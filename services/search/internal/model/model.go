@@ -9,6 +9,13 @@ type SearchRequest struct {
 	UserID    string
 	GroupIDs  []string
 	Query     string
+	// §7.1 / D6 — Mode controls the ranker stack:
+	//   "" or "lexical" : BM25 only (OpenSearch)
+	//   "semantic"      : dense-vector ANN only (Qdrant)
+	//   "hybrid"        : both, fused via RRF (α=0.6 lex, 0.4 sem, k=60)
+	// Unknown values fall back to "lexical" so a stale client can't
+	// silently get a degraded search.
+	Mode      string
 	Filters   SearchFilters
 	Facets    []string
 	SortBy    string // "relevance" | "created_at" | "updated_at" | "title" | "size_bytes"
@@ -17,6 +24,26 @@ type SearchRequest struct {
 	PageToken string
 	Highlight bool
 	Explain   bool
+}
+
+// SearchMode enumerates the valid Mode values. Use these constants
+// instead of hard-coding strings so the compiler flags typos.
+const (
+	SearchModeLexical  = "lexical"
+	SearchModeSemantic = "semantic"
+	SearchModeHybrid   = "hybrid"
+)
+
+// NormalizeMode coerces an arbitrary client-supplied mode into one of
+// the three valid values, defaulting to lexical. Applied at the edge
+// so the service body can compare against the constants above.
+func NormalizeMode(m string) string {
+	switch m {
+	case SearchModeSemantic, SearchModeHybrid, SearchModeLexical:
+		return m
+	default:
+		return SearchModeLexical
+	}
 }
 
 // SearchFilters mirrors every filterable field in the OpenSearch index.
