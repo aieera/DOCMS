@@ -1,0 +1,76 @@
+{{- /*
+§8.8 / G8 — daily audit chain verification.
+
+CronJob hits POST /api/v1/audit/verify-integrity once per tenant. The
+endpoint increments `audit_chain_break_total{tenant_id}` on any break;
+the p0-platform-emergency alert in deploy/monitoring/alerts/tiered-
+alerts.yml pages on-call within seconds.
+
+Runs against the internal ClusterIP of the audit service (port
+VAULTDMS_HEALTH_PORT bound inside the pod) — bypasses the gateway so
+the daily check isn't rate-limited. Tenant iteration is done by a
+minimal awk/jq over the tenants list; the operator installs
+`VAULTDMS_INTERNAL_API_KEY` as a Kubernetes Secret with the same
+value wired into the audit service.
+*/ -}}
+{{- if .Values.auditVerify.enabled | default true }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vaultdms-audit-verify
+  labels:
+    app.kubernetes.io/name: vaultdms-audit-verify
+    app.kubernetes.io/component: audit
+spec:
+  schedule: {{ .Values.auditVerify.schedule | default "15 3 * * *" | quote }}  # daily 03:15 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: verify
+              image: curlimages/curl:8.6.0
+              env:
+                - name: AUDIT_URL
+                  value: "http://vaultdms-audit:{{ .Values.audit.healthPort | default 8081 }}"
+                - name: INTERNAL_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.audit.existingSecret | default "vaultdms-audit" }}
+                      key: internal-api-key
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  echo "$(date -Iseconds) audit-verify starting"
+                  # Tenant ids are passed in as a newline-separated
+                  # string via the `.Values.auditVerify.tenantIds`
+                  # chart value for small deployments. Large multi-
+                  # tenant SaaS should swap this for a call to an
+                  # /internal/tenants endpoint — follow-up when
+                  # control-plane surfaces stabilize.
+                  printf '%s\n' {{- range .Values.auditVerify.tenantIds | default (list "all") }}
+                    "{{ . }}"
+                  {{- end }} | while read TENANT; do
+                    echo "verifying tenant=$TENANT"
+                    STATUS=$(curl -s -o /tmp/body -w "%{http_code}" \
+                      -X POST "$AUDIT_URL/api/v1/audit/verify-integrity" \
+                      -H "Authorization: Bearer $INTERNAL_API_KEY" \
+                      -H "X-Auth-Tenant-ID: $TENANT")
+                    if [ "$STATUS" != "200" ]; then
+                      echo "$(date -Iseconds) audit-verify HTTP $STATUS for $TENANT"
+                      cat /tmp/body
+                      exit 1
+                    fi
+                    # Log the result; actual alerting is from
+                    # audit_chain_break_total in Prometheus.
+                    cat /tmp/body
+                  done
+                  echo "$(date -Iseconds) audit-verify complete"
+{{- end }}

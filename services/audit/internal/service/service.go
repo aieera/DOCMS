@@ -96,9 +96,14 @@ func (s *Service) List(ctx context.Context, f model.ListFilter) ([]*model.AuditE
 }
 
 // VerifyIntegrity walks the hash chain for a tenant and checks every link.
+// Emits audit_verify_total{result} + audit_chain_break_total metrics so
+// the daily CronJob's output is scrapeable by Prometheus — alertmanager's
+// p0-platform-emergency rule (deploy/monitoring/alerts/tiered-alerts.yml)
+// pages on-call the moment audit_chain_break_total moves off zero.
 func (s *Service) VerifyIntegrity(ctx context.Context, tenantID string) (*model.IntegrityResult, error) {
 	events, err := s.repo.ListAll(ctx, tenantID)
 	if err != nil {
+		auditVerifyTotal.WithLabelValues(tenantID, "error").Inc()
 		return nil, err
 	}
 	result := &model.IntegrityResult{TenantID: tenantID, TotalEvents: int64(len(events)), Valid: true}
@@ -110,11 +115,15 @@ func (s *Service) VerifyIntegrity(ctx context.Context, tenantID string) (*model.
 			result.BrokenAt = e.ID
 			result.BrokenHash = e.EventHash
 			result.ExpectedHash = expected
+			auditChainBreakTotal.WithLabelValues(tenantID).Inc()
+			auditVerifyTotal.WithLabelValues(tenantID, "break").Inc()
 			return result, nil
 		}
 		result.Verified++
 		prevHash = e.EventHash
 	}
+	auditVerifyTotal.WithLabelValues(tenantID, "ok").Inc()
+	auditVerifyEventsScanned.WithLabelValues(tenantID).Add(float64(len(events)))
 	return result, nil
 }
 

@@ -30,6 +30,17 @@ groups:
         annotations:
           summary: "API availability < 95% (SLO 99.95%) for 2 minutes"
 
+      - alert: AuditChainBreak
+        # §8.8 / G8 — hash-chain tamper detection. ANY non-zero
+        # increment is a compliance emergency (tamper or silent data
+        # corruption). Alert auto-opens the audit-chain-break runbook.
+        expr: increase(audit_chain_break_total[10m]) > 0
+        for: 0m
+        labels: { severity: p0, service: audit, runbook: audit-chain-break }
+        annotations:
+          summary: "Audit hash chain BROKEN for tenant {{ $labels.tenant_id }}"
+          description: "audit_chain_break_total incremented; treat as compromise class until investigated."
+
       - alert: DatabasePrimaryDown
         expr: up{job="postgres-primary"} == 0
         for: 1m
