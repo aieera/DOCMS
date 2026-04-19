@@ -183,7 +183,45 @@ func main() {
 	}()
 
 	// ---- HTTP (grpc-gateway proxies REST → gRPC on localhost) --------------
+	// grpc-gateway's default header matcher only forwards
+	// Grpc-Metadata-* headers into gRPC metadata. The auth/tenant
+	// interceptors look at x-tenant-id / x-user-id metadata keys
+	// which come from the upstream X-Tenant-ID / X-User-ID HTTP
+	// headers (injected by the gateway in prod, by Vite in host dev).
+	// Whitelist them explicitly or every request arrives with empty
+	// tenant context → 401.
 	gwMux := runtime.NewServeMux()
+
+	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
+	// HTTP headers land in gRPC metadata. runtime.WithMetadata /
+	// WithIncomingHeaderMatcher both rely on grpc-gateway's own
+	// propagation which was lossy in practice; this middleware uses
+	// metadata.AppendToOutgoingContext directly which grpc-gateway
+	// forwards verbatim to the gRPC call.
+	// grpc-gateway forwards any `Grpc-Metadata-*` request header as
+	// matching gRPC metadata verbatim (prefix stripped, key lowercased).
+	// Rewriting inbound headers is the most reliable path — it
+	// doesn't depend on WithMetadata / WithIncomingHeaderMatcher, both
+	// of which proved lossy in host-dev mode.
+	grpcGatewayInject := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			get := func(k string) string { return r.Header.Get(k) }
+			tid := get("X-Tenant-ID")
+			if tid == "" {
+				tid = get("X-Auth-Tenant-ID")
+			}
+			if tid != "" {
+				r.Header.Set("Grpc-Metadata-X-Tenant-Id", tid)
+			}
+			if v := get("X-User-ID"); v != "" {
+				r.Header.Set("Grpc-Metadata-X-User-Id", v)
+			}
+			if v := get("X-User-Role"); v != "" {
+				r.Header.Set("Grpc-Metadata-X-User-Role", v)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 	gwConn, err := grpc.DialContext(ctx, fmt.Sprintf("localhost:%d", cfg.GRPCPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -290,7 +328,11 @@ func main() {
 	rootMux.Handle("DELETE /api/v1/annotations/{id}", middleware.CorrelationHTTP(annotationsMux))
 
 	// All other routes (including gRPC-Gateway) go through default chain
-	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(gwMux)))
+	// TenantHTTP sets auth.SetTenantID on the request context from
+	// X-Tenant-ID. TenantInterceptor now falls back to that when
+	// gRPC metadata is empty — covers host-dev mode where grpc-
+	// gateway's header forwarding is lossy.
+	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux)))))
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

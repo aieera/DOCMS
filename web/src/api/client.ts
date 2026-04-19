@@ -23,7 +23,17 @@ const SAFE_METHODS = new Set(['get', 'head', 'options'])
 
 api.interceptors.request.use((config) => {
   const { tenantId, user } = useAuthStore.getState()
-  if (tenantId) config.headers['X-Tenant-ID'] = tenantId
+  // §3.1 / B2.3 sweep — backend handlers now read X-Auth-Tenant-ID
+  // (the gateway-injected trusted header). In host dev mode the
+  // Vite proxy injects X-Gateway-Signature; with that header
+  // present the backend treats X-Auth-* as trusted.
+  if (tenantId) {
+    config.headers['X-Auth-Tenant-ID'] = tenantId
+    // Retain the legacy header for a release so any handler that
+    // hasn't finished the sweep still receives it. Remove after
+    // confirming nothing reads it.
+    config.headers['X-Tenant-ID'] = tenantId
+  }
   // Wave 11.2: role header for OPA-gated endpoints (e.g. legal holds
   // require compliance_officer / admin / owner). Downstream services
   // that don't care about role simply ignore the header.
