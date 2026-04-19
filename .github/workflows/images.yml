@@ -1,0 +1,205 @@
+# §3.2 — pre-build every service image and push to ghcr.io so the
+# Phase A / G1 live drill becomes a compose-pull, not a 45-minute
+# cold build on whatever laptop is doing the drill.
+#
+# Triggered on push to main (latest) and on tag push (release).
+# PRs run the build jobs to catch Dockerfile regressions BUT don't
+# push — only ref.name == main or a release tag publishes.
+#
+# Naming:
+#   ghcr.io/<owner>/docms/<service>:main             → tip of main
+#   ghcr.io/<owner>/docms/<service>:sha-<short>      → pinned snapshot
+#   ghcr.io/<owner>/docms/<service>:<tag>            → release tag
+#
+# 14 images = 11 Go services + intelligence + preview + collaboration.
+
+name: Images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "services/**"
+      - "build/Dockerfile.go-service"
+      - "pkg/**"
+      - "proto/gen/go/**"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/images.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercase the repo owner — ghcr rejects mixed-case paths.
+  NAMESPACE: ${{ github.repository_owner }}/docms
+
+jobs:
+  # ---- Go services: one matrix job per service, shared Dockerfile ----
+  go:
+    name: build / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - audit
+          - auth
+          - billing
+          - connector
+          - document
+          - notification
+          - policy
+          - search
+          - signature
+          - storage
+          - workflow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase namespace
+        id: ns
+        run: echo "value=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.ns.outputs.value }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=tag
+      - name: Build ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: build/Dockerfile.go-service
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            VERSION=${{ github.sha }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=go-${{ matrix.service }}
+          cache-to: type=gha,scope=go-${{ matrix.service }},mode=max
+
+  # ---- Non-Go application images: one job per service, bespoke Dockerfile ----
+  # Build contexts are per-service (not repo root) because these
+  # Dockerfiles COPY src/ / app/ / requirements.txt relative to the
+  # service dir — see the B2.1 compose fix.
+  collaboration:
+    name: build / collaboration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase namespace
+        id: ns
+        run: echo "value=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.ns.outputs.value }}/collaboration
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=tag
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/collaboration
+          file: services/collaboration/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=collab
+          cache-to: type=gha,scope=collab,mode=max
+
+  intelligence:
+    name: build / intelligence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase namespace
+        id: ns
+        run: echo "value=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.ns.outputs.value }}/intelligence
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=tag
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/intelligence
+          file: services/intelligence/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          # spaCy model download is ~400 MB — aggressive cache so a
+          # requirements.txt bump doesn't re-download the world.
+          cache-from: type=gha,scope=intel
+          cache-to: type=gha,scope=intel,mode=max
+
+  preview:
+    name: build / preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase namespace
+        id: ns
+        run: echo "value=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.ns.outputs.value }}/preview
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=tag
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/preview
+          file: services/preview/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=preview
+          cache-to: type=gha,scope=preview,mode=max

@@ -1,0 +1,53 @@
+# §3.2 — drill-time compose override.
+#
+# Layered over docker-compose.yml to swap `build:` for pre-built
+# images from ghcr.io/aieera/docms. Use for the Phase A / G1 live
+# drill or any time you want a fast `compose up` without burning
+# 45 minutes on cold Go + spaCy builds.
+#
+# Usage:
+#   export VAULTDMS_IMAGE_TAG=main            # or sha-<short>, or v1.2.3
+#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d
+#
+# `image:` under a service NAME fully replaces the parent's `build:`
+# per compose merge rules when both are specified — compose pulls
+# the pre-built image instead of re-building from Dockerfile.
+
+name: vaultdms-dev
+
+services:
+  # ---- Go services (11) --------------------------------------------------
+  auth:
+    image: ghcr.io/aieera/docms/auth:${VAULTDMS_IMAGE_TAG:-main}
+  policy:
+    image: ghcr.io/aieera/docms/policy:${VAULTDMS_IMAGE_TAG:-main}
+  document:
+    image: ghcr.io/aieera/docms/document:${VAULTDMS_IMAGE_TAG:-main}
+  storage:
+    image: ghcr.io/aieera/docms/storage:${VAULTDMS_IMAGE_TAG:-main}
+  search:
+    image: ghcr.io/aieera/docms/search:${VAULTDMS_IMAGE_TAG:-main}
+  audit:
+    image: ghcr.io/aieera/docms/audit:${VAULTDMS_IMAGE_TAG:-main}
+  workflow:
+    image: ghcr.io/aieera/docms/workflow:${VAULTDMS_IMAGE_TAG:-main}
+  notification:
+    image: ghcr.io/aieera/docms/notification:${VAULTDMS_IMAGE_TAG:-main}
+  signature:
+    image: ghcr.io/aieera/docms/signature:${VAULTDMS_IMAGE_TAG:-main}
+  billing:
+    image: ghcr.io/aieera/docms/billing:${VAULTDMS_IMAGE_TAG:-main}
+  connector:
+    image: ghcr.io/aieera/docms/connector:${VAULTDMS_IMAGE_TAG:-main}
+
+  # ---- Non-Go application services --------------------------------------
+  collaboration:
+    image: ghcr.io/aieera/docms/collaboration:${VAULTDMS_IMAGE_TAG:-main}
+  intelligence:
+    image: ghcr.io/aieera/docms/intelligence:${VAULTDMS_IMAGE_TAG:-main}
+  intelligence-worker:
+    # Worker reuses the intelligence image (same Dockerfile, different CMD
+    # supplied by the parent compose file).
+    image: ghcr.io/aieera/docms/intelligence:${VAULTDMS_IMAGE_TAG:-main}
+  preview-worker:
+    image: ghcr.io/aieera/docms/preview:${VAULTDMS_IMAGE_TAG:-main}

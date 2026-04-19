@@ -43,11 +43,13 @@ vaultdms/
 ## Quickstart
 
 ```bash
-# 1. Start the full compose tier — 24 services (10 infra + 3 app +
-#    11 Go), every long-running container with a healthcheck. Host
-#    ports follow scripts/run-all-services.sh so existing dev
-#    tooling (curl :8081/healthz, :8180 HTTP APIs, etc.) keeps
-#    working against the containerised services.
+# 1a. Fast path: pull pre-built images from ghcr.io/aieera/docms
+#     (populated on every merge to main by .github/workflows/images.yml).
+#     ~2 minutes of pulls vs. ~45 minutes of cold builds.
+make docker-up-prebuilt
+
+# 1b. Build-from-source path. 24 services (10 infra + 3 app + 11 Go),
+#     every long-running container with a healthcheck.
 make docker-up
 
 # 2. Block until every compose service reports healthy (≤120s):
