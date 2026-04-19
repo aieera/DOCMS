@@ -20,7 +20,6 @@ import (
 	temporalclient "go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/vaultdms/vaultdms/pkg/config"
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -199,30 +198,28 @@ func main() {
 	// propagation which was lossy in practice; this middleware uses
 	// metadata.AppendToOutgoingContext directly which grpc-gateway
 	// forwards verbatim to the gRPC call.
+	// grpc-gateway forwards any `Grpc-Metadata-*` request header as
+	// matching gRPC metadata verbatim (prefix stripped, key lowercased).
+	// Rewriting inbound headers is the most reliable path — it
+	// doesn't depend on WithMetadata / WithIncomingHeaderMatcher, both
+	// of which proved lossy in host-dev mode.
 	grpcGatewayInject := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			md := metadata.MD{}
-			get := func(k string) string {
-				if v := r.Header.Get(k); v != "" {
-					return v
-				}
-				return ""
-			}
+			get := func(k string) string { return r.Header.Get(k) }
 			tid := get("X-Tenant-ID")
 			if tid == "" {
 				tid = get("X-Auth-Tenant-ID")
 			}
 			if tid != "" {
-				md.Set("x-tenant-id", tid)
+				r.Header.Set("Grpc-Metadata-X-Tenant-Id", tid)
 			}
 			if v := get("X-User-ID"); v != "" {
-				md.Set("x-user-id", v)
+				r.Header.Set("Grpc-Metadata-X-User-Id", v)
 			}
 			if v := get("X-User-Role"); v != "" {
-				md.Set("x-user-role", v)
+				r.Header.Set("Grpc-Metadata-X-User-Role", v)
 			}
-			ctx := metadata.NewIncomingContext(r.Context(), md)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r)
 		})
 	}
 	gwConn, err := grpc.DialContext(ctx, fmt.Sprintf("localhost:%d", cfg.GRPCPort),
