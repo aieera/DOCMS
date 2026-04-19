@@ -45,17 +45,52 @@ plugins:
       latency_metrics: true
       bandwidth_metrics: true
       upstream_health_metrics: true
+  # §14.3 / B2.5 — default rate limit for every route. Route-specific
+  # classes (auth-login, auth-mfa, search, upload, shared) override
+  # this via inline `plugins:` blocks below, per
+  # deploy/gateway/rate-limits.yaml.
+  #
+  # Policy: `local` in dev (per-pod counters). Prod overrides via Helm
+  # to `redis` for cluster-wide counters.
+  - name: rate-limiting
+    config:
+      minute: 1000
+      hour:   60000
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
 
 # ---- Services + routes (one Kong service per backend) --------------
 services:
   - name: auth
     url: http://auth:8081
     routes:
-      - { name: auth-login,       paths: [/api/v1/auth/login],        methods: [POST], strip_path: false }
+      - name: auth-login
+        paths: [/api/v1/auth/login]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          # §8.1 / B2.5 — brute-force protection. 11th attempt/min = 429.
+          - name: rate-limiting
+            config: { minute: 10,  hour: 200,   policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: auth-logout,      paths: [/api/v1/auth/logout],       methods: [POST], strip_path: false }
       - { name: auth-me,          paths: [/api/v1/auth/me],           methods: [GET],  strip_path: false }
-      - { name: auth-mfa-verify,  paths: [/api/v1/auth/mfa/verify],   methods: [POST], strip_path: false }
-      - { name: auth-mfa-recov,   paths: [/api/v1/auth/mfa/recovery], methods: [POST], strip_path: false }
+      - name: auth-mfa-verify
+        paths: [/api/v1/auth/mfa/verify]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          # §8.1 / B2.5 — MFA tighter than login; brute forcing a
+          # TOTP is feasible without this.
+          - name: rate-limiting
+            config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
+      - name: auth-mfa-recov
+        paths: [/api/v1/auth/mfa/recovery]
+        methods: [POST]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: auth-mfa-rest,    paths: [/api/v1/auth/mfa],          strip_path: false }
       - { name: auth-sessions,    paths: [/api/v1/auth/sessions],     strip_path: false }
       - { name: auth-apikeys,     paths: [/api/v1/auth/api-keys],     strip_path: false }
@@ -81,17 +116,37 @@ services:
       - { name: privacy-dsr,        paths: [/api/v1/privacy/dsr],              strip_path: false }
       - { name: privacy-verify,     paths: [/api/v1/privacy/verify],           strip_path: false }
       - { name: residency,          paths: [/api/v1/residency],                strip_path: false }
-      - { name: shared,             paths: [/api/v1/shared],                   strip_path: false }
+      - name: shared
+        paths: [/api/v1/shared]
+        strip_path: false
+        plugins:
+          # Public (unauthenticated) share-link access. Per-IP cap
+          # so a leaked link can't DoS.
+          - name: rate-limiting
+            config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
 
   - name: storage
     url: http://storage:8081
     routes:
-      - { name: storage, paths: [/api/v1/storage], strip_path: false }
+      - name: storage
+        paths: [/api/v1/storage]
+        strip_path: false
+        plugins:
+          # §14.3 — upload RPS cap at gateway. Per-tenant bandwidth
+          # quotas live at the Storage Service itself.
+          - name: rate-limiting
+            config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
 
   - name: search
     url: http://search:8081
     routes:
-      - { name: search,         paths: [/api/v1/search],         strip_path: false }
+      - name: search
+        paths: [/api/v1/search]
+        strip_path: false
+        plugins:
+          # §14.3 — search 100/min Standard.
+          - name: rate-limiting
+            config: { minute: 100, hour: 5000, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: saved-searches, paths: [/api/v1/saved-searches], strip_path: false }
 
   - name: audit
