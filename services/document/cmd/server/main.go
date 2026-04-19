@@ -256,6 +256,13 @@ func main() {
 	redactionHandler.Register(redactionMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/redact", middleware.CorrelationHTTP(redactionMux))
 
+	// §9.4 / G5 — internal retention-sweep endpoint for the
+	// vaultdms-retention CronJob.
+	retentionSweepMux := http.NewServeMux()
+	handler.NewRetentionSweepHandler(svc, *log.Z()).Register(retentionSweepMux)
+	rootMux.Handle("POST /internal/v1/retention/sweep",
+		middleware.CorrelationHTTP(retentionSweepMux))
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
