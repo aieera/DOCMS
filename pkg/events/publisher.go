@@ -78,6 +78,12 @@ var DefaultStreams = []StreamSpec{
 	{Name: "WORKFLOW_EVENTS", Subjects: []string{"dms.workflow.>", "dms.task.>"}},
 	{Name: "INTEL_EVENTS", Subjects: []string{"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>"}},
 	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
+	// Compliance + lifecycle events emitted by services/document/internal/compliance
+	// (legal holds) and services/workflow/internal/activities/residency.
+	{Name: "COMPLIANCE_EVENTS", Subjects: []string{"dms.hold.>", "dms.residency.>"}},
+	// Signature lifecycle events emitted by services/signature and the
+	// workflow signature_stub activity (completed, declined).
+	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},
 	// Retained alongside the new topology for back-compat with events
 	// that still use these prefixes (e.g. dms.sharelink.*, dms.folder.*,
 	// dms.intelligence.*). Remove once every emitter is migrated.

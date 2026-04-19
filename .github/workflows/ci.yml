@@ -94,6 +94,23 @@ jobs:
           name: coverage
           path: coverage.txt
 
+  # §3.2 / A3 — fail the build if any published NATS subject is not
+  # covered by a JetStream stream filter. Pure-Go test; no broker
+  # needed, so this runs fast (<5s) and gates every PR before the
+  # heavier integration-tests job.
+  subjects-coverage:
+    name: NATS subjects coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go test ./pkg/events/...
+        working-directory: pkg
+        run: go test -count=1 -run TestSubjectCov ./events/...
+
   integration-tests:
     name: Integration tests (-tags integration)
     runs-on: ubuntu-latest

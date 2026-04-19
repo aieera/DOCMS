@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/vaultdms/vaultdms/pkg/events"
 )
 
 // natsCheck verifies that every subject passed on argv is covered by at
@@ -73,7 +75,7 @@ func natsCheck(args []string) {
 		covered := false
 		var coverStream, coverSubj string
 		for _, ss := range streamSubjects {
-			if subjectCovers(ss.Subject, s) {
+			if events.SubjectCovers(ss.Subject, s) {
 				covered = true
 				coverStream = ss.Stream
 				coverSubj = ss.Subject
@@ -114,30 +116,6 @@ func natsCheck(args []string) {
 
 type streamSubject struct{ Stream, Subject string }
 
-// subjectCovers reports whether NATS subject filter `filter` covers every
-// message that would match subscribe subject `subj`. Implements the subset
-// of NATS subject matching needed for preflight: literal tokens, `*`
-// single-token wildcard, and `>` tail wildcard. A filter covers a subject
-// iff every concrete message matching `subj` also matches `filter`.
-func subjectCovers(filter, subj string) bool {
-	ft := strings.Split(filter, ".")
-	st := strings.Split(subj, ".")
-	for i := 0; i < len(ft); i++ {
-		if ft[i] == ">" {
-			return i < len(st) || len(ft) == len(st)+1 && i == len(st)
-		}
-		if i >= len(st) {
-			return false
-		}
-		switch {
-		case ft[i] == "*":
-			if st[i] == ">" {
-				return false
-			}
-		case ft[i] == st[i]:
-		default:
-			return false
-		}
-	}
-	return len(ft) == len(st)
-}
+// Subject matching moved to pkg/events.SubjectCovers (§3.2 / A3) so the
+// runtime dms-admin check and the pure-Go build-time coverage gate share
+// one canonical implementation.
