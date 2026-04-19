@@ -4,6 +4,26 @@ import react from '@vitejs/plugin-react'
 import { TanStackRouterVite } from '@tanstack/router-vite-plugin'
 import path from 'path'
 
+// Dev-only: Kong normally injects X-Gateway-Signature. In host mode
+// (make run-all) we bypass Kong, so the Vite proxy must add the
+// header itself — otherwise every backend 401s via
+// pkg/middleware.RequireGatewaySignature. The value MUST match
+// VAULTDMS_GATEWAY_SECRET exported by scripts/run-all-services.sh.
+const DEV_GATEWAY_SECRET =
+  process.env.VAULTDMS_GATEWAY_SECRET || 'dev-only-gateway-secret-rotate-in-prod'
+
+function withSig(target: string) {
+  return {
+    target,
+    changeOrigin: false,
+    configure: (proxy: any) => {
+      proxy.on('proxyReq', (proxyReq: any) => {
+        proxyReq.setHeader('X-Gateway-Signature', DEV_GATEWAY_SECRET)
+      })
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [react(), TanStackRouterVite()],
   resolve: {
@@ -11,19 +31,45 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    // §3.1 / B2.4 — single proxy entry. All API traffic goes through
-    // Kong (deploy/gateway/kong.yaml). Kong owns per-service routing,
-    // auth-class gating, rate limits, and the X-Gateway-Signature
-    // injection. If the gateway isn't up, requests fail early instead
-    // of partially working against a subset of direct-to-backend routes
-    // — which is the correct behaviour for a gateway-enforced invariant.
-    //
-    // Gateway host/port:
-    //   * VITE_GATEWAY_URL env override (for remote-gateway dev setups)
-    //   * default http://localhost:8080 = the Kong container from compose
-    proxy: {
-      '/api': process.env.VITE_GATEWAY_URL || 'http://localhost:8080',
-    },
+    // Two modes:
+    //   1. Gateway mode (default in compose-only deploys) — VITE_GATEWAY_URL
+    //      points at Kong on :8080 and every request routes through it.
+    //   2. Host mode (when backend services run via `make run-all`) — proxy
+    //      per-prefix to the host HTTP ports from scripts/run-all-services.sh
+    //      because Kong in a container can't reach host Go services.
+    // Activated by VITE_PROXY_MODE=host (or VITE_GATEWAY_URL unset AND mode unset).
+    proxy:
+      process.env.VITE_PROXY_MODE === 'gateway' || process.env.VITE_GATEWAY_URL
+        ? { '/api': withSig(process.env.VITE_GATEWAY_URL || 'http://localhost:8080') }
+        : {
+            '/api/v1/admin/share-links':        withSig('http://localhost:8182'),
+            '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
+            '/api/v1/admin/documents':          withSig('http://localhost:8182'),
+            '/api/v1/admin/settings':           withSig('http://localhost:8189'),
+            '/api/v1/admin':                    withSig('http://localhost:8180'),
+            '/api/v1/permissions':              withSig('http://localhost:8181'),
+            '/api/v1/documents':                withSig('http://localhost:8182'),
+            '/api/v1/workspaces':               withSig('http://localhost:8182'),
+            '/api/v1/folders':                  withSig('http://localhost:8182'),
+            '/api/v1/shared':                   withSig('http://localhost:8182'),
+            '/api/v1/storage':                  withSig('http://localhost:8182'),
+            '/api/v1/compliance':               withSig('http://localhost:8182'),
+            '/api/v1/privacy':                  withSig('http://localhost:8182'),
+            '/api/v1/residency':                withSig('http://localhost:8182'),
+            '/api/v1/annotations':              withSig('http://localhost:8182'),
+            '/api/v1/tags':                     withSig('http://localhost:8182'),
+            '/api/v1/tenants/metadata-schema':  withSig('http://localhost:8182'),
+            '/api/v1/search':                   withSig('http://localhost:8184'),
+            '/api/v1/saved-searches':           withSig('http://localhost:8184'),
+            '/api/v1/audit':                    withSig('http://localhost:8185'),
+            '/api/v1/workflows':                withSig('http://localhost:8186'),
+            '/api/v1/notifications':            withSig('http://localhost:8187'),
+            '/api/v1/signatures':               withSig('http://localhost:8188'),
+            '/api/v1/webhooks':                 withSig('http://localhost:8190'),
+            '/api/v1/connectors':               withSig('http://localhost:8190'),
+            '/api/v1/mcp':                      withSig('http://localhost:8190'),
+            '/api':                             withSig('http://localhost:8180'),
+          },
   },
   test: {
     environment: 'jsdom',

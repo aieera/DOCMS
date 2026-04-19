@@ -72,6 +72,15 @@ func TenantInterceptor(pool *pgxpool.Pool) grpc.UnaryServerInterceptor {
 			}
 		}
 		tid, err := uuid.Parse(raw)
+		// Fallback: TenantHTTP may have already set the tenant on
+		// the context (host-dev mode where grpc-gateway's metadata
+		// forwarding is lossy). Honour that instead of 401'ing.
+		if err != nil || tid == uuid.Nil {
+			if existing, e := auth.GetTenantID(ctx); e == nil && existing != uuid.Nil {
+				tid = existing
+				err = nil
+			}
+		}
 		if err != nil || tid == uuid.Nil {
 			return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
 		}
