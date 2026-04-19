@@ -24,6 +24,11 @@ x-go-env: &go-env
   VAULTDMS_OPENSEARCH_URL: "http://opensearch:9200"
   VAULTDMS_QDRANT_URL:   "http://qdrant:6333"
   VAULTDMS_TEMPORAL_ADDR: "temporal:7233"
+  # §7.1 / D6 part 2 — search service's dense-vector path. Both must
+  # be set for hybrid/semantic mode to activate; otherwise Search()
+  # degrades to lexical and logs a notice.
+  VAULTDMS_INTELLIGENCE_EMBED_URL: "http://intelligence:8080/internal/v1/embed-query"
+  VAULTDMS_QDRANT_COLLECTION: "vaultdms_chunks"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
@@ -283,6 +288,33 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  # §7.1 / D6 part 2 — intelligence HTTP API. Serves /healthz, /ask,
+  # /summarize, and /internal/v1/embed-query (the last is what the
+  # search service calls for hybrid mode). Shares the Dockerfile with
+  # intelligence-worker but uses the default uvicorn CMD.
+  intelligence:
+    build:
+      context: services/intelligence
+      dockerfile: Dockerfile
+    container_name: vaultdms-intelligence
+    environment:
+      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      VAULTDMS_NATS_URL: "nats://nats:4222"
+      VAULTDMS_QDRANT_URL: "http://qdrant:6333"
+      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+    ports: ["8194:8080"]
+    depends_on:
+      redis:    { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      qdrant:   { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz',timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   intelligence-worker:

@@ -17,21 +17,29 @@ type semanticHit struct {
 	Score      float64
 }
 
-// semanticSearch calls Qdrant for the top-K nearest neighbours of the
-// query embedding. Current implementation: stub that returns nil,nil
-// because the intelligence-service /internal/v1/embed-query endpoint
-// doesn't exist yet (§D6 follow-up). Returning a zero-length slice
-// makes Search() degrade cleanly to lexical mode — no special-case
-// error path needed.
-//
-// When the real path lands, it does:
-//   1. POST /internal/v1/embed-query to intelligence with req.Query
-//      → []float32 (vector dimension per blueprint §6.8).
-//   2. Qdrant search with that vector, scoped to tenant_id payload
-//      filter + the user's readable_by group set.
-//   3. Convert top-K to []semanticHit{DocumentID, Score}.
-func (s *Service) semanticSearch(_ context.Context, _ *model.SearchRequest) ([]semanticHit, error) {
-	return nil, nil
+// semanticSearch embeds the query via the intelligence service's
+// /internal/v1/embed-query endpoint and ANN-queries Qdrant with a
+// tenant_id + readable_by payload filter (blueprint §7.3). Returns
+// nil hits + nil error when no vector client is wired (dev stacks
+// without intelligence running) so hybrid mode degrades to lexical
+// cleanly.
+func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) ([]semanticHit, error) {
+	if s.vec == nil || req.Query == "" {
+		return nil, nil
+	}
+	limit := req.PageSize
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	raw, err := s.vec.SemanticSearch(ctx, req.Query, req.TenantID, req.GroupIDs, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]semanticHit, 0, len(raw))
+	for _, h := range raw {
+		out = append(out, semanticHit{DocumentID: h.DocumentID, Score: h.Score})
+	}
+	return out, nil
 }
 
 // fuseHits merges OpenSearch BM25 results with semantic hits via

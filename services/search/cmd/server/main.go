@@ -32,6 +32,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
 	"github.com/vaultdms/vaultdms/services/search/internal/repository"
 	"github.com/vaultdms/vaultdms/services/search/internal/service"
+	"github.com/vaultdms/vaultdms/services/search/internal/vector"
 )
 
 const serviceName = "search"
@@ -80,10 +81,33 @@ func main() {
 
 	// ---- Service layer -----------------------------------------------------
 	repo := repository.New(pool)
+
+	// §7.1 / D6 part 2 — optional dense-vector path. Wires only when
+	// both env vars are set (dev without intelligence running leaves
+	// them empty, and hybrid mode degrades to lexical).
+	var vecClient *vector.Client
+	if embedURL, qdrantURL := os.Getenv("VAULTDMS_INTELLIGENCE_EMBED_URL"),
+		os.Getenv("VAULTDMS_QDRANT_URL"); embedURL != "" && qdrantURL != "" {
+		coll := os.Getenv("VAULTDMS_QDRANT_COLLECTION")
+		if coll == "" {
+			coll = "vaultdms_chunks"
+		}
+		vecClient, err = vector.New(vector.Config{
+			IntelligenceEmbedURL: embedURL,
+			QdrantBaseURL:        qdrantURL,
+			Collection:           coll,
+		})
+		if err != nil {
+			log.Warn(ctx).Err(err).Msg("vector client init failed; hybrid search disabled")
+			vecClient = nil
+		}
+	}
+
 	svc := service.New(service.Config{
 		OS:     osCli,
 		Repo:   repo,
 		Redis:  rdb,
+		Vector: vecClient,
 		Logger: *log.Z(),
 	})
 
