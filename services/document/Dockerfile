@@ -10,7 +10,7 @@ ARG VERSION=dev
 RUN cd services/document && \
     CGO_ENABLED=0 go build -ldflags="-w -s -X main.version=${VERSION}" -o /app ./cmd/server
 
-FROM alpine:3.19
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 1000 appuser
 USER appuser
