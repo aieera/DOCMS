@@ -1,0 +1,45 @@
+{{- /*
+§3.1 / B1 — Kong declarative config. Single source of truth for
+routes, services, and plugins. Mounted into the gateway Deployment
+at /kong/declarative/kong.yaml. Edits land here, then helm upgrade.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vaultdms.fullname" . }}-gateway
+  labels:
+    app.kubernetes.io/name: {{ include "vaultdms.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+data:
+  kong.yaml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+      - name: auth
+        # Helm renders this to the ClusterIP service name so Kong
+        # resolves via cluster DNS. Compose uses the plain service
+        # name `auth` instead — both work because Docker DNS and
+        # k8s DNS both resolve the same short name here.
+        url: http://{{ include "vaultdms.fullname" . }}-auth:{{ .Values.auth.healthPort | default 8081 }}
+        routes:
+          - name: api-v1-health
+            paths:
+              - /api/v1/health
+            strip_path: true
+            methods: [GET]
+
+    plugins:
+      - name: correlation-id
+        config:
+          header_name: X-Correlation-ID
+          generator: uuid
+          echo_downstream: true
+      - name: prometheus
+        config:
+          per_consumer: false
+          status_code_metrics: true
+          latency_metrics: true
+          bandwidth_metrics: true
+          upstream_health_metrics: true

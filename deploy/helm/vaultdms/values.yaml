@@ -105,6 +105,19 @@ document:
   httpPort: 8080
   healthPort: 8081
 
+# §3.1 / B1 — Kong API gateway (DBless). ONLY ingress; backend
+# services are ClusterIP-only from B2 onwards.
+gateway:
+  enabled: true
+  replicaCount: 1
+  image: kong:3.5-ubuntu
+  service:
+    type: ClusterIP       # cloud: LoadBalancer; on-prem: NodePort
+    proxyPort: 80
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 1000m, memory: 512Mi }
+
 auth:
   enabled: true
   replicas: 2

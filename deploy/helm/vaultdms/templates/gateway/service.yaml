@@ -1,0 +1,32 @@
+{{- /*
+§3.1 / B1 — gateway Service. Type is driven by .Values.gateway.service.type
+so operators can pick LoadBalancer (cloud), NodePort (on-prem), or
+ClusterIP (ingress-controller fronted). Default is ClusterIP + the
+standard Kubernetes Ingress template at templates/ingress.yaml.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vaultdms.fullname" . }}-gateway
+  labels:
+    app.kubernetes.io/name: {{ include "vaultdms.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8100"
+    prometheus.io/path: "/metrics"
+spec:
+  type: {{ .Values.gateway.service.type | default "ClusterIP" }}
+  ports:
+    - name: proxy
+      port: {{ .Values.gateway.service.proxyPort | default 80 }}
+      targetPort: proxy
+      protocol: TCP
+    - name: metrics
+      port: 8100
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "vaultdms.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}

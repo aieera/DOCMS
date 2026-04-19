@@ -111,6 +111,42 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # §3.1 / B1 — Kong API gateway. DBless mode (declarative), no DB
+  # dependency. Single source of public traffic; B2 will move every
+  # public REST route here and strip `ports:` off the backends so they
+  # are only reachable via the gateway. This B1 spike leaves backend
+  # ports in place so existing dev tooling keeps working while the
+  # route migration lands one PR at a time.
+  gateway:
+    image: kong:3.5-ubuntu
+    container_name: vaultdms-gateway
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yaml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      # Admin API bound to 127.0.0.1 only — never reachable from the
+      # network in dev. B2 disables it entirely in prod.
+      KONG_ADMIN_LISTEN: "127.0.0.1:8001"
+      # Status listener (health + /metrics) on 8100.
+      KONG_STATUS_LISTEN: "0.0.0.0:8100"
+      # Proxy listener — the single published port.
+      KONG_PROXY_LISTEN: "0.0.0.0:8080"
+    volumes:
+      - ./deploy/gateway:/kong/declarative:ro
+    ports:
+      - "8080:8080"   # public proxy
+      - "8100:8100"   # /metrics + /status (prometheus)
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   qdrant:
     image: qdrant/qdrant:v1.7.4
     container_name: vaultdms-qdrant

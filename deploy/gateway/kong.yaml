@@ -1,0 +1,50 @@
+# VaultDMS Kong gateway — declarative DBless configuration.
+# Blueprint §3.1 + §14.3. Single source of truth for routes, services,
+# plugins, and rate-limit policies. Referenced from both docker-compose
+# (bind-mounted) and the Helm chart (ConfigMap).
+#
+# B1 spike scope: ONE worked route proving the gateway serves traffic
+# end-to-end. B2 wires every public REST route through the gateway.
+_format_version: "3.0"
+_transform: true
+
+services:
+  # First proven backend — auth's healthz. Upstream DNS resolves to the
+  # auth container in compose (`auth`) or the auth ClusterIP service in
+  # Kubernetes (`vaultdms-auth`). Helm values override the host so the
+  # same declarative file works in both targets.
+  - name: auth
+    url: http://auth:8081
+    routes:
+      - name: api-v1-health
+        # Exposes auth's /healthz at a tenant-agnostic public path so
+        # operators (and the B1 smoke test) have a single URL to hit.
+        paths:
+          - /api/v1/health
+        strip_path: true
+        methods: [GET]
+        plugins:
+          - name: request-termination
+            # Disabled by default; kept wired so operators can flip it
+            # via the Kong admin API during maintenance windows.
+            enabled: false
+
+plugins:
+  # Correlation-id propagation — injected inbound, echoed outbound.
+  # Backends trust the value only when the gateway signed the request
+  # (Signature plugin comes in B2).
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid
+      echo_downstream: true
+
+  # Prometheus metrics on the status listener (8100). Scraped by the
+  # Prometheus deployment in deploy/monitoring.
+  - name: prometheus
+    config:
+      per_consumer: false
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
