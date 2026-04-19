@@ -1,0 +1,77 @@
+# §15.4 / F4 — Alertmanager routing by severity tier.
+# Chart mounts this at /etc/alertmanager/alertmanager.yml.
+#
+# Routing:
+#   p0 → pagerduty-phone + slack #oncall-immediate
+#   p1 → pagerduty-standard
+#   p2 → slack #incidents
+#   p3 → email digest (no pager)
+#
+# Inhibition rule: if a service is marked DOWN (up{job="$svc"}==0)
+# we suppress downstream alerts from THAT service and its
+# dependents — otherwise a single pod kill emits a page-storm.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: email-digest
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="p0"]
+      receiver: pager-immediate
+      group_wait: 0s
+      repeat_interval: 15m
+      continue: true                # also deliver to slack-oncall
+    - matchers: [severity="p0"]
+      receiver: slack-oncall
+
+    - matchers: [severity="p1"]
+      receiver: pager-standard
+      repeat_interval: 1h
+
+    - matchers: [severity="p2"]
+      receiver: slack-incidents
+      repeat_interval: 2h
+
+    - matchers: [severity="p3"]
+      receiver: email-digest
+      repeat_interval: 24h
+
+receivers:
+  - name: pager-immediate
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_P0_SERVICE_KEY}"
+        severity: critical
+        description: '{{ template "pagerduty.default.description" . }}'
+  - name: pager-standard
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_P1_SERVICE_KEY}"
+        severity: error
+  - name: slack-oncall
+    slack_configs:
+      - api_url: "${SLACK_ONCALL_WEBHOOK}"
+        channel: "#oncall-immediate"
+        title: "P0 {{ .GroupLabels.alertname }}"
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ "\n" }}{{ end }}'
+  - name: slack-incidents
+    slack_configs:
+      - api_url: "${SLACK_INCIDENTS_WEBHOOK}"
+        channel: "#incidents"
+        title: "P2 {{ .GroupLabels.alertname }}"
+  - name: email-digest
+    email_configs:
+      - to: sre-digest@vaultdms.example
+        send_resolved: false
+
+inhibit_rules:
+  # A service totally down silences its SLO-breach alerts; the
+  # "service down" P0 is the informative one.
+  - source_matchers: [alertname="DatabasePrimaryDown"]
+    target_matchers: [severity=~"p1|p2"]
+    equal: [service]
+  - source_matchers: [alertname="APIAvailabilityCatastrophic"]
+    target_matchers: [severity="p1", service=~"document|storage|search|audit"]
