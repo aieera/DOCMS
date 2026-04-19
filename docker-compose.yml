@@ -276,6 +276,8 @@ services:
       WS_PORT: "8083"
       REDIS_URL: "redis://redis:6379"
       AUTH_SERVICE_URL: "http://auth:8080"
+      # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
+      VAULTDMS_NATS_URL: "nats://nats:4222"
     ports: ["8083:8083"]
     depends_on:
       redis: { condition: service_healthy }
