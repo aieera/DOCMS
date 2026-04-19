@@ -218,8 +218,10 @@ services:
 
   collaboration:
     build:
-      context: .
-      dockerfile: services/collaboration/Dockerfile
+      # Dockerfile does COPY src/ / COPY package.json relative to the
+      # service dir, not the repo root — context must match.
+      context: services/collaboration
+      dockerfile: Dockerfile
     container_name: vaultdms-collaboration
     environment:
       WS_PORT: "8083"
@@ -241,8 +243,8 @@ services:
 
   intelligence-worker:
     build:
-      context: .
-      dockerfile: services/intelligence/Dockerfile
+      context: services/intelligence
+      dockerfile: Dockerfile
     container_name: vaultdms-intelligence-worker
     command:
       - celery
@@ -274,8 +276,8 @@ services:
 
   preview-worker:
     build:
-      context: .
-      dockerfile: services/preview/Dockerfile
+      context: services/preview
+      dockerfile: Dockerfile
     container_name: vaultdms-preview-worker
     command:
       - celery
