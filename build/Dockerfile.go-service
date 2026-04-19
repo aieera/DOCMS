@@ -1,0 +1,69 @@
+# Shared builder for every Go service in this repo (§3.2 / A2 sub-task B).
+#
+# One Dockerfile instead of 11 because every service has the same shape:
+# a Go 1.25+ module inside the root go.work, with its entrypoint at
+# services/<SERVICE>/cmd/server. The per-service Dockerfiles are kept
+# as thin wrappers for back-compat with `make docker-build`.
+#
+# Usage from docker-compose.yml:
+#   build:
+#     context: .
+#     dockerfile: build/Dockerfile.go-service
+#     args:
+#       SERVICE: auth
+#
+# Why a monolithic build context:
+#   go.work declares `use(...)` over 11 services + pkg + proto-gen +
+#   cmd/dms-admin + scripts/seed. `go build` inside a worktree fails
+#   if any use() target is missing from disk. Copying every use()
+#   target up front is the cheapest correct option — BuildKit caches
+#   layers so subsequent service builds only re-run the compile step.
+
+# ---- builder ----
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /build
+
+# Module graph + checksums first for best cache hits.
+COPY go.work go.work.sum ./
+
+# Every go.work `use(...)` target. If a new top-level module is added,
+# add it here AND to go.work.
+COPY pkg/            ./pkg/
+COPY proto/gen/go/   ./proto/gen/go/
+COPY cmd/dms-admin/  ./cmd/dms-admin/
+COPY scripts/seed/   ./scripts/seed/
+COPY services/       ./services/
+
+ARG SERVICE
+ARG VERSION=dev
+RUN test -n "$SERVICE" || (echo "build arg SERVICE is required" >&2 && exit 1)
+
+RUN cd services/${SERVICE} && \
+    CGO_ENABLED=0 go build \
+        -ldflags="-w -s -X main.version=${VERSION}" \
+        -o /app ./cmd/server
+
+# ---- runtime ----
+FROM alpine:3.19
+
+# wget for HEALTHCHECK; ca-certificates for TLS to downstream APIs.
+RUN apk add --no-cache ca-certificates tzdata wget && \
+    adduser -D -u 1000 appuser
+
+USER appuser
+COPY --from=builder /app /app
+
+# Service binds HEALTH_PORT (pkg/health) independently of HTTP/GRPC.
+# Dockerfile can't read env at HEALTHCHECK-parse time, so probe the
+# canonical health port set by compose for each service.
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=30s \
+    CMD wget -q -O - "http://localhost:${VAULTDMS_HEALTH_PORT:-8081}/healthz" > /dev/null || exit 1
+
+# HTTP(8180-range), gRPC(9090-range), health(8081-range) — compose
+# remaps each to distinct host ports per services/*.
+EXPOSE 8080 9090 8081
+
+ENTRYPOINT ["/app"]
