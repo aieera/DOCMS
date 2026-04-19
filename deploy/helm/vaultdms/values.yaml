@@ -117,6 +117,15 @@ gateway:
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 1000m, memory: 512Mi }
+  # §3.1 / B2.2 — shared secret for the gateway-signature header.
+  # Operator creates the Secret out of band (`kubectl create secret
+  # generic vaultdms-gateway --from-literal=shared-secret=$(openssl
+  # rand -base64 48)`). The same Secret is mounted into every backend
+  # Deployment as env VAULTDMS_GATEWAY_SECRET so that
+  # pkg/middleware.RequireGatewaySignature accepts the traffic.
+  secret:
+    name: vaultdms-gateway
+    sharedSecretKey: shared-secret
 
 auth:
   enabled: true

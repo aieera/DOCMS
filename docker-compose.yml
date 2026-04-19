@@ -8,6 +8,10 @@ name: vaultdms-dev
 # Docker Compose permits free-form top-level keys prefixed with `x-`.
 # Anchored here so they can be merged into each Go-service block via *.
 x-go-env: &go-env
+  # §3.1 / B2.2 — shared secret; pkg/middleware.RequireGatewaySignature
+  # rejects any request that doesn't carry a matching X-Gateway-Signature.
+  # Must be identical to the gateway's VAULTDMS_GATEWAY_SECRET.
+  VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
   VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
   VAULTDMS_REDIS_URL:    "redis:6379"
   VAULTDMS_NATS_URL:     "nats://nats:4222"
@@ -166,6 +170,10 @@ services:
       KONG_STATUS_LISTEN: "0.0.0.0:8100"
       # Proxy listener — the single published port.
       KONG_PROXY_LISTEN: "0.0.0.0:8080"
+      # §3.1 / B2.2 — shared secret injected into every forwarded
+      # request as X-Gateway-Signature. kong.yaml references it as
+      # `${VAULTDMS_GATEWAY_SECRET}`; Kong env-substitutes at boot.
+      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
     volumes:
       - ./deploy/gateway:/kong/declarative:ro
     ports:
