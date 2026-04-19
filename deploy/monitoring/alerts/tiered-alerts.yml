@@ -52,6 +52,16 @@ groups:
   - name: p1-slo-breach
     interval: 1m
     rules:
+      - alert: DSRPastDeadline
+        # §9.2 / G7 — any DSR past its due_at is a GDPR reportable
+        # delay. PagerDuty so the DPO gets it within the business
+        # day, not on the next standup.
+        expr: dsr_pending_seconds_remaining < 0
+        for: 0m
+        labels: { severity: p1, service: document, runbook: dsr-breach }
+        annotations:
+          summary: "DSR {{ $labels.dsr_id }} PAST GDPR deadline — DPO escalation"
+
       - alert: APIAvailabilityBreach
         expr: (sum(rate(http_requests_total{code!~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) < 0.9995
         for: 5m
@@ -113,6 +123,16 @@ groups:
         labels: { severity: p2, service: connector, runbook: webhook-degraded }
         annotations:
           summary: "Webhook delivery < 99.5% (§15.2 SLI 9)"
+
+      - alert: DSRApproachingDeadline
+        # §9.2 / G7 — GDPR Art 12(3) countdown. Alerts 72h before
+        # due_at so the compliance team has time to respond or
+        # formally extend.
+        expr: dsr_pending_seconds_remaining < 259200 and dsr_pending_seconds_remaining > 0
+        for: 0m
+        labels: { severity: p2, service: document, runbook: dsr-overdue }
+        annotations:
+          summary: "DSR {{ $labels.dsr_id }} due in <72h ({{ $labels.request_type }})"
 
       - alert: SearchIndexLag
         expr: histogram_quantile(0.95, sum by (le) (rate(search_index_lag_seconds_bucket[5m]))) > 5
