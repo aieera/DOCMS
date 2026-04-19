@@ -100,12 +100,16 @@ MIGRATIONS_DIR ?= services/$(SERVICE)/migrations
 .PHONY: migrate-up
 migrate-up: ## Run all up migrations for SERVICE=<name>
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)" -path $(MIGRATIONS_DIR) up
+	# §4.1 / A5: per-service bookkeeping table so versions don't collide
+	# across services (see docs/architecture/migrations.md).
+	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
+	           -path $(MIGRATIONS_DIR) up
 
 .PHONY: migrate-down
 migrate-down: ## Roll back last migration for SERVICE=<name>
 	@if [ -z "$(SERVICE)" ]; then echo "SERVICE=<name> required"; exit 1; fi
-	$(MIGRATE) -database "$(DATABASE_URL)" -path $(MIGRATIONS_DIR) down 1
+	$(MIGRATE) -database "$(DATABASE_URL)&x-migrations-table=$(SERVICE)_schema_migrations" \
+	           -path $(MIGRATIONS_DIR) down 1
 
 .PHONY: migrate-create
 migrate-create: ## Create new migration: make migrate-create SERVICE=<svc> NAME=<name>
