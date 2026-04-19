@@ -1,0 +1,138 @@
+# §15.4 / F4 — 4-tier Prometheus alerting rules.
+#
+# Tiers extend blueprint §15.4's P1/P2/P3 with a P0 for events that
+# MUST wake someone on their phone, not just page their work laptop:
+#   P0 — platform-wide outage / data-leak class (phone + PD)
+#   P1 — SLO breach needing immediate human action (PagerDuty)
+#   P2 — on-call should look within an hour (Slack #incidents)
+#   P3 — dashboard-only; caught at stand-up / weekly review
+#
+# Each alert carries `severity` and `service` labels; the
+# alertmanager routes on those. Labels also feed the Grafana alert
+# panel so P0s render at the top.
+groups:
+  # ---- P0 — platform emergency ----------------------------------
+  - name: p0-platform-emergency
+    interval: 30s
+    rules:
+      - alert: CrossTenantDataAccess
+        expr: increase(cross_tenant_access_denied_total[5m]) > 0
+        for: 0m
+        labels: { severity: p0, service: policy, runbook: cross-tenant }
+        annotations:
+          summary: "Cross-tenant access denial event(s) detected"
+          description: "Policy rejected {{ $value }} cross-tenant accesses in 5m; this is a compromise-class event."
+
+      - alert: APIAvailabilityCatastrophic
+        expr: (sum(rate(http_requests_total{code!~"5.."}[1m])) / sum(rate(http_requests_total[1m]))) < 0.95
+        for: 2m
+        labels: { severity: p0, service: gateway, runbook: api-down }
+        annotations:
+          summary: "API availability < 95% (SLO 99.95%) for 2 minutes"
+
+      - alert: DatabasePrimaryDown
+        expr: up{job="postgres-primary"} == 0
+        for: 1m
+        labels: { severity: p0, service: postgres, runbook: db-failover }
+        annotations:
+          summary: "Postgres primary unreachable"
+
+  # ---- P1 — SLO breach ------------------------------------------
+  - name: p1-slo-breach
+    interval: 1m
+    rules:
+      - alert: APIAvailabilityBreach
+        expr: (sum(rate(http_requests_total{code!~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) < 0.9995
+        for: 5m
+        labels: { severity: p1, service: gateway, runbook: slo-availability }
+        annotations:
+          summary: "API availability below 99.95% (§15.2 SLI 1)"
+
+      - alert: SearchLatencyBreach
+        expr: histogram_quantile(0.99, sum by (le) (rate(search_request_duration_seconds_bucket[5m]))) > 0.3
+        for: 10m
+        labels: { severity: p1, service: search, runbook: slo-search-latency }
+        annotations:
+          summary: "Search p99 > 300ms sustained 10m (§15.2 SLI 2)"
+
+      - alert: OCRProcessingBreach
+        expr: histogram_quantile(0.95, sum by (le) (rate(intelligence_ocr_duration_seconds_bucket[5m]))) > 30
+        for: 15m
+        labels: { severity: p1, service: intelligence, runbook: slo-ocr }
+        annotations:
+          summary: "OCR p95 > 30s sustained 15m (§15.2 SLI 5)"
+
+      - alert: PermissionCheckBreach
+        expr: histogram_quantile(0.99, sum by (le) (rate(policy_check_duration_seconds_bucket[5m]))) > 0.005
+        for: 5m
+        labels: { severity: p1, service: policy, runbook: slo-policy-latency }
+        annotations:
+          summary: "OPA policy check p99 > 5ms (§15.2 SLI 7) — hot path"
+
+      - alert: ErrorBudgetBurnHigh
+        # 14.4x burn = exhaust in 2d from 1h window (fast burn).
+        expr: |
+          ( (1 - 0.9995) / (1 - (sum(rate(http_requests_total{code!~"5.."}[1h])) / sum(rate(http_requests_total[1h])))) ) > 14.4
+        for: 5m
+        labels: { severity: p1, service: gateway, runbook: error-budget }
+        annotations:
+          summary: "Error budget burning 14.4× baseline — feature freeze candidate (§15.2 SLI 19)"
+
+  # ---- P2 — urgent (Slack) --------------------------------------
+  - name: p2-urgent
+    interval: 1m
+    rules:
+      - alert: OCRQueueDepthHigh
+        expr: intelligence_queue_depth{queue="intelligence-ocr"} > 10000
+        for: 5m
+        labels: { severity: p2, service: intelligence, runbook: ocr-backlog }
+        annotations:
+          summary: "OCR queue > 10k for 5m — consumer lag"
+
+      - alert: DiskUsageHigh
+        expr: (node_filesystem_size_bytes - node_filesystem_avail_bytes) / node_filesystem_size_bytes > 0.85
+        for: 10m
+        labels: { severity: p2, service: infra, runbook: disk-pressure }
+        annotations:
+          summary: "Disk > 85% on {{ $labels.instance }}"
+
+      - alert: WebhookDeliveryDegraded
+        expr: (sum(rate(webhook_deliveries_total{result="success"}[15m])) / sum(rate(webhook_deliveries_total[15m]))) < 0.995
+        for: 15m
+        labels: { severity: p2, service: connector, runbook: webhook-degraded }
+        annotations:
+          summary: "Webhook delivery < 99.5% (§15.2 SLI 9)"
+
+      - alert: SearchIndexLag
+        expr: histogram_quantile(0.95, sum by (le) (rate(search_index_lag_seconds_bucket[5m]))) > 5
+        for: 10m
+        labels: { severity: p2, service: search, runbook: index-lag }
+        annotations:
+          summary: "Search index freshness > 5s (§15.2 SLI 10)"
+
+  # ---- P3 — dashboard-only --------------------------------------
+  - name: p3-informational
+    interval: 5m
+    rules:
+      - alert: PreviewBacklog
+        expr: preview_queue_depth > 500
+        for: 30m
+        labels: { severity: p3, service: preview }
+        annotations:
+          summary: "Preview queue backlog above 500"
+
+      - alert: TenantRateLimitHits
+        # Informational: a single tenant hitting 429s persistently
+        # signals a misbehaving integration, not a platform issue.
+        expr: sum by (tenant_id) (rate(kong_http_requests_total{status="429"}[15m])) > 1
+        for: 30m
+        labels: { severity: p3, service: gateway }
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} sustained 429s"
+
+      - alert: CertExpiryWarn30d
+        expr: tls_cert_days_remaining < 30
+        for: 1h
+        labels: { severity: p3, service: infra }
+        annotations:
+          summary: "TLS cert for {{ $labels.host }} expires in {{ $value }}d (§15.2 SLI 18)"
