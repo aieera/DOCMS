@@ -106,6 +106,7 @@ services:
     url: http://document:8081
     routes:
       - { name: documents,          paths: [/api/v1/documents],                strip_path: false }
+      - { name: annotations,        paths: [/api/v1/annotations],              strip_path: false }
       - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
       - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
       - { name: admin-settings,     paths: [/api/v1/admin/settings],           strip_path: false }

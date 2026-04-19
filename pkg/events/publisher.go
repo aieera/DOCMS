@@ -84,6 +84,8 @@ var DefaultStreams = []StreamSpec{
 	// Signature lifecycle events emitted by services/signature and the
 	// workflow signature_stub activity (completed, declined).
 	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},
+	// §17.3 / D10 — annotation CRUD fan-out to collaboration WS.
+	{Name: "ANNOTATION_EVENTS", Subjects: []string{"dms.annotation.>"}},
 	// Retained alongside the new topology for back-compat with events
 	// that still use these prefixes (e.g. dms.sharelink.*, dms.folder.*,
 	// dms.intelligence.*). Remove once every emitter is migrated.
