@@ -38,7 +38,7 @@ type createBody struct {
 }
 
 func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	var body createBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -58,7 +58,7 @@ func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getRequest(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	req, err := h.svc.GetRequest(r.Context(), tenantID, id)
 	if err != nil || req == nil {
@@ -69,7 +69,7 @@ func (h *Handler) getRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listByDocument(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	docID := r.PathValue("documentId")
 	reqs, err := h.svc.ListByDocument(r.Context(), tenantID, docID)
 	if err != nil {
@@ -80,7 +80,7 @@ func (h *Handler) listByDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	reqID := r.PathValue("id")
 	signerID := r.PathValue("signerId")
 	ip := r.RemoteAddr
@@ -95,7 +95,7 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	if err := h.svc.CancelRequest(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -105,7 +105,7 @@ func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	docID := r.PathValue("documentId")
 	result, err := h.svc.Verify(r.Context(), tenantID, docID)
 	if err != nil {

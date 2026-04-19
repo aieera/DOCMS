@@ -96,7 +96,7 @@ type filtersBody struct {
 }
 
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
@@ -159,7 +159,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 // ---- autocomplete ---------------------------------------------------------
 
 func (h *Handler) autocomplete(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
@@ -195,7 +195,7 @@ type createSavedSearchBody struct {
 }
 
 func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
@@ -230,7 +230,7 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listSavedSearches(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
@@ -249,7 +249,7 @@ func (h *Handler) listSavedSearches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")

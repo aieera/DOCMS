@@ -43,6 +43,15 @@ Common environment variables injected into every Go service
   value: "{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
 - name: VAULTDMS_NATS_URL
   value: {{ .Values.global.nats.url | quote }}
+# §3.1 / B2.3 — shared gateway-signature secret. Every Go backend's
+# pkg/middleware.RequireGatewaySignature() rejects traffic without
+# X-Gateway-Signature=$this. Sourced from the same Secret the gateway
+# Deployment reads.
+- name: VAULTDMS_GATEWAY_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.gateway.secret.name | default "vaultdms-gateway" }}
+      key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
 - name: VAULTDMS_MINIO_ENDPOINT
   value: {{ .Values.global.s3.endpoint | quote }}
 - name: VAULTDMS_MINIO_USE_SSL

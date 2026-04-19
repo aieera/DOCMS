@@ -116,7 +116,7 @@ func main() {
 	httpRoot = middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(httpRoot)
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           httpRoot,
+		Handler:           middleware.RequireGatewaySignature()(httpRoot),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

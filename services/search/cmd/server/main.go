@@ -127,7 +127,7 @@ func main() {
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           mux,
+		Handler:           middleware.RequireGatewaySignature()(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

@@ -35,7 +35,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) listDefinitions(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -55,7 +55,7 @@ type createDefBody struct {
 }
 
 func (h *Handler) createDefinition(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
@@ -80,7 +80,7 @@ type startBody struct {
 }
 
 func (h *Handler) startInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	var body startBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -97,7 +97,7 @@ func (h *Handler) startInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	inst, err := h.svc.GetInstance(r.Context(), tenantID, id)
 	if err != nil || inst == nil {
@@ -108,7 +108,7 @@ func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	var signal model.StepSignal
 	if err := json.NewDecoder(r.Body).Decode(&signal); err != nil {
@@ -125,7 +125,7 @@ func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	if err := h.svc.CancelInstance(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -137,7 +137,7 @@ func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listMyTasks(w http.ResponseWriter, r *http.Request) {
 	// Back-compat shim: /tasks/mine always returns pending tasks for the
 	// caller. New clients should use /tasks?assignee=me&status=pending.
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	tasks, err := h.svc.ListTasks(r.Context(), tenantID, userID, "pending")
 	if err != nil {
@@ -160,7 +160,7 @@ func (h *Handler) listMyTasks(w http.ResponseWriter, r *http.Request) {
 //
 // Returns [] (never null) to simplify frontend consumption.
 func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")

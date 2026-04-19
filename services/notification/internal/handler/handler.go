@@ -35,7 +35,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
@@ -65,7 +65,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	id := r.PathValue("id")
 	if err := h.svc.MarkRead(r.Context(), tenantID, userID, id); err != nil {
@@ -76,7 +76,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) markAllRead(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if err := h.svc.MarkAllRead(r.Context(), tenantID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "mark all read failed")
@@ -86,7 +86,7 @@ func (h *Handler) markAllRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	count, err := h.svc.UnreadCount(r.Context(), tenantID, userID)
 	if err != nil {
@@ -97,7 +97,7 @@ func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getPreferences(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	pref, err := h.svc.GetPreference(r.Context(), tenantID, userID)
 	if err != nil {
@@ -108,7 +108,7 @@ func (h *Handler) getPreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	var pref model.UserPreference
 	if err := json.NewDecoder(r.Body).Decode(&pref); err != nil {
