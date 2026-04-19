@@ -4,6 +4,7 @@ import { createClient } from './redis.js';
 import { ConnectionManager } from './connections.js';
 import { handleMessage } from './handler.js';
 import { startAnnotationBridge } from './nats-bridge.js';
+import { attachYjs } from './yjs-server.js';
 
 const PORT = parseInt(process.env.WS_PORT || '8083', 10);
 const HEARTBEAT_INTERVAL = 30_000;
@@ -22,9 +23,25 @@ startAnnotationBridge(redisPub, NATS_URL, randomUUID())
   .then(() => console.log(`annotation bridge subscribed to NATS ${NATS_URL}`))
   .catch((err) => console.error('annotation bridge failed to start:', err));
 
-const wss = new WebSocketServer({ port: PORT, path: '/ws' });
+// Single port, two paths: existing auth/doc-room WS on /ws, Yjs CRDT
+// on /yjs/{tenantId}/{docId}. Omitting the `path` option lets a
+// single WebSocketServer accept either prefix and dispatch below.
+const wss = new WebSocketServer({ port: PORT });
+
+// §17.4 / E7 — Yjs path. Must be attached BEFORE the /ws handler so
+// it sees the connection first and marks it routed.
+attachYjs(wss);
 
 wss.on('connection', (ws, req) => {
+  // Yjs path was claimed by attachYjs; skip the existing /ws handler.
+  if (ws.__routed === 'yjs') return;
+  // Only the /ws path is allowed for the auth/doc-room protocol;
+  // everything else was either Yjs (handled above) or unknown.
+  if (req.url !== '/ws' && !(req.url || '').startsWith('/ws?')) {
+    ws.close(1008, 'unknown path');
+    return;
+  }
+
   ws.isAlive = true;
   ws.authenticated = false;
   ws.tenantId = null;
