@@ -43,14 +43,22 @@ vaultdms/
 ## Quickstart
 
 ```bash
-# 1. Start infrastructure (Postgres, Redis, NATS, MinIO, OpenSearch, Qdrant, Temporal, ClamAV)
+# 1. Start the compose tier — 13 services, all with healthchecks:
+#    10 infra (Postgres, Redis, NATS, MinIO + minio-init, OpenSearch,
+#    Qdrant, Temporal + UI, ClamAV) + 3 app (collaboration,
+#    intelligence-worker, preview-worker).
 make docker-up
 
-# 2. Wait for readiness, then run migrations for each service
+# 2. Block until every compose service reports healthy (≤120s):
+./scripts/wait-for-healthy.sh
+
+# 3. Run migrations for each Go service
 make migrate-up SERVICE=document
 
-# 3. Build and run a service locally
-cd services/document && go run ./cmd/server
+# 4. Start the 11 Go services on the host (auth, policy, document,
+#    storage, search, audit, workflow, notification, signature,
+#    billing, connector). Sub-task B will migrate these into compose.
+make run-all
 ```
 
 ## Development

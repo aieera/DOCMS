@@ -153,14 +153,15 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
-  # Application services built from per-service Dockerfiles.
-  # Disabled by default via the `app` profile — infra alone is enough
-  # for running Go services on the host (see `make run-all`). Start the
-  # app tier with `docker compose --profile app up -d`.
+  # Non-Go application services built from per-service Dockerfiles.
+  # Started by default per §3.2 / A2 so `docker compose up` brings the
+  # full compose tier up. The 11 Go services continue to run on the
+  # host via `make run-all` (see scripts/run-all-services.sh); the
+  # Sub-task B follow-up (§3.2 / A2 part 2) will migrate those into
+  # compose as well.
   # ---------------------------------------------------------------------
 
   collaboration:
-    profiles: [app]
     build:
       context: .
       dockerfile: services/collaboration/Dockerfile
@@ -172,10 +173,18 @@ services:
     ports: ["8083:8083"]
     depends_on:
       redis: { condition: service_healthy }
+    # Pure WebSocket server — no HTTP /healthz route. TCP probe on the
+    # WS listener is the only app-code-free option and is sufficient to
+    # detect "process up and accepting connections".
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8083"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   intelligence-worker:
-    profiles: [app]
     build:
       context: .
       dockerfile: services/intelligence/Dockerfile
@@ -197,10 +206,18 @@ services:
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
+    # Celery worker: no HTTP surface. `inspect ping` round-trips the
+    # broker so a healthy status means (worker process up) AND (worker
+    # can still talk to Redis) — stronger than a port probe.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 5 | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   preview-worker:
-    profiles: [app]
     build:
       context: .
       dockerfile: services/preview/Dockerfile
@@ -218,6 +235,12 @@ services:
       VAULTDMS_S3_ENDPOINT: "http://minio:9000"
     depends_on:
       redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 5 | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
 volumes:
