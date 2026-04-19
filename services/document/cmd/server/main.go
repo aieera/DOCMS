@@ -256,6 +256,14 @@ func main() {
 	redactionHandler.Register(redactionMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/redact", middleware.CorrelationHTTP(redactionMux))
 
+	// §10.3 / E6 — OnlyOffice editor config + save callback.
+	onlyOfficeMux := http.NewServeMux()
+	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config",
+		middleware.CorrelationHTTP(onlyOfficeMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback",
+		middleware.CorrelationHTTP(onlyOfficeMux))
+
 	// §17.3 / D10 — annotation CRUD. Pinned method+path patterns so
 	// only the annotation surface lands here; other
 	// /api/v1/documents/* paths continue to the grpc-gateway.
