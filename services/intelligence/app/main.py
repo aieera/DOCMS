@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.api.routes import router
+from app.api.routes import router, internal_router
 from app.config import settings
 from app.db.pool import close_pool
 from app.nats_consumer import IntelligenceConsumer
@@ -51,6 +51,7 @@ async def _run_consumer(consumer: IntelligenceConsumer):
 
 app = FastAPI(title="VaultDMS Intelligence", version=settings.service_version, lifespan=lifespan)
 app.include_router(router)
+app.include_router(internal_router)
 
 
 @app.get("/healthz")

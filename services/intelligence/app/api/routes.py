@@ -14,6 +14,48 @@ from app.tasks.summarize import summarize_document
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
 
+# §7.1 / D6 part 2 — internal embed-query endpoint.
+# Not publicly routable through the gateway (path `/internal/` is not
+# in deploy/gateway/routes.yaml); the search service calls it
+# service-to-service.
+internal_router = APIRouter(prefix="/internal/v1", tags=["internal"])
+
+
+class EmbedQueryRequest(BaseModel):
+    query: str
+
+
+class EmbedQueryResponse(BaseModel):
+    embedding: list[float]
+    dimension: int
+    model: str
+
+
+@internal_router.post("/embed-query", response_model=EmbedQueryResponse)
+def embed_query_endpoint(body: EmbedQueryRequest):
+    """Return a single dense vector for `query` using the same
+    embedder that powers chunk ingestion (app.models.embedder.embed_single).
+
+    Clamped at 1 KiB because a real user query is never longer —
+    guards against callers using this as a general-purpose batch
+    embed endpoint, which would change the model's cost profile.
+    """
+    q = (body.query or "").strip()
+    if not q:
+        raise HTTPException(400, "query required")
+    if len(q) > 1024:
+        raise HTTPException(400, "query too long (max 1024 chars)")
+
+    # Lazy import keeps the router module light at boot.
+    from app.models.embedder import embed_single
+
+    vec = embed_single(q)
+    return EmbedQueryResponse(
+        embedding=list(vec),
+        dimension=len(vec),
+        model="bge-m3",
+    )
+
 
 class AskRequest(BaseModel):
     question: str

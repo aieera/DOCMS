@@ -15,6 +15,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/search/internal/model"
 	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
 	"github.com/vaultdms/vaultdms/services/search/internal/repository"
+	"github.com/vaultdms/vaultdms/services/search/internal/vector"
 )
 
 const (
@@ -27,6 +28,10 @@ type Service struct {
 	os    *opensearch.RealClient
 	repo  *repository.Repository
 	redis *redis.Client
+	// vec is the dense-vector path (§7.1 / D6 part 2). Nil in dev
+	// stacks without intelligence running; Search() degrades to
+	// lexical mode when it's absent.
+	vec   *vector.Client
 	log   zerolog.Logger
 }
 
@@ -35,6 +40,7 @@ type Config struct {
 	OS     *opensearch.RealClient
 	Repo   *repository.Repository
 	Redis  *redis.Client
+	Vector *vector.Client // optional
 	Logger zerolog.Logger
 }
 
@@ -44,6 +50,7 @@ func New(cfg Config) *Service {
 		os:    cfg.OS,
 		repo:  cfg.Repo,
 		redis: cfg.Redis,
+		vec:   cfg.Vector,
 		log:   cfg.Logger,
 	}
 }
