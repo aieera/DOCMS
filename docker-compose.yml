@@ -4,6 +4,38 @@
 
 name: vaultdms-dev
 
+# ----- Shared anchors for Go services (§3.2 / A2 Sub-task B) -----
+# Docker Compose permits free-form top-level keys prefixed with `x-`.
+# Anchored here so they can be merged into each Go-service block via *.
+x-go-env: &go-env
+  VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+  VAULTDMS_REDIS_URL:    "redis:6379"
+  VAULTDMS_NATS_URL:     "nats://nats:4222"
+  VAULTDMS_HEALTH_PORT:  "8081"
+  VAULTDMS_HTTP_PORT:    "8080"
+  VAULTDMS_GRPC_PORT:    "9090"
+  VAULTDMS_S3_ENDPOINT:  "http://minio:9000"
+  VAULTDMS_S3_ACCESS_KEY: "minioadmin"
+  VAULTDMS_S3_SECRET_KEY: "minioadmin"
+  VAULTDMS_OPENSEARCH_URL: "http://opensearch:9200"
+  VAULTDMS_QDRANT_URL:   "http://qdrant:6333"
+  VAULTDMS_TEMPORAL_ADDR: "temporal:7233"
+  POLICY_SERVICE_ADDR:   "policy:9090"
+  STORAGE_SERVICE_ADDR:  "storage:9090"
+  VAULTDMS_ENV:          "development"
+
+x-go-depends: &go-depends
+  postgres: { condition: service_healthy }
+  redis:    { condition: service_healthy }
+  nats:     { condition: service_healthy }
+
+x-go-healthcheck: &go-healthcheck
+  test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/healthz"]
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 30s
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -117,6 +149,11 @@ services:
     ports: ["6333:6333", "6334:6334"]
     volumes:
       - qdrantdata:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   temporal:
@@ -132,6 +169,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   temporal-ui:
@@ -142,6 +185,12 @@ services:
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
     ports: ["8233:8080"]
     depends_on: [temporal]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   clamav:
@@ -150,6 +199,12 @@ services:
     ports: ["3310:3310"]
     volumes:
       - clamdata:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/3310'"]
+      interval: 15s
+      timeout: 3s
+      retries: 20
+      start_period: 120s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
@@ -241,6 +296,160 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Go services — §3.2 / A2 Sub-task B.
+  # All 11 share one builder (build/Dockerfile.go-service) parameterized
+  # by SERVICE. YAML anchors factor the common env/depends_on/healthcheck
+  # so per-service blocks carry only what actually differs: SERVICE arg,
+  # container_name, and host port mapping for the health port.
+  # Container-internal ports are uniform (health=8081, http=8080,
+  # grpc=9090); host ports follow scripts/run-all-services.sh so dev
+  # tooling keeps working (but compose will fail to bind if `make
+  # run-all` is already holding those ports — use one or the other).
+  # ---------------------------------------------------------------------
+
+  auth:
+    build: &go-build-auth
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: auth }
+    container_name: vaultdms-auth
+    environment: *go-env
+    ports: ["8081:8081", "9090:9090", "8180:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  policy:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: policy }
+    container_name: vaultdms-policy
+    environment: *go-env
+    ports: ["8082:8081", "9091:9090", "8181:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  document:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: document }
+    container_name: vaultdms-document
+    environment: *go-env
+    # Host health port 8084 instead of run-all-services.sh's 8083 to
+    # avoid collision with the collaboration WS listener on 8083.
+    ports: ["8084:8081", "9092:9090", "8182:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  storage:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: storage }
+    container_name: vaultdms-storage
+    environment: *go-env
+    ports: ["8085:8081", "9093:9090", "8183:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  search:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: search }
+    container_name: vaultdms-search
+    environment: *go-env
+    ports: ["8086:8081", "9094:9090", "8184:8080"]
+    depends_on:
+      postgres:   { condition: service_healthy }
+      redis:      { condition: service_healthy }
+      nats:       { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  audit:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: audit }
+    container_name: vaultdms-audit
+    environment: *go-env
+    ports: ["8087:8081", "9095:9090", "8185:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  workflow:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: workflow }
+    container_name: vaultdms-workflow
+    environment: *go-env
+    ports: ["8088:8081", "9096:9090", "8186:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      temporal: { condition: service_healthy }
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  notification:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: notification }
+    container_name: vaultdms-notification
+    environment: *go-env
+    ports: ["8089:8081", "9097:9090", "8187:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  signature:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: signature }
+    container_name: vaultdms-signature
+    environment: *go-env
+    ports: ["8090:8081", "9098:9090", "8188:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  billing:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: billing }
+    container_name: vaultdms-billing
+    environment: *go-env
+    ports: ["8091:8081", "9099:9090", "8189:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  connector:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: connector }
+    container_name: vaultdms-connector
+    environment: *go-env
+    ports: ["8092:8081", "9100:9090", "8190:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
     restart: unless-stopped
 
 volumes:

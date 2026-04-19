@@ -43,23 +43,35 @@ vaultdms/
 ## Quickstart
 
 ```bash
-# 1. Start the compose tier — 13 services, all with healthchecks:
-#    10 infra (Postgres, Redis, NATS, MinIO + minio-init, OpenSearch,
-#    Qdrant, Temporal + UI, ClamAV) + 3 app (collaboration,
-#    intelligence-worker, preview-worker).
+# 1. Start the full compose tier — 24 services (10 infra + 3 app +
+#    11 Go), every long-running container with a healthcheck. Host
+#    ports follow scripts/run-all-services.sh so existing dev
+#    tooling (curl :8081/healthz, :8180 HTTP APIs, etc.) keeps
+#    working against the containerised services.
 make docker-up
 
 # 2. Block until every compose service reports healthy (≤120s):
 ./scripts/wait-for-healthy.sh
 
-# 3. Run migrations for each Go service
-make migrate-up SERVICE=document
-
-# 4. Start the 11 Go services on the host (auth, policy, document,
-#    storage, search, audit, workflow, notification, signature,
-#    billing, connector). Sub-task B will migrate these into compose.
+# 3. (Optional) run Go services on the host instead of in containers.
+#     You cannot do both at once — host ports would collide.
+docker compose stop auth policy document storage search audit \
+                    workflow notification signature billing connector
 make run-all
 ```
+
+Service counts in compose:
+
+| Tier | Count | Services |
+|---|---|---|
+| Infrastructure | 10 | postgres, redis, nats, minio, opensearch, qdrant, temporal, temporal-ui, clamav, minio-init (one-shot) |
+| Application (non-Go) | 3 | collaboration, intelligence-worker, preview-worker |
+| Application (Go) | 11 | auth, policy, document, storage, search, audit, workflow, notification, signature, billing, connector |
+
+`docker compose ps --format json | jq '[.[] | select(.Health == "healthy")] | length'`
+reports ~23 healthy once every container has passed its start_period
+(minio-init exits after provisioning buckets and therefore doesn't
+contribute a "healthy" status).
 
 ## Development
 
