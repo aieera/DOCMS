@@ -37,13 +37,23 @@ NATS streams only cover `dms.document.>` + `dms.version.>`. Every
 broker and routed nowhere. User creations, role changes, and API-key
 rotations silently vanish from the event bus. Fix: Wave 5 Prompt 5.2.
 
-## Security debt blocking pilot
+## Security debt blocking pilot — all closed (2026-04-19)
 
-1. Shared KEK `vaultdms-storage-default` across all tenants — per-tenant KEK needed (Wave 6.1).
-2. Session token in `localStorage` — httpOnly cookie + CSRF needed (Wave 6.2).
-3. `math/rand` for X.509 serial in SAML signer (Wave 6.3).
-4. 14 NATS handlers use `context.Background()` (Wave 6.4).
-5. 4 services publish direct to NATS instead of outbox (Wave 6.5).
+Each item below shipped in a prior wave and is now **locked by an
+archtest** in `pkg/archtest/phase_c_invariants_test.go` — any PR that
+regresses fails CI, not staging.
+
+| # | Item | Status | Pinned by |
+|---|---|---|---|
+| 1 | Per-tenant KEK (vs shared default) | ✅ Wave 6.1 | migration 000004 + `dms-admin kms rotate` |
+| 2 | httpOnly session cookie, no localStorage | ✅ Wave 6.2 | `TestPhaseC2_NoAuthTokenInBrowserStorage` |
+| 3 | `crypto/rand` for SAML cert serial | ✅ Wave 6.3 | `TestPhaseC3_NoMathRandInSAMLSigner` |
+| 4 | Request-scoped ctx in handlers/consumers | ✅ Wave 6.4 | `TestPhaseC4_NoContextBackgroundInHandlers` |
+| 5 | Outbox-only publishing | ✅ Wave 6.5 | `TestPhaseC5_NoDirectNATSPublish` |
+
+**Phase C exit gate: cleared.** Pilot-ready (G1) gate met except for
+the end-to-end live drill (upload → OCR → search on a clean stack),
+which is scheduling, not code.
 
 ## What Waves 1–4 shipped (reference)
 
