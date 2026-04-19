@@ -256,6 +256,18 @@ func main() {
 	redactionHandler.Register(redactionMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/redact", middleware.CorrelationHTTP(redactionMux))
 
+	// §17.3 / D10 — annotation CRUD. Pinned method+path patterns so
+	// only the annotation surface lands here; other
+	// /api/v1/documents/* paths continue to the grpc-gateway.
+	annotationsMux := http.NewServeMux()
+	handler.NewAnnotationsHandler(svc, *log.Z()).Register(annotationsMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/annotations",
+		middleware.CorrelationHTTP(annotationsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/annotations",
+		middleware.CorrelationHTTP(annotationsMux))
+	rootMux.Handle("PATCH /api/v1/annotations/{id}", middleware.CorrelationHTTP(annotationsMux))
+	rootMux.Handle("DELETE /api/v1/annotations/{id}", middleware.CorrelationHTTP(annotationsMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(gwMux)))
 

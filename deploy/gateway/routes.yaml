@@ -93,6 +93,11 @@ routes:
     auth: required
     rate: doc-rw
   - service: document
+    prefix: /api/v1/annotations
+    methods: []
+    auth: required
+    rate: doc-rw
+  - service: document
     prefix: /api/v1/admin/documents
     methods: []
     auth: admin
