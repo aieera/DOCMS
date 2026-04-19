@@ -1,0 +1,51 @@
+# Rate-limit classes per blueprint §14.3 + §8.1.
+# Kong `rate-limiting` plugin values. Source of truth: route entries in
+# deploy/gateway/routes.yaml reference these class names, the
+# corresponding plugin block in kong.yaml enforces them.
+#
+# Numbers are for the Standard tier. Enterprise tier gets 10× the limit
+# (§14.3); applied at Kong via a separate consumer-group plugin when the
+# tier-aware pricing work lands.
+#
+# Policy: `local` in dev (in-process counters; each Kong pod counts
+# separately). `redis` in prod (shared counters across the cluster) —
+# set via Helm `gateway.rateLimit.policy`.
+
+classes:
+  # §14.3 default — every REST route unless overridden.
+  default:
+    minute: 1000
+    hour:   60000
+
+  # §8.1 brute-force protection on the password endpoint.
+  auth-login:
+    minute: 10
+    hour:   200
+
+  # §8.1 MFA — tighter than login. 11th attempt returns 429 + Retry-After.
+  auth-mfa:
+    minute: 5
+    hour:   60
+
+  # Write-heavy doc ops. Higher than default because bulk operations
+  # exist (move 500 docs = 500 requests in the naive client).
+  doc-rw:
+    minute: 600
+    hour:   30000
+
+  # §14.3 search — 100/min Standard, 1000/min Enterprise.
+  search:
+    minute: 100
+    hour:   5000
+
+  # Upload RPS; bandwidth is separately capped at the Storage Service
+  # per §14.3 (100 MB/min Standard).
+  upload:
+    minute: 30
+    hour:   1500
+
+  # Public share-link views. Per-IP because there is no authenticated
+  # caller. Kept modest so a leaked link can't DoS the backend.
+  shared:
+    minute: 60
+    hour:   2000
