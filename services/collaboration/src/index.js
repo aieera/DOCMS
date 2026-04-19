@@ -1,16 +1,26 @@
+import { randomUUID } from 'crypto';
 import { WebSocketServer } from 'ws';
 import { createClient } from './redis.js';
 import { ConnectionManager } from './connections.js';
 import { handleMessage } from './handler.js';
+import { startAnnotationBridge } from './nats-bridge.js';
 
 const PORT = parseInt(process.env.WS_PORT || '8083', 10);
 const HEARTBEAT_INTERVAL = 30_000;
 const PONG_TIMEOUT = 10_000;
+const NATS_URL = process.env.VAULTDMS_NATS_URL || process.env.NATS_URL || 'nats://nats:4222';
 
 const redisSub = createClient();
 const redisPub = createClient();
 const redisStore = createClient();
 const connections = new ConnectionManager(redisStore);
+
+// §17.3 / D10 WS fan-out — bridge NATS annotation events into the
+// Redis doc-room broadcast path. Non-fatal if it fails; WS service
+// still serves connections even without the bridge.
+startAnnotationBridge(redisPub, NATS_URL, randomUUID())
+  .then(() => console.log(`annotation bridge subscribed to NATS ${NATS_URL}`))
+  .catch((err) => console.error('annotation bridge failed to start:', err));
 
 const wss = new WebSocketServer({ port: PORT, path: '/ws' });
 
