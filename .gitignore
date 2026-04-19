@@ -27,6 +27,11 @@ node_modules/
 .pnpm-store/
 .next/
 .turbo/
+# Vite build output — the root-level `/dist/` rule above is anchored
+# to the repo root and misses `web/dist/`. This catches it (and any
+# future per-package dist dirs) explicitly.
+dist/
+web/dist/
 
 # IDE / OS
 .vscode/
