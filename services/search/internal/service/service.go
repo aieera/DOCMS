@@ -74,9 +74,17 @@ func (s *Service) PurgeSubject(ctx context.Context, tenantID, subjectID string) 
 
 // ---- Full-text search -----------------------------------------------------
 
-// Search executes the query against OpenSearch and returns the results.
+// Search executes the query against OpenSearch and (for hybrid /
+// semantic modes) Qdrant, fusing the results per blueprint §7.1.
+// Current implementation: the BM25 path is fully wired; the dense
+// vector path is a stub that returns an empty list until the
+// intelligence-service /internal/v1/embed-query endpoint lands. When
+// the stub returns nothing, hybrid mode degrades to lexical and logs
+// a warning so dashboards can surface the degradation.
 func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.SearchResult, error) {
 	start := time.Now()
+
+	mode := model.NormalizeMode(req.Mode)
 
 	query := opensearch.BuildSearchQuery(req)
 	raw, err := s.os.Search(ctx, req.TenantID, query)
@@ -84,9 +92,30 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 		return nil, fmt.Errorf("opensearch search: %w", err)
 	}
 
+	// §7.1 / D6 — hybrid / semantic branches. The RRF fusion math
+	// lives in services/search/internal/fusion; this layer owns
+	// orchestration (parallel querying, score merge, pagination).
+	if mode == model.SearchModeHybrid || mode == model.SearchModeSemantic {
+		sem, err := s.semanticSearch(ctx, req)
+		if err != nil {
+			s.log.Warn().Err(err).Str("mode", mode).
+				Msg("semantic path failed; degrading to lexical-only")
+			mode = model.SearchModeLexical
+		} else if len(sem) == 0 {
+			// Nothing to fuse. Leave mode unchanged so the response
+			// still reports what the client asked for, but the
+			// result set is identical to lexical.
+			s.log.Debug().Str("mode", mode).Msg("semantic path returned 0 hits")
+		} else if mode == model.SearchModeHybrid {
+			raw = fuseHits(raw, sem)
+		} else {
+			raw = semToRaw(sem)
+		}
+	}
+
 	result := &model.SearchResult{
 		TotalCount: raw.TotalHits,
-		SearchMode: "lexical",
+		SearchMode: mode,
 		LatencyMS:  time.Since(start).Milliseconds(),
 	}
 

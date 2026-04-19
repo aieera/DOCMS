@@ -115,6 +115,10 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		UserID:    userID,
 		GroupIDs:  groupIDs,
 		Query:     body.Query,
+		// §7.1 / D6 — normalize mode at the edge; unknown values
+		// fall back to "lexical" so a stale client can't silently
+		// get a degraded search.
+		Mode:      model.NormalizeMode(body.SearchMode),
 		Facets:    body.Facets,
 		SortBy:    body.SortBy,
 		SortOrder: body.SortOrder,
