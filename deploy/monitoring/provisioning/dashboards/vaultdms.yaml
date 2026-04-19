@@ -1,0 +1,17 @@
+# §15.2 / F3 — Grafana dashboard provisioning.
+# Grafana watches /etc/grafana/provisioning/dashboards for YAML
+# configs and auto-imports every .json under `path`. Mount the
+# repo's deploy/monitoring/dashboards/ at that path in the chart.
+apiVersion: 1
+
+providers:
+  - name: vaultdms
+    orgId: 1
+    folder: VaultDMS
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/vaultdms
+      foldersFromFilesStructure: true
