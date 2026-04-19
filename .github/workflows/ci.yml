@@ -37,7 +37,7 @@ jobs:
           fetch-depth: 0
       - uses: bufbuild/buf-setup-action@v1
       - name: Cache proto gen output
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: proto/gen
           key: proto-gen-${{ hashFiles('proto/**/*.proto', 'proto/buf.yaml', 'proto/buf.gen.yaml', 'proto/buf.lock') }}
