@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: theme('colors.slate.50');
+  --color-bg-secondary: theme('colors.white');
+  --color-text: theme('colors.slate.900');
+  --color-text-secondary: theme('colors.slate.500');
+  --color-primary: #1E40AF;
+  --color-primary-hover: #1E3A8A;
+  --color-border: theme('colors.slate.200');
+  --color-accent: theme('colors.blue.50');
+  --color-danger: theme('colors.red.500');
+  --color-success: theme('colors.emerald.500');
+  --color-warning: theme('colors.amber.500');
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+.dark {
+  --color-bg: theme('colors.slate.900');
+  --color-bg-secondary: theme('colors.slate.800');
+  --color-text: theme('colors.slate.100');
+  --color-text-secondary: theme('colors.slate.400');
+  --color-border: theme('colors.slate.700');
+  --color-accent: theme('colors.blue.950');
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+* { scrollbar-width: thin; scrollbar-color: var(--color-border) transparent; }

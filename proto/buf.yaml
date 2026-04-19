@@ -1,0 +1,22 @@
+version: v2
+modules:
+  - path: .
+    name: buf.build/vaultdms/api
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+breaking:
+  use:
+    - FILE
+  ignore_unstable_packages: true
+lint:
+  use:
+    - DEFAULT
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    # Cosmetic RPC-naming rules — deferred to v1 API freeze. See
+    # docs/tech-debt/proto-style.md for the rationale and required
+    # remediation before v1 GA.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE

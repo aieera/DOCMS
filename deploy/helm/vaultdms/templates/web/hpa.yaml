@@ -1,0 +1,20 @@
+{{- if and .Values.web.enabled (.Values.web.hpa).enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vaultdms-web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vaultdms-web
+  minReplicas: {{ .Values.web.hpa.minReplicas | default 2 }}
+  maxReplicas: {{ .Values.web.hpa.maxReplicas | default 6 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.web.hpa.targetCPU | default 70 }}
+{{- end }}

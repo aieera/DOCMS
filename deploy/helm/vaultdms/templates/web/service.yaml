@@ -1,0 +1,18 @@
+{{- if .Values.web.enabled }}
+# A plain ClusterIP service for the static frontend bundle. Traffic is
+# expected to enter via the top-level Ingress; internal services don't
+# talk to web, so no NetworkPolicy is needed beyond the default deny
+# elsewhere.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultdms-web
+  labels: { app.kubernetes.io/name: web }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: web }
+  ports:
+    - name: http
+      port: {{ .Values.web.port | default 3000 }}
+      targetPort: http
+{{- end }}

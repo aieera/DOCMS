@@ -1,0 +1,73 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Platform Overview",
+    "uid": "vaultdms-overview",
+    "tags": ["vaultdms"],
+    "timezone": "utc",
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "Requests Per Second",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+        "targets": [{"expr": "sum(rate(http_requests_total[5m]))", "legendFormat": "RPS"}]
+      },
+      {
+        "title": "Error Rate (%)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+        "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "Error %"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}]}}}
+      },
+      {
+        "title": "Latency Percentiles",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "RPS by Service",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{"expr": "sum(rate(http_requests_total[5m])) by (service)", "legendFormat": "{{service}}"}]
+      },
+      {
+        "title": "DB Connection Pool",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+        "targets": [{"expr": "sum(db_connections{state=\"in_use\"}) / sum(db_connections{state=\"total\"}) * 100", "legendFormat": "utilization %"}]
+      },
+      {
+        "title": "Event Bus Lag",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+        "targets": [{"expr": "sum(event_bus_lag) by (topic, group)", "legendFormat": "{{topic}}/{{group}}"}]
+      },
+      {
+        "title": "Cache Hit Rate",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 0, "y": 16},
+        "targets": [{"expr": "sum(rate(cache_hits_total[5m])) / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m]))) * 100", "legendFormat": "Hit %"}]
+      },
+      {
+        "title": "Upload/Download Throughput",
+        "type": "timeseries",
+        "gridPos": {"h": 4, "w": 8, "x": 8, "y": 16},
+        "targets": [
+          {"expr": "rate(upload_bytes_total[5m])", "legendFormat": "Upload B/s"},
+          {"expr": "rate(download_bytes_total[5m])", "legendFormat": "Download B/s"}
+        ]
+      },
+      {
+        "title": "WebSocket Connections",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 16, "y": 16},
+        "targets": [{"expr": "websocket_connections", "legendFormat": "Connections"}]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "vaultdms-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:smoke": "playwright test smoke.spec.ts",
+    "test:resilience": "playwright test resilience.spec.ts",
+    "api-smoke": "bash ./api-smoke.sh",
+    "install-browsers": "playwright install chromium --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.1"
+  }
+}

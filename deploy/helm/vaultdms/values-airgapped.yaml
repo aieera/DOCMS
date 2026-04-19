@@ -1,0 +1,72 @@
+# Air-gapped deployment overrides.
+# All images from local registry, offline license, bundled OCR models,
+# local vLLM for AI features.
+
+global:
+  imageRegistry: registry.internal.corp/vaultdms
+  imagePullSecrets:
+    - name: registry-credentials
+
+  s3:
+    endpoint: "https://s3.internal.corp:9000"
+    region: airgap
+    useSSL: true
+    buckets:
+      hot: dms-airgap-hot
+      warm: dms-airgap-warm
+      previews: dms-airgap-previews
+      quarantine: dms-quarantine
+
+  encryption:
+    kmsProvider: local
+
+# Override all subchart images to use local registry
+postgresql:
+  image:
+    registry: registry.internal.corp
+    repository: bitnami/postgresql
+
+redis:
+  image:
+    registry: registry.internal.corp
+    repository: bitnami/redis
+
+opensearch:
+  image:
+    repository: registry.internal.corp/opensearchproject/opensearch
+
+nats:
+  container:
+    image:
+      repository: registry.internal.corp/nats
+      tag: "2.10"
+
+qdrant:
+  image:
+    repository: registry.internal.corp/qdrant/qdrant
+
+intelligence:
+  env:
+    VAULTDMS_DEFAULT_LLM_MODEL: "openai/local-model"
+    VAULTDMS_LLM_BASE_URL: "http://vllm.internal:8000/v1"
+    VAULTDMS_EMBEDDING_MODEL: "/models/all-MiniLM-L6-v2"
+    VAULTDMS_CLASSIFIER_MODEL: "/models/distilbert-base-uncased"
+    VAULTDMS_RERANKER_MODEL: "/models/ms-marco-MiniLM-L-6-v2"
+  celery:
+    resources:
+      requests: { cpu: "4", memory: "8Gi" }
+      limits:   { cpu: "8", memory: "16Gi" }
+
+preview:
+  celery:
+    resources:
+      requests: { cpu: "1", memory: "2Gi" }
+      limits:   { cpu: "4", memory: "8Gi" }
+
+auth:
+  env:
+    VAULTDMS_LICENSE_MODE: "offline"
+    VAULTDMS_LICENSE_JWT_SECRET: ""  # set via external Secret
+
+backup:
+  s3Bucket: dms-airgap-backups

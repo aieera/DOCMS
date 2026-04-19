@@ -1,0 +1,3988 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "vaultdms/v1/common.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AuditService"
+    },
+    {
+      "name": "AuthService"
+    },
+    {
+      "name": "BillingService"
+    },
+    {
+      "name": "CollaborationService"
+    },
+    {
+      "name": "DocumentService"
+    },
+    {
+      "name": "IntelligenceService"
+    },
+    {
+      "name": "NotificationService"
+    },
+    {
+      "name": "PolicyService"
+    },
+    {
+      "name": "SearchService"
+    },
+    {
+      "name": "SignatureService"
+    },
+    {
+      "name": "StorageService"
+    },
+    {
+      "name": "WorkflowService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/api/v1/documents": {
+      "post": {
+        "operationId": "DocumentService_CreateDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDocumentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/batch/metadata": {
+      "post": {
+        "operationId": "DocumentService_BatchUpdateMetadata",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BatchUpdateMetadataResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BatchUpdateMetadataRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}": {
+      "get": {
+        "operationId": "DocumentService_GetDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "delete": {
+        "operationId": "DocumentService_DeleteDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "patch": {
+        "operationId": "DocumentService_UpdateDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceUpdateDocumentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}/lifecycle": {
+      "post": {
+        "operationId": "DocumentService_UpdateLifecycle",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceUpdateLifecycleBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}/move": {
+      "post": {
+        "operationId": "DocumentService_MoveDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceMoveDocumentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}/share-links": {
+      "get": {
+        "operationId": "DocumentService_ListShareLinks",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListShareLinksResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_CreateShareLink",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ShareLink"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DocumentServiceCreateShareLinkBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}/versions": {
+      "get": {
+        "operationId": "DocumentService_ListVersions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListVersionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "pagination.pageSize",
+            "description": "max 100, default 20",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pagination.pageToken",
+            "description": "opaque cursor",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_CreateVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Version"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceCreateVersionBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/documents/{documentId}/versions/{versionId}/restore": {
+      "post": {
+        "operationId": "DocumentService_RestoreVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Version"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceRestoreVersionBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/folders/{folderId}": {
+      "get": {
+        "operationId": "DocumentService_GetFolder",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Folder"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "delete": {
+        "operationId": "DocumentService_DeleteFolder",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "patch": {
+        "operationId": "DocumentService_UpdateFolder",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Folder"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceUpdateFolderBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/share-links/{shareLinkId}": {
+      "delete": {
+        "operationId": "DocumentService_DeleteShareLink",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "shareLinkId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/shared/{token}": {
+      "post": {
+        "operationId": "DocumentService_AccessShareLink",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AccessShareLinkResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceAccessShareLinkBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "operationId": "DocumentService_ListTags",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTagsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_CreateTag",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Tag"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateTagRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/tags/{tagId}": {
+      "delete": {
+        "operationId": "DocumentService_DeleteTag",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tagId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/tenants/metadata-schema": {
+      "get": {
+        "operationId": "DocumentService_GetMetadataSchema",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetMetadataSchemaResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "put": {
+        "operationId": "DocumentService_UpdateMetadataSchema",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetMetadataSchemaResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateMetadataSchemaRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/workspaces": {
+      "get": {
+        "operationId": "DocumentService_ListWorkspaces",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWorkspacesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_CreateWorkspace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Workspace"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateWorkspaceRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}": {
+      "get": {
+        "operationId": "DocumentService_GetWorkspace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Workspace"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "delete": {
+        "operationId": "DocumentService_DeleteWorkspace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "patch": {
+        "operationId": "DocumentService_UpdateWorkspace",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Workspace"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceUpdateWorkspaceBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/documents": {
+      "get": {
+        "operationId": "DocumentService_ListDocuments",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDocumentsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "lifecycleState",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "LIFECYCLE_STATE_UNSPECIFIED",
+              "LIFECYCLE_STATE_DRAFT",
+              "LIFECYCLE_STATE_IN_REVIEW",
+              "LIFECYCLE_STATE_ACTIVE",
+              "LIFECYCLE_STATE_SUPERSEDED",
+              "LIFECYCLE_STATE_RETAINED",
+              "LIFECYCLE_STATE_ARCHIVED",
+              "LIFECYCLE_STATE_DISPOSED",
+              "LIFECYCLE_STATE_LEGAL_HOLD"
+            ],
+            "default": "LIFECYCLE_STATE_UNSPECIFIED"
+          },
+          {
+            "name": "documentClass",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "createdAfter",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "createdBefore",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "SORT_ORDER_UNSPECIFIED",
+              "SORT_ORDER_ASC",
+              "SORT_ORDER_DESC"
+            ],
+            "default": "SORT_ORDER_UNSPECIFIED"
+          },
+          {
+            "name": "pagination.pageSize",
+            "description": "max 100, default 20",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pagination.pageToken",
+            "description": "opaque cursor",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "includeDeleted",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/folders": {
+      "get": {
+        "operationId": "DocumentService_ListFolders",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListFoldersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "parentFolderId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_CreateFolder",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Folder"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceCreateFolderBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DocumentServiceAccessShareLinkBody": {
+      "type": "object",
+      "properties": {
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceCreateFolderBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "parentFolderId": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceCreateVersionBody": {
+      "type": "object",
+      "properties": {
+        "contentBlobId": {
+          "type": "string"
+        },
+        "changeSummary": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceMoveDocumentBody": {
+      "type": "object",
+      "properties": {
+        "targetFolderId": {
+          "type": "string"
+        },
+        "targetWorkspaceId": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceRestoreVersionBody": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceUpdateDocumentBody": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "customMetadata": {
+          "type": "object"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clearTags": {
+          "type": "boolean"
+        }
+      }
+    },
+    "DocumentServiceUpdateFolderBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "newParentFolderId": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceUpdateLifecycleBody": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/v1LifecycleAction"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "holdName": {
+          "type": "string"
+        },
+        "holdMatterReference": {
+          "type": "string"
+        }
+      }
+    },
+    "DocumentServiceUpdateWorkspaceBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "protobufNullValue": {
+      "type": "string",
+      "enum": [
+        "NULL_VALUE"
+      ],
+      "default": "NULL_VALUE",
+      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1APIKey": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string",
+          "title": "first 8 chars, safe to display"
+        },
+        "plaintext": {
+          "type": "string",
+          "title": "returned ONLY on issue; never stored"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUsedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1AbortUploadResponse": {
+      "type": "object",
+      "properties": {
+        "aborted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1AccessShareLinkResponse": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/definitions/v1Document"
+        },
+        "downloadUrl": {
+          "type": "string"
+        },
+        "passwordRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1AnnotationKind": {
+      "type": "string",
+      "enum": [
+        "ANNOTATION_KIND_UNSPECIFIED",
+        "ANNOTATION_KIND_HIGHLIGHT",
+        "ANNOTATION_KIND_NOTE",
+        "ANNOTATION_KIND_STAMP",
+        "ANNOTATION_KIND_DRAWING"
+      ],
+      "default": "ANNOTATION_KIND_UNSPECIFIED"
+    },
+    "v1AskDocumentResponse": {
+      "type": "object",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Citation"
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "format": "float"
+        },
+        "model": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AuditEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "correlationId": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "actorKind": {
+          "type": "string",
+          "title": "user | system | api_key"
+        },
+        "action": {
+          "type": "string",
+          "title": "e.g. \"document.create\""
+        },
+        "resourceKind": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "title": "success | failure"
+        },
+        "sourceIpHash": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "prevHash": {
+          "type": "string",
+          "title": "hash chain pointer"
+        },
+        "hash": {
+          "type": "string",
+          "title": "sha256 of (prev_hash || canonicalized fields)"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1AuditMeta": {
+      "type": "object",
+      "properties": {
+        "createdBy": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedBy": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1BatchCheckPermissionResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CheckPermissionResponse"
+          }
+        }
+      }
+    },
+    "v1BatchEmbedResponse": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EmbedResponse"
+          }
+        }
+      }
+    },
+    "v1BatchUpdateMetadataRequest": {
+      "type": "object",
+      "properties": {
+        "documentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadataUpdates": {
+          "type": "object"
+        }
+      }
+    },
+    "v1BatchUpdateMetadataResponse": {
+      "type": "object",
+      "properties": {
+        "updatedCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "failedDocumentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "failureReasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1Certificate": {
+      "type": "object",
+      "properties": {
+        "envelopeId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "finalHash": {
+          "type": "string",
+          "title": "sha256 of signed document"
+        },
+        "cocPdfKey": {
+          "type": "string",
+          "title": "S3 key to cert-of-completion PDF"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SignerEvidence"
+          }
+        }
+      }
+    },
+    "v1Channel": {
+      "type": "string",
+      "enum": [
+        "CHANNEL_UNSPECIFIED",
+        "CHANNEL_EMAIL",
+        "CHANNEL_INAPP",
+        "CHANNEL_WEBHOOK",
+        "CHANNEL_SMS"
+      ],
+      "default": "CHANNEL_UNSPECIFIED"
+    },
+    "v1CheckPermissionRequest": {
+      "type": "object",
+      "properties": {
+        "subjectType": {
+          "type": "string",
+          "title": "\"user\" | \"group\""
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "title": "\"view\" | \"edit\" | \"delete\" | \"share\" | \"admin\""
+        },
+        "resourceType": {
+          "type": "string",
+          "title": "\"document\" | \"folder\" | \"workspace\""
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object",
+          "title": "ABAC attributes (region, classification, hold, ...)"
+        }
+      }
+    },
+    "v1CheckPermissionResponse": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Citation": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "start": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "end": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "snippet": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Comment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "parentId": {
+          "type": "string",
+          "title": "empty for top-level thread"
+        },
+        "authorId": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "mentionedUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "title": "0 = document-level"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedBy": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CompleteUploadResponse": {
+      "type": "object",
+      "properties": {
+        "storageBucket": {
+          "type": "string"
+        },
+        "storageKey": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "checksumSha256": {
+          "type": "string"
+        },
+        "scanResult": {
+          "$ref": "#/definitions/v1ScanResult",
+          "title": "PENDING if async scan pipeline not done"
+        },
+        "tier": {
+          "$ref": "#/definitions/v1StorageTier"
+        }
+      }
+    },
+    "v1CreateDocumentRequest": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "regionPin": {
+          "$ref": "#/definitions/v1RegionPin"
+        },
+        "customMetadata": {
+          "type": "object"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1CreateTagRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateWorkspaceRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "regionPin": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DeleteAnnotationResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1DeleteCommentResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1DeleteWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1Delivery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "templateCode": {
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/definitions/v1Channel"
+        },
+        "recipient": {
+          "type": "string",
+          "title": "email / phone / webhook-id"
+        },
+        "status": {
+          "$ref": "#/definitions/v1DeliveryStatus"
+        },
+        "attempts": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "sentAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1DeliveryStatus": {
+      "type": "string",
+      "enum": [
+        "DELIVERY_STATUS_UNSPECIFIED",
+        "DELIVERY_STATUS_QUEUED",
+        "DELIVERY_STATUS_SENT",
+        "DELIVERY_STATUS_FAILED",
+        "DELIVERY_STATUS_BOUNCED",
+        "DELIVERY_STATUS_SUPPRESSED"
+      ],
+      "default": "DELIVERY_STATUS_UNSPECIFIED"
+    },
+    "v1DetectPIIResponse": {
+      "type": "object",
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PIIFinding"
+          }
+        },
+        "anyFound": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1Document": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "lifecycleState": {
+          "$ref": "#/definitions/v1LifecycleState"
+        },
+        "regionPin": {
+          "$ref": "#/definitions/v1RegionPin"
+        },
+        "customMetadata": {
+          "type": "object"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "currentVersionId": {
+          "type": "string"
+        },
+        "documentClass": {
+          "type": "string"
+        },
+        "classificationConfidence": {
+          "type": "number",
+          "format": "float"
+        },
+        "sha256Hash": {
+          "type": "string"
+        },
+        "totalSizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "permissions": {
+          "$ref": "#/definitions/v1DocumentPermissions"
+        }
+      }
+    },
+    "v1DocumentPermissions": {
+      "type": "object",
+      "properties": {
+        "canView": {
+          "type": "boolean"
+        },
+        "canEdit": {
+          "type": "boolean"
+        },
+        "canDelete": {
+          "type": "boolean"
+        },
+        "canShare": {
+          "type": "boolean"
+        },
+        "canAdmin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1DocumentServiceCreateShareLinkBody": {
+      "type": "object",
+      "properties": {
+        "password": {
+          "type": "string"
+        },
+        "expiresInHours": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "maxViews": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1EmbedResponse": {
+      "type": "object",
+      "properties": {
+        "vector": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "model": {
+          "type": "string"
+        },
+        "dimensions": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1Entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "PERSON | ORG | DATE | MONEY | EMAIL | PHONE | CUSTOM"
+        },
+        "value": {
+          "type": "string"
+        },
+        "start": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "end": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "confidence": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "v1Envelope": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1EnvelopeStatus"
+        },
+        "signers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Signer"
+          }
+        },
+        "sequential": {
+          "type": "boolean",
+          "title": "false = parallel"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1EnvelopeStatus": {
+      "type": "string",
+      "enum": [
+        "ENVELOPE_STATUS_UNSPECIFIED",
+        "ENVELOPE_STATUS_DRAFT",
+        "ENVELOPE_STATUS_SENT",
+        "ENVELOPE_STATUS_IN_PROGRESS",
+        "ENVELOPE_STATUS_COMPLETED",
+        "ENVELOPE_STATUS_DECLINED",
+        "ENVELOPE_STATUS_VOIDED",
+        "ENVELOPE_STATUS_EXPIRED"
+      ],
+      "default": "ENVELOPE_STATUS_UNSPECIFIED"
+    },
+    "v1ExportJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "queued | running | done | failed"
+        },
+        "downloadUrl": {
+          "type": "string"
+        },
+        "rowCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1ExtractEntitiesResponse": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Entity"
+          }
+        }
+      }
+    },
+    "v1Folder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "parentFolderId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "depth": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "documentCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "childFolderCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GetDownloadURLResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GetInvoicePDFURLResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1GetMetadataSchemaResponse": {
+      "type": "object",
+      "properties": {
+        "jsonSchema": {
+          "type": "object"
+        }
+      }
+    },
+    "v1GetPreviewURLResponse": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "available": {
+          "type": "boolean",
+          "title": "false if preview still generating"
+        }
+      }
+    },
+    "v1Group": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "memberIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1InitiateUploadResponse": {
+      "type": "object",
+      "properties": {
+        "uploadId": {
+          "type": "string"
+        },
+        "presignedPutUrl": {
+          "type": "string"
+        },
+        "storageBucket": {
+          "type": "string"
+        },
+        "storageKey": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requiredHeaders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1InstanceStatus": {
+      "type": "string",
+      "enum": [
+        "INSTANCE_STATUS_UNSPECIFIED",
+        "INSTANCE_STATUS_PENDING",
+        "INSTANCE_STATUS_RUNNING",
+        "INSTANCE_STATUS_COMPLETED",
+        "INSTANCE_STATUS_CANCELLED",
+        "INSTANCE_STATUS_FAILED"
+      ],
+      "default": "INSTANCE_STATUS_UNSPECIFIED"
+    },
+    "v1Invoice": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": "string"
+        },
+        "number": {
+          "type": "string",
+          "title": "human-readable, e.g. \"INV-2026-0417\""
+        },
+        "subtotal": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "tax": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "total": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "status": {
+          "type": "string",
+          "title": "draft | open | paid | void | uncollectible"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dueAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paidAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1InvoiceLine"
+          }
+        }
+      }
+    },
+    "v1InvoiceLine": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "resource": {
+          "$ref": "#/definitions/v1MeteredResource"
+        },
+        "quantity": {
+          "type": "string",
+          "format": "int64"
+        },
+        "unitPrice": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "amount": {
+          "$ref": "#/definitions/v1Money"
+        }
+      }
+    },
+    "v1JobStatus": {
+      "type": "string",
+      "enum": [
+        "JOB_STATUS_UNSPECIFIED",
+        "JOB_STATUS_QUEUED",
+        "JOB_STATUS_RUNNING",
+        "JOB_STATUS_SUCCEEDED",
+        "JOB_STATUS_FAILED",
+        "JOB_STATUS_CANCELLED"
+      ],
+      "default": "JOB_STATUS_UNSPECIFIED"
+    },
+    "v1LifecycleAction": {
+      "type": "string",
+      "enum": [
+        "LIFECYCLE_ACTION_UNSPECIFIED",
+        "LIFECYCLE_ACTION_SUBMIT_FOR_REVIEW",
+        "LIFECYCLE_ACTION_APPROVE",
+        "LIFECYCLE_ACTION_REJECT",
+        "LIFECYCLE_ACTION_SUPERSEDE",
+        "LIFECYCLE_ACTION_ARCHIVE",
+        "LIFECYCLE_ACTION_DISPOSE",
+        "LIFECYCLE_ACTION_APPLY_HOLD",
+        "LIFECYCLE_ACTION_RELEASE_HOLD",
+        "LIFECYCLE_ACTION_RESTORE"
+      ],
+      "default": "LIFECYCLE_ACTION_UNSPECIFIED"
+    },
+    "v1LifecycleJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "fromTier": {
+          "$ref": "#/definitions/v1StorageTier"
+        },
+        "toTier": {
+          "$ref": "#/definitions/v1StorageTier"
+        },
+        "status": {
+          "type": "string",
+          "title": "queued | running | done | failed"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1LifecycleState": {
+      "type": "string",
+      "enum": [
+        "LIFECYCLE_STATE_UNSPECIFIED",
+        "LIFECYCLE_STATE_DRAFT",
+        "LIFECYCLE_STATE_IN_REVIEW",
+        "LIFECYCLE_STATE_ACTIVE",
+        "LIFECYCLE_STATE_SUPERSEDED",
+        "LIFECYCLE_STATE_RETAINED",
+        "LIFECYCLE_STATE_ARCHIVED",
+        "LIFECYCLE_STATE_DISPOSED",
+        "LIFECYCLE_STATE_LEGAL_HOLD"
+      ],
+      "default": "LIFECYCLE_STATE_UNSPECIFIED"
+    },
+    "v1ListAPIKeysResponse": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1APIKey"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListAnnotationsResponse": {
+      "type": "object",
+      "properties": {
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/vaultdmsv1Annotation"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListCommentsResponse": {
+      "type": "object",
+      "properties": {
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Comment"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListDefinitionsResponse": {
+      "type": "object",
+      "properties": {
+        "definitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkflowDefinition"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListDeliveriesResponse": {
+      "type": "object",
+      "properties": {
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Delivery"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListDocumentsResponse": {
+      "type": "object",
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Document"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/v1PaginationResponse"
+        }
+      }
+    },
+    "v1ListEnvelopesResponse": {
+      "type": "object",
+      "properties": {
+        "envelopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Envelope"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListFoldersResponse": {
+      "type": "object",
+      "properties": {
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Folder"
+          }
+        }
+      }
+    },
+    "v1ListGroupsResponse": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Group"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListInstancesResponse": {
+      "type": "object",
+      "properties": {
+        "instances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkflowInstance"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListInvoicesResponse": {
+      "type": "object",
+      "properties": {
+        "invoices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Invoice"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListPlansResponse": {
+      "type": "object",
+      "properties": {
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Plan"
+          }
+        }
+      }
+    },
+    "v1ListShareLinkEventsResponse": {
+      "type": "object",
+      "properties": {
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ShareLinkEvent"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListShareLinksResponse": {
+      "type": "object",
+      "properties": {
+        "shareLinks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ShareLink"
+          }
+        }
+      }
+    },
+    "v1ListTagsResponse": {
+      "type": "object",
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Tag"
+          }
+        }
+      }
+    },
+    "v1ListTasksResponse": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Task"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListTemplatesResponse": {
+      "type": "object",
+      "properties": {
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Template"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListUsersResponse": {
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1User"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListVersionsResponse": {
+      "type": "object",
+      "properties": {
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Version"
+          }
+        },
+        "pagination": {
+          "$ref": "#/definitions/v1PaginationResponse"
+        }
+      }
+    },
+    "v1ListWebhooksResponse": {
+      "type": "object",
+      "properties": {
+        "webhooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Webhook"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListWorkspacesResponse": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Workspace"
+          }
+        }
+      }
+    },
+    "v1LogoutResponse": {
+      "type": "object",
+      "properties": {
+        "revoked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1MeteredResource": {
+      "type": "string",
+      "enum": [
+        "METERED_RESOURCE_UNSPECIFIED",
+        "METERED_RESOURCE_STORAGE_GB",
+        "METERED_RESOURCE_SEATS",
+        "METERED_RESOURCE_API_CALLS",
+        "METERED_RESOURCE_AI_TOKENS",
+        "METERED_RESOURCE_SIGNATURES"
+      ],
+      "default": "METERED_RESOURCE_UNSPECIFIED"
+    },
+    "v1Money": {
+      "type": "object",
+      "properties": {
+        "currencyCode": {
+          "type": "string"
+        },
+        "amountMinor": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1OCRJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1JobStatus"
+        },
+        "pageCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pagesDone": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "textKey": {
+          "type": "string",
+          "title": "S3 key to extracted text"
+        },
+        "error": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1PIIFinding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "SSN | EMAIL | PHONE | CREDIT_CARD | ..."
+        },
+        "count": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "sample": {
+          "type": "string",
+          "title": "redacted sample for UI"
+        }
+      }
+    },
+    "v1PageRequest": {
+      "type": "object",
+      "properties": {
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "sortBy": {
+          "type": "string"
+        }
+      },
+      "title": "---- Legacy pagination (kept for Phase C services) ------------------------"
+    },
+    "v1PageResponse": {
+      "type": "object",
+      "properties": {
+        "nextCursor": {
+          "type": "string"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "total": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1PaginationRequest": {
+      "type": "object",
+      "properties": {
+        "pageSize": {
+          "type": "integer",
+          "format": "int32",
+          "title": "max 100, default 20"
+        },
+        "pageToken": {
+          "type": "string",
+          "title": "opaque cursor"
+        }
+      },
+      "title": "---- Pagination (new: cursor-based) ---------------------------------------"
+    },
+    "v1PaginationResponse": {
+      "type": "object",
+      "properties": {
+        "nextPageToken": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "string",
+          "format": "int64",
+          "title": "-1 if unknown / too expensive"
+        }
+      }
+    },
+    "v1Plan": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "monthlyPrice": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "annualPrice": {
+          "$ref": "#/definitions/v1Money"
+        },
+        "seatLimit": {
+          "type": "integer",
+          "format": "int32",
+          "title": "0 = unlimited"
+        },
+        "storageLimitGb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "featureLimits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          },
+          "title": "\"ai_tokens_per_month\" -\u003e N"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "active": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1Preferences": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "channelByCode": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "\"doc.shared:email\" -\u003e true"
+        },
+        "digestDaily": {
+          "type": "boolean"
+        },
+        "quietHoursStart": {
+          "type": "string",
+          "title": "\"22:00\""
+        },
+        "quietHoursEnd": {
+          "type": "string",
+          "title": "\"07:00\""
+        }
+      }
+    },
+    "v1PresenceEvent": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PresenceUser"
+          }
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1PresenceUser": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1QueryAuditRequest": {
+      "type": "object",
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "title": "admin override; normal users scoped to own tenant"
+        },
+        "actorId": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "resourceKind": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correlationId": {
+          "type": "string"
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageRequest"
+        }
+      }
+    },
+    "v1QueryAuditResponse": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditEvent"
+          }
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1RecordUsageResponse": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1RegionPin": {
+      "type": "string",
+      "enum": [
+        "REGION_PIN_UNSPECIFIED",
+        "REGION_PIN_US_EAST_1",
+        "REGION_PIN_EU_WEST_1",
+        "REGION_PIN_ME_SOUTH_1",
+        "REGION_PIN_AP_SOUTHEAST_1"
+      ],
+      "default": "REGION_PIN_UNSPECIFIED"
+    },
+    "v1ReindexJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "queued | running | done | failed"
+        },
+        "total": {
+          "type": "string",
+          "format": "int64"
+        },
+        "processed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "failed": {
+          "type": "string",
+          "format": "int64"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1RevokeAPIKeyResponse": {
+      "type": "object",
+      "properties": {
+        "revoked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1RevokeShareLinkResponse": {
+      "type": "object",
+      "properties": {
+        "revoked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ScanResult": {
+      "type": "string",
+      "enum": [
+        "SCAN_RESULT_UNSPECIFIED",
+        "SCAN_RESULT_CLEAN",
+        "SCAN_RESULT_INFECTED",
+        "SCAN_RESULT_ERROR",
+        "SCAN_RESULT_PENDING"
+      ],
+      "default": "SCAN_RESULT_UNSPECIFIED"
+    },
+    "v1ScanStatus": {
+      "type": "object",
+      "properties": {
+        "uploadId": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/definitions/v1ScanResult"
+        },
+        "signature": {
+          "type": "string",
+          "title": "e.g. \"Eicar-Test-Signature\""
+        },
+        "scannedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1SearchHit": {
+      "type": "object",
+      "properties": {
+        "documentId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "format": "float"
+        },
+        "highlights": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "folderPath": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SearchResponse": {
+      "type": "object",
+      "properties": {
+        "hits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SearchHit"
+          }
+        },
+        "tookMs": {
+          "type": "string",
+          "format": "int64"
+        },
+        "totalHits": {
+          "type": "string",
+          "format": "int64"
+        },
+        "page": {
+          "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1SendBatchResponse": {
+      "type": "object",
+      "properties": {
+        "responses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SendResponse"
+          }
+        }
+      }
+    },
+    "v1SendRequest": {
+      "type": "object",
+      "properties": {
+        "templateCode": {
+          "type": "string"
+        },
+        "recipientUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recipientEmails": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "forceChannel": {
+          "$ref": "#/definitions/v1Channel",
+          "title": "0 = follow user preferences"
+        }
+      }
+    },
+    "v1SendResponse": {
+      "type": "object",
+      "properties": {
+        "deliveryIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1Session": {
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "refreshToken": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ShareLink": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "passwordProtected": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxViews": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "viewCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1ShareLinkEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "tokenPrefix": {
+          "type": "string",
+          "title": "first 8 chars, safe for display"
+        },
+        "allowedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "\"view\", \"comment\", \"download\""
+        },
+        "passwordHash": {
+          "type": "string",
+          "title": "optional"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxViews": {
+          "type": "integer",
+          "format": "int32",
+          "title": "0 = unlimited"
+        },
+        "viewCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1SignResponse": {
+      "type": "object",
+      "properties": {
+        "signer": {
+          "$ref": "#/definitions/v1Signer"
+        },
+        "envelopeStatus": {
+          "$ref": "#/definitions/v1EnvelopeStatus"
+        }
+      }
+    },
+    "v1SignatureMethod": {
+      "type": "string",
+      "enum": [
+        "SIGNATURE_METHOD_UNSPECIFIED",
+        "SIGNATURE_METHOD_CLICK_TO_SIGN",
+        "SIGNATURE_METHOD_DRAWN",
+        "SIGNATURE_METHOD_TYPED",
+        "SIGNATURE_METHOD_CERTIFICATE"
+      ],
+      "default": "SIGNATURE_METHOD_UNSPECIFIED",
+      "title": "- SIGNATURE_METHOD_CERTIFICATE: x509-backed"
+    },
+    "v1Signer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "orderIndex": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "status": {
+          "$ref": "#/definitions/v1SignerStatus"
+        },
+        "method": {
+          "$ref": "#/definitions/v1SignatureMethod"
+        },
+        "viewedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ipHash": {
+          "type": "string"
+        },
+        "declineReason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SignerEvidence": {
+      "type": "object",
+      "properties": {
+        "signerId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "ipHash": {
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/definitions/v1SignatureMethod"
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "userAgentHash": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SignerStatus": {
+      "type": "string",
+      "enum": [
+        "SIGNER_STATUS_UNSPECIFIED",
+        "SIGNER_STATUS_PENDING",
+        "SIGNER_STATUS_VIEWED",
+        "SIGNER_STATUS_SIGNED",
+        "SIGNER_STATUS_DECLINED"
+      ],
+      "default": "SIGNER_STATUS_UNSPECIFIED"
+    },
+    "v1SortOrder": {
+      "type": "string",
+      "enum": [
+        "SORT_ORDER_UNSPECIFIED",
+        "SORT_ORDER_ASC",
+        "SORT_ORDER_DESC"
+      ],
+      "default": "SORT_ORDER_UNSPECIFIED"
+    },
+    "v1StorageTier": {
+      "type": "string",
+      "enum": [
+        "STORAGE_TIER_UNSPECIFIED",
+        "STORAGE_TIER_HOT",
+        "STORAGE_TIER_WARM",
+        "STORAGE_TIER_COLD",
+        "STORAGE_TIER_QUARANTINE"
+      ],
+      "default": "STORAGE_TIER_UNSPECIFIED"
+    },
+    "v1Subscription": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "planCode": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1SubscriptionStatus"
+        },
+        "currentPeriodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentPeriodEnd": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trialEndAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paymentMethodId": {
+          "type": "string"
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1SubscriptionStatus": {
+      "type": "string",
+      "enum": [
+        "SUBSCRIPTION_STATUS_UNSPECIFIED",
+        "SUBSCRIPTION_STATUS_ACTIVE",
+        "SUBSCRIPTION_STATUS_PAST_DUE",
+        "SUBSCRIPTION_STATUS_CANCELLED",
+        "SUBSCRIPTION_STATUS_TRIALING"
+      ],
+      "default": "SUBSCRIPTION_STATUS_UNSPECIFIED"
+    },
+    "v1SuggestResponse": {
+      "type": "object",
+      "properties": {
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1SummarizeResponse": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "tokenCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "model": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Tag": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "documentCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1Task": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "stepKey": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "assigneeId": {
+          "type": "string"
+        },
+        "assigneeGroup": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1TaskStatus"
+        },
+        "dueAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "formData": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1TaskStatus": {
+      "type": "string",
+      "enum": [
+        "TASK_STATUS_UNSPECIFIED",
+        "TASK_STATUS_PENDING",
+        "TASK_STATUS_ASSIGNED",
+        "TASK_STATUS_COMPLETED",
+        "TASK_STATUS_EXPIRED",
+        "TASK_STATUS_CANCELLED"
+      ],
+      "default": "TASK_STATUS_UNSPECIFIED"
+    },
+    "v1Template": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "title": "stable key, e.g. \"doc.shared\""
+        },
+        "channel": {
+          "$ref": "#/definitions/v1Channel"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string",
+          "title": "handlebars-style"
+        },
+        "locale": {
+          "type": "string",
+          "title": "e.g. \"en-US\""
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1Tenant": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "regionPin": {
+          "type": "string"
+        },
+        "planCode": {
+          "type": "string",
+          "title": "free | team | business | enterprise"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1TimeRange": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1UpdateMetadataSchemaRequest": {
+      "type": "object",
+      "properties": {
+        "jsonSchema": {
+          "type": "object"
+        }
+      }
+    },
+    "v1UsageSummary": {
+      "type": "object",
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "periodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "periodEnd": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "totals": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          },
+          "title": "\"storage_gb\" -\u003e value"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          }
+        }
+      }
+    },
+    "v1User": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "owner | admin | member | viewer"
+        },
+        "groupIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "$ref": "#/definitions/v1UserStatus"
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1UserStatus": {
+      "type": "string",
+      "enum": [
+        "USER_STATUS_UNSPECIFIED",
+        "USER_STATUS_ACTIVE",
+        "USER_STATUS_INVITED",
+        "USER_STATUS_DISABLED"
+      ],
+      "default": "USER_STATUS_UNSPECIFIED"
+    },
+    "v1VerifyChainResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "checked": {
+          "type": "string",
+          "format": "int64"
+        },
+        "firstBreakEventId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1VerifyDocumentResponse": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "envelopeId": {
+          "type": "string"
+        },
+        "expectedHash": {
+          "type": "string"
+        },
+        "actualHash": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Version": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "versionNumber": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "contentBlobId": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sha256Hash": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "changeSummary": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Webhook": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "secretPrefix": {
+          "type": "string",
+          "title": "first 8 of shared HMAC secret"
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1WorkflowDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "specJson": {
+          "type": "string",
+          "title": "BPMN-lite JSON (steps, branches, timers)"
+        },
+        "published": {
+          "type": "boolean"
+        },
+        "audit": {
+          "$ref": "#/definitions/v1AuditMeta"
+        }
+      }
+    },
+    "v1WorkflowInstance": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "definitionId": {
+          "type": "string"
+        },
+        "definitionVersion": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "documentId": {
+          "type": "string",
+          "title": "optional binding"
+        },
+        "status": {
+          "$ref": "#/definitions/v1InstanceStatus"
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "temporalWorkflowId": {
+          "type": "string"
+        },
+        "temporalRunId": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1Workspace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "regionPin": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "object"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "documentCount": {
+          "type": "string",
+          "format": "int64"
+        },
+        "folderCount": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "vaultdmsv1Annotation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "documentId": {
+          "type": "string"
+        },
+        "authorId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/v1AnnotationKind"
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "geometryJson": {
+          "type": "string",
+          "title": "shape coords"
+        },
+        "text": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "vaultdmsv1Label": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

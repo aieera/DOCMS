@@ -1,0 +1,43 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Intelligence Pipeline",
+    "uid": "vaultdms-intelligence",
+    "tags": ["vaultdms", "ai"],
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "OCR Pages/min by Engine",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+        "targets": [{"expr": "sum(rate(ocr_pages_total[5m])) by (engine) * 60", "legendFormat": "{{engine}}"}]
+      },
+      {
+        "title": "Classification Tier Usage",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+        "targets": [{"expr": "sum(rate(http_requests_total{path=\"/api/v1/intelligence/classify\"}[1h])) by (method)", "legendFormat": "{{method}}"}]
+      },
+      {
+        "title": "LLM Call Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{path=~\"/api/v1/intelligence/ask.*\"}[5m])) by (le))", "legendFormat": "RAG p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path=~\"/api/v1/intelligence/ask.*\"}[5m])) by (le))", "legendFormat": "RAG p95"}
+        ]
+      },
+      {
+        "title": "Embedding Queue Depth",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 0, "y": 8},
+        "targets": [{"expr": "event_bus_lag{topic=\"dms.version.ocr_completed.v1\",group=~\"intel.*\"}"}]
+      },
+      {
+        "title": "Celery Worker Utilization",
+        "type": "timeseries",
+        "gridPos": {"h": 4, "w": 16, "x": 8, "y": 8},
+        "targets": [{"expr": "celery_active_tasks / celery_worker_concurrency * 100", "legendFormat": "{{queue}} utilization %"}]
+      }
+    ]
+  }
+}

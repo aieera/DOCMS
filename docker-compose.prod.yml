@@ -1,0 +1,197 @@
+# VaultDMS — single-node on-prem production compose.
+# Differences from dev:
+#   - Secrets come from .env (not checked in)
+#   - Services run as containers from published images
+#   - Volumes are bind-mounted to /var/lib/vaultdms for easy backup
+#   - Resource limits set on all services
+#   - OpenSearch security plugin enabled; admin password from env
+#
+# Prereqs:
+#   1. Copy .env.example -> .env and fill in every value
+#   2. mkdir -p /var/lib/vaultdms/{pg,redis,opensearch,minio,nats,qdrant,clam}
+#   3. docker compose -f docker-compose.prod.yml up -d
+
+name: vaultdms
+
+x-restart: &restart
+  restart: always
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    <<: [*restart, *logging]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /var/lib/vaultdms/pg:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4g }
+
+  redis:
+    image: redis:7-alpine
+    <<: [*restart, *logging]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - /var/lib/vaultdms/redis:/data
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512m }
+
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    <<: [*restart, *logging]
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - /var/lib/vaultdms/opensearch:/usr/share/opensearch/data
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4g }
+
+  minio:
+    image: minio/minio:RELEASE.2024-02-17T01-15-57Z
+    <<: [*restart, *logging]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - /var/lib/vaultdms/minio:/data
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2g }
+
+  nats:
+    image: nats:2.10
+    <<: [*restart, *logging]
+    command: -js -sd /data -m 8222
+    volumes:
+      - /var/lib/vaultdms/nats:/data
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1g }
+
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    <<: [*restart, *logging]
+    volumes:
+      - /var/lib/vaultdms/qdrant:/qdrant/storage
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2g }
+
+  temporal:
+    image: temporalio/auto-setup:1.22
+    <<: [*restart, *logging]
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PWD=${POSTGRES_PASSWORD}
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2g }
+
+  clamav:
+    image: clamav/clamav:stable
+    <<: [*restart, *logging]
+    volumes:
+      - /var/lib/vaultdms/clam:/var/lib/clamav
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2g }
+
+  # ---- VaultDMS services -----------------------------------------------------
+  # Each block is a template; tune image tag + env per environment.
+
+  document:
+    image: ${REGISTRY}/document:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, redis, nats, minio]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1g }
+
+  storage:
+    image: ${REGISTRY}/storage:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, redis, nats, minio, clamav]
+
+  search:
+    image: ${REGISTRY}/search:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, opensearch, qdrant, nats]
+
+  auth:
+    image: ${REGISTRY}/auth:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, redis, nats]
+
+  policy:
+    image: ${REGISTRY}/policy:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, redis, nats]
+
+  workflow:
+    image: ${REGISTRY}/workflow:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, temporal, nats]
+
+  notification:
+    image: ${REGISTRY}/notification:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]
+
+  audit:
+    image: ${REGISTRY}/audit:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]
+
+  signature:
+    image: ${REGISTRY}/signature:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]
+
+  billing:
+    image: ${REGISTRY}/billing:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]
+
+  connector:
+    image: ${REGISTRY}/connector:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]

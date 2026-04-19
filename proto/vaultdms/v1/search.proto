@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package vaultdms.v1;
+
+import "google/protobuf/timestamp.proto";
+import "vaultdms/v1/common.proto";
+
+option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+
+// SearchService owns the OpenSearch (lexical) and Qdrant (semantic) indexes.
+// Documents are indexed asynchronously via the document.indexed event.
+service SearchService {
+  rpc Search         (SearchRequest)         returns (SearchResponse);
+  rpc SemanticSearch (SemanticSearchRequest) returns (SearchResponse);
+  rpc HybridSearch   (HybridSearchRequest)   returns (SearchResponse);
+
+  rpc Reindex       (ReindexRequest)       returns (ReindexJob);
+  rpc GetReindexJob (GetReindexJobRequest) returns (ReindexJob);
+
+  rpc Suggest (SuggestRequest) returns (SuggestResponse);
+}
+
+message SearchRequest {
+  string          query        = 1;
+  string          workspace_id = 2;
+  repeated string folder_ids   = 3;
+  repeated string mime_types   = 4;
+  repeated Label  labels       = 5;
+  TimeRange       created_between = 6;
+  string          created_by   = 7;
+  PageRequest     page         = 8;
+  bool            highlight    = 9;
+}
+
+message SemanticSearchRequest {
+  string      query        = 1;
+  string      workspace_id = 2;
+  int32       top_k        = 3; // default 20, max 100
+  float       min_score    = 4;
+  PageRequest page         = 5;
+}
+
+message HybridSearchRequest {
+  string      query        = 1;
+  string      workspace_id = 2;
+  float       lexical_weight  = 3; // 0..1
+  float       semantic_weight = 4; // 0..1
+  PageRequest page         = 5;
+}
+
+message TimeRange {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to   = 2;
+}
+
+message SearchHit {
+  string              document_id = 1;
+  string              title       = 2;
+  float               score       = 3;
+  repeated string     highlights  = 4;
+  map<string, string> metadata    = 5;
+  string              folder_path = 6;
+}
+
+message SearchResponse {
+  repeated SearchHit hits      = 1;
+  int64              took_ms   = 2;
+  int64              total_hits = 3;
+  PageResponse       page      = 4;
+}
+
+message ReindexRequest {
+  string          workspace_id = 1;
+  repeated string document_ids = 2; // empty = all docs in workspace
+  bool            force        = 3; // re-embed even if fingerprint unchanged
+}
+message GetReindexJobRequest { string id = 1; }
+
+message ReindexJob {
+  string                    id           = 1;
+  string                    status       = 2;  // queued | running | done | failed
+  int64                     total        = 3;
+  int64                     processed    = 4;
+  int64                     failed       = 5;
+  google.protobuf.Timestamp started_at   = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}
+
+message SuggestRequest {
+  string prefix       = 1;
+  string workspace_id = 2;
+  int32  limit        = 3;
+}
+message SuggestResponse {
+  repeated string suggestions = 1;
+}

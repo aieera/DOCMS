@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package vaultdms.v1;
+
+import "google/protobuf/timestamp.proto";
+import "vaultdms/v1/common.proto";
+
+option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+
+// SignatureService handles e-signature requests: create envelope, collect
+// signatures from multiple signers, verify, and issue a tamper-evident
+// certificate of completion.
+service SignatureService {
+  rpc CreateEnvelope (CreateEnvelopeRequest) returns (Envelope);
+  rpc GetEnvelope    (GetEnvelopeRequest)    returns (Envelope);
+  rpc CancelEnvelope (CancelEnvelopeRequest) returns (Envelope);
+  rpc ListEnvelopes  (ListEnvelopesRequest)  returns (ListEnvelopesResponse);
+
+  rpc Sign           (SignRequest)           returns (SignResponse);
+  rpc Decline        (DeclineRequest)        returns (SignResponse);
+
+  rpc GetCertificate (GetCertificateRequest) returns (Certificate);
+  rpc VerifyDocument (VerifyDocumentRequest) returns (VerifyDocumentResponse);
+}
+
+enum EnvelopeStatus {
+  ENVELOPE_STATUS_UNSPECIFIED = 0;
+  ENVELOPE_STATUS_DRAFT       = 1;
+  ENVELOPE_STATUS_SENT        = 2;
+  ENVELOPE_STATUS_IN_PROGRESS = 3;
+  ENVELOPE_STATUS_COMPLETED   = 4;
+  ENVELOPE_STATUS_DECLINED    = 5;
+  ENVELOPE_STATUS_VOIDED      = 6;
+  ENVELOPE_STATUS_EXPIRED     = 7;
+}
+
+enum SignerStatus {
+  SIGNER_STATUS_UNSPECIFIED = 0;
+  SIGNER_STATUS_PENDING     = 1;
+  SIGNER_STATUS_VIEWED      = 2;
+  SIGNER_STATUS_SIGNED      = 3;
+  SIGNER_STATUS_DECLINED    = 4;
+}
+
+enum SignatureMethod {
+  SIGNATURE_METHOD_UNSPECIFIED = 0;
+  SIGNATURE_METHOD_CLICK_TO_SIGN = 1;
+  SIGNATURE_METHOD_DRAWN         = 2;
+  SIGNATURE_METHOD_TYPED         = 3;
+  SIGNATURE_METHOD_CERTIFICATE   = 4; // x509-backed
+}
+
+message Signer {
+  string          id          = 1;
+  string          email       = 2;
+  string          full_name   = 3;
+  int32           order_index = 4;
+  SignerStatus    status      = 5;
+  SignatureMethod method      = 6;
+  google.protobuf.Timestamp viewed_at = 7;
+  google.protobuf.Timestamp signed_at = 8;
+  string          ip_hash     = 9;
+  string          decline_reason = 10;
+}
+
+message Envelope {
+  string                    id          = 1;
+  string                    tenant_id   = 2;
+  string                    document_id = 3;
+  string                    subject     = 4;
+  string                    message     = 5;
+  EnvelopeStatus            status      = 6;
+  repeated Signer           signers     = 7;
+  bool                      sequential  = 8; // false = parallel
+  google.protobuf.Timestamp expires_at  = 9;
+  AuditMeta                 audit       = 10;
+}
+
+message Certificate {
+  string                    envelope_id  = 1;
+  string                    document_id  = 2;
+  string                    final_hash   = 3; // sha256 of signed document
+  string                    coc_pdf_key  = 4; // S3 key to cert-of-completion PDF
+  google.protobuf.Timestamp issued_at    = 5;
+  repeated SignerEvidence   evidence     = 6;
+}
+
+message SignerEvidence {
+  string                    signer_id   = 1;
+  string                    email       = 2;
+  string                    ip_hash     = 3;
+  SignatureMethod           method      = 4;
+  google.protobuf.Timestamp signed_at   = 5;
+  string                    user_agent_hash = 6;
+}
+
+// ---- Requests / responses --------------------------------------------------
+
+message CreateEnvelopeRequest {
+  string                    document_id = 1;
+  string                    subject     = 2;
+  string                    message     = 3;
+  repeated Signer           signers     = 4;
+  bool                      sequential  = 5;
+  google.protobuf.Timestamp expires_at  = 6;
+  bool                      send_now    = 7;
+}
+message GetEnvelopeRequest    { string id = 1; }
+message CancelEnvelopeRequest { string id = 1; string reason = 2; }
+message ListEnvelopesRequest {
+  string         document_id = 1;
+  EnvelopeStatus status      = 2;
+  PageRequest    page        = 3;
+}
+message ListEnvelopesResponse {
+  repeated Envelope envelopes = 1;
+  PageResponse      page      = 2;
+}
+
+message SignRequest {
+  string          envelope_id = 1;
+  string          signer_id   = 2;
+  SignatureMethod method      = 3;
+  bytes           signature_image = 4; // for drawn method
+  string          typed_name  = 5;     // for typed method
+  string          access_token = 6;    // magic-link token from email
+}
+message SignResponse { Signer signer = 1; EnvelopeStatus envelope_status = 2; }
+
+message DeclineRequest { string envelope_id = 1; string signer_id = 2; string reason = 3; string access_token = 4; }
+
+message GetCertificateRequest  { string envelope_id = 1; }
+message VerifyDocumentRequest  { string document_id = 1; bytes document_bytes = 2; }
+message VerifyDocumentResponse {
+  bool   valid            = 1;
+  string envelope_id      = 2;
+  string expected_hash    = 3;
+  string actual_hash      = 4;
+  string message          = 5;
+}

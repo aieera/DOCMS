@@ -1,0 +1,118 @@
+- generic [ref=e22]:
+  - complementary [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]: VaultDMS
+      - button "Toggle sidebar" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+    - navigation [ref=e30]:
+      - link "Dashboard" [ref=e31] [cursor=pointer]:
+        - /url: /
+        - img [ref=e32]
+        - generic [ref=e37]: Dashboard
+      - link "Search" [ref=e38] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e39]
+        - generic [ref=e42]: Search
+      - link "Tasks" [ref=e43] [cursor=pointer]:
+        - /url: /tasks
+        - img [ref=e44]
+        - generic [ref=e47]: Tasks
+      - link "Trash" [ref=e48] [cursor=pointer]:
+        - /url: /trash
+        - img [ref=e49]
+        - generic [ref=e52]: Trash
+      - link "Admin" [active] [ref=e53] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e54]
+        - generic [ref=e57]: Admin
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - button "Search documents... ⌘K" [ref=e60] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Search documents...
+        - generic [ref=e65]: ⌘K
+      - generic [ref=e66]:
+        - button "Notifications" [ref=e67] [cursor=pointer]:
+          - img [ref=e68]
+        - button "Toggle theme" [ref=e71] [cursor=pointer]:
+          - img [ref=e72]
+        - generic [ref=e74]:
+          - generic [ref=e75]: A
+          - button "Logout" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+    - main [ref=e80]:
+      - generic [ref=e192]:
+        - generic [ref=e193]:
+          - generic [ref=e194]:
+            - heading "Users" [level=1] [ref=e195]
+            - paragraph [ref=e196]: Manage team members
+          - button "Invite User" [ref=e198] [cursor=pointer]:
+            - img [ref=e199]
+            - text: Invite User
+        - table [ref=e201]:
+          - rowgroup [ref=e202]:
+            - row "User Role MFA Last Login" [ref=e203]:
+              - columnheader "User" [ref=e204]:
+                - button "User" [ref=e205] [cursor=pointer]:
+                  - text: User
+                  - img [ref=e206]
+              - columnheader "Role" [ref=e209]:
+                - button "Role" [ref=e210] [cursor=pointer]:
+                  - text: Role
+                  - img [ref=e211]
+              - columnheader "MFA" [ref=e214]:
+                - button "MFA" [ref=e215] [cursor=pointer]:
+                  - text: MFA
+                  - img [ref=e216]
+              - columnheader "Last Login" [ref=e219]:
+                - button "Last Login" [ref=e220] [cursor=pointer]:
+                  - text: Last Login
+                  - img [ref=e221]
+              - columnheader [ref=e224]:
+                - button
+          - rowgroup [ref=e225]:
+            - row "A Alice alice@acme.local member Off Never" [ref=e226]:
+              - cell "A Alice alice@acme.local" [ref=e227]:
+                - generic [ref=e228]:
+                  - generic [ref=e230]: A
+                  - generic [ref=e231]:
+                    - paragraph [ref=e232]: Alice
+                    - paragraph [ref=e233]: alice@acme.local
+              - cell "member" [ref=e234]:
+                - generic [ref=e235]: member
+              - cell "Off" [ref=e236]:
+                - generic [ref=e237]: "Off"
+              - cell "Never" [ref=e238]
+              - cell [ref=e239]:
+                - button [ref=e240] [cursor=pointer]:
+                  - img [ref=e241]
+            - row "AU Admin User admin@acme.local owner Off a few seconds ago" [ref=e245]:
+              - cell "AU Admin User admin@acme.local" [ref=e246]:
+                - generic [ref=e247]:
+                  - generic [ref=e249]: AU
+                  - generic [ref=e250]:
+                    - paragraph [ref=e251]: Admin User
+                    - paragraph [ref=e252]: admin@acme.local
+              - cell "owner" [ref=e253]:
+                - generic [ref=e254]: owner
+              - cell "Off" [ref=e255]:
+                - generic [ref=e256]: "Off"
+              - cell "a few seconds ago" [ref=e257]
+              - cell [ref=e258]:
+                - button [ref=e259] [cursor=pointer]:
+                  - img [ref=e260]
+            - row "A Alice alice@acme.test owner Off Never" [ref=e264]:
+              - cell "A Alice alice@acme.test" [ref=e265]:
+                - generic [ref=e266]:
+                  - generic [ref=e268]: A
+                  - generic [ref=e269]:
+                    - paragraph [ref=e270]: Alice
+                    - paragraph [ref=e271]: alice@acme.test
+              - cell "owner" [ref=e272]:
+                - generic [ref=e273]: owner
+              - cell "Off" [ref=e274]:
+                - generic [ref=e275]: "Off"
+              - cell "Never" [ref=e276]
+              - cell [ref=e277]:
+                - button [ref=e278] [cursor=pointer]:
+                  - img [ref=e279]

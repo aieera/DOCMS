@@ -1,0 +1,70 @@
+version: 2
+updates:
+  # Go modules (workspace root covers all services via go.work)
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "go"]
+    reviewers: ["sulthansha"]
+    groups:
+      go-minor:
+        update-types: ["minor", "patch"]
+
+  # Web frontend
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "frontend"]
+    groups:
+      patch-and-minor:
+        update-types: ["patch", "minor"]
+
+  # Mobile app
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "mobile"]
+
+  # Python intelligence service
+  - package-ecosystem: pip
+    directory: /services/intelligence
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+
+  # Python preview service
+  - package-ecosystem: pip
+    directory: /services/preview
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+
+  # Collaboration (Node.js)
+  - package-ecosystem: npm
+    directory: /services/collaboration
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "nodejs"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "ci"]
+
+  # Docker
+  - package-ecosystem: docker
+    directory: /services/document
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "docker"]

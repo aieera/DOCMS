@@ -1,0 +1,70 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  go: "1.22"
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - staticcheck
+    - govet
+    - ineffassign
+    - unused
+    - gosimple
+    - typecheck
+    - gocritic
+    - gosec
+    - exhaustive
+    - nilerr
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - noctx
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - prealloc
+    - contextcheck
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - ifElseChain
+      - singleCaseSwitch
+  gosec:
+    excludes:
+      - G104 # handled by errcheck
+      - G304 # file path from variable — acceptable with validation
+  exhaustive:
+    default-signifies-exhaustive: true
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  goimports:
+    local-prefixes: github.com/vaultdms/vaultdms
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - unparam
+        - gocritic
+    - path: cmd/
+      linters:
+        - gochecknoinits

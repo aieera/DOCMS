@@ -1,0 +1,47 @@
+// Event schemas for the VaultDMS domain event bus (NATS JetStream).
+//
+// Each top-level message is the payload of a single NATS subject. Subjects
+// are versioned via a .vN suffix; a breaking payload change bumps the suffix
+// and the new message lives alongside the old until consumers migrate.
+//
+// Events are JSON-encoded on the wire today (CloudEvents envelope wraps
+// the payload). Protobuf wire format is reserved for future use.
+syntax = "proto3";
+
+package vaultdms.v1;
+
+option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+
+import "google/protobuf/timestamp.proto";
+
+// VersionUploadedV1 is the payload of NATS subject
+// `dms.version.uploaded.v1`. See ADR 0021 for why this event is emitted
+// from the document service's CreateVersion RPC rather than from storage's
+// CompleteUpload RPC.
+//
+// Consumers: intelligence (OCR trigger), preview (thumbnail trigger),
+// search (indexer warm-up). Each consumer must deduplicate on
+// `event_id`.
+message VersionUploadedV1 {
+  // UUIDv7 produced by the outbox at insert time. Serves as the
+  // idempotency key for all consumers.
+  string event_id = 1;
+
+  string tenant_id        = 2;
+  string document_id      = 3;
+  string version_id       = 4;
+  int32  version_number   = 5;
+  string content_blob_id  = 6;
+
+  // Canonical object URI: "s3://{bucket}/{key}" composed from the
+  // content_blobs row at emit time. Consumers use this to fetch the
+  // plaintext (after decrypting with the per-tenant KEK — see Wave 6.1).
+  string storage_uri      = 7;
+
+  string mime_type        = 8;
+  int64  size_bytes       = 9;
+  string sha256           = 10;
+
+  string uploaded_by_user_id           = 11;
+  google.protobuf.Timestamp uploaded_at = 12;
+}

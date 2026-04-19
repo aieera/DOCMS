@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package vaultdms.v1;
+
+option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "vaultdms/v1/common.proto";
+
+// ---- CheckPermission (called by every service via gRPC) --------------------
+
+message CheckPermissionRequest {
+  string                 subject_type  = 1; // "user" | "group"
+  string                 subject_id    = 2;
+  string                 action        = 3; // "view" | "edit" | "delete" | "share" | "admin"
+  string                 resource_type = 4; // "document" | "folder" | "workspace"
+  string                 resource_id   = 5;
+  google.protobuf.Struct context       = 6; // ABAC attributes (region, classification, hold, ...)
+}
+message CheckPermissionResponse {
+  bool   allowed = 1;
+  string reason  = 2;
+}
+
+message BatchCheckPermissionRequest  { repeated CheckPermissionRequest checks = 1; }
+message BatchCheckPermissionResponse { repeated CheckPermissionResponse results = 1; }
+
+// ---- ACLs + retention + classification + DLP -------------------------------
+
+enum Effect {
+  EFFECT_UNSPECIFIED = 0;
+  EFFECT_ALLOW       = 1;
+  EFFECT_DENY        = 2;
+}
+
+message Permission {
+  string          id             = 1;
+  string          tenant_id      = 2;
+  string          resource_kind  = 3;
+  string          resource_id    = 4;
+  string          principal_kind = 5;
+  string          principal_id   = 6;
+  repeated string actions        = 7;
+  Effect          effect         = 8;
+  bool            inherited      = 9;
+  AuditMeta       audit          = 10;
+}
+
+message RetentionPolicy {
+  string         id                = 1;
+  string         tenant_id         = 2;
+  string         name              = 3;
+  string         description       = 4;
+  int32          retain_days       = 5;
+  bool           delete_on_expiry  = 6;
+  repeated Label applies_to_labels = 7;
+  AuditMeta      audit             = 8;
+}
+
+message Classification {
+  string                    document_id   = 1;
+  string                    level         = 2;
+  float                     confidence    = 3;
+  repeated string           detectors     = 4;
+  map<string, string>       details       = 5;
+  google.protobuf.Timestamp classified_at = 6;
+}
+
+message DLPRule {
+  string          id        = 1;
+  string          tenant_id = 2;
+  string          name      = 3;
+  string          pattern   = 4;
+  repeated string actions   = 5;
+  bool            enabled   = 6;
+  AuditMeta       audit     = 7;
+}
+
+// ---- Service ---------------------------------------------------------------
+
+service PolicyService {
+  rpc CheckPermission      (CheckPermissionRequest)      returns (CheckPermissionResponse);
+  rpc BatchCheckPermission (BatchCheckPermissionRequest) returns (BatchCheckPermissionResponse);
+}

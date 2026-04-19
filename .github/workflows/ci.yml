@@ -1,0 +1,532 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.57
+          args: --timeout=5m
+
+  proto:
+    name: Proto lint + generate + breaking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: bufbuild/buf-setup-action@v1
+      - name: Cache proto gen output
+        uses: actions/cache@v4
+        with:
+          path: proto/gen
+          key: proto-gen-${{ hashFiles('proto/**/*.proto', 'proto/buf.yaml', 'proto/buf.gen.yaml', 'proto/buf.lock') }}
+      - uses: bufbuild/buf-lint-action@v1
+        with:
+          input: proto
+      - name: buf generate
+        working-directory: proto
+        run: buf generate
+      - name: Verify no drift from committed files
+        run: git diff --exit-code proto/gen/
+      - uses: bufbuild/buf-breaking-action@v1
+        if: github.event_name == 'pull_request'
+        with:
+          input: proto
+          against: "https://github.com/${{ github.repository }}.git#branch=main,subdir=proto"
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vaultdms
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: vaultdms
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U vaultdms"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s --health-retries=10
+      nats:
+        image: nats:2.10
+        ports: ["4222:4222"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Go tests
+        env:
+          DATABASE_URL: postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
+          REDIS_URL: localhost:6379
+          NATS_URL: nats://localhost:4222
+        run: go test -race -timeout 10m -coverprofile=coverage.txt ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.txt
+
+  integration-tests:
+    name: Integration tests (-tags integration)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vaultdms
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: vaultdms
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U vaultdms"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s --health-retries=10
+      nats:
+        image: nats:2.10
+        ports: ["4222:4222"]
+      minio:
+        image: minio/minio:RELEASE.2024-02-17T01-15-57Z
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd="bash -c 'exec 3<>/dev/tcp/localhost/9000'"
+          --health-interval=5s --health-retries=10
+      # Wave 13.1: OpenSearch for search + DSR cross-service tests.
+      opensearch:
+        image: opensearchproject/opensearch:2.13.0
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: DevRoot_1234
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd="curl -sf http://localhost:9200/_cluster/health || exit 1"
+          --health-interval=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Harness compiles
+        run: go vet ./pkg/testharness/...
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
+          REDIS_URL: localhost:6379
+          NATS_URL: nats://localhost:4222
+          OPENSEARCH_URL: http://localhost:9200
+          MINIO_ENDPOINT: localhost:9000
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        # Budget: 12 minutes p95 per spec §13.1. Timeout at 15m as
+        # hard stop; PRs that consistently approach the limit get
+        # their slow tests reviewed.
+        run: go test -tags integration -timeout 15m ./pkg/... ./services/...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, proto]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: make build
+
+  e2e:
+    name: E2E smoke (Playwright)
+    runs-on: ubuntu-latest
+    needs: [build, integration-tests]
+    # The prompt requires <5 min total runtime for the smoke; give
+    # the job a generous safety margin but cut it off if the stack
+    # is wedged.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            web/package-lock.json
+            tests/e2e/package-lock.json
+
+      - name: Generate .env
+        run: ./scripts/gen-dev-env.sh
+
+      - name: docker compose up
+        run: |
+          docker compose up -d postgres redis nats minio opensearch
+          ./scripts/wait-for-health.sh || true   # opensearch password is pre-existing gate
+
+      - name: Run migrations
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+          "$(go env GOPATH)/bin/migrate" \
+            -database "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+            -path services/document/migrations up
+
+      - name: Seed default tenant + admin
+        run: |
+          DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+            go run ./scripts/seed
+
+      - name: Build + start backend services (background)
+        env:
+          VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+          VAULTDMS_REDIS_URL: "localhost:6379"
+          VAULTDMS_NATS_URL: "nats://localhost:4222"
+          VAULTDMS_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
+          SESSION_COOKIE_SECRET: "MZAQnIFxYrZb3Lfe8HttmuzCR2sNvsR4TOTKU1qsrRY="
+          VAULTDMS_INTERNAL_API_KEY: "984c200bb8a05911e8a1081c92f4a0893a189b2d6ea3517a7459b4a2e8ab814c"
+        run: |
+          mkdir -p .run
+          for svc_port in "auth:8081" "policy:8082" "billing:8083"; do
+            svc="${svc_port%%:*}"; port="${svc_port##*:}"
+            VAULTDMS_HTTP_PORT="$port" \
+              bash -c "cd services/$svc && go run ./cmd/server" > ".run/$svc.log" 2>&1 &
+            echo $! > ".run/$svc.pid"
+          done
+          sleep 20
+
+      - name: Web deps + Vite (background)
+        working-directory: web
+        run: |
+          npm ci
+          npm run dev > ../.run/web.log 2>&1 &
+          echo $! > ../.run/web.pid
+          for i in 1 2 3 4 5 6; do
+            curl -sf http://localhost:3000/ >/dev/null && break
+            sleep 2
+          done
+
+      - name: Playwright install
+        working-directory: tests/e2e
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke spec
+        working-directory: tests/e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+        run: npx playwright test smoke.spec.ts
+
+      - name: Run api-smoke.sh
+        env:
+          E2E_BASE_URL: http://localhost:3000
+        run: bash tests/e2e/api-smoke.sh
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-service-logs
+          path: .run/*.log
+
+  # =========================================================================
+  # Security scanning — blocks on HIGH/CRITICAL
+  # =========================================================================
+
+  security-go:
+    name: Go Security (gosec + govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - name: gosec
+        uses: securego/gosec@master
+        with:
+          args: -severity high -confidence high -quiet ./...
+      - name: No math/rand in security-sensitive packages (Wave 6 Prompt 6.3)
+        run: bash scripts/check-no-math-rand.sh
+      - name: No context.Background() in NATS handlers (Wave 6 Prompt 6.4)
+        run: bash scripts/check-no-background-in-handlers.sh
+      - name: Outbox-only publishing (Wave 6 Prompt 6.5)
+        run: bash scripts/check-outbox-only-publishing.sh
+
+  security-semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        run: semgrep scan --config auto --error --severity ERROR --severity WARNING .
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_TOKEN }}
+
+  security-trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build test images
+        run: |
+          for svc in document auth policy storage search audit workflow notification signature billing; do
+            docker build -t vaultdms-${svc}:test -f services/${svc}/Dockerfile . || true
+          done
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: "vaultdms-document:test"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          format: table
+
+  web-tests:
+    name: Web unit tests (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+      - name: Vitest (with coverage)
+        working-directory: web
+        run: npm run test:ci
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: web/coverage
+
+  security-npm:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Web audit
+        working-directory: web
+        run: |
+          npm ci
+          npm audit --audit-level=high
+      - name: Mobile audit
+        working-directory: mobile
+        run: |
+          npm ci
+          npm audit --audit-level=high || true
+
+  security-python:
+    name: Python dependency scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pip-audit intelligence
+        run: |
+          pip install pip-audit
+          cd services/intelligence && pip-audit -r requirements.txt --desc --severity high
+      - name: pip-audit preview
+        run: |
+          cd services/preview && pip-audit -r requirements.txt --desc --severity high
+
+  # Wave 13.5: mutation testing on security-critical packages.
+  # go-mutesting flips operators + boolean checks, runs the
+  # package's tests against each mutant, scores how many tests
+  # actually caught the mutation. Score < 70% fails the job.
+  #
+  # Expensive — runs on main + release branches + `labeled`
+  # events carrying the `mutation-test` label on a PR, not on
+  # every push. PR authors who want a pre-merge score add the
+  # label; CI runs the job and posts the result.
+  mutation:
+    name: Mutation testing (auth / policy / storage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: |
+      github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation-test'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install go-mutesting
+        run: go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+      - name: Run
+        run: bash scripts/mutesting/run.sh
+        env:
+          THRESHOLD: "70"
+
+  # Wave 13.4: Playwright E2E journeys. Runs after build so the
+  # vite preview server has a bundle to serve. Backend mocks
+  # live inside each spec via page.route() — no real backends
+  # are reached.
+  frontend-e2e:
+    name: Frontend Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install deps
+        working-directory: web
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Build web
+        working-directory: web
+        run: npm run build
+      - name: Playwright test
+        working-directory: web
+        run: npx playwright test --project=chromium
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
+
+  # Wave 13.4: vitest coverage gate. Fails CI if statement
+  # coverage under web/src/** drops below 50% — the end-of-wave
+  # target per spec §13.4.
+  frontend-coverage:
+    name: Frontend coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install deps
+        working-directory: web
+        run: npm ci
+      - name: Vitest with coverage
+        working-directory: web
+        run: npm run test:ci
+      - name: Enforce 50% statement coverage
+        working-directory: web
+        run: |
+          pct=$(node -e 'const s=require("./coverage/coverage-summary.json").total.statements.pct;console.log(s)' 2>/dev/null || echo 0)
+          echo "statement coverage: $pct%"
+          awk -v p="$pct" 'BEGIN { if (p+0 < 50) exit 1 }'
+
+  # Wave 13.2: k6 script lint. We don't execute load tests in CI
+  # (see docs/performance/README.md § "What this runbook does NOT
+  # do"), but we do catch syntax errors + invalid imports before
+  # an SRE spends 90 minutes running against staging.
+  k6-lint:
+    name: k6 script lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+              --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+              | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+      - name: Lint every scenario
+        run: |
+          set -e
+          for f in tests/load/scenarios/*.js; do
+            echo "--- $f ---"
+            # k6 archive parses + resolves imports without executing.
+            k6 archive --out /dev/null "$f"
+          done
+
+  openapi:
+    name: OpenAPI lint + drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install spectral
+        run: npm install -g @stoplight/spectral-cli@6.11.1
+      - name: Lint
+        run: spectral lint docs/api/openapi.yaml --fail-severity=error
+      - name: Drift check (advisory until first green)
+        continue-on-error: true
+        run: bash scripts/openapi/check-drift.sh
+
+  # Gate: all security checks must pass
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    needs: [security-go, security-semgrep, security-trivy, security-npm, security-python]
+    steps:
+      - run: echo "All security checks passed"

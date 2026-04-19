@@ -1,0 +1,43 @@
+{{- if and .Values.intelligence.enabled .Values.intelligence.hpa.enabled }}
+# API server HPA — CPU-based.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vaultdms-intelligence-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vaultdms-intelligence-api
+  minReplicas: {{ .Values.intelligence.hpa.minReplicas | default 2 }}
+  maxReplicas: {{ .Values.intelligence.hpa.maxReplicas | default 8 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.intelligence.hpa.targetCPU | default 70 }}
+---
+# Celery worker HPA. In production this should be driven by queue
+# depth via KEDA (keda.sh ScaledObject). CPU is the dev/stopgap
+# signal — pin the same knobs so the switch is non-breaking.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vaultdms-intelligence-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vaultdms-intelligence-worker
+  minReplicas: {{ .Values.intelligence.celery.replicas | default 2 }}
+  maxReplicas: {{ .Values.intelligence.hpa.maxReplicas | default 8 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+{{- end }}

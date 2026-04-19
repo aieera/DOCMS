@@ -1,0 +1,112 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Load Test Results",
+    "uid": "vaultdms-loadtest",
+    "tags": ["vaultdms", "loadtest"],
+    "refresh": "10s",
+    "annotations": {
+      "list": [
+        {"name": "Load Test Runs", "datasource": "Prometheus", "expr": "changes(k6_iterations_total[1m]) > 0", "color": "#1E40AF"}
+      ]
+    },
+    "panels": [
+      {
+        "title": "Virtual Users (Active)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+        "targets": [{"expr": "k6_vus", "legendFormat": "VUs"}]
+      },
+      {
+        "title": "Requests/sec",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+        "targets": [{"expr": "rate(k6_http_reqs_total[1m])", "legendFormat": "RPS"}]
+      },
+      {
+        "title": "Error Rate",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+        "targets": [{"expr": "rate(k6_http_req_failed_total[5m]) * 100", "legendFormat": "Error %"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}]}}}
+      },
+      {
+        "title": "SLI: Document Read p99",
+        "type": "gauge",
+        "gridPos": {"h": 6, "w": 4, "x": 0, "y": 6},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket{name=\"doc_read\"}[5m]))*1000"}],
+        "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "max": 500, "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 100}, {"color": "red", "value": 150}]}}}
+      },
+      {
+        "title": "SLI: Search p99",
+        "type": "gauge",
+        "gridPos": {"h": 6, "w": 4, "x": 4, "y": 6},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket{name=\"search\"}[5m]))*1000"}],
+        "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "max": 1000, "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 200}, {"color": "red", "value": 300}]}}}
+      },
+      {
+        "title": "SLI: Upload Init p99",
+        "type": "gauge",
+        "gridPos": {"h": 6, "w": 4, "x": 8, "y": 6},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket{name=\"upload_init\"}[5m]))*1000"}],
+        "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "max": 500, "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 150}, {"color": "red", "value": 200}]}}}
+      },
+      {
+        "title": "SLI: Autocomplete p99",
+        "type": "gauge",
+        "gridPos": {"h": 6, "w": 4, "x": 12, "y": 6},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket{name=\"autocomplete\"}[5m]))*1000"}],
+        "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "max": 200, "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 30}, {"color": "red", "value": 50}]}}}
+      },
+      {
+        "title": "SLI: Download URL p99",
+        "type": "gauge",
+        "gridPos": {"h": 6, "w": 4, "x": 16, "y": 6},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket{name=\"download_url\"}[5m]))*1000"}],
+        "fieldConfig": {"defaults": {"unit": "ms", "min": 0, "max": 300, "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 75}, {"color": "red", "value": 100}]}}}
+      },
+      {
+        "title": "Cross-Tenant Isolation Violations",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 4, "x": 20, "y": 6},
+        "targets": [{"expr": "k6_isolation_violations_total", "legendFormat": "Violations"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}]}}}
+      },
+      {
+        "title": "HTTP Request Duration Distribution",
+        "type": "histogram",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [{"expr": "rate(k6_http_req_duration_seconds_bucket[5m])", "legendFormat": "{{le}}"}]
+      },
+      {
+        "title": "Uploads: Completed vs Failed",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {"expr": "k6_uploads_completed_total", "legendFormat": "Completed"},
+          {"expr": "k6_uploads_failed_total", "legendFormat": "Failed"}
+        ]
+      },
+      {
+        "title": "WebSocket Connections",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+        "targets": [{"expr": "k6_ws_connections_total", "legendFormat": "Connections"}]
+      },
+      {
+        "title": "WebSocket Message Latency p99",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 20},
+        "targets": [{"expr": "histogram_quantile(0.99, rate(k6_ws_message_latency_bucket[5m]))", "legendFormat": "p99 ms"}]
+      },
+      {
+        "title": "OCR Pipeline: Queued vs Completed",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 20},
+        "targets": [
+          {"expr": "k6_ocr_docs_queued_total", "legendFormat": "Queued"},
+          {"expr": "k6_ocr_docs_completed_total", "legendFormat": "Completed"}
+        ]
+      }
+    ]
+  }
+}

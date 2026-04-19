@@ -1,0 +1,34 @@
+<!--
+  Wave 12.9 — structured logging with explicit PDF-byte redaction.
+
+  Two appenders:
+    - CONSOLE: plain human-readable for dev.
+    - JSON: logstash-encoded for prod log pipelines.
+
+  Critical: DSS + gRPC can log request bodies at DEBUG. PDF bytes
+  in a log line are a data-leak risk. We pin loggers that touch
+  PDF content at INFO and emit only structured metadata (signer,
+  field, level) — never the bytes themselves. The CI guard at
+  scripts/check-pdf-byte-leak.sh (Wave 13.4) fails any change
+  that removes the redaction or sets DSS / gRPC loggers to DEBUG
+  without a companion redaction filter.
+-->
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{ISO8601} %-5level [%thread] %logger{40} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- DSS is verbose at DEBUG and includes PDF bytes in trace
+         lines. Pinned to INFO. Do not lower without wiring a
+         redacting filter. -->
+    <logger name="eu.europa.esig" level="INFO"/>
+
+    <!-- grpc-java logs raw protobuf bytes at DEBUG. -->
+    <logger name="io.grpc" level="INFO"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

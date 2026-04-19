@@ -1,0 +1,57 @@
+# Architecture Decision Records — Index
+
+Format: Michael Nygard (Context · Decision · Consequences · Alternatives).
+Numbering is monotonic and gap-free. Once merged, ADRs are immutable —
+subsequent decisions that overturn an ADR supersede it via a new ADR.
+
+## Status legend
+
+- **Accepted** — merged and in force.
+- **Proposed** — under review, not yet binding.
+- **Superseded** — replaced; see the newer ADR.
+- **Deprecated** — still documented but no longer guiding current work.
+
+## Register
+
+| # | Title | Status | Date |
+|---|---|---|---|
+| [0021](0021-version-uploaded-event-emission-point.md) | `dms.version.uploaded.v1` is emitted from document service, not storage | Accepted | 2026-04-17 |
+| [0022](0022-per-tenant-kek-derivation.md) | Per-tenant KEK via HKDF-SHA256 from master secret (dev/on-prem); Vault/AWS KMS alias (prod) | Accepted | 2026-04-17 |
+| [0023](0023-temporal-namespace-strategy.md) | Single Temporal namespace `vaultdms` + `tenant_id` search attribute + workflow-id prefix | Accepted | 2026-04-17 |
+| [0024](0024-gdpr-dsr-strategy.md) | GDPR DSR: per-request Temporal workflow, hold short-circuit, 7-year ledger, HMAC anonymization | Accepted | 2026-04-17 |
+| [0025](0025-pades-library.md) | PAdES signing via EU Commission DSS (LGPL-2.1) as a Java sidecar; fallback Digidoc4j / commercial iText | Accepted | 2026-04-17 |
+| [0026](0026-per-region-kek-masters.md) | Per-region KEK master secrets; kekID gains `/region` suffix; cross-region isolation under ikm compromise | Accepted | 2026-04-18 |
+
+*Note: 0021 was promoted from its final.md-placeholder slot to document
+an actual Wave 5 decision. Wave 6.5 shipped without an ADR (no design
+decision required — the pattern was already established). Subsequent
+numbers shift by one.*
+
+## Template
+
+Copy into `docs/adr/NNNN-<slug>.md`:
+
+```markdown
+# NNNN — <Title>
+
+- **Status:** Proposed
+- **Date:** YYYY-MM-DD
+- **Supersedes:** — (or ADR NNNN)
+- **Deciders:** <names>
+
+## Context
+<The forces at play, including technological, political, social, and
+project local. Describe the problem as a neutral observer.>
+
+## Decision
+<The response to these forces, in full sentences, active voice.>
+
+## Consequences
+<What becomes easier or harder because of this decision.>
+
+## Alternatives considered
+<Each alternative with pros/cons and why it was rejected.>
+
+## Sources
+<Links to RFCs, papers, prior art, CVEs consulted.>
+```

@@ -1,0 +1,21 @@
+dependencies:
+- name: postgresql
+  repository: https://charts.bitnami.com/bitnami
+  version: 15.5.38
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 19.6.4
+- name: opensearch
+  repository: https://opensearch-project.github.io/helm-charts
+  version: 2.37.0
+- name: nats
+  repository: https://nats-io.github.io/k8s/helm/charts
+  version: 1.3.16
+- name: qdrant
+  repository: https://qdrant.github.io/qdrant-helm
+  version: 0.10.1
+- name: temporal
+  repository: https://go.temporal.io/helm-charts
+  version: 0.74.0
+digest: sha256:6dae6fbb683960ad0e4d57063cff687387b579008f23e0021ca0b22f55c8ee9f
+generated: "2026-04-17T08:33:07.275491982Z"

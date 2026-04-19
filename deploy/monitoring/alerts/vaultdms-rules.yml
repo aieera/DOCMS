@@ -1,0 +1,164 @@
+groups:
+  # ===========================================================================
+  # P1 — Pages (PagerDuty / on-call)
+  # ===========================================================================
+  - name: vaultdms.p1
+    rules:
+      - alert: HighErrorRate
+        expr: >
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Error rate above 1% for 5 minutes"
+          description: "{{ $value | humanizePercentage }} of requests are 5xx."
+          runbook: "https://wiki.vaultdms.io/runbooks/high-error-rate"
+
+      - alert: DatabaseDown
+        expr: up{job=~".*postgres.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          runbook: "https://wiki.vaultdms.io/runbooks/db-down"
+
+      - alert: CrossTenantDataAccess
+        expr: >
+          sum(rate(http_requests_total{status="403",path=~"/api/v1/documents.*"}[5m])) by (tenant_id)
+          / sum(rate(http_requests_total{path=~"/api/v1/documents.*"}[5m])) by (tenant_id) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Possible cross-tenant access attempt"
+          description: "Tenant {{ $labels.tenant_id }} has >10% 403s on document endpoints."
+
+      - alert: NATSDown
+        expr: up{job=~".*nats.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "NATS is unreachable — event bus down"
+
+  # ===========================================================================
+  # P2 — Slack notifications
+  # ===========================================================================
+  - name: vaultdms.p2
+    rules:
+      - alert: HighLatency
+        expr: >
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "P95 latency above 500ms for 5 minutes"
+          description: "P95 = {{ $value | humanizeDuration }}"
+
+      - alert: EventBusLagHigh
+        expr: sum(event_bus_lag) by (topic, group) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Event bus consumer lag >10K"
+          description: "{{ $labels.topic }}/{{ $labels.group }} lag = {{ $value }}"
+
+      - alert: DiskUsageHigh
+        expr: >
+          (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})
+          / node_filesystem_size_bytes{mountpoint="/"} > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Disk usage above 85%"
+
+      - alert: PodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace="vaultdms"}[1h]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} crash-looping ({{ $value }} restarts/hr)"
+
+      - alert: OpenSearchClusterRed
+        expr: opensearch_cluster_status{color="red"} > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OpenSearch cluster status RED"
+
+      - alert: CertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 7 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "TLS certificate expires in <7 days"
+
+  # ===========================================================================
+  # P3 — Dashboard-only (low urgency)
+  # ===========================================================================
+  - name: vaultdms.p3
+    rules:
+      - alert: CacheHitRateLow
+        expr: >
+          sum(rate(cache_hits_total[5m]))
+          / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m])))
+          < 0.80
+        for: 15m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "Cache hit rate below 80%"
+          description: "Hit rate = {{ $value | humanizePercentage }}"
+
+      - alert: CronJobFailing
+        expr: >
+          kube_job_status_failed{namespace="vaultdms"} > 5
+        for: 30m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "CronJob has >5 failures"
+
+      - alert: HighDBConnectionUsage
+        expr: >
+          sum(db_connections{state="in_use"})
+          / sum(db_connections{state="total"}) > 0.85
+        for: 10m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: "DB connection pool >85% utilized"
+
+      - alert: SlowOCRProcessing
+        expr: >
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path=~".*ocr.*"}[5m])) by (le))
+          > 10
+        for: 10m
+        labels:
+          severity: info
+          team: ai
+        annotations:
+          summary: "OCR p95 latency >10s"

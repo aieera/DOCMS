@@ -1,0 +1,122 @@
+// Package health serves /healthz, /readyz, and /metrics on a dedicated port,
+// so liveness / readiness probing is isolated from application traffic.
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
+	"github.com/vaultdms/vaultdms/pkg/storage"
+)
+
+// Server bundles the dependency handles required by /readyz.
+type Server struct {
+	pg    *pgxpool.Pool
+	rdb   *redis.Client
+	nats  *nats.Conn
+	s3    *storage.S3Client
+	mu    sync.Mutex
+	http  *http.Server
+}
+
+// NewServer wires the server. Any dependency may be nil; readiness reports
+// "not configured" for nil deps and does not treat them as failures.
+func NewServer(pg *pgxpool.Pool, rdb *redis.Client, nc *nats.Conn, s3 *storage.S3Client) *Server {
+	return &Server{pg: pg, rdb: rdb, nats: nc, s3: s3}
+}
+
+// Start listens on addr (e.g. ":8081"). Blocks until the server stops.
+func (s *Server) Start(addr string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", s.handleLive)
+	mux.HandleFunc("/readyz", s.handleReady)
+	mux.Handle("/metrics", promhttp.Handler())
+
+	s.mu.Lock()
+	s.http = &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	s.mu.Unlock()
+
+	if err := s.http.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+// Shutdown gracefully stops the server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	srv := s.http
+	s.mu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
+}
+
+func (s *Server) handleLive(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "alive"})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	out := map[string]string{}
+	ok := true
+
+	if s.pg != nil {
+		if err := s.pg.Ping(ctx); err != nil {
+			out["postgres"] = "fail: " + err.Error()
+			ok = false
+		} else {
+			out["postgres"] = "ok"
+		}
+	}
+	if s.rdb != nil {
+		if err := s.rdb.Ping(ctx).Err(); err != nil {
+			out["redis"] = "fail: " + err.Error()
+			ok = false
+		} else {
+			out["redis"] = "ok"
+		}
+	}
+	if s.nats != nil {
+		if s.nats.Status() != nats.CONNECTED {
+			out["nats"] = "fail: " + s.nats.Status().String()
+			ok = false
+		} else {
+			out["nats"] = "ok"
+		}
+	}
+	if s.s3 != nil {
+		if err := s.s3.Ping(ctx, "health-check"); err != nil {
+			out["s3"] = "fail: " + err.Error()
+			ok = false
+		} else {
+			out["s3"] = "ok"
+		}
+	}
+
+	code := http.StatusOK
+	if !ok {
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, out)
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}

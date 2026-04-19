@@ -1,0 +1,38 @@
+# METHOD /path-with-placeholders
+# `{uuid}` is substituted with 00000000-0000-0000-0000-000000000000 at run time
+# so that routes which parse UUIDs hit a deterministic value. 404 is the only
+# hard failure.
+
+# Auth
+POST /api/v1/auth/login
+POST /api/v1/auth/register
+POST /api/v1/auth/logout
+POST /api/v1/auth/mfa/verify
+
+# Permissions (new in 04b)
+GET /api/v1/permissions/document/{uuid}
+POST /api/v1/permissions/check
+POST /api/v1/permissions/document/{uuid}
+DELETE /api/v1/permissions/document/{uuid}/{uuid}
+
+# Admin users (new in 04b)
+GET /api/v1/admin/users
+POST /api/v1/admin/users/invite
+POST /api/v1/admin/users/{uuid}/suspend
+POST /api/v1/admin/users/{uuid}/reset-mfa
+
+# Admin settings (new in 04b)
+GET /api/v1/admin/settings
+PUT /api/v1/admin/settings
+
+# Audit (existing path; frontend fixed in 04b)
+GET /api/v1/audit/events
+
+# Search
+POST /api/v1/search
+GET /api/v1/search/autocomplete
+
+# Notifications
+GET /api/v1/notifications
+GET /api/v1/notifications/unread-count
+POST /api/v1/notifications/read-all

@@ -1,0 +1,42 @@
+"""OCR model loaders — Surya primary, PaddleOCR fallback."""
+from __future__ import annotations
+import logging
+
+log = logging.getLogger(__name__)
+
+_surya_det = None
+_surya_rec = None
+
+def load_surya():
+    global _surya_det, _surya_rec
+    if _surya_det is None:
+        from surya.model.detection.model import load_det_model, load_det_processor
+        from surya.model.recognition.model import load_rec_model, load_rec_processor
+        log.info("loading surya OCR models")
+        _surya_det = load_det_model(), load_det_processor()
+        _surya_rec = load_rec_model(), load_rec_processor()
+    return _surya_det, _surya_rec
+
+def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
+    from surya.ocr import run_ocr
+    det, rec = load_surya()
+    det_model, det_proc = det
+    rec_model, rec_proc = rec
+    langs = languages or ["en"]
+    result = run_ocr([image], [langs], det_model, det_proc, rec_model, rec_proc)
+    if not result:
+        return {"text": "", "confidence": 0.0, "boxes": []}
+    page = result[0]
+    text_lines = []
+    boxes = []
+    confidences = []
+    for line in page.text_lines:
+        text_lines.append(line.text)
+        confidences.append(line.confidence)
+        boxes.append({
+            "x1": line.bbox[0], "y1": line.bbox[1],
+            "x2": line.bbox[2], "y2": line.bbox[3],
+            "text": line.text, "confidence": line.confidence,
+        })
+    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}

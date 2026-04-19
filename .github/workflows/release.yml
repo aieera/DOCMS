@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write   # cosign keyless OIDC
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+jobs:
+  images:
+    name: Build, sign & push service images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - audit
+          - auth
+          - billing
+          - collaboration
+          - connector
+          - document
+          - intelligence
+          - notification
+          - policy
+          - preview
+          - search
+          - signature
+          - signature-signer
+          - storage
+          - workflow
+          - web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
+      - name: Determine version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build & push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}:${{ steps.ver.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}:latest
+          build-args: |
+            VERSION=${{ steps.ver.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+      - name: Sign image (keyless via Sigstore)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE"
+      - name: Generate SBOM
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}:${{ steps.ver.outputs.version }}
+        run: |
+          syft "$IMAGE" -o spdx-json > sbom-${{ matrix.service }}.spdx.json
+      - name: Attest SBOM to image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign attest --yes --predicate sbom-${{ matrix.service }}.spdx.json \
+              --type spdxjson "$IMAGE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.spdx.json
+
+  airgap-bundle:
+    name: Build air-gapped bundle
+    runs-on: ubuntu-latest
+    needs: [images]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build bundle (amd64)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          REGISTRY: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
+          PLATFORM: linux/amd64
+        run: bash scripts/airgap/build-bundle.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: airgap-bundle-amd64
+          path: dist/vaultdms-airgap-*.tar.gz
+
+  changelog:
+    name: Generate changelog + release
+    runs-on: ubuntu-latest
+    needs: [images, airgap-bundle]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          path: sboms/
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: airgap-bundle-amd64
+          path: dist/
+      - name: Generate changelog
+        id: cl
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: ".github/changelog-config.json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.cl.outputs.changelog }}
+          generate_release_notes: true
+          files: |
+            sboms/*.spdx.json
+            dist/vaultdms-airgap-*.tar.gz

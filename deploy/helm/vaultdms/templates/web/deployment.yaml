@@ -1,0 +1,28 @@
+{{- if .Values.web.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultdms-web
+  labels: { app.kubernetes.io/name: web, app.kubernetes.io/instance: {{ .Release.Name }} }
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: web }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: web }
+    spec:
+      containers:
+        - name: web
+          image: {{ .Values.global.imageRegistry }}/web:{{ .Values.global.imageTag }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web.port }}
+          livenessProbe:
+            httpGet: { path: /, port: http }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+          securityContext: { runAsNonRoot: true, runAsUser: 1000, readOnlyRootFilesystem: true }
+{{- end }}

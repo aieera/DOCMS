@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "VaultDMS",
+    "slug": "vaultdms",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "vaultdms",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#1E40AF" },
+    "ios": { "bundleIdentifier": "com.vaultdms.app", "supportsTablet": true },
+    "android": { "package": "com.vaultdms.app", "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#1E40AF" } },
+    "plugins": ["expo-router", "expo-camera", "expo-notifications", "expo-secure-store"]
+  }
+}

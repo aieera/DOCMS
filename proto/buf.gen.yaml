@@ -1,0 +1,32 @@
+version: v2
+managed:
+  enabled: true
+  disable:
+    - module: buf.build/googleapis/googleapis
+    - module: buf.build/grpc-ecosystem/grpc-gateway
+  override:
+    - file_option: go_package_prefix
+      value: github.com/vaultdms/vaultdms/proto/gen/go
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.33.0
+    out: gen/go
+    opt:
+      - paths=source_relative
+
+  - remote: buf.build/grpc/go:v1.3.0
+    out: gen/go
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=true
+
+  - remote: buf.build/grpc-ecosystem/gateway:v2.19.0
+    out: gen/go
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=false
+
+  - remote: buf.build/grpc-ecosystem/openapiv2:v2.19.0
+    out: gen/openapi
+    opt:
+      - allow_merge=true
+      - merge_file_name=vaultdms

@@ -1,0 +1,14 @@
+{{- if .Values.intelligence.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultdms-intelligence
+  labels: { app.kubernetes.io/name: intelligence-api }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: intelligence-api }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- end }}

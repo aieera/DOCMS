@@ -1,0 +1,21 @@
+go 1.25.0
+
+toolchain go1.26.2
+
+use (
+	./cmd/dms-admin
+	./pkg
+	./proto/gen/go
+	./scripts/seed
+	./services/audit
+	./services/auth
+	./services/billing
+	./services/connector
+	./services/document
+	./services/notification
+	./services/policy
+	./services/search
+	./services/signature
+	./services/storage
+	./services/workflow
+)

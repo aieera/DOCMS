@@ -1,0 +1,102 @@
+- generic [ref=e22]:
+  - complementary [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]: VaultDMS
+      - button "Toggle sidebar" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+    - navigation [ref=e30]:
+      - link "Dashboard" [ref=e31] [cursor=pointer]:
+        - /url: /
+        - img [ref=e32]
+        - generic [ref=e37]: Dashboard
+      - link "Search" [ref=e38] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e39]
+        - generic [ref=e42]: Search
+      - link "Tasks" [ref=e43] [cursor=pointer]:
+        - /url: /tasks
+        - img [ref=e44]
+        - generic [ref=e47]: Tasks
+      - link "Trash" [ref=e48] [cursor=pointer]:
+        - /url: /trash
+        - img [ref=e49]
+        - generic [ref=e52]: Trash
+      - link "Admin" [active] [ref=e53] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e54]
+        - generic [ref=e57]: Admin
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - button "Search documents... ⌘K" [ref=e60] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Search documents...
+        - generic [ref=e65]: ⌘K
+      - generic [ref=e66]:
+        - button "Notifications" [ref=e67] [cursor=pointer]:
+          - img [ref=e68]
+        - button "Toggle theme" [ref=e71] [cursor=pointer]:
+          - img [ref=e72]
+        - generic [ref=e74]:
+          - generic [ref=e75]: A
+          - button "Logout" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+    - main [ref=e80]:
+      - generic [ref=e118]:
+        - generic [ref=e120]:
+          - heading "Administration" [level=1] [ref=e121]
+          - paragraph [ref=e122]: Manage your VaultDMS tenant
+        - generic [ref=e123]:
+          - link "Users Manage team members" [ref=e124] [cursor=pointer]:
+            - /url: /admin/users
+            - img [ref=e125]
+            - generic [ref=e130]:
+              - paragraph [ref=e131]: Users
+              - paragraph [ref=e132]: Manage team members
+          - link "Groups Group permissions" [ref=e133] [cursor=pointer]:
+            - /url: /admin/groups
+            - img [ref=e134]
+            - generic [ref=e136]:
+              - paragraph [ref=e137]: Groups
+              - paragraph [ref=e138]: Group permissions
+          - link "SSO SAML/OIDC config" [ref=e139] [cursor=pointer]:
+            - /url: /admin/sso
+            - img [ref=e140]
+            - generic [ref=e144]:
+              - paragraph [ref=e145]: SSO
+              - paragraph [ref=e146]: SAML/OIDC config
+          - link "Workflows Approval workflows" [ref=e147] [cursor=pointer]:
+            - /url: /admin/workflows
+            - img [ref=e148]
+            - generic [ref=e152]:
+              - paragraph [ref=e153]: Workflows
+              - paragraph [ref=e154]: Approval workflows
+          - link "Retention Retention policies" [ref=e155] [cursor=pointer]:
+            - /url: /admin/retention
+            - img [ref=e156]
+            - generic [ref=e159]:
+              - paragraph [ref=e160]: Retention
+              - paragraph [ref=e161]: Retention policies
+          - link "Legal Holds Active holds" [ref=e162] [cursor=pointer]:
+            - /url: /admin/legal-holds
+            - img [ref=e163]
+            - generic [ref=e167]:
+              - paragraph [ref=e168]: Legal Holds
+              - paragraph [ref=e169]: Active holds
+          - link "Audit Log Activity history" [ref=e170] [cursor=pointer]:
+            - /url: /admin/audit-log
+            - img [ref=e171]
+            - generic [ref=e174]:
+              - paragraph [ref=e175]: Audit Log
+              - paragraph [ref=e176]: Activity history
+          - link "Webhooks Event subscriptions" [ref=e177] [cursor=pointer]:
+            - /url: /admin/webhooks
+            - img [ref=e178]
+            - generic [ref=e182]:
+              - paragraph [ref=e183]: Webhooks
+              - paragraph [ref=e184]: Event subscriptions
+          - link "Settings Tenant config" [ref=e185] [cursor=pointer]:
+            - /url: /admin/settings
+            - img [ref=e186]
+            - generic [ref=e189]:
+              - paragraph [ref=e190]: Settings
+              - paragraph [ref=e191]: Tenant config

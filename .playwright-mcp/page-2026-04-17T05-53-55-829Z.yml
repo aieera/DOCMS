@@ -1,0 +1,51 @@
+- generic [ref=e22]:
+  - complementary [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]: VaultDMS
+      - button "Toggle sidebar" [ref=e26] [cursor=pointer]:
+        - img [ref=e27]
+    - navigation [ref=e30]:
+      - link "Dashboard" [ref=e31] [cursor=pointer]:
+        - /url: /
+        - img [ref=e32]
+        - generic [ref=e37]: Dashboard
+      - link "Search" [ref=e38] [cursor=pointer]:
+        - /url: /search
+        - img [ref=e39]
+        - generic [ref=e42]: Search
+      - link "Tasks" [ref=e43] [cursor=pointer]:
+        - /url: /tasks
+        - img [ref=e44]
+        - generic [ref=e47]: Tasks
+      - link "Trash" [ref=e48] [cursor=pointer]:
+        - /url: /trash
+        - img [ref=e49]
+        - generic [ref=e52]: Trash
+      - link "Admin" [active] [ref=e53] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=e54]
+        - generic [ref=e57]: Admin
+  - generic [ref=e58]:
+    - banner [ref=e59]:
+      - button "Search documents... ⌘K" [ref=e60] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Search documents...
+        - generic [ref=e65]: ⌘K
+      - generic [ref=e66]:
+        - button "Notifications" [ref=e67] [cursor=pointer]:
+          - img [ref=e68]
+        - button "Toggle theme" [ref=e71] [cursor=pointer]:
+          - img [ref=e72]
+        - generic [ref=e74]:
+          - generic [ref=e75]: A
+          - button "Logout" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+    - main [ref=e80]:
+      - generic [ref=e357]:
+        - generic [ref=e359]:
+          - heading "Settings" [level=1] [ref=e360]
+          - paragraph [ref=e361]: Tenant configuration, branding, and feature flags
+        - generic [ref=e362]:
+          - img [ref=e363]
+          - heading "Settings" [level=3] [ref=e366]
+          - paragraph [ref=e367]: Configure your tenant settings, branding, and feature flags.

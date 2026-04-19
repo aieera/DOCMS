@@ -1,0 +1,37 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Search Performance",
+    "uid": "vaultdms-search",
+    "tags": ["vaultdms", "search"],
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "Search QPS",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{"expr": "sum(rate(http_requests_total{path=~\"/api/v1/search.*\"}[5m]))", "legendFormat": "QPS"}]
+      },
+      {
+        "title": "Search Latency by Mode",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(search_latency_seconds_bucket[5m])) by (le, mode))", "legendFormat": "{{mode}} p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(search_latency_seconds_bucket[5m])) by (le, mode))", "legendFormat": "{{mode}} p95"}
+        ]
+      },
+      {
+        "title": "Autocomplete Latency (p50)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+        "targets": [{"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{path=\"/api/v1/search/autocomplete\"}[5m])) by (le))"}]
+      },
+      {
+        "title": "OpenSearch Index Lag",
+        "type": "timeseries",
+        "gridPos": {"h": 4, "w": 18, "x": 6, "y": 8},
+        "targets": [{"expr": "event_bus_lag{topic=\"dms.document.created.v1\",group=~\"search.*\"}", "legendFormat": "{{group}}"}]
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Per-Service Health",
+    "uid": "vaultdms-service-health",
+    "tags": ["vaultdms"],
+    "timezone": "utc",
+    "refresh": "30s",
+    "templating": {
+      "list": [{"name": "service", "type": "query", "query": "label_values(http_requests_total, service)", "multi": false}]
+    },
+    "panels": [
+      {
+        "title": "$service — RPS by Status",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{"expr": "sum(rate(http_requests_total{service=\"$service\"}[5m])) by (status)", "legendFormat": "{{status}}"}]
+      },
+      {
+        "title": "$service — Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "$service — DB Query Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{"expr": "histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket{service=\"$service\"}[5m])) by (le, query))", "legendFormat": "{{query}} p95"}]
+      },
+      {
+        "title": "$service — Error Rate",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+        "targets": [{"expr": "sum(rate(http_requests_total{service=\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{service=\"$service\"}[5m])) * 100"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 0.5}, {"color": "red", "value": 1}]}}}
+      },
+      {
+        "title": "$service — gRPC Latency",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+        "targets": [{"expr": "histogram_quantile(0.95, sum(rate(grpc_request_duration_seconds_bucket{service=\"$service\"}[5m])) by (le))", "legendFormat": "p95"}]
+      }
+    ]
+  }
+}

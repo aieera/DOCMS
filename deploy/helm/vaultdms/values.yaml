@@ -1,0 +1,451 @@
+# ============================================================================
+# VaultDMS Helm Chart — Default Values
+# ============================================================================
+
+global:
+  imageRegistry: ghcr.io/vaultdms
+  imageTag: "1.0.0"
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  storageClass: ""
+  tenantIsolation: shared  # shared | schema | database
+
+  domain: vaultdms.example.com
+  tlsSecretName: vaultdms-tls
+
+  s3:
+    endpoint: "https://s3.us-east-1.amazonaws.com"
+    region: us-east-1
+    accessKeySecret: vaultdms-s3-credentials   # Secret name
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+    useSSL: true
+    buckets:
+      hot: dms-us-east-1-hot
+      warm: dms-us-east-1-warm
+      previews: dms-us-east-1-previews
+      quarantine: dms-quarantine
+
+  database:
+    host: ""           # set by subchart or external
+    port: 5432
+    name: vaultdms
+    username: vaultdms
+    existingSecret: vaultdms-db-credentials
+    passwordKey: password
+
+  redis:
+    host: ""
+    port: 6379
+    existingSecret: ""
+    passwordKey: password
+
+  nats:
+    url: "nats://vaultdms-nats:4222"
+
+  opensearch:
+    url: "http://vaultdms-opensearch:9200"
+    username: ""
+    password: ""
+
+  qdrant:
+    url: "http://vaultdms-qdrant:6333"
+
+  temporal:
+    address: "vaultdms-temporal-frontend:7233"
+
+  encryption:
+    kmsProvider: local   # local | vault | aws
+    localKEK: ""         # base64 32-byte AES key
+    existingSecret: vaultdms-encryption
+
+  # Externally reachable base URL of the platform. Used by auth SSO
+  # redirect URLs and document share links. Set explicitly in prod.
+  publicURL: "https://{{ .Values.global.domain }}"
+
+  # Optional override for S3 endpoint host in presigned URLs.
+  s3PublicBase: ""
+
+  # gRPC address of the policy service used by document + storage.
+  policyServiceAddr: "vaultdms-policy:9090"
+
+  # Temporal + ClamAV + OpenSearch addresses (no change; re-documented
+  # here for discoverability).
+  clamAVAddr: "vaultdms-clamav:3310"
+  temporalAddr: "vaultdms-temporal-frontend:7233"
+  openSearchURL: "http://vaultdms-opensearch:9200"
+
+  # Billing secrets (set via Kubernetes Secrets, never hardcoded).
+  # Both secrets must exist with keys `api-key` and `webhook-secret`.
+  billing:
+    existingSecret: vaultdms-billing-secrets
+    internalAPIKeyKey: api-key
+    stripeWebhookSecretKey: webhook-secret
+
+# ============================================================================
+# Services
+# ============================================================================
+
+document:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/document"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  env: {}
+  grpcPort: 9090
+  httpPort: 8080
+  healthPort: 8081
+
+auth:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/auth"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPU: 70
+  env: {}
+  grpcPort: 9090
+  httpPort: 8080
+  healthPort: 8081
+
+policy:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/policy"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  env: {}
+  grpcPort: 9091
+  healthPort: 8081
+
+storage:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/storage"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits:   { cpu: "1", memory: "2Gi" }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  env: {}
+  grpcPort: 9090
+  healthPort: 8081
+
+search:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/search"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPU: 70
+  env: {}
+  grpcPort: 9090
+  httpPort: 8080
+  healthPort: 8081
+
+audit:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/audit"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
+workflow:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/workflow"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
+notification:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/notification"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
+signature:
+  enabled: true
+  replicas: 1
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/signature"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: false
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
+billing:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/billing"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  grpcPort: 9090
+  healthPort: 8081
+
+connector:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/connector"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
+intelligence:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/intelligence"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 500m, memory: "1Gi" }
+    limits:   { cpu: "2", memory: "4Gi" }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPU: 70
+  env:
+    VAULTDMS_DEFAULT_LLM_MODEL: gpt-4o-mini
+  celery:
+    replicas: 2
+    queues: intelligence,intelligence-ocr,intelligence-embed,intelligence-rag
+    resources:
+      requests: { cpu: "1", memory: "2Gi" }
+      limits:   { cpu: "4", memory: "8Gi" }
+  apiPort: 8080
+
+preview:
+  enabled: true
+  replicas: 1
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/preview"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: "1", memory: "2Gi" }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPU: 70
+  celery:
+    replicas: 2
+    queues: preview,preview-video
+    resources:
+      requests: { cpu: 500m, memory: "1Gi" }
+      limits:   { cpu: "2", memory: "4Gi" }
+  apiPort: 8080
+
+collaboration:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/collaboration"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  wsPort: 8083
+
+web:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/web"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 50m, memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  port: 3000
+
+# ============================================================================
+# Ingress
+# ============================================================================
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "5g"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/websocket-services: vaultdms-collaboration
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    - secretName: "{{ .Values.global.tlsSecretName }}"
+      hosts:
+        - "{{ .Values.global.domain }}"
+
+# ============================================================================
+# Subcharts
+# ============================================================================
+
+postgresql:
+  enabled: true
+  auth:
+    database: vaultdms
+    username: vaultdms
+    existingSecret: vaultdms-db-credentials
+  primary:
+    persistence:
+      size: 50Gi
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { cpu: "2", memory: "4Gi" }
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      size: 5Gi
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+
+opensearch:
+  enabled: true
+  singleNode: true
+  resources:
+    requests: { cpu: 500m, memory: "1Gi" }
+    limits:   { cpu: "2", memory: "4Gi" }
+  persistence:
+    size: 50Gi
+
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 10Gi
+
+qdrant:
+  enabled: true
+  persistence:
+    size: 20Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1", memory: "2Gi" }
+
+temporal:
+  enabled: true
+  server:
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+
+# ============================================================================
+# Backup
+# ============================================================================
+
+backup:
+  enabled: true
+  schedule: "0 2 * * *"   # daily at 2am
+  s3Bucket: vaultdms-backups
+  retention: 30            # days
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 512Mi }

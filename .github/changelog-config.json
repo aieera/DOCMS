@@ -1,0 +1,14 @@
+{
+  "categories": [
+    { "title": "## Features",     "labels": ["feat", "feature", "enhancement"] },
+    { "title": "## Bug Fixes",    "labels": ["fix", "bug"] },
+    { "title": "## Security",     "labels": ["security"] },
+    { "title": "## Performance",  "labels": ["perf", "performance"] },
+    { "title": "## Refactor",     "labels": ["refactor"] },
+    { "title": "## Docs",         "labels": ["docs", "documentation"] },
+    { "title": "## Dependencies", "labels": ["deps", "dependencies"] }
+  ],
+  "sort": "ASC",
+  "template": "#{{CHANGELOG}}\n\n**Full changelog:** #{{UNCATEGORIZED}}",
+  "pr_template": "- #{{TITLE}} (##{{NUMBER}}) by @#{{AUTHOR}}"
+}

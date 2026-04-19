@@ -1,0 +1,527 @@
+openapi: 3.1.0
+info:
+  title: VaultDMS API
+  version: 1.0.0
+  description: Enterprise Document Management System
+  contact:
+    email: sulthansha@raabyt.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.vaultdms.io/api/v1
+    description: Production
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication, sessions, MFA
+  - name: Documents
+    description: Document CRUD, versions, sharing
+  - name: Workspaces
+    description: Workspace management
+  - name: Folders
+    description: Folder hierarchy
+  - name: Storage
+    description: Upload/download with presigned URLs
+  - name: Search
+    description: Full-text and faceted search
+  - name: Workflows
+    description: Approval workflows (Temporal-backed)
+  - name: Intelligence
+    description: AI/ML operations (OCR, RAG, classification)
+  - name: Notifications
+    description: Notification management
+  - name: Signatures
+    description: E-signature requests and verification
+  - name: Audit
+    description: Audit trail with hash-chain integrity
+  - name: Webhooks
+    description: Webhook subscriptions and delivery
+  - name: Connectors
+    description: Third-party integrations (M365, Salesforce, Google)
+  - name: Admin
+    description: User, group, and tenant management
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    tenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+    userId:
+      name: X-User-ID
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+    Document:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        folder_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        document_class: { type: string }
+        lifecycle_state: { type: string, enum: [draft, in_review, active, superseded, archived, disposed] }
+        mime_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        version_count: { type: integer }
+        tags: { type: array, items: { type: string } }
+        created_by: { type: string, format: uuid }
+        created_by_name: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    SearchResult:
+      type: object
+      properties:
+        results: { type: array, items: { $ref: '#/components/schemas/SearchHit' } }
+        facets: { type: object, additionalProperties: { type: array, items: { $ref: '#/components/schemas/FacetBucket' } } }
+        total_count: { type: integer }
+        page_token: { type: string }
+        latency_ms: { type: integer }
+        search_mode: { type: string }
+
+    SearchHit:
+      type: object
+      properties:
+        document_id: { type: string }
+        title: { type: string }
+        highlights: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        score: { type: number }
+
+    FacetBucket:
+      type: object
+      properties:
+        value: { type: string }
+        count: { type: integer }
+
+    UploadSession:
+      type: object
+      properties:
+        upload_id: { type: string, format: uuid }
+        presigned_put_url: { type: string, format: uri }
+        storage_bucket: { type: string }
+        storage_key: { type: string }
+        expires_at: { type: string, format: date-time }
+        deduplicated: { type: boolean }
+
+    WebhookSubscription:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+        secret: { type: string }
+        events: { type: array, items: { type: string } }
+        active: { type: boolean }
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { type: object }
+                  token: { type: string }
+                  tenant_id: { type: string }
+        '401': { description: Invalid credentials }
+
+  /documents:
+    get:
+      tags: [Documents]
+      summary: List documents
+      parameters:
+        - { $ref: '#/components/parameters/tenantId' }
+        - { name: workspace_id, in: query, schema: { type: string } }
+        - { name: folder_id, in: query, schema: { type: string } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20 } }
+        - { name: page_token, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Document' } }
+                  total_count: { type: integer }
+                  page_token: { type: string }
+
+  /documents/{id}:
+    get:
+      tags: [Documents]
+      summary: Get document by ID
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Document' } } } }
+        '404': { description: Not found }
+
+  /search:
+    post:
+      tags: [Search]
+      summary: Full-text search with filters and facets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                filters: { type: object }
+                facets: { type: array, items: { type: string } }
+                page_size: { type: integer, default: 20 }
+                highlight: { type: boolean, default: true }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchResult' }
+
+  /storage/uploads/initiate:
+    post:
+      tags: [Storage]
+      summary: Initiate upload (returns presigned PUT URL)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, mime_type, size_bytes]
+              properties:
+                filename: { type: string }
+                mime_type: { type: string }
+                size_bytes: { type: integer }
+                sha256_hash: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadSession' }
+
+  /webhooks:
+    post:
+      tags: [Webhooks]
+      summary: Create webhook subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, events]
+              properties:
+                url: { type: string, format: uri }
+                events: { type: array, items: { type: string } }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSubscription' }
+    get:
+      tags: [Webhooks]
+      summary: List webhook subscriptions
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/WebhookSubscription' } }
+
+  /intelligence/ask:
+    post:
+      tags: [Intelligence]
+      summary: RAG Q&A — ask a question about documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string }
+                scope: { type: string, enum: [tenant, workspace, folder, document] }
+                scope_id: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string }
+                  sources: { type: array, items: { type: object } }
+                  model: { type: string }
+                  cost_usd: { type: number }
+
+  /audit/events:
+    get:
+      tags: [Audit]
+      summary: List audit events (paginated, filterable)
+      parameters:
+        - { name: actor, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: resource_type, in: query, schema: { type: string } }
+        - { name: date_from, in: query, schema: { type: string, format: date-time } }
+        - { name: date_to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array }
+                  page_token: { type: string }
+
+  # -- Permissions REST (wraps policy gRPC) -----------------------------------
+  /permissions/{resource_type}/{resource_id}:
+    parameters:
+      - name: resource_type
+        in: path
+        required: true
+        schema: { type: string, enum: [document, folder, workspace] }
+      - name: resource_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Admin]
+      summary: List ACL grants on a resource
+      description: Caller must hold ADMIN on the resource (or be an org owner/admin).
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    resource_type: { type: string }
+                    resource_id: { type: string, format: uuid }
+                    principal_type: { type: string, enum: [user, group] }
+                    principal_id: { type: string, format: uuid }
+                    capability: { type: string, enum: [view, share, edit, delete, admin] }
+                    granted_by: { type: string, format: uuid }
+                    granted_at: { type: string, format: date-time }
+                    expires_at: { type: string, format: date-time, nullable: true }
+        '403': { description: Caller lacks ADMIN capability }
+    post:
+      tags: [Admin]
+      summary: Grant a capability on a resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [principal_type, principal_id, capability]
+              properties:
+                principal_type: { type: string, enum: [user, group] }
+                principal_id:   { type: string, format: uuid }
+                capability:     { type: string, enum: [view, share, edit, delete, admin] }
+                expires_at:     { type: string, format: date-time, nullable: true }
+      responses:
+        '201': { description: Permission created }
+
+  /permissions/{resource_type}/{resource_id}/{principal_id}:
+    parameters:
+      - { name: resource_type, in: path, required: true, schema: { type: string, enum: [document, folder, workspace] } }
+      - { name: resource_id,  in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: principal_id, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [Admin]
+      summary: Revoke every active grant for (resource, principal)
+      responses:
+        '204': { description: All matching grants revoked }
+
+  /permissions/check:
+    post:
+      tags: [Admin]
+      summary: Evaluate whether the authenticated caller may perform an action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resource_type, resource_id, action]
+              properties:
+                resource_type: { type: string, enum: [document, folder, workspace] }
+                resource_id:   { type: string, format: uuid }
+                action:        { type: string, enum: [view, share, edit, delete, admin] }
+                context:       { type: object, additionalProperties: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed: { type: boolean }
+                  reason:  { type: string }
+
+  # -- Admin users ------------------------------------------------------------
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users in the caller's tenant
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, suspended, deactivated] } }
+        - { name: role,   in: query, schema: { type: string, enum: [owner, admin, member, guest] } }
+        - { name: q,      in: query, schema: { type: string }, description: 'email / display_name substring' }
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        email: { type: string }
+                        display_name: { type: string }
+                        role: { type: string }
+                        status: { type: string }
+                        mfa_enabled: { type: boolean }
+                        created_at: { type: string, format: date-time }
+                        last_login_at: { type: string, format: date-time, nullable: true }
+                  next_cursor: { type: string }
+
+  /admin/users/invite:
+    post:
+      tags: [Admin]
+      summary: Invite a user (creates placeholder + emits user.invited.v1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, display_name, role]
+              properties:
+                email:        { type: string, format: email }
+                display_name: { type: string }
+                role:         { type: string, enum: [admin, member, guest] }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:         { type: object }
+                  invite_token: { type: string, description: 'plaintext token for the email template' }
+
+  /admin/users/{id}/suspend:
+    post:
+      tags: [Admin]
+      summary: Suspend a user and revoke every active session
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: User suspended }
+
+  /admin/users/{id}/reset-mfa:
+    post:
+      tags: [Admin]
+      summary: Clear the user's MFA secret; force re-enrollment on next login
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: MFA reset }
+
+  # -- Admin settings (owner-only user-facing view of billing features) -------
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Read the tenant's feature flags (user-facing wrapper)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ai_enabled:        { type: boolean }
+                  advanced_workflow: { type: boolean }
+                  sso_enabled:       { type: boolean }
+                  e_signatures:      { type: boolean }
+                  custom_branding:   { type: boolean }
+                  api_access:        { type: boolean }
+                  data_rooms:        { type: boolean }
+    put:
+      tags: [Admin]
+      summary: Update feature flags (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ai_enabled:        { type: boolean }
+                advanced_workflow: { type: boolean }
+                sso_enabled:       { type: boolean }
+                e_signatures:      { type: boolean }
+                custom_branding:   { type: boolean }
+                api_access:        { type: boolean }
+                data_rooms:        { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object

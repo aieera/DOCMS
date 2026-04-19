@@ -1,0 +1,327 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/services/document/internal/model"
+)
+
+type documentRepo struct{}
+
+// Create inserts a new document row. tenant_id is required in WHERE clauses
+// on every subsequent query for defense-in-depth alongside RLS.
+func (r *documentRepo) Create(ctx context.Context, tx pgx.Tx, d *model.Document) error {
+	meta, err := json.Marshal(d.CustomMetadata)
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+	if d.Tags == nil {
+		d.Tags = []string{}
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO documents (
+			id, tenant_id, workspace_id, folder_id, title, description,
+			mime_type, total_size_bytes, sha256_hash, current_version_id,
+			version_count, lifecycle_state, region_pin, under_legal_hold,
+			tags, custom_metadata, document_class, classification_confidence,
+			created_by, created_at, updated_by, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10,
+			$11, $12, $13, $14,
+			$15, $16, $17, $18,
+			$19, $20, $21, $22
+		)`,
+		d.ID, d.TenantID, d.WorkspaceID, d.FolderID, d.Title, d.Description,
+		d.MimeType, d.TotalSizeBytes, d.SHA256Hash, nullableUUID(d.CurrentVersionID),
+		0, string(d.LifecycleState), d.RegionPin, d.LifecycleState == model.StateLegalHold,
+		d.Tags, meta, d.DocumentClass, d.ClassificationConfidence,
+		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt,
+	)
+	return mapPgError(err)
+}
+
+// GetByID returns one document by id, enforcing tenant isolation. Includes
+// soft-deleted rows; callers filter via DocumentFilter.IncludeDeleted.
+func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error) {
+	row := tx.QueryRow(ctx, `
+		SELECT id, tenant_id, workspace_id, folder_id, title, description,
+		       lifecycle_state, region_pin, custom_metadata, tags,
+		       current_version_id, document_class, classification_confidence,
+		       sha256_hash, total_size_bytes, mime_type,
+		       created_by, created_at, updated_by, updated_at, deleted_at
+		FROM documents
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	return scanDocument(row)
+}
+
+// Update writes back fields that the service layer marks as changed. It uses
+// a full-row UPDATE because the service layer has already loaded the row and
+// only mutated the fields the caller requested; this keeps the repo simple.
+func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document) error {
+	meta, err := json.Marshal(d.CustomMetadata)
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+	if d.Tags == nil {
+		d.Tags = []string{}
+	}
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents
+		SET title = $3, description = $4, folder_id = $5, workspace_id = $6,
+		    custom_metadata = $7, tags = $8, document_class = $9,
+		    classification_confidence = $10, mime_type = $11,
+		    sha256_hash = $12, total_size_bytes = $13, region_pin = $14,
+		    lifecycle_state = $15, under_legal_hold = $16,
+		    current_version_id = $17, updated_by = $18, updated_at = $19
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`,
+		d.TenantID, d.ID, d.Title, d.Description, d.FolderID, d.WorkspaceID,
+		meta, d.Tags, d.DocumentClass, d.ClassificationConfidence,
+		d.MimeType, d.SHA256Hash, d.TotalSizeBytes, d.RegionPin,
+		string(d.LifecycleState), d.LifecycleState == model.StateLegalHold,
+		nullableUUID(d.CurrentVersionID), d.UpdatedBy, d.UpdatedAt,
+	)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// SoftDelete sets deleted_at. Retention and hard-delete live in Phase 6.
+func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET deleted_at = now(), updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`, tenantID, id)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateLifecycleState only touches the state column; callers that need
+// finer updates use Update.
+func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET lifecycle_state = $3,
+		                     under_legal_hold = ($3 = 'legal_hold'),
+		                     updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`, tenantID, id, string(s))
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// SetCurrentVersion records the new head version alongside the hash / size /
+// mime summary derived from that version.
+func (r *documentRepo) SetCurrentVersion(ctx context.Context, tx pgx.Tx, tenantID, id, versionID uuid.UUID, sha, mime string, size int64) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents
+		SET current_version_id = $3, sha256_hash = $4, mime_type = $5,
+		    total_size_bytes = $6, version_count = version_count + 1,
+		    updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`, tenantID, id, versionID, sha, mime, size)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+func (r *documentRepo) CountByFolder(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID) (int64, error) {
+	var n int64
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM documents
+		WHERE tenant_id = $1 AND folder_id = $2 AND deleted_at IS NULL
+	`, tenantID, folderID).Scan(&n)
+	return n, mapPgError(err)
+}
+
+// List returns a page of documents matching f. Pagination is keyset on
+// (sort_column, id) — no OFFSET anywhere.
+func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, f model.DocumentFilter) (*model.Page[model.Document], error) {
+	col, err := sortColumn(f.SortBy)
+	if err != nil {
+		return nil, vdmserr.Validation("sort_by", err.Error())
+	}
+	desc := !strings.EqualFold(f.SortOrder, "asc")
+	pageSize := clampPageSize(f.PageSize)
+
+	var (
+		args  []any
+		where []string
+	)
+	add := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+
+	where = append(where, "tenant_id = "+add(tenantID))
+	if !f.IncludeDeleted {
+		where = append(where, "deleted_at IS NULL")
+	}
+	if f.WorkspaceID != nil {
+		where = append(where, "workspace_id = "+add(*f.WorkspaceID))
+	}
+	if f.FolderID != nil {
+		where = append(where, "folder_id = "+add(*f.FolderID))
+	}
+	if f.LifecycleState != nil {
+		where = append(where, "lifecycle_state = "+add(string(*f.LifecycleState)))
+	}
+	if f.DocumentClass != "" {
+		where = append(where, "document_class = "+add(f.DocumentClass))
+	}
+	if len(f.Tags) > 0 {
+		where = append(where, "tags && "+add(f.Tags)) // ARRAY overlap
+	}
+	if f.CreatedAfter != nil {
+		where = append(where, "created_at >= "+add(*f.CreatedAfter))
+	}
+	if f.CreatedBefore != nil {
+		where = append(where, "created_at <= "+add(*f.CreatedBefore))
+	}
+	if f.Query != "" {
+		where = append(where, "title ILIKE "+add("%"+f.Query+"%"))
+	}
+
+	// Cursor predicate
+	if c, ok := decodeCursor(f.PageToken); ok && c.Sort == col {
+		cmp := "<"
+		if !desc {
+			cmp = ">"
+		}
+		switch col {
+		case "created_at", "updated_at":
+			where = append(where,
+				fmt.Sprintf("(%s, id) %s (%s, %s)", col, cmp, add(c.Time), add(c.ID)))
+		case "title":
+			where = append(where,
+				fmt.Sprintf("(title, id) %s (%s, %s)", cmp, add(c.Text), add(c.ID)))
+		case "total_size_bytes":
+			where = append(where,
+				fmt.Sprintf("(total_size_bytes, id) %s (%s, %s)", cmp, add(c.Size), add(c.ID)))
+		}
+	}
+
+	order := "DESC"
+	if !desc {
+		order = "ASC"
+	}
+
+	q := fmt.Sprintf(`
+		SELECT id, tenant_id, workspace_id, folder_id, title, description,
+		       lifecycle_state, region_pin, custom_metadata, tags,
+		       current_version_id, document_class, classification_confidence,
+		       sha256_hash, total_size_bytes, mime_type,
+		       created_by, created_at, updated_by, updated_at, deleted_at
+		FROM documents
+		WHERE %s
+		ORDER BY %s %s, id %s
+		LIMIT %d`,
+		strings.Join(where, " AND "), col, order, order, pageSize+1)
+
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+
+	items := make([]model.Document, 0, pageSize)
+	for rows.Next() {
+		d, err := scanDocument(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+
+	page := &model.Page[model.Document]{Items: items, TotalCount: -1}
+	if len(items) > pageSize {
+		last := items[pageSize-1]
+		page.Items = items[:pageSize]
+		next := cursor{Sort: col, ID: last.ID}
+		switch col {
+		case "created_at":
+			next.Time = last.CreatedAt
+		case "updated_at":
+			next.Time = last.UpdatedAt
+		case "title":
+			next.Text = last.Title
+		case "total_size_bytes":
+			next.Size = last.TotalSizeBytes
+		}
+		page.NextPageToken = encodeCursor(next)
+	}
+	return page, nil
+}
+
+// ---- helpers ---------------------------------------------------------------
+
+// rowScanner is satisfied by both pgx.Row and pgx.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDocument(r rowScanner) (*model.Document, error) {
+	var (
+		d            model.Document
+		curVersion   *uuid.UUID
+		metaBytes    []byte
+		deleted      *time.Time
+		lifecycleRaw string
+	)
+	if err := r.Scan(
+		&d.ID, &d.TenantID, &d.WorkspaceID, &d.FolderID, &d.Title, &d.Description,
+		&lifecycleRaw, &d.RegionPin, &metaBytes, &d.Tags,
+		&curVersion, &d.DocumentClass, &d.ClassificationConfidence,
+		&d.SHA256Hash, &d.TotalSizeBytes, &d.MimeType,
+		&d.CreatedBy, &d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted,
+	); err != nil {
+		return nil, mapPgError(err)
+	}
+	d.LifecycleState = model.LifecycleState(lifecycleRaw)
+	d.CurrentVersionID = curVersion
+	d.DeletedAt = deleted
+	if len(metaBytes) > 0 {
+		_ = json.Unmarshal(metaBytes, &d.CustomMetadata)
+	}
+	if d.CustomMetadata == nil {
+		d.CustomMetadata = map[string]any{}
+	}
+	return &d, nil
+}
+
+func nullableUUID(u *uuid.UUID) any {
+	if u == nil {
+		return nil
+	}
+	return *u
+}

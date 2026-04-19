@@ -1,0 +1,40 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Tenant Health (Noisy Neighbor)",
+    "uid": "vaultdms-tenant-health",
+    "tags": ["vaultdms", "tenant"],
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "RPS by Tenant (Top 10)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{"expr": "topk(10, sum(rate(http_requests_total[5m])) by (tenant_id))", "legendFormat": "{{tenant_id}}"}]
+      },
+      {
+        "title": "Error Rate by Tenant",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [{"expr": "topk(10, sum(rate(http_requests_total{status=~\"5..\"}[5m])) by (tenant_id) / sum(rate(http_requests_total[5m])) by (tenant_id) * 100)", "legendFormat": "{{tenant_id}}"}]
+      },
+      {
+        "title": "Storage Usage by Tenant (GB)",
+        "type": "bargauge",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{"expr": "topk(10, sum(content_blobs_size_bytes) by (tenant_id) / 1073741824)", "legendFormat": "{{tenant_id}}"}]
+      },
+      {
+        "title": "DB Query Latency by Tenant (p95)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [{"expr": "topk(5, histogram_quantile(0.95, sum(rate(db_query_duration_seconds_bucket[5m])) by (le, tenant_id)))", "legendFormat": "{{tenant_id}}"}]
+      },
+      {
+        "title": "Rate Limit Hits (Noisy Tenants)",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+        "targets": [{"expr": "topk(10, sum(increase(http_requests_total{status=\"429\"}[1h])) by (tenant_id))", "legendFormat": "{{tenant_id}}", "format": "table", "instant": true}]
+      }
+    ]
+  }
+}

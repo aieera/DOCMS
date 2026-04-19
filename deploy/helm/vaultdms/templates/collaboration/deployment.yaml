@@ -1,0 +1,48 @@
+{{- if .Values.collaboration.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultdms-collaboration
+  labels: { app.kubernetes.io/name: collaboration, app.kubernetes.io/instance: {{ .Release.Name }} }
+spec:
+  replicas: {{ .Values.collaboration.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: collaboration }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: collaboration }
+    spec:
+      containers:
+        - name: ws
+          image: {{ .Values.global.imageRegistry }}/collaboration:{{ .Values.global.imageTag }}
+          ports:
+            - name: ws
+              containerPort: {{ .Values.collaboration.wsPort }}
+          env:
+            - name: WS_PORT
+              value: {{ .Values.collaboration.wsPort | quote }}
+            - name: REDIS_URL
+              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
+            - name: AUTH_SERVICE_URL
+              value: "http://vaultdms-auth:8080"
+          livenessProbe:
+            tcpSocket: { port: ws }
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket: { port: ws }
+          resources:
+            {{- toYaml .Values.collaboration.resources | nindent 12 }}
+          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultdms-collaboration
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: collaboration }
+  ports:
+    - name: ws
+      port: {{ .Values.collaboration.wsPort }}
+      targetPort: ws
+{{- end }}

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Users/dell/AppData/Local/Programs/Python/Python313/python.exe -m pytest tests/test_embed.py -q)",
+      "Read(//c/Users/dell/Documents/DOCMS/services/auth/**)"
+    ]
+  }
+}
