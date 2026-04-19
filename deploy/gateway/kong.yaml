@@ -1,46 +1,27 @@
 # VaultDMS Kong gateway — declarative DBless configuration.
-# Blueprint §3.1 + §14.3. Single source of truth for routes, services,
-# plugins, and rate-limit policies. Referenced from both docker-compose
-# (bind-mounted) and the Helm chart (ConfigMap).
+# Blueprint §3.1, §8.1, §14.3. Generated to match
+# deploy/gateway/routes.yaml; each entry maps to a route there.
 #
-# B1 spike scope: ONE worked route proving the gateway serves traffic
-# end-to-end. B2 wires every public REST route through the gateway.
+# Auth model (landed in B2.1):
+#   * `public`   routes have no auth plugin — anyone can call them.
+#   * `required` routes will get the `session` plugin in B2.2 once the
+#     gateway-signature middleware lands. Until then they pass through.
+#   * `admin`    routes also get `session`, with backend-side role check.
+#   * `service`  routes are reached via internal API key (SCIM); not
+#     publicly callable.
+#
+# Correlation-id + prometheus global plugins apply to every route.
+# Route-specific rate-limits land in B4.
 _format_version: "3.0"
 _transform: true
 
-services:
-  # First proven backend — auth's healthz. Upstream DNS resolves to the
-  # auth container in compose (`auth`) or the auth ClusterIP service in
-  # Kubernetes (`vaultdms-auth`). Helm values override the host so the
-  # same declarative file works in both targets.
-  - name: auth
-    url: http://auth:8081
-    routes:
-      - name: api-v1-health
-        # Exposes auth's /healthz at a tenant-agnostic public path so
-        # operators (and the B1 smoke test) have a single URL to hit.
-        paths:
-          - /api/v1/health
-        strip_path: true
-        methods: [GET]
-        plugins:
-          - name: request-termination
-            # Disabled by default; kept wired so operators can flip it
-            # via the Kong admin API during maintenance windows.
-            enabled: false
-
+# ---- Global plugins -------------------------------------------------
 plugins:
-  # Correlation-id propagation — injected inbound, echoed outbound.
-  # Backends trust the value only when the gateway signed the request
-  # (Signature plugin comes in B2).
   - name: correlation-id
     config:
       header_name: X-Correlation-ID
       generator: uuid
       echo_downstream: true
-
-  # Prometheus metrics on the status listener (8100). Scraped by the
-  # Prometheus deployment in deploy/monitoring.
   - name: prometheus
     config:
       per_consumer: false
@@ -48,3 +29,77 @@ plugins:
       latency_metrics: true
       bandwidth_metrics: true
       upstream_health_metrics: true
+
+# ---- Services + routes (one Kong service per backend) --------------
+services:
+  - name: auth
+    url: http://auth:8081
+    routes:
+      - { name: auth-login,       paths: [/api/v1/auth/login],        methods: [POST], strip_path: false }
+      - { name: auth-logout,      paths: [/api/v1/auth/logout],       methods: [POST], strip_path: false }
+      - { name: auth-me,          paths: [/api/v1/auth/me],           methods: [GET],  strip_path: false }
+      - { name: auth-mfa-verify,  paths: [/api/v1/auth/mfa/verify],   methods: [POST], strip_path: false }
+      - { name: auth-mfa-recov,   paths: [/api/v1/auth/mfa/recovery], methods: [POST], strip_path: false }
+      - { name: auth-mfa-rest,    paths: [/api/v1/auth/mfa],          strip_path: false }
+      - { name: auth-sessions,    paths: [/api/v1/auth/sessions],     strip_path: false }
+      - { name: auth-apikeys,     paths: [/api/v1/auth/api-keys],     strip_path: false }
+      - { name: auth-saml,        paths: [/api/v1/auth/saml],         strip_path: false }
+      - { name: auth-oidc,        paths: [/api/v1/auth/oidc],         strip_path: false }
+      - { name: admin-users,      paths: [/api/v1/admin/users],       strip_path: false }
+      - { name: admin-sso,        paths: [/api/v1/admin/sso-configs], strip_path: false }
+      - { name: admin-tenants,    paths: [/api/v1/admin/tenants],     strip_path: false }
+      - { name: scim,             paths: [/api/v1/scim/v2],           strip_path: false }
+      - { name: api-v1-health,    paths: [/api/v1/health], methods: [GET], strip_path: true }
+
+  - name: document
+    url: http://document:8081
+    routes:
+      - { name: documents,          paths: [/api/v1/documents],                strip_path: false }
+      - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
+      - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
+      - { name: admin-settings,     paths: [/api/v1/admin/settings],           strip_path: false }
+      - { name: admin-share-links,  paths: [/api/v1/admin/share-links],        strip_path: false }
+      - { name: admin-groups,       paths: [/api/v1/admin/groups],             strip_path: false }
+      - { name: permissions-matrix, paths: [/api/v1/permissions/matrix], methods: [GET], strip_path: false }
+      - { name: compliance-holds,   paths: [/api/v1/compliance/holds],         strip_path: false }
+      - { name: privacy-dsr,        paths: [/api/v1/privacy/dsr],              strip_path: false }
+      - { name: privacy-verify,     paths: [/api/v1/privacy/verify],           strip_path: false }
+      - { name: residency,          paths: [/api/v1/residency],                strip_path: false }
+      - { name: shared,             paths: [/api/v1/shared],                   strip_path: false }
+
+  - name: storage
+    url: http://storage:8081
+    routes:
+      - { name: storage, paths: [/api/v1/storage], strip_path: false }
+
+  - name: search
+    url: http://search:8081
+    routes:
+      - { name: search,         paths: [/api/v1/search],         strip_path: false }
+      - { name: saved-searches, paths: [/api/v1/saved-searches], strip_path: false }
+
+  - name: audit
+    url: http://audit:8081
+    routes:
+      - { name: audit, paths: [/api/v1/audit], strip_path: false }
+
+  - name: workflow
+    url: http://workflow:8081
+    routes:
+      - { name: workflows, paths: [/api/v1/workflows], strip_path: false }
+
+  - name: notification
+    url: http://notification:8081
+    routes:
+      - { name: notifications, paths: [/api/v1/notifications], strip_path: false }
+
+  - name: signature
+    url: http://signature:8081
+    routes:
+      - { name: signatures, paths: [/api/v1/signatures], strip_path: false }
+
+  - name: connector
+    url: http://connector:8081
+    routes:
+      - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
+      - { name: connectors, paths: [/api/v1/connectors], strip_path: false }

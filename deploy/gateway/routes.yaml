@@ -1,0 +1,197 @@
+# VaultDMS public-route inventory — §3.1 / B2.1.
+# Source of truth for `deploy/gateway/kong.yaml`. Every public
+# HTTP/REST route in the codebase MUST appear here. The archtest in
+# pkg/archtest/routes_test.go (B2.1 follow-up) fails the build if any
+# route is reachable via a handler but absent from this file, catching
+# "forgot to publish through the gateway" bugs at merge time.
+#
+# Fields per entry:
+#   service   backend service (must be a compose-service name)
+#   prefix    URL prefix matched by the gateway
+#   methods   HTTP verbs allowed; [] for all
+#   auth      `required` (session cookie) | `public` (unauthenticated)
+#             | `admin`    (session + role in admin/owner set)
+#             | `service`  (mTLS + internal API key, not public;
+#                           listed here only so archtest knows about it)
+#   rate      rate-limit class — see deploy/gateway/rate-limits.yaml
+#             once B4 lands. `default` until then.
+
+routes:
+  # ---- auth -----------------------------------------------------------
+  - service: auth
+    prefix: /api/v1/auth/login
+    methods: [POST]
+    auth: public
+    rate: auth-login
+  - service: auth
+    prefix: /api/v1/auth/logout
+    methods: [POST]
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/me
+    methods: [GET]
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/mfa/verify
+    methods: [POST]
+    auth: public           # pre-session: verifying after password succeeded
+    rate: auth-mfa
+  - service: auth
+    prefix: /api/v1/auth/mfa/recovery
+    methods: [POST]
+    auth: public
+    rate: auth-mfa
+  - service: auth
+    prefix: /api/v1/auth/mfa/setup
+    methods: [POST]
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/mfa/confirm
+    methods: [POST]
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/mfa/disable
+    methods: [POST]
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/sessions
+    methods: []
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/api-keys
+    methods: []
+    auth: required
+  - service: auth
+    prefix: /api/v1/auth/saml
+    methods: []
+    auth: public           # IdP-initiated redirects
+  - service: auth
+    prefix: /api/v1/auth/oidc
+    methods: []
+    auth: public
+  - service: auth
+    prefix: /api/v1/admin/users
+    methods: []
+    auth: admin
+  - service: auth
+    prefix: /api/v1/admin/sso-configs
+    methods: []
+    auth: admin
+  - service: auth
+    prefix: /api/v1/admin/tenants
+    methods: []
+    auth: admin
+  - service: auth
+    prefix: /api/v1/scim/v2
+    methods: []
+    auth: service          # SCIM provisioning uses a per-tenant bearer token
+
+  # ---- document + compliance + privacy + residency -------------------
+  - service: document
+    prefix: /api/v1/documents
+    methods: []
+    auth: required
+    rate: doc-rw
+  - service: document
+    prefix: /api/v1/admin/documents
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/retention-policies
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/settings
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/share-links
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/groups
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/permissions/matrix
+    methods: [GET]
+    auth: required
+  - service: document
+    prefix: /api/v1/compliance/holds
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/privacy/dsr
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/privacy/verify
+    methods: []
+    auth: public           # DSR verification link consumed by data subject
+  - service: document
+    prefix: /api/v1/residency
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/shared       # unauthenticated share-link view + download
+    methods: []
+    auth: public
+    rate: shared
+
+  # ---- storage --------------------------------------------------------
+  - service: storage
+    prefix: /api/v1/storage
+    methods: []
+    auth: required
+    rate: upload
+
+  # ---- search ---------------------------------------------------------
+  - service: search
+    prefix: /api/v1/search
+    methods: []
+    auth: required
+    rate: search
+  - service: search
+    prefix: /api/v1/saved-searches
+    methods: []
+    auth: required
+
+  # ---- audit ----------------------------------------------------------
+  - service: audit
+    prefix: /api/v1/audit
+    methods: []
+    auth: admin
+
+  # ---- workflow -------------------------------------------------------
+  - service: workflow
+    prefix: /api/v1/workflows
+    methods: []
+    auth: required
+
+  # ---- notification ---------------------------------------------------
+  - service: notification
+    prefix: /api/v1/notifications
+    methods: []
+    auth: required
+
+  # ---- signature ------------------------------------------------------
+  - service: signature
+    prefix: /api/v1/signatures
+    methods: []
+    auth: required
+
+  # ---- connector ------------------------------------------------------
+  - service: connector
+    prefix: /api/v1/webhooks
+    methods: []
+    auth: admin
+  - service: connector
+    prefix: /api/v1/connectors
+    methods: []
+    auth: required
+
+  # ---- gateway meta ---------------------------------------------------
+  - service: auth            # arbitrary healthy upstream
+    prefix: /api/v1/health
+    methods: [GET]
+    auth: public
