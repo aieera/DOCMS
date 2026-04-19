@@ -46,6 +46,14 @@ spec:
             - { name: KONG_ADMIN_LISTEN,  value: "127.0.0.1:8001" }
             - { name: KONG_STATUS_LISTEN, value: "0.0.0.0:8100" }
             - { name: KONG_PROXY_LISTEN,  value: "0.0.0.0:8080" }
+            # §3.1 / B2.2 — gateway-signature shared secret. Sourced
+            # from the vaultdms-gateway Secret; MUST match the value
+            # wired into every backend Deployment as the same env var.
+            - name: VAULTDMS_GATEWAY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gateway.secret.name | default "vaultdms-gateway" }}
+                  key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
           ports:
             - { name: proxy,   containerPort: 8080, protocol: TCP }
             - { name: metrics, containerPort: 8100, protocol: TCP }
