@@ -52,7 +52,7 @@ type createWebhookBody struct {
 }
 
 func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	userID := r.Header.Get("X-User-ID")
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
@@ -73,7 +73,7 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	list, err := h.svc.ListWebhooks(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -83,7 +83,7 @@ func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	if err := h.svc.DeleteWebhook(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -93,7 +93,7 @@ func (h *Handler) deleteWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getDeliveryLog(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	log, err := h.svc.GetDeliveryLog(r.Context(), tenantID, id, 50)
 	if err != nil {
@@ -142,7 +142,7 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -161,7 +161,7 @@ func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	deliveryID := r.PathValue("deliveryId")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -182,7 +182,7 @@ func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {
 // ---- Connectors -----------------------------------------------------------
 
 func (h *Handler) listConnectors(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	list, err := h.svc.ListConnectors(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -192,7 +192,7 @@ func (h *Handler) listConnectors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getConnector(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	provider := r.PathValue("provider")
 	cc, err := h.svc.GetConnector(r.Context(), tenantID, provider)
 	if err != nil || cc == nil {

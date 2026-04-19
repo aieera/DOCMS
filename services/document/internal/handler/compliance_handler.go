@@ -230,7 +230,7 @@ func (h *HoldsHandler) release(w http.ResponseWriter, r *http.Request) {
 // middleware chain for /api/v1/* isn't applied here because the
 // compliance routes mount on a dedicated mux.
 func callers(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
-	tenantID, err := uuid.Parse(r.Header.Get("X-Tenant-ID"))
+	tenantID, err := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
 	if err != nil || tenantID == uuid.Nil {
 		writeErr(w, r, vdmserr.ErrUnauthorized)
 		return uuid.Nil, uuid.Nil, false

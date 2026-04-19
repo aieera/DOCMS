@@ -156,7 +156,7 @@ func (h *ShareLinksAdminHandler) revokeAll(w http.ResponseWriter, r *http.Reques
 // them attached. Returns a nil context + false and writes 401 on
 // missing or malformed headers.
 func (h *ShareLinksAdminHandler) enrich(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
-	tid, err := uuid.Parse(r.Header.Get("X-Tenant-ID"))
+	tid, err := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
 	if err != nil || tid == uuid.Nil {
 		h.writeErr(w, r, vdmserr.ErrUnauthorized)
 		return nil, false

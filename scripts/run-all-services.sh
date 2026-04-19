@@ -52,6 +52,12 @@ service_specs=(
 export POLICY_SERVICE_ADDR="localhost:9091"
 export STORAGE_SERVICE_ADDR="localhost:9093"
 
+# §3.1 / B2.3 — gateway-signature shared secret; pkg/middleware
+# RequireGatewaySignature refuses to start without it. Matches the
+# default wired into docker-compose.yml so `make run-all` on the host
+# interoperates with a compose gateway.
+export VAULTDMS_GATEWAY_SECRET="${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
+
 echo "Starting ${#service_specs[@]} services..."
 for spec in "${service_specs[@]}"; do
   IFS=':' read -r svc grpc_port health_port http_port <<<"$spec"

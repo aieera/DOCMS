@@ -35,7 +35,7 @@ func NewServer(log zerolog.Logger) *Server {
 
 // HandleSSE is the HTTP handler for the MCP SSE endpoint.
 func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	apiKey := r.Header.Get("X-API-Key")
 	if tenantID == "" || apiKey == "" {
 		http.Error(w, `{"error":"X-Tenant-ID and X-API-Key required"}`, http.StatusUnauthorized)

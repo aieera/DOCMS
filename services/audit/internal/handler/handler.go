@@ -35,7 +35,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -74,7 +74,7 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -95,7 +95,7 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) verifyIntegrity(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -113,7 +113,7 @@ type subjectBody struct {
 }
 
 func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	var body subjectBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")
@@ -128,7 +128,7 @@ func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	var body subjectBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")
