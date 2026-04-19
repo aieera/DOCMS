@@ -1,0 +1,79 @@
+# §12.1 / J2 — publish the OpenAPI spec to GitHub Pages.
+#
+# On every push to main, renders a single-page docs site from the
+# buf-generated swagger + the hand-maintained OpenAPI YAML, and
+# publishes it via GitHub Pages. Customers get
+# https://aieera.github.io/DOCMS/ as the canonical public spec.
+#
+# Drift prevention already lives in .github/workflows/ci.yml's
+# `proto` job (`git diff --exit-code proto/gen/`). This workflow is
+# publish-only.
+
+name: OpenAPI Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/api/**"
+      - "proto/gen/openapi/**"
+      - ".github/workflows/openapi-pages.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          # The hand-maintained YAML (docs/api/openapi.yaml) is the
+          # source customers browse; the buf-generated swagger JSON
+          # is linked for programmatic consumers (codegen).
+          cp docs/api/openapi.yaml           _site/openapi.yaml
+          cp proto/gen/openapi/vaultdms.swagger.json _site/swagger.json
+          cp docs/api/SEMVER_POLICY.md       _site/SEMVER_POLICY.md
+          cp docs/api/CHANGELOG.md           _site/CHANGELOG.md
+          # Single-file Redoc renderer loading the YAML above.
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8"/>
+            <title>VaultDMS API v1.0</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <link rel="icon" href="data:,"/>
+            <style>body{margin:0;font-family:system-ui}</style>
+          </head>
+          <body>
+            <redoc spec-url="openapi.yaml"></redoc>
+            <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+          </body>
+          </html>
+          HTML
+
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
