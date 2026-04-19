@@ -97,6 +97,9 @@ routes:
     methods: []
     auth: required
     rate: doc-rw
+  # §10.3 / E6 OnlyOffice sub-paths (/config, /callback) live under
+  # the existing /api/v1/documents prefix — no separate gateway rule
+  # needed; the document service's main.go pins them explicitly.
   - service: document
     prefix: /api/v1/admin/documents
     methods: []

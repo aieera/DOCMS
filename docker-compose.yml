@@ -29,6 +29,10 @@ x-go-env: &go-env
   # degrades to lexical and logs a notice.
   VAULTDMS_INTELLIGENCE_EMBED_URL: "http://intelligence:8080/internal/v1/embed-query"
   VAULTDMS_QDRANT_COLLECTION: "vaultdms_chunks"
+  # §10.3 / E6 — OnlyOffice integration
+  VAULTDMS_ONLYOFFICE_URL: "http://onlyoffice"  # in-cluster DNS
+  VAULTDMS_ONLYOFFICE_PUBLIC_URL: "http://localhost:8195"  # what the browser sees
+  VAULTDMS_ONLYOFFICE_JWT: "${VAULTDMS_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
@@ -150,6 +154,27 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  # §10.3 / E6 — OnlyOffice Document Server for DOCX/XLSX/PPTX
+  # co-editing. JWT-enabled so the document service signs the editor
+  # config and OnlyOffice refuses unsigned load requests.
+  # 4 GB RAM + 2 vCPU is the vendor-minimum; tune in production.
+  onlyoffice:
+    image: onlyoffice/documentserver:8.0
+    container_name: vaultdms-onlyoffice
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "${VAULTDMS_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
+      JWT_HEADER: "Authorization"
+      JWT_IN_BODY: "true"
+    ports: ["8195:80"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   # §3.1 / B1 — Kong API gateway. DBless mode (declarative), no DB
