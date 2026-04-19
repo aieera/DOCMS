@@ -256,6 +256,12 @@ func main() {
 	redactionHandler.Register(redactionMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/redact", middleware.CorrelationHTTP(redactionMux))
 
+	// §9.5 / G9 — eDiscovery signed-ZIP export.
+	ediscoveryMux := http.NewServeMux()
+	handler.NewEDiscoveryHandler(svc, *log.Z()).Register(ediscoveryMux)
+	rootMux.Handle("POST /api/v1/admin/ediscovery/export",
+		middleware.CorrelationHTTP(ediscoveryMux))
+
 	// §9.4 / G5 — internal retention-sweep endpoint for the
 	// vaultdms-retention CronJob.
 	retentionSweepMux := http.NewServeMux()
