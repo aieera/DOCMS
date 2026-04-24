@@ -47,6 +47,7 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedAdminAcknowledgementsRouteImport } from './routes/_authenticated/admin/acknowledgements'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminPlatformInternalAuthRouteImport } from './routes/_authenticated/admin/platform/internal-auth'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -262,6 +263,12 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPlatformInternalAuthRoute =
+  AuthenticatedAdminPlatformInternalAuthRouteImport.update({
+    id: '/admin/platform/internal-auth',
+    path: '/admin/platform/internal-auth',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -306,6 +313,7 @@ export interface FileRoutesByFullPath {
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -346,6 +354,7 @@ export interface FileRoutesByTo {
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -388,6 +397,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -430,6 +440,7 @@ export interface FileRouteTypes {
     | '/settings/signatures'
     | '/admin/'
     | '/workspaces/'
+    | '/admin/platform/internal-auth'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
@@ -470,6 +481,7 @@ export interface FileRouteTypes {
     | '/settings/signatures'
     | '/admin'
     | '/workspaces'
+    | '/admin/platform/internal-auth'
     | '/workspaces/$workspaceId'
     | '/workspaces/$workspaceId/documents/$documentId'
   id:
@@ -511,6 +523,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/signatures'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/admin/platform/internal-auth'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
   fileRoutesById: FileRoutesById
@@ -792,6 +805,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/platform/internal-auth': {
+      id: '/_authenticated/admin/platform/internal-auth'
+      path: '/admin/platform/internal-auth'
+      fullPath: '/admin/platform/internal-auth'
+      preLoaderRoute: typeof AuthenticatedAdminPlatformInternalAuthRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -834,6 +854,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsSignaturesRoute: typeof AuthenticatedSettingsSignaturesRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
+  AuthenticatedAdminPlatformInternalAuthRoute: typeof AuthenticatedAdminPlatformInternalAuthRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -871,6 +892,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsSignaturesRoute: AuthenticatedSettingsSignaturesRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
+  AuthenticatedAdminPlatformInternalAuthRoute:
+    AuthenticatedAdminPlatformInternalAuthRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:

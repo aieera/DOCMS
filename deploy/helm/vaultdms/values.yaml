@@ -85,6 +85,44 @@ global:
     internalAPIKeyKey: api-key
     stripeWebhookSecretKey: webhook-secret
 
+  # VAULTDMS_ENV gates fail-closed behaviour in pkg/trustedproxy —
+  # an empty trustedProxyCIDRs list panics at boot when env=production.
+  env: production
+
+  # ADR 0031 — trusted-proxy CIDR list. Walked right-to-left by
+  # pkg/trustedproxy to resolve client IP; hops outside these ranges
+  # are treated as attacker-controlled. Override per-cluster with the
+  # actual ingress / LB CIDRs — defaults here cover loopback + RFC1918
+  # and are unsafe for prod.
+  trustedProxyCIDRs:
+    - "127.0.0.0/8"
+    - "::1/128"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+  # ADR 0031 — internal-auth plane for /internal/*. Default mode is
+  # empty → every service keeps its pre-ADR gateway-signature behaviour
+  # (opt-in rollout). Flip services to "both" first, verify
+  # internal_auth_total{method="mtls",outcome="ok"} is ticking, then
+  # cut over to "mtls".
+  internalAuth:
+    mode: ""   # "" | mtls | hmac | both
+    sanAllowlist: []   # set per service via service.env override
+    # HMAC Secret must exist as Kubernetes Secret when mode != mtls.
+    # Operator creates with: kubectl create secret generic vaultdms-internal-auth
+    #   --from-literal=hmac-secret=$(openssl rand -base64 48)
+    hmacSecret:
+      name: vaultdms-internal-auth
+      key: hmac-secret
+
+  # Prometheus URL consumed by the workflow service's platform metrics
+  # proxy (/api/v1/platform/metrics/query). Empty → the endpoint
+  # returns 503 and the admin panel renders "metrics backend not
+  # configured".
+  prometheus:
+    url: "http://vaultdms-prometheus:9090"
+
 # ============================================================================
 # Services
 # ============================================================================

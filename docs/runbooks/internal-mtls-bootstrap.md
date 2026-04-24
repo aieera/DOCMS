@@ -147,3 +147,30 @@ Per-service scrape targets now emit:
   expect zero after full cutover.
 - `internal_auth_total{method="hmac",outcome="skew"}` — clock drift
   across the cluster; >0 suggests NTP drift >5 min.
+
+Alert rules ship in `ops/prometheus/rules/internalauth.yml`:
+
+- `InternalAuthRejectionRateHigh` — fires when rejection rate exceeds
+  0.1/s per service for 5 min.
+- `InternalAuthCertExpiringSoon` — fires when any SAN cert has <7d
+  remaining.
+
+Dashboard at `deploy/monitoring/dashboards/internal-auth.json`. UI at
+`/admin/platform/internal-auth` renders the same PromQL for operators
+without Grafana access.
+
+## Post-deploy verification
+
+`scripts/smoke-internal-auth.sh` runs three live checks against a
+locally running stack:
+
+1. Every `/internal/*` route returns 401 to unauthenticated traffic.
+2. `pkg/trustedproxy` ignores `X-Forwarded-For` when the peer is
+   outside `VAULTDMS_TRUSTED_PROXY_CIDRS` (T-D-2 regression guard).
+3. Prometheus is scraping `internal_auth_total` from every service.
+
+```sh
+VAULTDMS_GATEWAY_SECRET=... ./scripts/smoke-internal-auth.sh
+```
+
+Exits non-zero on any failure; intended for CI + post-deploy gates.

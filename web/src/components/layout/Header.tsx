@@ -22,7 +22,7 @@ export function Header() {
       >
         <Search className="h-4 w-4" />
         <span>Search documents...</span>
-        <kbd className="ms-auto rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-700">⌘K</kbd>
+        <kbd className="ms-auto rounded bg-slate-200 px-1.5 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-100">⌘K</kbd>
       </button>
 
       <div className="flex items-center gap-2">

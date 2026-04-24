@@ -1,8 +1,11 @@
 package internalauth
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -30,7 +33,37 @@ func New(cfg Config) (*Verifier, error) {
 	if cfg.ClockSkewSecs <= 0 {
 		cfg.ClockSkewSecs = 300
 	}
+	setModeInfo(cfg.Mode)
+	setCertExpiry(readClientCertExpiry(cfg.ClientCertFile))
 	return &Verifier{cfg: cfg, now: time.Now}, nil
+}
+
+// readClientCertExpiry parses the local service's own client cert and
+// returns NotAfter keyed by each DNS SAN. Silent no-op on unreadable
+// or unparseable input — the gauge simply stays empty, which the
+// admin panel surfaces as "cert metadata unavailable" rather than
+// blocking service startup. CA / HMAC-only modes hit this path too.
+func readClientCertExpiry(path string) map[string]int64 {
+	if path == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return nil
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]int64, len(cert.DNSNames))
+	for _, san := range cert.DNSNames {
+		out[san] = cert.NotAfter.Unix()
+	}
+	return out
 }
 
 // Mode returns the configured auth mode.

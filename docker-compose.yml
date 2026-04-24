@@ -36,6 +36,9 @@ x-go-env: &go-env
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
+  # Consumed by the workflow service's platform metrics proxy
+  # (/api/v1/platform/metrics/query). Harmless noise for other services.
+  VAULTDMS_PROMETHEUS_URL: "http://prometheus:9090"
 
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }
@@ -152,6 +155,33 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
       interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Prometheus scrapes each service's /metrics on its health port.
+  # Consumed by the platform admin UI via workflow's
+  # /api/v1/platform/metrics/query PromQL proxy; the browser never
+  # talks to Prometheus directly because Prom has no auth of its own.
+  #
+  # Config + rules are baked into the image via the volume mount.
+  # In production this is the cluster Prometheus operator, not this
+  # container.
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: vaultdms-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    ports: ["9090:9090"]
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheusdata:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
       timeout: 3s
       retries: 5
     restart: unless-stopped
@@ -565,3 +595,4 @@ volumes:
   natsdata:
   qdrantdata:
   clamdata:
+  prometheusdata:

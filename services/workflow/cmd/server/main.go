@@ -136,6 +136,10 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
+	// Platform admin surface — /api/v1/platform/* is admin-role gated
+	// inside the handler. Hosted here rather than in a dedicated
+	// service because it piggy-backs on the existing auth chain.
+	h.RegisterPlatform(mux)
 	verifier, err := internalauth.MustInit()
 	if err != nil {
 		log.Error(ctx).Err(err).Msg("internalauth init failed")
