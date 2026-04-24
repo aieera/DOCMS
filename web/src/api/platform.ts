@@ -86,3 +86,27 @@ export async function listSchedules(): Promise<ScheduleView[]> {
   const { data } = await api.get<SchedulesResponse>('/platform/schedules')
   return data.schedules ?? []
 }
+
+// ---- Security posture (ADR 0033) -----------------------------------------
+
+export type ScanStatus = 'pass' | 'fail' | 'unknown'
+
+export interface SecurityPostureScan {
+  scan_type: 'sast' | 'dep_scan' | 'dast' | 'secret_scan'
+  status: ScanStatus
+  critical_count: number
+  high_count: number
+  run_id?: string
+  run_url?: string
+  ran_at?: string
+}
+
+export interface SecurityPosture {
+  any_failing: boolean
+  scans: SecurityPostureScan[]
+}
+
+export async function getSecurityPosture(): Promise<SecurityPosture> {
+  const { data } = await api.get<SecurityPosture>('/platform/security/posture')
+  return data
+}

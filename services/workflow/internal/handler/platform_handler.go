@@ -52,6 +52,7 @@ func (h *Handler) RegisterPlatform(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/metrics/query", h.platformMetricsQuery)
 	mux.HandleFunc("POST /api/v1/platform/trusted-proxy/test", h.platformTrustedProxyTest)
 	mux.HandleFunc("GET /api/v1/platform/schedules", h.platformSchedules)
+	mux.HandleFunc("GET /api/v1/platform/security/posture", h.platformSecurityPosture)
 }
 
 // requireAdmin rejects any caller whose X-User-Role is not admin or
@@ -328,6 +329,123 @@ func describeSchedule(ctx context.Context, sc client.ScheduleClient, id string) 
 		v.LastRun = &s
 	}
 	return v, nil
+}
+
+// ---- Security posture aggregator ----------------------------------------
+
+// EnvAuditURL is the HTTP base for the audit service. Unset → the
+// posture endpoint returns 503, matching the other "backend not
+// configured" paths.
+const EnvAuditURL = "VAULTDMS_AUDIT_URL"
+
+// posturePlaceholderUnknown represents a gate that has no rows yet —
+// CI has never run, or was never wired. Rendered as "unknown" by the
+// UI with neutral tone, not red.
+const posturePlaceholderUnknown = "unknown"
+
+// SecurityPostureScan is the per-gate row the UI renders.
+type SecurityPostureScan struct {
+	ScanType      string     `json:"scan_type"`
+	Status        string     `json:"status"` // pass | fail | unknown
+	CriticalCount int        `json:"critical_count"`
+	HighCount     int        `json:"high_count"`
+	RunID         string     `json:"run_id,omitempty"`
+	RunURL        string     `json:"run_url,omitempty"`
+	RanAt         *time.Time `json:"ran_at,omitempty"`
+}
+
+// SecurityPosture is the endpoint's aggregate return shape. The UI
+// banner lights up when `.AnyFailing` is true; the per-card view
+// iterates `.Scans`.
+type SecurityPosture struct {
+	AnyFailing bool                  `json:"any_failing"`
+	Scans      []SecurityPostureScan `json:"scans"`
+}
+
+// scanTypes is the canonical order the UI expects. Also used to
+// backfill "unknown" rows for gates the audit service hasn't seen
+// yet.
+var scanTypes = []string{"sast", "dep_scan", "dast", "secret_scan"}
+
+type auditLatestResponse struct {
+	Scans []struct {
+		ScanType      string    `json:"scan_type"`
+		Status        string    `json:"status"`
+		CriticalCount int       `json:"critical_count"`
+		HighCount     int       `json:"high_count"`
+		RunID         string    `json:"run_id,omitempty"`
+		RunURL        string    `json:"run_url,omitempty"`
+		RanAt         time.Time `json:"ran_at"`
+	} `json:"scans"`
+}
+
+// platformSecurityPosture aggregates the audit service's latest-per-type
+// rows into the shape the admin banner + /admin/platform/security page
+// consume. Admin-only; 503 if the audit URL is unset.
+func (h *Handler) platformSecurityPosture(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	auditURL := strings.TrimRight(os.Getenv(EnvAuditURL), "/")
+	if auditURL == "" {
+		writeError(w, http.StatusServiceUnavailable, "audit service URL not configured")
+		return
+	}
+
+	cctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet,
+		auditURL+"/api/v1/audit/security-scans/latest", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "build audit request failed")
+		return
+	}
+	req.Header.Set("X-User-Role", r.Header.Get("X-User-Role"))
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		h.log.Error().Err(err).Str("audit_url", auditURL).Msg("posture fetch")
+		writeError(w, http.StatusBadGateway, "audit fetch failed")
+		return
+	}
+	defer resp.Body.Close()
+
+	var latest auditLatestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil {
+		writeError(w, http.StatusBadGateway, "audit response decode failed")
+		return
+	}
+
+	// Build a keyed map for O(1) lookup, then emit in the canonical
+	// scan-type order with "unknown" placeholders for missing gates.
+	by := make(map[string]SecurityPostureScan, len(latest.Scans))
+	for _, s := range latest.Scans {
+		ran := s.RanAt
+		by[s.ScanType] = SecurityPostureScan{
+			ScanType: s.ScanType, Status: s.Status,
+			CriticalCount: s.CriticalCount, HighCount: s.HighCount,
+			RunID: s.RunID, RunURL: s.RunURL,
+			RanAt: &ran,
+		}
+	}
+
+	out := SecurityPosture{Scans: make([]SecurityPostureScan, 0, len(scanTypes))}
+	for _, st := range scanTypes {
+		if v, ok := by[st]; ok {
+			out.Scans = append(out.Scans, v)
+			if v.Status == "fail" {
+				out.AnyFailing = true
+			}
+			continue
+		}
+		out.Scans = append(out.Scans, SecurityPostureScan{
+			ScanType: st,
+			Status:   posturePlaceholderUnknown,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // Static check so a build fails if fmt becomes unused after refactor.

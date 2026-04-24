@@ -25,6 +25,7 @@ const sections = [
   { to: '/admin/geofences', icon: MapPin, label: 'Geofences', desc: 'Country + CIDR access policies' },
   { to: '/admin/platform/internal-auth', icon: Activity, label: 'Internal Auth', desc: 'mTLS + HMAC health per service' },
   { to: '/admin/platform/schedules', icon: Clock, label: 'Schedules', desc: 'Temporal schedules (password / ack / signature sweeps)' },
+  { to: '/admin/platform/security', icon: ShieldAlert, label: 'Security posture', desc: 'SAST + dep + DAST + secret scan CI gates (ADR 0033)' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
 ] as const
 
