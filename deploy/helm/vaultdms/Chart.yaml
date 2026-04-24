@@ -2,8 +2,8 @@ apiVersion: v2
 name: vaultdms
 description: VaultDMS — Enterprise Document Management System
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 1.3.0
+appVersion: "1.3.0"
 maintainers:
   - name: VaultDMS Team
     email: sulthansha@raabyt.com
