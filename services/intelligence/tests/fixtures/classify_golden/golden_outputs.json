@@ -1,0 +1,18 @@
+{
+  "_schema": {
+    "model_version": "string — value of _tier2_ml's third return; freeze at regen time",
+    "generated_at": "ISO-8601 UTC; rewritten by scripts/regenerate_classify_golden.py",
+    "tolerance": "±0.05 on confidence; exact match on category",
+    "documents": "ordered list, one entry per PDF in this directory"
+  },
+  "model_version": "TBD-on-first-regen",
+  "generated_at": "TBD-on-first-regen",
+  "documents": [
+    {
+      "filename": "01-invoice.pdf",
+      "expected_category": "invoice",
+      "expected_confidence": 0.0,
+      "_note": "PLACEHOLDER. Replace with real value once corpus + regen run."
+    }
+  ]
+}
