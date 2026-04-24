@@ -83,27 +83,40 @@ func TestCreateWebhook_RequiresBodyFields(t *testing.T) {
 	}
 }
 
-func TestGetAuthURL_ReturnsStubForAnyProvider(t *testing.T) {
-	// /auth-url is a stub that just echoes the provider back. Regression
-	// guard so a future real implementation still emits the provider.
+// /auth-url no longer stubs. It now requires a tenant header, a
+// redirect_uri, and a provider the service has AttachOAuth'd.
+// Without AttachOAuth the call surfaces the misconfig as 400 —
+// regression guard that the stub is gone and the error path reports
+// clearly instead of silently echoing.
+func TestGetAuthURL_RejectsMissingTenant(t *testing.T) {
 	mux := newMux(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/connectors/salesforce/auth-url?redirect_uri=https://app/cb", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-	if !bytes.Contains(w.Body.Bytes(), []byte(`"provider":"salesforce"`)) {
-		t.Errorf("response missing provider echo: %s", w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
-func TestOAuthCallback_ReturnsStubForAnyProvider(t *testing.T) {
+func TestGetAuthURL_RejectsMissingRedirectURI(t *testing.T) {
 	mux := newMux(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/google/callback", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
+	req.Header.Set("X-Auth-Tenant-ID", "00000000-0000-0000-0000-000000000001")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOAuthCallback_RejectsMissingStateAndCode(t *testing.T) {
+	mux := newMux(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/google/callback", nil)
+	req.Body = http.NoBody
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
 	}
 }

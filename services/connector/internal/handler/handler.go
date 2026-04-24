@@ -202,12 +202,65 @@ func (h *Handler) getConnector(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cc)
 }
 
+// getAuthURL returns the provider auth URL + the opaque state token
+// the caller must echo on /callback. Admin UI redirects the user to
+// the URL; the provider sends them back with `?code=...&state=...`.
 func (h *Handler) getAuthURL(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stub", "provider": r.PathValue("provider")})
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusUnauthorized, "tenant missing")
+		return
+	}
+	provider := r.PathValue("provider")
+	redirectURI := r.URL.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		writeError(w, http.StatusBadRequest, "redirect_uri required")
+		return
+	}
+	authURL, state, err := h.svc.BeginOAuth(r.Context(), tenantID, provider, redirectURI)
+	if err != nil {
+		h.log.Warn().Err(err).Str("provider", provider).Msg("begin oauth")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"auth_url": authURL,
+		"state":    state,
+	})
 }
 
+// oauthCallback exchanges the code for tokens via the provider. The
+// PKCE verifier lookup + delete happens in the service layer. Tokens
+// are returned to the caller but NOT persisted — storage path is
+// blocked on the connector_configs schema-drift reconciliation
+// (docs/backlog/out-of-scope.md).
 func (h *Handler) oauthCallback(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stub", "provider": r.PathValue("provider")})
+	var body struct {
+		State string `json:"state"`
+		Code  string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.State == "" || body.Code == "" {
+		writeError(w, http.StatusBadRequest, "state and code required")
+		return
+	}
+	tokens, tenantID, err := h.svc.CompleteOAuth(r.Context(), body.State, body.Code)
+	if err != nil {
+		h.log.Warn().Err(err).Msg("complete oauth")
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// NEVER log the access/refresh token; only surface presence.
+	h.log.Info().Str("tenant_id", tenantID).Str("provider", r.PathValue("provider")).
+		Bool("has_refresh", tokens.RefreshToken != "").
+		Time("expires_at", tokens.TokenExpiry).
+		Msg("oauth exchange succeeded")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "exchanged",
+		"expires_at":  tokens.TokenExpiry,
+		"scopes":      tokens.Scopes,
+		"persisted":   false,
+		"note":        "token persistence pending connector_configs schema reconciliation (backlog)",
+	})
 }
 
 // ---- helpers --------------------------------------------------------------

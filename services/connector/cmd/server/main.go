@@ -24,6 +24,9 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	"github.com/vaultdms/vaultdms/services/connector/internal/handler"
 	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
+	"github.com/vaultdms/vaultdms/services/connector/internal/providers/google"
+	"github.com/vaultdms/vaultdms/services/connector/internal/providers/microsoft"
+	"github.com/vaultdms/vaultdms/services/connector/internal/providers/salesforce"
 	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
 	"github.com/vaultdms/vaultdms/services/connector/internal/webhook"
@@ -32,6 +35,16 @@ import (
 const serviceName = "connector"
 
 var version = "dev"
+
+// envOr returns the env value for `key`, falling back to `fallback`
+// when unset. Used for OAuth provider config that has sensible
+// defaults (e.g. M365 "common" tenant, Salesforce login.salesforce.com).
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
 	cfg, err := config.Load(serviceName)
@@ -63,6 +76,31 @@ func main() {
 	repo := repository.New(pool)
 	svc := service.New(service.Config{Repo: repo, Logger: *log.Z()})
 
+	// OAuth provider registry. Each provider is built from env vars
+	// the operator sets per tenant deployment; an empty client_id
+	// still registers the provider so auth-url calls return a
+	// misconfig error rather than "unknown provider".
+	registry := service.ProviderRegistry{
+		"microsoft365": microsoft.New(
+			os.Getenv("M365_CLIENT_ID"),
+			os.Getenv("M365_CLIENT_SECRET"),
+			envOr("M365_TENANT_ID", "common"),
+			*log.Z(),
+		),
+		"salesforce": salesforce.New(
+			os.Getenv("SALESFORCE_CLIENT_ID"),
+			os.Getenv("SALESFORCE_CLIENT_SECRET"),
+			envOr("SALESFORCE_INSTANCE_URL", "https://login.salesforce.com"),
+			*log.Z(),
+		),
+		"google_workspace": google.New(
+			os.Getenv("GOOGLE_CLIENT_ID"),
+			os.Getenv("GOOGLE_CLIENT_SECRET"),
+			*log.Z(),
+		),
+	}
+	svc.AttachOAuth(rdb, registry)
+
 	// Start NATS event fanout → webhook deliveries.
 	if err := svc.StartEventFanout(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("event fanout")
@@ -89,6 +127,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
