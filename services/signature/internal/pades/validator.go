@@ -1,3 +1,20 @@
+// ============================================================================
+// SMOKE CHECK ONLY — NOT SUFFICIENT FOR PRODUCTION ACCEPTANCE.
+//
+// This validator regexes over raw PDF bytes. Regexes are not a PDF
+// parser: they can match inside string objects, miss encrypted xref
+// streams, and mis-identify signature dictionaries inside object
+// streams. Use this package to catch *structural regressions* during
+// CI; use Adobe Reader + EU DSS for cryptographic acceptance.
+//
+// Production acceptance gate: `make test-pades-strict` fails the
+// build if any source file under //go:build prod_accept references
+// this package. A follow-up ticket (T-D-7b) tracks replacing these
+// regexes with a proper pdfcpu-backed parser; until that lands, the
+// prod_accept gate is the invariant keeping this package out of the
+// release-qualification path.
+// ============================================================================
+//
 // Package pades is the CI-side PAdES structure validator for Wave
 // 15.4 (and the broader Wave 9 signer sidecar DoD).
 //

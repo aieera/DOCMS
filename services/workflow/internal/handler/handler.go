@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/rs/zerolog"
+	"go.temporal.io/sdk/client"
 
 	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
 	"github.com/vaultdms/vaultdms/services/workflow/internal/service"
@@ -15,11 +16,23 @@ import (
 type Handler struct {
 	svc *service.Service
 	log zerolog.Logger
+	// Temporal client used by the platform /schedules endpoint. Kept
+	// optional (nil-safe) — deployments without a Temporal wiring can
+	// still boot and serve non-platform routes.
+	tc client.Client
 }
 
 // New constructs a Handler.
 func New(svc *service.Service, log zerolog.Logger) *Handler {
 	return &Handler{svc: svc, log: log}
+}
+
+// WithTemporal returns a copy of the Handler with the Temporal client
+// wired. Call before RegisterPlatform so the /schedules endpoint can
+// enumerate schedules.
+func (h *Handler) WithTemporal(tc client.Client) *Handler {
+	h.tc = tc
+	return h
 }
 
 // Register mounts routes.

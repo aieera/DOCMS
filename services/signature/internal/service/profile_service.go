@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -53,6 +54,8 @@ type ProfileService struct {
 	repo    repository.ProfileRepo
 	kms     crypto.KeyManager
 	store   ProfileObjectStore
+	outbox  *database.OutboxRepository
+	log     zerolog.Logger
 	kekID   func(tenantID uuid.UUID) string
 	clock   func() time.Time
 }
@@ -67,19 +70,23 @@ type ProfileObjectStore interface {
 
 // ProfileServiceConfig bundles deps.
 type ProfileServiceConfig struct {
-	Pool  *pgxpool.Pool
-	Repo  repository.ProfileRepo
-	KMS   crypto.KeyManager
-	Store ProfileObjectStore
+	Pool   *pgxpool.Pool
+	Repo   repository.ProfileRepo
+	KMS    crypto.KeyManager
+	Store  ProfileObjectStore
+	Outbox *database.OutboxRepository
+	Logger zerolog.Logger
 }
 
 // NewProfileService constructs a service.
 func NewProfileService(cfg ProfileServiceConfig) *ProfileService {
 	return &ProfileService{
-		pool:  cfg.Pool,
-		repo:  cfg.Repo,
-		kms:   cfg.KMS,
-		store: cfg.Store,
+		pool:   cfg.Pool,
+		repo:   cfg.Repo,
+		kms:    cfg.KMS,
+		store:  cfg.Store,
+		outbox: cfg.Outbox,
+		log:    cfg.Logger,
 		kekID: func(t uuid.UUID) string {
 			return "vaultdms/tenant/" + t.String() + "/signature-profiles"
 		},

@@ -21,6 +21,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"go.temporal.io/sdk/client"
 
 	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 )
@@ -48,6 +51,7 @@ const EnvPrometheusURL = "VAULTDMS_PROMETHEUS_URL"
 func (h *Handler) RegisterPlatform(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/platform/metrics/query", h.platformMetricsQuery)
 	mux.HandleFunc("POST /api/v1/platform/trusted-proxy/test", h.platformTrustedProxyTest)
+	mux.HandleFunc("GET /api/v1/platform/schedules", h.platformSchedules)
 }
 
 // requireAdmin rejects any caller whose X-User-Role is not admin or
@@ -233,6 +237,97 @@ func parseHop(raw string, mayHavePort bool) trustedProxyHopResult {
 func mustAddr(s string) netip.Addr {
 	a, _ := netip.ParseAddr(s)
 	return a
+}
+
+// ---- Schedules listing ---------------------------------------------------
+
+// ScheduleView is the wire shape the admin UI consumes. One object per
+// schedule in the Temporal namespace. Fields are nullable strings so
+// the UI can render "—" for fresh schedules that have never fired.
+type ScheduleView struct {
+	ID           string  `json:"id"`
+	Paused       bool    `json:"paused"`
+	NextRun      *string `json:"next_run,omitempty"`   // RFC3339
+	LastRun      *string `json:"last_run,omitempty"`   // RFC3339
+	NumActions   int     `json:"num_actions"`          // total triggers so far
+	NumMissed    int     `json:"num_missed,omitempty"` // missed catchup window
+	RunningCount int     `json:"running_count"`        // currently-executing invocations
+}
+
+type schedulesResponse struct {
+	Schedules []ScheduleView `json:"schedules"`
+}
+
+// platformSchedules enumerates every Temporal schedule in the
+// workflow service's namespace and returns a compact view. Admin-only.
+// Returns 503 when the Temporal client is unconfigured so the UI can
+// render "Temporal not reachable" rather than an empty table.
+func (h *Handler) platformSchedules(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	if h.tc == nil {
+		writeError(w, http.StatusServiceUnavailable, "temporal client not configured")
+		return
+	}
+
+	cctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	sc := h.tc.ScheduleClient()
+	iter, err := sc.List(cctx, client.ScheduleListOptions{PageSize: 100})
+	if err != nil {
+		h.log.Error().Err(err).Msg("platform schedules list")
+		writeError(w, http.StatusBadGateway, "temporal list failed")
+		return
+	}
+
+	out := make([]ScheduleView, 0, 16)
+	for iter.HasNext() {
+		entry, err := iter.Next()
+		if err != nil {
+			h.log.Error().Err(err).Msg("platform schedules iter")
+			writeError(w, http.StatusBadGateway, "temporal iter failed")
+			return
+		}
+		view, err := describeSchedule(cctx, sc, entry.ID)
+		if err != nil {
+			// Describe errors on one schedule must not abort the
+			// listing — emit a row with the id and zero counters so
+			// the UI still shows it.
+			h.log.Warn().Err(err).Str("id", entry.ID).Msg("platform schedule describe")
+			out = append(out, ScheduleView{ID: entry.ID})
+			continue
+		}
+		out = append(out, view)
+	}
+	writeJSON(w, http.StatusOK, schedulesResponse{Schedules: out})
+}
+
+// describeSchedule pulls the per-schedule detail we surface to the UI.
+// Kept separate so the listing loop stays compact.
+func describeSchedule(ctx context.Context, sc client.ScheduleClient, id string) (ScheduleView, error) {
+	desc, err := sc.GetHandle(ctx, id).Describe(ctx)
+	if err != nil {
+		return ScheduleView{}, err
+	}
+	v := ScheduleView{
+		ID:           id,
+		Paused:       desc.Schedule.State.Paused,
+		NumActions:   desc.Info.NumActions,
+		NumMissed:    desc.Info.NumActionsMissedCatchupWindow,
+		RunningCount: len(desc.Info.RunningWorkflows),
+	}
+	if len(desc.Info.NextActionTimes) > 0 {
+		s := desc.Info.NextActionTimes[0].UTC().Format(time.RFC3339)
+		v.NextRun = &s
+	}
+	if len(desc.Info.RecentActions) > 0 {
+		last := desc.Info.RecentActions[len(desc.Info.RecentActions)-1]
+		s := last.ActualTime.UTC().Format(time.RFC3339)
+		v.LastRun = &s
+	}
+	return v, nil
 }
 
 // Static check so a build fails if fmt becomes unused after refactor.

@@ -118,18 +118,24 @@ func main() {
 			log.Fatal(ctx).Err(kerr).Msg("kms init")
 		}
 		profileSvc := service.NewProfileService(service.ProfileServiceConfig{
-			Pool:  pool,
-			Repo:  repository.NewProfileRepo(),
-			KMS:   km,
-			Store: service.NewProfileS3Adapter(s3c),
+			Pool:   pool,
+			Repo:   repository.NewProfileRepo(),
+			KMS:    km,
+			Store:  service.NewProfileS3Adapter(s3c),
+			Outbox: database.NewOutboxRepository(),
+			Logger: *log.Z(),
 		})
+		profileH := handler.NewProfileHandler(profileSvc)
 		pr := chi.NewRouter()
 		pr.Use(middleware.TenantHTTP(pool))
 		pr.Use(middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool}))
 		profileMux := http.NewServeMux()
-		handler.NewProfileHandler(profileSvc).Register(profileMux)
+		profileH.Register(profileMux)
 		pr.Mount("/", profileMux)
 		profileRouter = pr
+		// Internal (Temporal-invoked) routes don't go through session
+		// auth — register on the main mux directly.
+		profileH.RegisterInternal(mux)
 	} else {
 		log.Warn(ctx).Msg("signature profiles disabled: S3 or LocalKEK missing")
 	}
