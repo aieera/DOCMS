@@ -8,6 +8,54 @@ Policy: [docs/release/release-policy.md](docs/release/release-policy.md).
 
 ## [Unreleased]
 
+### Wave 15 highlights (cut as v1.3.0)
+
+Four sub-waves, shipped 2026-04-20 → 2026-04-24. Full per-commit
+notes below; this section is the operator-facing summary.
+
+- **15.1 — Policy attestation campaigns** (`services/acknowledgement`).
+  New Go service for tenant-admin-driven policy acknowledgement
+  campaigns. Per-tenant HMAC + per-campaign SHA-256 hash chain so
+  row deletion and timestamp tampering are detectable on export
+  (ADR 0027). Daily 09:00 UTC Temporal reminder + 7-day escalation.
+  Dual emission: `dms.acknowledgement.*.v1` domain events +
+  `dms.notify.acknowledgement.*.v1` fan-out (ADR 0032 carve-out).
+
+- **15.2 — Geofencing** (`pkg/geo` + `services/policy`). CIDR + country
+  allow/deny/step-up policies evaluated per request via OPA rule in
+  Rego. Middleware returns 451 Unavailable-For-Legal-Reasons on
+  deny, 428 Precondition Required on step-up, 503 on decider error
+  (fail-closed). MaxMind adapter behind `//go:build maxmind` for
+  countries; static CIDR path is the always-on default (ADR 0028).
+
+- **15.3 — Password-lifecycle policy** (`services/auth`). Admin-forced
+  rotation issues a single-use change token with 10-minute TTL +
+  Redis GETDEL replay protection. Password history (default 12) +
+  min-age (default 1 day). Emits `dms.auth.password_reset_requested.v1`
+  for SOC monitoring (ADR 0029).
+
+- **15.4 — Saved signature profiles** (`services/signature`). Users
+  draw/upload/type a signature once; the cryptographic PAdES
+  signature is unchanged. Image bytes encrypted at rest with a
+  per-profile DEK KMS-wrapped under the tenant KEK; delete is
+  crypto-shred (ADR 0030). Tier-1 structural PAdES validator ships
+  under `//go:build pades_corpus`; Tier-2 cryptographic acceptance
+  remains the operator-per-release Adobe Reader + EU DSS flow.
+
+#### Platform hardening in the same release window
+
+- **ADR 0031 — internal-auth plane**: `pkg/internalauth` +
+  `pkg/trustedproxy` consolidate `/internal/*` authentication (mTLS
+  or HMAC, dual-mount during rollout) and client-IP resolution
+  (CIDR-aware XFF walk, fail-closed in production). Closes T-D-1
+  and T-D-2.
+- **T-D-3 … T-D-9 closed**: acknowledgement service split by seam;
+  signature-profile orphan sweeper (daily 03:00 UTC); package-local
+  HTTP client in workflow activities + `forbidigo` lint for
+  `http.DefaultClient`; mandatory `Resolver` config in
+  acknowledgement; PAdES prod_accept gate; typed Temporal
+  AlreadyExists check; ADR 0032 for subject namespaces + CI lint.
+
 ### Added
 - Wave 14.6: release workflow now signs every image via Sigstore
   cosign (keyless OIDC), generates SPDX SBOMs via Syft, attests the
