@@ -38,6 +38,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/v1/tenants/{tenantId}/features", h.requireAPIKey(h.getFeatures))
 	mux.HandleFunc("PUT /internal/v1/tenants/{tenantId}/features", h.requireAPIKey(h.updateFeatures))
 	mux.HandleFunc("GET /internal/v1/plans", h.requireAPIKey(h.listPlans))
+	// Wave 20 — tenant lifecycle.
+	mux.HandleFunc("GET /internal/v1/tenants", h.requireAPIKey(h.listTenants))
+	mux.HandleFunc("POST /internal/v1/tenants/{tenantId}/deprovision", h.requireAPIKey(h.deprovisionTenant))
+	mux.HandleFunc("POST /internal/v1/tenants/{tenantId}/undo-deprovision", h.requireAPIKey(h.undoDeprovision))
 }
 
 func (h *Handler) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
@@ -111,6 +115,44 @@ func (h *Handler) updateFeatures(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listPlans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.DefaultPlans)
+}
+
+// ---- Tenant lifecycle (Wave 20) -------------------------------------------
+
+// listTenants returns every organization the admin can see. Thin
+// projection — the admin UI only needs enough to render the Tenants
+// table; a detail view hits GET /{tenantId}/subscription.
+func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
+	tenants, err := h.svc.ListTenants(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, tenants)
+}
+
+// deprovisionTenant soft-deletes a tenant + schedules hard-dispose
+// after graceDays (default 30). Idempotent: re-calling on an
+// already-scheduled tenant is a no-op.
+func (h *Handler) deprovisionTenant(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantId")
+	if err := h.svc.Deprovision(r.Context(), tenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "scheduled"})
+}
+
+// undoDeprovision reverses a soft-delete iff hard-dispose hasn't
+// fired yet. Returns 409 when the grace period elapsed (disposed_at
+// is non-NULL) — the crypto-shred is by definition irreversible.
+func (h *Handler) undoDeprovision(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantId")
+	if err := h.svc.UndoDeprovision(r.Context(), tenantID); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

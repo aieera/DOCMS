@@ -70,3 +70,27 @@ func (s *Service) GetPlan(planID string) *model.Plan {
 	}
 	return &p
 }
+
+// ---- Tenant lifecycle (Wave 20) -------------------------------------------
+
+// disposalGraceDays is how long a soft-deleted tenant lingers before
+// the nightly sweep promotes it to hard-dispose. 30 days per brief;
+// matches most SaaS compliance undelete windows.
+const disposalGraceDays = 30
+
+// ListTenants returns every organization + its lifecycle state for
+// the admin Tenants page.
+func (s *Service) ListTenants(ctx context.Context) ([]map[string]any, error) {
+	return s.repo.ListOrgs(ctx)
+}
+
+// Deprovision marks a tenant soft-deleted and schedules hard-dispose
+// after the grace window. Idempotent.
+func (s *Service) Deprovision(ctx context.Context, tenantID string) error {
+	return s.repo.SoftDeleteOrg(ctx, tenantID, disposalGraceDays)
+}
+
+// UndoDeprovision reverses Deprovision iff hard-dispose hasn't run.
+func (s *Service) UndoDeprovision(ctx context.Context, tenantID string) error {
+	return s.repo.UndoSoftDeleteOrg(ctx, tenantID)
+}
