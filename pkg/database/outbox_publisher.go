@@ -210,6 +210,7 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil {
+		outboxPublishErrorsTotal.WithLabelValues(e.EventType, "marshal").Inc()
 		return fmt.Errorf("marshal envelope: %w", err)
 	}
 	pubCtx, cancel := context.WithTimeout(ctx, p.cfg.PublishTimeout)
@@ -220,8 +221,10 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 		Header:  nats.Header{"Nats-Msg-Id": []string{e.ID.String()}},
 	}, nats.Context(pubCtx))
 	if err != nil {
+		outboxPublishErrorsTotal.WithLabelValues(e.EventType, "publish").Inc()
 		return fmt.Errorf("js publish: %w", err)
 	}
+	outboxPublishLagSeconds.WithLabelValues(e.EventType).Observe(time.Since(e.CreatedAt).Seconds())
 	return nil
 }
 
