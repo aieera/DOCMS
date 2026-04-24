@@ -144,7 +144,7 @@ func main() {
 
 	// ---- HTTP REST ---------------------------------------------------------
 	mux := http.NewServeMux()
-	h := handler.New(svc, *log.Z())
+	h := handler.New(svc, *log.Z()).WithTemporal(tc)
 	h.Register(mux)
 	// Platform admin surface — /api/v1/platform/* is admin-role gated
 	// inside the handler. Hosted here rather than in a dedicated

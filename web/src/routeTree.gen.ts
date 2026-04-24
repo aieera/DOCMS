@@ -47,6 +47,7 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedAdminAcknowledgementsRouteImport } from './routes/_authenticated/admin/acknowledgements'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminPlatformSchedulesRouteImport } from './routes/_authenticated/admin/platform/schedules'
 import { Route as AuthenticatedAdminPlatformInternalAuthRouteImport } from './routes/_authenticated/admin/platform/internal-auth'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
@@ -263,6 +264,12 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPlatformSchedulesRoute =
+  AuthenticatedAdminPlatformSchedulesRouteImport.update({
+    id: '/admin/platform/schedules',
+    path: '/admin/platform/schedules',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminPlatformInternalAuthRoute =
   AuthenticatedAdminPlatformInternalAuthRouteImport.update({
     id: '/admin/platform/internal-auth',
@@ -314,6 +321,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
+  '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -355,6 +363,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
+  '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -398,6 +407,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
+  '/_authenticated/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -441,6 +451,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/workspaces/'
     | '/admin/platform/internal-auth'
+    | '/admin/platform/schedules'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/workspaces'
     | '/admin/platform/internal-auth'
+    | '/admin/platform/schedules'
     | '/workspaces/$workspaceId'
     | '/workspaces/$workspaceId/documents/$documentId'
   id:
@@ -524,6 +536,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/platform/internal-auth'
+    | '/_authenticated/admin/platform/schedules'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
   fileRoutesById: FileRoutesById
@@ -805,6 +818,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/platform/schedules': {
+      id: '/_authenticated/admin/platform/schedules'
+      path: '/admin/platform/schedules'
+      fullPath: '/admin/platform/schedules'
+      preLoaderRoute: typeof AuthenticatedAdminPlatformSchedulesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/platform/internal-auth': {
       id: '/_authenticated/admin/platform/internal-auth'
       path: '/admin/platform/internal-auth'
@@ -855,6 +875,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminPlatformInternalAuthRoute: typeof AuthenticatedAdminPlatformInternalAuthRoute
+  AuthenticatedAdminPlatformSchedulesRoute: typeof AuthenticatedAdminPlatformSchedulesRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -894,6 +915,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminPlatformInternalAuthRoute:
     AuthenticatedAdminPlatformInternalAuthRoute,
+  AuthenticatedAdminPlatformSchedulesRoute:
+    AuthenticatedAdminPlatformSchedulesRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:

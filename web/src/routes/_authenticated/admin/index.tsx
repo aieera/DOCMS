@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Users, Shield, Key, Workflow, Archive, Scale, ScrollText, Webhook, Settings, Tag, Link2, ShieldCheck, KeyRound, Plug, CreditCard, ShieldAlert, UserCog, Globe, FileJson, ClipboardCheck, MapPin, Activity } from 'lucide-react'
+import { Users, Shield, Key, Workflow, Archive, Scale, ScrollText, Webhook, Settings, Tag, Link2, ShieldCheck, KeyRound, Plug, CreditCard, ShieldAlert, UserCog, Globe, FileJson, ClipboardCheck, MapPin, Activity, Clock } from 'lucide-react'
 
 const sections = [
   { to: '/admin/users', icon: Users, label: 'Users', desc: 'Manage team members' },
@@ -24,6 +24,7 @@ const sections = [
   { to: '/admin/acknowledgements', icon: ClipboardCheck, label: 'Acknowledgements', desc: 'Policy attestation campaigns' },
   { to: '/admin/geofences', icon: MapPin, label: 'Geofences', desc: 'Country + CIDR access policies' },
   { to: '/admin/platform/internal-auth', icon: Activity, label: 'Internal Auth', desc: 'mTLS + HMAC health per service' },
+  { to: '/admin/platform/schedules', icon: Clock, label: 'Schedules', desc: 'Temporal schedules (password / ack / signature sweeps)' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
 ] as const
 

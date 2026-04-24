@@ -65,3 +65,24 @@ export async function testTrustedProxy(input: {
   )
   return data
 }
+
+// ---- Temporal schedules listing ------------------------------------------
+
+export interface ScheduleView {
+  id: string
+  paused: boolean
+  next_run?: string
+  last_run?: string
+  num_actions: number
+  num_missed?: number
+  running_count: number
+}
+
+interface SchedulesResponse {
+  schedules: ScheduleView[]
+}
+
+export async function listSchedules(): Promise<ScheduleView[]> {
+  const { data } = await api.get<SchedulesResponse>('/platform/schedules')
+  return data.schedules ?? []
+}
