@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 )
 
 func testReq(remote string) *http.Request {
@@ -90,9 +92,17 @@ func TestGeofence_NoTenantPassesThrough(t *testing.T) {
 }
 
 func TestRealClientIP_XFF(t *testing.T) {
+	// realClientIP now delegates to pkg/trustedproxy. The peer
+	// (10.0.0.1) must be in the trusted-proxy CIDR list for XFF to
+	// be believed; configure that explicitly here.
+	cfg, err := trustedproxy.Parse("10.0.0.0/8")
+	require.NoError(t, err)
+	trustedproxy.SetDefault(cfg)
+	t.Cleanup(func() { trustedproxy.SetDefault(trustedproxy.Config{}) })
+
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "10.0.0.1:9999"
 	r.Header.Set("X-Forwarded-For", "8.8.8.8, 1.2.3.4")
-	ip := realClientIP(r)
+	ip := trustedproxy.RealClientIPNetIP(r, trustedproxy.Default())
 	require.Equal(t, "1.2.3.4", ip.String())
 }

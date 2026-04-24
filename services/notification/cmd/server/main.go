@@ -19,6 +19,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
+	"github.com/vaultdms/vaultdms/pkg/internalauth"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	"github.com/vaultdms/vaultdms/services/notification/internal/handler"
@@ -104,7 +105,12 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
+	verifier, err := internalauth.MustInit()
+	if err != nil {
+		log.Error(ctx).Err(err).Msg("internalauth init failed")
+		os.Exit(1)
+	}
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: internalauth.Mux(mux, verifier, middleware.RequireGatewaySignature()), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -1,0 +1,170 @@
+# Per-service leaf certificates. Each Certificate writes a Secret into
+# the service's namespace (assumed `vaultdms`); pods mount it at
+# /etc/vaultdms/internal-mtls/ and export the VAULTDMS_INTERNAL_*
+# env vars from the files.
+#
+# SANs MUST match the service's VAULTDMS_INTERNAL_SAN_ALLOWLIST (or
+# the peer it is calling). Adding a new caller means:
+#   1. add the DNS name to that service's allowlist,
+#   2. add it to the caller's leaf Certificate below.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-worker
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-worker
+  duration: 720h    # 30 days
+  renewBefore: 240h # 10 days
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: worker.temporal.internal
+  dnsNames:
+    - worker.temporal.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-ack-sweeper
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-ack-sweeper
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: sweeper.ack.internal
+  dnsNames:
+    - sweeper.ack.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-policy
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-policy
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: policy.internal
+  dnsNames:
+    - policy.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-signature
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-signature
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: signature.internal
+  dnsNames:
+    - signature.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-notification
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-notification
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: notification.internal
+  dnsNames:
+    - notification.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-audit
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-audit
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: audit.internal
+  dnsNames:
+    - audit.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-mtls-auth
+  namespace: vaultdms
+spec:
+  secretName: internal-mtls-auth
+  duration: 720h
+  renewBefore: 240h
+  issuerRef:
+    name: vaultdms-internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+  commonName: auth.internal
+  dnsNames:
+    - auth.internal
+  usages:
+    - client auth
+    - digital signature
+  privateKey:
+    algorithm: ECDSA
+    size: 256

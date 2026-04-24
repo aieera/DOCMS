@@ -7,11 +7,10 @@
 //   step-up        → 428 Precondition Required, WWW-Authenticate: Step-Up
 //   allow          → next.ServeHTTP
 //
-// Source IP is read via realClientIP (X-Forwarded-For right-most
-// untrusted hop, falling back to r.RemoteAddr). The trusted-proxy
-// chain is honoured by pkg/gateway/waf.go's RealIP middleware that
-// runs earlier in the chain; this middleware is safe to compose
-// after it.
+// Source IP is resolved by pkg/trustedproxy using the process-wide
+// trusted-proxy CIDR list (VAULTDMS_TRUSTED_PROXY_CIDRS). Services
+// install the default via trustedproxy.SetDefault in main.go; if they
+// forget, the helper degrades to r.RemoteAddr, which is always safe.
 //
 // NOTE: this package MUST NOT import services/policy. The Decider
 // interface keeps the policy-service binary wire-compatible without
@@ -23,11 +22,11 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 )
 
 // GeofenceAction mirrors services/policy/internal/model.GeofenceAction
@@ -124,7 +123,7 @@ func Geofence(cfg GeofenceConfig) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			ip := realClientIP(r)
+			ip := trustedproxy.RealClientIPNetIP(r, trustedproxy.Default())
 			wsID, docID := cfg.ResolveScope(r)
 			action := cfg.Action(r)
 			decision, err := cfg.Decide(r.Context(), tenantID, wsID, docID, action, ip)
@@ -169,22 +168,4 @@ func defaultStepUpHook(w http.ResponseWriter, _ *http.Request, d GeofenceDecisio
 	w.WriteHeader(http.StatusPreconditionRequired) // 428
 }
 
-// realClientIP extracts the source IP. Upstream pkg/http/realip or
-// chi's RealIP middleware set r.RemoteAddr to the un-proxied client
-// IP; we defensively re-derive from X-Forwarded-For in case this
-// middleware is mounted standalone.
-func realClientIP(r *http.Request) net.IP {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Right-most hop is the one added by the trusted proxy.
-		parts := strings.Split(xff, ",")
-		candidate := strings.TrimSpace(parts[len(parts)-1])
-		if ip := net.ParseIP(candidate); ip != nil {
-			return ip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	return net.ParseIP(host)
-}
+// (realClientIP was removed — see pkg/trustedproxy. T-D-2.)

@@ -5,12 +5,12 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 )
 
 // RateLimiter implements a Redis token bucket per tenant+IP+endpoint.
@@ -63,11 +63,10 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// extractIP resolves the request's real source IP via pkg/trustedproxy.
+// The previous implementation returned the left-most X-Forwarded-For
+// entry, which is attacker-controlled — letting a single client evade
+// per-IP rate limits by rotating the header value.
 func extractIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return host
+	return trustedproxy.RealClientIPString(r)
 }

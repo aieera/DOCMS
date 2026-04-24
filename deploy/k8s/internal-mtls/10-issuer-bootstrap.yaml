@@ -1,0 +1,10 @@
+# Bootstrap SelfSigned issuer. Used once, to sign the internal root
+# Certificate in 20-ca.yaml. Every subsequent issuance goes through
+# the CA-backed Issuer in 30-issuer-internal.yaml.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: internal-bootstrap
+  namespace: vaultdms-pki
+spec:
+  selfSigned: {}

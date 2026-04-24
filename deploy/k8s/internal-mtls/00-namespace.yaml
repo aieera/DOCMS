@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vaultdms-pki
+  labels:
+    purpose: internal-mtls-authority
+    # Everything in this namespace is a TLS secret or issuer config;
+    # no workload pods run here. Locked down by a separate
+    # NetworkPolicy (not in this file).

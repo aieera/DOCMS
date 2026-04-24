@@ -59,6 +59,45 @@ export STORAGE_SERVICE_ADDR="localhost:9093"
 # interoperates with a compose gateway.
 export VAULTDMS_GATEWAY_SECRET="${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
 
+# ADR 0031 — /internal/* auth plane. Dev runs in HMAC-only mode with a
+# shared secret; mTLS is enabled via cert-manager in k8s and (for local
+# hacking) via mkcert below. VAULTDMS_TRUSTED_PROXY_CIDRS covers the
+# loopback range so XFF headers sent by the compose gateway are
+# honoured. In production both must be tightened — see the runbook at
+# docs/runbooks/internal-mtls-bootstrap.md.
+export VAULTDMS_INTERNAL_AUTH_MODE="${VAULTDMS_INTERNAL_AUTH_MODE:-hmac}"
+export VAULTDMS_INTERNAL_HMAC_SECRET="${VAULTDMS_INTERNAL_HMAC_SECRET:-dev-only-internal-hmac-rotate-in-prod}"
+export VAULTDMS_TRUSTED_PROXY_CIDRS="${VAULTDMS_TRUSTED_PROXY_CIDRS:-127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
+
+# Optional: bootstrap mTLS material via mkcert when the operator asks
+# for it (VAULTDMS_INTERNAL_AUTH_MODE=mtls or both). mkcert manages a
+# local development CA it trusts; we reuse that as the internal CA for
+# the duration of the dev session. Skipped silently when mkcert is not
+# installed and hmac mode is enough.
+if [ "$VAULTDMS_INTERNAL_AUTH_MODE" != "hmac" ]; then
+  if ! command -v mkcert >/dev/null 2>&1; then
+    echo "VAULTDMS_INTERNAL_AUTH_MODE=$VAULTDMS_INTERNAL_AUTH_MODE but mkcert is not on PATH." >&2
+    echo "Install mkcert (https://github.com/FiloSottile/mkcert) or fall back to hmac mode." >&2
+    exit 1
+  fi
+  mkdir -p .dev-certs
+  if [ ! -f .dev-certs/ca.pem ]; then
+    echo "Bootstrapping dev internal CA via mkcert → .dev-certs/"
+    cp "$(mkcert -CAROOT)/rootCA.pem" .dev-certs/ca.pem
+    # One leaf good for every in-cluster SAN we allowlist. The SAN
+    # list here must match VAULTDMS_INTERNAL_SAN_ALLOWLIST below.
+    (cd .dev-certs && mkcert \
+      -cert-file client.pem -key-file client-key.pem \
+      worker.temporal.internal sweeper.ack.internal \
+      policy.internal signature.internal notification.internal \
+      audit.internal auth.internal) >/dev/null
+  fi
+  export VAULTDMS_INTERNAL_CA_CERT="$(pwd)/.dev-certs/ca.pem"
+  export VAULTDMS_INTERNAL_CLIENT_CERT="$(pwd)/.dev-certs/client.pem"
+  export VAULTDMS_INTERNAL_CLIENT_KEY="$(pwd)/.dev-certs/client-key.pem"
+  export VAULTDMS_INTERNAL_SAN_ALLOWLIST="worker.temporal.internal,sweeper.ack.internal,policy.internal,signature.internal,notification.internal,audit.internal,auth.internal"
+fi
+
 echo "Starting ${#service_specs[@]} services..."
 for spec in "${service_specs[@]}"; do
   IFS=':' read -r svc grpc_port health_port http_port <<<"$spec"

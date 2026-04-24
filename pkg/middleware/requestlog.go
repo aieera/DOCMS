@@ -3,10 +3,10 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/vaultdms/vaultdms/pkg/logger"
+	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 	"google.golang.org/grpc"
 )
 
@@ -80,19 +80,12 @@ func isHealthPath(p string) bool {
 	return p == "/healthz" || p == "/readyz" || p == "/metrics"
 }
 
+// clientIP resolves the request's real source IP via pkg/trustedproxy.
+// The prior implementation took the left-most X-Forwarded-For entry,
+// which is attacker-controlled; callers of this function (audit logs,
+// request logs) would record whatever value the client supplied. The
+// trustedproxy helper only believes XFF for hops whose source is a
+// trusted proxy (see VAULTDMS_TRUSTED_PROXY_CIDRS).
 func clientIP(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		if i := strings.IndexByte(v, ','); i > 0 {
-			return strings.TrimSpace(v[:i])
-		}
-		return strings.TrimSpace(v)
-	}
-	if v := r.Header.Get("X-Real-IP"); v != "" {
-		return v
-	}
-	host := r.RemoteAddr
-	if i := strings.LastIndexByte(host, ':'); i > 0 {
-		host = host[:i]
-	}
-	return host
+	return trustedproxy.RealClientIPString(r)
 }

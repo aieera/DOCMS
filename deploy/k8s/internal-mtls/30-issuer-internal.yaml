@@ -1,0 +1,10 @@
+# CA-backed Issuer. Every leaf Certificate in 40-*.yaml references
+# this. Consumers can be in any namespace — the Issuer is cluster-wide
+# (ClusterIssuer) so services don't need to duplicate it per namespace.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: vaultdms-internal-ca
+spec:
+  ca:
+    secretName: vaultdms-internal-ca

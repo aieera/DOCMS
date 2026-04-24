@@ -1,0 +1,26 @@
+# The self-signed root for the internal auth plane. 10-year lifetime
+# so this never expires under our feet; leaf certs rotate in 30 days.
+#
+# Renewal: cert-manager auto-renews at 2/3 lifetime. Emergency rotation
+# procedure is in docs/runbooks/internal-mtls-bootstrap.md.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vaultdms-internal-ca
+  namespace: vaultdms-pki
+spec:
+  isCA: true
+  commonName: vaultdms-internal-ca
+  secretName: vaultdms-internal-ca
+  duration: 87600h   # 10 years
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: internal-bootstrap
+    kind: Issuer
+    group: cert-manager.io
+  usages:
+    - cert sign
+    - crl sign
