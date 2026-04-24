@@ -47,6 +47,16 @@ type AckRemindersOutcome struct {
 	ExecutedAt string `json:"executed_at"`
 }
 
+// SignatureProfileOrphanInput / Outcome — T-D-4 daily sweep.
+type SignatureProfileOrphanInput struct {
+	TenantID string `json:"tenant_id"`
+}
+type SignatureProfileOrphanOutcome struct {
+	TenantID   string `json:"tenant_id"`
+	Swept      int    `json:"swept"`
+	ExecutedAt string `json:"executed_at"`
+}
+
 // ---- Workflows ------------------------------------------------------------
 
 func PasswordExpiryWorkflow(ctx workflow.Context, in PasswordExpiryInput) (*PasswordExpiryOutcome, error) {
@@ -70,6 +80,37 @@ func PasswordExpiryWorkflow(ctx workflow.Context, in PasswordExpiryInput) (*Pass
 		return out, err
 	}
 	out.Flagged = flagged
+	return out, nil
+}
+
+// SignatureProfileOrphanWorkflow runs the T-D-4 daily orphan sweep
+// for one tenant. Same retry profile as AckReminders — the sweep is
+// idempotent at both the S3 (DeleteObject) and DB (ClearImageRef)
+// layers.
+func SignatureProfileOrphanWorkflow(ctx workflow.Context, in SignatureProfileOrphanInput) (*SignatureProfileOrphanOutcome, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts:    3,
+			InitialInterval:    10 * time.Second,
+			BackoffCoefficient: 2,
+			MaximumInterval:    1 * time.Minute,
+		},
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	out := &SignatureProfileOrphanOutcome{
+		TenantID:   in.TenantID,
+		ExecutedAt: workflow.Now(ctx).UTC().Format(time.RFC3339),
+	}
+	type sweepRes struct {
+		Swept int
+	}
+	var res sweepRes
+	if err := workflow.ExecuteActivity(ctx, "SweepSignatureProfileOrphans", in.TenantID).
+		Get(ctx, &res); err != nil {
+		return out, err
+	}
+	out.Swept = res.Swept
 	return out, nil
 }
 
@@ -147,6 +188,31 @@ func RegisterWave15Schedules(ctx context.Context, pool *pgxpool.Pool, tc client.
 		})
 		if !scheduleErrIsBenign(err) {
 			return created, fmt.Errorf("create schedule %s: %w", pwID, err)
+		}
+		if err == nil {
+			created++
+		}
+
+		// Signature-profile orphan sweep — daily 03:00 UTC, ahead of
+		// ack reminders so dashboards reflect yesterday's cleanup. See
+		// T-D-4.
+		sigID := "signature-profile-orphan-sweep-" + tenantID
+		_, err = sc.Create(ctx, client.ScheduleOptions{
+			ID: sigID,
+			Spec: client.ScheduleSpec{
+				CronExpressions: []string{"0 3 * * *"},
+				TimeZoneName:    "UTC",
+			},
+			Action: &client.ScheduleWorkflowAction{
+				ID:        "wf-" + sigID + "-" + now,
+				Workflow:  SignatureProfileOrphanWorkflow,
+				Args:      []any{SignatureProfileOrphanInput{TenantID: tenantID}},
+				TaskQueue: taskQueue,
+			},
+			Overlap: 1,
+		})
+		if !scheduleErrIsBenign(err) {
+			return created, fmt.Errorf("create schedule %s: %w", sigID, err)
 		}
 		if err == nil {
 			created++
