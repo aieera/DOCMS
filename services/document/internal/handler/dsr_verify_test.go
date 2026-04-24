@@ -35,7 +35,7 @@ func TestDSRVerify_MissingEmail400(t *testing.T) {
 	mux := newDSRVerifyMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/privacy/verify/request-token",
 		bytes.NewBufferString(`{}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -46,7 +46,7 @@ func TestDSRVerify_MalformedEmail400(t *testing.T) {
 	mux := newDSRVerifyMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/privacy/verify/request-token",
 		bytes.NewBufferString(`{"subject_email":"no-at-sign"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

@@ -36,7 +36,7 @@ func TestRedact_Forbidden403_NonCompliance(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x","regions":[{"page":1}]}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "member")
 	w := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func TestRedact_BadDocUUID400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/not-a-uuid/redact",
 		bytes.NewBufferString(`{"reason":"x","regions":[{"page":1}]}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -62,7 +62,7 @@ func TestRedact_MissingReason400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"regions":[{"page":1}]}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestRedact_EmptyRegionsAndEntities400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -88,7 +88,7 @@ func TestRedact_BadVersionID400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x","version_id":"bad","regions":[{"page":1}]}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()

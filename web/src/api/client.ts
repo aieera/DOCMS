@@ -51,13 +51,46 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// The only endpoint that authoritatively reports session-invalid is
+// `/auth/me` — a 401 there means the session cookie is gone or
+// expired. 401s from any OTHER endpoint can mean many things
+// (missing tenant header, service-specific auth failure, transient
+// upstream) and should NOT blanket-logout the user — they'd lose
+// their session on a single flaky request.
+//
+// Prior behaviour: any 401 anywhere → logout + redirect. That made
+// "click dashboard card → navigate to /workspaces → GET /workspaces
+// 401s for a root cause → user kicked to /login" a frequent dev
+// surprise. Fixed 2026-04-20.
+const SESSION_VALIDATION_PATHS = ['/auth/me']
+
 api.interceptors.response.use(
   (r) => r,
   (error) => {
     const status = error.response?.status
+    const url = error.config?.url || ''
     if (status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+      if (SESSION_VALIDATION_PATHS.some((p) => url.includes(p))) {
+        // Actual session expiry or invalidation.
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+      } else {
+        // Per-request auth failure — session may still be valid.
+        // Surface the error and let the caller (or the user) decide.
+        toast.error('Request unauthorised — if this persists, sign in again')
+      }
+    } else if (status === 428) {
+      // Wave 15.2 step-up challenge. The geofence middleware sets
+      // `WWW-Authenticate: Step-Up` when the policy requires re-MFA
+      // before the request can proceed. Surface a toast and point
+      // the user at the challenge path; full MFA challenge UX is a
+      // Wave 15.2 follow-up.
+      toast.error('Additional verification required for this location. Re-authenticate and try again.')
+    } else if (status === 451) {
+      // Wave 15.2 geofence deny. 451 Unavailable For Legal Reasons
+      // is the canonical code for tenant / country / CIDR blocks.
+      const reason = error.response?.headers?.['x-geofence-reason'] || ''
+      toast.error(`Request blocked by geofence policy${reason ? ` (${reason})` : ''}`)
     } else if (status === 403) {
       toast.error('Access denied')
     } else if (status === 429) {

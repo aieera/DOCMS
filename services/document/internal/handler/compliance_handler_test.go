@@ -48,7 +48,7 @@ func TestHolds_Create_MalformedJSON400(t *testing.T) {
 	mux := newHoldsMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/compliance/holds",
 		bytes.NewBufferString("{{{"))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -63,7 +63,7 @@ func TestHolds_Create_InvalidDocUUID400(t *testing.T) {
 	body := `{"name":"Matter A","document_ids":["not-a-uuid"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/compliance/holds",
 		bytes.NewBufferString(body))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -77,7 +77,7 @@ func TestHolds_List_InvalidStatus400(t *testing.T) {
 	mux := newHoldsMux(t)
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/compliance/holds?status=bogus", nil)
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -93,7 +93,7 @@ func TestHolds_Release_MissingApprover400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/compliance/holds/"+id+"/release",
 		bytes.NewBufferString(`{"reason":"done"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -107,7 +107,7 @@ func TestHolds_Get_BadUUID400(t *testing.T) {
 	mux := newHoldsMux(t)
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/compliance/holds/not-a-uuid", nil)
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "compliance_officer")
 	w := httptest.NewRecorder()
@@ -124,7 +124,7 @@ func TestHolds_Create_Forbidden403_WhenNotComplianceOfficer(t *testing.T) {
 	mux := newHoldsMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/compliance/holds",
 		bytes.NewBufferString(`{"name":"x","document_ids":["`+uuid.New().String()+`"]}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	req.Header.Set("X-User-Role", "member")
 	w := httptest.NewRecorder()
