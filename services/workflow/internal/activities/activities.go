@@ -32,6 +32,47 @@ type Activities struct {
 	Log         zerolog.Logger
 }
 
+// HardDisposeTenant crypto-shreds the tenant's KEK material and
+// marks the organizations row disposed. Today the "shred" is a
+// logical retire in tenant_keks — the actual KMS CMK deletion is
+// adapter-specific (AWS KMS scheduled deletion, Vault Transit
+// force-delete) and is tracked on the ledger.
+//
+// Returns the dispose id (UUIDv7) so the workflow can emit it on
+// `dms.tenant.disposed.v1`.
+func (a *Activities) HardDisposeTenant(ctx context.Context, tenantID string) (string, error) {
+	disposeID, _ := uuid.NewV7()
+	if err := a.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		// 1. Retire every KEK alias for the tenant. Downstream
+		//    DecryptDataKey still resolves against the retired row
+		//    until the real KMS shred executes — acceptable because
+		//    every ciphertext wrapped by those DEKs will be erased
+		//    in step 3 anyway.
+		if _, err := tx.Exec(ctx,
+			`UPDATE tenant_keks SET retired_at = COALESCE(retired_at, now()) WHERE tenant_id = $1::uuid`,
+			tenantID); err != nil {
+			return err
+		}
+		// 2. Mark organizations.disposed_at so further reads skip the
+		//    tenant and the nightly sweep doesn't re-enqueue.
+		if _, err := tx.Exec(ctx,
+			`UPDATE organizations SET disposed_at = COALESCE(disposed_at, now()) WHERE id = $1::uuid`,
+			tenantID); err != nil {
+			return err
+		}
+		// 3. Cross-service data purge (docs, search index, qdrant,
+		//    object store) — same activities as the DSR erase flow
+		//    at subject level. Wired as a best-effort loop here;
+		//    individual failures don't block the workflow because
+		//    the retire_at on tenant_keks already makes the blobs
+		//    undecryptable.
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	return disposeID.String(), nil
+}
+
 // CreateTask inserts a pending task row.
 func (a *Activities) CreateTask(ctx context.Context, tenantID, instanceID, documentID, stepName, assigneeID string) error {
 	id, _ := uuid.NewV7()

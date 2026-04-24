@@ -60,6 +60,51 @@ func (a *Activities) PurgeSubjectFromSearch(ctx context.Context, tenantID, subje
 	return body.Deleted, nil
 }
 
+// AvailabilityResult is the IsUserOnLeave activity's payload. Single
+// struct return because Temporal activities marshal one non-error value.
+type AvailabilityResult struct {
+	OnLeave bool   `json:"on_leave"`
+	Reason  string `json:"reason"`
+}
+
+// IsUserOnLeave asks the policy service whether `assigneeID` is currently
+// unavailable (vacation, leave, off-rotation). Used by ApprovalWorkflow
+// to skip the step instead of waiting 72h for a signal that won't come.
+//
+// Contract: GET <policy>/internal/v1/users/<id>/availability
+//   200 { "on_leave": bool, "reason": string }
+//   any other code → treat as available (fail open: never block an
+//   approval chain on policy-service downtime).
+//
+// Soft no-op if the policy URL is unconfigured (dev / standalone tests).
+func (a *Activities) IsUserOnLeave(ctx context.Context, assigneeID string) (AvailabilityResult, error) {
+	base := a.ServiceURLs["policy"]
+	if base == "" {
+		return AvailabilityResult{}, nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet,
+		fmt.Sprintf("%s/internal/v1/users/%s/availability", base, assigneeID), nil)
+	if err != nil {
+		return AvailabilityResult{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// Fail open. Logged so ops sees policy-service blips.
+		a.Log.Warn().Err(err).Str("assignee_id", assigneeID).
+			Msg("on-leave check failed; treating as available")
+		return AvailabilityResult{}, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return AvailabilityResult{}, nil
+	}
+	var body AvailabilityResult
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	return body, nil
+}
+
 // PurgeSubjectFromVectors is the Qdrant equivalent. Qdrant is
 // stubbed in the search service today (spec: "semantic via Qdrant
 // stubbed for Phase 11"). Until a real Qdrant client is wired, the

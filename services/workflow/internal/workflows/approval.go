@@ -65,6 +65,29 @@ func ApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (string, 
 func executeStep(ctx workflow.Context, input model.ApprovalInput, idx int, step model.Step) string {
 	logger := workflow.GetLogger(ctx)
 
+	// Skip-level: if the assignee is on leave, record the reason on the
+	// task and skip without notifying or waiting. Approval-chain semantics
+	// per the brief: a skipped step counts as "approved" so the chain
+	// proceeds. Fail open — IsUserOnLeave returns (false, "", nil) on
+	// policy-service downtime so we never block a chain on a stale check.
+	if step.AssigneeID != "" {
+		var avail struct {
+			OnLeave bool   `json:"on_leave"`
+			Reason  string `json:"reason"`
+		}
+		if err := workflow.ExecuteActivity(ctx, "IsUserOnLeave", step.AssigneeID).
+			Get(ctx, &avail); err == nil && avail.OnLeave {
+			logger.Info("skip-level: assignee on leave",
+				"step", step.Name, "assignee", step.AssigneeID, "reason", avail.Reason)
+			_ = workflow.ExecuteActivity(ctx, "CreateTask",
+				input.TenantID, input.InstanceID, input.DocumentID, step.Name, step.AssigneeID).Get(ctx, nil)
+			_ = workflow.ExecuteActivity(ctx, "CompleteTask",
+				input.TenantID, input.InstanceID, idx, "skipped",
+				"auto-skipped (on leave): "+avail.Reason).Get(ctx, nil)
+			return "approved"
+		}
+	}
+
 	_ = workflow.ExecuteActivity(ctx, "CreateTask", input.TenantID, input.InstanceID, input.DocumentID, step.Name, step.AssigneeID).Get(ctx, nil)
 	_ = workflow.ExecuteActivity(ctx, "NotifyAssignee", input.TenantID, step.AssigneeID, input.DocumentID, step.Name).Get(ctx, nil)
 

@@ -41,12 +41,17 @@ func (r *Repository) runTenant(ctx context.Context, tenantID string, fn func(tx 
 
 // ---- Definitions ----------------------------------------------------------
 
-// CreateDefinition persists a workflow definition.
+// CreateDefinition persists a workflow definition. The DB column for
+// the serialized steps is `definition` (jsonb NOT NULL) — the Go
+// model's `Steps` field wraps it for historical naming reasons.
 func (r *Repository) CreateDefinition(ctx context.Context, d *model.WorkflowDefinition) error {
 	stepsJSON, _ := json.Marshal(d.Steps)
+	if len(stepsJSON) == 0 {
+		stepsJSON = []byte("[]")
+	}
 	return r.runTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO workflow_definitions (id, tenant_id, name, description, steps, created_by, created_at, updated_at)
+			INSERT INTO workflow_definitions (id, tenant_id, name, description, definition, created_by, created_at, updated_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		`, d.ID, d.TenantID, d.Name, d.Description, stepsJSON, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
 		return err
@@ -57,8 +62,11 @@ func (r *Repository) CreateDefinition(ctx context.Context, d *model.WorkflowDefi
 func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*model.WorkflowDefinition, error) {
 	var out []*model.WorkflowDefinition
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		// description is nullable; created_by is nullable (FK allows it).
 		rows, err := tx.Query(ctx, `
-			SELECT id, tenant_id, name, description, steps, created_by, created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description, ''), definition,
+			       COALESCE(created_by, '00000000-0000-0000-0000-000000000000'::uuid),
+			       created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 ORDER BY created_at DESC`, tenantID)
 		if err != nil {
 			return err
@@ -85,7 +93,9 @@ func (r *Repository) GetDefinition(ctx context.Context, tenantID, id string) (*m
 	var found bool
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
-			SELECT id, tenant_id, name, description, steps, created_by, created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description, ''), definition,
+			       COALESCE(created_by, '00000000-0000-0000-0000-000000000000'::uuid),
+			       created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 AND id = $2`, tenantID, id).
 			Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &stepsJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
 		if err == pgx.ErrNoRows {

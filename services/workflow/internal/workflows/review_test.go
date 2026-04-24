@@ -68,6 +68,17 @@ func (*stubActivities)EvaluateCondition(_ context.Context, _, _, _ string) (bool
 	return false, nil
 }
 
+// stubAvailability mirrors activities.AvailabilityResult by JSON shape;
+// duplicated here to avoid pulling the activities package into tests.
+type stubAvailability struct {
+	OnLeave bool   `json:"on_leave"`
+	Reason  string `json:"reason"`
+}
+
+func (*stubActivities)IsUserOnLeave(_ context.Context, _ string) (stubAvailability, error) {
+	return stubAvailability{}, nil
+}
+
 func TestReviewWorkflow_UnanimousApprove(t *testing.T) {
 	s := testsuite.WorkflowTestSuite{}
 	env := s.NewTestWorkflowEnvironment()

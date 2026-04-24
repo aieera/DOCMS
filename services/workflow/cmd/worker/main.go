@@ -85,11 +85,15 @@ func main() {
 		Pool:   pool,
 		Outbox: database.NewOutboxRepository(),
 		Redis:  rdb,
-		// Wave 12.4: cross-service erase targets. Empty = soft no-op.
+		// Cross-service HTTP targets. Empty = soft no-op.
+		// Wave 12.4: search / qdrant / connector (DSR).
+		// Wave 15.3 / 15.1: auth / acknowledgement (sweepers).
 		ServiceURLs: map[string]string{
-			"search":    os.Getenv("VAULTDMS_SEARCH_URL"),
-			"qdrant":    os.Getenv("VAULTDMS_QDRANT_URL"),
-			"connector": os.Getenv("VAULTDMS_CONNECTOR_URL"),
+			"search":          os.Getenv("VAULTDMS_SEARCH_URL"),
+			"qdrant":          os.Getenv("VAULTDMS_QDRANT_URL"),
+			"connector":       os.Getenv("VAULTDMS_CONNECTOR_URL"),
+			"auth":            os.Getenv("VAULTDMS_AUTH_URL"),
+			"acknowledgement": os.Getenv("VAULTDMS_ACKNOWLEDGEMENT_URL"),
 		},
 		Log: *log.Z(),
 	}
@@ -103,6 +107,10 @@ func main() {
 	w.RegisterWorkflow(workflows.EraseWorkflow)
 	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
+	w.RegisterWorkflow(workflows.DeprovisionWorkflow)
+	// Wave 15 sweepers.
+	w.RegisterWorkflow(workflows.PasswordExpiryWorkflow)
+	w.RegisterWorkflow(workflows.AckRemindersWorkflow)
 	w.RegisterActivity(acts)
 
 	log.Info(ctx).
@@ -121,6 +129,14 @@ func main() {
 		log.Error(ctx).Err(err).Msg("retention schedules bootstrap failed")
 	} else if n > 0 {
 		log.Info(ctx).Int("created", n).Msg("retention schedules registered")
+	}
+
+	// Wave 15 per-tenant schedules: password-expiry (02:00 UTC) +
+	// acknowledgement-reminders (09:00 UTC). Idempotent.
+	if n, err := workflows.RegisterWave15Schedules(ctx, pool, tc, queue); err != nil {
+		log.Error(ctx).Err(err).Msg("wave 15 schedules bootstrap failed")
+	} else if n > 0 {
+		log.Info(ctx).Int("created", n).Msg("wave 15 schedules registered")
 	}
 
 	if err := w.Run(worker.InterruptCh()); err != nil {

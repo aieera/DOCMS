@@ -92,6 +92,7 @@ func main() {
 	w.RegisterWorkflow(workflows.EraseWorkflow)
 	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
+	w.RegisterWorkflow(workflows.DeprovisionWorkflow)
 	w.RegisterActivity(acts)
 	go func() {
 		if err := w.Run(worker.InterruptCh()); err != nil {
@@ -116,6 +117,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
