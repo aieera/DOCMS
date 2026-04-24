@@ -90,3 +90,33 @@ no-ops when no tenant is on ctx (remediation 04b live-run).
 **MFA setup fails with "KEK unavailable"**
 — `VAULTDMS_LOCAL_KEK` not set and no KMS configured. Generate:
 `openssl rand -base64 32`.
+
+## Architecture
+
+```mermaid
+graph LR
+  BR[Browser] -->|cookie+CSRF| A(auth)
+  IDP[SAML/OIDC IdP] -->|SSO| A
+  A --> PG[(users/sessions<br/>api_keys/sso_configs)]
+  A --> RD[(Redis<br/>session cache + rate limit)]
+  A -.outbox.-> NE((AUTH stream))
+  A --> KEK[pkg/crypto<br/>tenant KEK]
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | users + sessions + outbox |
+| `VAULTDMS_REDIS_URL` | session cache + login rate limit |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `VAULTDMS_LOCAL_KEK` | base64 32-byte KEK for MFA secret encryption |
+| `SESSION_COOKIE_SECRET` | HMAC of session cookies |
+| `VAULTDMS_PUBLIC_URL` | SAML/OIDC redirect base |
+| `VAULTDMS_HTTP_PORT` (8080) | service port |
+
+## On-call
+
+- [runbook 06 — session cookies + CSRF](../../docs/runbooks/06-session-cookies-csrf.md)
+- [runbook 12 — secret rotation](../../docs/runbooks/12-secret-rotation.md) (JWT signing key + api-internal tokens pass through auth)
+- [runbook 06 — key management](../../docs/runbooks/06-key-management.md) (MFA secret KEK)

@@ -32,6 +32,14 @@ type UserRepository interface {
 	ClearMFA(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hashToRemove string) error
 	SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.Status) error
+
+	// Password lifecycle (Wave 15.3).
+	SetMustChangePassword(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, must bool) error
+	SetPasswordLifecycle(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, changedAt time.Time, expiresAt *time.Time) error
+	RecordPasswordHistory(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hash string, keepN int) error
+	RecentPasswordHashes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, n int) ([]string, error)
+	FlagExpiredPasswords(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, now time.Time, limit int) ([]uuid.UUID, error)
+	GetTenantPasswordExpiryDays(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error)
 }
 
 type userRepo struct{}
@@ -157,6 +165,7 @@ const selectUserSQL = `
 	       COALESCE(mfa_secret_encrypted, ''),
 	       COALESCE(mfa_recovery_hashes, '{}'::text[]),
 	       last_login_at, locale, timezone, settings,
+	       password_changed_at, must_change_password, password_expires_at, sso_federated,
 	       created_at, updated_at, deleted_at
 	FROM users`
 
@@ -169,6 +178,8 @@ func scanUser(s scanner) (*model.User, error) {
 		settings  []byte
 		last      *time.Time
 		deleted   *time.Time
+		pwChanged *time.Time
+		pwExpires *time.Time
 	)
 	if err := s.Scan(
 		&u.TenantID, &u.ID, &u.Email, &u.DisplayName,
@@ -176,6 +187,7 @@ func scanUser(s scanner) (*model.User, error) {
 		&role, &st, &u.MFAEnabled,
 		&u.MFASecretEnc, &u.MFARecoveryHashes,
 		&last, &u.Locale, &u.Timezone, &settings,
+		&pwChanged, &u.MustChangePassword, &pwExpires, &u.SSOFederated,
 		&u.CreatedAt, &u.UpdatedAt, &deleted,
 	); err != nil {
 		return nil, mapPgError(err)
@@ -184,6 +196,8 @@ func scanUser(s scanner) (*model.User, error) {
 	u.Status = model.Status(st)
 	u.LastLoginAt = last
 	u.DeletedAt = deleted
+	u.PasswordChangedAt = pwChanged
+	u.PasswordExpiresAt = pwExpires
 	if len(settings) > 0 {
 		_ = json.Unmarshal(settings, &u.Settings)
 	}
@@ -191,6 +205,128 @@ func scanUser(s scanner) (*model.User, error) {
 		u.Settings = map[string]any{}
 	}
 	return &u, nil
+}
+
+// ---- Wave 15.3: password lifecycle ---------------------------------------
+
+func (r *userRepo) SetMustChangePassword(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, must bool) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users SET must_change_password = $3, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2`, tenantID, id, must)
+	return mapPgError(err)
+}
+
+func (r *userRepo) SetPasswordLifecycle(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, changedAt time.Time, expiresAt *time.Time) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users
+		   SET password_changed_at = $3,
+		       password_expires_at = $4,
+		       must_change_password = false,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id, changedAt, expiresAt)
+	return mapPgError(err)
+}
+
+// RecordPasswordHistory appends the hash and trims the oldest rows so only
+// the most recent `keepN` remain.
+func (r *userRepo) RecordPasswordHistory(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hash string, keepN int) error {
+	if keepN <= 0 {
+		keepN = 5
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO password_history (tenant_id, user_id, password_hash)
+		VALUES ($1, $2, $3)`, tenantID, id, hash); err != nil {
+		return mapPgError(err)
+	}
+	_, err := tx.Exec(ctx, `
+		DELETE FROM password_history
+		 WHERE tenant_id = $1 AND user_id = $2
+		   AND id NOT IN (
+		     SELECT id FROM password_history
+		      WHERE tenant_id = $1 AND user_id = $2
+		      ORDER BY created_at DESC
+		      LIMIT $3
+		   )`, tenantID, id, keepN)
+	return mapPgError(err)
+}
+
+func (r *userRepo) RecentPasswordHashes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, n int) ([]string, error) {
+	if n <= 0 {
+		n = 5
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT password_hash FROM password_history
+		 WHERE tenant_id = $1 AND user_id = $2
+		 ORDER BY created_at DESC
+		 LIMIT $3`, tenantID, id, n)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// FlagExpiredPasswords sets must_change_password=true for local-auth users
+// whose password_expires_at is in the past. Returns the IDs it flipped so
+// the caller can emit per-user events. Capped by `limit` to keep each cron
+// tick small and bounded.
+func (r *userRepo) FlagExpiredPasswords(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, now time.Time, limit int) ([]uuid.UUID, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	rows, err := tx.Query(ctx, `
+		UPDATE users
+		   SET must_change_password = true, updated_at = now()
+		 WHERE tenant_id = $1
+		   AND sso_federated = false
+		   AND deleted_at IS NULL
+		   AND must_change_password = false
+		   AND password_expires_at IS NOT NULL
+		   AND password_expires_at <= $2
+		   AND id IN (
+		     SELECT id FROM users
+		      WHERE tenant_id = $1
+		        AND sso_federated = false
+		        AND deleted_at IS NULL
+		        AND must_change_password = false
+		        AND password_expires_at IS NOT NULL
+		        AND password_expires_at <= $2
+		      LIMIT $3
+		   )
+		RETURNING id`, tenantID, now, limit)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetTenantPasswordExpiryDays returns the tenant-configured expiry window.
+// organizations is not RLS-protected; caller passes the tenant id explicitly.
+func (r *userRepo) GetTenantPasswordExpiryDays(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error) {
+	var days int
+	err := tx.QueryRow(ctx, `SELECT password_expiry_days FROM organizations WHERE id = $1`, tenantID).Scan(&days)
+	if err != nil {
+		return 0, mapPgError(err)
+	}
+	return days, nil
 }
 
 func nullableStr(s string) any {
