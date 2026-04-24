@@ -1,0 +1,68 @@
+# Static application security testing. Runs Semgrep with five
+# curated rulepacks (golang, OWASP Top 10, JWT, SQL injection,
+# secrets) plus the VaultDMS custom rules in .semgrep/.
+#
+# Gate: any ERROR-level finding blocks merge. WARNING is informational
+# (uploaded as SARIF but doesn't fail the job) so the team doesn't
+# pile up false-positive suppressions under pressure.
+#
+# Replaces the ad-hoc `--config auto` run in .github/workflows/ci.yml.
+# Once this gate is merged and green on main, the operator should
+# delete the `security-semgrep` job from ci.yml; kept here for one
+# cycle so both runs coexist during rollout.
+
+name: sast-semgrep
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write    # upload SARIF to Security tab
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.89.0
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Curated packs come from Semgrep's community registry. Versions
+      # are NOT pinned by the registry; Semgrep resolves to the latest
+      # rules each run. This is intentional — security rules should
+      # ratchet forward — but watch for new ERROR findings on green
+      # baselines and triage before flipping to WARNING.
+      - name: Semgrep (rulepacks + custom)
+        run: |
+          semgrep scan \
+            --config p/golang \
+            --config p/owasp-top-ten \
+            --config p/jwt \
+            --config p/sql-injection \
+            --config p/secrets \
+            --config .semgrep/ \
+            --error \
+            --severity ERROR \
+            --sarif --output semgrep.sarif \
+            --metrics off \
+            .
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          retention-days: 30

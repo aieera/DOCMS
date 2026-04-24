@@ -1,0 +1,70 @@
+# VaultDMS — reject direct reads of X-Auth-* / X-User-* headers from
+# service-facing handlers.
+#
+# Identity (tenant, user id, role) is populated into context by the
+# middleware stack — pkg/middleware.SessionAuth for HTTP,
+# pkg/middleware.UserIdentityInterceptor for gRPC. Handlers call
+# pkg/auth.User(ctx), pkg/auth.GetTenantID(ctx), pkg/auth.GetUserID(ctx).
+#
+# Reading X-Auth-Tenant-ID (etc) directly in a handler bypasses that
+# middleware and trusts whatever the network caller supplied. The
+# ONLY correct sites for direct reads are:
+#   - pkg/middleware/**                (sets up the ctx values)
+#   - pkg/gateway/**                   (forwards the header upstream)
+#   - services/*/cmd/server/**         (wiring)
+#   - test fixtures                    (arrange headers by hand)
+#
+# Anywhere else this is a tenant-isolation footgun.
+#
+# Severity is WARNING (not ERROR) during the migration window:
+# handlers today legitimately read the header because the TenantHTTP
+# middleware validates and re-writes it upstream, so a direct read
+# from the handler is already the trusted post-middleware value.
+# The cleanup target is replacing direct header reads with
+# auth.GetTenantID(ctx) / auth.User(ctx) so the handler is explicit
+# about its trust-chain assumption. Promote to ERROR once the last
+# handler migrates (tracked in docs/tech-debt/ledger.md).
+
+rules:
+  - id: vaultdms-direct-auth-tenant-header
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Do not read X-Auth-Tenant-ID directly in handlers. Use
+      pkg/auth.GetTenantID(ctx) which is populated by the middleware
+      stack after validating the session. Direct reads bypass auth
+      and allow the caller to spoof any tenant.
+    paths:
+      include:
+        - services/**/*.go
+      exclude:
+        - services/*/cmd/server/**
+        - pkg/middleware/**
+        - pkg/gateway/**
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: $R.Header.Get("X-Auth-Tenant-ID")
+      - pattern: $R.Header.Get("X-Tenant-ID")
+      - pattern: $R.Header["X-Auth-Tenant-ID"]
+
+  - id: vaultdms-direct-user-id-header
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Do not read X-User-ID / X-User-Role directly in handlers. Use
+      pkg/auth.User(ctx) or pkg/auth.GetUserID(ctx) —
+      middleware.UserIdentityInterceptor / SessionAuth populates
+      them. Direct reads are a tenant/role-isolation footgun.
+    paths:
+      include:
+        - services/**/*.go
+      exclude:
+        - services/*/cmd/server/**
+        - pkg/middleware/**
+        - pkg/gateway/**
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: $R.Header.Get("X-User-ID")
+      - pattern: $R.Header.Get("X-User-Role")
+      - pattern: $R.Header["X-User-ID"]
+      - pattern: $R.Header["X-User-Role"]
