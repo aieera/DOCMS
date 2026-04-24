@@ -16,7 +16,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -245,14 +244,16 @@ func RegisterWave15Schedules(ctx context.Context, pool *pgxpool.Pool, tc client.
 }
 
 // scheduleErrIsBenign returns true when err is nil OR a Temporal
-// AlreadyExists — idempotency hook for bootstrap-on-every-boot.
+// *serviceerror.AlreadyExists. The former strings.Contains fallback
+// was T-D-8: brittle across SDK versions and silently swallowing any
+// other "already exists"-ish error text (e.g. unrelated upstream
+// collisions). Temporal SDK ≥ v1.25 exposes AlreadyExists as a
+// typed error; the workflow module's go.mod pins v1.26.1 so the
+// errors.As path is authoritative here.
 func scheduleErrIsBenign(err error) bool {
 	if err == nil {
 		return true
 	}
 	var already *serviceerror.AlreadyExists
-	if errors.As(err, &already) {
-		return true
-	}
-	return strings.Contains(err.Error(), "already exists")
+	return errors.As(err, &already)
 }
