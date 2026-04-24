@@ -7,7 +7,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/trustedproxy"
 	"github.com/vaultdms/vaultdms/services/acknowledgement/internal/model"
 	"github.com/vaultdms/vaultdms/services/acknowledgement/internal/service"
 )
@@ -365,21 +365,9 @@ func writeErr(w http.ResponseWriter, err error) {
 	writeJSON(w, code, map[string]any{"error": map[string]any{"code": verr.Code, "message": verr.Message}})
 }
 
-// clientMeta returns (ip, user-agent). Matches the pattern used by
-// the auth service's handler.go#clientMeta.
+// clientMeta returns (ip, user-agent). IP resolution goes through
+// pkg/trustedproxy so XFF is only honoured for hops whose source is
+// in VAULTDMS_TRUSTED_PROXY_CIDRS — see T-D-2.
 func clientMeta(r *http.Request) (string, string) {
-	ip := ""
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Right-most hop after trusted proxy.
-		parts := strings.Split(xff, ",")
-		ip = strings.TrimSpace(parts[len(parts)-1])
-	}
-	if ip == "" {
-		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			ip = host
-		} else {
-			ip = r.RemoteAddr
-		}
-	}
-	return ip, r.UserAgent()
+	return trustedproxy.RealClientIPString(r), r.UserAgent()
 }
