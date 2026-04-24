@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
 	"github.com/vaultdms/vaultdms/pkg/config"
+	"github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
@@ -59,8 +61,8 @@ func main() {
 	defer nc.Close()
 
 	var s3c *storage.S3Client
-	if cfg.MinIOEndpoint != "" {
-		s3c, err = storage.NewS3Client(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
+	if cfg.S3Endpoint != "" {
+		s3c, err = storage.NewS3Client(cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3UseSSL)
 		if err != nil {
 			log.Fatal(ctx).Err(err).Msg("s3 connect")
 		}
@@ -86,6 +88,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
@@ -102,7 +105,44 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
+
+	// Wave 15.4 saved-signature profiles — separate chi router under
+	// SessionAuth + TenantHTTP so handlers can pull auth.User(ctx).
+	// KMS wired from the LocalKEK for dev; swap Vault/AWS/PKCS#11 in
+	// prod via config. S3 client from above.
+	var profileRouter http.Handler
+	if s3c != nil && cfg.LocalKEK != "" {
+		km, kerr := crypto.NewLocalKeyManager(cfg.LocalKEK, nil)
+		if kerr != nil {
+			log.Fatal(ctx).Err(kerr).Msg("kms init")
+		}
+		profileSvc := service.NewProfileService(service.ProfileServiceConfig{
+			Pool:  pool,
+			Repo:  repository.NewProfileRepo(),
+			KMS:   km,
+			Store: service.NewProfileS3Adapter(s3c),
+		})
+		pr := chi.NewRouter()
+		pr.Use(middleware.TenantHTTP(pool))
+		pr.Use(middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool}))
+		profileMux := http.NewServeMux()
+		handler.NewProfileHandler(profileSvc).Register(profileMux)
+		pr.Mount("/", profileMux)
+		profileRouter = pr
+	} else {
+		log.Warn(ctx).Msg("signature profiles disabled: S3 or LocalKEK missing")
+	}
+
+	// Root mux: signature-profile routes go through the chi sub-router
+	// with session auth; everything else keeps the legacy path.
+	rootMux := http.NewServeMux()
+	if profileRouter != nil {
+		rootMux.Handle("/api/v1/signatures/profiles", profileRouter)
+		rootMux.Handle("/api/v1/signatures/profiles/", profileRouter)
+	}
+	rootMux.Handle("/", mux)
+
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(rootMux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
