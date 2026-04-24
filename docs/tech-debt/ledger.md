@@ -12,45 +12,43 @@ to a dedicated follow-up wave.
 
 ## Active entries
 
-### T-D-1 — `/internal/*` sweeper endpoints rely on shared gateway secret
+### T-D-1 — `/internal/*` sweeper endpoints relied on shared gateway secret (RESOLVED 2026-04-24)
 
-- **Opened:** 2026-04-23 · Wave 15.1
-- **Impact:** Medium (auth, lateral)
-- **Where:** `services/acknowledgement/internal/handler/handler.go:39`
-  + `services/workflow/internal/activities/wave15.go:53,104`
-- **What:** The worker → ack-service handshake authenticates via
-  `RequireGatewaySignature + TenantHTTP`. Any in-cluster service
-  holding `VAULTDMS_GATEWAY_SECRET` can call this path with an
-  arbitrary `X-Auth-Tenant-ID` and trigger reminder + escalation
-  side-effects for that tenant (bumps `reminded_count`, stamps
-  `escalated_at`, emits notifications and hash-chain events).
-- **Not yet fixed because:** the same trust-model exists on
-  several other services' internal endpoints. Solving for one
-  without solving for all is a patch; we need an ADR + a shared
-  `pkg/middleware/internal_auth.go` design pass.
-- **Owner queue:** Platform-security (cross-service).
-- **Exit criterion:** internal routes mount on a second listener
-  with mTLS OR `X-Internal-Worker-Signature` HMAC middleware.
+- **Opened:** 2026-04-23 · Wave 15.1 — **Resolved:** 2026-04-24 (ADR 0031).
+- **Impact:** Medium (auth, lateral).
+- **What was broken:** The worker → ack-service handshake
+  authenticated via `RequireGatewaySignature + TenantHTTP`. Any
+  in-cluster service holding `VAULTDMS_GATEWAY_SECRET` could POST to
+  `/internal/v1/acknowledgement/sweep-reminders` with an arbitrary
+  `X-Auth-Tenant-ID` and trigger reminder/escalation side-effects
+  for that tenant.
+- **Fix:** `pkg/internalauth` is a new single auth plane for
+  `/internal/*`. mTLS validates the peer cert chain against the
+  internal CA and requires the client cert's DNS SAN to appear in a
+  per-service allowlist. HMAC (dual-mounted during rollout) binds
+  method + path + timestamp + body with a 5-minute skew window.
+  `internalauth.Mux` is path-aware: `/internal/*` goes through the
+  verifier, `/api/*` keeps `RequireGatewaySignature`, kube probes
+  bypass both. Wired into acknowledgement, audit, auth,
+  notification, policy, search, signature, workflow. See ADR 0031
+  and `docs/runbooks/internal-mtls-bootstrap.md`.
 
-### T-D-2 — `realClientIP` trusts right-most XFF hop
+### T-D-2 — `realClientIP` trusted right-most XFF hop (RESOLVED 2026-04-24)
 
-- **Opened:** 2026-04-23 · Wave 15.2
-- **Impact:** Medium (geofence bypass)
-- **Where:** `pkg/middleware/geofence.go:176-190` (and
-  `services/acknowledgement/internal/handler/handler.go:366-381`).
-- **What:** Spoofable when the middleware is ever mounted without
-  a normalising proxy in front. Today correct behind Kong, but
-  there's no code invariant that prevents a service owner from
-  adding `Geofence(...)` to an internal listener and taking the
-  hit.
-- **Not yet fixed because:** requires a trusted-proxy-CIDR config
-  + an ADR on the trust-boundary shape (where the TLS terminator
-  is, what normalises XFF, etc.). pkg/gateway/waf.go already has
-  a `RealIP` middleware — consolidating on that is cleanest.
-- **Owner queue:** Platform-security.
-- **Exit criterion:** `Geofence` refuses to parse XFF unless
-  `TrustedProxies` is configured, OR delegates to `RealIP`
-  exclusively.
+- **Opened:** 2026-04-23 · Wave 15.2 — **Resolved:** 2026-04-24 (ADR 0031).
+- **Impact:** Medium (geofence bypass, rate-limit bypass, audit-log
+  spoofing).
+- **What was broken:** Four middlewares (geofence, request log, rate
+  limiter, ack handler) each reimplemented `realClientIP` with
+  incompatible, all-wrong logic; none consulted a trusted-proxy
+  allowlist. Rate limiter and request log took the left-most XFF
+  hop, which is attacker-controlled; geofence and ack handler took
+  the right-most hop unconditionally.
+- **Fix:** `pkg/trustedproxy.RealClientIP` walks XFF right-to-left,
+  only believing a hop whose immediate predecessor is in
+  `VAULTDMS_TRUSTED_PROXY_CIDRS`. `VAULTDMS_ENV=production` with an
+  empty CIDR list panics at boot. All four prior callers now
+  delegate. See ADR 0031.
 
 ### T-D-3 — `services/acknowledgement/internal/service/service.go` is a god object
 
