@@ -79,3 +79,28 @@ mark its preview as "unsupported" rather than retrying.
 **Previews missing for older docs** — the preview service only runs
 on `dms.version.uploaded.v1`. To backfill, republish the event or
 call `POST /preview/generate` manually.
+
+## Architecture
+
+```mermaid
+graph LR
+  NE[NATS<br/>dms.version.uploaded.v1] --> P(preview API)
+  P -->|enqueue| CE[Celery preview queue]
+  CE --> W[preview worker<br/>poppler / soffice / ffmpeg]
+  W --> S3[(S3 {tenant}-previews)]
+  W --> PG[(previews metadata)]
+  CL[client] -->|302 redirect to signed S3 URL| P
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | previews metadata |
+| `VAULTDMS_CELERY_BROKER_URL` | Redis DB 2 |
+| `VAULTDMS_S3_ENDPOINT` / `_ACCESS_KEY` / `_SECRET_KEY` | preview bucket writes |
+| `VAULTDMS_NATS_URL` | upload-event subscribe |
+
+## On-call
+
+No dedicated runbook. Preview is best-effort — the main viewer falls back to PDF.js-generated thumbnails when the preview endpoint returns 404 ("not ready"). A stuck preview never blocks a user.

@@ -17,11 +17,19 @@ class Settings(BaseSettings):
     nats_url: str = "nats://nats:4222"
     nats_stream: str = "VAULTDMS"
 
-    s3_endpoint: str = "http://minio:9000"
+    # S3-API-compatible object store. No default — env MUST set
+    # VAULTDMS_S3_ENDPOINT. Local dev points at the in-compose dev
+    # backend; staging + prod point at AWS S3. A missing value
+    # fails fast at boot rather than letting a dev-backend hardcode
+    # leak into a production deploy.
+    s3_endpoint: str
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_use_ssl: bool = False
     s3_region: str = "us-east-1"
+    # "virtual" for AWS S3 (bucket.s3.amazonaws.com), "path" for
+    # MinIO and most S3-API-compatible stores (server/bucket/key).
+    s3_addressing_style: str = "virtual"
 
     database_url: str = "postgresql://vaultdms:secret@postgres:5432/vaultdms"
 

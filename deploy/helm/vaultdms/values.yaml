@@ -13,6 +13,9 @@ global:
   domain: vaultdms.example.com
   tlsSecretName: vaultdms-tls
 
+  # Object store. AWS S3 in prod; any S3-API-compatible backend for
+  # on-prem (MinIO, Ceph, Cloudian, etc). The service code path is
+  # identical — only the endpoint + credentials differ.
   s3:
     endpoint: "https://s3.us-east-1.amazonaws.com"
     region: us-east-1

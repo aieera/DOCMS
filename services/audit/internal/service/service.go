@@ -13,33 +13,49 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/services/audit/internal/model"
 	"github.com/vaultdms/vaultdms/services/audit/internal/repository"
 )
 
 // Service is the audit service facade.
 type Service struct {
-	repo  *repository.Repository
-	rdb   *redis.Client
-	log   zerolog.Logger
-	locks sync.Map // per-tenant in-process mutex (Redis SETNX backs cross-instance)
+	repo   *repository.Repository
+	rdb    *redis.Client
+	pool   *pgxpool.Pool               // Wave 17: tamper-detect outbox emission
+	outbox *database.OutboxRepository  // nil → emission path is a no-op
+	log    zerolog.Logger
+	locks  sync.Map // per-tenant in-process mutex (Redis SETNX backs cross-instance)
 }
 
 // Config is the DI struct.
 type Config struct {
 	Repo   *repository.Repository
 	Redis  *redis.Client
+	// Pool + Outbox are both required for `dms.audit.tamper_detected.v1`
+	// emission on chain break. Leave nil in tests that don't care about
+	// the emit path; VerifyIntegrity falls back to metrics-only alerting.
+	Pool   *pgxpool.Pool
+	Outbox *database.OutboxRepository
 	Logger zerolog.Logger
 }
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	return &Service{repo: cfg.Repo, rdb: cfg.Redis, log: cfg.Logger}
+	return &Service{
+		repo:   cfg.Repo,
+		rdb:    cfg.Redis,
+		pool:   cfg.Pool,
+		outbox: cfg.Outbox,
+		log:    cfg.Logger,
+	}
 }
 
 // IngestEvent derives an audit entry from a raw NATS CloudEvents envelope.
@@ -117,6 +133,15 @@ func (s *Service) VerifyIntegrity(ctx context.Context, tenantID string) (*model.
 			result.ExpectedHash = expected
 			auditChainBreakTotal.WithLabelValues(tenantID).Inc()
 			auditVerifyTotal.WithLabelValues(tenantID, "break").Inc()
+			// Emit `dms.audit.tamper_detected.v1` via outbox so downstream
+			// consumers (ops Slack bot, SOC feed) see the event in
+			// addition to the alertmanager counter-based page. Outbox
+			// insert failure does NOT swallow the verify result — the
+			// forensics report is the primary output; emission is a
+			// secondary signal.
+			if err := s.emitTamperDetected(ctx, tenantID, e.ID, expected, e.EventHash, result.Verified, result.TotalEvents); err != nil {
+				s.log.Error().Err(err).Str("tenant_id", tenantID).Str("broken_at", e.ID).Msg("emit tamper_detected failed")
+			}
 			return result, nil
 		}
 		result.Verified++
@@ -125,6 +150,40 @@ func (s *Service) VerifyIntegrity(ctx context.Context, tenantID string) (*model.
 	auditVerifyTotal.WithLabelValues(tenantID, "ok").Inc()
 	auditVerifyEventsScanned.WithLabelValues(tenantID).Add(float64(len(events)))
 	return result, nil
+}
+
+// emitTamperDetected writes a `dms.audit.tamper_detected.v1` outbox
+// row. Soft-noop when pool/outbox aren't configured (unit tests);
+// returns error so callers can log, never fails the caller's flow.
+func (s *Service) emitTamperDetected(
+	ctx context.Context,
+	tenantID, brokenAtEventID, expectedHash, actualHash string,
+	verifiedBeforeBreak int64, totalEvents int64,
+) error {
+	if s.pool == nil || s.outbox == nil {
+		return nil
+	}
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("parse tenant_id: %w", err)
+	}
+	brokenUUID, _ := uuid.Parse(brokenAtEventID)
+	payload, err := json.Marshal(map[string]any{
+		"tenant_id":              tenantID,
+		"broken_at_event_id":     brokenAtEventID,
+		"expected_hash":          expectedHash,
+		"actual_hash":            actualHash,
+		"verified_before_break":  verifiedBeforeBreak,
+		"total_events":           totalEvents,
+		"detected_at":            time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	evt := database.NewOutboxEvent(tenantUUID, "dms.audit.tamper_detected.v1", "audit_chain", brokenUUID, json.RawMessage(payload))
+	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+		return s.outbox.Insert(ctx, tx, evt)
+	})
 }
 
 // ExportSubject returns all events for a data subject (GDPR Art.15).

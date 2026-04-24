@@ -26,11 +26,16 @@ class Settings(BaseSettings):
     nats_subject_preview_ready: str = "dms.version.preview_ready.v1"
 
     # --- Object storage ----------------------------------------------------
-    s3_endpoint: str = "http://minio:9000"
+    # S3-API-compatible object store. No default — env VAULTDMS_S3_ENDPOINT
+    # must be set. Local dev points at MinIO via compose; staging +
+    # prod point at AWS S3.
+    s3_endpoint: str
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_use_ssl: bool = False
     s3_region: str = "us-east-1"
+    # "virtual" for AWS (bucket.s3.amazonaws.com); "path" for MinIO.
+    s3_addressing_style: str = "virtual"
     # Buckets follow dms-{region}-{tier} — previews live in a tier of their own.
     preview_bucket_template: str = "dms-{region}-previews"
     # Presign TTL for REST redirects.

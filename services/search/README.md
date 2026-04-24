@@ -109,3 +109,29 @@ Autocomplete uses a completion suggester that's separate from the main
 index. If the completion suggester isn't warm, the first query takes
 seconds. Warm it with a scheduled GET on common prefixes or raise
 `index.refresh_interval` on `_autocomplete`.
+
+## Architecture
+
+```mermaid
+graph LR
+  NE[NATS dms.&gt;] -->|8 durable subs| S(search)
+  S --> OS[(OpenSearch<br/>dms_documents)]
+  S --> PG[(saved_searches)]
+  WEB[web/mobile] -->|/search| S
+  S -->|ACL filter readable_by| OS
+```
+
+Every hit is scoped at query time by `readable_by` against the caller's group set; the `permission.changed.v1` consumer keeps that field current.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_OPENSEARCH_URL` / `_USERNAME` / `_PASSWORD` | index store |
+| `VAULTDMS_DATABASE_URL` | saved_searches |
+| `VAULTDMS_NATS_URL` | 8 durable consumer subs |
+| `VAULTDMS_HTTP_PORT` (8080) / `_GRPC_PORT` (9090) / `_HEALTH_PORT` (8081) | service ports |
+
+## On-call
+
+No dedicated runbook. SLO target `search p99 < 300ms`. Cold-OpenSearch after restart: first 60 s discarded in perf runs. For missed permission updates → force reindex via admin CLI.

@@ -23,13 +23,6 @@
 // Enforcement: DocumentService.DeleteDocument pre-checks
 // AnyActiveHoldFor(documentID) and returns ErrLegalHold (→ 423
 // Locked) when the binding table has an active row.
-//
-// NOTE: this file is the real Wave 8.2 implementation. The small
-// helpers in retention.go (CreateLegalHold / ReleaseLegalHold) were
-// written against a schema that never existed (`legal_hold_items` +
-// `reason` + `status` columns). They remain unreferenced by the
-// server boot and are scheduled for removal in the Wave 11 workflow
-// consolidation.
 package compliance
 
 import (

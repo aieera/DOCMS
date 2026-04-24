@@ -58,7 +58,20 @@ func main() {
 	defer nc.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(service.Config{Repo: repo, Redis: rdb, Logger: *log.Z()})
+	outbox := database.NewOutboxRepository()
+	svc := service.New(service.Config{
+		Repo:   repo,
+		Redis:  rdb,
+		Pool:   pool,
+		Outbox: outbox,
+		Logger: *log.Z(),
+	})
+
+	// Wave 17 — publish `dms.audit.tamper_detected.v1` to JetStream.
+	// Service is otherwise consumer-only; this is the one emit path.
+	publisher := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
+	go publisher.Start(ctx)
+	defer publisher.Stop()
 
 	if err := svc.StartConsumer(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
@@ -75,6 +88,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))

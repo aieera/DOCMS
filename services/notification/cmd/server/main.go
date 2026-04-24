@@ -87,6 +87,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))

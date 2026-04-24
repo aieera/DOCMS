@@ -69,3 +69,28 @@ SES / SendGrid in `services/notification/internal/service/service.go`
 The `notifications` row is the durable record; any WS listener that
 comes online after a missed publish reads from the row via the REST
 list API.
+
+## Architecture
+
+```mermaid
+graph LR
+  NE[NATS dms.notify.&gt;] --> N(notification)
+  N --> PG[(notifications<br/>preferences)]
+  N -->|pub| RD[(Redis notif:{t}:{u})]
+  RD -->|sub| WS[collab / web WS]
+  N -->|stubbed| MAIL[email provider<br/>SES / SendGrid]
+  CL[client REST] -->|list/read| N
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | notifications + preferences |
+| `VAULTDMS_REDIS_URL` | real-time pub/sub |
+| `VAULTDMS_NATS_URL` | `dms.notify.>` subscribe |
+| `VAULTDMS_HTTP_PORT` (8080) / `_HEALTH_PORT` (8081) | service ports |
+
+## On-call
+
+No dedicated runbook. Notifications are resilient by design — REST is the authoritative read path; Redis pub/sub is the push-delivery optimisation. Restart is safe.

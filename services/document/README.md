@@ -75,3 +75,32 @@ handler reports "folder not found".
 service returns `region_pin: immutable` validation errors. To
 physically move a doc across regions use the compliance migration
 tool, not a PATCH.
+
+## Architecture
+
+```mermaid
+graph LR
+  W[web] -->|REST via gateway| D(document)
+  M[mobile] -->|REST| D
+  S[storage] -->|upload_completed.v1| NE((NATS)) --> D
+  D -->|CheckPermission gRPC| POL[policy]
+  D --> PG[(documents/versions<br/>folders/workspaces<br/>legal_holds/retention<br/>outbox)]
+  D -.outbox.-> DE((DOC_EVENTS))
+```
+
+Per ADR 0021, `dms.version.uploaded.v1` is emitted here (not from storage). Outbox lands in the same tx as the version-row insert.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | 45-table doc schema + outbox |
+| `VAULTDMS_REDIS_URL` | tenant route cache |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `POLICY_SERVICE_ADDR` | gRPC permission checks (default `policy:9090`) |
+| `VAULTDMS_HTTP_PORT` / `_GRPC_PORT` / `_HEALTH_PORT` | service ports |
+
+## On-call
+
+- [runbook 08 — retention](../../docs/runbooks/08-retention.md) (lifecycle state machine, legal holds)
+- [runbook 13 — control plane](../../docs/runbooks/13-control-plane.md) (hard-dispose activity retires KEKs + marks org disposed)

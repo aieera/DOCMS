@@ -52,16 +52,16 @@ Common environment variables injected into every Go service
     secretKeyRef:
       name: {{ .Values.gateway.secret.name | default "vaultdms-gateway" }}
       key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
-- name: VAULTDMS_MINIO_ENDPOINT
+- name: VAULTDMS_S3_ENDPOINT
   value: {{ .Values.global.s3.endpoint | quote }}
-- name: VAULTDMS_MINIO_USE_SSL
+- name: VAULTDMS_S3_USE_SSL
   value: {{ .Values.global.s3.useSSL | quote }}
-- name: VAULTDMS_MINIO_ACCESS_KEY
+- name: VAULTDMS_S3_ACCESS_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.s3.accessKeySecret }}
       key: {{ .Values.global.s3.accessKeyKey }}
-- name: VAULTDMS_MINIO_SECRET_KEY
+- name: VAULTDMS_S3_SECRET_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.s3.accessKeySecret }}

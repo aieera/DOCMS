@@ -36,10 +36,14 @@ type Config struct {
 
 	NATSURL string `mapstructure:"nats_url" validate:"required"`
 
-	MinIOEndpoint  string `mapstructure:"minio_endpoint"`
-	MinIOAccessKey string `mapstructure:"minio_access_key"`
-	MinIOSecretKey string `mapstructure:"minio_secret_key"`
-	MinIOUseSSL    bool   `mapstructure:"minio_use_ssl"`
+	// S3-API-compatible object store. Production + staging run
+	// against AWS S3; local dev uses MinIO via docker-compose. The
+	// code path is identical — only the endpoint + credential source
+	// differs. Env prefix VAULTDMS_S3_* per Wave 15 cutover.
+	S3Endpoint  string `mapstructure:"s3_endpoint"`
+	S3AccessKey string `mapstructure:"s3_access_key"`
+	S3SecretKey string `mapstructure:"s3_secret_key"`
+	S3UseSSL    bool   `mapstructure:"s3_use_ssl"`
 
 	OpenSearchURL      string `mapstructure:"opensearch_url"`
 	OpenSearchUsername string `mapstructure:"opensearch_username"`
@@ -142,9 +146,10 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("http_port", "VAULTDMS_HTTP_PORT")
 	_ = v.BindEnv("grpc_port", "VAULTDMS_GRPC_PORT")
 	_ = v.BindEnv("health_port", "VAULTDMS_HEALTH_PORT")
-	_ = v.BindEnv("minio_endpoint", "VAULTDMS_MINIO_ENDPOINT")
-	_ = v.BindEnv("minio_access_key", "VAULTDMS_MINIO_ACCESS_KEY")
-	_ = v.BindEnv("minio_secret_key", "VAULTDMS_MINIO_SECRET_KEY")
+	_ = v.BindEnv("s3_endpoint", "VAULTDMS_S3_ENDPOINT")
+	_ = v.BindEnv("s3_access_key", "VAULTDMS_S3_ACCESS_KEY")
+	_ = v.BindEnv("s3_secret_key", "VAULTDMS_S3_SECRET_KEY")
+	_ = v.BindEnv("s3_use_ssl", "VAULTDMS_S3_USE_SSL")
 	_ = v.BindEnv("local_kek", "VAULTDMS_LOCAL_KEK")
 	_ = v.BindEnv("public_url", "VAULTDMS_PUBLIC_URL")
 	_ = v.BindEnv("internal_api_key", "VAULTDMS_INTERNAL_API_KEY")
