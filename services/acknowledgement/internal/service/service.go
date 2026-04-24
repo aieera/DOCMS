@@ -31,6 +31,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -106,17 +107,25 @@ type Config struct {
 	Logger   zerolog.Logger
 }
 
-// New constructs a service.
-func New(cfg Config) *Service {
+// New constructs a service. Returns an error when cfg.Resolver is
+// nil — T-D-6. The former StaticRecipientResolver silent fallback
+// masked a production misconfig (auth-service resolver missing) as a
+// per-request validation error, so operators learned only when an
+// admin created a campaign targeting groups. This path now fails at
+// boot so the operator sees it immediately.
+//
+// Tests that want the dev/static path construct
+// StaticRecipientResolver{} explicitly and pass it in.
+func New(cfg Config) (*Service, error) {
 	if cfg.Resolver == nil {
-		cfg.Resolver = StaticRecipientResolver{}
+		return nil, fmt.Errorf("acknowledgement.service.New: Resolver is required (supply StaticRecipientResolver{} in tests; wire an auth-service resolver in prod)")
 	}
 	return &Service{
 		pool: cfg.Pool, repo: cfg.Repo, outbox: cfg.Outbox,
 		kms: cfg.KMS, resolver: cfg.Resolver, log: cfg.Logger,
 		now:      time.Now,
 		keyCache: map[uuid.UUID][]byte{},
-	}
+	}, nil
 }
 
 // clock returns the service's current UTC time; every wall-clock read
