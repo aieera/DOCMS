@@ -46,6 +46,7 @@ service_specs=(
   "signature:9098:8089:8188"
   "billing:9099:8090:8189"
   "connector:9100:8091:8190"
+  "acknowledgement:9101:8092:8191"
 )
 
 # Inter-service addresses must match the per-service port assignments above.

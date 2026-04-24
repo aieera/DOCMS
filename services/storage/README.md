@@ -36,7 +36,7 @@ gRPC:
 
 ## Configuration
 
-- `VAULTDMS_MINIO_ENDPOINT` / `_S3_*`
+- `VAULTDMS_S3_ENDPOINT` / `_S3_ACCESS_KEY` / `_S3_SECRET_KEY` / `_S3_USE_SSL`
 - `CLAMAV_ADDR` (default `clamav:3310`)
 - `POLICY_SERVICE_ADDR`
 - `VAULTDMS_LOCAL_KEK` (base64 32 bytes, when KMS=local)
@@ -86,3 +86,35 @@ don't strip. The `parse()` function is pinned by
 **MinIO unhealthy** — image ships without `curl`. The healthcheck
 fallback uses bash `/dev/tcp` — fixed in the compose file after the
 04b live run.
+
+## Architecture
+
+```mermaid
+graph LR
+  CL[client] -->|InitiateUpload gRPC| S(storage)
+  S -->|CheckPermission| POL[policy]
+  CL -->|direct PUT| S3[(S3 hot bucket)]
+  CL -->|CompleteUpload| S
+  S -->|INSTREAM scan| CLAM[ClamAV]
+  S -->|GenerateDataKey| KEK[pkg/crypto<br/>tenant KEK]
+  S -->|envelope encrypt| S3
+  S --> PG[(upload_sessions<br/>content_blobs)]
+  S -.outbox.-> SE((STORAGE / upload_completed.v1))
+```
+
+ADR 0021: `dms.version.uploaded.v1` is emitted by the **document** service, not here. Storage emits `upload_completed.v1`; document consumes that and creates the version row → emits version.uploaded.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | upload_sessions + content_blobs |
+| `VAULTDMS_S3_ENDPOINT` / `_S3_ACCESS_KEY` / `_S3_SECRET_KEY` / `_S3_USE_SSL` | object store |
+| `CLAMAV_ADDR` (3310) | INSTREAM virus scan |
+| `POLICY_SERVICE_ADDR` | permission check on every upload |
+| `VAULTDMS_LOCAL_KEK` | base64 32-byte master (local KMS) |
+| `VAULTDMS_KMS_PROVIDER` | `local \| vault \| aws` |
+
+## On-call
+
+- [runbook 06 — key management](../../docs/runbooks/06-key-management.md) (per-tenant KEK wrapping of every DEK)

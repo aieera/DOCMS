@@ -36,6 +36,7 @@ package testharness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -46,6 +47,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
@@ -178,6 +180,153 @@ func (h *Harness) SeedTenant(t *testing.T, name string) uuid.UUID {
 	}
 	return id
 }
+
+// ---- Wave 15 extensions: cross-tenant RLS helper --------------------------
+
+// AssertRLSIsolated verifies that two tenants cannot see each other's
+// rows through a tenant-scoped connection.
+//
+// insertA writes a row inside a tenant-A tx; insertB writes in B;
+// countInA returns how many rows a tenant-scoped read sees.
+//
+// The harness runs both inserts, then asserts each tenant sees
+// exactly 1 row — if RLS is missing or the policy is wrong, one
+// tenant will see 2 (or leak PKs from the other). This is the
+// hard-stop P0 gate from the Wave 15 brief's stop conditions.
+func (h *Harness) AssertRLSIsolated(
+	t *testing.T,
+	tenantA, tenantB uuid.UUID,
+	insert func(tx pgx.Tx) error,
+	count func(tx pgx.Tx) (int, error),
+) {
+	t.Helper()
+	// Insert one row per tenant.
+	for _, tid := range []uuid.UUID{tenantA, tenantB} {
+		if err := h.WithTenantTx(tid, insert); err != nil {
+			t.Fatalf("insert for tenant %s: %v", tid, err)
+		}
+	}
+	// Each tenant must see exactly 1 row.
+	for _, tid := range []uuid.UUID{tenantA, tenantB} {
+		var got int
+		err := h.WithTenantTx(tid, func(tx pgx.Tx) error {
+			n, e := count(tx)
+			got = n
+			return e
+		})
+		if err != nil {
+			t.Fatalf("count for tenant %s: %v", tid, err)
+		}
+		if got != 1 {
+			t.Fatalf("RLS leak: tenant %s saw %d rows; expected 1", tid, got)
+		}
+	}
+}
+
+// WithTenantTx is a test-facing shim around
+// pkg/database.WithTenantTx that avoids importing the database
+// package here (which would create an import cycle via callers
+// that depend on testharness from under pkg/). Mirrors the
+// production semantics exactly: begin tx, SET LOCAL
+// app.current_tenant = <id>, run fn, commit on nil error.
+func (h *Harness) WithTenantTx(tenantID uuid.UUID, fn func(tx pgx.Tx) error) error {
+	conn, err := h.Pool.Acquire(h.Ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	tx, err := conn.Begin(h.Ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(h.Ctx,
+		"SELECT set_config('app.current_tenant', $1, true)", tenantID.String()); err != nil {
+		_ = tx.Rollback(h.Ctx)
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback(h.Ctx)
+		return err
+	}
+	return tx.Commit(h.Ctx)
+}
+
+// RequireContainersOrSkip is the companion to New for tests that
+// want to auto-bootstrap a Postgres + Redis + NATS via
+// testcontainers when env vars are absent. Callers import
+// pkg/testutil for the container helpers; this harness layer stays
+// dep-free so `go test` from a dev box without docker doesn't fail.
+// If an env var is set, the corresponding container is skipped —
+// mixing modes is explicitly supported so CI can use compose for
+// NATS but testcontainers for Postgres, for example.
+//
+// Returns a Cleanup the test should call; New already registers
+// t.Cleanup so the harness itself is automatic.
+func (h *Harness) RequireContainersOrSkip(t *testing.T, opts ContainerOptions) func() {
+	t.Helper()
+	if !opts.Any() {
+		return func() {}
+	}
+	return func() {
+		// Per-container teardown is registered by the caller via
+		// the Cleanup funcs returned from pkg/testutil; this stub
+		// exists so test code looks symmetric. Real wiring is done
+		// in NewWithContainers below.
+	}
+}
+
+// ContainerOptions is what NewWithContainers consumes. Zero-value is
+// "start nothing" — the caller picks their trade-off per-test.
+type ContainerOptions struct {
+	Postgres bool
+	Redis    bool
+	NATS     bool
+}
+
+// Any returns true if any container is requested.
+func (o ContainerOptions) Any() bool { return o.Postgres || o.Redis || o.NATS }
+
+// NewWithContainers is like New but auto-bootstraps any requested
+// service via testcontainers when its env var is absent. Keeps the
+// dev-box path working without docker-compose.
+//
+// Start policy:
+//   - If DATABASE_URL (or REDIS_URL / NATS_URL) is already set, use it.
+//   - Otherwise, start a container via pkg/testutil and set the env
+//     var for the duration of the test.
+//
+// Callers that already use New() don't need to migrate — this is
+// additive.
+func NewWithContainers(t *testing.T, opts ContainerOptions, bootPG, bootRedis, bootNATS containerBoot) *Harness {
+	t.Helper()
+	ctx := context.Background()
+
+	setIfBooted := func(envVar string, need bool, boot containerBoot) {
+		if !need || os.Getenv(envVar) != "" || boot == nil {
+			return
+		}
+		url, cleanup, err := boot(ctx)
+		if err != nil {
+			t.Fatalf("bootstrap %s: %v", envVar, err)
+		}
+		t.Setenv(envVar, url)
+		t.Cleanup(cleanup)
+	}
+	setIfBooted("DATABASE_URL", opts.Postgres, bootPG)
+	setIfBooted("REDIS_URL", opts.Redis, bootRedis)
+	setIfBooted("NATS_URL", opts.NATS, bootNATS)
+	return New(t)
+}
+
+// containerBoot is the shape pkg/testutil.NewPostgresContainer +
+// friends satisfy (returned-URL, cleanup-fn, err). We don't import
+// pkg/testutil here to avoid pulling testcontainers into every
+// build — callers pass the function in.
+type containerBoot func(ctx context.Context) (url string, cleanup func(), err error)
+
+// ErrHarnessNotBooted is returned when a caller asks for a service
+// that the harness doesn't have.
+var ErrHarnessNotBooted = errors.New("harness: requested service not booted")
 
 // WaitForNATSMsg blocks up to `timeout` for one message on `subject`.
 // Common in integration tests that publish via outbox and want to

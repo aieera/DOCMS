@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as SharedTokenRouteImport } from './routes/shared.$token'
@@ -19,11 +20,14 @@ import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedAcknowledgementsRouteImport } from './routes/_authenticated/acknowledgements'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedSettingsSignaturesRouteImport } from './routes/_authenticated/settings/signatures'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminTenantsRouteImport } from './routes/_authenticated/admin/tenants'
 import { Route as AuthenticatedAdminTagsRouteImport } from './routes/_authenticated/admin/tags'
 import { Route as AuthenticatedAdminSsoRouteImport } from './routes/_authenticated/admin/sso'
 import { Route as AuthenticatedAdminShareLinksRouteImport } from './routes/_authenticated/admin/share-links'
@@ -35,11 +39,13 @@ import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_authenticated/admin/metadata-schema'
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
+import { Route as AuthenticatedAdminGeofencesRouteImport } from './routes/_authenticated/admin/geofences'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
+import { Route as AuthenticatedAdminAcknowledgementsRouteImport } from './routes/_authenticated/admin/acknowledgements'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
@@ -56,6 +62,11 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangePasswordRoute = ChangePasswordRouteImport.update({
+  id: '/change-password',
+  path: '/change-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -93,6 +104,12 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAcknowledgementsRoute =
+  AuthenticatedAcknowledgementsRouteImport.update({
+    id: '/acknowledgements',
+    path: '/acknowledgements',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesIndexRoute =
   AuthenticatedWorkspacesIndexRouteImport.update({
     id: '/workspaces/',
@@ -104,6 +121,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSettingsSignaturesRoute =
+  AuthenticatedSettingsSignaturesRouteImport.update({
+    id: '/settings/signatures',
+    path: '/settings/signatures',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminWorkflowsRoute =
   AuthenticatedAdminWorkflowsRouteImport.update({
     id: '/admin/workflows',
@@ -121,6 +144,12 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminTenantsRoute =
+  AuthenticatedAdminTenantsRouteImport.update({
+    id: '/admin/tenants',
+    path: '/admin/tenants',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminTagsRoute = AuthenticatedAdminTagsRouteImport.update({
   id: '/admin/tags',
   path: '/admin/tags',
@@ -185,6 +214,12 @@ const AuthenticatedAdminGroupsRoute =
     path: '/admin/groups',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminGeofencesRoute =
+  AuthenticatedAdminGeofencesRouteImport.update({
+    id: '/admin/geofences',
+    path: '/admin/geofences',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminConnectorsRoute =
   AuthenticatedAdminConnectorsRouteImport.update({
     id: '/admin/connectors',
@@ -215,6 +250,12 @@ const AuthenticatedAdminApiKeysRoute =
     path: '/admin/api-keys',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminAcknowledgementsRoute =
+  AuthenticatedAdminAcknowledgementsRouteImport.update({
+    id: '/admin/acknowledgements',
+    path: '/admin/acknowledgements',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
   AuthenticatedWorkspacesWorkspaceIdIndexRouteImport.update({
     id: '/workspaces/$workspaceId/',
@@ -230,19 +271,23 @@ const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
+  '/change-password': typeof ChangePasswordRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
@@ -254,29 +299,35 @@ export interface FileRoutesByFullPath {
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/admin/tags': typeof AuthenticatedAdminTagsRoute
+  '/admin/tenants': typeof AuthenticatedAdminTenantsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 export interface FileRoutesByTo {
+  '/change-password': typeof ChangePasswordRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof AuthenticatedIndexRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
@@ -288,9 +339,11 @@ export interface FileRoutesByTo {
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/admin/tags': typeof AuthenticatedAdminTagsRoute
+  '/admin/tenants': typeof AuthenticatedAdminTenantsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -299,20 +352,24 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/change-password': typeof ChangePasswordRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/_authenticated/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/_authenticated/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
@@ -324,9 +381,11 @@ export interface FileRoutesById {
   '/_authenticated/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/_authenticated/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/_authenticated/admin/tags': typeof AuthenticatedAdminTagsRoute
+  '/_authenticated/admin/tenants': typeof AuthenticatedAdminTenantsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -336,19 +395,23 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/change-password'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/acknowledgements'
     | '/notifications'
     | '/search'
     | '/tasks'
     | '/trash'
     | '/shared/$token'
+    | '/admin/acknowledgements'
     | '/admin/api-keys'
     | '/admin/audit-log'
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
@@ -360,29 +423,35 @@ export interface FileRouteTypes {
     | '/admin/share-links'
     | '/admin/sso'
     | '/admin/tags'
+    | '/admin/tenants'
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/settings/signatures'
     | '/admin/'
     | '/workspaces/'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/change-password'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/acknowledgements'
     | '/notifications'
     | '/search'
     | '/tasks'
     | '/trash'
     | '/shared/$token'
     | '/'
+    | '/admin/acknowledgements'
     | '/admin/api-keys'
     | '/admin/audit-log'
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
@@ -394,9 +463,11 @@ export interface FileRouteTypes {
     | '/admin/share-links'
     | '/admin/sso'
     | '/admin/tags'
+    | '/admin/tenants'
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/settings/signatures'
     | '/admin'
     | '/workspaces'
     | '/workspaces/$workspaceId'
@@ -404,20 +475,24 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authenticated'
+    | '/change-password'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/_authenticated/acknowledgements'
     | '/_authenticated/notifications'
     | '/_authenticated/search'
     | '/_authenticated/tasks'
     | '/_authenticated/trash'
     | '/shared/$token'
     | '/_authenticated/'
+    | '/_authenticated/admin/acknowledgements'
     | '/_authenticated/admin/api-keys'
     | '/_authenticated/admin/audit-log'
     | '/_authenticated/admin/billing'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
+    | '/_authenticated/admin/geofences'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/legal-holds'
     | '/_authenticated/admin/metadata-schema'
@@ -429,9 +504,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/share-links'
     | '/_authenticated/admin/sso'
     | '/_authenticated/admin/tags'
+    | '/_authenticated/admin/tenants'
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/settings/signatures'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/workspaces/$workspaceId/'
@@ -440,6 +517,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  ChangePasswordRoute: typeof ChangePasswordRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -467,6 +545,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/change-password': {
+      id: '/change-password'
+      path: '/change-password'
+      fullPath: '/change-password'
+      preLoaderRoute: typeof ChangePasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -518,6 +603,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/acknowledgements': {
+      id: '/_authenticated/acknowledgements'
+      path: '/acknowledgements'
+      fullPath: '/acknowledgements'
+      preLoaderRoute: typeof AuthenticatedAcknowledgementsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/': {
       id: '/_authenticated/workspaces/'
       path: '/workspaces'
@@ -530,6 +622,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/signatures': {
+      id: '/_authenticated/settings/signatures'
+      path: '/settings/signatures'
+      fullPath: '/settings/signatures'
+      preLoaderRoute: typeof AuthenticatedSettingsSignaturesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
@@ -551,6 +650,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/tenants': {
+      id: '/_authenticated/admin/tenants'
+      path: '/admin/tenants'
+      fullPath: '/admin/tenants'
+      preLoaderRoute: typeof AuthenticatedAdminTenantsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/tags': {
@@ -630,6 +736,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminGroupsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/geofences': {
+      id: '/_authenticated/admin/geofences'
+      path: '/admin/geofences'
+      fullPath: '/admin/geofences'
+      preLoaderRoute: typeof AuthenticatedAdminGeofencesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/connectors': {
       id: '/_authenticated/admin/connectors'
       path: '/admin/connectors'
@@ -665,6 +778,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminApiKeysRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/acknowledgements': {
+      id: '/_authenticated/admin/acknowledgements'
+      path: '/admin/acknowledgements'
+      fullPath: '/admin/acknowledgements'
+      preLoaderRoute: typeof AuthenticatedAdminAcknowledgementsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/$workspaceId/': {
       id: '/_authenticated/workspaces/$workspaceId/'
       path: '/workspaces/$workspaceId'
@@ -683,16 +803,19 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAcknowledgementsRoute: typeof AuthenticatedAcknowledgementsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAdminAcknowledgementsRoute: typeof AuthenticatedAdminAcknowledgementsRoute
   AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
+  AuthenticatedAdminGeofencesRoute: typeof AuthenticatedAdminGeofencesRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
@@ -704,9 +827,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminShareLinksRoute: typeof AuthenticatedAdminShareLinksRoute
   AuthenticatedAdminSsoRoute: typeof AuthenticatedAdminSsoRoute
   AuthenticatedAdminTagsRoute: typeof AuthenticatedAdminTagsRoute
+  AuthenticatedAdminTenantsRoute: typeof AuthenticatedAdminTenantsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
+  AuthenticatedSettingsSignaturesRoute: typeof AuthenticatedSettingsSignaturesRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -714,16 +839,20 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAcknowledgementsRoute: AuthenticatedAcknowledgementsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAdminAcknowledgementsRoute:
+    AuthenticatedAdminAcknowledgementsRoute,
   AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
+  AuthenticatedAdminGeofencesRoute: AuthenticatedAdminGeofencesRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
@@ -735,9 +864,11 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminShareLinksRoute: AuthenticatedAdminShareLinksRoute,
   AuthenticatedAdminSsoRoute: AuthenticatedAdminSsoRoute,
   AuthenticatedAdminTagsRoute: AuthenticatedAdminTagsRoute,
+  AuthenticatedAdminTenantsRoute: AuthenticatedAdminTenantsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
+  AuthenticatedSettingsSignaturesRoute: AuthenticatedSettingsSignaturesRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
@@ -752,6 +883,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  ChangePasswordRoute: ChangePasswordRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,

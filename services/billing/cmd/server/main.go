@@ -72,7 +72,11 @@ func main() {
 	})
 
 	// ---- Usage metering (hourly cron) ------------------------------------
-	meter := metering.New(repo, *log.Z())
+	// Reporter is a soft-no-op when STRIPE_API_KEY is unset — the
+	// DB-side aggregation still runs so the billing dashboard works
+	// in dev/on-prem installs without a Stripe account.
+	stripeReporter := metering.NewStripeReporter(os.Getenv("STRIPE_API_KEY"), *log.Z())
+	meter := metering.New(repo, stripeReporter, *log.Z())
 	go meter.Start(ctx)
 	defer meter.Stop()
 
@@ -111,6 +115,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))

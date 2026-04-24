@@ -42,6 +42,7 @@ func (h *Handler) listDefinitions(w http.ResponseWriter, r *http.Request) {
 	}
 	defs, err := h.svc.ListDefinitions(r.Context(), tenantID)
 	if err != nil {
+		h.log.Error().Err(err).Str("path", r.URL.Path).Msg("list failed")
 		writeError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
@@ -141,6 +142,7 @@ func (h *Handler) listMyTasks(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	tasks, err := h.svc.ListTasks(r.Context(), tenantID, userID, "pending")
 	if err != nil {
+		h.log.Error().Err(err).Str("path", r.URL.Path).Msg("list failed")
 		writeError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
@@ -179,6 +181,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	tasks, err := h.svc.ListTasks(r.Context(), tenantID, assignee, status)
 	if err != nil {
+		h.log.Error().Err(err).Str("path", r.URL.Path).Msg("list failed")
 		writeError(w, http.StatusInternalServerError, "list failed")
 		return
 	}

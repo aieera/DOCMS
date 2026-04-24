@@ -18,10 +18,15 @@ import (
 )
 
 // Provider is the interface all connectors implement.
+//
+// PKCE note: AuthURL takes a pre-computed S256 code_challenge; the
+// matching code_verifier must be passed back to ExchangeCode on the
+// callback hop. Callers own the verifier-state store (typically
+// Redis keyed on the OAuth `state` param).
 type Provider interface {
 	Name() string
-	AuthURL(redirectURI, state string) string
-	ExchangeCode(ctx context.Context, code, redirectURI string) (*model.OAuthTokens, error)
+	AuthURL(redirectURI, state, codeChallenge string) string
+	ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier string) (*model.OAuthTokens, error)
 	RefreshToken(ctx context.Context, tokens *model.OAuthTokens) (*model.OAuthTokens, error)
 }
 
@@ -36,26 +41,36 @@ type BaseOAuth struct {
 	Log          zerolog.Logger
 }
 
-// AuthURL returns the OAuth2 authorization URL.
-func (b *BaseOAuth) AuthURL(redirectURI, state string) string {
+// AuthURL returns the OAuth2 authorization URL with PKCE S256.
+// codeChallenge must be BASE64URL(SHA256(verifier)); see pkce.go.
+func (b *BaseOAuth) AuthURL(redirectURI, state, codeChallenge string) string {
 	params := url.Values{
-		"client_id":     {b.ClientID},
-		"response_type": {"code"},
-		"redirect_uri":  {redirectURI},
-		"scope":         {strings.Join(b.Scopes, " ")},
-		"state":         {state},
+		"client_id":             {b.ClientID},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {strings.Join(b.Scopes, " ")},
+		"state":                 {state},
+		"code_challenge":        {codeChallenge},
+		"code_challenge_method": {"S256"},
 	}
 	return b.AuthEndpoint + "?" + params.Encode()
 }
 
-// ExchangeCode exchanges an authorization code for tokens.
-func (b *BaseOAuth) ExchangeCode(ctx context.Context, code, redirectURI string) (*model.OAuthTokens, error) {
+// ExchangeCode exchanges an authorization code for tokens, passing
+// the PKCE verifier. An empty verifier is a programming error —
+// callers must store the verifier at authorize time and forward
+// it here.
+func (b *BaseOAuth) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier string) (*model.OAuthTokens, error) {
+	if codeVerifier == "" {
+		return nil, fmt.Errorf("pkce: code_verifier required")
+	}
 	data := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
 		"client_id":     {b.ClientID},
 		"client_secret": {b.ClientSecret},
+		"code_verifier": {codeVerifier},
 	}
 	return b.tokenRequest(ctx, data)
 }

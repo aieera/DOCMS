@@ -64,7 +64,7 @@ func main() {
 	}
 	defer nc.Close()
 
-	s3c, err := storage.NewS3Client(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
+	s3c, err := storage.NewS3Client(cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3UseSSL)
 	if err != nil {
 		log.Fatal(ctx).Err(err).Msg("s3 connect")
 	}
@@ -145,6 +145,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	vaultdmsv1.RegisterStorageServiceServer(grpcSrv, handler.New(svc))

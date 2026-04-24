@@ -82,3 +82,33 @@ sent to a finished workflow id. Check the instance's state first.
 JetStream streams (the `WORKFLOWS` stream) aren't declared. On a
 fresh stack, run `events.EnsureStreams` or let the service boot —
 the `ConnectNATS` wrapper declares all defaults.
+
+## Architecture
+
+```mermaid
+graph LR
+  CL[client / admin] -->|REST start / signal| W(workflow)
+  W -->|start / signal| T[Temporal]
+  T --> WF[[workflows:<br/>Approval / ParallelApproval<br/>Review / Retention<br/>DSR / Residency<br/>Deprovision / Signature]]
+  WF -->|activities| ACT[[Activities<br/>runTenant → WithTenantTx]]
+  ACT --> PG[(workflow_tasks<br/>outbox)]
+  ACT -->|policy check| POL[policy]
+  ACT -->|doc lifecycle| DOC[document]
+  W -.outbox.-> WE((WORKFLOWS + COMPLIANCE_EVENTS))
+```
+
+`activities/tenant.go:runTenant` sets `app.current_tenant` GUC before every query so RLS admits the rows; every tenant-touching activity routes through it.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | workflow_tasks + outbox |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `TEMPORAL_ADDR` | Temporal frontend (default `temporal-frontend:7233`) |
+| `VAULTDMS_HTTP_PORT` (8080) | service port |
+
+## On-call
+
+- [runbook 08 — retention](../../docs/runbooks/08-retention.md) (retention cron workflow + `dispose_candidate.v1`)
+- [runbook 13 — control plane](../../docs/runbooks/13-control-plane.md) (DeprovisionWorkflow + 30-day timer + HardDisposeTenant activity)

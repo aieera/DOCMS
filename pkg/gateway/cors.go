@@ -20,7 +20,15 @@ type CORSConfig struct {
 var DefaultCORS = CORSConfig{
 	AllowedOrigins: []string{"*"},
 	AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-	AllowedHeaders: []string{"Authorization", "Content-Type", "X-Tenant-ID", "X-User-ID", "X-Correlation-ID"},
+	AllowedHeaders: []string{
+		"Authorization", "Content-Type", "X-Correlation-ID",
+		// Tenant/user identity — both legacy and gateway-injected names
+		// are allowed so the frontend can send either and a CORS preflight
+		// doesn't reject a valid request.
+		"X-Tenant-ID", "X-Auth-Tenant-ID", "X-User-ID", "X-User-Role",
+		// CSRF double-submit header (see pkg/middleware/csrf.go).
+		"X-CSRF-Token",
+	},
 	MaxAge:         3600,
 }
 

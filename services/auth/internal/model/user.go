@@ -47,6 +47,10 @@ type User struct {
 	Locale            string
 	Timezone          string
 	Settings          map[string]any
+	PasswordChangedAt   *time.Time
+	MustChangePassword  bool
+	PasswordExpiresAt   *time.Time
+	SSOFederated        bool
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time

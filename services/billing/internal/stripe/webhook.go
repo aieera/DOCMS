@@ -64,7 +64,27 @@ func (wh *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ctx := r.Context()
+
+	// Idempotency guard. Stripe retries up to 3 days; handlers must
+	// be re-entrant. INSERT-ON-CONFLICT returns false on duplicate →
+	// we 200 OK without re-running the handler so Stripe stops
+	// retrying but we don't double-apply side effects.
+	isNew, err := wh.repo.InsertStripeEvent(ctx, event.ID, string(event.Type), body)
+	if err != nil {
+		wh.log.Error().Err(err).Str("event_id", event.ID).Msg("stripe_events insert")
+		// Fail the webhook so Stripe retries once the DB recovers.
+		http.Error(w, "persist", http.StatusServiceUnavailable)
+		return
+	}
+	if !isNew {
+		wh.log.Debug().Str("event_id", event.ID).Msg("stripe duplicate — skipping")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	switch event.Type {
+	case "checkout.session.completed":
+		wh.onCheckoutCompleted(ctx, event)
 	case "invoice.paid":
 		wh.onInvoicePaid(ctx, event)
 	case "invoice.payment_failed":
@@ -78,6 +98,34 @@ func (wh *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// onCheckoutCompleted links a freshly-paid Stripe checkout to the
+// VaultDMS tenant it provisioned. Contract with the frontend:
+// client_reference_id MUST be the provisioning-intent id the
+// checkout was opened with (that id is also the future tenant_id).
+// metadata.tenant_id wins over client_reference_id when both set —
+// lets the operator attach legacy Stripe sessions to existing tenants.
+func (wh *WebhookHandler) onCheckoutCompleted(ctx context.Context, event gostripe.Event) {
+	var session gostripe.CheckoutSession
+	if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
+		wh.log.Warn().Err(err).Msg("parse checkout session")
+		return
+	}
+	tenantID := session.ClientReferenceID
+	if session.Metadata != nil {
+		if v := session.Metadata["tenant_id"]; v != "" {
+			tenantID = v
+		}
+	}
+	if tenantID == "" {
+		wh.log.Warn().Str("session", session.ID).Msg("checkout.session.completed with no tenant reference")
+		return
+	}
+	// Activate the subscription + clear any grace/suspended marker.
+	_ = wh.repo.UpdateSubscriptionStatus(ctx, tenantID, "active", nil)
+	_ = wh.router.Unsuspend(ctx, tenantID)
+	wh.log.Info().Str("tenant", tenantID).Str("session", session.ID).Msg("checkout completed; tenant active")
 }
 
 func (wh *WebhookHandler) onInvoicePaid(ctx context.Context, event gostripe.Event) {

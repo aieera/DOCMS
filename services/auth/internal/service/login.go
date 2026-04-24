@@ -24,14 +24,17 @@ type LoginInput struct {
 	UserAgent  string
 }
 
-// LoginResult returned on successful login. Exactly one of MFARequired or
-// Session will be populated:
-//   - MFARequired=true → client prompts for TOTP, submits via MFA/verify with MFASessionToken
-//   - Session != nil   → client is fully logged in
+// LoginResult returned on successful login. Exactly one of MFARequired,
+// RequirePasswordChange, or Session will be populated:
+//   - MFARequired=true           → client prompts for TOTP, submits via MFA/verify
+//   - RequirePasswordChange=true → client POSTs one-time token + new password to /auth/change-password
+//   - Session != nil             → client is fully logged in
 type LoginResult struct {
-	MFARequired      bool
-	MFASessionToken  string // plaintext, short-lived (5 min)
-	Session          *CreatedSession
+	MFARequired           bool
+	MFASessionToken       string // plaintext, short-lived (5 min)
+	RequirePasswordChange bool
+	OneTimeChangeToken    string // plaintext, short-lived (10 min); single-use
+	Session               *CreatedSession
 }
 
 // Login validates the credentials, handles rate limiting, branches on MFA.
@@ -88,6 +91,18 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 
 	// Clear attempt counter on success.
 	_ = s.rdb.Del(ctx, loginAttemptsKey(org.ID, email)).Err()
+
+	// Wave 15.3: force-change-password branches ahead of MFA so that a
+	// compromised-but-valid password cannot issue a session — even a
+	// TOTP holder must rotate before they get a session cookie. The
+	// token is tenant+user-scoped and single-use with a 10 min TTL.
+	if user.MustChangePassword && !user.SSOFederated {
+		tok, err := s.issuePasswordChangeToken(ctx, user.TenantID, user.ID, ReasonFirstLogin)
+		if err != nil {
+			return nil, err
+		}
+		return &LoginResult{RequirePasswordChange: true, OneTimeChangeToken: tok}, nil
+	}
 
 	if user.MFAEnabled {
 		mfaToken, err := s.issueMFASession(ctx, user.TenantID, user.ID)

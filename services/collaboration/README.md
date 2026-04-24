@@ -83,3 +83,30 @@ on a different pod. Check ingress cookie affinity is enabled:
 **High memory per pod** — each WS connection holds a room membership
 struct. Expected ~10 KiB/user. If higher, look for leaked listeners
 on disconnected sockets.
+
+## Architecture
+
+```mermaid
+graph LR
+  BR[Browser<br/>cookie+CSRF subprotocol] -->|WS upgrade| C(collab)
+  C -->|verify cookie| AS[auth /auth/me]
+  C -->|check document:read| POL[policy /permissions/check]
+  C <-->|pub/sub fanout| RD[(Redis<br/>dms:{t}:doc:{d})]
+  NE[NATS annotation events] -->|bridge| C
+```
+
+Client→server messages (zod-validated): `room.join`, `room.leave`, `comment.{create,update,delete}`, `typing.{start,stop}`. Server→client broadcasts mirror those with past-tense forms (`comment.created` etc) plus `presence.{joined,left}`. Schema violation → close code 4400; policy deny → 4003; auth fail → 4001.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `WS_PORT` (8083) | WebSocket listen port |
+| `REDIS_URL` | cross-pod pub/sub + presence |
+| `AUTH_SERVICE_URL` | `GET /auth/me` for cookie validation at upgrade |
+| `POLICY_SERVICE_URL` | `document:read` check on `room.join` |
+| `VAULTDMS_NATS_URL` | annotation-event bridge |
+
+## On-call
+
+No dedicated runbook. The WS service is stateless except for room membership; safe to restart. Cookie+CSRF verification short-circuits before any state is touched. Related: [runbook 05 — event pipeline](../../docs/runbooks/05-event-pipeline.md) for the NATS→Redis bridge.

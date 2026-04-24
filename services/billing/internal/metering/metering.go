@@ -13,14 +13,16 @@ import (
 
 // Meter collects usage per tenant on a schedule.
 type Meter struct {
-	repo *repository.Repository
-	log  zerolog.Logger
-	stop chan struct{}
+	repo     *repository.Repository
+	reporter *StripeReporter // nil → Stripe reporting disabled
+	log      zerolog.Logger
+	stop     chan struct{}
 }
 
-// New creates a Meter.
-func New(repo *repository.Repository, log zerolog.Logger) *Meter {
-	return &Meter{repo: repo, log: log, stop: make(chan struct{})}
+// New creates a Meter. Pass nil for reporter to disable Stripe Meter
+// reporting (dev / on-prem installs without a Stripe account).
+func New(repo *repository.Repository, reporter *StripeReporter, log zerolog.Logger) *Meter {
+	return &Meter{repo: repo, reporter: reporter, log: log, stop: make(chan struct{})}
 }
 
 // Start runs the metering loop (hourly). Call in a goroutine.
@@ -80,6 +82,26 @@ func (m *Meter) collect(ctx context.Context) {
 		}
 		if err := m.repo.InsertUsage(ctx, record); err != nil {
 			m.log.Error().Err(err).Str("tenant", tid).Msg("insert usage")
+			continue
+		}
+
+		// Ship to Stripe Meters if a reporter is configured AND the
+		// tenant has a linked Stripe customer. A failure here logs
+		// + continues to the next tenant — the row stays
+		// reported_at IS NULL so the next sweep retries.
+		if m.reporter != nil {
+			stripeCust, err := m.repo.StripeCustomerIDFor(ctx, tid)
+			if err != nil {
+				m.log.Warn().Err(err).Str("tenant", tid).Msg("lookup stripe customer")
+				continue
+			}
+			if err := m.reporter.Report(ctx, record, stripeCust); err != nil {
+				m.log.Error().Err(err).Str("tenant", tid).Msg("stripe meter push")
+				continue
+			}
+			if err := m.repo.MarkUsageReported(ctx, tid, periodStart); err != nil {
+				m.log.Warn().Err(err).Str("tenant", tid).Msg("mark reported")
+			}
 		}
 	}
 	m.log.Info().Int("tenants", len(tenants)).Msg("metering: collection complete")

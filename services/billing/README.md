@@ -76,3 +76,34 @@ for the endpoint.
 **Provisioned tenant can't log in** — the admin user row was created
 but no password was set. Send the invite email (via the outbox event)
 or run `dms-admin provision --reset-password`.
+
+**Metering shows 0 for every tenant** — fixed 2026-04-20. The
+metering queries ran without `app.current_tenant` GUC set, so RLS
+returned 0 rows silently. Every query now wraps in `WithTenantTx`.
+
+## Architecture
+
+```mermaid
+graph LR
+  STRIPE[Stripe] -->|webhooks<br/>sig verified| B(billing)
+  ADM[admin UI] -->|X-API-Key| B
+  B --> PG[(organizations<br/>subscriptions<br/>usage_records<br/>stripe_events)]
+  B -.outbox.-> NE((BILLING))
+  B -->|hourly cron| METER[Stripe Meter API]
+  B --> PROV[Provisioner<br/>v1 KEK + tenant route]
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | org/sub/usage/outbox |
+| `VAULTDMS_REDIS_URL` | tenant route cache + idempotency |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `VAULTDMS_INTERNAL_API_KEY` | gate on `/internal/v1/*` |
+| `STRIPE_WEBHOOK_SECRET` | verify inbound webhooks |
+| `STRIPE_API_KEY` | outbound Stripe Meter push (soft no-op when unset) |
+
+## On-call
+
+- [runbook 13 — control plane](../../docs/runbooks/13-control-plane.md) (provisioning, Stripe webhooks, tenant lifecycle, usage metering)

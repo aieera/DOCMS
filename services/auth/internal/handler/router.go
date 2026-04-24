@@ -33,6 +33,8 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/login", h.Login)
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
+		// Wave 15.3: one-time-token-authenticated, so public.
+		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/change-password", h.ChangePassword)
 
 		// ---- SAML 2.0 SSO (public; tenant identified by path slug) -------
 		if saml != nil {
@@ -84,6 +86,14 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		})
 	})
 
+	// ---- Admin password policy (Wave 15.3) -------------------------------
+	r.Route("/api/v1/admin/password-policy", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Use(h.RequireRole("owner"))
+		r.Post("/sweep-expired", h.SweepExpiredPasswordsAdmin)
+	})
+
 	// ---- Admin user management ------------------------------------------------
 	// Frontend calls /api/v1/admin/users/* — gated by the user's role.
 	r.Route("/api/v1/admin/users", func(r chi.Router) {
@@ -94,6 +104,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/invite", h.InviteUserAdmin)
 		r.Post("/{id}/suspend", h.SuspendUserAdmin)
 		r.Post("/{id}/reset-mfa", h.ResetUserMFAAdmin)
+		r.Post("/{id}/force-password-reset", h.ForcePasswordResetAdmin)
 	})
 
 	// ---- Admin groups (Wave 10) ------------------------------------------

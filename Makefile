@@ -54,6 +54,29 @@ test-storage:      ; $(GO) test -race -cover ./services/storage/... ## Run stora
 test-workflow:     ; $(GO) test -race -cover ./services/workflow/... ## Run workflow tests
 test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow ## Run every Go service's unit tests
 
+.PHONY: test-integration test-integration-document test-integration-wave15 test-pades
+test-integration-document: ## Run document service integration tests (Postgres + NATS testcontainers)
+	$(GO) test -tags integration -race -timeout 5m ./services/document/internal/service/...
+
+# Wave 15 cross-tenant RLS hard-stops. Each sub-wave's repository
+# integration test boots a Postgres testcontainer + runs the
+# tenant-isolation assertion. Hard P0 per the Wave 15 brief.
+test-integration-wave15: ## Run Wave 15 cross-tenant isolation tests
+	$(GO) test -tags integration -race -timeout 10m \
+		./services/auth/internal/repository/... \
+		./services/policy/internal/repository/... \
+		./services/acknowledgement/internal/repository/... \
+		./services/signature/internal/repository/...
+
+test-integration: test-integration-document test-integration-wave15 ## Run all service integration tests (build tag: integration)
+
+# Wave 9 / Wave 15.4 — PAdES-B-LT structural validator against a
+# fixture corpus. Point VAULTDMS_PADES_FIXTURES at a directory of
+# real signed PDFs before running; see
+# docs/runbooks/15-pades-harness.md.
+test-pades: ## Run the PAdES-B-LT corpus validator against tests/fixtures/pades/*.pdf
+	$(GO) test -tags pades_corpus -race -timeout 2m ./services/signature/internal/pades/...
+
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report
 	$(GO) test -race -coverprofile=coverage.txt -covermode=atomic ./...
@@ -92,6 +115,43 @@ proto-lint: ## Lint .proto files
 .PHONY: proto-breaking
 proto-breaking: ## Detect breaking proto changes against main
 	cd proto && $(BUF) breaking --against '.git#branch=main,subdir=proto'
+
+# ---- SDK codegen from docs/api/openapi.yaml -------------------------------
+#
+# The hand-maintained spec is the source for client SDKs. Generator
+# runs on demand (not every build) because:
+#   - Output diffs are noisy under version control.
+#   - `docs/api/openapi.yaml` coverage is incomplete (see
+#     `scripts/openapi/drift-allowlist.txt`); SDKs regenerated today
+#     would miss ~40 grandfathered routes.
+#
+# Outputs live under `clients/<lang>/` and are committed so consumers
+# can depend on a tagged commit without running the generator
+# themselves. Empty directories today — `make sdk-gen-<lang>` writes
+# into them.
+
+OPENAPI_SPEC ?= docs/api/openapi.yaml
+
+.PHONY: sdk-gen sdk-gen-go sdk-gen-ts sdk-gen-py
+sdk-gen: sdk-gen-go sdk-gen-ts sdk-gen-py ## Regenerate all client SDKs from openapi.yaml
+
+sdk-gen-go: ## Go client SDK (oapi-codegen; types + client)
+	@command -v oapi-codegen >/dev/null || $(GO) install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	@mkdir -p clients/go
+	oapi-codegen -generate types,client -package vaultdmsclient \
+		-o clients/go/vaultdmsclient.go $(OPENAPI_SPEC)
+
+sdk-gen-ts: ## TypeScript client SDK (openapi-typescript-codegen)
+	@command -v npx >/dev/null || { echo "npx required (install Node.js)"; exit 2; }
+	@mkdir -p clients/ts
+	npx -y openapi-typescript-codegen --input $(OPENAPI_SPEC) \
+		--output clients/ts --client axios --useOptions
+
+sdk-gen-py: ## Python client SDK (openapi-python-client)
+	@command -v openapi-python-client >/dev/null || pip install --user openapi-python-client
+	@mkdir -p clients/python
+	openapi-python-client generate --path $(OPENAPI_SPEC) \
+		--output-path clients/python/vaultdms --overwrite
 
 # ---- Migrations ------------------------------------------------------------
 

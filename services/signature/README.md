@@ -75,3 +75,28 @@ event_type='dms.notify.signature_requested.v1' AND published=false`.
 anyone with the URL can sign. To revoke, cancel the request via
 `POST /…/cancel` which marks the row `cancelled`; the sign endpoint
 rejects any subsequent POST.
+
+## Architecture
+
+```mermaid
+graph LR
+  CL[client / admin] -->|REST| SIG(signature)
+  SIG --> PG[(signature_requests<br/>outbox)]
+  SIG -->|gRPC stub| DSS[Java DSS sidecar<br/>PAdES B-LT]
+  SIG -.outbox.-> WE((WORKFLOWS))
+  SIG -->|via outbox| NOTIFY[notify svc]
+```
+
+ADR 0025: primary signer = EU Commission DSS (Java sidecar). `dss_sidecar.go` is the gRPC client shell; the real sidecar is Wave 9.2b.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | signature_requests + outbox |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `VAULTDMS_DSS_SIDECAR_ADDR` | gRPC endpoint of the Java PAdES signer (stub today) |
+
+## On-call
+
+- [runbook 09 — signature](../../docs/runbooks/09-signature.md)

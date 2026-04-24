@@ -17,6 +17,11 @@ import (
 // session token instead.
 const TenantHeader = "X-Tenant-ID"
 
+// TenantHeaderAlt is the gateway-injected alias. Kong's request-transformer
+// in prod writes both names; in host-dev the frontend mirrors that. Either
+// is accepted so a single missing header doesn't 401 the whole request.
+const TenantHeaderAlt = "X-Auth-Tenant-ID"
+
 // TenantMetadataKey is the gRPC metadata equivalent.
 const TenantMetadataKey = "x-tenant-id"
 
@@ -33,6 +38,9 @@ func TenantHTTP(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get(TenantHeader)
+			if raw == "" {
+				raw = r.Header.Get(TenantHeaderAlt)
+			}
 			tid, err := uuid.Parse(raw)
 			if err != nil || tid == uuid.Nil {
 				writeUnauthorized(w, r, "missing or invalid tenant")
@@ -59,6 +67,56 @@ func TenantHTTP(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+// UserMetadataKey + UserRoleMetadataKey are the gRPC metadata keys
+// carrying user identity through the mesh. The HTTP gateway maps
+// X-User-ID → x-user-id and X-User-Role → x-user-role via the
+// `Grpc-Metadata-*` prefix shim in each service's main.go.
+const (
+	UserMetadataKey     = "x-user-id"
+	UserRoleMetadataKey = "x-user-role"
+)
+
+// UserIdentityInterceptor reads x-user-id and x-user-role from the
+// incoming gRPC metadata and populates a minimal auth.UserInfo on
+// the context. Chain AFTER TenantInterceptor so TenantID is already
+// set. Missing headers are NOT an error — some internal callers
+// (outbox publishers, cron workers) have no user — we still set
+// whatever we have.
+//
+// Without this interceptor, auth.GetUserID / GetUserRole return
+// zero values inside gRPC handlers, which cascades into policy
+// checks that never see a caller role and default-deny.
+func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return handler(ctx, req)
+		}
+		var (
+			userID uuid.UUID
+			role   string
+		)
+		if v := md.Get(UserMetadataKey); len(v) > 0 && v[0] != "" {
+			if id, err := uuid.Parse(v[0]); err == nil {
+				userID = id
+			}
+		}
+		if v := md.Get(UserRoleMetadataKey); len(v) > 0 {
+			role = v[0]
+		}
+		if userID == uuid.Nil && role == "" {
+			return handler(ctx, req)
+		}
+		tenantID, _ := auth.GetTenantID(ctx)
+		ctx = auth.WithUser(ctx, auth.UserInfo{
+			ID:       userID,
+			TenantID: tenantID,
+			Role:     role,
+		})
+		return handler(ctx, req)
 	}
 }
 

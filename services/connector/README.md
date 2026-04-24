@@ -73,3 +73,32 @@ is `sha256=hex(HMAC(timestamp.payload, secret))`.
 **SSRF rejection on valid URL** — `ValidateURL` refuses private /
 loopback / link-local IPs. If the receiver is genuinely private, it
 has to run outside the cluster.
+
+## Architecture
+
+```mermaid
+graph LR
+  BUS[NATS dms.&gt;] -->|consume| C(connector)
+  C -->|signed webhook| EXT[external HTTPS<br/>tenant-registered]
+  C -->|OAuth authorize<br/>w/ PKCE| OAUTH[MS365/Salesforce/Google]
+  LLM[LLM agent] -->|MCP SSE| C
+  C --> PG[(webhook_subs<br/>webhook_deliveries<br/>connector_configs)]
+  C --> RD[(Redis<br/>PKCE state 10m TTL<br/>retry schedule)]
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | subs/deliveries/configs |
+| `VAULTDMS_REDIS_URL` | PKCE state + retry schedule |
+| `VAULTDMS_NATS_URL` | `dms.>` wildcard consume |
+| `M365_CLIENT_ID` / `M365_CLIENT_SECRET` / `M365_TENANT_ID` | OAuth app |
+| `SALESFORCE_CLIENT_ID` / `_SECRET` / `_INSTANCE_URL` | OAuth app |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | OAuth app |
+
+Empty OAuth vars register the provider with misconfig — auth-url calls return a clear error rather than "unknown provider".
+
+## On-call
+
+No dedicated runbook. Webhook delivery issues: inspect `webhook_deliveries.last_error`. OAuth issues: verify PKCE state expiry (10-min Redis TTL) and that the callback path matches the registered redirect URI.

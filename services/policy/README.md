@@ -73,3 +73,29 @@ Postgres latency — the cache should hit on hot paths.
 [remediation 04b live run](../../docs/audit/remediation/04b-frontend-contracts.md)
 — the 000001 schema has no `effect` column; the repo was rewritten to
 treat capability as TEXT and effect as implicit allow.
+
+## Architecture
+
+```mermaid
+graph LR
+  SVC[doc/storage/etc] -->|gRPC CheckPermission| P(policy)
+  WEB[web session] -->|REST /permissions/check| P
+  P --> OPA[[policy.rego<br/>compiled at boot]]
+  P --> PG[(permissions<br/>groups<br/>group_members)]
+  P --> RD[(Redis<br/>per-resource + per-user<br/>cache)]
+  P -.outbox.-> NE((AUTH / dms.permission.*))
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | permissions + groups |
+| `VAULTDMS_REDIS_URL` | lookup cache |
+| `VAULTDMS_NATS_URL` | outbox publish |
+| `VAULTDMS_GRPC_PORT` (9090) | hot-path service-to-service |
+| `VAULTDMS_HTTP_PORT` (8080) | session-authed REST |
+
+## On-call
+
+No dedicated runbook. Policy is latency-critical — SLO target `permission check p99 < 5ms`. Slow evals over 20ms are logged; inspect the cache hit rate first, then profile `loadResourcePermissions` for DB latency.

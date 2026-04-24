@@ -2,15 +2,45 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { useLocalSearchParams } from 'expo-router'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
+import { get as cacheGet, put as cachePut } from '../../lib/offlineCache'
+import { useAuthStore } from '../../store/authStore'
 
-async function getDocument(id: string) {
-  const { data } = await api.get(`/documents/${id}`)
-  return data
+// Cache-first document fetch. On success: writes both the metadata
+// and the downloaded blob to the per-tenant offline cache. On
+// network failure: falls back to the cached metadata if present so
+// the viewer still renders under airplane mode. The actual byte
+// blob isn't needed for the metadata screen — it's saved so the
+// viewer placeholder (or a future in-app viewer) can decrypt and
+// render offline.
+async function getDocument(tenantId: string, id: string): Promise<Record<string, unknown>> {
+  try {
+    const { data } = await api.get(`/documents/${id}`)
+    // Best-effort prefetch of the downloadable blob. Failure to
+    // fetch the binary doesn't block the metadata return; the cache
+    // just stores an empty blob placeholder. The viewer will
+    // re-fetch-online when that happens.
+    let blob = new Uint8Array()
+    try {
+      const r = await api.get(`/documents/${id}/download`, { responseType: 'arraybuffer' })
+      blob = new Uint8Array(r.data as ArrayBuffer)
+    } catch { /* keep going — metadata is the primary payload */ }
+    await cachePut(tenantId, id, data, blob, (data as any)?.mime_type ?? null)
+    return data
+  } catch (err) {
+    const cached = await cacheGet(tenantId, id)
+    if (cached) return cached.metadata as Record<string, unknown>
+    throw err
+  }
 }
 
 export default function DocumentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { data: doc, isLoading } = useQuery({ queryKey: ['document', id], queryFn: () => getDocument(id) })
+  const tenantId = useAuthStore((s) => s.tenantId) ?? ''
+  const { data: doc, isLoading } = useQuery({
+    queryKey: ['document', tenantId, id],
+    queryFn: () => getDocument(tenantId, id),
+    enabled: !!tenantId && !!id,
+  })
 
   if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#1E40AF" /></View>
   if (!doc) return <View style={styles.center}><Text>Document not found</Text></View>

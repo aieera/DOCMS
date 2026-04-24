@@ -20,7 +20,7 @@ def _client():
         aws_secret_access_key=settings.s3_secret_key or None,
         use_ssl=settings.s3_use_ssl,
         region_name=settings.s3_region,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(signature_version="s3v4", s3={"addressing_style": settings.s3_addressing_style}),
     )
 
 

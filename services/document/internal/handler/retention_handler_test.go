@@ -36,7 +36,7 @@ func TestRetentionPolicy_Create_MissingName400(t *testing.T) {
 	mux := newRetentionMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/retention-policies",
 		bytes.NewBufferString(`{"retain_days":30,"then_action":"archive"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -49,7 +49,7 @@ func TestRetentionPolicy_Create_InvalidAction400(t *testing.T) {
 	mux := newRetentionMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/retention-policies",
 		bytes.NewBufferString(`{"name":"x","retain_days":30,"then_action":"bogus"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -62,7 +62,7 @@ func TestRetentionPolicy_Create_ZeroRetainDays400(t *testing.T) {
 	mux := newRetentionMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/retention-policies",
 		bytes.NewBufferString(`{"name":"x","retain_days":0,"then_action":"archive"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -75,7 +75,7 @@ func TestRetentionPolicy_Create_BadWorkspaceUUID400(t *testing.T) {
 	mux := newRetentionMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/retention-policies",
 		bytes.NewBufferString(`{"name":"x","retain_days":30,"then_action":"archive","workspace_filter":"nope"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -88,7 +88,7 @@ func TestRetentionPolicy_Get_BadUUID400(t *testing.T) {
 	mux := newRetentionMux(t)
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/admin/retention-policies/not-a-uuid", nil)
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -103,7 +103,7 @@ func TestRetentionPolicy_Update_InvalidAction400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch,
 		"/api/v1/admin/retention-policies/"+id,
 		bytes.NewBufferString(`{"then_action":"shred"}`))
-	req.Header.Set("X-Tenant-ID", uuid.New().String())
+	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
 	req.Header.Set("X-User-ID", uuid.New().String())
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

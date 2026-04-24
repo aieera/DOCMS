@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
@@ -22,8 +23,10 @@ import (
 
 // Service is the connector facade.
 type Service struct {
-	repo *repository.Repository
-	log  zerolog.Logger
+	repo      *repository.Repository
+	rdb       *redis.Client     // set via AttachOAuth; nil = OAuth disabled
+	providers ProviderRegistry  // set via AttachOAuth
+	log       zerolog.Logger
 }
 
 // Config is DI.

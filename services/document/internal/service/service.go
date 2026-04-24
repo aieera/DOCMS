@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
@@ -252,13 +253,60 @@ func validateSharePermissions(perms []string) error {
 
 // ---- Permission helpers ---------------------------------------------------
 
+// withCallerMetadata appends x-tenant-id, x-user-id and x-user-role
+// to the outgoing gRPC metadata so a downstream service's
+// TenantInterceptor + role-aware handlers can resolve the caller.
+// Safe to call with empty role / zero userID — only non-empty
+// values are attached.
+func (s *DocumentService) withCallerMetadata(ctx context.Context, userID uuid.UUID) context.Context {
+	pairs := []string{}
+	if tid, err := auth.GetTenantID(ctx); err == nil && tid != uuid.Nil {
+		pairs = append(pairs, "x-tenant-id", tid.String())
+	}
+	if userID != uuid.Nil {
+		pairs = append(pairs, "x-user-id", userID.String())
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	if len(pairs) == 0 {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
+}
+
 // checkPermission calls PolicyService. On transport error it logs and DENIES
 // (fail closed). The ABAC context is encoded as google.protobuf.Struct.
+//
+// Always forwards the caller's `user_role` (from auth.GetUserRole)
+// + `workspace_id` when the resource is a workspace into the
+// policy context so Rule 5 (workspace-member admin) and Rule 6
+// (organisation owner/admin) can fire. Without this the policy
+// engine sees an empty context and denies everything except rows
+// in the permissions table.
 func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID, action, resourceType string, resourceID uuid.UUID, extra map[string]any) (bool, error) {
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		if _, ok := extra["user_role"]; !ok {
+			extra["user_role"] = role
+		}
+	}
+	if resourceType == "workspace" {
+		if _, ok := extra["workspace_id"]; !ok {
+			extra["workspace_id"] = resourceID.String()
+		}
+	}
 	ctxStruct, err := structpb.NewStruct(stringifyMap(extra))
 	if err != nil {
 		return false, fmt.Errorf("build context struct: %w", err)
 	}
+	// Forward identity into the outgoing gRPC metadata so the policy
+	// service's TenantInterceptor can resolve tenant / user / role.
+	// Without this the policy server returns Unauthenticated and the
+	// fail-closed branch here surfaces as a silent 403 to the user.
+	ctx = s.withCallerMetadata(ctx, userID)
 	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    userID.String(),
@@ -306,7 +354,7 @@ func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, user
 			Context:      ctxStruct,
 		})
 	}
-	resp, err := s.policy.BatchCheckPermission(ctx, &vaultdmsv1.BatchCheckPermissionRequest{Checks: checks})
+	resp, err := s.policy.BatchCheckPermission(s.withCallerMetadata(ctx, userID), &vaultdmsv1.BatchCheckPermissionRequest{Checks: checks})
 	if err != nil {
 		s.log.Warn().Err(err).Msg("policy batch check unavailable; returning zero-permission summary")
 		return &DocumentPermissions{}, nil

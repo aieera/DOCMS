@@ -63,11 +63,13 @@ type loginRequest struct {
 	TenantSlug string `json:"tenant_slug"`
 }
 type loginResponse struct {
-	SessionToken    string              `json:"session_token,omitempty"`
-	ExpiresAt       *time.Time          `json:"expires_at,omitempty"`
-	User            any                 `json:"user,omitempty"`
-	MFARequired     bool                `json:"mfa_required,omitempty"`
-	MFASessionToken string              `json:"mfa_session_token,omitempty"`
+	SessionToken          string     `json:"session_token,omitempty"`
+	ExpiresAt             *time.Time `json:"expires_at,omitempty"`
+	User                  any        `json:"user,omitempty"`
+	MFARequired           bool       `json:"mfa_required,omitempty"`
+	MFASessionToken       string     `json:"mfa_session_token,omitempty"`
+	RequirePasswordChange bool       `json:"require_password_change,omitempty"`
+	OneTimeChangeToken    string     `json:"one_time_change_token,omitempty"`
 }
 
 // Login handles POST /api/v1/auth/login.
@@ -93,6 +95,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusOK, loginResponse{
 			MFARequired:     true,
 			MFASessionToken: res.MFASessionToken,
+		})
+		return
+	}
+	if res.RequirePasswordChange {
+		h.writeJSON(w, http.StatusOK, loginResponse{
+			RequirePasswordChange: true,
+			OneTimeChangeToken:    res.OneTimeChangeToken,
 		})
 		return
 	}

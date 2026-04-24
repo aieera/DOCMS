@@ -11,16 +11,22 @@
 # "every mutant we tried broke at least one test"; low scores
 # mean tests coast on untested branches.
 #
-# We run on three packages only — the surface where silent
+# We run on five packages — the surface where silent
 # regressions hurt the most:
 #
-#   services/auth/internal/service/...       (login, MFA, sessions)
-#   services/policy/internal/opa/...         (OPA evaluation)
-#   services/storage/internal/service/...    (envelope encryption)
+#   services/auth/internal/service/...             (login, MFA, sessions,
+#                                                    Wave 15.3 password-change flow)
+#   services/policy/internal/opa/...               (OPA evaluation)
+#   services/storage/internal/service/...          (envelope encryption)
+#   services/acknowledgement/internal/service/...  (Wave 15.1 HMAC attestation
+#                                                    + per-campaign hash chain)
+#   services/signature/internal/service/...        (Wave 15.4 saved-signature
+#                                                    per-profile envelope encryption)
 #
 # Budget: 20 minutes per package. Beyond that the mutant set
 # grows faster than the test suite can cover. The CI job has a
-# 90-minute hard timeout.
+# 90-minute hard timeout (five × 20m = 100m worst case; expect
+# most packages to finish in <5m).
 
 set -euo pipefail
 
@@ -29,6 +35,8 @@ PACKAGES=(
     "github.com/vaultdms/vaultdms/services/auth/internal/service/..."
     "github.com/vaultdms/vaultdms/services/policy/internal/opa/..."
     "github.com/vaultdms/vaultdms/services/storage/internal/service/..."
+    "github.com/vaultdms/vaultdms/services/acknowledgement/internal/service/..."
+    "github.com/vaultdms/vaultdms/services/signature/internal/service/..."
 )
 
 if ! command -v go-mutesting >/dev/null 2>&1; then

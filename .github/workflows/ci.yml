@@ -168,9 +168,16 @@ jobs:
           REDIS_URL: localhost:6379
           NATS_URL: nats://localhost:4222
           OPENSEARCH_URL: http://localhost:9200
-          MINIO_ENDPOINT: localhost:9000
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
+          # CI uses MinIO as its S3 backend (same image the local
+          # compose uses). Env vars here are what the code reads —
+          # NOT the MinIO container's own `MINIO_ROOT_USER` /
+          # `MINIO_ROOT_PASSWORD` above, which are MinIO's bootstrap
+          # env and can't be renamed.
+          VAULTDMS_S3_ENDPOINT: http://localhost:9000
+          VAULTDMS_S3_ACCESS_KEY: minioadmin
+          VAULTDMS_S3_SECRET_KEY: minioadmin
+          VAULTDMS_S3_USE_SSL: "false"
+          S3_ADDRESSING_STYLE: path
         # Budget: 12 minutes p95 per spec §13.1. Timeout at 15m as
         # hard stop; PRs that consistently approach the limit get
         # their slow tests reviewed.
@@ -318,6 +325,8 @@ jobs:
         run: bash scripts/check-no-background-in-handlers.sh
       - name: Outbox-only publishing (Wave 6 Prompt 6.5)
         run: bash scripts/check-outbox-only-publishing.sh
+      - name: No MinIO naming in prod paths (Wave 15 / Phase 1.7)
+        run: bash scripts/check-no-minio-leaks.sh
 
   security-semgrep:
     name: Semgrep SAST
@@ -373,6 +382,41 @@ jobs:
         with:
           name: web-coverage
           path: web/coverage
+
+  web-e2e:
+    name: Web e2e (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+      - name: Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        working-directory: web
+        run: npm run build
+      - name: Playwright
+        working-directory: web
+        run: npx playwright test
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-playwright-report
+          path: web/playwright-report
+      - name: Upload visual diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-visual-diffs
+          path: web/test-results
 
   security-npm:
     name: npm audit
@@ -536,8 +580,10 @@ jobs:
         run: npm install -g @stoplight/spectral-cli@6.11.1
       - name: Lint
         run: spectral lint docs/api/openapi.yaml --fail-severity=error
-      - name: Drift check (advisory until first green)
-        continue-on-error: true
+      - name: Drift check
+        # Hard-fail: any handler whose path isn't in docs/api/openapi.yaml
+        # or scripts/openapi/drift-allowlist.txt fails CI. The allow-list
+        # captures 2026-04-20's grandfathered routes and must shrink.
         run: bash scripts/openapi/check-drift.sh
 
   # Gate: all security checks must pass

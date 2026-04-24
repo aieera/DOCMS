@@ -53,10 +53,15 @@ func (r *documentRepo) Create(ctx context.Context, tx pgx.Tx, d *model.Document)
 // soft-deleted rows; callers filter via DocumentFilter.IncludeDeleted.
 func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT id, tenant_id, workspace_id, folder_id, title, description,
-		       lifecycle_state, region_pin, custom_metadata, tags,
-		       current_version_id, document_class, classification_confidence,
-		       sha256_hash, total_size_bytes, mime_type,
+		SELECT id, tenant_id, workspace_id, folder_id, title,
+		       COALESCE(description, ''),
+		       lifecycle_state,
+		       COALESCE(region_pin, ''),
+		       custom_metadata, tags,
+		       current_version_id,
+		       COALESCE(document_class, ''), classification_confidence,
+		       COALESCE(sha256_hash, ''), total_size_bytes,
+		       COALESCE(mime_type, ''),
 		       created_by, created_at, updated_by, updated_at, deleted_at
 		FROM documents
 		WHERE tenant_id = $1 AND id = $2
@@ -233,11 +238,20 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		order = "ASC"
 	}
 
+	// COALESCE the nullable text columns so scanning into plain
+	// `string` fields doesn't blow up with "cannot scan NULL into
+	// *string" when a document has an empty description, no region
+	// pin, unknown mime type, etc.
 	q := fmt.Sprintf(`
-		SELECT id, tenant_id, workspace_id, folder_id, title, description,
-		       lifecycle_state, region_pin, custom_metadata, tags,
-		       current_version_id, document_class, classification_confidence,
-		       sha256_hash, total_size_bytes, mime_type,
+		SELECT id, tenant_id, workspace_id, folder_id, title,
+		       COALESCE(description, ''),
+		       lifecycle_state,
+		       COALESCE(region_pin, ''),
+		       custom_metadata, tags,
+		       current_version_id,
+		       COALESCE(document_class, ''), classification_confidence,
+		       COALESCE(sha256_hash, ''), total_size_bytes,
+		       COALESCE(mime_type, ''),
 		       created_by, created_at, updated_by, updated_at, deleted_at
 		FROM documents
 		WHERE %s

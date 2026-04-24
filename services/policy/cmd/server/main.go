@@ -93,6 +93,7 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	vaultdmsv1.RegisterPolicyServiceServer(grpcSrv, handler.New(svc))

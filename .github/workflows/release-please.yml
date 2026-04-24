@@ -1,0 +1,24 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    # Scans main for conventional commits since the last tag, produces
+    # one PR per package (separate-pull-requests: true in config).
+    # Merging a PR tags the release + writes per-service CHANGELOG.md
+    # entries; the downstream `release` workflow (.github/workflows/release.yml)
+    # picks up the tag and builds images + bundle + signs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

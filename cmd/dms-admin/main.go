@@ -20,7 +20,7 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: dms-admin <command>")
-		fmt.Println("Commands: rotate-secrets, seed, nats, kms")
+		fmt.Println("Commands: rotate-secrets, seed, nats, kms, audit, secrets")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -32,6 +32,10 @@ func main() {
 		natsMain(os.Args[2:])
 	case "kms":
 		kmsMain(os.Args[2:])
+	case "audit":
+		auditMain(os.Args[2:])
+	case "secrets":
+		secretsMain(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		os.Exit(1)

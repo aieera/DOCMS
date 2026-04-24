@@ -30,6 +30,7 @@ func New(repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log
 
 // Provision creates a new tenant end-to-end:
 //  1. Create organization row
+//  1a. Allocate v1 per-tenant KEK (mirrors `dms-admin kms create`)
 //  2. Create schema (if schema-per-tenant isolation)
 //  3. Set up tenant routing in Redis
 //  4. Create admin user via auth service
@@ -43,6 +44,14 @@ func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest)
 	tenantID, err := p.repo.CreateOrg(ctx, req.OrgName, req.Plan, req.Region)
 	if err != nil {
 		return nil, fmt.Errorf("create org: %w", err)
+	}
+
+	// 1a. Allocate v1 KEK. Without this, the first object upload fails
+	// at encrypt-time. Fatal — operator can re-run provisioning or
+	// `dms-admin kms create --tenant <id>` if this step fails after the
+	// org row commits.
+	if err := p.allocateInitialKEK(ctx, tenantID); err != nil {
+		return nil, fmt.Errorf("allocate kek: %w", err)
 	}
 
 	// 2. Schema-per-tenant isolation (optional).
@@ -91,6 +100,23 @@ func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest)
 		AdminUserID: adminID,
 		LoginURL:    fmt.Sprintf("https://app.vaultdms.io/login?tenant=%s", tenantID),
 	}, nil
+}
+
+// allocateInitialKEK inserts the v1 row in tenant_keks. Mirrors
+// `dms-admin kms create` so the schema contract stays in one shape.
+// ON CONFLICT DO NOTHING makes it idempotent on retry / re-provision.
+func (p *Provisioner) allocateInitialKEK(ctx context.Context, tenantID string) error {
+	alias := fmt.Sprintf("vaultdms/tenant/%s", tenantID)
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
+		VALUES ($1::uuid, 1, $2, now())
+		ON CONFLICT (tenant_id, version) DO NOTHING
+	`, tenantID, alias)
+	if err != nil {
+		return err
+	}
+	p.log.Info().Str("tenant_id", tenantID).Str("alias", alias).Msg("allocated v1 KEK")
+	return nil
 }
 
 func (p *Provisioner) createAdminUser(ctx context.Context, tenantID, email string) (string, error) {

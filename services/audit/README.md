@@ -68,3 +68,27 @@ suspect event; investigate via `psql` + git history.
 **Queue lag rising** — the NATS consumer is single-threaded per
 tenant by design (for hash-chain ordering). Scale out replicas — the
 per-tenant lock ensures ordering across instances.
+
+## Architecture
+
+```mermaid
+graph LR
+  BUS[NATS dms.&gt;] -->|wildcard sub| A(audit)
+  A -->|hash-chain insert| PG[(audit_events)]
+  A -.outbox.-> AE((AUDIT_EVENTS))
+  CLI[dms-admin audit verify] -->|HTTP| A
+  AE -->|dms.audit.tamper_detected.v1| OPS[alertmanager / SOC]
+```
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | audit_events + outbox |
+| `VAULTDMS_REDIS_URL` | per-tenant hash-chain lock |
+| `VAULTDMS_NATS_URL` | `dms.>` subscribe + outbox publish |
+| `VAULTDMS_HTTP_PORT` (8080) / `VAULTDMS_HEALTH_PORT` (8081) | service ports |
+
+## On-call
+
+Hash-chain break → `audit_chain_break_total` counter + `dms.audit.tamper_detected.v1` outbox event. Related: [runbook 12 — secret rotation](../../docs/runbooks/12-secret-rotation.md).

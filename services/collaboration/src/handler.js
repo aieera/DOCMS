@@ -1,97 +1,140 @@
-/**
- * Message handler. Processes client→server messages:
- *   auth, subscribe, unsubscribe, presence, comment_create
- */
+// Message dispatcher for the authenticated WS protocol.
+//
+// Connection is already authenticated by the HTTP-upgrade handler
+// (index.js). This file only sees authenticated sockets with
+// `ws.userId`, `ws.tenantId`, `ws.displayName`, `ws.cookie` already
+// populated.
+//
+// Every inbound frame is parsed against the ClientMessage schema.
+// Parse failure closes with 4400; invalid type is a no-op (already
+// excluded by the discriminated union).
+//
+// Broadcast naming (per brief):
+//   comment.created | comment.updated | comment.deleted
+//   presence.joined | presence.left
+//   typing.start    | typing.stop
+//
+// Broadcasts go through Redis pub/sub (`dms:{tenant}:doc:{doc}`) so
+// multiple collaboration pods see each other's events.
 
-const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:8080';
+import { canReadDocument } from './policy.js';
+import {
+  ClientMessage,
+  CLOSE_FORBIDDEN,
+  CLOSE_INVALID_MESSAGE,
+} from './schemas.js';
 
-async function validateToken(token) {
-  try {
-    const resp = await fetch(`${AUTH_SERVICE_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!resp.ok) return null;
-    const user = await resp.json();
-    return { userId: user.id, tenantId: user.tenant_id, displayName: user.display_name };
-  } catch {
-    return null;
-  }
+function channelFor(tenantId, docId) {
+  return `dms:${tenantId}:doc:${docId}`;
 }
 
-export async function handleMessage(ws, msg, connections, redisPub, authTimeout) {
+async function broadcast(redisPub, connections, tenantId, docId, payload, senderUserId) {
+  const wire = { ...payload, _senderUserId: senderUserId };
+  await redisPub.publish(channelFor(tenantId, docId), JSON.stringify(wire));
+  connections.broadcastToDoc(tenantId, docId, wire, senderUserId);
+}
+
+export async function handleMessage(ws, raw, connections, redisPub) {
+  let frame;
+  try { frame = JSON.parse(raw.toString()); } catch {
+    ws.close(CLOSE_INVALID_MESSAGE, 'invalid json');
+    return;
+  }
+  const parsed = ClientMessage.safeParse(frame);
+  if (!parsed.success) {
+    ws.close(CLOSE_INVALID_MESSAGE, 'schema violation');
+    return;
+  }
+  const msg = parsed.data;
+  const now = new Date().toISOString();
+
   switch (msg.type) {
-    case 'auth': {
-      const user = await validateToken(msg.token);
-      if (!user) {
-        ws.close(4001, 'invalid token');
+    case 'room.join': {
+      const allowed = await canReadDocument(ws.cookie, msg.document_id);
+      if (!allowed) {
+        ws.close(CLOSE_FORBIDDEN, 'document:read denied');
         return;
       }
-      clearTimeout(authTimeout);
-      ws.authenticated = true;
-      ws.tenantId = user.tenantId;
-      ws.userId = user.userId;
-      ws.displayName = user.displayName;
-      await connections.addConnection(ws);
-      ws.send(JSON.stringify({ type: 'auth_ok', user_id: user.userId }));
-      break;
-    }
-
-    case 'subscribe': {
-      if (!ws.authenticated) return;
-      const docId = msg.doc_id;
-      if (!docId) return;
-      connections.subscribeToDoc(ws, docId);
-      const users = connections.getDocPresence(ws.tenantId, docId);
-      connections.broadcastToDoc(ws.tenantId, docId, {
-        type: 'presence_update', doc_id: docId, users,
-      });
-      break;
-    }
-
-    case 'unsubscribe': {
-      if (!ws.authenticated) return;
-      connections.unsubscribeFromDoc(ws, msg.doc_id);
-      break;
-    }
-
-    case 'presence': {
-      if (!ws.authenticated) return;
-      const data = {
-        type: 'presence_update',
-        doc_id: msg.doc_id,
+      connections.subscribeToDoc(ws, msg.document_id);
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'presence.joined',
+        document_id: msg.document_id,
         user_id: ws.userId,
         display_name: ws.displayName,
-        page: msg.page,
-        cursor: msg.cursor,
-        _senderUserId: ws.userId,
-      };
-      // Publish to Redis for cross-instance delivery.
-      const channel = `dms:${ws.tenantId}:doc:${msg.doc_id}`;
-      await redisPub.publish(channel, JSON.stringify(data));
-      // Local broadcast (same instance).
-      connections.broadcastToDoc(ws.tenantId, msg.doc_id, data, ws.userId);
-      break;
+        at: now,
+      }, ws.userId);
+      return;
     }
 
-    case 'comment_create': {
-      if (!ws.authenticated) return;
-      const comment = {
-        type: 'comment_added',
-        doc_id: msg.doc_id,
+    case 'room.leave': {
+      connections.unsubscribeFromDoc(ws, msg.document_id);
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'presence.left',
+        document_id: msg.document_id,
+        user_id: ws.userId,
+        at: now,
+      }, ws.userId);
+      return;
+    }
+
+    case 'comment.create': {
+      // Comment persistence lives in the document service's REST API.
+      // This broadcast is the realtime fan-out ONLY; clients still POST
+      // the comment to /documents/:id/comments to persist. Backend
+      // could publish the authoritative event through NATS instead,
+      // but the brief scopes this service to broadcast-only.
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'comment.created',
+        document_id: msg.document_id,
         body: msg.body,
-        parent_id: msg.parent_id || null,
+        parent_id: msg.parent_id ?? null,
         user_id: ws.userId,
         display_name: ws.displayName,
-        created_at: new Date().toISOString(),
-        _senderUserId: ws.userId,
-      };
-      const channel = `dms:${ws.tenantId}:doc:${msg.doc_id}`;
-      await redisPub.publish(channel, JSON.stringify(comment));
-      connections.broadcastToDoc(ws.tenantId, msg.doc_id, comment, ws.userId);
-      break;
+        created_at: now,
+      }, ws.userId);
+      return;
     }
 
-    default:
-      break;
+    case 'comment.update': {
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'comment.updated',
+        document_id: msg.document_id,
+        comment_id: msg.comment_id,
+        body: msg.body,
+        user_id: ws.userId,
+        updated_at: now,
+      }, ws.userId);
+      return;
+    }
+
+    case 'comment.delete': {
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'comment.deleted',
+        document_id: msg.document_id,
+        comment_id: msg.comment_id,
+        user_id: ws.userId,
+        deleted_at: now,
+      }, ws.userId);
+      return;
+    }
+
+    case 'typing.start': {
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'typing.start',
+        document_id: msg.document_id,
+        user_id: ws.userId,
+        display_name: ws.displayName,
+      }, ws.userId);
+      return;
+    }
+
+    case 'typing.stop': {
+      await broadcast(redisPub, connections, ws.tenantId, msg.document_id, {
+        type: 'typing.stop',
+        document_id: msg.document_id,
+        user_id: ws.userId,
+      }, ws.userId);
+      return;
+    }
   }
 }

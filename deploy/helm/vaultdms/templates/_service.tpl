@@ -31,6 +31,30 @@ spec:
                   matchLabels:
                     app.kubernetes.io/name: {{ .svcName }}
                 topologyKey: kubernetes.io/hostname
+      # Spread replicas across zones AND hostnames. ScheduleAnyway
+      # so a single-zone dev cluster still schedules; DoNotSchedule
+      # would cause 2-replica deploys to hang in 1-zone clusters.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "vaultdms.selectorLabels" (dict "name" .svcName "Release" .Release) | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "vaultdms.selectorLabels" (dict "name" .svcName "Release" .Release) | nindent 14 }}
+      # Pod-level security context covers the seccomp profile; the
+      # container-level securityContext further down drops caps.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: {{ .svcName }}
           image: {{ .Values.global.imageRegistry }}/{{ .svcName }}:{{ .Values.global.imageTag }}
@@ -91,6 +115,13 @@ spec:
             runAsUser: 1000
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+            # Drop all Linux capabilities. Go services don't need
+            # NET_BIND_SERVICE (ports ≥ 1024) or any other cap.
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
 {{- end }}
 
 {{/*

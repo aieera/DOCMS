@@ -140,6 +140,104 @@ components:
         events: { type: array, items: { type: string } }
         active: { type: boolean }
 
+    # ---- Wave 15 schemas ------------------------------------------------
+
+    GeofencePolicy:
+      type: object
+      properties:
+        id:             { type: string, format: uuid }
+        tenant_id:      { type: string, format: uuid }
+        scope:          { type: string, enum: [tenant, workspace, document] }
+        scope_id:       { type: string, format: uuid }
+        mode:           { type: string, enum: [allow, deny, step_up] }
+        country_codes:  { type: array, items: { type: string, pattern: "^[A-Z]{2}$" } }
+        cidr_allowlist: { type: array, items: { type: string } }
+        cidr_denylist:  { type: array, items: { type: string } }
+        apply_to:       { type: string, enum: [read, write, admin, "*"] }
+        enabled:        { type: boolean }
+        created_at:     { type: string, format: date-time }
+        updated_at:     { type: string, format: date-time }
+
+    GeofencePolicyInput:
+      type: object
+      required: [scope, mode]
+      properties:
+        scope:          { type: string, enum: [tenant, workspace, document] }
+        scope_id:       { type: string, format: uuid }
+        mode:           { type: string, enum: [allow, deny, step_up] }
+        country_codes:  { type: array, items: { type: string, pattern: "^[A-Z]{2}$" } }
+        cidr_allowlist: { type: array, items: { type: string } }
+        cidr_denylist:  { type: array, items: { type: string } }
+        apply_to:       { type: string, enum: [read, write, admin, "*"] }
+        enabled:        { type: boolean }
+
+    AckCampaign:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        tenant_id:   { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        version_id:  { type: string, format: uuid }
+        title:       { type: string }
+        body_md:     { type: string }
+        due_at:      { type: string, format: date-time }
+        status:      { type: string, enum: [draft, active, closed, archived] }
+        created_by:  { type: string, format: uuid }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+        closed_at:   { type: string, format: date-time }
+
+    AckCampaignInput:
+      type: object
+      required: [document_id, title, due_at, recipient_policy]
+      properties:
+        document_id: { type: string, format: uuid }
+        version_id:  { type: string, format: uuid }
+        title:       { type: string, maxLength: 200 }
+        body_md:     { type: string }
+        due_at:      { type: string, format: date-time }
+        activate:    { type: boolean }
+        recipient_policy:
+          type: object
+          properties:
+            users:  { type: array, items: { type: string, format: uuid } }
+            groups: { type: array, items: { type: string, format: uuid } }
+            roles:  { type: array, items: { type: string } }
+
+    AckAssignment:
+      type: object
+      properties:
+        id:               { type: string, format: uuid }
+        campaign_id:      { type: string, format: uuid }
+        assignee_user_id: { type: string, format: uuid }
+        assigned_at:      { type: string, format: date-time }
+        reminded_count:   { type: integer }
+        reminded_at:      { type: string, format: date-time }
+        acknowledged_at:  { type: string, format: date-time }
+        escalated_at:     { type: string, format: date-time }
+
+    AckReport:
+      type: object
+      properties:
+        campaign_id:          { type: string, format: uuid }
+        total:                { type: integer }
+        acknowledged:         { type: integer }
+        overdue:              { type: integer }
+        escalated:            { type: integer }
+        acknowledgement_rate: { type: number, format: float }
+        due_at:               { type: string, format: date-time }
+
+    SignatureProfile:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        name:       { type: string }
+        kind:       { type: string, enum: [draw, upload, typed] }
+        font_style: { type: string }
+        is_default: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
 paths:
   /auth/login:
     post:
@@ -525,3 +623,274 @@ paths:
             application/json:
               schema:
                 type: object
+
+  # ---- Wave 15 ----------------------------------------------------------
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Redeem a one-time token from a force-change-password login
+      description: |
+        Wave 15.3. Login returns `require_password_change: true` +
+        `one_time_change_token` instead of a session when the user
+        must rotate. Client POSTs the token + new password; server
+        validates policy, rejects reuse against last 5 hashes,
+        writes the new hash, and issues a session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [one_time_change_token, new_password]
+              properties:
+                one_time_change_token: { type: string }
+                new_password:          { type: string, minLength: 12 }
+      responses:
+        '200': { description: Password changed and session issued }
+        '400': { description: Policy rejection (weak / reused password) }
+        '401': { description: Token missing, expired, or already consumed }
+
+  /admin/users/{id}/force-password-reset:
+    post:
+      tags: [Auth, Admin]
+      summary: Force the target user to change their password on next login
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202': { description: must_change_password set, sessions revoked }
+        '400': { description: SSO-federated user or actor==target }
+        '404': { description: User not found }
+
+  /admin/password-policy/sweep-expired:
+    post:
+      tags: [Auth, Admin]
+      summary: Flag users whose password_expires_at has passed (owner-role)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { flagged: { type: integer } }
+
+  /admin/geofences:
+    get:
+      tags: [Policy, Admin]
+      summary: List tenant geofence policies
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  geofences: { type: array, items: { $ref: '#/components/schemas/GeofencePolicy' } }
+    post:
+      tags: [Policy, Admin]
+      summary: Create a geofence policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GeofencePolicyInput' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeofencePolicy' }
+
+  /admin/geofences/{id}:
+    delete:
+      tags: [Policy, Admin]
+      summary: Delete a geofence policy
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted }
+
+  /admin/geofences/test:
+    post:
+      tags: [Policy, Admin]
+      summary: Dry-run a geofence decision for a given IP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ip]
+              properties:
+                ip:           { type: string }
+                action:       { type: string, enum: [read, write, admin, "*"] }
+                workspace_id: { type: string, format: uuid }
+                document_id:  { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allow:             { type: boolean }
+                  require_step_up:   { type: boolean }
+                  reason:            { type: string }
+                  matched_policy_id: { type: string, format: uuid }
+
+  /acknowledgement/campaigns:
+    get:
+      tags: [Acknowledgement]
+      summary: List acknowledgement campaigns
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, active, closed, archived] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns: { type: array, items: { $ref: '#/components/schemas/AckCampaign' } }
+    post:
+      tags: [Acknowledgement]
+      summary: Create an acknowledgement campaign (compliance_officer role)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AckCampaignInput' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AckCampaign' }
+
+  /acknowledgement/campaigns/{id}/close:
+    post:
+      tags: [Acknowledgement]
+      summary: Close a campaign
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Closed }
+
+  /acknowledgement/campaigns/{id}/report:
+    get:
+      tags: [Acknowledgement]
+      summary: Per-campaign rollup
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AckReport' }
+
+  /acknowledgement/my:
+    get:
+      tags: [Acknowledgement]
+      summary: The caller's pending assignments
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending: { type: array, items: { $ref: '#/components/schemas/AckAssignment' } }
+
+  /acknowledgement/assignments/{id}/ack:
+    post:
+      tags: [Acknowledgement]
+      summary: Acknowledge an assignment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { comment: { type: string, maxLength: 1000 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AckAssignment' }
+        '403': { description: Assignee mismatch }
+        '409': { description: Already acknowledged }
+
+  /signatures/profiles:
+    get:
+      tags: [Signatures]
+      summary: List the caller's saved signature profiles
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles: { type: array, items: { $ref: '#/components/schemas/SignatureProfile' } }
+    post:
+      tags: [Signatures]
+      summary: Create a saved signature profile (drawn / uploaded / typed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, image_base64]
+              properties:
+                name:         { type: string, maxLength: 100 }
+                kind:         { type: string, enum: [draw, upload, typed] }
+                font_style:   { type: string }
+                image_base64: { type: string, description: "Base64 PNG/JPEG, ≤1 MiB decoded" }
+                set_default:  { type: boolean }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureProfile' }
+
+  /signatures/profiles/{id}:
+    patch:
+      tags: [Signatures]
+      summary: Rename or set-default a signature profile
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:        { type: string }
+                set_default: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignatureProfile' }
+    delete:
+      tags: [Signatures]
+      summary: Crypto-shred a signature profile (revoke → S3 delete → row delete)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Profile deleted; per-profile DEK unrecoverable }
+
+  /signatures/profiles/{id}/image:
+    get:
+      tags: [Signatures]
+      summary: Stream decrypted profile image (owner-only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Image bytes
+          content:
+            image/png:  {}
+            image/jpeg: {}
