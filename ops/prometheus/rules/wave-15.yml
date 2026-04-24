@@ -1,0 +1,157 @@
+# Wave 15 Prometheus alerting rules.
+#
+# Paired with deploy/monitoring/dashboards/wave-15-features.json so
+# operators can click through from any firing alert to the
+# corresponding panel. Alertmanager routes these to the
+# `wave15`-tagged receiver; adjust labels per environment.
+#
+# Four rule groups, one per sub-wave. Thresholds come from the Wave
+# 15 brief § CC-3 (Alerts).
+#
+# Evaluation cadence: every 30 s — matches the default Prometheus
+# `global.evaluation_interval` and the dashboard refresh.
+
+groups:
+  - name: wave15_password_policy
+    interval: 30s
+    rules:
+      - alert: AuthPasswordExpiriesBacklog
+        # DoD: alert when >1000 users are pending a password change.
+        # `auth_password_expiries_pending` is a gauge-per-tenant; sum
+        # is the platform-wide backlog.
+        expr: sum(auth_password_expiries_pending) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          wave: "15.3"
+        annotations:
+          summary: "Password-change backlog exceeds 1000 users"
+          description: >-
+            The Wave 15.3 force-change-password sweeper has flagged
+            more than 1000 users platform-wide. Investigate the
+            cron + tenant-level password_expiry_days config before
+            users start hitting the change-password prompt at login.
+          runbook: "docs/runbooks/15-force-password-change.md"
+          dashboard: "/d/vaultdms-wave-15"
+
+      - alert: AuthPasswordChangeErrorSpike
+        # Too many failed password-change attempts suggests either
+        # policy misconfiguration (reuse window too aggressive) or
+        # a credential-stuffing probe against the change-token path.
+        expr: |
+          sum(rate(auth_password_changed_total[5m])) == 0
+          and
+          sum(rate(http_request_errors_total{route="/api/v1/auth/change-password"}[5m])) > 1
+        for: 15m
+        labels:
+          severity: warning
+          wave: "15.3"
+        annotations:
+          summary: "Repeated /auth/change-password errors with no successful changes"
+          runbook: "docs/runbooks/15-force-password-change.md"
+
+  - name: wave15_geofencing
+    interval: 30s
+    rules:
+      - alert: GeofenceDenySpike
+        # DoD: deny rate >5x the 7d baseline → security P1.
+        # The /5 in the denominator matches the brief's "5x baseline"
+        # (7d avg * 5) trigger. for:5m prevents single-minute blips.
+        expr: |
+          sum(rate(geofence_decisions_total{mode="deny"}[5m]))
+            >
+          (sum(rate(geofence_decisions_total{mode="deny"}[7d])) * 5)
+        for: 5m
+        labels:
+          severity: critical
+          wave: "15.2"
+        annotations:
+          summary: "Geofence deny rate >5x 7d baseline"
+          description: >-
+            A sudden surge of 451 responses suggests either a
+            policy misconfiguration (over-broad country list) or a
+            real incident (coordinated access attempt from a
+            blocked region). Triage via /admin/geofences/test.
+          runbook: "docs/runbooks/15-geofencing.md"
+          dashboard: "/d/vaultdms-wave-15"
+
+      - alert: GeofenceLookupLatencyHigh
+        # Decider latency on the hot request path. p99 >500 ms for
+        # 10 min means something in the resolver/DB stack is stuck —
+        # every authenticated request takes this hit.
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(geofence_lookup_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          wave: "15.2"
+        annotations:
+          summary: "Geofence decision p99 >500 ms"
+          runbook: "docs/runbooks/15-geofencing.md"
+
+  - name: wave15_acknowledgements
+    interval: 30s
+    rules:
+      - alert: AcknowledgementCampaignsStuck
+        # DoD: no progress in 24 h on any active campaign. Approximated
+        # as "no ack events emitted in 24 h while active campaigns
+        # have non-zero pending assignments." Campaign-level pending
+        # is derived from the service; here we proxy via the outbox
+        # event rate.
+        expr: |
+          sum(increase(outbox_events_inserted_total{service="acknowledgement",subject="dms.acknowledgement.acknowledged.v1"}[24h])) == 0
+          and on()
+          sum(acknowledgement_campaigns_active) > 0
+        for: 1h
+        labels:
+          severity: warning
+          wave: "15.1"
+        annotations:
+          summary: "Active acknowledgement campaigns with zero progress in 24 h"
+          runbook: "docs/runbooks/15-acknowledgements.md"
+          dashboard: "/d/vaultdms-wave-15"
+
+      - alert: AcknowledgementReminderCronQuiet
+        # The daily 09:00 UTC reminder schedule should emit at least
+        # one reminded.v1 per day while any assignment is within the
+        # 3-day window. 26 h allows for a missed tick plus clock skew.
+        expr: |
+          sum(increase(outbox_events_inserted_total{service="acknowledgement",subject="dms.acknowledgement.reminded.v1"}[26h])) == 0
+          and on()
+          sum(acknowledgement_assignments_overdue) > 0
+        for: 30m
+        labels:
+          severity: warning
+          wave: "15.1"
+        annotations:
+          summary: "Reminder cron produced no reminded.v1 events in 26 h"
+          runbook: "docs/runbooks/15-acknowledgements.md"
+
+  - name: wave15_saved_signatures
+    interval: 30s
+    rules:
+      - alert: SignatureProfileImageFetchErrors
+        # DoD: >1 % of profile-image requests fail → investigate KMS
+        # unwrap, S3 read, or envelope decryption. Threshold is a
+        # ratio rather than a raw count so small tenants don't get
+        # noisy alerts.
+        expr: |
+          (
+            sum(rate(signature_profile_image_fetch_errors_total[10m]))
+            /
+            clamp_min(sum(rate(signature_profile_image_fetches_total[10m])), 1)
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          wave: "15.4"
+        annotations:
+          summary: "Signature-profile image fetch error rate >1 %"
+          description: >-
+            Image fetch is a tenant-KEK unwrap → S3 GET → AES-GCM
+            decrypt path. Failures most often point at KMS auth or
+            S3 connectivity, not the profile rows themselves.
+          runbook: "docs/runbooks/15-saved-signatures.md"
+          dashboard: "/d/vaultdms-wave-15"

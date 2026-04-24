@@ -1,0 +1,136 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Event Pipeline",
+    "uid": "vaultdms-event-pipeline",
+    "tags": ["vaultdms", "pipeline", "events"],
+    "refresh": "30s",
+    "description": "Per-hop view of the upload→OCR→classify→embed→search pipeline. Each row is one stage with throughput, p50/p95/p99 latency, and error/DLQ rate. Matches the DoD #18 in the integration test plan.",
+    "panels": [
+      { "type": "row", "title": "Hop 1 — Version emitted (document service)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0} },
+      {
+        "title": "version.uploaded outbox inserts / min",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 1},
+        "targets": [{"expr": "sum(rate(document_events_published_total{subject=\"dms.version.uploaded.v1\"}[5m])) by (subject) * 60", "legendFormat": "{{subject}}"}]
+      },
+      {
+        "title": "Outbox→NATS publish lag p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 1},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(outbox_publish_lag_seconds_bucket{subject=\"dms.version.uploaded.v1\"}[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(outbox_publish_lag_seconds_bucket{subject=\"dms.version.uploaded.v1\"}[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(outbox_publish_lag_seconds_bucket{subject=\"dms.version.uploaded.v1\"}[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "Outbox publish errors / 5m by reason",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 1},
+        "targets": [{"expr": "sum(rate(outbox_publish_errors_total[5m])) by (subject, reason) * 60", "legendFormat": "{{subject}} {{reason}}"}]
+      },
+
+      { "type": "row", "title": "Hop 2 — OCR", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7} },
+      {
+        "title": "OCR docs / min by status",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+        "targets": [{"expr": "sum(rate(ocr_documents_total[5m])) by (status) * 60", "legendFormat": "{{status}}"}]
+      },
+      {
+        "title": "OCR duration p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(ocr_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(ocr_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(ocr_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "OCR errors + DLQ / 5m",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+        "targets": [
+          {"expr": "sum(rate(ocr_documents_total{status=\"failed\"}[5m])) * 60", "legendFormat": "failed/min"},
+          {"expr": "sum(rate(ocr_dlq_total[5m])) * 60", "legendFormat": "dlq/min"}
+        ]
+      },
+
+      { "type": "row", "title": "Hop 3 — Classify", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14} },
+      {
+        "title": "Classify docs / min by status",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 15},
+        "targets": [{"expr": "sum(rate(classify_documents_total[5m])) by (status) * 60", "legendFormat": "{{status}}"}]
+      },
+      {
+        "title": "Classify duration p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 15},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(classify_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(classify_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(classify_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "Classify errors + DLQ / 5m",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 15},
+        "targets": [
+          {"expr": "sum(rate(classify_documents_total{status=\"failed\"}[5m])) * 60", "legendFormat": "failed/min"},
+          {"expr": "sum(rate(classify_dlq_total[5m])) * 60", "legendFormat": "dlq/min"}
+        ]
+      },
+
+      { "type": "row", "title": "Hop 4 — Embed", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 21} },
+      {
+        "title": "Embed chunks / min",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
+        "targets": [{"expr": "sum(rate(embed_chunks_total[5m])) * 60", "legendFormat": "chunks/min"}]
+      },
+      {
+        "title": "Embed duration p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 22},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(embed_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(embed_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(embed_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "Embed DLQ / 5m",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 22},
+        "targets": [{"expr": "sum(rate(embed_dlq_total[5m])) * 60", "legendFormat": "dlq/min"}]
+      },
+
+      { "type": "row", "title": "Hop 5 — Search (queryable end)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28} },
+      {
+        "title": "Search requests / min by status",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 29},
+        "targets": [{"expr": "sum(rate(http_requests_total{path=~\"/api/v1/search.*\"}[5m])) by (code) * 60", "legendFormat": "{{code}}"}]
+      },
+      {
+        "title": "Search duration p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 29},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{path=~\"/api/v1/search.*\"}[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{path=~\"/api/v1/search.*\"}[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{path=~\"/api/v1/search.*\"}[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "Search 5xx rate",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 29},
+        "targets": [{"expr": "sum(rate(http_requests_total{path=~\"/api/v1/search.*\",code=~\"5..\"}[5m])) / sum(rate(http_requests_total{path=~\"/api/v1/search.*\"}[5m]))", "legendFormat": "5xx ratio"}]
+      }
+    ]
+  }
+}

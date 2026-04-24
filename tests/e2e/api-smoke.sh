@@ -139,7 +139,22 @@ HITS=$(node -e "
     try { const o=JSON.parse(d); process.stdout.write(String((o.hits||[]).length)) } catch { process.stdout.write('0') }
   });" <<< "$SEARCH")
 [ "$HITS" -gt 0 ] || die "search returned 0 hits for CONFIDENTIAL"
-say "   hits=$HITS"
+# DoD #14: a hit must carry a snippet/highlight that contains the queried
+# term — otherwise UI rendering breaks even though the count is non-zero.
+SNIPPET=$(node -e "
+  let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+    try {
+      const o=JSON.parse(d);
+      const h=(o.hits||[])[0]||{};
+      process.stdout.write(String(h.snippet||h.highlight||(h.highlights||[])[0]||''));
+    } catch { process.stdout.write('') }
+  });" <<< "$SEARCH")
+[ -n "$SNIPPET" ] || die "search hit has no snippet/highlight field"
+case "$(printf '%s' "$SNIPPET" | tr '[:upper:]' '[:lower:]')" in
+  *confidential*) ;;
+  *) die "snippet does not contain queried term: $SNIPPET" ;;
+esac
+say "   hits=$HITS snippet=${SNIPPET:0:80}..."
 
 # ---- 8. Create share link ------------------------------------------------
 say "8. POST /documents/:id/share-links"

@@ -1,0 +1,56 @@
+# OpenAPI drift allow-list.
+#
+# Paths in this file are known-undocumented today and are GRANDFATHERED
+# — the drift check passes even though they lack a spec entry. A new
+# route added to the codebase that isn't here WILL fail CI.
+#
+# Rules:
+#   1. Lines starting with `#` are comments.
+#   2. Blank lines are ignored.
+#   3. Each non-comment line is one path (may contain `{param}`).
+#   4. This list MUST shrink over time. Adding to it requires an
+#      "OpenAPI coverage debt" backlog entry pointing at the owner.
+#
+# Captured 2026-04-20 from scripts/openapi/check-drift.sh output —
+# these are the paths present in handler code but missing from
+# docs/api/openapi.yaml at cutover to hard-fail.
+
+/api/v1/ResourceTypes
+/api/v1/Schemas
+/api/v1/ServiceProviderConfig
+/api/v1/acs
+/api/v1/admin/documents/
+/api/v1/admin/retention-policies
+/api/v1/admin/retention-policies/
+/api/v1/admin/share-links
+/api/v1/admin/share-links/
+/api/v1/callback
+/api/v1/compliance/
+/api/v1/confirm
+/api/v1/disable
+/api/v1/internal/
+/api/v1/invite
+/api/v1/login
+/api/v1/logout
+/api/v1/me
+/api/v1/metadata
+/api/v1/mfa/recovery
+/api/v1/mfa/verify
+/api/v1/privacy/
+/api/v1/readyz
+/api/v1/register
+/api/v1/residency/
+/api/v1/revoke-all
+/api/v1/setup
+/api/v1/shared/
+/api/v1/storage/
+/api/v1/validate
+/api/v1/{param}
+/api/v1/{param}/cancel-cmk-deletion
+/api/v1/{param}/members
+/api/v1/{param}/members/{param}
+/api/v1/{param}/region-pin
+/api/v1/{param}/reset-mfa
+/api/v1/{param}/schedule-cmk-deletion
+/api/v1/{param}/suspend
+/healthz

@@ -64,7 +64,18 @@ awk '
     | awk '{ if ($0 !~ /^\/api\/v1/) { print "/api/v1" $0 } else { print $0 } }' \
     | sort -u > "$tmp/spec-paths.txt"
 
-undoc=$(comm -23 "$tmp/code-paths-prefixed.txt" "$tmp/spec-paths.txt" || true)
+# Apply allow-list: paths listed in drift-allowlist.txt are
+# GRANDFATHERED and do not fail CI. New routes added to the code
+# that aren't here will. The list must shrink over time.
+ALLOWLIST="${ALLOWLIST:-$REPO_ROOT/scripts/openapi/drift-allowlist.txt}"
+if [[ -f "$ALLOWLIST" ]]; then
+    grep -vE '^\s*(#|$)' "$ALLOWLIST" | sort -u > "$tmp/allowlist.txt"
+else
+    : > "$tmp/allowlist.txt"
+fi
+
+undoc=$(comm -23 "$tmp/code-paths-prefixed.txt" "$tmp/spec-paths.txt" \
+        | comm -23 - "$tmp/allowlist.txt" || true)
 stale=$(comm -13 "$tmp/code-paths-prefixed.txt" "$tmp/spec-paths.txt" || true)
 
 fail=0

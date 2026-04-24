@@ -1,0 +1,132 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Wave 15 — Features",
+    "uid": "vaultdms-wave-15",
+    "tags": ["vaultdms", "wave-15", "acknowledgements", "geofencing", "password-policy", "signatures"],
+    "refresh": "30s",
+    "description": "One row per Wave 15 sub-wave: 15.1 acknowledgements, 15.2 geofencing, 15.3 force-password-change, 15.4 saved signatures. Paired with ops/prometheus/rules/wave-15.yml for alerts.",
+    "templating": {
+      "list": [
+        {
+          "name": "tenant",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(geofence_decisions_total, tenant)",
+          "includeAll": true,
+          "allValue": ".*",
+          "current": { "selected": false, "text": "All", "value": "$__all" }
+        }
+      ]
+    },
+    "panels": [
+      { "type": "row", "title": "15.3 Force-change-password", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0} },
+      {
+        "title": "Password changes / 5m by reason",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 1},
+        "targets": [
+          {"expr": "sum(rate(auth_password_changed_total[5m])) by (reason) * 300", "legendFormat": "{{reason}}"}
+        ]
+      },
+      {
+        "title": "Pending password-expiry backlog (total)",
+        "type": "stat",
+        "gridPos": {"h": 7, "w": 6, "x": 12, "y": 1},
+        "targets": [{"expr": "sum(auth_password_expiries_pending)", "legendFormat": "pending"}],
+        "fieldConfig": { "defaults": { "thresholds": { "steps": [
+          { "color": "green",  "value": null },
+          { "color": "yellow", "value": 100  },
+          { "color": "red",    "value": 1000 }
+        ]}}}
+      },
+      {
+        "title": "Pending by tenant (top 10)",
+        "type": "bargauge",
+        "gridPos": {"h": 7, "w": 6, "x": 18, "y": 1},
+        "targets": [{"expr": "topk(10, auth_password_expiries_pending)", "legendFormat": "{{tenant}}"}]
+      },
+
+      { "type": "row", "title": "15.2 Geofencing", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 8} },
+      {
+        "title": "Geofence decisions / 5m by mode",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 9},
+        "targets": [
+          {"expr": "sum(rate(geofence_decisions_total{tenant=~\"$tenant\"}[5m])) by (mode) * 300", "legendFormat": "{{mode}}"}
+        ]
+      },
+      {
+        "title": "Deny rate / 5m by reason",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 12, "y": 9},
+        "targets": [
+          {"expr": "sum(rate(geofence_decisions_total{tenant=~\"$tenant\",mode=\"deny\"}[5m])) by (result) * 300", "legendFormat": "{{result}}"}
+        ]
+      },
+      {
+        "title": "Lookup latency p50/p95/p99 (s)",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(geofence_lookup_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+          {"expr": "histogram_quantile(0.95, sum(rate(geofence_lookup_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+          {"expr": "histogram_quantile(0.99, sum(rate(geofence_lookup_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+        ]
+      },
+      {
+        "title": "Step-up triggered / 5m",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {"expr": "sum(rate(geofence_decisions_total{mode=\"step_up\"}[5m])) by (tenant) * 300", "legendFormat": "{{tenant}}"}
+        ]
+      },
+
+      { "type": "row", "title": "15.1 Acknowledgements", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23} },
+      {
+        "title": "Outbox inserts / 5m by subject",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {"expr": "sum(rate(outbox_events_inserted_total{service=\"acknowledgement\"}[5m])) by (subject) * 300", "legendFormat": "{{subject}}"}
+        ]
+      },
+      {
+        "title": "Reminder cron runs / day",
+        "type": "stat",
+        "gridPos": {"h": 7, "w": 6, "x": 12, "y": 24},
+        "targets": [{"expr": "sum(increase(outbox_events_inserted_total{service=\"acknowledgement\",subject=\"dms.acknowledgement.reminded.v1\"}[24h]))", "legendFormat": "reminded (24h)"}]
+      },
+      {
+        "title": "Escalations / day",
+        "type": "stat",
+        "gridPos": {"h": 7, "w": 6, "x": 18, "y": 24},
+        "targets": [{"expr": "sum(increase(outbox_events_inserted_total{service=\"acknowledgement\",subject=\"dms.acknowledgement.escalated.v1\"}[24h]))", "legendFormat": "escalated (24h)"}],
+        "fieldConfig": { "defaults": { "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 1 },
+          { "color": "red",    "value": 10 }
+        ]}}}
+      },
+
+      { "type": "row", "title": "15.4 Saved signatures", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 31} },
+      {
+        "title": "Signature profiles created / day",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {"expr": "sum(increase(signature_profiles_created_total[24h])) by (kind)", "legendFormat": "{{kind}}"}
+        ]
+      },
+      {
+        "title": "Profile image fetch errors / 5m",
+        "type": "timeseries",
+        "gridPos": {"h": 7, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {"expr": "sum(rate(signature_profile_image_fetch_errors_total[5m])) * 300", "legendFormat": "errors"}
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
