@@ -102,3 +102,36 @@ recovered by re-publishing:
 
 **Surya OOMs on large scans** — bump `celery.resources.limits.memory`
 or drop DPI in `_ocr_pdf_pages`.
+
+## Architecture
+
+```mermaid
+graph LR
+  NE[NATS<br/>dms.version.uploaded.v1] --> NC(nats_consumer)
+  NC -->|dedupe<br/>ocr_processed_events| CE[Celery queue]
+  CE --> W[intelligence worker<br/>OCR → Classify/NER → Embed]
+  W --> PG[(ocr_results<br/>classifications<br/>entities<br/>chunks)]
+  W --> Q[(Qdrant dm_vectors)]
+  W -.publish.-> NE2((INTEL_EVENTS))
+  W -->|DLQ on terminal fail| DLQ[dms.dlq.intel_events.*]
+```
+
+Hardening: per-tenant semaphore (8), 90s/page timeout, 30-min hard abort, 3 retries with jittered exp backoff (base 5s), dedupe PK on `ocr_processed_events(tenant_id, event_id)`.
+
+## Env var reference
+
+| Var | Purpose |
+|---|---|
+| `VAULTDMS_DATABASE_URL` | ocr/classify/entities/chunks + dedupe |
+| `VAULTDMS_NATS_URL` | subscribe + publish |
+| `VAULTDMS_QDRANT_URL` | vector upsert + query |
+| `VAULTDMS_CELERY_BROKER_URL` | Redis DB 1 |
+| `VAULTDMS_S3_ENDPOINT` / `_ACCESS_KEY` / `_SECRET_KEY` | download version content |
+| `VAULTDMS_DEFAULT_LLM_MODEL` | LiteLLM model selector |
+| `VAULTDMS_OCR_CONFIDENCE_THRESHOLD` | default 0.7 |
+
+## On-call
+
+- [runbook 05 — OCR pipeline](../../docs/runbooks/05-ocr-pipeline.md)
+- [runbook 05 — classification pipeline](../../docs/runbooks/05-classification-pipeline.md)
+- [runbook 05 — embed pipeline](../../docs/runbooks/05-embed-pipeline.md)

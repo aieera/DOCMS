@@ -46,8 +46,12 @@ export default defineConfig({
             '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
             '/api/v1/admin/documents':          withSig('http://localhost:8182'),
             '/api/v1/admin/settings':           withSig('http://localhost:8189'),
+            // Wave 15.2 — geofence admin lives in the policy service.
+            '/api/v1/admin/geofences':          withSig('http://localhost:8181'),
             '/api/v1/admin':                    withSig('http://localhost:8180'),
             '/api/v1/permissions':              withSig('http://localhost:8181'),
+            // Wave 15.1 — acknowledgement service.
+            '/api/v1/acknowledgement':          withSig('http://localhost:8191'),
             '/api/v1/documents':                withSig('http://localhost:8182'),
             '/api/v1/workspaces':               withSig('http://localhost:8182'),
             '/api/v1/folders':                  withSig('http://localhost:8182'),
@@ -87,6 +91,17 @@ export default defineConfig({
         'src/main.tsx',
         'src/test/**',
       ],
+      // Coverage floor. Set to a defensive 20% initial value — the
+      // brief targets 50% by end of wave and "rising" after.
+      // Ratchet this up as new tests land. If `test:ci` fails on the
+      // threshold, either add tests or lower the floor explicitly in
+      // a PR (do not disable it silently).
+      thresholds: {
+        statements: 20,
+        branches: 20,
+        functions: 20,
+        lines: 20,
+      },
     },
   },
 })

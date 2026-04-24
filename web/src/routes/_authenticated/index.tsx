@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { AckBanner } from '@/components/shared/AckBanner'
 import { useAuthStore } from '@/store/authStore'
 import { FileText, FolderOpen, Search, Upload } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
@@ -13,6 +14,7 @@ function DashboardPage() {
         title={`Welcome back, ${user?.display_name?.split(' ')[0] || 'there'}`}
         description="Here's what's happening in your workspace"
       />
+      <AckBanner />
       <div className="grid grid-cols-4 gap-4">
         {[
           { icon: FileText, label: 'Recent Documents', value: '—', to: '/workspaces' },

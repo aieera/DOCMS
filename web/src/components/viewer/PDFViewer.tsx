@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { annotationsApi, type Annotation } from '@/api/annotations'
+import { PageThumbnailSidebar } from './PageThumbnailSidebar'
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
@@ -35,43 +36,59 @@ export function PDFViewer({ url, documentId, versionId }: PDFViewerProps) {
 
   const pageAnnotations = annotations.filter((a) => a.page_number === page)
 
+  // Show the preview-backed thumbnail sidebar only when we have both a
+  // document id (so we can construct the preview URL) and the PDF has
+  // more than one page. Single-page docs don't benefit from a strip.
+  const showSidebar = !!documentId && numPages > 1
+
   return (
-    <div className="flex flex-col items-center">
-      <Document
-        file={url}
-        onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-        loading={<Spinner />}
-        error={<p className="text-sm text-red-500">Failed to load PDF</p>}
-      >
-        <div className="relative">
-          <Page
-            pageNumber={page}
-            width={800}
-            renderTextLayer
-            renderAnnotationLayer={false}
-          />
-          {pageAnnotations.length > 0 && (
-            <AnnotationOverlay annotations={pageAnnotations} />
-          )}
-        </div>
-      </Document>
-      {numPages > 1 && (
-        <div className="mt-3 flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm">{page} / {numPages}</span>
-          <Button variant="ghost" size="sm" disabled={page >= numPages} onClick={() => setPage((p) => p + 1)}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          {annotations.length > 0 && (
-            <span className="ml-4 inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <MessageSquare className="h-3 w-3" aria-hidden />
-              {annotations.length} annotation{annotations.length === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
+    <div className="flex items-start gap-4">
+      {showSidebar && (
+        <PageThumbnailSidebar
+          documentId={documentId!}
+          pdfUrl={url}
+          numPages={numPages}
+          currentPage={page}
+          onSelect={setPage}
+        />
       )}
+      <div className="flex flex-1 flex-col items-center">
+        <Document
+          file={url}
+          onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+          loading={<Spinner />}
+          error={<p className="text-sm text-red-500">Failed to load PDF</p>}
+        >
+          <div className="relative">
+            <Page
+              pageNumber={page}
+              width={800}
+              renderTextLayer
+              renderAnnotationLayer={false}
+            />
+            {pageAnnotations.length > 0 && (
+              <AnnotationOverlay annotations={pageAnnotations} />
+            )}
+          </div>
+        </Document>
+        {numPages > 1 && (
+          <div className="mt-3 flex items-center gap-2">
+            <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm">{page} / {numPages}</span>
+            <Button variant="ghost" size="sm" disabled={page >= numPages} onClick={() => setPage((p) => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            {annotations.length > 0 && (
+              <span className="ml-4 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <MessageSquare className="h-3 w-3" aria-hidden />
+                {annotations.length} annotation{annotations.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
