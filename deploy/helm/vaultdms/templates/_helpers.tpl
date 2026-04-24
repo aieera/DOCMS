@@ -52,6 +52,45 @@ Common environment variables injected into every Go service
     secretKeyRef:
       name: {{ .Values.gateway.secret.name | default "vaultdms-gateway" }}
       key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
+# ADR 0031 — /internal/* auth plane. Default mode is unset so services
+# keep their pre-ADR behaviour (gateway-signature on every path) until
+# an operator opts a service in via internalAuth.mode. Empty env var =
+# Verifier is nil = internalauth.Mux falls through to the gateway-sig
+# middleware.
+{{- if .Values.global.internalAuth.mode }}
+- name: VAULTDMS_INTERNAL_AUTH_MODE
+  value: {{ .Values.global.internalAuth.mode | quote }}
+{{- end }}
+{{- if ne .Values.global.internalAuth.mode "mtls" }}
+- name: VAULTDMS_INTERNAL_HMAC_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.internalAuth.hmacSecret.name | default "vaultdms-internal-auth" }}
+      key:  {{ .Values.global.internalAuth.hmacSecret.key  | default "hmac-secret" }}
+{{- end }}
+{{- if ne .Values.global.internalAuth.mode "hmac" }}
+- name: VAULTDMS_INTERNAL_CA_CERT
+  value: /etc/vaultdms/internal-mtls/ca.crt
+- name: VAULTDMS_INTERNAL_CLIENT_CERT
+  value: /etc/vaultdms/internal-mtls/tls.crt
+- name: VAULTDMS_INTERNAL_CLIENT_KEY
+  value: /etc/vaultdms/internal-mtls/tls.key
+{{- with .Values.global.internalAuth.sanAllowlist }}
+- name: VAULTDMS_INTERNAL_SAN_ALLOWLIST
+  value: {{ join "," . | quote }}
+{{- end }}
+{{- end }}
+# ADR 0031 / T-D-2 — trusted-proxy CIDR list. Empty here would panic
+# at boot because global.env == production. Operators MUST override
+# this with the ingress/load-balancer CIDRs for the cluster.
+- name: VAULTDMS_TRUSTED_PROXY_CIDRS
+  value: {{ join "," .Values.global.trustedProxyCIDRs | quote }}
+- name: VAULTDMS_ENV
+  value: {{ .Values.global.env | default "production" | quote }}
+{{- if .Values.global.prometheus.url }}
+- name: VAULTDMS_PROMETHEUS_URL
+  value: {{ .Values.global.prometheus.url | quote }}
+{{- end }}
 - name: VAULTDMS_S3_ENDPOINT
   value: {{ .Values.global.s3.endpoint | quote }}
 - name: VAULTDMS_S3_USE_SSL
