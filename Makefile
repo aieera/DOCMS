@@ -54,7 +54,7 @@ test-storage:      ; $(GO) test -race -cover ./services/storage/... ## Run stora
 test-workflow:     ; $(GO) test -race -cover ./services/workflow/... ## Run workflow tests
 test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow ## Run every Go service's unit tests
 
-.PHONY: test-integration test-integration-document test-integration-wave15 test-pades
+.PHONY: test-integration test-integration-document test-integration-wave15 test-pades test-pades-strict
 test-integration-document: ## Run document service integration tests (Postgres + NATS testcontainers)
 	$(GO) test -tags integration -race -timeout 5m ./services/document/internal/service/...
 
@@ -76,6 +76,11 @@ test-integration: test-integration-document test-integration-wave15 ## Run all s
 # docs/runbooks/15-pades-harness.md.
 test-pades: ## Run the PAdES-B-LT corpus validator against tests/fixtures/pades/*.pdf
 	$(GO) test -tags pades_corpus -race -timeout 2m ./services/signature/internal/pades/...
+
+# T-D-7 strict gate — no prod_accept build file may import the
+# regex-based pades validator. Cheap + fast; safe to run on every PR.
+test-pades-strict: ## Fail if any //go:build prod_accept file imports the (regex-based) pades validator
+	@bash scripts/check-pades-prod-accept.sh
 
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report

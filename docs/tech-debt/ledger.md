@@ -107,14 +107,40 @@ to a dedicated follow-up wave.
 
 - **Opened:** 2026-04-23 · Wave 15.4
 - **Impact:** Low (correctness, low surface)
-- **Where:** `services/signature/internal/pades/validator.go:121-126`
+- **Where:** `services/signature/internal/pades/validator.go`
 - **What:** Regexes are sufficient for CI smoke but can match
   inside string objects or miss encrypted xref streams. Explicitly
   scoped as "structural, not cryptographic" in the package
   docstring.
+- **Mitigation (shipped):** 2026-04-24 — validator.go now carries a
+  prominent "SMOKE CHECK ONLY" header; `make test-pades-strict`
+  (`scripts/check-pades-prod-accept.sh`) fails the build if any
+  source file tagged `//go:build prod_accept` imports the package.
+  That is the containment perimeter until T-D-7b lands.
 - **Owner queue:** Signature service owner.
-- **Exit criterion:** parse with pdfcpu or delegate to the EU DSS
-  sidecar before trusting this output anywhere outside CI.
+- **Exit criterion:** T-D-7b below.
+
+### T-D-7b — PAdES full-parser replacement (pdfcpu)
+
+- **Opened:** 2026-04-24 · follow-up to T-D-7.
+- **Impact:** Low today (prod_accept gate keeps the regex out of
+  release qualification); Medium once the acceptance gate relies
+  on anything other than Adobe Reader + EU DSS.
+- **Where:** `services/signature/internal/pades/validator.go`.
+- **What:** Replace the regex-over-bytes implementation with a real
+  PDF parse pass. pdfcpu is the preferred dep — pure Go, actively
+  maintained, already reads the xref + object streams we care
+  about. Alternative: delegate the structural checks to the EU DSS
+  sidecar and keep only a 10-line caller here.
+- **Owner queue:** Signature service owner.
+- **Scope:** Phase 8. Not earlier — the current perimeter
+  (`test-pades-strict` + "SMOKE CHECK ONLY" header) is sufficient
+  until we need structural checks inside a release-qualification
+  gate.
+- **Exit criterion:** validator.go uses pdfcpu (or the sidecar) for
+  `/Type /Sig` + `/ByteRange` + `/DSS` + `DocTimeStamp` detection;
+  the SMOKE CHECK header is removed; `test-pades-strict` is kept
+  as a defence-in-depth gate but becomes a no-op.
 
 ### T-D-8 — Schedule bootstrap string-matches Temporal error text
 
