@@ -29,6 +29,27 @@ type ProfileRepo interface {
 	SetDefault(ctx context.Context, tx pgx.Tx, tenantID, userID, id uuid.UUID) error
 	Revoke(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error
 	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+
+	// ListOrphans returns profiles that were soft-revoked more than
+	// `olderThan` ago but still carry an S3 object reference. T-D-4
+	// orphan-sweeper input — rows in this state indicate a Delete()
+	// that crashed between tx1 (revoke) and the S3 + tx2 steps.
+	ListOrphans(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time) ([]OrphanRow, error)
+
+	// ClearImageRef nulls image_ref on a previously-revoked row after
+	// the S3 object has been deleted. Does NOT hard-delete the row:
+	// operators keep the revoked_at history for audit + compliance.
+	ClearImageRef(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+}
+
+// OrphanRow is the narrow shape ListOrphans returns. Only the fields
+// the sweeper needs to act on (delete S3, null image_ref, audit) are
+// surfaced — avoids a full SignatureProfile scan per row.
+type OrphanRow struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	ImageRef  string
+	RevokedAt time.Time
 }
 
 type profileRepo struct{}
@@ -144,6 +165,50 @@ func (r *profileRepo) Revoke(ctx context.Context, tx pgx.Tx, tenantID, id uuid.U
 // deleted so a failed row-delete doesn't leave orphaned ciphertext.
 func (r *profileRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	_, err := tx.Exec(ctx, `DELETE FROM signature_profiles WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return mapProfileErr(err)
+}
+
+// ListOrphans returns rows that are revoked + still carry an image_ref.
+// Bounded at 500 so a runaway tenant can't stall the sweep — the next
+// schedule run will drain the remainder. Cutoff exists so an in-flight
+// Delete() (which holds revoked_at but not yet S3-deleted) is not
+// sniped out from under its own tx2.
+func (r *profileRepo) ListOrphans(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cutoff time.Time) ([]OrphanRow, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id, user_id, image_ref, revoked_at
+		  FROM signature_profiles
+		 WHERE tenant_id = $1
+		   AND revoked_at IS NOT NULL
+		   AND image_ref  IS NOT NULL
+		   AND image_ref  <> ''
+		   AND revoked_at < $2
+		 ORDER BY revoked_at
+		 LIMIT 500`, tenantID, cutoff)
+	if err != nil {
+		return nil, mapProfileErr(err)
+	}
+	defer rows.Close()
+	var out []OrphanRow
+	for rows.Next() {
+		var r OrphanRow
+		if err := rows.Scan(&r.ID, &r.UserID, &r.ImageRef, &r.RevokedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ClearImageRef nulls image_ref on a revoked row. The row itself
+// stays put; the audit/compliance trail (revoked_at, user_id) remains
+// queryable. Idempotent — a second call after the null is a no-op.
+func (r *profileRepo) ClearImageRef(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE signature_profiles
+		   SET image_ref = NULL,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2 AND revoked_at IS NOT NULL`,
+		tenantID, id)
 	return mapProfileErr(err)
 }
 

@@ -79,6 +79,12 @@ func main() {
 			"search":    os.Getenv("VAULTDMS_SEARCH_URL"),
 			"qdrant":    os.Getenv("VAULTDMS_QDRANT_URL"),
 			"connector": os.Getenv("VAULTDMS_CONNECTOR_URL"),
+			// T-D-4 signature orphan sweeper target.
+			"signature": os.Getenv("VAULTDMS_SIGNATURE_URL"),
+			// Wave 15.1 / 15.3 sweepers already exist; surface the
+			// URLs here so operators can configure them in one place.
+			"auth":            os.Getenv("VAULTDMS_AUTH_URL"),
+			"acknowledgement": os.Getenv("VAULTDMS_ACKNOWLEDGEMENT_URL"),
 		},
 		Log: *log.Z(),
 	}
@@ -93,6 +99,10 @@ func main() {
 	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
 	w.RegisterWorkflow(workflows.DeprovisionWorkflow)
+	// Wave 15 daily sweepers.
+	w.RegisterWorkflow(workflows.PasswordExpiryWorkflow)
+	w.RegisterWorkflow(workflows.AckRemindersWorkflow)
+	w.RegisterWorkflow(workflows.SignatureProfileOrphanWorkflow)
 	w.RegisterActivity(acts)
 	go func() {
 		if err := w.Run(worker.InterruptCh()); err != nil {

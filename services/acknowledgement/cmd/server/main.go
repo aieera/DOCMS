@@ -70,13 +70,33 @@ func main() {
 
 	repo := repository.New()
 	outbox := database.NewOutboxRepository()
-	svc := service.New(service.Config{
-		Pool:   pool,
-		Repo:   repo,
-		Outbox: outbox,
-		KMS:    km,
-		Logger: *log.Z(),
+
+	// T-D-6 — Resolver is mandatory. The former nil-fallback silently
+	// installed StaticRecipientResolver which only understands
+	// policy.Users and rejects Groups/Roles as validation errors.
+	// Operators learned about a missing real resolver only when an
+	// admin created a campaign targeting groups. Now fail-fast:
+	//
+	//   VAULTDMS_ACK_RESOLVER=static   → dev/tests only; admins can
+	//                                    only create users-only campaigns.
+	//   VAULTDMS_ACK_RESOLVER=auth     → not yet implemented; reserved.
+	//   (unset)                        → panic at boot.
+	resolver, err := loadResolver(os.Getenv("VAULTDMS_ACK_RESOLVER"))
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("resolver init")
+	}
+
+	svc, err := service.New(service.Config{
+		Pool:     pool,
+		Repo:     repo,
+		Outbox:   outbox,
+		KMS:      km,
+		Resolver: resolver,
+		Logger:   *log.Z(),
 	})
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("service init")
+	}
 
 	publisher := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go publisher.Start(ctx)
@@ -125,4 +145,19 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
+}
+
+// loadResolver picks a RecipientResolver by mode env var. Fails
+// closed when unset — see T-D-6 rationale above the call site.
+func loadResolver(mode string) (service.RecipientResolver, error) {
+	switch mode {
+	case "static":
+		return service.StaticRecipientResolver{}, nil
+	case "auth":
+		return nil, fmt.Errorf("VAULTDMS_ACK_RESOLVER=auth: auth-service resolver not yet implemented (Wave 16)")
+	case "":
+		return nil, fmt.Errorf("VAULTDMS_ACK_RESOLVER is required; set to 'static' (dev) or 'auth' (prod)")
+	default:
+		return nil, fmt.Errorf("VAULTDMS_ACK_RESOLVER=%q: unknown mode (want 'static' or 'auth')", mode)
+	}
 }

@@ -52,95 +52,134 @@ to a dedicated follow-up wave.
   `TrustedProxies` is configured, OR delegates to `RealIP`
   exclusively.
 
-### T-D-3 — `services/acknowledgement/internal/service/service.go` is a god object
+### T-D-3 — `services/acknowledgement/internal/service/service.go` is a god object (RESOLVED 2026-04-24, commit 768e678)
 
-- **Opened:** 2026-04-23 · Wave 15.1
-- **Impact:** Low (maintainability)
-- **Where:** file is 800+ LOC.
-- **What:** Campaign CRUD + Acknowledge + HMAC + chain + sweeper +
-  notification fan-out all live in one file. Reference
-  implementation `services/document` splits these seams.
-- **Owner queue:** Ack service owner.
-- **Exit criterion:** split into `campaign_service.go`,
-  `acknowledge_service.go`, `attestation.go`, `sweeper.go`,
-  `events.go`.
+- **Opened:** 2026-04-23 · Wave 15.1 — **Resolved:** 2026-04-24
+  (commit `768e678`).
+- **Impact:** Low (maintainability).
+- **What was:** Campaign CRUD + Acknowledge + HMAC + chain + sweeper +
+  notification fan-out all in one 829-LOC file.
+- **Fix:** split into `campaign_service.go`, `assignment_service.go`,
+  `attestation_service.go`, `sweeper_service.go`, `event_service.go`.
+  Tests moved to matching `_test.go` files. Receivers stay on
+  `*Service` so the public surface is byte-identical.
 
-### T-D-4 — Profile-delete split-tx orphans S3 objects on crash
+### T-D-4 — Profile-delete split-tx orphans S3 objects on crash (RESOLVED 2026-04-24, commit 29abe8f)
 
-- **Opened:** 2026-04-23 · Wave 15.4
-- **Impact:** Low (operability, storage leak)
-- **Where:** `services/signature/internal/service/profile_service.go:219-249`
-- **What:** Soft-delete in tx1 → S3 delete → hard-delete in tx2.
-  A process kill between tx1 and the S3 delete leaves a row with
-  `revoked_at IS NOT NULL` and the `image_ref` still present.
-- **Owner queue:** Signature service owner.
-- **Exit criterion:** sweeper job `SweepRevokedProfiles` that
-  finds `revoked_at < now() - interval '24h' AND image_ref IS
-  NOT NULL`, retries S3 delete + hard-delete.
+- **Opened:** 2026-04-23 · Wave 15.4 — **Resolved:** 2026-04-24
+  (commit `29abe8f`).
+- **Impact:** Low (operability, storage leak).
+- **What was:** tx1 Revoke → S3 delete → tx2 HardDelete. A process
+  kill mid-flight left `revoked_at IS NOT NULL` + `image_ref` still
+  set + S3 object still present.
+- **Fix:** daily 03:00 UTC Temporal schedule per tenant
+  (`signature-profile-orphan-sweep-<tenant>`). Workflow invokes
+  `POST /internal/v1/signature/orphan-sweep` on the signature service
+  which: `ListOrphans` (revoked_at < now - 24h AND image_ref set,
+  LIMIT 500) → per row S3 DeleteObject → ClearImageRef (keeps
+  revoked_at for audit) → `dms.signature.profile.orphan_swept.v1`
+  outbox. Chaos drill at
+  `docs/chaos/scenarios/09-signature-orphan-sweeper-kill.md`.
 
-### T-D-5 — Workflow activity HTTP calls share DefaultClient
+### T-D-5 — Workflow activity HTTP calls share DefaultClient (RESOLVED 2026-04-24, commit 0938f52)
 
-- **Opened:** 2026-04-23 · generic
-- **Impact:** Low (resilience)
-- **Where:** `services/workflow/internal/activities/wave15.go:58,106`
-- **What:** `http.DefaultClient` has no `Timeout`. Activities
-  inherit only the caller's context budget. Under backend-service
-  slowness we'd keep a goroutine + socket pinned.
-- **Owner queue:** Workflow service owner.
-- **Exit criterion:** per-activities `http.Client{Timeout: 30s,
-  Transport: configured with connection caps}`.
+- **Opened:** 2026-04-23 · generic — **Resolved:** 2026-04-24
+  (commit `0938f52`).
+- **Impact:** Low (resilience).
+- **What was:** `http.DefaultClient` with no `Timeout`; under slow
+  downstream, a goroutine + socket pinned until the workflow-level
+  StartToCloseTimeout fired.
+- **Fix:** `services/workflow/internal/activities/httpclient.go`
+  declares a package-local `httpClient` with `Timeout: 10s` +
+  `otelhttp.NewTransport(http.DefaultTransport)`. All six call sites
+  across `wave15.go` + `dsr_crossservice.go` migrated. `.golangci.yml`
+  enables `forbidigo` with a pattern banning `http.DefaultClient`
+  references (test files excluded).
 
-### T-D-6 — `StaticRecipientResolver` silently replaces `nil`
+### T-D-6 — `StaticRecipientResolver` silently replaces `nil` (RESOLVED 2026-04-24, commit 2e047d8)
 
-- **Opened:** 2026-04-23 · Wave 15.1
-- **Impact:** Low (operational-error visibility)
-- **Where:** `services/acknowledgement/internal/service/service.go:122`
-- **What:** `New()` replaces a nil `Resolver` with
-  `StaticRecipientResolver{}`, so a production misconfig (missing
-  auth-service resolver) yields "groups/roles silently rejected as
-  validation errors" rather than boot-time failure.
-- **Owner queue:** Ack service owner.
-- **Exit criterion:** `New()` panics if `Resolver` is nil; the
-  Static resolver becomes opt-in via a named constructor.
+- **Opened:** 2026-04-23 · Wave 15.1 — **Resolved:** 2026-04-24
+  (commit `2e047d8`).
+- **Impact:** Low (operational-error visibility).
+- **What was:** `New()` installed `StaticRecipientResolver{}` when
+  `cfg.Resolver` was nil; production misconfigs only surfaced when
+  an admin created a group/role campaign.
+- **Fix:** `New()` now returns `(*Service, error)`; nil Resolver is a
+  fail-fast boot error. `cmd/server/main.go` reads
+  `VAULTDMS_ACK_RESOLVER` and picks `static` (dev) or `auth`
+  (reserved for Wave 16 — currently returns an explicit "not
+  implemented" error). Unset → fatal.
 
 ### T-D-7 — PAdES validator uses regex over raw bytes
 
 - **Opened:** 2026-04-23 · Wave 15.4
 - **Impact:** Low (correctness, low surface)
-- **Where:** `services/signature/internal/pades/validator.go:121-126`
+- **Where:** `services/signature/internal/pades/validator.go`
 - **What:** Regexes are sufficient for CI smoke but can match
   inside string objects or miss encrypted xref streams. Explicitly
   scoped as "structural, not cryptographic" in the package
   docstring.
+- **Mitigation (shipped):** 2026-04-24 (commit `9755ba0`) —
+  validator.go now carries a prominent "SMOKE CHECK ONLY" header;
+  `make test-pades-strict` (`scripts/check-pades-prod-accept.sh`)
+  fails the build if any source file tagged `//go:build prod_accept`
+  imports the package. That is the containment perimeter until
+  T-D-7b lands.
 - **Owner queue:** Signature service owner.
-- **Exit criterion:** parse with pdfcpu or delegate to the EU DSS
-  sidecar before trusting this output anywhere outside CI.
+- **Exit criterion:** T-D-7b below.
 
-### T-D-8 — Schedule bootstrap string-matches Temporal error text
+### T-D-7b — PAdES full-parser replacement (pdfcpu)
 
-- **Opened:** 2026-04-23 · Wave 15.1
-- **Impact:** Low (robustness)
-- **Where:** `services/workflow/internal/workflows/wave15.go:191`
-- **What:** `scheduleErrIsBenign` falls back to
-  `strings.Contains(err.Error(), "already exists")`. Brittle
-  across Temporal SDK versions.
-- **Owner queue:** Workflow service owner.
-- **Exit criterion:** remove the substring fallback once we pin
-  a single Temporal SDK version and rely solely on
-  `errors.As(&serviceerror.AlreadyExists{})`.
+- **Opened:** 2026-04-24 · follow-up to T-D-7.
+- **Impact:** Low today (prod_accept gate keeps the regex out of
+  release qualification); Medium once the acceptance gate relies
+  on anything other than Adobe Reader + EU DSS.
+- **Where:** `services/signature/internal/pades/validator.go`.
+- **What:** Replace the regex-over-bytes implementation with a real
+  PDF parse pass. pdfcpu is the preferred dep — pure Go, actively
+  maintained, already reads the xref + object streams we care
+  about. Alternative: delegate the structural checks to the EU DSS
+  sidecar and keep only a 10-line caller here.
+- **Owner queue:** Signature service owner.
+- **Scope:** Phase 8. Not earlier — the current perimeter
+  (`test-pades-strict` + "SMOKE CHECK ONLY" header) is sufficient
+  until we need structural checks inside a release-qualification
+  gate.
+- **Exit criterion:** validator.go uses pdfcpu (or the sidecar) for
+  `/Type /Sig` + `/ByteRange` + `/DSS` + `DocTimeStamp` detection;
+  the SMOKE CHECK header is removed; `test-pades-strict` is kept
+  as a defence-in-depth gate but becomes a no-op.
 
-### T-D-9 — `dms.notify.*` namespace outside the standard subject shape
+### T-D-8 — Schedule bootstrap string-matches Temporal error text (RESOLVED 2026-04-24, commit fcf8a4b)
 
-- **Opened:** 2026-04-23 · Wave 15.1
-- **Impact:** Low (hygiene, discoverability)
-- **Where:** `services/acknowledgement/internal/service/service.go:53-59`
-- **What:** Notification subjects land under `dms.notify.<source>.<event>.v1`
-  rather than `dms.<aggregate>.<event>.v1`. Works because the
-  notification consumer subscribes with a `>` wildcard, but the
-  naming convention isn't documented anywhere.
-- **Owner queue:** Event-schema owner.
-- **Exit criterion:** ADR documenting the `dms.notify.*` carve-out,
-  or rename to fit the existing convention.
+- **Opened:** 2026-04-23 · Wave 15.1 — **Resolved:** 2026-04-24
+  (commit `fcf8a4b`).
+- **Impact:** Low (robustness).
+- **What was:** `scheduleErrIsBenign` fell back to
+  `strings.Contains(err.Error(), "already exists")` after its typed
+  `errors.As` check — brittle across SDK versions and over-broad on
+  unrelated errors.
+- **Fix:** typed-only check against `*serviceerror.AlreadyExists`
+  (the SDK v1.26.1 pinned in `services/workflow/go.mod` exposes it).
+  New `wave15_schedule_err_test.go` pins the contract with wrapped
+  typed errors (benign) vs plain "already exists" text + NotFound +
+  Internal (not benign).
+
+### T-D-9 — `dms.notify.*` namespace outside the standard subject shape (RESOLVED 2026-04-24, commit 5370ef9)
+
+- **Opened:** 2026-04-23 · Wave 15.1 — **Resolved:** 2026-04-24
+  (commit `5370ef9`).
+- **Impact:** Low (hygiene, discoverability).
+- **What was:** Notification subjects landed under
+  `dms.notify.<source>.<event>.v1` rather than the standard
+  `dms.<aggregate>.<event>.v1`; the carve-out wasn't documented
+  anywhere.
+- **Fix:** ADR 0032 (`docs/adr/0032-event-subject-namespacing.md`)
+  codifies both shapes and the ownership rule. New
+  `scripts/lint-nats-subjects.sh` walks `services/` + `pkg/`,
+  extracts every `dms.*` string literal, and fails CI if a complete
+  publish subject matches neither shape. Wired into the existing
+  `security-go` job in `.github/workflows/ci.yml`.
 
 ## Closed entries
 

@@ -55,7 +55,7 @@ func (a *Activities) SweepPasswordExpiries(ctx context.Context, tenantID string)
 	// is bypassed by the mesh / run-inside-trust-boundary posture.
 	// See Wave 3 deployment notes.
 	req.Header.Set("X-Internal-Worker", "workflow")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("password sweep POST: %w", err)
 	}
@@ -72,8 +72,53 @@ func (a *Activities) SweepPasswordExpiries(ctx context.Context, tenantID string)
 // shape. Mirrors the endpoint's return (to be added in Wave 15.1
 // follow-up).
 type SweepAcknowledgementRemindersResult struct {
-	Reminded   int `json:"reminded"`
-	Escalated  int `json:"escalated"`
+	Reminded  int `json:"reminded"`
+	Escalated int `json:"escalated"`
+}
+
+// SweepSignatureProfileOrphansResult mirrors the signature service's
+// /internal/v1/signature/orphan-sweep response. Count is per-call,
+// not cumulative.
+type SweepSignatureProfileOrphansResult struct {
+	Swept int `json:"swept"`
+}
+
+// SweepSignatureProfileOrphans calls the signature service's T-D-4
+// orphan-sweep endpoint for a single tenant. Rows whose Delete()
+// crashed between tx1 and the S3 step are found, their S3 object is
+// deleted, image_ref is nulled, and an audit outbox event is emitted
+// (see services/signature/internal/service/orphan_sweeper.go).
+func (a *Activities) SweepSignatureProfileOrphans(ctx context.Context, tenantID string) (SweepSignatureProfileOrphansResult, error) {
+	var out SweepSignatureProfileOrphansResult
+	url := a.ServiceURLs["signature"]
+	if url == "" {
+		a.Log.Info().Str("tenant_id", tenantID).
+			Msg("signature orphan sweep: signature service URL not configured; skipping")
+		return out, nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		cctx, http.MethodPost,
+		url+"/internal/v1/signature/orphan-sweep",
+		bytes.NewReader([]byte(`{}`)),
+	)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Auth-Tenant-ID", tenantID)
+	req.Header.Set("X-Internal-Worker", "workflow")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("signature orphan sweep POST: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return out, fmt.Errorf("signature orphan sweep returned %d", resp.StatusCode)
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return out, nil
 }
 
 // SweepAcknowledgementReminders calls the acknowledgement service's
@@ -103,7 +148,7 @@ func (a *Activities) SweepAcknowledgementReminders(ctx context.Context, tenantID
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
 	req.Header.Set("X-Internal-Worker", "workflow")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return out, fmt.Errorf("ack reminder sweep POST: %w", err)
 	}

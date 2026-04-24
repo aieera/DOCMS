@@ -327,6 +327,8 @@ jobs:
         run: bash scripts/check-outbox-only-publishing.sh
       - name: No MinIO naming in prod paths (Wave 15 / Phase 1.7)
         run: bash scripts/check-no-minio-leaks.sh
+      - name: NATS subject shape (ADR 0032 / T-D-9)
+        run: bash scripts/lint-nats-subjects.sh
 
   security-semgrep:
     name: Semgrep SAST

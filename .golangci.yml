@@ -29,6 +29,7 @@ linters:
     - unparam
     - prealloc
     - contextcheck
+    - forbidigo
 
 linters-settings:
   gocritic:
@@ -53,6 +54,16 @@ linters-settings:
     local-prefixes: github.com/vaultdms/vaultdms
   misspell:
     locale: US
+  # T-D-5 — block http.DefaultClient anywhere. DefaultClient has no
+  # Timeout; under downstream slowness it pins a goroutine + socket
+  # until the caller's context expires. Every package must own a
+  # named client with an explicit timeout + otelhttp transport, like
+  # services/workflow/internal/activities/httpclient.go.
+  forbidigo:
+    analyze-types: true
+    forbid:
+      - pattern: '^http\.DefaultClient$'
+        msg: "http.DefaultClient has no Timeout; declare a package-local http.Client with a Timeout + otelhttp transport (see services/workflow/internal/activities/httpclient.go)."
 
 issues:
   exclude-use-default: false
@@ -65,6 +76,7 @@ issues:
         - errcheck
         - unparam
         - gocritic
+        - forbidigo
     - path: cmd/
       linters:
         - gochecknoinits
