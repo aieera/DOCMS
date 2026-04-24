@@ -20,7 +20,7 @@ export const Route = createFileRoute('/_authenticated')({
     // deciding to redirect.
     try {
       const user = await getCurrentUser()
-      state.login(user, user.tenant_id)
+      state.login(user, user.tenant_id ?? '')
     } catch {
       throw redirect({ to: '/login' })
     }
