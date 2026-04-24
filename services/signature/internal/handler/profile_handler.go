@@ -33,15 +33,41 @@ func NewProfileHandler(svc *service.ProfileService) *ProfileHandler {
 	return &ProfileHandler{svc: svc}
 }
 
-// Register mounts the profile routes on a chi-compatible mux.
-// Uses net/http routing patterns to match the service's existing
-// style.
+// Register mounts the session-authenticated profile routes on a
+// chi-compatible mux. Internal/Temporal-invoked routes are registered
+// separately via RegisterInternal so they don't sit behind SessionAuth.
 func (h *ProfileHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET    /api/v1/signatures/profiles", h.list)
 	mux.HandleFunc("POST   /api/v1/signatures/profiles", h.create)
 	mux.HandleFunc("PATCH  /api/v1/signatures/profiles/{id}", h.patch)
 	mux.HandleFunc("DELETE /api/v1/signatures/profiles/{id}", h.delete)
 	mux.HandleFunc("GET    /api/v1/signatures/profiles/{id}/image", h.image)
+}
+
+// RegisterInternal mounts worker-invoked routes. Tenant is read from
+// the X-Auth-Tenant-ID header (Temporal worker injects it); session
+// auth does NOT apply here because workers carry no cookie.
+func (h *ProfileHandler) RegisterInternal(mux *http.ServeMux) {
+	// T-D-4 orphan sweeper — daily 03:00 UTC per tenant.
+	mux.HandleFunc("POST /internal/v1/signature/orphan-sweep", h.orphanSweep)
+}
+
+// orphanSweep is the Temporal-invoked per-tenant cleanup for profile
+// rows whose Delete() crashed between tx1 and the S3 step. See
+// service.ProfileService.OrphanSweep for the state machine.
+func (h *ProfileHandler) orphanSweep(w http.ResponseWriter, r *http.Request) {
+	tenantStr := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID, err := uuid.Parse(tenantStr)
+	if err != nil || tenantID == uuid.Nil {
+		writeErrProfile(w, vdmserr.Unauthorized("X-Auth-Tenant-ID required"))
+		return
+	}
+	res, err := h.svc.OrphanSweep(r.Context(), tenantID)
+	if err != nil {
+		writeErrProfile(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"swept": res.Swept})
 }
 
 // extractIdentity reads the authenticated session set by the

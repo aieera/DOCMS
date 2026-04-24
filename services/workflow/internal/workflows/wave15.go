@@ -16,7 +16,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,6 +46,16 @@ type AckRemindersOutcome struct {
 	ExecutedAt string `json:"executed_at"`
 }
 
+// SignatureProfileOrphanInput / Outcome — T-D-4 daily sweep.
+type SignatureProfileOrphanInput struct {
+	TenantID string `json:"tenant_id"`
+}
+type SignatureProfileOrphanOutcome struct {
+	TenantID   string `json:"tenant_id"`
+	Swept      int    `json:"swept"`
+	ExecutedAt string `json:"executed_at"`
+}
+
 // ---- Workflows ------------------------------------------------------------
 
 func PasswordExpiryWorkflow(ctx workflow.Context, in PasswordExpiryInput) (*PasswordExpiryOutcome, error) {
@@ -70,6 +79,37 @@ func PasswordExpiryWorkflow(ctx workflow.Context, in PasswordExpiryInput) (*Pass
 		return out, err
 	}
 	out.Flagged = flagged
+	return out, nil
+}
+
+// SignatureProfileOrphanWorkflow runs the T-D-4 daily orphan sweep
+// for one tenant. Same retry profile as AckReminders — the sweep is
+// idempotent at both the S3 (DeleteObject) and DB (ClearImageRef)
+// layers.
+func SignatureProfileOrphanWorkflow(ctx workflow.Context, in SignatureProfileOrphanInput) (*SignatureProfileOrphanOutcome, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts:    3,
+			InitialInterval:    10 * time.Second,
+			BackoffCoefficient: 2,
+			MaximumInterval:    1 * time.Minute,
+		},
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	out := &SignatureProfileOrphanOutcome{
+		TenantID:   in.TenantID,
+		ExecutedAt: workflow.Now(ctx).UTC().Format(time.RFC3339),
+	}
+	type sweepRes struct {
+		Swept int
+	}
+	var res sweepRes
+	if err := workflow.ExecuteActivity(ctx, "SweepSignatureProfileOrphans", in.TenantID).
+		Get(ctx, &res); err != nil {
+		return out, err
+	}
+	out.Swept = res.Swept
 	return out, nil
 }
 
@@ -152,6 +192,31 @@ func RegisterWave15Schedules(ctx context.Context, pool *pgxpool.Pool, tc client.
 			created++
 		}
 
+		// Signature-profile orphan sweep — daily 03:00 UTC, ahead of
+		// ack reminders so dashboards reflect yesterday's cleanup. See
+		// T-D-4.
+		sigID := "signature-profile-orphan-sweep-" + tenantID
+		_, err = sc.Create(ctx, client.ScheduleOptions{
+			ID: sigID,
+			Spec: client.ScheduleSpec{
+				CronExpressions: []string{"0 3 * * *"},
+				TimeZoneName:    "UTC",
+			},
+			Action: &client.ScheduleWorkflowAction{
+				ID:        "wf-" + sigID + "-" + now,
+				Workflow:  SignatureProfileOrphanWorkflow,
+				Args:      []any{SignatureProfileOrphanInput{TenantID: tenantID}},
+				TaskQueue: taskQueue,
+			},
+			Overlap: 1,
+		})
+		if !scheduleErrIsBenign(err) {
+			return created, fmt.Errorf("create schedule %s: %w", sigID, err)
+		}
+		if err == nil {
+			created++
+		}
+
 		// Ack reminders — daily 09:00 UTC per the Wave 15.1 brief.
 		ackID := "ack-reminders-" + tenantID
 		_, err = sc.Create(ctx, client.ScheduleOptions{
@@ -179,14 +244,16 @@ func RegisterWave15Schedules(ctx context.Context, pool *pgxpool.Pool, tc client.
 }
 
 // scheduleErrIsBenign returns true when err is nil OR a Temporal
-// AlreadyExists — idempotency hook for bootstrap-on-every-boot.
+// *serviceerror.AlreadyExists. The former strings.Contains fallback
+// was T-D-8: brittle across SDK versions and silently swallowing any
+// other "already exists"-ish error text (e.g. unrelated upstream
+// collisions). Temporal SDK ≥ v1.25 exposes AlreadyExists as a
+// typed error; the workflow module's go.mod pins v1.26.1 so the
+// errors.As path is authoritative here.
 func scheduleErrIsBenign(err error) bool {
 	if err == nil {
 		return true
 	}
 	var already *serviceerror.AlreadyExists
-	if errors.As(err, &already) {
-		return true
-	}
-	return strings.Contains(err.Error(), "already exists")
+	return errors.As(err, &already)
 }
