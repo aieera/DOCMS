@@ -1,0 +1,63 @@
+# ADR 0031 — internal-auth plane alerting.
+#
+# Two groups:
+#   rejection_rate: an elevated rate of /internal/* auth rejections
+#     means either (a) a peer is misconfigured and re-trying with a
+#     bad cert / signature, or (b) someone is probing the internal
+#     surface. Either way, page oncall.
+#
+#   cert_expiry: surface mTLS leaves that are about to expire. The
+#     internal CA auto-renews via cert-manager at 2/3 lifetime, but
+#     a stuck reconciler or deleted Secret can still leave a pod
+#     holding a soon-to-expire cert — we want to know before traffic
+#     breaks, not after.
+
+groups:
+  - name: internalauth_rejection_rate
+    interval: 30s
+    rules:
+      - alert: InternalAuthRejectionRateHigh
+        # Threshold: 0.1 rejections/sec sustained over 5m per service.
+        # Background noise from kube probes is excluded by the
+        # internalauth.Mux path carve-out — probes never hit the
+        # verifier — so any non-zero rate is real traffic being
+        # rejected. 0.1/s ≈ 6 per minute per service.
+        expr: |
+          sum by (job) (
+            rate(internal_auth_total{outcome!="ok"}[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          adr: "0031"
+        annotations:
+          summary: "{{ $labels.job }}: internal-auth rejection rate > 0.1/s"
+          description: >-
+            {{ $labels.job }} is rejecting /internal/* requests faster
+            than 0.1/s over the last 5 minutes. Inspect the outcome
+            label on internal_auth_total — bad_cert suggests a misrotated
+            client cert, bad_sig an HMAC misconfig, skew clock drift.
+          runbook_url: "docs/runbooks/internal-mtls-bootstrap.md#metrics-and-alerts"
+
+  - name: internalauth_cert_expiry
+    interval: 5m
+    rules:
+      - alert: InternalAuthCertExpiringSoon
+        # Leaf certs are 30-day, auto-renewed at 20 days remaining.
+        # Fire an alert at 7 days so a stuck renewer has time to be
+        # diagnosed before expiry.
+        expr: |
+          (internal_auth_cert_expiry_timestamp_seconds - time()) < (7 * 86400)
+          and (internal_auth_cert_expiry_timestamp_seconds > 0)
+        for: 15m
+        labels:
+          severity: warning
+          adr: "0031"
+        annotations:
+          summary: "{{ $labels.job }}: internal-auth cert for SAN {{ $labels.san }} expires in <7d"
+          description: >-
+            The client cert for {{ $labels.san }} on {{ $labels.job }}
+            expires in less than 7 days. cert-manager should have
+            renewed by now — check the Certificate resource's status
+            and events in deploy/k8s/internal-mtls/.
+          runbook_url: "docs/runbooks/internal-mtls-bootstrap.md#rotation"

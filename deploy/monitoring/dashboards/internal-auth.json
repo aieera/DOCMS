@@ -1,0 +1,96 @@
+{
+  "dashboard": {
+    "title": "VaultDMS Internal Auth Plane",
+    "uid": "vaultdms-internal-auth",
+    "tags": ["vaultdms", "internal-auth", "adr-0031"],
+    "refresh": "30s",
+    "description": "Rollout + runtime health of the ADR 0031 internal-auth plane. Paired with ops/prometheus/rules/internalauth.yml and the admin UI at /admin/platform/internal-auth.",
+    "templating": {
+      "list": [
+        {
+          "name": "service",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(internal_auth_mode_info, job)",
+          "includeAll": true,
+          "allValue": ".*",
+          "current": {"selected": false, "text": "All", "value": "$__all"}
+        }
+      ]
+    },
+    "panels": [
+      {"type": "row", "title": "Rollout state", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}},
+      {
+        "title": "Configured mode per service",
+        "type": "table",
+        "description": "internal_auth_mode_info is published once at Verifier construction. Blank cell = service has no Verifier (VAULTDMS_INTERNAL_AUTH_MODE unset).",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 1},
+        "targets": [
+          {"expr": "internal_auth_mode_info", "instant": true, "format": "table"}
+        ]
+      },
+      {
+        "title": "Successful /internal/* authentications (rate, 5m)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 16, "x": 8, "y": 1},
+        "targets": [
+          {"expr": "sum by (job) (rate(internal_auth_total{job=~\"$service\",outcome=\"ok\"}[5m]))", "legendFormat": "{{job}}"}
+        ]
+      },
+      {"type": "row", "title": "Rejection rate (alert: >0.1/s per service)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9}},
+      {
+        "title": "Rejection rate per service",
+        "type": "timeseries",
+        "description": "sum by (job) (rate(internal_auth_total{outcome!=\"ok\"}[5m])). Alert fires when this crosses 0.1/s for 5 min — see ops/prometheus/rules/internalauth.yml.",
+        "gridPos": {"h": 8, "w": 16, "x": 0, "y": 10},
+        "targets": [
+          {"expr": "sum by (job) (rate(internal_auth_total{job=~\"$service\",outcome!=\"ok\"}[5m]))", "legendFormat": "{{job}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "orange", "value": 0.1}
+              ]
+            }
+          }
+        },
+        "options": {"tooltip": {"mode": "multi"}}
+      },
+      {
+        "title": "Rejections by outcome",
+        "type": "timeseries",
+        "description": "Split by the per-rejection reason so operators can diagnose without drilling per-service: bad_cert = expired/untrusted cert, bad_san = SAN not on allowlist, bad_sig = HMAC mismatch, skew = timestamp drift >5min, missing = no credential, mode_mismatch = HMAC sent to mTLS-only endpoint.",
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 10},
+        "targets": [
+          {"expr": "sum by (outcome) (rate(internal_auth_total{job=~\"$service\",outcome!=\"ok\"}[5m]))", "legendFormat": "{{outcome}}"}
+        ]
+      },
+      {"type": "row", "title": "Cert expiry", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18}},
+      {
+        "title": "Days until soonest cert expiry per service",
+        "type": "stat",
+        "description": "(internal_auth_cert_expiry_timestamp_seconds - time()) / 86400. Alert InternalAuthCertExpiringSoon fires at <7d.",
+        "gridPos": {"h": 6, "w": 24, "x": 0, "y": 19},
+        "targets": [
+          {"expr": "(min by (job) (internal_auth_cert_expiry_timestamp_seconds{job=~\"$service\"}) - time()) / 86400", "legendFormat": "{{job}}"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "d",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 7},
+                {"color": "green", "value": 30}
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
