@@ -55,7 +55,7 @@ func (a *Activities) SweepPasswordExpiries(ctx context.Context, tenantID string)
 	// is bypassed by the mesh / run-inside-trust-boundary posture.
 	// See Wave 3 deployment notes.
 	req.Header.Set("X-Internal-Worker", "workflow")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("password sweep POST: %w", err)
 	}
@@ -109,7 +109,7 @@ func (a *Activities) SweepSignatureProfileOrphans(ctx context.Context, tenantID 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
 	req.Header.Set("X-Internal-Worker", "workflow")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return out, fmt.Errorf("signature orphan sweep POST: %w", err)
 	}
@@ -148,7 +148,7 @@ func (a *Activities) SweepAcknowledgementReminders(ctx context.Context, tenantID
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
 	req.Header.Set("X-Internal-Worker", "workflow")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return out, fmt.Errorf("ack reminder sweep POST: %w", err)
 	}

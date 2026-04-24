@@ -45,7 +45,7 @@ func (a *Activities) PurgeSubjectFromSearch(ctx context.Context, tenantID, subje
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("search purge POST: %w", err)
 	}
@@ -89,7 +89,7 @@ func (a *Activities) IsUserOnLeave(ctx context.Context, assigneeID string) (Avai
 	if err != nil {
 		return AvailabilityResult{}, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Fail open. Logged so ops sees policy-service blips.
 		a.Log.Warn().Err(err).Str("assignee_id", assigneeID).
@@ -143,7 +143,7 @@ func (a *Activities) PurgeSubjectFromConnectors(ctx context.Context, tenantID, s
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("connector purge POST: %w", err)
 	}
