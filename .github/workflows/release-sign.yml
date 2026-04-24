@@ -1,0 +1,166 @@
+# Release-time image signing + SBOM attestation.
+#
+# Triggers on a release tag push matching v*.  For every VaultDMS
+# service, the job:
+#   1. Builds and pushes the service image to ghcr.io.
+#   2. Produces a CycloneDX SBOM via syft.
+#   3. Signs the image keylessly via cosign (Sigstore / GitHub OIDC).
+#   4. Attaches the SBOM as a cosign attestation on the same image.
+#
+# Verification (operator-side, after the tag is published):
+#
+#   cosign verify \
+#     ghcr.io/${{ github.repository_owner }}/vaultdms-acknowledgement:v1.3.0 \
+#     --certificate-identity-regexp '.*github.*' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+#
+#   cosign verify-attestation \
+#     ghcr.io/${{ github.repository_owner }}/vaultdms-acknowledgement:v1.3.0 \
+#     --type cyclonedx --certificate-oidc-issuer https://token.actions.githubusercontent.com
+#
+# Rationale: keyless cosign means no long-lived signing key to rotate
+# or protect. The attesting identity is the workflow run's OIDC JWT;
+# verifiers pin on --certificate-identity-regexp to avoid spoofing.
+
+name: release-sign
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write    # push to ghcr.io
+  id-token: write    # Sigstore keyless needs the OIDC JWT
+
+env:
+  REGISTRY: ghcr.io
+  # Every service matches this layout; the registry namespace is the
+  # lower-cased repo owner so forks inherit a usable default.
+  IMAGE_PREFIX: ${{ github.repository_owner }}/vaultdms-
+
+jobs:
+  sign:
+    name: Build + sign + SBOM (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in sync with deploy/helm/vaultdms/Chart.yaml subcharts
+        # and .release-please-manifest.json keys. Non-Go services
+        # (collaboration / intelligence / preview) have their own
+        # Dockerfiles; the per-service build command resolves both
+        # families via build/Dockerfile.<lang>-service.
+        service:
+          - acknowledgement
+          - auth
+          - policy
+          - document
+          - storage
+          - search
+          - workflow
+          - notification
+          - audit
+          - signature
+          - billing
+          - connector
+          - collaboration
+          - intelligence
+          - preview
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image ref
+        id: ref
+        run: |
+          # Tag is the pushed git tag (e.g. v1.3.0). Lower-case the
+          # registry prefix in case the org casing drifts.
+          tag="${GITHUB_REF_NAME}"
+          prefix=$(echo "${{ env.IMAGE_PREFIX }}" | tr '[:upper:]' '[:lower:]')
+          image="${{ env.REGISTRY }}/${prefix}${{ matrix.service }}:${tag}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push
+        uses: docker/build-push-action@v5
+        id: build
+        with:
+          context: .
+          # One Dockerfile per language tier. SERVICE is consumed by
+          # the existing Go Dockerfile; the Python/Node variants read
+          # their own ENV. Kept consistent with build/ layout from
+          # the Wave 5 compose work.
+          file: build/Dockerfile.${{ matrix.service == 'collaboration' && 'node' || (contains(fromJSON('["intelligence","preview"]'), matrix.service) && 'python' || 'go') }}-service
+          build-args: |
+            SERVICE=${{ matrix.service }}
+          push: true
+          tags: ${{ steps.ref.outputs.image }}
+          provenance: false   # cosign handles this via attestations
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.2.3"
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+        with:
+          syft-version: v1.4.1
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          syft \
+            --output cyclonedx-json=sbom-${{ matrix.service }}.cdx.json \
+            "${{ steps.ref.outputs.image }}@${{ steps.build.outputs.digest }}"
+
+      - name: Cosign keyless sign
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes \
+            "${{ steps.ref.outputs.image }}@${{ steps.build.outputs.digest }}"
+
+      - name: Cosign attest SBOM
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign attest --yes \
+            --predicate sbom-${{ matrix.service }}.cdx.json \
+            --type cyclonedx \
+            "${{ steps.ref.outputs.image }}@${{ steps.build.outputs.digest }}"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.cdx.json
+          retention-days: 90
+
+  # Summary job that the release notes can link to. Fails if any
+  # matrix leg above failed, so the operator sees a single red check
+  # rather than 15 individual ones.
+  signed-images-summary:
+    name: Signed images summary
+    needs: [sign]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summarise
+        run: |
+          if [ "${{ needs.sign.result }}" != "success" ]; then
+            echo "::error::one or more service sign jobs failed"
+            exit 1
+          fi
+          echo "All services signed + attested for ${GITHUB_REF_NAME}."
