@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { initiateUpload } from '../../api/upload'
+import { captureDocument } from '../../lib/scanner'
+import { enqueue, MAX_BYTES } from '../../lib/uploadQueue'
+import { useAuthStore } from '../../store/authStore'
 
 export default function UploadScreen() {
   const [uploading, setUploading] = useState(false)
@@ -28,20 +31,31 @@ export default function UploadScreen() {
     }
   }
 
+  // Edge-detecting capture + queue. The queue handles offline,
+  // reconnect resume, and 25 MB cap — upload happens here
+  // synchronously when online, and next-tick when not.
   const takePhoto = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync()
-    if (!perm.granted) return Alert.alert('Permission needed', 'Camera access required')
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 })
-    if (result.canceled) return
+    const tenantId = useAuthStore.getState().tenantId
+    if (!tenantId) return Alert.alert('Not signed in', 'Sign in before capturing')
     setUploading(true)
     try {
-      const asset = result.assets[0]
+      const capture = await captureDocument()
+      if (!capture) return
       const filename = `scan_${Date.now()}.jpg`
-      const session = await initiateUpload({ filename, mime_type: 'image/jpeg', size_bytes: asset.fileSize || 0 })
-      await fetch(session.presigned_put_url, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: { uri: asset.uri } as any })
-      Alert.alert('Success', 'Photo uploaded')
-    } catch (e) {
-      Alert.alert('Error', String(e))
+      try {
+        await enqueue({
+          tenantId,
+          localPath: capture.uri,
+          filename,
+          mimeType: 'image/jpeg',
+        })
+        Alert.alert('Queued', 'Scan queued; will upload when online')
+      } catch (e) {
+        const msg = String(e).includes('capture too large')
+          ? `Capture exceeds ${Math.round(MAX_BYTES / 1024 / 1024)} MB limit`
+          : String(e)
+        Alert.alert('Error', msg)
+      }
     } finally {
       setUploading(false)
     }

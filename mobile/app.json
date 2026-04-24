@@ -8,7 +8,13 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": { "image": "./assets/splash.png", "resizeMode": "contain", "backgroundColor": "#1E40AF" },
-    "ios": { "bundleIdentifier": "com.vaultdms.app", "supportsTablet": true },
+    "ios": {
+      "bundleIdentifier": "com.vaultdms.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "BGTaskSchedulerPermittedIdentifiers": ["com.vaultdms.app.upload-drain"]
+      }
+    },
     "android": { "package": "com.vaultdms.app", "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#1E40AF" } },
     "plugins": ["expo-router", "expo-camera", "expo-notifications", "expo-secure-store"]
   }
