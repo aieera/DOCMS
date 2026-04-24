@@ -1,0 +1,39 @@
+name: Commitlint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commitlint:
+    # Validates that every commit on the PR branch follows
+    # conventional-commits. release-please depends on this — a PR
+    # with "WIP fix stuff" commits won't produce a clean changelog
+    # entry. The PR *title* is also validated because squash-merge
+    # uses it as the commit subject.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install commitlint
+        run: |
+          npm install --no-save \
+            @commitlint/cli@19 \
+            @commitlint/config-conventional@19
+      - name: Lint PR title
+        run: echo "${{ github.event.pull_request.title }}" \
+             | npx commitlint --config commitlint.config.cjs
+      - name: Lint commits on PR branch
+        run: |
+          npx commitlint \
+            --config commitlint.config.cjs \
+            --from ${{ github.event.pull_request.base.sha }} \
+            --to   ${{ github.event.pull_request.head.sha }}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-v-in-tag": true,
+  "include-component-in-tag": true,
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "plugins": ["sentence-case"],
+  "packages": {
+    "services/acknowledgement": { "release-type": "go", "package-name": "acknowledgement" },
+    "services/auth":         { "release-type": "go", "package-name": "auth" },
+    "services/policy":       { "release-type": "go", "package-name": "policy" },
+    "services/document":     { "release-type": "go", "package-name": "document" },
+    "services/storage":      { "release-type": "go", "package-name": "storage" },
+    "services/search":       { "release-type": "go", "package-name": "search" },
+    "services/workflow":     { "release-type": "go", "package-name": "workflow" },
+    "services/notification": { "release-type": "go", "package-name": "notification" },
+    "services/audit":        { "release-type": "go", "package-name": "audit" },
+    "services/signature":    { "release-type": "go", "package-name": "signature" },
+    "services/billing":      { "release-type": "go", "package-name": "billing" },
+    "services/connector":    { "release-type": "go", "package-name": "connector" },
+    "services/collaboration":{ "release-type": "node", "package-name": "collaboration" },
+    "services/intelligence": { "release-type": "python", "package-name": "intelligence" },
+    "services/preview":      { "release-type": "python", "package-name": "preview" },
+    "web":                   { "release-type": "node", "package-name": "vaultdms-web" },
+    "mobile":                { "release-type": "node", "package-name": "vaultdms-mobile" },
+    ".":                     { "release-type": "simple", "package-name": "vaultdms-umbrella", "component": "umbrella" }
+  }
+}

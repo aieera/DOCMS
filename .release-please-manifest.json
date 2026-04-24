@@ -1,0 +1,20 @@
+{
+  "services/acknowledgement": "0.1.0",
+  "services/auth": "0.1.0",
+  "services/policy": "0.1.0",
+  "services/document": "0.1.0",
+  "services/storage": "0.1.0",
+  "services/search": "0.1.0",
+  "services/workflow": "0.1.0",
+  "services/notification": "0.1.0",
+  "services/audit": "0.1.0",
+  "services/signature": "0.1.0",
+  "services/billing": "0.1.0",
+  "services/connector": "0.1.0",
+  "services/collaboration": "0.1.0",
+  "services/intelligence": "0.1.0",
+  "services/preview": "0.1.0",
+  "web": "0.1.0",
+  "mobile": "0.1.0",
+  ".": "0.1.0"
+}
