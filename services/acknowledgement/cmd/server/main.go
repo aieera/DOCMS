@@ -23,6 +23,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
+	"github.com/vaultdms/vaultdms/pkg/internalauth"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	"github.com/vaultdms/vaultdms/services/acknowledgement/internal/handler"
@@ -90,9 +91,10 @@ func main() {
 	}()
 
 	r := chi.NewRouter()
-	// Global: gateway-signature + tenant-header resolution. Both
-	// public + internal paths need these.
-	r.Use(middleware.RequireGatewaySignature())
+	// Tenant-header resolution. Auth is applied path-dependently by
+	// internalauth.Mux at the http.Server boundary: /internal/* goes
+	// through internalauth (mTLS/HMAC), /api/* keeps the Kong gateway
+	// signature, and kube probes bypass both.
 	r.Use(middleware.TenantHTTP(pool))
 
 	h := handler.New(svc)
@@ -106,9 +108,14 @@ func main() {
 		h.RegisterPublic(r)
 	})
 
+	verifier, err := internalauth.MustInit()
+	if err != nil {
+		log.Error(ctx).Err(err).Msg("internalauth init failed")
+		os.Exit(1)
+	}
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           r,
+		Handler:           internalauth.Mux(r, verifier, middleware.RequireGatewaySignature()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

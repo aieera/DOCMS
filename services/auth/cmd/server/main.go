@@ -27,6 +27,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
+	"github.com/vaultdms/vaultdms/pkg/internalauth"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 
@@ -165,9 +166,14 @@ func main() {
 		),
 	)
 
+	verifier, err := internalauth.MustInit()
+	if err != nil {
+		log.Error(ctx).Err(err).Msg("internalauth init failed")
+		os.Exit(1)
+	}
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(rootMux),
+		Handler:           internalauth.Mux(rootMux, verifier, middleware.RequireGatewaySignature()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
