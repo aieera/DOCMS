@@ -48,9 +48,10 @@ function TagsPage() {
   })
 
   const confirmDelete = (t: Tag) => {
+    const count = t.document_count ?? 0
     const suffix =
-      t.document_count > 0
-        ? ` It is applied to ${t.document_count} document${t.document_count === 1 ? '' : 's'}; the tag will be removed from them too.`
+      count > 0
+        ? ` It is applied to ${count} document${count === 1 ? '' : 's'}; the tag will be removed from them too.`
         : ''
     if (window.confirm(`Delete tag "${t.name}"?${suffix}`)) remove.mutate(t.id)
   }
@@ -133,7 +134,7 @@ function TagsPage() {
                       {t.name}
                     </span>
                   </td>
-                  <td className="px-4 py-2">{t.document_count.toLocaleString()}</td>
+                  <td className="px-4 py-2">{(t.document_count ?? 0).toLocaleString()}</td>
                   <td className="px-4 py-2 text-right">
                     <Button onClick={() => confirmDelete(t)} disabled={remove.isPending}>
                       <Trash2 className="h-4 w-4" />
