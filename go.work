@@ -4,9 +4,11 @@ toolchain go1.26.2
 
 use (
 	./cmd/dms-admin
+	./cmd/dms-installer
 	./pkg
 	./proto/gen/go
 	./scripts/seed
+	./services/acknowledgement
 	./services/audit
 	./services/auth
 	./services/billing
