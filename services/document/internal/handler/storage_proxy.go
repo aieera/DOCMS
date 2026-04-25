@@ -190,10 +190,19 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 func (p *StorageProxy) outbound(r *http.Request) (context.Context, context.CancelFunc) {
 	tenantID := r.Header.Get(middleware.TenantHeader)
 	userID := r.Header.Get(userIDHeader)
-	md := metadata.Pairs(
+	userRole := r.Header.Get("X-User-Role")
+	pairs := []string{
 		middleware.TenantMetadataKey, tenantID,
 		"x-user-id", userID,
-	)
+	}
+	// Forward role so storage's OPA check sees it. Without this the
+	// admin-bypass rule (input.context.user_role == "admin") never
+	// fires and every upload requires an explicit permission grant
+	// on the target folder. CLAUDE.md cross-service auth section.
+	if userRole != "" {
+		pairs = append(pairs, "x-user-role", userRole)
+	}
+	md := metadata.Pairs(pairs...)
 	ctx, cancel := context.WithTimeout(r.Context(), proxyRPCBudget)
 	return metadata.NewOutgoingContext(ctx, md), cancel
 }
