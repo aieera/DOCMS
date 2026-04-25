@@ -26,6 +26,7 @@ import (
 
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/regionenforcer"
 )
 
 const residencyTaskQueue = "vaultdms-default"
@@ -153,6 +154,27 @@ func (h *ResidencyHandler) createMigration(w http.ResponseWriter, r *http.Reques
 	}
 	if body.SourceRegion == body.TargetRegion {
 		writeErr(w, r, vdmserr.Validation("target_region", "must differ from source"))
+		return
+	}
+	// Blueprint §9.1 + ADR 0034: cross-boundary movement is refused
+	// outright. Same-boundary moves (eu-west-1 → eu-central-1) go
+	// through the standard migration workflow; cross-boundary
+	// (me-south-1 → us-east-1) needs an explicit policy exception
+	// the platform doesn't surface.
+	if !regionenforcer.SameBoundary(body.SourceRegion, body.TargetRegion) {
+		e := vdmserr.Wrap(vdmserr.ErrRegionViolation,
+			fmt.Errorf("cross-boundary migration refused: %s (%s) → %s (%s)",
+				body.SourceRegion, regionenforcer.BoundaryOf(body.SourceRegion),
+				body.TargetRegion, regionenforcer.BoundaryOf(body.TargetRegion)))
+		e.Message = "cross-boundary residency migration is refused; contact compliance for policy exception"
+		if e.Details == nil {
+			e.Details = map[string]any{}
+		}
+		e.Details["source_region"] = body.SourceRegion
+		e.Details["source_boundary"] = string(regionenforcer.BoundaryOf(body.SourceRegion))
+		e.Details["target_region"] = body.TargetRegion
+		e.Details["target_boundary"] = string(regionenforcer.BoundaryOf(body.TargetRegion))
+		writeErr(w, r, e)
 		return
 	}
 

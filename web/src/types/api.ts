@@ -50,6 +50,7 @@ export interface Document {
   updated_at?: string
   has_thumbnail: boolean
   thumbnail_url?: string
+  region_pin?: string
 }
 
 export interface Version {
