@@ -1,6 +1,7 @@
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
+import { useSessionStore } from '@/store/sessionStore'
 
 // withCredentials: true lets the browser include the HttpOnly session
 // cookie on every request. The cookie is set by the auth service on login
@@ -65,10 +66,32 @@ api.interceptors.request.use((config) => {
 const SESSION_VALIDATION_PATHS = ['/auth/me']
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    // Blueprint §8.1 — any authenticated response may carry a
+    // X-Session-Warning header when the tenant's binding strictness is
+    // `warn` and the request's IP/UA drift from the session's stored
+    // values. Surface it as a persistent dismissible banner (not a
+    // toast — the user needs to see it until they act).
+    const warn = r.headers?.['x-session-warning']
+    if (warn === 'binding-mismatch') {
+      useSessionStore.getState().showWarning()
+    }
+    return r
+  },
   (error) => {
     const status = error.response?.status
     const url = error.config?.url || ''
+    const headers = error.response?.headers ?? {}
+
+    // §8.1 enforce-mode revocation: backend 401'd AND signals the
+    // reason via X-Session-Revoked-Reason. We route past the usual
+    // "toast on misc 401" path straight to the full-screen modal so
+    // the user can't just ignore it.
+    if (status === 401 && headers['x-session-revoked-reason'] === 'binding-mismatch') {
+      useSessionStore.getState().showRevoked()
+      return Promise.reject(error)
+    }
+
     if (status === 401) {
       if (SESSION_VALIDATION_PATHS.some((p) => url.includes(p))) {
         // Actual session expiry or invalidation.
@@ -87,10 +110,18 @@ api.interceptors.response.use(
       // Wave 15.2 follow-up.
       toast.error('Additional verification required for this location. Re-authenticate and try again.')
     } else if (status === 451) {
-      // Wave 15.2 geofence deny. 451 Unavailable For Legal Reasons
-      // is the canonical code for tenant / country / CIDR blocks.
-      const reason = error.response?.headers?.['x-geofence-reason'] || ''
-      toast.error(`Request blocked by geofence policy${reason ? ` (${reason})` : ''}`)
+      // 451 Unavailable For Legal Reasons now serves two causes —
+      // geofence deny (Wave 15.2) and region-pin violation (Wave 16).
+      // Disambiguate on the error body's type/code so the operator
+      // reads a message that points at the right policy surface.
+      const body = error.response?.data as { type?: string; error_code?: string; message?: string } | undefined
+      const code = body?.type || body?.error_code
+      if (code === 'REGION_VIOLATION') {
+        toast.error('Operation blocked: data residency rule violated. Contact your admin.')
+      } else {
+        const reason = error.response?.headers?.['x-geofence-reason'] || ''
+        toast.error(`Request blocked by geofence policy${reason ? ` (${reason})` : ''}`)
+      }
     } else if (status === 403) {
       toast.error('Access denied')
     } else if (status === 429) {

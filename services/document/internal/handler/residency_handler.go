@@ -54,6 +54,11 @@ type regionRow struct {
 	Region    string `json:"region"`
 	DocCount  int64  `json:"doc_count"`
 	BlobBytes int64  `json:"blob_bytes"`
+	// Documents whose pinned region differs from the physical
+	// storage_region of their current content_blob. Populated by the
+	// SQL JOIN below — the reconciliation worker reads the same query
+	// to publish the data_residency_compliance Prom gauge.
+	OffRegionCount int64 `json:"off_region_count"`
 }
 
 func (h *ResidencyHandler) stats(w http.ResponseWriter, r *http.Request) {
@@ -74,9 +79,35 @@ func (h *ResidencyHandler) stats(w http.ResponseWriter, r *http.Request) {
 			    SELECT storage_region AS region, COALESCE(SUM(size_bytes), 0) AS bytes
 			      FROM content_blobs WHERE tenant_id = $1
 			     GROUP BY storage_region
+			),
+			-- A doc is "off region" when its current version's content_blob
+			-- sits in a different physical storage_region than the doc's
+			-- region_pin. Joining via versions(content_blob_id) keeps the
+			-- check honest — moving the row's region_pin without
+			-- re-encrypting + re-storing is the residency bug we're
+			-- looking for.
+			off_regions AS (
+			    SELECT d.region_pin AS region, COUNT(*) AS off_count
+			      FROM documents d
+			      JOIN versions v
+			        ON v.tenant_id = d.tenant_id
+			       AND v.id = d.current_version_id
+			      JOIN content_blobs cb
+			        ON cb.tenant_id = d.tenant_id
+			       AND cb.id = v.content_blob_id
+			     WHERE d.tenant_id = $1
+			       AND d.deleted_at IS NULL
+			       AND cb.storage_region IS NOT NULL
+			       AND cb.storage_region <> d.region_pin
+			     GROUP BY d.region_pin
 			)
-			SELECT COALESCE(d.region, b.region), COALESCE(d.doc_count, 0), COALESCE(b.bytes, 0)
-			  FROM doc_regions d FULL OUTER JOIN blob_regions b ON d.region = b.region
+			SELECT COALESCE(d.region, b.region),
+			       COALESCE(d.doc_count, 0),
+			       COALESCE(b.bytes, 0),
+			       COALESCE(o.off_count, 0)
+			  FROM doc_regions d
+			  FULL OUTER JOIN blob_regions b ON d.region = b.region
+			  LEFT  JOIN off_regions  o ON o.region = COALESCE(d.region, b.region)
 			 ORDER BY 1`, tenantID)
 		if err != nil {
 			return err
@@ -84,7 +115,7 @@ func (h *ResidencyHandler) stats(w http.ResponseWriter, r *http.Request) {
 		defer rows.Close()
 		for rows.Next() {
 			var row regionRow
-			if err := rows.Scan(&row.Region, &row.DocCount, &row.BlobBytes); err != nil {
+			if err := rows.Scan(&row.Region, &row.DocCount, &row.BlobBytes, &row.OffRegionCount); err != nil {
 				return err
 			}
 			out = append(out, row)

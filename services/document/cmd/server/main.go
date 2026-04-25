@@ -150,6 +150,7 @@ func main() {
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
+	quarantineAdminHandler := handler.NewQuarantineAdminHandler(pool, database.NewOutboxRepository(), *log.Z())
 
 	storageProxy := handler.NewStorageProxy(storageClient)
 
@@ -287,6 +288,14 @@ func main() {
 	rootMux.Handle("/api/v1/admin/retention-policies", middleware.CorrelationHTTP(retentionPolicyMux))
 	rootMux.Handle("/api/v1/admin/retention-policies/", middleware.CorrelationHTTP(retentionPolicyMux))
 
+	// Quarantine review queue — admin releases/deletes/acks items that
+	// the storage finalize path moved to the quarantine bucket. Every
+	// mutation emits dms.audit.quarantine_*.v1 via the outbox.
+	quarantineMux := http.NewServeMux()
+	quarantineAdminHandler.Register(quarantineMux)
+	rootMux.Handle("/api/v1/admin/quarantine", middleware.CorrelationHTTP(quarantineMux))
+	rootMux.Handle("/api/v1/admin/quarantine/", middleware.CorrelationHTTP(quarantineMux))
+
 	// Redaction endpoint — Wave 11.5. Uses Go 1.22 method+pattern
 	// routing so only the /redact suffix lands here; everything else
 	// under /api/v1/documents/ still flows to the grpc-gateway via
@@ -351,6 +360,13 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Residency SLI reconciler (Wave 16, Blueprint §9.1) ---------------
+	// Daily sweep — populates the data_residency_compliance + per-region
+	// off_region gauges so the /admin/compliance widget surfaces a real
+	// SLI rather than "100% unless proven otherwise".
+	residency := service.NewResidencyReconciler(pool, *log.Z())
+	go residency.Start(ctx)
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")
@@ -361,6 +377,7 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+	residency.Stop()
 }
 
 // ---- deny-all fallback when Policy Service is unreachable -----------------
