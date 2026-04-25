@@ -38,6 +38,18 @@ export async function getAuditLog(params?: Record<string, string>) {
   return data
 }
 
+export interface AuditIntegrityResult {
+  ok: boolean
+  verified_count: number
+  broken_at?: string // event id where the chain breaks, if any
+  message?: string
+}
+
+export async function verifyAuditIntegrity() {
+  const { data } = await api.post<AuditIntegrityResult>('/audit/verify-integrity')
+  return data
+}
+
 export async function exportAuditCSV(params?: Record<string, string>) {
   const resp = await api.get('/audit/export', { params, responseType: 'blob' })
   const url = URL.createObjectURL(resp.data as Blob)

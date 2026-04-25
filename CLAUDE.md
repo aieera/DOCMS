@@ -11,7 +11,7 @@ VaultDMS — multi-tenant, region-aware enterprise Document Management System. G
 Go workspace (`go.work`) with one module per service. Don't `cd` into a single module to run cross-cutting tests — use the workspace.
 
 - `proto/` — buf-managed protobuf; **source of truth** for all RPCs. Stubs land in `proto/gen/go` (a workspace module).
-- `pkg/` — shared libraries (`auth`, `database`, `events`, `tenant`, `middleware`, `storage`, `crypto`, …). One module.
+- `pkg/` — shared libraries (`auth`, `database`, `events`, `tenant`, `middleware`, `storage`, `crypto`, `regionenforcer`, `geo`, `trustedproxy`, `internalauth`, …). One module.
 - `services/<name>/` — one Go module each (`auth`, `policy`, `document`, `storage`, `search`, `audit`, `workflow`, `notification`, `signature`, `billing`, `connector`, `acknowledgement`). Layout: `cmd/server`, `internal/{handler,service,repository,model}`, `migrations/`.
 - `services/document/` is the **reference implementation** (Phase 5). Mirror its structure when scaffolding new services.
 - `cmd/dms-admin/` — admin CLI (only non-service binary in `cmd/`).
@@ -62,6 +62,7 @@ These are guarded by scripts in `scripts/`; violations fail the build.
 - **Per-service migration table**: `make migrate-up` injects `x-migrations-table=<service>_schema_migrations` so versions don't collide. See [docs/architecture/migrations.md](docs/architecture/migrations.md).
 - **Per-service Postgres schema with RLS** for tenant isolation. Always thread tenant through `pkg/tenant`; never trust a tenant id from the client request body.
 - **Region pin is immutable** after first upload (document service). Lifecycle state machine: `draft → in_review → active → superseded → retained → archived → disposed`; `legal_hold` freezes transitions.
+- **Region governance** (Wave 16, ADR 0034). `documents.region_pin` resolves on create as `explicit → workspaces.region_pin → organizations.default_region_pin → 'us-east-1'` then is checked against `organizations.allowed_regions` (NULL = unrestricted, back-compat). Cross-boundary moves are refused outright — see `pkg/regionenforcer/boundaries.go` (EU/US/MENA/APAC/OTHER) and the SQL→Go mirror parity test. New tenants default to `me-south-1`; existing tenants stay on `us-east-1` per the 000014 backfill.
 
 ## Event emission
 
@@ -117,6 +118,15 @@ Every service exposing gRPC + HTTP needs these three middleware primitives stack
 
 Policy context for OPA checks **must** include `user_role` (for Rule 6) and `workspace_id` when checking workspace resources (for Rule 5). Empty context → default-deny even for `owner`. See `services/document/internal/service/service.go` `checkPermission` for the canonical forward-all-identity pattern.
 
+## Domain errors over the wire
+
+`pkg/errors` is the canonical domain-error type for both gRPC and HTTP responses. Two non-obvious things worth knowing before adding a new error:
+
+1. **Adding a new `Kind`** — every Kind needs entries in *both* `ToGRPCError` (status code) and `ToHTTPError` (HTTP status). Forgetting either leaves you with a default-`Internal` translation that masks the intent at the wire. Current Kinds beyond the obvious set: `Unavailable` (503, scanner outages), `PayloadTooLarge` (413), `MIMEMismatch` (409 with `details.declared_mime`/`detected_mime`), `RegionViolation` (HTTP 451 — RFC 7725).
+2. **gRPC ↔ HTTP edge** — services that are gRPC-only (storage, search, …) get fronted by REST proxies in the document service (`services/document/internal/handler/storage_proxy.go`). The proxy unpacks a JSON envelope embedded in `status.Message()` so structured error detail (MIME mismatch declared/detected, payload-too-large limits) survives the round-trip. New domain errors that need detail beyond `Message` should populate `Error.Details`; `EncodeWire` / `DecodeWire` handle the rest.
+
+**HTTP 451 has two causes** — `pkg/middleware.Geofence` (Wave 15.2, country/CIDR) and `pkg.regionenforcer` (Wave 16, region pinning). Clients disambiguate via the body's `type` field (`REGION_VIOLATION` vs the geofence error code) — see [web/src/api/client.ts](web/src/api/client.ts) for the canonical pattern.
+
 ## Repo scanner discipline
 
 Any SQL column that is nullable MUST either be `COALESCE`'d in the SELECT or scanned into a pointer (`*string`, `*time.Time`, `*uuid.UUID`). Plain `string` / `time.Time` / `uuid.UUID` destinations panic on NULL with `can't scan into dest[N]: cannot scan NULL into *string`. The bug is infuriatingly easy to miss on a fresh seed where optional columns are empty. Audit applies equally to inline `tx.QueryRow(...).Scan(...)` calls and to dedicated `scanFoo` helpers.
@@ -139,3 +149,16 @@ Four sub-waves shipped as a conscious scope expansion. New patterns worth knowin
 - **Wave 15 additions to `pkg/middleware`** — `Geofence` middleware returns 451 / 428 / 503 (fail-closed) per the OPA decision, and `SessionAuth` / `UserIdentityInterceptor` (see cross-service auth section above).
 - **Outbox fan-out to notification**: emit a second row under `dms.notify.<source>.<event>.v1` with the `DeliveryPayload` shape (tenant, user_ids, title, body, resource_type, resource_id). The notification service's `dms.notify.>` consumer picks it up. Namespace carve-out (not `dms.<aggregate>.<event>.v1`) is documented in the tech-debt ledger as T-D-9.
 - **Tier-1 PAdES validator**: `services/signature/internal/pades/` does structural checks (regex-based, `//go:build pades_corpus` for fixture walker). Tier-2 Adobe Reader + EU DSS is an operator-per-release procedure documented in `docs/runbooks/15-pades-harness.md`. Never promote Tier-1 to prod acceptance.
+
+## Wave 16 (2026-04-24)
+
+Three independent sub-waves; each has its own ADR + runbook.
+
+- **Session §8.1 hardening** — migration `services/auth/migrations/000002` adds five per-tenant session knobs on `organizations` (TTL hours, sliding minutes, absolute-max days, concurrent limit, binding strictness `none|warn|enforce`). `services/auth/internal/service/binding.go` exposes `IPBindingCIDR` (/24 v4, /56 v6), `UserAgentFingerprint` (canonicalized SHA-256), and `BindingMatches` (treats unknown sides as "match"). `ValidateSessionWithBinding` is the new hot path; `ValidateSession` is a back-compat shim. `last_activity_at` writes are coalesced to one per session per 60 s. New audit subjects: `dms.auth.session.{evicted,refreshed,revoked,binding_mismatch}.v1`. Frontend pieces: `/settings/sessions`, `/admin/tenant/security`, `SessionRevokedModal` + `SessionWarningBanner` mounted in `AppLayout`.
+- **Upload pipeline §22 closure** — `services/storage/internal/service/service.go` finalize now splits two quarantine outcomes: ClamAV-infected → 200 with `scan_result=infected`; MIME-only block → 409 with `MIME_MISMATCH` + `declared_mime`/`detected_mime` (Blueprint §22 anti-pattern #6). Migration `services/document/migrations/000012` creates `scan_results` + `quarantine_events` (the table the storage repo had been INSERTing into for months without a CREATE). Migration 000013 adds `status`+`reviewed_by`+`reviewed_at`. Admin queue at `/admin/quarantine` (handler in `services/document/internal/handler/quarantine_admin_handler.go`); every release/delete/reviewed action emits `dms.audit.quarantine_*.v1` in the same tenant tx. Reconciliation worker `services/storage/internal/service/reconcile.go` flips stuck `pending` rows after 1 h.
+- **Region governance** — migration 000014 creates `supported_regions` (8 codes × 5 boundaries) + `organizations.{allowed_regions,default_region_pin}`. `pkg/regionenforcer/` mirrors the boundary table in Go for hot-path checks; `TestBoundariesMatchMigration` blocks merges that drift the SQL ↔ Go pair. ADR 0034 documents the four enforcement surfaces; `docs/runbooks/region-violation-response.md` covers triage. Frontend: `RegionPinBadge` (boundary-tinted, tooltip names the legal framework), `ResidencyComplianceCard` on `/admin/compliance`.
+
+### Test patterns introduced this wave
+
+- **Real-Postgres-plus-miniredis integration tests** without docker Redis: `services/auth/internal/service/eviction_integration_test.go` and `cache_bounded_test.go` are the reference. Use `miniredis.RunT(t)` + `redis.NewClient{Addr: mr.Addr()}`; `services/auth/go.mod` has `alicebob/miniredis/v2` as a direct test dep.
+- **SQL ↔ Go mirror parity** — `pkg/regionenforcer/boundaries_test.go::TestBoundariesMatchMigration` reads the seed SQL and diffs against the Go map. Mirror this when adding any new "DB table that the runtime needs to make decisions without a query".
