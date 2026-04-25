@@ -85,6 +85,16 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := p.outbound(r)
 	defer cancel()
+	// Storage's OPA permission check needs at least one of
+	// (X-Document-ID, X-Folder-ID, X-Workspace-ID) on the gRPC metadata.
+	// The frontend posts folder_id / workspace_id in the JSON body; lift
+	// them into outgoing metadata so the rule has something to evaluate.
+	if in.FolderID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-folder-id", in.FolderID)
+	}
+	if in.WorkspaceID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-workspace-id", in.WorkspaceID)
+	}
 	checksum := in.ChecksumSHA256
 	if checksum == "" {
 		checksum = in.SHA256Hash

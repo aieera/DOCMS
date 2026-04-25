@@ -4,6 +4,7 @@ package handler
 import (
 	"context"
 
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/google/uuid"
@@ -14,6 +15,26 @@ import (
 	"github.com/vaultdms/vaultdms/services/storage/internal/model"
 	"github.com/vaultdms/vaultdms/services/storage/internal/service"
 )
+
+// uuidFromMD reads a single header off the incoming gRPC metadata and
+// parses it as a UUID. Returns nil for missing/empty/unparseable values
+// — the caller decides whether nil is a hard error (permission scope)
+// or just an absent optional.
+func uuidFromMD(ctx context.Context, key string) *uuid.UUID {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil
+	}
+	vals := md.Get(key)
+	if len(vals) == 0 || vals[0] == "" {
+		return nil
+	}
+	id, err := uuid.Parse(vals[0])
+	if err != nil {
+		return nil
+	}
+	return &id
+}
 
 // Handler is the gRPC boundary.
 type Handler struct {
@@ -32,14 +53,26 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUp
 	}
 	userID, _ := auth.GetUserID(ctx)
 
+	// Permission scope — the OPA check inside the service requires one
+	// of (DocumentID, FolderID, WorkspaceID). The document REST proxy
+	// (services/document/internal/handler/storage_proxy.go) forwards
+	// these as gRPC metadata after lifting them from the request body;
+	// read them back into the input here.
+	folderID := uuidFromMD(ctx, "x-folder-id")
+	workspaceID := uuidFromMD(ctx, "x-workspace-id")
+	documentID := uuidFromMD(ctx, "x-document-id")
+
 	res, err := h.svc.InitiateUpload(ctx, service.InitiateUploadInput{
-		TenantID:   tenantID,
-		UserID:     userID,
-		RegionPin:  req.GetRegionPin(),
-		Filename:   req.GetFilename(),
-		MimeType:   req.GetMimeType(),
-		SizeBytes:  req.GetSizeBytes(),
-		SHA256Hash: req.GetChecksumSha256(),
+		TenantID:    tenantID,
+		UserID:      userID,
+		RegionPin:   req.GetRegionPin(),
+		Filename:    req.GetFilename(),
+		MimeType:    req.GetMimeType(),
+		SizeBytes:   req.GetSizeBytes(),
+		SHA256Hash:  req.GetChecksumSha256(),
+		FolderID:    folderID,
+		WorkspaceID: workspaceID,
+		DocumentID:  documentID,
 	})
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
