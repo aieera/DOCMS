@@ -4,9 +4,11 @@
 package errors
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -28,6 +30,9 @@ const (
 	KindRateLimited
 	KindRegionViolation
 	KindLegalHold
+	KindUnavailable // dependent service (virus scanner, policy, KMS) is down
+	KindPayloadTooLarge
+	KindMIMEMismatch // server-detected MIME disagrees with client Content-Type (409)
 	KindInternal
 )
 
@@ -38,6 +43,11 @@ type Error struct {
 	Code    string
 	Message string
 	Field   string
+	// Details carries error-kind-specific structured data that can't be
+	// flattened into Message (e.g. declared vs detected MIME on a
+	// MIME_MISMATCH). Survives both ToGRPCError (JSON-encoded into the
+	// status message) and ToHTTPError (copied to the JSON body).
+	Details map[string]any
 	Cause   error
 }
 
@@ -94,6 +104,37 @@ func Internal(message string) *Error {
 	return &Error{Kind: KindInternal, Code: "INTERNAL", Message: message}
 }
 
+// Unavailable signals that a hard dependency (virus scanner, policy, KMS)
+// cannot service the request. Wire translation: gRPC Unavailable / HTTP 503.
+// Used by the fail-closed path on CompleteUpload when ClamAV is unreachable.
+func Unavailable(message string) *Error {
+	return &Error{Kind: KindUnavailable, Code: "UNAVAILABLE", Message: message}
+}
+
+// PayloadTooLarge signals that a request body (upload size) exceeds the
+// tenant's plan limit. Wire translation: HTTP 413. gRPC has no direct
+// analogue so ResourceExhausted is used.
+func PayloadTooLarge(message string) *Error {
+	return &Error{Kind: KindPayloadTooLarge, Code: "PAYLOAD_TOO_LARGE", Message: message}
+}
+
+// MIMEMismatch signals that the server-detected MIME disagrees with the
+// client-declared Content-Type badly enough to reject the upload (typical
+// case: deny-listed exe type behind a benign extension). Wire: HTTP 409
+// with a structured body that names both MIME values so the uploader can
+// render an actionable inline alert. Blueprint §22 anti-pattern #6.
+func MIMEMismatch(declared, detected string) *Error {
+	return &Error{
+		Kind:    KindMIMEMismatch,
+		Code:    "MIME_MISMATCH",
+		Message: fmt.Sprintf("file type doesn't match extension: declared %s, detected %s", declared, detected),
+		Details: map[string]any{
+			"declared_mime": declared,
+			"detected_mime": detected,
+		},
+	}
+}
+
 // Wrap attaches a cause to a domain error, preserving its Kind and Code.
 func Wrap(base *Error, cause error) *Error {
 	if base == nil {
@@ -102,6 +143,47 @@ func Wrap(base *Error, cause error) *Error {
 	cp := *base
 	cp.Cause = cause
 	return &cp
+}
+
+// wirePayload is the JSON envelope we smuggle through a gRPC status
+// message so the HTTP proxy on the other side can reconstruct the
+// original domain error shape (type/message/details). Callers should
+// never read from this directly — it's an implementation detail of the
+// gRPC↔HTTP edge.
+type wirePayload struct {
+	Type    string         `json:"type"`
+	Message string         `json:"message"`
+	Field   string         `json:"field,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+// EncodeWire returns a compact JSON string suitable for embedding in a
+// gRPC status message. Decoded on the receiving side by DecodeWire.
+func (e *Error) EncodeWire() string {
+	p := wirePayload{Type: e.Code, Message: e.Message, Field: e.Field, Details: e.Details}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return e.Message
+	}
+	return string(b)
+}
+
+// DecodeWire parses a gRPC status message that may be an EncodeWire JSON
+// envelope. Returns ok=true only when the message parses AND names a
+// known error code.
+func DecodeWire(msg string) (wirePayload, bool) {
+	msg = strings.TrimSpace(msg)
+	if !strings.HasPrefix(msg, "{") {
+		return wirePayload{}, false
+	}
+	var p wirePayload
+	if err := json.Unmarshal([]byte(msg), &p); err != nil {
+		return wirePayload{}, false
+	}
+	if p.Type == "" {
+		return wirePayload{}, false
+	}
+	return p, true
 }
 
 // ---- Classification --------------------------------------------------------
@@ -170,6 +252,17 @@ func ToGRPCError(err error) error {
 		return status.Error(codes.ResourceExhausted, e.Message)
 	case KindRegionViolation:
 		return status.Error(codes.FailedPrecondition, e.Message)
+	case KindUnavailable:
+		return status.Error(codes.Unavailable, e.Message)
+	case KindPayloadTooLarge:
+		// ResourceExhausted is shared with rate-limiting; the proxy
+		// disambiguates by reading the embedded type from the wire payload.
+		return status.Error(codes.ResourceExhausted, e.EncodeWire())
+	case KindMIMEMismatch:
+		// FailedPrecondition is shared with other 4xx-ish outcomes; the
+		// wire payload carries the specific type so the proxy can emit
+		// 409 + MIME_MISMATCH with the declared/detected MIME details.
+		return status.Error(codes.FailedPrecondition, e.EncodeWire())
 	default:
 		return status.Error(codes.Internal, e.Message)
 	}
@@ -179,11 +272,12 @@ func ToGRPCError(err error) error {
 
 // HTTPError is the canonical HTTP error body returned to clients.
 type HTTPError struct {
-	Code          int       `json:"-"`
-	Type          string    `json:"type"`
-	Message       string    `json:"message"`
-	Field         string    `json:"field,omitempty"`
-	CorrelationID string    `json:"correlation_id,omitempty"`
+	Code          int            `json:"-"`
+	Type          string         `json:"type"`
+	Message       string         `json:"message"`
+	Field         string         `json:"field,omitempty"`
+	Details       map[string]any `json:"details,omitempty"`
+	CorrelationID string         `json:"correlation_id,omitempty"`
 }
 
 // ToHTTPError maps a domain error to an HTTPError. The caller is responsible
@@ -205,6 +299,7 @@ func ToHTTPError(err error, correlationID string) HTTPError {
 		Type:          e.Code,
 		Message:       e.Message,
 		Field:         e.Field,
+		Details:       e.Details,
 		CorrelationID: correlationID,
 	}
 	switch e.Kind {
@@ -221,10 +316,22 @@ func ToHTTPError(err error, correlationID string) HTTPError {
 		out.Code = http.StatusForbidden
 	case KindUnauthorized:
 		out.Code = http.StatusUnauthorized
-	case KindValidation, KindRegionViolation:
+	case KindValidation:
 		out.Code = http.StatusBadRequest
+	case KindRegionViolation:
+		// RFC 7725 — 451 Unavailable For Legal Reasons. Residency
+		// rules ARE a legal-reasons surface; the frontend interceptor
+		// disambiguates between geofence and region-pin causes via
+		// the body's error_code.
+		out.Code = http.StatusUnavailableForLegalReasons
 	case KindRateLimited:
 		out.Code = http.StatusTooManyRequests
+	case KindUnavailable:
+		out.Code = http.StatusServiceUnavailable
+	case KindPayloadTooLarge:
+		out.Code = http.StatusRequestEntityTooLarge
+	case KindMIMEMismatch:
+		out.Code = http.StatusConflict
 	default:
 		out.Code = http.StatusInternalServerError
 		// Never leak internal detail to the wire.
