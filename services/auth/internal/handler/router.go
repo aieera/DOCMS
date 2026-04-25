@@ -68,6 +68,11 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Route("/sessions", func(r chi.Router) {
 				r.Get("/", h.ListSessions)
 				r.Post("/revoke-all", h.RevokeAllSessions)
+				// Blueprint §8.1 spec also accepts DELETE on the
+				// collection as "revoke all but current". Same
+				// semantics as POST /revoke-all; alias kept so clients
+				// using either idiom work.
+				r.Delete("/", h.RevokeAllSessions)
 				r.Delete("/{session_id}", h.RevokeSession)
 			})
 
@@ -92,6 +97,22 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Use(vdmsmw.CSRFDoubleSubmit())
 		r.Use(h.RequireRole("owner"))
 		r.Post("/sweep-expired", h.SweepExpiredPasswordsAdmin)
+	})
+
+	// ---- Tenant session policy (Blueprint §8.1) ---------------------------
+	// GET is authenticated-only so admins can render a read-only view;
+	// PUT is owner-gated (tenant-wide security policy change).
+	r.Route("/api/v1/tenant/session-policy", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Get("/", h.sessionPolicy.GetSessionPolicy)
+		r.With(h.RequireRole("owner")).Put("/", h.sessionPolicy.PutSessionPolicy)
+	})
+
+	// Plan lookup for the upload-tier tooltip + billing surfaces.
+	r.Route("/api/v1/tenant/plan", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Get("/", h.GetTenantPlan)
 	})
 
 	// ---- Admin user management ------------------------------------------------
