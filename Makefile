@@ -20,7 +20,7 @@ LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 DATABASE_URL    ?= postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
 
-SERVICES := document storage search auth policy workflow notification audit signature billing connector
+SERVICES := document storage search auth policy workflow notification audit signature billing connector acknowledgement
 
 # ---- Help ------------------------------------------------------------------
 
