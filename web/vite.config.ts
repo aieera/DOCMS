@@ -67,6 +67,11 @@ export default defineConfig({
             '/api/v1/saved-searches':           withSig('http://localhost:8184'),
             '/api/v1/audit':                    withSig('http://localhost:8185'),
             '/api/v1/workflows':                withSig('http://localhost:8186'),
+            // Wave 15.4 + Wave 16 — platform admin observability surface
+            // (metrics query, schedules, security-posture) lives on the
+            // workflow service. Without this entry the catchall below
+            // sends /api/v1/platform/* to auth and 404s.
+            '/api/v1/platform':                 withSig('http://localhost:8186'),
             '/api/v1/notifications':            withSig('http://localhost:8187'),
             '/api/v1/signatures':               withSig('http://localhost:8188'),
             '/api/v1/webhooks':                 withSig('http://localhost:8190'),
