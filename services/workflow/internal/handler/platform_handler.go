@@ -402,6 +402,15 @@ func (h *Handler) platformSecurityPosture(w http.ResponseWriter, r *http.Request
 		return
 	}
 	req.Header.Set("X-User-Role", r.Header.Get("X-User-Role"))
+	// Forward the gateway signature from the inbound request so audit's
+	// RequireGatewaySignature middleware accepts the call. Without this
+	// header audit responds 401 with a plain-text body, which our JSON
+	// decoder below surfaces as the misleading "audit response decode
+	// failed" 502 — see the gateway-sig middleware at
+	// pkg/middleware/gatewaysig.go.
+	if sig := r.Header.Get("X-Gateway-Signature"); sig != "" {
+		req.Header.Set("X-Gateway-Signature", sig)
+	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
