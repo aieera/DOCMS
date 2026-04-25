@@ -23,6 +23,7 @@ type Bundle struct {
 	Scans        ScanRepo
 	Lifecycle    LifecycleRepo
 	ContentBlobs ContentBlobRepo
+	Quarantine   QuarantineRepo
 }
 
 // New constructs the bundle.
@@ -33,6 +34,7 @@ func New(pool *pgxpool.Pool) *Bundle {
 		Scans:        &scanRepo{},
 		Lifecycle:    &lifecycleRepo{},
 		ContentBlobs: &contentBlobRepo{},
+		Quarantine:   &quarantineRepo{},
 	}
 }
 
@@ -49,6 +51,30 @@ type UploadRepo interface {
 type ScanRepo interface {
 	Record(ctx context.Context, tx pgx.Tx, r *model.ScanRecord) error
 	GetByUpload(ctx context.Context, tx pgx.Tx, tenantID, uploadID uuid.UUID) (*model.ScanRecord, error)
+	// ListStuckPending returns scan rows still pending older than `cutoff`.
+	// Runs against a BYPASSRLS connection so the reconciliation worker can
+	// sweep across tenants.
+	ListStuckPending(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]model.ScanRecord, error)
+}
+
+// QuarantineEvent is the audit row written every time the finalize path
+// moves an object to the quarantine bucket. Reason distinguishes virus
+// hits from static MIME rejections.
+type QuarantineEvent struct {
+	TenantID      uuid.UUID
+	ID            uuid.UUID
+	UploadID      uuid.UUID
+	Reason        string // virus | blocked_mime | mime_mismatch
+	Signature     string
+	DeclaredMIME  string
+	DetectedMIME  string
+	StorageBucket string
+	StorageKey    string
+	CreatedAt     time.Time
+}
+
+type QuarantineRepo interface {
+	Record(ctx context.Context, tx pgx.Tx, e *QuarantineEvent) error
 }
 
 type LifecycleRepo interface {

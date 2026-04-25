@@ -176,10 +176,15 @@ type InitiateUploadResult struct {
 // and returns everything the client needs to push bytes to S3 directly.
 func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*InitiateUploadResult, error) {
 	maxSize := s.cfg.MaxUploadSize
+	planLabel := "default"
 	if s.plans != nil && in.TenantID != uuid.Nil {
 		maxSize = s.plans.MaxUploadSize(ctx, in.TenantID)
+		planLabel = s.plans.Plan(ctx, in.TenantID)
 	}
 	if err := validateInitiate(in, maxSize); err != nil {
+		if vdmserr.KindOf(err) == vdmserr.KindPayloadTooLarge {
+			uploadSizeRejectedTotal.WithLabelValues(planLabel).Inc()
+		}
 		return nil, err
 	}
 	// MIME blocklist + extension blocklist at initiate time. This is the
@@ -413,14 +418,49 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 2b. MIME magic-byte detection. If detected type is executable OR
 	//     conflicts with declared type and detected is exec → quarantine.
+	//     On any mismatch (declared != detected, both known) we increment
+	//     the mime_mismatch counter and record the server-detected type as
+	//     authoritative downstream (content_blobs.mime_type).
 	detected, _ := scanner.DetectFromBytes(plainBytes[:min(len(plainBytes), 262)])
 	mimeMismatch := detected.IsKnown && !scanner.MIMEMatchesDeclared(session.MimeType, detected)
 	detectedExec := detected.IsKnown && scanner.IsBlockedMIME(detected.MIME)
-	mustQuarantineMIME := detectedExec || (mimeMismatch && detectedExec)
+	mustQuarantineMIME := detectedExec
+	if mimeMismatch {
+		mimeMismatchTotal.WithLabelValues(session.TenantID.String()).Inc()
+		s.log.Warn().
+			Str("upload_id", session.ID.String()).
+			Str("declared_mime", session.MimeType).
+			Str("detected_mime", detected.MIME).
+			Msg("mime mismatch: server-detected type is authoritative")
+	}
+	if detectedExec {
+		mimeRejectedTotal.WithLabelValues(session.TenantID.String()).Inc()
+	}
 
 	// 3. ClamAV stream scan against the in-memory bytes (no second S3 GET).
 	scanRes := s.scanBuffer(ctx, bytes.NewReader(plainBytes))
-	if mustQuarantineMIME {
+	// Fail-closed on scanner unavailability: reject the upload rather than
+	// admit untrusted bytes. See docs/runbooks/quarantine-response.md for
+	// operator guidance during a ClamAV outage.
+	if scanRes.result == model.ScanError {
+		s.failUpload(ctx, session, "clamav unavailable; fail-closed reject")
+		uploadFinalizeTotal.WithLabelValues("error").Inc()
+		return nil, vdmserr.Unavailable("virus scanner unavailable; please retry")
+	}
+	// Two quarantine paths that look the same at the storage layer but
+	// get different wire treatment for the uploader UX:
+	//
+	//   virus (ClamAV infected):  200 OK, scan_result=infected. The
+	//       client surfaces "your file was flagged for review"; admin
+	//       decides release/delete from the quarantine queue.
+	//
+	//   blocked_mime (MIME-only): 409 MIME_MISMATCH with declared vs
+	//       detected. The uploader shows an inline "file type doesn't
+	//       match extension" alert so the user can just re-upload the
+	//       right file — no admin loop needed.
+	//
+	// When BOTH fire, virus wins (more severe, admin must review).
+	if scanRes.result != model.ScanInfected && mustQuarantineMIME {
 		scanRes.result = model.ScanInfected
 		scanRes.signature = "BlockedMIME:" + detected.MIME
 	}
@@ -436,6 +476,7 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 4. If infected / MIME-blocked: COPY to quarantine, delete from hot.
 	finalTier := "hot"
+	quarantineReason := ""
 	if scanRes.result == model.ScanInfected {
 		qKey := path.Join("infected", session.TenantID.String(), key)
 		if err := s.s3.CopyObject(ctx, bucket, key, s.cfg.QuarantineBucket, qKey); err != nil {
@@ -446,6 +487,12 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			key = qKey
 		}
 		finalTier = "quarantine"
+		if mustQuarantineMIME {
+			quarantineReason = "blocked_mime"
+		} else {
+			quarantineReason = "virus"
+		}
+		quarantineEventsTotal.WithLabelValues(quarantineReason).Inc()
 	}
 
 	// 5. Envelope encryption. If enabled, rewrap bytes with a fresh DEK and
@@ -483,12 +530,45 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			if err := s.repos.Uploads.UpdateStatus(ctx, tx, session.TenantID, session.ID, model.UploadQuarantine); err != nil {
 				return err
 			}
-			return s.emit(ctx, tx, session.TenantID, session.ID, "dms.storage.upload_quarantined.v1", map[string]any{
+			qeID, _ := uuid.NewV7()
+			if err := s.repos.Quarantine.Record(ctx, tx, &repository.QuarantineEvent{
+				ID:            qeID,
+				TenantID:      session.TenantID,
+				UploadID:      session.ID,
+				Reason:        quarantineReason,
+				Signature:     scanRes.signature,
+				DeclaredMIME:  session.MimeType,
+				DetectedMIME:  detected.MIME,
+				StorageBucket: bucket,
+				StorageKey:    key,
+				CreatedAt:     s.now().UTC(),
+			}); err != nil {
+				return err
+			}
+			if err := s.emit(ctx, tx, session.TenantID, session.ID, "dms.storage.upload_quarantined.v1", map[string]any{
 				"upload_id":      session.ID.String(),
 				"tenant_id":      session.TenantID.String(),
 				"signature":      scanRes.signature,
+				"reason":         quarantineReason,
+				"declared_mime":  session.MimeType,
+				"detected_mime":  detected.MIME,
 				"storage_bucket": bucket,
 				"storage_key":    key,
+			}); err != nil {
+				return err
+			}
+			// Fan-out to the notification service under the dms.notify.>
+			// carve-out (ADR 0032 / T-D-9). The notification worker turns
+			// this into an admin alert — the quarantine runbook points
+			// operators to the same payload for manual review.
+			return s.emit(ctx, tx, session.TenantID, session.ID, "dms.notify.quarantine.v1", map[string]any{
+				"tenant_id":     session.TenantID.String(),
+				"user_ids":      []string{}, // admin fan-out; notification service resolves
+				"title":         "File quarantined",
+				"body":          fmt.Sprintf("Upload %s was quarantined (%s). Signature: %s", session.ID, quarantineReason, scanRes.signature),
+				"resource_type": "upload",
+				"resource_id":   session.ID.String(),
+				"severity":      "warning",
 			})
 		}
 		// Happy path: insert content_blobs row capturing the final bytes,
@@ -541,6 +621,16 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		return nil, err
 	}
 
+	uploadFinalizeTotal.WithLabelValues(string(scanRes.result)).Inc()
+
+	// MIME-only quarantine (no real virus) returns a structured 409 so the
+	// uploader renders the inline "file type doesn't match extension" alert
+	// instead of a generic "flagged for review" — see the two-paths comment
+	// above. The file IS still in the quarantine bucket with a
+	// quarantine_events row and a notify.quarantine emission.
+	if quarantineReason == "blocked_mime" {
+		return nil, vdmserr.MIMEMismatch(session.MimeType, detected.MIME)
+	}
 	return &CompleteUploadResult{
 		StorageBucket: bucket,
 		StorageKey:    key,
@@ -636,18 +726,28 @@ func (s *Service) scanObject(ctx context.Context, bucket, key string) scanOutcom
 // scanBuffer runs ClamAV against an already-fetched byte source. Used by
 // CompleteUpload to avoid a second S3 GET when we already pulled bytes
 // into memory for SHA-256 / MIME / envelope-encrypt.
+//
+// Fail-closed: on scanner nil / transport error, returns ScanError and the
+// caller rejects with 503. This is a breaking change from the earlier
+// fail-open behavior — see docs/runbooks/quarantine-response.md.
 func (s *Service) scanBuffer(ctx context.Context, r io.Reader) scanOutcome {
+	start := time.Now()
 	if s.scanner == nil {
+		scanOutcomeTotal.WithLabelValues("unavailable").Inc()
 		return scanOutcome{result: model.ScanError}
 	}
 	res, err := s.scanner.Scan(ctx, r)
+	scanDurationSeconds.Observe(time.Since(start).Seconds())
 	if err != nil {
-		s.log.Error().Err(err).Msg("clamav scan failed; fail-open")
+		scanOutcomeTotal.WithLabelValues("error").Inc()
+		s.log.Error().Err(err).Msg("clamav scan failed; fail-closed")
 		return scanOutcome{result: model.ScanError}
 	}
 	if res.Infected {
+		scanOutcomeTotal.WithLabelValues("infected").Inc()
 		return scanOutcome{result: model.ScanInfected, signature: res.Signature}
 	}
+	scanOutcomeTotal.WithLabelValues("clean").Inc()
 	return scanOutcome{result: model.ScanClean}
 }
 
@@ -730,7 +830,12 @@ func validateInitiate(in InitiateUploadInput, maxSize int64) error {
 		return vdmserr.Validation("size_bytes", "must be > 0")
 	}
 	if in.SizeBytes > maxSize {
-		return vdmserr.Validation("size_bytes", fmt.Sprintf("exceeds single-PUT ceiling of %d bytes; use multipart", maxSize))
+		// 413 Payload Too Large. Blueprint §22 anti-pattern #12: size
+		// enforcement at three layers (gateway, presigned URL, storage
+		// finalize) — this is the finalize-layer gate.
+		return vdmserr.PayloadTooLarge(fmt.Sprintf(
+			"upload size %d exceeds tenant plan ceiling of %d bytes",
+			in.SizeBytes, maxSize))
 	}
 	if strings.TrimSpace(in.Filename) == "" {
 		return vdmserr.Validation("filename", "required")

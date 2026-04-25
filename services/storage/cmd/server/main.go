@@ -173,6 +173,12 @@ func main() {
 	reaper := service.NewBlobReaper(pool, repos, s3c, *log.Z())
 	go reaper.Start(ctx)
 
+	// ---- Scan reconciler ---------------------------------------------------
+	// Sweeps scan_results rows stuck in 'pending' > 1h so an upload never
+	// hangs silently when finalize crashes mid-way. See reconcile.go.
+	reconciler := service.NewScanReconciler(pool, repos, *log.Z())
+	go reconciler.Start(ctx)
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")
@@ -183,5 +189,6 @@ func main() {
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
 	reaper.Stop()
+	reconciler.Stop()
 	_ = http.ListenAndServe // retained for future /metrics wiring
 }

@@ -54,6 +54,12 @@ func (p *PlanLookup) MaxUploadSize(ctx context.Context, tenantID uuid.UUID) int6
 	return p.fallback
 }
 
+// Plan returns the tenant's plan identifier (standard|enterprise|dedicated),
+// falling back to "standard" when no row exists. Used as a metric label.
+func (p *PlanLookup) Plan(ctx context.Context, tenantID uuid.UUID) string {
+	return p.loadPlan(ctx, tenantID)
+}
+
 func (p *PlanLookup) loadPlan(ctx context.Context, tenantID uuid.UUID) string {
 	key := planCachePrefix + tenantID.String()
 	if p.redis != nil {

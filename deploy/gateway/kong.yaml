@@ -137,6 +137,16 @@ services:
           # quotas live at the Storage Service itself.
           - name: rate-limiting
             config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
+          # Blueprint §22 anti-pattern #12 — size enforcement at the
+          # gateway edge. 50 GiB matches the Enterprise plan ceiling; the
+          # storage service does the per-tenant (Standard vs Enterprise)
+          # check at initiate, and the finalize path re-verifies actual
+          # bytes. Three layers of defense in depth.
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 51200   # MiB → 50 GiB
+              size_unit: megabytes
+              require_content_length: true
 
   - name: search
     url: http://search:8081
