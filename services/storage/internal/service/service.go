@@ -28,6 +28,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"google.golang.org/grpc/metadata"
+
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
@@ -782,7 +785,15 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 		return nil
 	}
 	resKind, resID := "", ""
+	// Per CLAUDE.md cross-service auth section: OPA Rule 5 needs
+	// workspace_id and Rule 6 needs user_role. Without these the
+	// owner/admin allow-all branches never fire and every check
+	// default-denies. user_role is read from the gRPC metadata
+	// populated by middleware.UserIdentityInterceptor upstream.
 	extra := map[string]any{}
+	if role := auth.GetUserRole(ctx); role != "" {
+		extra["user_role"] = role
+	}
 	switch {
 	case in.DocumentID != nil:
 		resKind, resID = "document", in.DocumentID.String()
@@ -801,7 +812,12 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 	if err != nil {
 		return fmt.Errorf("policy ctx build: %w", err)
 	}
-	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
+	// Forward caller identity to the policy service. Without this the
+	// downstream TenantInterceptor 401s and the fail-closed branch
+	// reports "policy service unavailable" — see CLAUDE.md cross-
+	// service auth section.
+	outCtx := withCallerMetadata(ctx, in.TenantID, in.UserID, auth.GetUserRole(ctx))
+	resp, err := s.policy.CheckPermission(outCtx, &vaultdmsv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    in.UserID.String(),
 		Action:       "edit",
@@ -903,6 +919,18 @@ func rewriteHost(presigned, publicBase string) string {
 
 func isIdempotentDupe(err error) bool {
 	return err != nil && vdmserr.KindOf(err) == vdmserr.KindAlreadyExists
+}
+
+// withCallerMetadata copies tenant + user identity onto an outgoing
+// gRPC context so downstream services' TenantInterceptor +
+// UserIdentityInterceptor accept the call. Pattern documented in
+// CLAUDE.md cross-service auth section.
+func withCallerMetadata(ctx context.Context, tenantID, userID uuid.UUID, role string) context.Context {
+	pairs := []string{"x-tenant-id", tenantID.String(), "x-user-id", userID.String()}
+	if role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
 // silence unused imports in minimal builds

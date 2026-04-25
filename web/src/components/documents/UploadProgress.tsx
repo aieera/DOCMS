@@ -21,13 +21,21 @@ export function UploadProgress() {
 
   return (
     <div className="fixed bottom-4 end-4 z-40 w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-lg">
-      <button onClick={() => setCollapsed(!collapsed)} className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium">
-        <span>{label}</span>
-        <div className="flex items-center gap-1">
-          {active.length === 0 && <button onClick={(e) => { e.stopPropagation(); clearCompleted() }} className="text-xs text-[var(--color-text-secondary)] hover:underline">Clear</button>}
+      <div className="flex items-center justify-between gap-2 px-3 py-2 text-sm font-medium">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex flex-1 items-center justify-between"
+          aria-expanded={!collapsed}
+        >
+          <span>{label}</span>
           {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </div>
-      </button>
+        </button>
+        {active.length === 0 && (
+          <button onClick={clearCompleted} className="text-xs text-[var(--color-text-secondary)] hover:underline">
+            Clear
+          </button>
+        )}
+      </div>
       {!collapsed && (
         <div className="max-h-60 overflow-y-auto border-t border-[var(--color-border)]">
           {items.map((u) => <UploadRow key={u.id} item={u} onRemove={() => removeUpload(u.id)} />)}
