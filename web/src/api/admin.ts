@@ -62,6 +62,32 @@ export async function exportAuditCSV(params?: Record<string, string>) {
   URL.revokeObjectURL(url)
 }
 
+// eDiscovery export — streams a signed ZIP bundling docs by id.
+// The backend (services/document/internal/handler/ediscovery_handler.go)
+// is compliance-officer / admin / owner gated. Filename is set by
+// the server's Content-Disposition; we just pull it off the response
+// header so the saved file matches what audit logged.
+export async function exportEDiscovery(input: {
+  case_id: string
+  case_name: string
+  custodian_email: string
+  document_ids: string[]
+}): Promise<{ filename: string }> {
+  const resp = await api.post('/admin/ediscovery/export', input, { responseType: 'blob' })
+  const dispo = (resp.headers['content-disposition'] || resp.headers['Content-Disposition']) as string | undefined
+  const match = dispo?.match(/filename="([^"]+)"/)
+  const filename = match?.[1] ?? `ediscovery-${input.case_id}.zip`
+  const url = URL.createObjectURL(resp.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return { filename }
+}
+
 export async function getTenantSettings() {
   const { data } = await api.get('/admin/settings')
   return data
