@@ -305,6 +305,102 @@ func (s *Service) ForcePasswordReset(ctx context.Context, tenantID, actorID, tar
 	})
 }
 
+// ---- Self-service forgot-password (public, unauthenticated) --------------
+
+// RequestPasswordResetInput is what the public /auth/forgot-password
+// endpoint hands to the service.
+type RequestPasswordResetInput struct {
+	TenantSlug string
+	Email      string
+	IPAddress  string
+	UserAgent  string
+}
+
+// RequestPasswordReset is the unauthenticated entry point for
+// "I forgot my password". The flow re-uses the existing single-use
+// change-token mechanism that admin-forced and expiry-driven resets
+// already use:
+//
+//   1. Resolve tenant by slug. If unknown: return nil + emit nothing
+//      (no oracle to the caller — the handler always returns 202).
+//   2. Look up the user by (tenant, email). If unknown / SSO-federated
+//      / deactivated: same silent no-op.
+//   3. Issue a one-time change token (Redis, 10-minute TTL).
+//   4. Emit dms.notify.password_reset.v1 with the magic link
+//      https://<host>/change-password?token=<plaintext>. The
+//      notification service's existing email path delivers it.
+//
+// The plaintext token leaves this process exactly once — in the
+// outbox payload that becomes the email body. The returned error
+// never carries it.
+func (s *Service) RequestPasswordReset(ctx context.Context, in RequestPasswordResetInput) error {
+	if in.TenantSlug == "" || in.Email == "" {
+		// Validation; the handler maps this to 400 BEFORE we even start
+		// (so callers can't probe the slug-resolution timing).
+		return vdmserr.Validation("body", "tenant_slug and email required")
+	}
+
+	var tenantID uuid.UUID
+	if err := s.pool.QueryRow(ctx,
+		`SELECT id FROM organizations WHERE slug = $1 AND deleted_at IS NULL`,
+		in.TenantSlug,
+	).Scan(&tenantID); err != nil {
+		// Unknown slug — silent no-op. The handler returns the same
+		// 202 it would for a real reset.
+		s.log.Info().Str("slug", in.TenantSlug).Msg("forgot_password: unknown tenant slug")
+		return nil
+	}
+
+	// Mint the token + emit notify in one tenant tx so the audit
+	// ordering matches.
+	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		user, err := s.users.GetByEmail(ctx, tx, tenantID, in.Email)
+		if err != nil {
+			// Unknown email — silent no-op.
+			s.log.Info().Str("tenant", tenantID.String()).Msg("forgot_password: unknown email")
+			return nil
+		}
+		if user.SSOFederated {
+			s.log.Info().Str("user", user.ID.String()).Msg("forgot_password: SSO-federated user; no local password to reset")
+			return nil
+		}
+		if user.Status != model.StatusActive {
+			s.log.Info().Str("user", user.ID.String()).Str("status", string(user.Status)).
+				Msg("forgot_password: user not active; ignoring")
+			return nil
+		}
+
+		token, err := s.issuePasswordChangeToken(ctx, tenantID, user.ID, ReasonSelfInitiated)
+		if err != nil {
+			return fmt.Errorf("issue token: %w", err)
+		}
+
+		// dms.notify.password_reset.v1 — recipient_email field is the
+		// per-DeliveryPayload extension that the public DSR intake
+		// added for non-user-bound delivery (notification service
+		// reads either user_ids OR recipient_email).
+		payload := map[string]any{
+			"tenant_id":       tenantID.String(),
+			"user_ids":        []string{user.ID.String()},
+			"recipient_email": user.Email,
+			"type":            "password_reset",
+			"title":           "Reset your password",
+			"body": fmt.Sprintf(
+				"You (or someone using your email) requested a password reset. Click the link below within 10 minutes:\n\nhttps://%s/change-password?token=%s\n\nIf you didn't request this, ignore this email — your password won't be changed.",
+				in.TenantSlug, token,
+			),
+			"resource_type": "user",
+			"resource_id":   user.ID.String(),
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		evt := database.NewOutboxEvent(tenantID, "dms.notify.password_reset.v1", "user", user.ID, body)
+		return s.outbox.Insert(ctx, tx, evt)
+	})
+}
+
 // ---- Expiry sweeper -------------------------------------------------------
 
 // SweepExpiredPasswordsForTenant flags local-auth users whose

@@ -35,6 +35,12 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/mfa/recovery", h.MFARecovery)
 		// Wave 15.3: one-time-token-authenticated, so public.
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/change-password", h.ChangePassword)
+		// GAP-3: Forgot password — unauthenticated, rate-limited.
+		// Always returns 202 with a generic message; the service
+		// handles its own oracle defense (unknown slug/email/SSO
+		// user are all silent no-ops, only the success path emits
+		// dms.notify.password_reset.v1).
+		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/forgot-password", h.ForgotPassword)
 
 		// ---- SAML 2.0 SSO (public; tenant identified by path slug) -------
 		if saml != nil {
