@@ -475,7 +475,13 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: document }
     container_name: vaultdms-document
-    environment: *go-env
+    environment:
+      <<: *go-env
+      # Smoke-test override for ADR 0036/0037 internal cron endpoints
+      # (retention sweep, disposition execute, DSR SLA sweep). Real
+      # deploy injects via secret manager; dev compose treats it as
+      # any other shared dev key.
+      VAULTDMS_INTERNAL_API_KEY: dev-internal-api-key
     # Host health port 8084 instead of run-all-services.sh's 8083 to
     # avoid collision with the collaboration WS listener on 8083.
     ports: ["8084:8081", "9092:9090", "8182:8080"]
