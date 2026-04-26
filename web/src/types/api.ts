@@ -51,6 +51,11 @@ export interface Document {
   has_thumbnail: boolean
   thumbnail_url?: string
   region_pin?: string
+  // Wave 17 §9.3: under_legal_hold is the boolean fast-path the
+  // backend's enforcement layer reads; hold_count composes overlapping
+  // holds (folder-hold + doc-hold = 2). Either truthy = doc is held.
+  under_legal_hold?: boolean
+  hold_count?: number
 }
 
 export interface Version {

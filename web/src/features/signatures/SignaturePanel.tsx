@@ -26,9 +26,15 @@ import { Input } from '@/components/ui/Input'
 interface Props {
   documentID: string
   versionID: string
+  // When set, the "Request signature" button is disabled with the
+  // tooltip explaining why (typically: doc is on legal hold). Existing
+  // requests continue to render so signers can complete in-flight
+  // signatures even after a hold lands.
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function SignaturePanel({ documentID, versionID }: Props) {
+export function SignaturePanel({ documentID, versionID, disabled, disabledReason }: Props) {
   const qc = useQueryClient()
   const { data: requests, isLoading } = useQuery({
     queryKey: ['signatures', 'document', documentID],
@@ -89,6 +95,8 @@ export function SignaturePanel({ documentID, versionID }: Props) {
             size="sm"
             data-testid="signatures-request"
             onClick={() => setCreateOpen(true)}
+            disabled={disabled}
+            title={disabled ? disabledReason : undefined}
           >
             <Plus className="mr-1 h-3.5 w-3.5" /> Request signature
           </Button>
