@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useDocument } from '@/hooks/useDocuments'
@@ -7,9 +8,11 @@ import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import { RegionPinBadge } from '@/components/shared/RegionPinBadge'
 import { SignaturePanel } from '@/features/signatures/SignaturePanel'
+import { RedactDialog } from '@/features/redaction/RedactDialog'
 import { getVersions } from '@/api/documents'
+import { useAuthStore } from '@/store/authStore'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
-import { Download, Share, History, MessageSquare } from 'lucide-react'
+import { Download, Share, History, MessageSquare, ScissorsLineDashed } from 'lucide-react'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
@@ -23,6 +26,14 @@ function DocumentDetailPage() {
     enabled: !!doc,
   })
   const currentVersionID = versions?.[0]?.id ?? ''
+  // Role gate mirrors the backend's requireRole at
+  // services/document/internal/handler/redaction_handler.go:79.
+  // The frontend User.role union doesn't enumerate compliance_officer
+  // (that's a tenant-administered role flag, not the canonical app
+  // role) so we string-match to keep TS happy.
+  const userRole = useAuthStore((s) => s.user?.role) as string | undefined
+  const canRedact = !!userRole && ['compliance_officer', 'admin', 'owner'].includes(userRole)
+  const [redactOpen, setRedactOpen] = useState(false)
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -69,8 +80,25 @@ function DocumentDetailPage() {
         <div className="flex flex-col gap-2">
           <Button variant="ghost" size="sm" className="justify-start"><History className="h-4 w-4" /> Version History</Button>
           <Button variant="ghost" size="sm" className="justify-start"><MessageSquare className="h-4 w-4" /> Comments</Button>
+          {canRedact && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start text-red-700 hover:text-red-800 dark:text-red-300"
+              data-testid="document-redact"
+              onClick={() => setRedactOpen(true)}
+            >
+              <ScissorsLineDashed className="h-4 w-4" /> Redact
+            </Button>
+          )}
         </div>
       </aside>
+      <RedactDialog
+        open={redactOpen}
+        onOpenChange={setRedactOpen}
+        documentID={doc.id}
+        versionID={currentVersionID}
+      />
     </div>
   )
 }
