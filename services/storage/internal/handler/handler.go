@@ -214,6 +214,41 @@ func (h *Handler) ShredBlobs(ctx context.Context, req *vaultdmsv1.ShredBlobsRequ
 	}, nil
 }
 
+// TransitionBlobsTier moves a set of blobs to a target S3 storage
+// class. Internal-auth gated; the document service is the only
+// legitimate caller (retention archive path).
+func (h *Handler) TransitionBlobsTier(ctx context.Context, req *vaultdmsv1.TransitionBlobsTierRequest) (*vaultdmsv1.TransitionBlobsTierResponse, error) {
+	tenantID, err := uuid.Parse(req.GetTenantId())
+	if err != nil || tenantID == uuid.Nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("tenant_id", "not a uuid"))
+	}
+	if req.GetTargetClass() == "" {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("target_class", "required"))
+	}
+	blobs := make([]uuid.UUID, 0, len(req.GetBlobIds()))
+	for _, raw := range req.GetBlobIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, vdmserr.ToGRPCError(vdmserr.Validation("blob_ids", "contains a non-uuid value"))
+		}
+		blobs = append(blobs, id)
+	}
+	res, err := h.svc.TransitionBlobsTier(ctx, service.TransitionBlobsTierInput{
+		TenantID:    tenantID,
+		BlobIDs:     blobs,
+		TargetClass: req.GetTargetClass(),
+		PolicyID:    req.GetPolicyId(),
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &vaultdmsv1.TransitionBlobsTierResponse{
+		Transitioned:    uuidsToStrings(res.Transitioned),
+		AlreadyInTarget: uuidsToStrings(res.AlreadyInTarget),
+		NotFound:        uuidsToStrings(res.NotFound),
+	}, nil
+}
+
 func uuidsToStrings(in []uuid.UUID) []string {
 	out := make([]string, len(in))
 	for i, id := range in {

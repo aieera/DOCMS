@@ -31,7 +31,21 @@ type ContentBlobRepo interface {
 	// shredded_at on a single blob row. Returns one of three outcomes
 	// the caller maps onto the gRPC response (shredded / already / not_found).
 	Shred(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (ShredOutcome, error)
+
+	// TransitionStorageClass updates the persisted storage_class on the
+	// blob row to reflect a tier change applied at the S3 layer. Returns
+	// the per-blob outcome the caller maps onto the gRPC response.
+	TransitionStorageClass(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, targetClass string) (TransitionOutcome, error)
 }
+
+// TransitionOutcome is the per-blob result from TransitionStorageClass.
+type TransitionOutcome int
+
+const (
+	TransitionOutcomeMoved        TransitionOutcome = iota // class changed by this call
+	TransitionOutcomeAlreadyInTarget                       // already in target class on entry
+	TransitionOutcomeNotFound                              // no such blob for this tenant
+)
 
 // ShredOutcome is the per-blob result from Shred. Distinct from a Go
 // error because "blob already shredded" and "blob not found for tenant"
@@ -203,6 +217,34 @@ func (r *contentBlobRepo) Shred(ctx context.Context, tx pgx.Tx, tenantID, id uui
 		return ShredOutcomeAlreadyShredded, nil
 	}
 	return ShredOutcomeNotFound, nil
+}
+
+// TransitionStorageClass updates the storage_class column under
+// WHERE storage_class != target so the second call is naturally
+// idempotent (returns AlreadyInTarget without writing).
+func (r *contentBlobRepo) TransitionStorageClass(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, targetClass string) (TransitionOutcome, error) {
+	tag, err := tx.Exec(ctx, `
+		UPDATE content_blobs
+		   SET storage_class = $1
+		 WHERE tenant_id = $2 AND id = $3 AND storage_class <> $1
+	`, targetClass, tenantID, id)
+	if err != nil {
+		return TransitionOutcomeNotFound, mapPgError(err)
+	}
+	if tag.RowsAffected() == 1 {
+		return TransitionOutcomeMoved, nil
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM content_blobs WHERE tenant_id = $1 AND id = $2)`,
+		tenantID, id,
+	).Scan(&exists); err != nil {
+		return TransitionOutcomeNotFound, mapPgError(err)
+	}
+	if exists {
+		return TransitionOutcomeAlreadyInTarget, nil
+	}
+	return TransitionOutcomeNotFound, nil
 }
 
 func (r *contentBlobRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {

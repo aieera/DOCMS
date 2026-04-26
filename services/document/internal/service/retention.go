@@ -11,6 +11,7 @@ import (
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/database"
+	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
 
@@ -108,7 +109,10 @@ func (s *DocumentService) SweepRetention(ctx context.Context, tenantID uuid.UUID
 			continue
 		}
 
-		// Archive path — kept direct.
+		// Archive path — kept direct (cheap, reversible state change).
+		// Slice 8: after successful state transition, also move every
+		// version's blob to STANDARD_IA on S3 so the archive actually
+		// changes storage cost (was state-only before).
 		for _, id := range ids {
 			_, err := s.UpdateLifecycle(
 				withSystemUser(ctx, tenantID),
@@ -128,6 +132,19 @@ func (s *DocumentService) SweepRetention(ctx context.Context, tenantID uuid.UUID
 				continue
 			}
 			result.Archived++
+			// Best-effort tier transition. A failure here doesn't roll
+			// back the lifecycle change — the doc state advances even if
+			// the cold-storage move can't happen right now (network
+			// blip, S3 outage). Next sweep retries via the executor's
+			// reconciliation pass.
+			if s.storage != nil {
+				if err := s.transitionDocumentToIA(ctx, tenantID, id, p.ID); err != nil {
+					s.log.Warn().Err(err).
+						Str("doc", id.String()).
+						Str("policy", p.ID.String()).
+						Msg("archive tier transition failed; document remains in STANDARD")
+				}
+			}
 		}
 	}
 	return result, nil
@@ -240,6 +257,57 @@ func (s *DocumentService) enqueueDispositionCandidate(ctx context.Context, tenan
 		return nil
 	})
 	return outcome, err
+}
+
+// transitionDocumentToIA looks up every version's content_blob_id for
+// the document and asks storage to move them to STANDARD_IA. The S3
+// CopyObject + content_blobs.storage_class persist + audit emit all
+// happen inside the storage service; we just orchestrate.
+//
+// Best-effort: if storage is unreachable or any blob fails, this
+// returns an error and the caller logs it but does not roll back the
+// archive lifecycle transition — the doc state is correct, only the
+// storage cost is unchanged.
+func (s *DocumentService) transitionDocumentToIA(ctx context.Context, tenantID, docID, policyID uuid.UUID) error {
+	var blobIDs []uuid.UUID
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT DISTINCT v.content_blob_id
+			  FROM versions v
+			 WHERE v.tenant_id = $1
+			   AND v.document_id = $2
+			   AND v.content_blob_id IS NOT NULL
+		`, tenantID, docID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			blobIDs = append(blobIDs, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return fmt.Errorf("collect blob ids: %w", err)
+	}
+	if len(blobIDs) == 0 {
+		return nil
+	}
+	blobStrs := make([]string, len(blobIDs))
+	for i, id := range blobIDs {
+		blobStrs[i] = id.String()
+	}
+	_, err = s.storage.TransitionBlobsTier(ctx, &vaultdmsv1.TransitionBlobsTierRequest{
+		TenantId:    tenantID.String(),
+		BlobIds:     blobStrs,
+		TargetClass: "STANDARD_IA",
+		PolicyId:    policyID.String(),
+	})
+	return err
 }
 
 // notifyDispositionQueueGrew fans a dms.notify.disposition.review.v1

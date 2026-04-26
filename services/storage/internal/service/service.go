@@ -791,6 +791,116 @@ func (s *Service) ShredBlobs(ctx context.Context, in ShredBlobsInput) (*ShredBlo
 	return res, nil
 }
 
+// TransitionBlobsTierInput is the service-layer input.
+type TransitionBlobsTierInput struct {
+	TenantID    uuid.UUID
+	BlobIDs     []uuid.UUID
+	TargetClass string // S3 class string, e.g. "STANDARD_IA"
+	PolicyID    string // retention_policy.id authorising the transition
+}
+
+// TransitionBlobsTierResult mirrors the gRPC response.
+type TransitionBlobsTierResult struct {
+	Transitioned    []uuid.UUID
+	AlreadyInTarget []uuid.UUID
+	NotFound        []uuid.UUID
+}
+
+// TransitionBlobsTier moves blobs to a colder S3 storage class. The S3
+// CopyObject is best-effort — if it fails, the DB column stays
+// unchanged and the next retention sweep retries. The audit event
+// (dms.blob.tier_transitioned.v1) is only emitted on a successful
+// transition; tenants reading the audit trail can rely on its
+// presence to mean the bytes really did move.
+func (s *Service) TransitionBlobsTier(ctx context.Context, in TransitionBlobsTierInput) (*TransitionBlobsTierResult, error) {
+	if in.TenantID == uuid.Nil {
+		return nil, vdmserr.Validation("tenant_id", "required")
+	}
+	if len(in.BlobIDs) == 0 {
+		return nil, vdmserr.Validation("blob_ids", "at least one required")
+	}
+	if in.TargetClass == "" {
+		return nil, vdmserr.Validation("target_class", "required")
+	}
+	res := &TransitionBlobsTierResult{
+		Transitioned:    make([]uuid.UUID, 0, len(in.BlobIDs)),
+		AlreadyInTarget: make([]uuid.UUID, 0),
+		NotFound:        make([]uuid.UUID, 0),
+	}
+
+	// Pre-load every blob's bucket+key so we can call S3 *outside* a DB
+	// tx — like ShredBlobs, gRPC/S3 calls under a held tx are a bad
+	// pattern. We then re-open a tx per-blob to update the column +
+	// emit audit, scoped tightly.
+	type blobRef struct {
+		id           uuid.UUID
+		bucket, key  string
+		currentClass string
+	}
+	var refs []blobRef
+	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+		for _, id := range in.BlobIDs {
+			b, err := s.repos.ContentBlobs.GetByID(ctx, tx, in.TenantID, id)
+			if err != nil {
+				if vdmserr.KindOf(err) == vdmserr.KindNotFound {
+					res.NotFound = append(res.NotFound, id)
+					continue
+				}
+				return err
+			}
+			refs = append(refs, blobRef{id: b.ID, bucket: b.StorageBucket, key: b.StorageKey, currentClass: b.StorageClass})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range refs {
+		if ref.currentClass == in.TargetClass {
+			res.AlreadyInTarget = append(res.AlreadyInTarget, ref.id)
+			continue
+		}
+		// S3 CopyObject onto self with new class. Failure is per-blob;
+		// other blobs in the batch still try.
+		if err := s.s3.SetStorageClass(ctx, ref.bucket, ref.key, in.TargetClass); err != nil {
+			s.log.Warn().Err(err).
+				Str("blob_id", ref.id.String()).
+				Str("target", in.TargetClass).
+				Msg("storage class transition failed; will retry next sweep")
+			continue
+		}
+		// Persist + audit in one tenant tx.
+		if err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+			outcome, err := s.repos.ContentBlobs.TransitionStorageClass(ctx, tx, in.TenantID, ref.id, in.TargetClass)
+			if err != nil || outcome != repository.TransitionOutcomeMoved {
+				return err
+			}
+			return s.emit(ctx, tx, in.TenantID, ref.id, "dms.blob.tier_transitioned.v1", map[string]any{
+				"blob_id":      ref.id.String(),
+				"tenant_id":    in.TenantID.String(),
+				"from_class":   ref.currentClass,
+				"to_class":     in.TargetClass,
+				"policy_id":    in.PolicyID,
+			})
+		}); err != nil {
+			s.log.Error().Err(err).Str("blob_id", ref.id.String()).Msg("transition persist failed")
+			continue
+		}
+		res.Transitioned = append(res.Transitioned, ref.id)
+	}
+
+	s.log.Info().
+		Str("tenant_id", in.TenantID.String()).
+		Str("policy_id", in.PolicyID).
+		Str("target", in.TargetClass).
+		Int("transitioned", len(res.Transitioned)).
+		Int("already", len(res.AlreadyInTarget)).
+		Int("not_found", len(res.NotFound)).
+		Msg("tier transition completed")
+	return res, nil
+}
+
 // ---- internals ------------------------------------------------------------
 
 type scanOutcome struct {
