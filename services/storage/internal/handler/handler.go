@@ -179,6 +179,49 @@ func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStat
 	}, nil
 }
 
+// ShredBlobs (ADR 0036) destroys wrapped DEKs for a set of content_blobs.
+// The tenant in the request body is authoritative — auth.GetTenantID is
+// the caller's identity (the document executor's system user), which
+// MAY operate on a different tenant than its own. Internal-auth
+// middleware on the route gates who can call this; the document service
+// is the only legitimate caller.
+func (h *Handler) ShredBlobs(ctx context.Context, req *vaultdmsv1.ShredBlobsRequest) (*vaultdmsv1.ShredBlobsResponse, error) {
+	tenantID, err := uuid.Parse(req.GetTenantId())
+	if err != nil || tenantID == uuid.Nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("tenant_id", "not a uuid"))
+	}
+	blobs := make([]uuid.UUID, 0, len(req.GetBlobIds()))
+	for _, raw := range req.GetBlobIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, vdmserr.ToGRPCError(vdmserr.Validation("blob_ids", "contains a non-uuid value"))
+		}
+		blobs = append(blobs, id)
+	}
+	res, err := h.svc.ShredBlobs(ctx, service.ShredBlobsInput{
+		TenantID:    tenantID,
+		BlobIDs:     blobs,
+		CandidateID: req.GetCandidateId(),
+		ActorID:     req.GetActorId(),
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &vaultdmsv1.ShredBlobsResponse{
+		Shredded:        uuidsToStrings(res.Shredded),
+		AlreadyShredded: uuidsToStrings(res.AlreadyShredded),
+		NotFound:        uuidsToStrings(res.NotFound),
+	}, nil
+}
+
+func uuidsToStrings(in []uuid.UUID) []string {
+	out := make([]string, len(in))
+	for i, id := range in {
+		out[i] = id.String()
+	}
+	return out
+}
+
 // ---- enum mappers --------------------------------------------------------
 
 func protoScanResult(r model.ScanResult) vaultdmsv1.ScanResult {

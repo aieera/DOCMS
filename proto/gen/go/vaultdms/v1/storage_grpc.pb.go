@@ -26,6 +26,7 @@ const (
 	StorageService_GetPreviewURL_FullMethodName    = "/vaultdms.v1.StorageService/GetPreviewURL"
 	StorageService_GetScanStatus_FullMethodName    = "/vaultdms.v1.StorageService/GetScanStatus"
 	StorageService_RequestLifecycle_FullMethodName = "/vaultdms.v1.StorageService/RequestLifecycle"
+	StorageService_ShredBlobs_FullMethodName       = "/vaultdms.v1.StorageService/ShredBlobs"
 )
 
 // StorageServiceClient is the client API for StorageService service.
@@ -39,6 +40,13 @@ type StorageServiceClient interface {
 	GetPreviewURL(ctx context.Context, in *GetPreviewURLRequest, opts ...grpc.CallOption) (*GetPreviewURLResponse, error)
 	GetScanStatus(ctx context.Context, in *GetScanStatusRequest, opts ...grpc.CallOption) (*ScanStatus, error)
 	RequestLifecycle(ctx context.Context, in *RequestLifecycleRequest, opts ...grpc.CallOption) (*LifecycleJob, error)
+	// ShredBlobs cryptographically destroys the wrapped DEKs for a set
+	// of content_blobs (ADR 0036). The S3 objects are scheduled for
+	// best-effort async delete. Idempotent: blobs already shredded are
+	// skipped silently and reported in already_shredded. Caller must
+	// be the document service running under its internal-auth identity;
+	// user-facing requests have their own delete path.
+	ShredBlobs(ctx context.Context, in *ShredBlobsRequest, opts ...grpc.CallOption) (*ShredBlobsResponse, error)
 }
 
 type storageServiceClient struct {
@@ -112,6 +120,15 @@ func (c *storageServiceClient) RequestLifecycle(ctx context.Context, in *Request
 	return out, nil
 }
 
+func (c *storageServiceClient) ShredBlobs(ctx context.Context, in *ShredBlobsRequest, opts ...grpc.CallOption) (*ShredBlobsResponse, error) {
+	out := new(ShredBlobsResponse)
+	err := c.cc.Invoke(ctx, StorageService_ShredBlobs_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StorageServiceServer is the server API for StorageService service.
 // All implementations must embed UnimplementedStorageServiceServer
 // for forward compatibility
@@ -123,6 +140,13 @@ type StorageServiceServer interface {
 	GetPreviewURL(context.Context, *GetPreviewURLRequest) (*GetPreviewURLResponse, error)
 	GetScanStatus(context.Context, *GetScanStatusRequest) (*ScanStatus, error)
 	RequestLifecycle(context.Context, *RequestLifecycleRequest) (*LifecycleJob, error)
+	// ShredBlobs cryptographically destroys the wrapped DEKs for a set
+	// of content_blobs (ADR 0036). The S3 objects are scheduled for
+	// best-effort async delete. Idempotent: blobs already shredded are
+	// skipped silently and reported in already_shredded. Caller must
+	// be the document service running under its internal-auth identity;
+	// user-facing requests have their own delete path.
+	ShredBlobs(context.Context, *ShredBlobsRequest) (*ShredBlobsResponse, error)
 	mustEmbedUnimplementedStorageServiceServer()
 }
 
@@ -150,6 +174,9 @@ func (UnimplementedStorageServiceServer) GetScanStatus(context.Context, *GetScan
 }
 func (UnimplementedStorageServiceServer) RequestLifecycle(context.Context, *RequestLifecycleRequest) (*LifecycleJob, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestLifecycle not implemented")
+}
+func (UnimplementedStorageServiceServer) ShredBlobs(context.Context, *ShredBlobsRequest) (*ShredBlobsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ShredBlobs not implemented")
 }
 func (UnimplementedStorageServiceServer) mustEmbedUnimplementedStorageServiceServer() {}
 
@@ -290,6 +317,24 @@ func _StorageService_RequestLifecycle_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StorageService_ShredBlobs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShredBlobsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).ShredBlobs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_ShredBlobs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).ShredBlobs(ctx, req.(*ShredBlobsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StorageService_ServiceDesc is the grpc.ServiceDesc for StorageService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -324,6 +369,10 @@ var StorageService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestLifecycle",
 			Handler:    _StorageService_RequestLifecycle_Handler,
+		},
+		{
+			MethodName: "ShredBlobs",
+			Handler:    _StorageService_ShredBlobs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

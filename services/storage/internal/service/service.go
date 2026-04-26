@@ -706,6 +706,91 @@ func (s *Service) GetScanStatus(ctx context.Context, tenantID, uploadID uuid.UUI
 	return rec, err
 }
 
+// ShredBlobsInput is the service-layer input for ShredBlobs (ADR 0036).
+type ShredBlobsInput struct {
+	TenantID    uuid.UUID
+	BlobIDs     []uuid.UUID
+	CandidateID string // disposition_candidates.id authorising the shred
+	ActorID     string // reviewer who approved the candidate
+}
+
+// ShredBlobsResult mirrors the gRPC response shape.
+type ShredBlobsResult struct {
+	Shredded        []uuid.UUID
+	AlreadyShredded []uuid.UUID
+	NotFound        []uuid.UUID
+}
+
+// ShredBlobs (ADR 0036) crypto-shreds the wrapped DEKs for a set of
+// content_blobs. The DEK row in `content_blobs.encrypted_dek` is set
+// to NULL inside a single tenant tx along with `dek_nonce` and a
+// `shredded_at` timestamp; the CHECK constraint
+// content_blobs_shred_consistency makes the (NULL DEK ∧ shredded_at NOT
+// NULL) invariant DB-enforced.
+//
+// Idempotent: blobs already shredded are skipped silently and reported
+// separately; missing blobs likewise. Per-blob audit events
+// (dms.blob.shredded.v1) land in the outbox so an auditor can pivot
+// from any blob row to the disposition candidate that authorised it.
+//
+// The S3 object delete is **not** done here — it's a best-effort async
+// hygiene operation handled by the disposition executor in the document
+// service after this RPC returns. Once the DEK is null the ciphertext
+// is mathematically unrecoverable; deletion of the bytes is cleanup,
+// not a security boundary.
+func (s *Service) ShredBlobs(ctx context.Context, in ShredBlobsInput) (*ShredBlobsResult, error) {
+	if in.TenantID == uuid.Nil {
+		return nil, vdmserr.Validation("tenant_id", "required")
+	}
+	if len(in.BlobIDs) == 0 {
+		// Empty input is a programmer error, not a runtime case.
+		return nil, vdmserr.Validation("blob_ids", "at least one required")
+	}
+	res := &ShredBlobsResult{
+		Shredded:        make([]uuid.UUID, 0, len(in.BlobIDs)),
+		AlreadyShredded: make([]uuid.UUID, 0),
+		NotFound:        make([]uuid.UUID, 0),
+	}
+	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+		for _, id := range in.BlobIDs {
+			outcome, err := s.repos.ContentBlobs.Shred(ctx, tx, in.TenantID, id)
+			if err != nil {
+				return err
+			}
+			switch outcome {
+			case repository.ShredOutcomeShredded:
+				res.Shredded = append(res.Shredded, id)
+				if err := s.emit(ctx, tx, in.TenantID, id, "dms.blob.shredded.v1", map[string]any{
+					"blob_id":      id.String(),
+					"tenant_id":    in.TenantID.String(),
+					"candidate_id": in.CandidateID,
+					"actor_id":     in.ActorID,
+				}); err != nil {
+					// Outbox failure rolls back the entire tx — the audit
+					// trail is non-negotiable for a destructive op.
+					return fmt.Errorf("emit shredded event for %s: %w", id, err)
+				}
+			case repository.ShredOutcomeAlreadyShredded:
+				res.AlreadyShredded = append(res.AlreadyShredded, id)
+			case repository.ShredOutcomeNotFound:
+				res.NotFound = append(res.NotFound, id)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info().
+		Str("tenant_id", in.TenantID.String()).
+		Str("candidate_id", in.CandidateID).
+		Int("shredded", len(res.Shredded)).
+		Int("already", len(res.AlreadyShredded)).
+		Int("not_found", len(res.NotFound)).
+		Msg("crypto-shred completed")
+	return res, nil
+}
+
 // ---- internals ------------------------------------------------------------
 
 type scanOutcome struct {

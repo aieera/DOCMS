@@ -6,6 +6,11 @@
 -- shreds cannot be undone. Operators should NEVER run this in prod
 -- without an audit-trail snapshot first.
 
+DROP INDEX IF EXISTS idx_content_blobs_shredded;
+ALTER TABLE content_blobs
+    DROP CONSTRAINT IF EXISTS content_blobs_shred_consistency,
+    DROP COLUMN IF EXISTS shredded_at;
+
 DROP INDEX IF EXISTS idx_documents_shredded;
 ALTER TABLE documents DROP COLUMN IF EXISTS shredded_at;
 

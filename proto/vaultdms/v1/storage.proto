@@ -19,6 +19,14 @@ service StorageService {
 
   rpc GetScanStatus    (GetScanStatusRequest)    returns (ScanStatus);
   rpc RequestLifecycle (RequestLifecycleRequest) returns (LifecycleJob);
+
+  // ShredBlobs cryptographically destroys the wrapped DEKs for a set
+  // of content_blobs (ADR 0036). The S3 objects are scheduled for
+  // best-effort async delete. Idempotent: blobs already shredded are
+  // skipped silently and reported in already_shredded. Caller must
+  // be the document service running under its internal-auth identity;
+  // user-facing requests have their own delete path.
+  rpc ShredBlobs (ShredBlobsRequest) returns (ShredBlobsResponse);
 }
 
 enum StorageTier {
@@ -106,6 +114,25 @@ message RequestLifecycleRequest {
   string      document_id  = 1;
   StorageTier target_tier  = 2;
   string      reason       = 3;
+}
+
+message ShredBlobsRequest {
+  // Tenant + blob ids the document executor wants destroyed. The
+  // storage service does NOT cross-check the doc/blob mapping — that
+  // is the document service's job (it owns documents/versions). The
+  // storage tx zeros the DEK and emits an audit event per blob.
+  string          tenant_id = 1;
+  repeated string blob_ids  = 2;
+  // Audit context — the disposition_candidate id that authorised the
+  // shred. Recorded on the dms.blob.shredded.v1 event so an auditor
+  // can pivot from the blob row to the approval trail.
+  string candidate_id = 3;
+  string actor_id     = 4; // reviewer who approved (not the executor system user)
+}
+message ShredBlobsResponse {
+  repeated string shredded         = 1; // blob ids zeroed by this call
+  repeated string already_shredded = 2; // blob ids that were already shredded
+  repeated string not_found        = 3; // blob ids that did not exist for this tenant
 }
 
 message LifecycleJob {

@@ -96,14 +96,29 @@ CREATE POLICY disposition_candidates_tenant_isolation_insert ON disposition_cand
     FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 -- ---- shredded_at on documents --------------------------------------
--- Records the moment crypto-shred happened. Distinct from deleted_at
--- (soft delete, recoverable) and lifecycle_state='disposed' (state).
--- A row with shredded_at IS NOT NULL is cryptographically destroyed —
--- the matching content_blobs.encrypted_dek is NULL and download paths
--- must return 410 Gone.
+-- Records the moment crypto-shred happened on the document row.
+-- Distinct from deleted_at (soft delete, recoverable) and
+-- lifecycle_state='disposed' (state). A row with shredded_at IS NOT
+-- NULL is cryptographically destroyed — the matching
+-- content_blobs.encrypted_dek is NULL and download paths must return
+-- 410 Gone.
 ALTER TABLE documents
     ADD COLUMN shredded_at TIMESTAMPTZ;
 
 CREATE INDEX idx_documents_shredded
     ON documents(tenant_id, shredded_at)
+    WHERE shredded_at IS NOT NULL;
+
+-- ---- shredded_at on content_blobs ----------------------------------
+-- Mirror column on the blob row, set in the same Storage.ShredBlobs
+-- transaction that nulls encrypted_dek + dek_nonce. The CHECK
+-- constraint makes the invariant explicit: a row with shredded_at
+-- IS NOT NULL has NULL DEK material — readers can rely on it.
+ALTER TABLE content_blobs
+    ADD COLUMN shredded_at TIMESTAMPTZ,
+    ADD CONSTRAINT content_blobs_shred_consistency
+        CHECK (shredded_at IS NULL OR encrypted_dek IS NULL);
+
+CREATE INDEX idx_content_blobs_shredded
+    ON content_blobs(tenant_id, shredded_at)
     WHERE shredded_at IS NOT NULL;

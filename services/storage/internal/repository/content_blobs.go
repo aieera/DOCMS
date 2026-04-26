@@ -27,7 +27,23 @@ type ContentBlobRepo interface {
 	// cross-region re-encrypt. Sha256 is preserved (same plaintext);
 	// every other storage / envelope field rotates.
 	UpdateMigration(ctx context.Context, tx pgx.Tx, b *model.ContentBlob) error
+	// Shred (ADR 0036): null encrypted_dek + dek_nonce and stamp
+	// shredded_at on a single blob row. Returns one of three outcomes
+	// the caller maps onto the gRPC response (shredded / already / not_found).
+	Shred(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (ShredOutcome, error)
 }
+
+// ShredOutcome is the per-blob result from Shred. Distinct from a Go
+// error because "blob already shredded" and "blob not found for tenant"
+// are not failures — the caller reports them in the gRPC response so
+// the executor knows which slots to update vs skip.
+type ShredOutcome int
+
+const (
+	ShredOutcomeShredded        ShredOutcome = iota // newly shredded by this call
+	ShredOutcomeAlreadyShredded                     // shredded_at IS NOT NULL on entry
+	ShredOutcomeNotFound                            // no such blob for this tenant
+)
 
 type contentBlobRepo struct{}
 
@@ -150,6 +166,43 @@ func (r *contentBlobRepo) UpdateMigration(ctx context.Context, tx pgx.Tx, b *mod
 		return vdmserr.ErrNotFound
 	}
 	return nil
+}
+
+// Shred zeros the wrapped DEK + nonce and stamps shredded_at. Idempotent
+// against repeat calls — the WHERE filters on shredded_at IS NULL so a
+// second call returns AlreadyShredded without touching the row. The
+// CHECK constraint content_blobs_shred_consistency makes the (NULL DEK
+// ∧ shredded_at NOT NULL) invariant DB-enforced.
+func (r *contentBlobRepo) Shred(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (ShredOutcome, error) {
+	tag, err := tx.Exec(ctx, `
+		UPDATE content_blobs
+		   SET encrypted_dek = NULL,
+		       dek_nonce     = NULL,
+		       shredded_at   = now()
+		 WHERE tenant_id = $1
+		   AND id        = $2
+		   AND shredded_at IS NULL`,
+		tenantID, id)
+	if err != nil {
+		return ShredOutcomeNotFound, mapPgError(err)
+	}
+	if tag.RowsAffected() == 1 {
+		return ShredOutcomeShredded, nil
+	}
+	// Zero rows affected: either the blob doesn't exist for this tenant,
+	// or it's already shredded. Distinguish so the caller can report
+	// honestly.
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM content_blobs WHERE tenant_id = $1 AND id = $2)`,
+		tenantID, id,
+	).Scan(&exists); err != nil {
+		return ShredOutcomeNotFound, mapPgError(err)
+	}
+	if exists {
+		return ShredOutcomeAlreadyShredded, nil
+	}
+	return ShredOutcomeNotFound, nil
 }
 
 func (r *contentBlobRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
