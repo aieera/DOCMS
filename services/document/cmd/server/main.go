@@ -311,6 +311,14 @@ func main() {
 	dispositionHandler.Register(dispositionMux)
 	rootMux.Handle("/api/v1/admin/disposition/", middleware.CorrelationHTTP(dispositionMux))
 
+	// Public DSR intake (ADR 0037) — UNAUTHENTICATED. Gateway rate-limits
+	// per IP + per email. The session-auth middleware would fight these
+	// routes (no session yet); they're mounted on a bare mux outside
+	// the admin path.
+	dsrPublicMux := http.NewServeMux()
+	handler.NewDSRPublicHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(dsrPublicMux)
+	rootMux.Handle("/api/v1/dsr/", middleware.CorrelationHTTP(dsrPublicMux))
+
 	// Redaction endpoint — Wave 11.5. Uses Go 1.22 method+pattern
 	// routing so only the /redact suffix lands here; everything else
 	// under /api/v1/documents/ still flows to the grpc-gateway via
