@@ -46,6 +46,7 @@ import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
 import { Route as AuthenticatedAdminGeofencesRouteImport } from './routes/_authenticated/admin/geofences'
+import { Route as AuthenticatedAdminDispositionRouteImport } from './routes/_authenticated/admin/disposition'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
@@ -268,6 +269,12 @@ const AuthenticatedAdminGeofencesRoute =
     path: '/admin/geofences',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminDispositionRoute =
+  AuthenticatedAdminDispositionRouteImport.update({
+    id: '/admin/disposition',
+    path: '/admin/disposition',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminConnectorsRoute =
   AuthenticatedAdminConnectorsRouteImport.update({
     id: '/admin/connectors',
@@ -372,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -424,6 +432,7 @@ export interface FileRoutesByTo {
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -478,6 +487,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/_authenticated/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/_authenticated/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -532,6 +542,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/disposition'
     | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
@@ -584,6 +595,7 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/disposition'
     | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
@@ -637,6 +649,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/billing'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
+    | '/_authenticated/admin/disposition'
     | '/_authenticated/admin/geofences'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/legal-holds'
@@ -941,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminGeofencesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/disposition': {
+      id: '/_authenticated/admin/disposition'
+      path: '/admin/disposition'
+      fullPath: '/admin/disposition'
+      preLoaderRoute: typeof AuthenticatedAdminDispositionRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/connectors': {
       id: '/_authenticated/admin/connectors'
       path: '/admin/connectors'
@@ -1090,6 +1110,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
+  AuthenticatedAdminDispositionRoute: typeof AuthenticatedAdminDispositionRoute
   AuthenticatedAdminGeofencesRoute: typeof AuthenticatedAdminGeofencesRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
@@ -1135,6 +1156,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
+  AuthenticatedAdminDispositionRoute: AuthenticatedAdminDispositionRoute,
   AuthenticatedAdminGeofencesRoute: AuthenticatedAdminGeofencesRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,

@@ -44,6 +44,7 @@ export default defineConfig({
         : {
             '/api/v1/admin/share-links':        withSig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
+            '/api/v1/admin/disposition':        withSig('http://localhost:8182'),
             '/api/v1/admin/documents':          withSig('http://localhost:8182'),
             '/api/v1/admin/settings':           withSig('http://localhost:8189'),
             // Wave 15.2 — geofence admin lives in the policy service.
