@@ -290,6 +290,14 @@ func main() {
 	rootMux.Handle("/api/v1/admin/share-links/", middleware.CorrelationHTTP(shareLinksAdminMux))
 	rootMux.Handle("/api/v1/admin/documents/", middleware.CorrelationHTTP(shareLinksAdminMux))
 
+	// GAP-4 — soft-delete trash list + restore. Same /api/v1/admin/documents
+	// prefix as share-links; the rootMux pattern routing peels off the
+	// /trash and /{id}/restore sub-paths to the right mux.
+	trashMux := http.NewServeMux()
+	handler.NewTrashHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(trashMux)
+	rootMux.Handle("GET /api/v1/admin/documents/trash", middleware.CorrelationHTTP(trashMux))
+	rootMux.Handle("POST /api/v1/admin/documents/{id}/restore", middleware.CorrelationHTTP(trashMux))
+
 	// Retention policies admin — Wave 10.
 	retentionPolicyMux := http.NewServeMux()
 	retentionPolicyHandler.Register(retentionPolicyMux)
