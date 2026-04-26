@@ -37,19 +37,178 @@ func NewHoldsHandler(svc *compliance.HoldsService, log zerolog.Logger) *HoldsHan
 	return &HoldsHandler{svc: svc, log: log}
 }
 
-// Register mounts:
+// Register mounts the compliance/holds surface. The §9.3 closure
+// (Wave 17) added /custodians, /my, /verify-chain alongside the
+// original Wave 8.2 routes.
 //
 //	POST   /api/v1/compliance/holds
 //	GET    /api/v1/compliance/holds
+//	GET    /api/v1/compliance/holds/my              (Wave 17 — custodian inbox)
 //	GET    /api/v1/compliance/holds/{id}
 //	PATCH  /api/v1/compliance/holds/{id}
 //	POST   /api/v1/compliance/holds/{id}/release
+//	GET    /api/v1/compliance/holds/{id}/custodians
+//	POST   /api/v1/compliance/holds/{id}/custodians
+//	POST   /api/v1/compliance/holds/{id}/custodians/{user_id}/acknowledge
+//	GET    /api/v1/compliance/holds/{id}/events
+//	GET    /api/v1/compliance/holds/{id}/verify-chain
 func (h *HoldsHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/compliance/holds", h.create)
 	mux.HandleFunc("GET /api/v1/compliance/holds", h.list)
+	// /my must be registered BEFORE /{id} or the path-value pattern
+	// will match "my" as an id and 400 on the UUID parse.
+	mux.HandleFunc("GET /api/v1/compliance/holds/my", h.listMy)
 	mux.HandleFunc("GET /api/v1/compliance/holds/{id}", h.get)
 	mux.HandleFunc("PATCH /api/v1/compliance/holds/{id}", h.update)
 	mux.HandleFunc("POST /api/v1/compliance/holds/{id}/release", h.release)
+	mux.HandleFunc("GET /api/v1/compliance/holds/{id}/custodians", h.listCustodians)
+	mux.HandleFunc("POST /api/v1/compliance/holds/{id}/custodians", h.addCustodians)
+	mux.HandleFunc("POST /api/v1/compliance/holds/{id}/custodians/{user_id}/acknowledge", h.acknowledgeCustodian)
+	mux.HandleFunc("GET /api/v1/compliance/holds/{id}/events", h.listEvents)
+	mux.HandleFunc("GET /api/v1/compliance/holds/{id}/verify-chain", h.verifyChain)
+}
+
+func (h *HoldsHandler) listMy(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.svc.ListMyHolds(r.Context(), tenantID, userID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"holds": rows})
+}
+
+func (h *HoldsHandler) listCustodians(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	holdID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	out, err := h.svc.ListCustodians(r.Context(), tenantID, holdID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"custodians": out})
+}
+
+func (h *HoldsHandler) addCustodians(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	holdID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	var body struct {
+		UserIDs []string `json:"user_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	parsed := make([]uuid.UUID, 0, len(body.UserIDs))
+	for _, s := range body.UserIDs {
+		u, err := uuid.Parse(s)
+		if err != nil {
+			writeErr(w, r, vdmserr.Validation("user_ids", "invalid uuid: "+s))
+			return
+		}
+		parsed = append(parsed, u)
+	}
+	out, err := h.svc.AddCustodians(r.Context(), tenantID, holdID, userID, parsed)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"custodians": out})
+}
+
+func (h *HoldsHandler) acknowledgeCustodian(w http.ResponseWriter, r *http.Request) {
+	tenantID, callerID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	holdID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	target, err := uuid.Parse(r.PathValue("user_id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("user_id", "not a uuid"))
+		return
+	}
+	// A custodian may only acknowledge for themselves. The hold owner
+	// can list custodians and chase, but never click ack on a user's
+	// behalf — ack is a sworn statement.
+	if target != callerID {
+		writeErr(w, r, vdmserr.Forbidden("custodians may only acknowledge for themselves"))
+		return
+	}
+	c, err := h.svc.AcknowledgeCustodian(r.Context(), tenantID, holdID, callerID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, c)
+}
+
+func (h *HoldsHandler) listEvents(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	holdID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	events, err := h.svc.ListEvents(r.Context(), tenantID, holdID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"events": events})
+}
+
+func (h *HoldsHandler) verifyChain(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	holdID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	res, err := h.svc.VerifyChain(r.Context(), tenantID, holdID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, res)
 }
 
 func (h *HoldsHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +445,20 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 			httpErr.Code = http.StatusInternalServerError
 			httpErr.Message = "internal error"
 		}
+	}
+	// 5xx responses get a generic "internal error" body on the wire to
+	// avoid leaking internals; without server-side logging that turns
+	// every 500 into an undebuggable mystery. Log the underlying error
+	// here so the document service log has the actual cause. 4xx is
+	// caller-fault and stays quiet.
+	if httpErr.Code >= 500 {
+		zerolog.Ctx(r.Context()).Error().
+			Err(err).
+			Str("path", r.URL.Path).
+			Str("method", r.Method).
+			Str("correlation_id", corr).
+			Int("status", httpErr.Code).
+			Msg("request failed")
 	}
 	writeJSONStatus(w, httpErr.Code, httpErr)
 }
