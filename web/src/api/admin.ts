@@ -31,6 +31,22 @@ export async function resetMFA(id: string) {
   await api.post(`/admin/users/${id}/reset-mfa`)
 }
 
+// Force the target user into the must_change_password flow on next
+// login. Used when a credential is suspected leaked or a contractor
+// rotation is needed.
+export async function forcePasswordReset(id: string) {
+  await api.post(`/admin/users/${id}/force-password-reset`)
+}
+
+// Sweep across the whole tenant: every user whose password has
+// crossed the org's password_expiry_days threshold gets flagged
+// must_change_password=true. Owner-gated server-side. Returns the
+// number of users flagged.
+export async function sweepExpiredPasswords(): Promise<{ swept: number }> {
+  const { data } = await api.post<{ swept: number }>('/admin/password-policy/sweep-expired')
+  return data
+}
+
 export async function getAuditLog(params?: Record<string, string>) {
   // Backend path is /api/v1/audit/events (see services/audit handler).
   // The axios client already prefixes /api/v1.
