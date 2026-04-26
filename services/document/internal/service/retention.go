@@ -37,12 +37,20 @@ var systemUser = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 // RetentionSweepResult is returned by SweepRetention for metrics
 // and the runbook log line.
+//
+// ADR 0036 split: archive policies still apply directly (Archived
+// counter); dispose policies *enqueue* into disposition_candidates for
+// human review (Queued counter). The legacy `Disposed` counter is gone
+// — disposition no longer happens at sweep time. The disposition
+// executor cron (see executor.go) advances Queued → Executed after
+// approval + 24h soak.
 type RetentionSweepResult struct {
 	TenantID        uuid.UUID `json:"tenant_id"`
 	PoliciesApplied int       `json:"policies_applied"`
 	Archived        int       `json:"archived"`
-	Disposed        int       `json:"disposed"`
+	Queued          int       `json:"queued"` // dispose candidates enqueued for review
 	SkippedByHold   int       `json:"skipped_by_hold"`
+	AlreadyQueued   int       `json:"already_queued"` // ON CONFLICT DO NOTHING — doc already has an open candidate
 	Errors          int       `json:"errors"`
 }
 
@@ -71,42 +79,135 @@ func (s *DocumentService) SweepRetention(ctx context.Context, tenantID uuid.UUID
 		}
 		result.PoliciesApplied++
 
-		action := model.ActionArchive
+		// ADR 0036: archive still applies directly (cheap, reversible,
+		// no destruction). Dispose enqueues into disposition_candidates
+		// for human approval — the executor cron actually shreds.
 		if p.ThenAction == "dispose" {
-			action = model.ActionDispose
+			for _, id := range ids {
+				outcome, err := s.enqueueDispositionCandidate(ctx, tenantID, p.ID, id)
+				if err != nil {
+					if isLegalHold(err) {
+						result.SkippedByHold++
+						continue
+					}
+					result.Errors++
+					s.log.Error().Err(err).Str("doc", id.String()).Msg("retention: enqueue dispose")
+					continue
+				}
+				switch outcome {
+				case enqueueOutcomeQueued:
+					result.Queued++
+				case enqueueOutcomeAlreadyQueued:
+					result.AlreadyQueued++
+				case enqueueOutcomeHeld:
+					result.SkippedByHold++
+				}
+			}
+			continue
 		}
 
+		// Archive path — kept direct.
 		for _, id := range ids {
 			_, err := s.UpdateLifecycle(
 				withSystemUser(ctx, tenantID),
 				&UpdateLifecycleInput{
 					DocumentID: id,
-					Action:     action,
+					Action:     model.ActionArchive,
 					Reason:     "retention policy " + p.Name,
 				},
 			)
 			if err != nil {
-				// Legal hold is the typical non-error rejection —
-				// UpdateLifecycle returns ErrLegalHold and the
-				// document stays in its current state. Count it
-				// separately so dashboards can track suppressed
-				// retention decisions.
 				if isLegalHold(err) {
 					result.SkippedByHold++
 					continue
 				}
 				result.Errors++
-				s.log.Error().Err(err).Str("doc", id.String()).Msg("retention: apply action")
+				s.log.Error().Err(err).Str("doc", id.String()).Msg("retention: archive")
 				continue
 			}
-			if action == model.ActionDispose {
-				result.Disposed++
-			} else {
-				result.Archived++
-			}
+			result.Archived++
 		}
 	}
 	return result, nil
+}
+
+// enqueueOutcome reports what enqueueDispositionCandidate did. Held
+// and AlreadyQueued are not errors — they're expected outcomes the
+// sweeper counts separately for the runbook log.
+type enqueueOutcome int
+
+const (
+	enqueueOutcomeQueued        enqueueOutcome = iota // new candidate row inserted
+	enqueueOutcomeAlreadyQueued                       // doc already has a queued/approved candidate
+	enqueueOutcomeHeld                                // doc is on legal hold; nothing inserted
+)
+
+// enqueueDispositionCandidate inserts a row in disposition_candidates
+// for the document, with proposed_action='dispose'. Held documents are
+// skipped explicitly (not via the UpdateLifecycle path which checks
+// holds itself). The unique partial index on (tenant_id, document_id)
+// WHERE status IN ('queued', 'approved') makes the "one open candidate
+// per doc" guarantee a DB invariant — concurrent sweeps over the same
+// row each get a clean answer (one wins, others get AlreadyQueued).
+func (s *DocumentService) enqueueDispositionCandidate(ctx context.Context, tenantID, policyID, docID uuid.UUID) (enqueueOutcome, error) {
+	var outcome enqueueOutcome
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Hold check: the dispose path doesn't go through UpdateLifecycle,
+		// so we must explicitly verify the doc isn't held. Both fast-path
+		// flag and counter — either truthy = held (per Wave 17 §9.3).
+		var held bool
+		if err := tx.QueryRow(ctx, `
+			SELECT (under_legal_hold OR hold_count > 0)
+			  FROM documents WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+		`, tenantID, docID).Scan(&held); err != nil {
+			return err
+		}
+		if held {
+			outcome = enqueueOutcomeHeld
+			return nil
+		}
+
+		// Snapshot the current version's blob id at proposal time. If a
+		// new version is uploaded between propose and execute, the
+		// candidate is auto-superseded by a future sweep so we never
+		// crypto-shred a version the user wrote *after* the policy
+		// decided this doc was disposable. NULL is allowed (the doc
+		// may have no current_version yet — rare, but possible).
+		var blobID *uuid.UUID
+		if err := tx.QueryRow(ctx, `
+			SELECT v.content_blob_id
+			  FROM documents d
+			  LEFT JOIN versions v
+			    ON v.tenant_id = d.tenant_id
+			   AND v.id = d.current_version_id
+			 WHERE d.tenant_id = $1 AND d.id = $2
+		`, tenantID, docID).Scan(&blobID); err != nil {
+			return err
+		}
+
+		// ON CONFLICT DO NOTHING relies on the partial unique index
+		// idx_disposition_candidates_active. RETURNING reports whether
+		// a row was actually inserted vs ignored.
+		var insertedID uuid.UUID
+		err := tx.QueryRow(ctx, `
+			INSERT INTO disposition_candidates (
+				tenant_id, document_id, policy_id, proposed_action, proposed_blob_id
+			) VALUES ($1, $2, $3, 'dispose', $4)
+			ON CONFLICT (tenant_id, document_id) WHERE status IN ('queued', 'approved')
+			DO NOTHING
+			RETURNING id
+		`, tenantID, docID, policyID, blobID).Scan(&insertedID)
+		if err != nil && err != pgx.ErrNoRows {
+			return err
+		}
+		if err == pgx.ErrNoRows {
+			outcome = enqueueOutcomeAlreadyQueued
+			return nil
+		}
+		outcome = enqueueOutcomeQueued
+		return nil
+	})
+	return outcome, err
 }
 
 // ---- plumbing ---------------------------------------------------
