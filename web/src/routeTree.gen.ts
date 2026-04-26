@@ -24,9 +24,11 @@ import { Route as AuthenticatedAcknowledgementsRouteImport } from './routes/_aut
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedWorkflowsInstanceIdRouteImport } from './routes/_authenticated/workflows/$instanceId'
 import { Route as AuthenticatedSettingsSignaturesRouteImport } from './routes/_authenticated/settings/signatures'
 import { Route as AuthenticatedSettingsSessionsRouteImport } from './routes/_authenticated/settings/sessions'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
+import { Route as AuthenticatedLegalHoldsMyRouteImport } from './routes/_authenticated/legal-holds/my'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -136,6 +138,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedWorkflowsInstanceIdRoute =
+  AuthenticatedWorkflowsInstanceIdRouteImport.update({
+    id: '/workflows/$instanceId',
+    path: '/workflows/$instanceId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSettingsSignaturesRoute =
   AuthenticatedSettingsSignaturesRouteImport.update({
     id: '/signatures',
@@ -153,6 +161,12 @@ const AuthenticatedSettingsNotificationsRoute =
     id: '/notifications',
     path: '/notifications',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedLegalHoldsMyRoute =
+  AuthenticatedLegalHoldsMyRouteImport.update({
+    id: '/legal-holds/my',
+    path: '/legal-holds/my',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminWorkflowsRoute =
   AuthenticatedAdminWorkflowsRouteImport.update({
@@ -368,9 +382,11 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
@@ -417,9 +433,11 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
@@ -468,9 +486,11 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/_authenticated/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/_authenticated/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
@@ -519,9 +539,11 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/legal-holds/my'
     | '/settings/notifications'
     | '/settings/sessions'
     | '/settings/signatures'
+    | '/workflows/$instanceId'
     | '/admin/'
     | '/workspaces/'
     | '/admin/platform/internal-auth'
@@ -568,9 +590,11 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/legal-holds/my'
     | '/settings/notifications'
     | '/settings/sessions'
     | '/settings/signatures'
+    | '/workflows/$instanceId'
     | '/admin'
     | '/workspaces'
     | '/admin/platform/internal-auth'
@@ -618,9 +642,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/legal-holds/my'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/sessions'
     | '/_authenticated/settings/signatures'
+    | '/_authenticated/workflows/$instanceId'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/platform/internal-auth'
@@ -748,6 +774,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/workflows/$instanceId': {
+      id: '/_authenticated/workflows/$instanceId'
+      path: '/workflows/$instanceId'
+      fullPath: '/workflows/$instanceId'
+      preLoaderRoute: typeof AuthenticatedWorkflowsInstanceIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings/signatures': {
       id: '/_authenticated/settings/signatures'
       path: '/signatures'
@@ -768,6 +801,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/legal-holds/my': {
+      id: '/_authenticated/legal-holds/my'
+      path: '/legal-holds/my'
+      fullPath: '/legal-holds/my'
+      preLoaderRoute: typeof AuthenticatedLegalHoldsMyRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
       id: '/_authenticated/admin/workflows'
@@ -1032,6 +1072,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
+  AuthenticatedLegalHoldsMyRoute: typeof AuthenticatedLegalHoldsMyRoute
+  AuthenticatedWorkflowsInstanceIdRoute: typeof AuthenticatedWorkflowsInstanceIdRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminPlatformInternalAuthRoute: typeof AuthenticatedAdminPlatformInternalAuthRoute
@@ -1075,6 +1117,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
+  AuthenticatedLegalHoldsMyRoute: AuthenticatedLegalHoldsMyRoute,
+  AuthenticatedWorkflowsInstanceIdRoute: AuthenticatedWorkflowsInstanceIdRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminPlatformInternalAuthRoute:

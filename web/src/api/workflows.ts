@@ -70,3 +70,29 @@ export async function startWorkflow(documentId: string, workflowId: string) {
   const { data } = await api.post('/workflows/instances', { document_id: documentId, workflow_id: workflowId })
   return data
 }
+
+// Wave 7 instance state surfaced on the workflow detail page.
+// `current_step` is the index into the definition's `steps` array — that's
+// how the instance detail page highlights "you are here". `temporal_run_id`
+// is opaque to the UI; surfaced only as small print for ops.
+export interface WorkflowInstance {
+  id: string
+  tenant_id: string
+  definition_id: string
+  document_id: string
+  initiated_by: string
+  status: 'running' | 'completed' | 'rejected' | 'cancelled' | string
+  current_step: number
+  temporal_run_id?: string
+  created_at: string
+  completed_at?: string | null
+}
+
+export async function getWorkflowInstance(id: string): Promise<WorkflowInstance> {
+  const { data } = await api.get<WorkflowInstance>(`/workflows/instances/${id}`)
+  return data
+}
+
+export async function cancelWorkflowInstance(id: string) {
+  await api.post(`/workflows/instances/${id}/cancel`)
+}

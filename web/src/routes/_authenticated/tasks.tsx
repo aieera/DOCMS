@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { CheckSquare, Check, X, FileText } from 'lucide-react'
+import { CheckSquare, Check, X, FileText, ExternalLink } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import { formatRelativeTime } from '@/lib/formatters'
@@ -87,6 +87,14 @@ function TasksPage() {
                 <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
                   Assigned {formatRelativeTime(task.created_at)}
                   {task.due_at && <> · due {formatRelativeTime(task.due_at)}</>}
+                  {' · '}
+                  <Link
+                    to="/workflows/$instanceId"
+                    params={{ instanceId: task.instance_id }}
+                    className="inline-flex items-center gap-0.5 text-[var(--color-primary)] hover:underline"
+                  >
+                    View workflow <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </Link>
                 </div>
               </div>
               {task.status === 'pending' && (
