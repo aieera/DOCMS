@@ -58,15 +58,18 @@ func CSRFDoubleSubmit() func(http.Handler) http.Handler {
 			}
 			c, err := r.Cookie(CSRFCookieName)
 			if err != nil || c == nil || c.Value == "" {
+				csrfRejectionsTotal.WithLabelValues("missing_cookie").Inc()
 				writeForbidden(w, r, "csrf: missing cookie")
 				return
 			}
 			header := r.Header.Get(CSRFHeaderName)
 			if header == "" {
+				csrfRejectionsTotal.WithLabelValues("missing_header").Inc()
 				writeForbidden(w, r, "csrf: missing header")
 				return
 			}
 			if subtle.ConstantTimeCompare([]byte(header), []byte(c.Value)) != 1 {
+				csrfRejectionsTotal.WithLabelValues("token_mismatch").Inc()
 				writeForbidden(w, r, "csrf: token mismatch")
 				return
 			}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/hkdf"
 )
@@ -213,13 +214,14 @@ func (l *LocalKeyManager) deriveKEK(kekID string) ([]byte, error) {
 
 // GenerateDataKey returns a random DEK and the DEK encrypted under the
 // per-tenant KEK derived from kekID.
-func (l *LocalKeyManager) GenerateDataKey(_ context.Context, kekID string) ([]byte, []byte, error) {
+func (l *LocalKeyManager) GenerateDataKey(_ context.Context, kekID string) (dek []byte, wrapped []byte, err error) {
+	defer func(start time.Time) { recordKMS("local", "generate", start, err) }(time.Now())
 	l.emitWarning()
 	kek, err := l.deriveKEK(kekID)
 	if err != nil {
 		return nil, nil, err
 	}
-	dek, err := GenerateDEK()
+	dek, err = GenerateDEK()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -227,7 +229,7 @@ func (l *LocalKeyManager) GenerateDataKey(_ context.Context, kekID string) ([]by
 	if err != nil {
 		return nil, nil, err
 	}
-	wrapped := make([]byte, 0, len(nonce)+len(ct))
+	wrapped = make([]byte, 0, len(nonce)+len(ct))
 	wrapped = append(wrapped, nonce...)
 	wrapped = append(wrapped, ct...)
 	return dek, wrapped, nil
@@ -236,7 +238,8 @@ func (l *LocalKeyManager) GenerateDataKey(_ context.Context, kekID string) ([]by
 // DecryptDataKey unwraps a DEK previously produced by GenerateDataKey
 // under the SAME kekID. Passing a different kekID fails (this is the
 // cross-tenant isolation boundary on the local manager).
-func (l *LocalKeyManager) DecryptDataKey(_ context.Context, kekID string, encryptedDEK []byte) ([]byte, error) {
+func (l *LocalKeyManager) DecryptDataKey(_ context.Context, kekID string, encryptedDEK []byte) (dek []byte, err error) {
+	defer func(start time.Time) { recordKMS("local", "decrypt", start, err) }(time.Now())
 	l.emitWarning()
 	kek, err := l.deriveKEK(kekID)
 	if err != nil {
@@ -317,6 +320,7 @@ func NewVaultKeyManager(client VaultTransitClient, keyPrefix string) (*VaultKeyM
 
 // GenerateDataKey proxies to Vault's transit/datakey/plaintext.
 func (v *VaultKeyManager) GenerateDataKey(ctx context.Context, kekID string) (plaintext, wrapped []byte, err error) {
+	defer func(start time.Time) { recordKMS("vault", "generate", start, err) }(time.Now())
 	if v.client == nil {
 		return nil, nil, ErrKMSNotConfigured
 	}
@@ -324,7 +328,8 @@ func (v *VaultKeyManager) GenerateDataKey(ctx context.Context, kekID string) (pl
 }
 
 // DecryptDataKey proxies to Vault's transit/decrypt.
-func (v *VaultKeyManager) DecryptDataKey(ctx context.Context, kekID string, wrapped []byte) ([]byte, error) {
+func (v *VaultKeyManager) DecryptDataKey(ctx context.Context, kekID string, wrapped []byte) (dek []byte, err error) {
+	defer func(start time.Time) { recordKMS("vault", "decrypt", start, err) }(time.Now())
 	if v.client == nil {
 		return nil, ErrKMSNotConfigured
 	}
@@ -400,6 +405,7 @@ func (a *AWSKMSKeyManager) keyID(kekID string) string {
 
 // GenerateDataKey proxies to kms:GenerateDataKey.
 func (a *AWSKMSKeyManager) GenerateDataKey(ctx context.Context, kekID string) (plaintext, wrapped []byte, err error) {
+	defer func(start time.Time) { recordKMS("aws", "generate", start, err) }(time.Now())
 	if a.client == nil {
 		return nil, nil, ErrKMSNotConfigured
 	}
@@ -407,7 +413,8 @@ func (a *AWSKMSKeyManager) GenerateDataKey(ctx context.Context, kekID string) (p
 }
 
 // DecryptDataKey proxies to kms:Decrypt.
-func (a *AWSKMSKeyManager) DecryptDataKey(ctx context.Context, kekID string, wrapped []byte) ([]byte, error) {
+func (a *AWSKMSKeyManager) DecryptDataKey(ctx context.Context, kekID string, wrapped []byte) (dek []byte, err error) {
+	defer func(start time.Time) { recordKMS("aws", "decrypt", start, err) }(time.Now())
 	if a.client == nil {
 		return nil, ErrKMSNotConfigured
 	}
