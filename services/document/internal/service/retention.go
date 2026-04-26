@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
 
@@ -149,6 +151,13 @@ const (
 // WHERE status IN ('queued', 'approved') makes the "one open candidate
 // per doc" guarantee a DB invariant — concurrent sweeps over the same
 // row each get a clean answer (one wins, others get AlreadyQueued).
+//
+// Notification (slice 6, ADR 0036): if this insert is the empty→non-
+// empty transition for the tenant's review queue, fan out a
+// dms.notify.disposition.review.v1 to compliance_officer + owner role
+// members. Two concurrent inserts that both observe the queue empty
+// would both notify (rare race; ADR accepts the duplicate over
+// serialising the inserts).
 func (s *DocumentService) enqueueDispositionCandidate(ctx context.Context, tenantID, policyID, docID uuid.UUID) (enqueueOutcome, error) {
 	var outcome enqueueOutcome
 	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -185,6 +194,19 @@ func (s *DocumentService) enqueueDispositionCandidate(ctx context.Context, tenan
 			return err
 		}
 
+		// Determine BEFORE the insert whether the review queue is empty —
+		// after the insert, this tenant always has at least one open
+		// candidate. The notify trigger is the empty→non-empty transition.
+		var queueWasEmpty bool
+		if err := tx.QueryRow(ctx, `
+			SELECT NOT EXISTS (
+				SELECT 1 FROM disposition_candidates
+				 WHERE tenant_id = $1 AND status IN ('queued', 'approved')
+			)
+		`, tenantID).Scan(&queueWasEmpty); err != nil {
+			return err
+		}
+
 		// ON CONFLICT DO NOTHING relies on the partial unique index
 		// idx_disposition_candidates_active. RETURNING reports whether
 		// a row was actually inserted vs ignored.
@@ -205,9 +227,70 @@ func (s *DocumentService) enqueueDispositionCandidate(ctx context.Context, tenan
 			return nil
 		}
 		outcome = enqueueOutcomeQueued
+
+		// Notify on the empty→non-empty transition only.
+		if queueWasEmpty && s.outbox != nil {
+			if err := s.notifyDispositionQueueGrew(ctx, tx, tenantID, insertedID); err != nil {
+				// A notify failure rolls back the entire enqueue tx —
+				// reviewers must hear about new destructions or the
+				// queue silently fills up. The next sweep retries.
+				return fmt.Errorf("notify reviewers: %w", err)
+			}
+		}
 		return nil
 	})
 	return outcome, err
+}
+
+// notifyDispositionQueueGrew fans a dms.notify.disposition.review.v1
+// out to compliance_officer + owner role members for the tenant. The
+// payload follows the Wave 15 DeliveryPayload shape that notification-
+// service's dms.notify.> consumer reads.
+//
+// Empty user list → no-op (a tenant with no compliance_officer and no
+// owner has no one to notify; queue continues to grow until staffed).
+func (s *DocumentService) notifyDispositionQueueGrew(ctx context.Context, tx pgx.Tx, tenantID, candidateID uuid.UUID) error {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text
+		  FROM users
+		 WHERE tenant_id = $1
+		   AND role IN ('compliance_officer', 'owner')
+		   AND deleted_at IS NULL
+	`, tenantID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var userIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		userIDs = append(userIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(userIDs) == 0 {
+		// Nobody to notify; quiet skip.
+		return nil
+	}
+	payload := map[string]any{
+		"tenant_id":     tenantID.String(),
+		"user_ids":      userIDs,
+		"type":          "disposition.review",
+		"title":         "Disposition queue needs review",
+		"body":          "One or more documents are scheduled for disposition and require compliance review before destruction.",
+		"resource_type": "disposition_candidate",
+		"resource_id":   candidateID.String(),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	evt := database.NewOutboxEvent(tenantID, "dms.notify.disposition.review.v1", "disposition_candidate", candidateID, body)
+	return s.outbox.Insert(ctx, tx, evt)
 }
 
 // ---- plumbing ---------------------------------------------------
