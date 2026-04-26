@@ -12,6 +12,40 @@ export interface DSRRequest {
   blocked_reason?: string
   created_at: string
   completed_at?: string
+  // ADR 0037 augmentations:
+  due_at?: string
+  intake_source?: 'admin' | 'public_form'
+  requester_identity_verified_at?: string
+  open_conflicts?: number
+}
+
+// ADR 0037 conflict shape — the kanban detail panel reads these.
+export interface DSRConflict {
+  id: string
+  conflict_type: 'legal_hold' | 'retention_conflict' | 'multi_tenant'
+  conflict_details: Record<string, unknown>
+  created_at: string
+  resolved_by?: string
+  resolved_at?: string
+  resolution_action: '' | 'partial_erase' | 'release_hold' | 'reject_request' | 'other'
+  resolution_notes: string
+}
+
+export async function listConflicts(requestId: string): Promise<DSRConflict[]> {
+  const { data } = await api.get<{ conflicts: DSRConflict[] }>(`/privacy/dsr/${requestId}/conflicts`)
+  return data.conflicts ?? []
+}
+
+export async function resolveConflict(
+  requestId: string,
+  conflictId: string,
+  action: 'partial_erase' | 'release_hold' | 'reject_request' | 'other',
+  notes?: string,
+) {
+  await api.post(`/privacy/dsr/${requestId}/conflicts/${conflictId}/resolve`, {
+    action,
+    notes: notes ?? '',
+  })
 }
 
 export async function listDSR(opts: { status?: string } = {}): Promise<DSRRequest[]> {

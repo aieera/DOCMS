@@ -62,6 +62,9 @@ func (h *PrivacyHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/privacy/dsr/anonymize", h.submit("anonymize", workflowAnonymize))
 	mux.HandleFunc("GET /api/v1/privacy/dsr/{id}", h.get)
 	mux.HandleFunc("GET /api/v1/privacy/dsr", h.list)
+	// ADR 0037: structured conflict surface for the kanban detail panel.
+	mux.HandleFunc("GET /api/v1/privacy/dsr/{id}/conflicts", h.listConflicts)
+	mux.HandleFunc("POST /api/v1/privacy/dsr/{id}/conflicts/{conflict_id}/resolve", h.resolveConflict)
 }
 
 type submitBody struct {
@@ -222,14 +225,27 @@ func (h *PrivacyHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("status", "invalid"))
 		return
 	}
-	sql := `SELECT id::text, request_type, subject_email, status, created_at, completed_at
-	          FROM privacy_dsr_requests WHERE tenant_id = $1`
+	// ADR 0037 augmented columns: due_at (SLA countdown for kanban),
+	// intake_source ('admin' vs 'public_form'), and the verification
+	// timestamp + open conflict count for the conflict surface. Older
+	// clients ignore the extra JSON fields.
+	sql := `SELECT r.id::text, r.request_type, r.subject_email, r.status,
+	               r.created_at, r.completed_at, r.due_at,
+	               COALESCE(r.intake_source, 'admin'),
+	               r.requester_identity_verified_at,
+	               COALESCE(r.blocked_reason, ''),
+	               (SELECT COUNT(*) FROM dsr_conflicts c
+	                 WHERE c.tenant_id = r.tenant_id
+	                   AND c.request_id = r.id
+	                   AND c.resolved_at IS NULL)::int AS open_conflicts
+	          FROM privacy_dsr_requests r
+	         WHERE r.tenant_id = $1`
 	args := []any{tenantID}
 	if status != "" {
-		sql += " AND status = $2"
+		sql += " AND r.status = $2"
 		args = append(args, status)
 	}
-	sql += " ORDER BY created_at DESC LIMIT 200"
+	sql += " ORDER BY r.created_at DESC LIMIT 200"
 
 	out := []map[string]any{}
 	err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
@@ -239,21 +255,34 @@ func (h *PrivacyHandler) list(w http.ResponseWriter, r *http.Request) {
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var id, rt, subj, st string
-			var created time.Time
-			var completed *time.Time
-			if err := rows.Scan(&id, &rt, &subj, &st, &created, &completed); err != nil {
+			var (
+				id, rt, subj, st, intakeSrc, blockedReason string
+				created, dueAt                             time.Time
+				completed, verifiedAt                      *time.Time
+				openConflicts                              int
+			)
+			if err := rows.Scan(&id, &rt, &subj, &st, &created, &completed, &dueAt,
+				&intakeSrc, &verifiedAt, &blockedReason, &openConflicts); err != nil {
 				return err
 			}
 			m := map[string]any{
-				"id":            id,
-				"request_type":  rt,
-				"subject_email": subj,
-				"status":        st,
-				"created_at":    created,
+				"id":             id,
+				"request_type":   rt,
+				"subject_email":  subj,
+				"status":         st,
+				"created_at":     created,
+				"due_at":         dueAt,
+				"intake_source":  intakeSrc,
+				"open_conflicts": openConflicts,
 			}
 			if completed != nil {
 				m["completed_at"] = completed
+			}
+			if verifiedAt != nil {
+				m["requester_identity_verified_at"] = verifiedAt
+			}
+			if blockedReason != "" {
+				m["blocked_reason"] = blockedReason
 			}
 			out = append(out, m)
 		}
@@ -266,5 +295,148 @@ func (h *PrivacyHandler) list(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusOK, out)
 }
 
+// listConflicts returns dsr_conflicts rows for the request, both
+// resolved and unresolved. The kanban detail card iterates these to
+// render the resolution panel; resolved rows stay visible as audit
+// trail.
+func (h *PrivacyHandler) listConflicts(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
+		return
+	}
+	out := []map[string]any{}
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(r.Context(), `
+			SELECT id::text, conflict_type, conflict_details,
+			       resolved_by, resolved_at, COALESCE(resolution_action, ''),
+			       COALESCE(resolution_notes, ''), created_at
+			  FROM dsr_conflicts
+			 WHERE tenant_id = $1 AND request_id = $2
+			 ORDER BY created_at ASC
+		`, tenantID, id)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var (
+				cid, ctype, action, notes string
+				details                   []byte
+				resolvedBy                *uuid.UUID
+				resolvedAt                *time.Time
+				createdAt                 time.Time
+			)
+			if err := rows.Scan(&cid, &ctype, &details, &resolvedBy, &resolvedAt,
+				&action, &notes, &createdAt); err != nil {
+				return err
+			}
+			row := map[string]any{
+				"id":                cid,
+				"conflict_type":     ctype,
+				"created_at":        createdAt,
+				"resolution_action": action,
+				"resolution_notes":  notes,
+			}
+			if len(details) > 0 {
+				var d any
+				_ = json.Unmarshal(details, &d)
+				row["conflict_details"] = d
+			}
+			if resolvedBy != nil {
+				row["resolved_by"] = resolvedBy.String()
+			}
+			if resolvedAt != nil {
+				row["resolved_at"] = resolvedAt
+			}
+			out = append(out, row)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		writeErr(w, r, vdmserr.FromPgError(err))
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"conflicts": out})
+}
+
+type resolveConflictBody struct {
+	Action string `json:"action"` // partial_erase | release_hold | reject_request | other
+	Notes  string `json:"notes"`
+}
+
+// resolveConflict stamps resolved_by + resolved_at + resolution_action
+// + resolution_notes on a single conflict row. Idempotent — second
+// call against the same row is a no-op (WHERE resolved_at IS NULL).
+//
+// Per ADR 0037 §"What we did not do", this handler does NOT itself
+// release any legal hold. resolution_action='release_hold' merely
+// records that an officer acted; the actual release goes through the
+// existing /compliance/holds/{id}/release endpoint with its own
+// audit trail and authorization. Coupling the two would create an
+// erasure-via-DSR backdoor around the hold gate.
+func (h *PrivacyHandler) resolveConflict(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	requestID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
+		return
+	}
+	conflictID, err := uuid.Parse(r.PathValue("conflict_id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("conflict_id", "invalid uuid"))
+		return
+	}
+	var body resolveConflictBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	if body.Action == "" {
+		writeErr(w, r, vdmserr.Validation("action", "required"))
+		return
+	}
+	switch body.Action {
+	case "partial_erase", "release_hold", "reject_request", "other":
+	default:
+		writeErr(w, r, vdmserr.Validation("action",
+			"must be one of partial_erase | release_hold | reject_request | other"))
+		return
+	}
+
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(r.Context(), `
+			UPDATE dsr_conflicts
+			   SET resolved_by = $1,
+			       resolved_at = now(),
+			       resolution_action = $2,
+			       resolution_notes = NULLIF($3, '')
+			 WHERE tenant_id = $4 AND id = $5 AND request_id = $6
+			   AND resolved_at IS NULL`,
+			userID, body.Action, body.Notes, tenantID, conflictID, requestID,
+		)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return vdmserr.Conflict("conflict not found or already resolved")
+		}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"ok": true, "action": body.Action})
+}
+
 // unused import guard — context is indirectly referenced via r.Context().
 var _ = context.Background
+var _ = fmt.Sprintf
