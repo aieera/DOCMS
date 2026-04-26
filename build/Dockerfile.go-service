@@ -33,8 +33,9 @@ COPY go.work go.work.sum ./
 # add it here AND to go.work.
 COPY pkg/            ./pkg/
 COPY proto/gen/go/   ./proto/gen/go/
-COPY cmd/dms-admin/  ./cmd/dms-admin/
-COPY scripts/seed/   ./scripts/seed/
+COPY cmd/dms-admin/     ./cmd/dms-admin/
+COPY cmd/dms-installer/ ./cmd/dms-installer/
+COPY scripts/seed/      ./scripts/seed/
 COPY services/       ./services/
 
 ARG SERVICE

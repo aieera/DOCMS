@@ -3287,6 +3287,32 @@
         }
       }
     },
+    "v1ShredBlobsResponse": {
+      "type": "object",
+      "properties": {
+        "shredded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "blob ids zeroed by this call"
+        },
+        "alreadyShredded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "blob ids that were already shredded"
+        },
+        "notFound": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "blob ids that did not exist for this tenant"
+        }
+      }
+    },
     "v1SignResponse": {
       "type": "object",
       "properties": {
@@ -3620,6 +3646,31 @@
         "to": {
           "type": "string",
           "format": "date-time"
+        }
+      }
+    },
+    "v1TransitionBlobsTierResponse": {
+      "type": "object",
+      "properties": {
+        "transitioned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "blob ids moved by this call"
+        },
+        "alreadyInTarget": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "blobs already in target_class"
+        },
+        "notFound": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
