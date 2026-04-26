@@ -121,6 +121,13 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	// ADR 0036 — wire storage gRPC + outbox for the disposition executor.
+	// Storage client may be nil (boot-time outage); the executor refuses
+	// to run rather than silently skipping the shred.
+	if storageClient != nil {
+		svc.SetStorageClient(storageClient)
+	}
+	svc.SetOutbox(database.NewOutboxRepository())
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
 
@@ -324,6 +331,14 @@ func main() {
 	handler.NewRetentionSweepHandler(svc, *log.Z()).Register(retentionSweepMux)
 	rootMux.Handle("POST /internal/v1/retention/sweep",
 		middleware.CorrelationHTTP(retentionSweepMux))
+
+	// ADR 0036 — internal disposition-execute endpoint for the
+	// vaultdms-disposition CronJob. Same auth (shared secret) as the
+	// retention sweep; runs hourly per tenant.
+	dispositionExecMux := http.NewServeMux()
+	handler.NewDispositionExecutorHandler(svc, *log.Z()).Register(dispositionExecMux)
+	rootMux.Handle("POST /internal/v1/disposition/execute",
+		middleware.CorrelationHTTP(dispositionExecMux))
 
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()

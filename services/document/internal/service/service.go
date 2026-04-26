@@ -56,11 +56,13 @@ type HoldsChecker interface {
 
 // DocumentService orchestrates repositories + PolicyService.
 type DocumentService struct {
-	pool   *pgxpool.Pool
-	repos  *repository.Repositories
-	policy PermissionChecker
-	holds  HoldsChecker
-	log    zerolog.Logger
+	pool    *pgxpool.Pool
+	repos   *repository.Repositories
+	policy  PermissionChecker
+	holds   HoldsChecker
+	log     zerolog.Logger
+	storage vaultdmsv1.StorageServiceClient // wired via SetStorageClient; nil disables disposition execute
+	outbox  *database.OutboxRepository       // wired via SetOutbox; required for disposition emits
 }
 
 // SetHoldsChecker wires a hold-binding checker into DocumentService.
@@ -68,6 +70,15 @@ type DocumentService struct {
 // lifecycle_state-based check only (Wave 8.2 keeps both paths so a
 // deployment without the compliance package still enforces via state).
 func (s *DocumentService) SetHoldsChecker(h HoldsChecker) { s.holds = h }
+
+// SetStorageClient wires the storage gRPC client used by the disposition
+// executor (ADR 0036). When nil, ExecuteDispositions returns an error
+// rather than silently skipping shreds.
+func (s *DocumentService) SetStorageClient(c vaultdmsv1.StorageServiceClient) { s.storage = c }
+
+// SetOutbox wires the outbox repo used by the disposition executor for
+// dms.disposition.{executed,superseded}.v1 emits.
+func (s *DocumentService) SetOutbox(o *database.OutboxRepository) { s.outbox = o }
 
 // New constructs a DocumentService. Callers wire repositories and a Policy
 // gRPC client in cmd/server/main.go.
