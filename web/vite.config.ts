@@ -42,6 +42,12 @@ export default defineConfig({
       process.env.VITE_PROXY_MODE === 'gateway' || process.env.VITE_GATEWAY_URL
         ? { '/api': withSig(process.env.VITE_GATEWAY_URL || 'http://localhost:8080') }
         : {
+            // GAP-8 — collaboration WebSocket hub. ws=true is the
+            // critical bit: vite-proxy needs explicit WS upgrade
+            // forwarding for /ws/collab. Auth runs on the upgrade
+            // request via the dms_session cookie (browser includes
+            // it automatically for same-origin WebSockets).
+            '/ws/collab':                       { target: 'ws://localhost:8083', ws: true, changeOrigin: true },
             '/api/v1/admin/share-links':        withSig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
             '/api/v1/admin/disposition':        withSig('http://localhost:8182'),

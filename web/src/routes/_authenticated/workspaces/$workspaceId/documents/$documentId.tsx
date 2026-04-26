@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import { RegionPinBadge } from '@/components/shared/RegionPinBadge'
 import { LegalHoldBadge } from '@/components/shared/LegalHoldBadge'
+import { CollabPresence } from '@/components/shared/CollabPresence'
 import { SignaturePanel } from '@/features/signatures/SignaturePanel'
 import { RedactDialog } from '@/features/redaction/RedactDialog'
 import { getVersions } from '@/api/documents'
@@ -55,6 +56,7 @@ function DocumentDetailPage() {
             <div className="flex items-center gap-2">
               <h1 className="truncate text-xl font-bold">{doc.title}</h1>
               {held && <LegalHoldBadge count={doc.hold_count} />}
+              <CollabPresence documentID={documentId} showConnectionState />
             </div>
             <p className="text-sm text-[var(--color-text-secondary)]">{doc.created_by_name} · {formatDateTime(doc.created_at)}</p>
           </div>
