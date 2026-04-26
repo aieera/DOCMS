@@ -348,6 +348,14 @@ func main() {
 	rootMux.Handle("POST /internal/v1/disposition/execute",
 		middleware.CorrelationHTTP(dispositionExecMux))
 
+	// ADR 0037 — internal DSR SLA monitor for the vaultdms-dsr-sla CronJob.
+	// Cross-tenant scan; emits per-tenant warning / breach notifications
+	// for requests within 12h of (or past) the 30-day GDPR deadline.
+	dsrSLAMux := http.NewServeMux()
+	handler.NewDSRSLAHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(dsrSLAMux)
+	rootMux.Handle("POST /internal/v1/dsr/sla-sweep",
+		middleware.CorrelationHTTP(dsrSLAMux))
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
