@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Plus, ClipboardCheck, X as XIcon } from 'lucide-react'
@@ -112,9 +112,13 @@ function CampaignRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-base font-medium text-[var(--color-text)]">
+            <Link
+              to="/admin/acknowledgements/$campaignId"
+              params={{ campaignId: campaign.id }}
+              className="truncate text-base font-medium text-[var(--color-text)] hover:underline"
+            >
               {campaign.title}
-            </h3>
+            </Link>
             <Badge variant={status}>{status}</Badge>
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">

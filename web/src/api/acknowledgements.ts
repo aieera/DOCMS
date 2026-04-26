@@ -41,6 +41,11 @@ export interface Report {
   due_at: string
 }
 
+export async function getCampaign(id: string) {
+  const { data } = await api.get<Campaign>(`/acknowledgement/campaigns/${id}`)
+  return data
+}
+
 export async function listCampaigns(status?: AcknowledgementStatus) {
   const { data } = await api.get<{ campaigns: Campaign[] }>(
     '/acknowledgement/campaigns',

@@ -58,6 +58,7 @@ import { Route as AuthenticatedAdminTenantResidencyRouteImport } from './routes/
 import { Route as AuthenticatedAdminPlatformSecurityRouteImport } from './routes/_authenticated/admin/platform/security'
 import { Route as AuthenticatedAdminPlatformSchedulesRouteImport } from './routes/_authenticated/admin/platform/schedules'
 import { Route as AuthenticatedAdminPlatformInternalAuthRouteImport } from './routes/_authenticated/admin/platform/internal-auth'
+import { Route as AuthenticatedAdminAcknowledgementsCampaignIdRouteImport } from './routes/_authenticated/admin/acknowledgements/$campaignId'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -339,6 +340,12 @@ const AuthenticatedAdminPlatformInternalAuthRoute =
     path: '/admin/platform/internal-auth',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminAcknowledgementsCampaignIdRoute =
+  AuthenticatedAdminAcknowledgementsCampaignIdRouteImport.update({
+    id: '/$campaignId',
+    path: '/$campaignId',
+    getParentRoute: () => AuthenticatedAdminAcknowledgementsRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -359,7 +366,7 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
-  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
@@ -389,6 +396,7 @@ export interface FileRoutesByFullPath {
   '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
@@ -410,7 +418,7 @@ export interface FileRoutesByTo {
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof AuthenticatedIndexRoute
-  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
@@ -440,6 +448,7 @@ export interface FileRoutesByTo {
   '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
@@ -463,7 +472,7 @@ export interface FileRoutesById {
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/_authenticated/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
@@ -493,6 +502,7 @@ export interface FileRoutesById {
   '/_authenticated/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/_authenticated/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/_authenticated/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
   '/_authenticated/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | '/workflows/$instanceId'
     | '/admin/'
     | '/workspaces/'
+    | '/admin/acknowledgements/$campaignId'
     | '/admin/platform/internal-auth'
     | '/admin/platform/schedules'
     | '/admin/platform/security'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/workflows/$instanceId'
     | '/admin'
     | '/workspaces'
+    | '/admin/acknowledgements/$campaignId'
     | '/admin/platform/internal-auth'
     | '/admin/platform/schedules'
     | '/admin/platform/security'
@@ -649,6 +661,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workflows/$instanceId'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/admin/acknowledgements/$campaignId'
     | '/_authenticated/admin/platform/internal-auth'
     | '/_authenticated/admin/platform/schedules'
     | '/_authenticated/admin/platform/security'
@@ -1012,6 +1025,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPlatformInternalAuthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/acknowledgements/$campaignId': {
+      id: '/_authenticated/admin/acknowledgements/$campaignId'
+      path: '/$campaignId'
+      fullPath: '/admin/acknowledgements/$campaignId'
+      preLoaderRoute: typeof AuthenticatedAdminAcknowledgementsCampaignIdRouteImport
+      parentRoute: typeof AuthenticatedAdminAcknowledgementsRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -1041,6 +1061,21 @@ const AuthenticatedSettingsRouteRouteWithChildren =
     AuthenticatedSettingsRouteRouteChildren,
   )
 
+interface AuthenticatedAdminAcknowledgementsRouteChildren {
+  AuthenticatedAdminAcknowledgementsCampaignIdRoute: typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
+}
+
+const AuthenticatedAdminAcknowledgementsRouteChildren: AuthenticatedAdminAcknowledgementsRouteChildren =
+  {
+    AuthenticatedAdminAcknowledgementsCampaignIdRoute:
+      AuthenticatedAdminAcknowledgementsCampaignIdRoute,
+  }
+
+const AuthenticatedAdminAcknowledgementsRouteWithChildren =
+  AuthenticatedAdminAcknowledgementsRoute._addFileChildren(
+    AuthenticatedAdminAcknowledgementsRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedAcknowledgementsRoute: typeof AuthenticatedAcknowledgementsRoute
@@ -1049,7 +1084,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedAdminAcknowledgementsRoute: typeof AuthenticatedAdminAcknowledgementsRoute
+  AuthenticatedAdminAcknowledgementsRoute: typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
@@ -1094,7 +1129,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminAcknowledgementsRoute:
-    AuthenticatedAdminAcknowledgementsRoute,
+    AuthenticatedAdminAcknowledgementsRouteWithChildren,
   AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
