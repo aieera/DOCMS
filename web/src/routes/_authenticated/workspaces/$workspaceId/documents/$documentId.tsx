@@ -1,15 +1,28 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { useDocument } from '@/hooks/useDocuments'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
+import { RegionPinBadge } from '@/components/shared/RegionPinBadge'
+import { SignaturePanel } from '@/features/signatures/SignaturePanel'
+import { getVersions } from '@/api/documents'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
 import { Download, Share, History, MessageSquare } from 'lucide-react'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
+  // Fetch versions to know the current version_id for signature
+  // requests. Backend resolves "current" if we send the latest id;
+  // an empty array means the doc has no content yet (newly created).
+  const { data: versions } = useQuery({
+    queryKey: ['document', documentId, 'versions'],
+    queryFn: () => getVersions(documentId),
+    enabled: !!doc,
+  })
+  const currentVersionID = versions?.[0]?.id ?? ''
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -33,10 +46,12 @@ function DocumentDetailPage() {
           <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Download</Button>
           <Button variant="outline" size="sm"><Share className="h-4 w-4" /> Share</Button>
         </div>
+        <SignaturePanel documentID={doc.id} versionID={currentVersionID} />
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 space-y-3">
           <h3 className="text-sm font-semibold">Details</h3>
           <div className="space-y-2 text-sm">
             <Row label="Status"><Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge></Row>
+            {doc.region_pin && <Row label="Region"><RegionPinBadge region={doc.region_pin} size="sm" /></Row>}
             <Row label="Type">{doc.document_class || 'Unclassified'}</Row>
             <Row label="Size">{formatFileSize(doc.size_bytes)}</Row>
             <Row label="Versions">{doc.version_count}</Row>
