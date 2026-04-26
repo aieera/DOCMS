@@ -257,8 +257,11 @@ func (h *PrivacyHandler) list(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var (
 				id, rt, subj, st, intakeSrc, blockedReason string
-				created, dueAt                             time.Time
-				completed, verifiedAt                      *time.Time
+				created                                    time.Time
+				// due_at is nullable on the schema — must be a pointer scan,
+				// not time.Time, or pgx panics on NULL (CLAUDE.md scanner
+				// discipline). completed_at + verifiedAt are also nullable.
+				dueAt, completed, verifiedAt               *time.Time
 				openConflicts                              int
 			)
 			if err := rows.Scan(&id, &rt, &subj, &st, &created, &completed, &dueAt,
@@ -271,9 +274,11 @@ func (h *PrivacyHandler) list(w http.ResponseWriter, r *http.Request) {
 				"subject_email":  subj,
 				"status":         st,
 				"created_at":     created,
-				"due_at":         dueAt,
 				"intake_source":  intakeSrc,
 				"open_conflicts": openConflicts,
+			}
+			if dueAt != nil {
+				m["due_at"] = dueAt
 			}
 			if completed != nil {
 				m["completed_at"] = completed
