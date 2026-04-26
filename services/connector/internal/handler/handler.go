@@ -3,12 +3,15 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
+	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
 )
 
@@ -31,6 +34,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Webhooks
 	mux.HandleFunc("POST /api/v1/webhooks", h.createWebhook)
 	mux.HandleFunc("GET /api/v1/webhooks", h.listWebhooks)
+	mux.HandleFunc("PATCH /api/v1/webhooks/{id}", h.patchWebhook)
 	mux.HandleFunc("DELETE /api/v1/webhooks/{id}", h.deleteWebhook)
 	mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", h.getDeliveryLog)
 	mux.HandleFunc("POST /api/v1/webhooks/{id}/rotate-secret", h.rotateSecret)
@@ -80,6 +84,49 @@ func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// patchWebhook applies a partial update to a subscription. The most
+// common operator need is `active` (pause a noisy webhook without
+// losing its delivery history); url + events round out the surface.
+// Secret rotation has its own atomic endpoint and is not patchable
+// here.
+type patchWebhookBody struct {
+	URL    *string   `json:"url,omitempty"`
+	Events *[]string `json:"events,omitempty"`
+	Active *bool     `json:"active,omitempty"`
+}
+
+func (h *Handler) patchWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	var body patchWebhookBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if body.URL == nil && body.Events == nil && body.Active == nil {
+		writeError(w, http.StatusBadRequest, "no patchable fields supplied")
+		return
+	}
+	wh, err := h.svc.PatchWebhook(r.Context(), tenantID, id, repository.WebhookPatch{
+		URL:    body.URL,
+		Events: body.Events,
+		Active: body.Active,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, wh)
 }
 
 func (h *Handler) deleteWebhook(w http.ResponseWriter, r *http.Request) {

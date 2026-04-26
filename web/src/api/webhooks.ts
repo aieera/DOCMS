@@ -38,6 +38,16 @@ export async function deleteWebhook(id: string): Promise<void> {
   await api.delete(`/webhooks/${id}`)
 }
 
+// Partial update. Only fields you pass are touched; the backend
+// re-validates the URL through the same SSRF guard CreateWebhook uses.
+export async function patchWebhook(
+  id: string,
+  patch: { url?: string; events?: string[]; active?: boolean },
+): Promise<Webhook> {
+  const { data } = await api.patch<Webhook>(`/webhooks/${id}`, patch)
+  return data
+}
+
 export async function rotateWebhookSecret(id: string): Promise<Webhook> {
   const { data } = await api.post<Webhook>(`/webhooks/${id}/rotate-secret`)
   return data

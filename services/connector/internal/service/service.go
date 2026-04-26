@@ -73,6 +73,21 @@ func (s *Service) DeleteWebhook(ctx context.Context, tenantID, id string) error 
 	return s.repo.DeleteWebhook(ctx, tenantID, id)
 }
 
+// PatchWebhook applies a partial update. URL changes are re-validated
+// through the same SSRF/scheme guard as CreateWebhook so an operator
+// can't pivot a subscription to an internal address after creation.
+func (s *Service) PatchWebhook(ctx context.Context, tenantID, id string, p repository.WebhookPatch) (*model.WebhookSubscription, error) {
+	if p.URL != nil {
+		if err := webhook.ValidateURL(*p.URL); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.repo.PatchWebhook(ctx, tenantID, id, p); err != nil {
+		return nil, err
+	}
+	return s.repo.GetWebhook(ctx, tenantID, id)
+}
+
 // GetDeliveryLog returns delivery history for a webhook.
 func (s *Service) GetDeliveryLog(ctx context.Context, tenantID, subID string, limit int) ([]*model.WebhookDelivery, error) {
 	return s.repo.ListDeliveries(ctx, tenantID, subID, limit)
