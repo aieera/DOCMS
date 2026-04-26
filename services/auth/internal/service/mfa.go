@@ -288,7 +288,13 @@ func (s *Service) VerifyRecoveryCode(ctx context.Context, mfaSessionToken, recov
 		if matchedHash == "" {
 			return vdmserr.ErrUnauthorized
 		}
-		return s.users.ConsumeRecoveryHash(ctx, tx, tenantID, userID, matchedHash)
+		// Purge ALL remaining codes — not just the matched one.
+		// Stronger posture: a recovery code being used means the user
+		// likely lost their TOTP device AND someone unknown may have
+		// access to the printed code sheet. Invalidating the rest forces
+		// the user to call /mfa/setup to mint fresh codes before they
+		// have any recovery path again. TOTP secret stays intact.
+		return s.users.PurgeRecoveryCodes(ctx, tx, tenantID, userID)
 	})
 	if err != nil {
 		return nil, vdmserr.ErrUnauthorized
@@ -300,11 +306,13 @@ func (s *Service) VerifyRecoveryCode(ctx context.Context, mfaSessionToken, recov
 		return nil, err
 	}
 
-	// Warn if the user is running low on codes.
-	if len(user.MFARecoveryHashes)-1 <= 2 {
-		s.log.Warn().Str("user_id", user.ID.String()).Int("remaining", len(user.MFARecoveryHashes)-1).
-			Msg("user has low recovery code count; encourage regenerate")
-	}
+	// All remaining codes were just purged (security upgrade Wave 6 ledger).
+	// Surface this on the audit trail so the user's "I logged in with a
+	// recovery code" event also shows "remaining codes invalidated" — the
+	// /mfa/setup follow-up is documented in the runbook.
+	s.log.Info().Str("user_id", user.ID.String()).
+		Int("codes_invalidated", len(user.MFARecoveryHashes)-1).
+		Msg("recovery code consumed; remaining codes purged — user must regenerate")
 	return created, nil
 }
 
