@@ -115,6 +115,27 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Get("/", h.GetTenantPlan)
 	})
 
+	// ---- Tenant residency policy (Blueprint §9.1) -------------------------
+	// GET is authenticated-only — region pickers across the app need to
+	// know the allowlist + default to render correctly. PUT is
+	// owner-gated; allowing admins to flip the policy lets a single
+	// account-takeover quietly migrate every new doc to a different
+	// jurisdiction.
+	r.Route("/api/v1/tenant/residency-policy", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Get("/", h.GetTenantResidencyPolicy)
+		r.With(h.RequireRole("owner")).Put("/", h.PutTenantResidencyPolicy)
+	})
+
+	// Per-workspace region overrides — read-only listing. Admin UI
+	// surfaces these as a table; editing is done from each workspace's
+	// settings page (document service owns those routes).
+	r.Route("/api/v1/tenant/workspace-regions", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Get("/", h.ListWorkspaceRegions)
+	})
+
 	// ---- Admin user management ------------------------------------------------
 	// Frontend calls /api/v1/admin/users/* — gated by the user's role.
 	r.Route("/api/v1/admin/users", func(r chi.Router) {

@@ -102,8 +102,10 @@ services:
       # Wave 16 — auth service exposes per-tenant config (session policy
       # + plan lookup) under /api/v1/tenant/*. Without these routes the
       # frontend's useTenantPlan + /admin/tenant/security pages 404.
-      - { name: tenant-plan,           paths: [/api/v1/tenant/plan],           strip_path: false }
-      - { name: tenant-session-policy, paths: [/api/v1/tenant/session-policy], strip_path: false }
+      - { name: tenant-plan,             paths: [/api/v1/tenant/plan],              strip_path: false }
+      - { name: tenant-session-policy,   paths: [/api/v1/tenant/session-policy],    strip_path: false }
+      - { name: tenant-residency-policy, paths: [/api/v1/tenant/residency-policy],  strip_path: false }
+      - { name: tenant-workspace-regions,paths: [/api/v1/tenant/workspace-regions], strip_path: false }
       - { name: scim,             paths: [/api/v1/scim/v2],           strip_path: false }
       - { name: api-v1-health,    paths: [/api/v1/health], methods: [GET], strip_path: true }
 
