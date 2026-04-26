@@ -1,4 +1,14 @@
+import axios from 'axios'
+
 import { api } from './client'
+
+// publicAPI is for the unauthenticated /api/v1/dsr/* endpoints. We
+// can't reuse `api` because its interceptor reads from useAuthStore
+// for X-Auth-Tenant-ID etc — for the public flow there's no session
+// and the public handler doesn't read those headers anyway. Using a
+// bare axios instance keeps the public form free of any session
+// state coupling.
+const publicAPI = axios.create({ baseURL: '/api/v1', withCredentials: false })
 
 export interface DSRRequest {
   id: string
@@ -46,6 +56,44 @@ export async function resolveConflict(
     action,
     notes: notes ?? '',
   })
+}
+
+// ---- Public (unauthenticated) DSR surface — ADR 0037 -----------------------
+
+export interface DSRIntakeBody {
+  tenant_slug: string
+  requester_email: string
+  request_type: 'access' | 'rectification' | 'erasure' | 'portability'
+  description?: string
+}
+
+export interface DSRIntakeResponse {
+  accepted: boolean
+  message: string
+  expires_at: string
+}
+
+export async function publicIntake(body: DSRIntakeBody): Promise<DSRIntakeResponse> {
+  const { data } = await publicAPI.post<DSRIntakeResponse>('/dsr/intake', body)
+  return data
+}
+
+export interface DSRPublicStatus {
+  request_type: 'export' | 'erase' | 'anonymize'
+  status: 'pending' | 'running' | 'completed' | 'blocked' | 'failed'
+  created_at: string
+  due_at: string
+  verified: boolean
+  completed_at?: string
+}
+
+export async function publicStatus(token: string): Promise<DSRPublicStatus> {
+  const { data } = await publicAPI.get<DSRPublicStatus>('/dsr/status', { params: { token } })
+  return data
+}
+
+export async function publicVerify(token: string) {
+  await publicAPI.post('/dsr/status/verify', { token })
 }
 
 export async function listDSR(opts: { status?: string } = {}): Promise<DSRRequest[]> {

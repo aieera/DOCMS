@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as DsrStatusRouteImport } from './routes/dsr-status'
+import { Route as DsrRequestRouteImport } from './routes/dsr-request'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
@@ -75,6 +77,16 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DsrStatusRoute = DsrStatusRouteImport.update({
+  id: '/dsr-status',
+  path: '/dsr-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DsrRequestRoute = DsrRequestRouteImport.update({
+  id: '/dsr-request',
+  path: '/dsr-request',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChangePasswordRoute = ChangePasswordRouteImport.update({
@@ -363,6 +375,8 @@ const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -415,6 +429,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -470,6 +486,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -526,6 +544,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -578,6 +598,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -632,6 +654,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -687,6 +711,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   ChangePasswordRoute: typeof ChangePasswordRoute
+  DsrRequestRoute: typeof DsrRequestRoute
+  DsrStatusRoute: typeof DsrStatusRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -714,6 +740,20 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dsr-status': {
+      id: '/dsr-status'
+      path: '/dsr-status'
+      fullPath: '/dsr-status'
+      preLoaderRoute: typeof DsrStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dsr-request': {
+      id: '/dsr-request'
+      path: '/dsr-request'
+      fullPath: '/dsr-request'
+      preLoaderRoute: typeof DsrRequestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/change-password': {
@@ -1200,6 +1240,8 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ChangePasswordRoute: ChangePasswordRoute,
+  DsrRequestRoute: DsrRequestRoute,
+  DsrStatusRoute: DsrStatusRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
