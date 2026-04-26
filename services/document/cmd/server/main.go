@@ -151,6 +151,7 @@ func main() {
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
 	quarantineAdminHandler := handler.NewQuarantineAdminHandler(pool, database.NewOutboxRepository(), *log.Z())
+	dispositionHandler := handler.NewDispositionHandler(pool, database.NewOutboxRepository(), *log.Z())
 
 	storageProxy := handler.NewStorageProxy(storageClient)
 
@@ -295,6 +296,13 @@ func main() {
 	quarantineAdminHandler.Register(quarantineMux)
 	rootMux.Handle("/api/v1/admin/quarantine", middleware.CorrelationHTTP(quarantineMux))
 	rootMux.Handle("/api/v1/admin/quarantine/", middleware.CorrelationHTTP(quarantineMux))
+
+	// Disposition queue (ADR 0036) — compliance review of dispose
+	// candidates the retention sweeper enqueued. Approve/reject are
+	// gated to compliance_officer | owner inside the handler.
+	dispositionMux := http.NewServeMux()
+	dispositionHandler.Register(dispositionMux)
+	rootMux.Handle("/api/v1/admin/disposition/", middleware.CorrelationHTTP(dispositionMux))
 
 	// Redaction endpoint — Wave 11.5. Uses Go 1.22 method+pattern
 	// routing so only the /redact suffix lands here; everything else
