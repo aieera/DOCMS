@@ -147,7 +147,86 @@ func (s *DocumentService) SweepRetention(ctx context.Context, tenantID uuid.UUID
 			}
 		}
 	}
+	// Slice 9: refresh the SLI gauges at the end of the sweep. A scrape
+	// failure here is non-fatal — the sweep result is the authoritative
+	// audit signal, prom is best-effort observability.
+	if cov, queue, err := s.computeRetentionMetrics(ctx, tenantID); err != nil {
+		s.log.Warn().Err(err).Str("tenant", tenantID.String()).Msg("retention metrics refresh failed")
+	} else {
+		PublishRetentionMetrics(tenantID.String(), cov, queue)
+	}
 	return result, nil
+}
+
+// computeRetentionMetrics returns the coverage ratio and the
+// disposition queue depth keyed by status. Run inside the sweep so
+// the gauge update is push-driven; pull-driven /metrics handlers
+// can't safely run a JOIN over millions of documents on every scrape.
+func (s *DocumentService) computeRetentionMetrics(ctx context.Context, tenantID uuid.UUID) (float64, map[string]int, error) {
+	var coverage float64
+	queue := map[string]int{}
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Coverage: a doc is "covered" if it matches at least one
+		// active retention policy. Today the sweeper only matches on
+		// retain_days (no document_class / tag / workspace filters yet),
+		// so the existence of any active policy = full coverage. Once
+		// the filter columns activate (see findDocsOverRetentionBudget
+		// follow-up), this query gets richer; for now the simple
+		// "any active policy = covered" is honest about what the
+		// sweeper actually does.
+		var totalActive, hasPolicy int
+		if err := tx.QueryRow(ctx, `
+			SELECT COUNT(*) FROM documents
+			 WHERE tenant_id = $1
+			   AND deleted_at IS NULL
+			   AND lifecycle_state IN ('active', 'retained')
+		`, tenantID).Scan(&totalActive); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `
+			SELECT COUNT(*) FROM retention_policies
+			 WHERE tenant_id = $1 AND is_active = true
+		`, tenantID).Scan(&hasPolicy); err != nil {
+			return err
+		}
+		if totalActive == 0 {
+			coverage = 1.0 // vacuously covered; avoid div-by-zero alarms
+		} else if hasPolicy == 0 {
+			coverage = 0.0
+		} else {
+			coverage = 1.0
+		}
+
+		// Queue depth by status — informs the disposition dashboard.
+		rows, err := tx.Query(ctx, `
+			SELECT status, COUNT(*)
+			  FROM disposition_candidates
+			 WHERE tenant_id = $1
+			 GROUP BY status
+		`, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var status string
+			var count int
+			if err := rows.Scan(&status, &count); err != nil {
+				return err
+			}
+			queue[status] = count
+		}
+		// Always publish the canonical statuses even if zero so the
+		// gauge has a stable cardinality and dashboards never see
+		// "no data" for a healthy tenant.
+		for _, st := range []string{"queued", "approved", "rejected", "executed", "superseded"} {
+			if _, ok := queue[st]; !ok {
+				queue[st] = 0
+			}
+		}
+		return rows.Err()
+	})
+	return coverage, queue, err
 }
 
 // enqueueOutcome reports what enqueueDispositionCandidate did. Held
