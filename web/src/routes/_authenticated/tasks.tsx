@@ -2,14 +2,17 @@ import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { CheckSquare, Check, X, FileText, ExternalLink } from 'lucide-react'
+import { CheckSquare, Check, X, FileText, ExternalLink, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
+import { getUsers } from '@/api/admin'
 import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Dialog } from '@/components/ui/Dialog'
+import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
 
 type Filter = 'pending' | 'completed' | 'all'
@@ -34,6 +37,25 @@ function TasksPage() {
       qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
     },
     onError: () => toast.error('Action failed'),
+  })
+
+  // Delegate is a third workflow signal outcome ('delegate') that the
+  // backend has supported since Wave 7 but the UI never surfaced. The
+  // delegate_to argument needs a user UUID; we try /admin/users first
+  // for a real picker, fall back to a freeform UUID input on 403.
+  const [delegateTarget, setDelegateTarget] = useState<WorkflowTask | null>(null)
+  const delegate = useMutation({
+    mutationFn: ({ task, delegateTo, notes }: { task: WorkflowTask; delegateTo: string; notes?: string }) =>
+      signalStep(task.instance_id, 0, 'delegate', { delegate_to: delegateTo, notes }),
+    onSuccess: () => {
+      toast.success('Task delegated')
+      qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
+      setDelegateTarget(null)
+    },
+    onError: (err: unknown) => {
+      const m = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(m ?? 'Delegate failed')
+    },
   })
 
   return (
@@ -101,15 +123,23 @@ function TasksPage() {
                 <div className="flex shrink-0 gap-2">
                   <Button
                     onClick={() => act.mutate({ task, outcome: 'approve' })}
-                    disabled={act.isPending}
+                    disabled={act.isPending || delegate.isPending}
                   >
                     <Check className="h-4 w-4" /> Approve
                   </Button>
                   <Button
                     onClick={() => act.mutate({ task, outcome: 'reject' })}
-                    disabled={act.isPending}
+                    disabled={act.isPending || delegate.isPending}
                   >
                     <X className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setDelegateTarget(task)}
+                    disabled={act.isPending || delegate.isPending}
+                    title="Hand this task off to another user"
+                  >
+                    <UserPlus className="h-4 w-4" /> Delegate
                   </Button>
                 </div>
               )}
@@ -117,7 +147,115 @@ function TasksPage() {
           ))}
         </ul>
       )}
+
+      <DelegateDialog
+        task={delegateTarget}
+        onClose={() => setDelegateTarget(null)}
+        onSubmit={(delegateTo, notes) =>
+          delegateTarget && delegate.mutate({ task: delegateTarget, delegateTo, notes })
+        }
+        submitting={delegate.isPending}
+      />
     </div>
+  )
+}
+
+function DelegateDialog({
+  task,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  task: WorkflowTask | null
+  onClose: () => void
+  onSubmit: (delegateTo: string, notes?: string) => void
+  submitting: boolean
+}) {
+  const open = task !== null
+  const [delegateTo, setDelegateTo] = useState('')
+  const [notes, setNotes] = useState('')
+  // Try the admin user list. 403 is fine — non-admin assignees fall
+  // back to the freeform input. We don't surface the error.
+  const { data: users } = useQuery({
+    queryKey: ['admin-users-for-delegate'],
+    queryFn: () => getUsers().catch(() => null),
+    enabled: open,
+    retry: false,
+  })
+
+  if (!task) return null
+
+  const userList = users?.items ?? []
+  const submit = () => {
+    if (delegateTo.trim()) onSubmit(delegateTo.trim(), notes.trim() || undefined)
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          onClose()
+          setDelegateTo('')
+          setNotes('')
+        }
+      }}
+      title="Delegate task"
+      size="md"
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          Hand <strong>{task.step_name}</strong> off to another user. They'll get the task in
+          their inbox; the audit trail records you as the delegator.
+        </p>
+        {userList.length > 0 ? (
+          <div>
+            <label className="mb-1 block text-xs font-medium">Assignee</label>
+            <select
+              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+              value={delegateTo}
+              onChange={(e) => setDelegateTo(e.target.value)}
+              data-testid="delegate-assignee"
+            >
+              <option value="">Select a user…</option>
+              {userList.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.display_name} · {u.email}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <Input
+            label="Assignee user UUID"
+            placeholder="11111111-1111-…"
+            value={delegateTo}
+            onChange={(e) => setDelegateTo(e.target.value)}
+            data-testid="delegate-assignee"
+          />
+        )}
+        <Input
+          label="Notes (optional)"
+          placeholder="Why you're delegating"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!delegateTo.trim() || submitting}
+            loading={submitting}
+            onClick={submit}
+            data-testid="delegate-submit"
+          >
+            Delegate
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 
