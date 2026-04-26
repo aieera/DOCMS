@@ -47,6 +47,13 @@ type DiscoveryExportInput struct {
 	CaseName       string      `json:"case_name"`
 	CustodianEmail string      `json:"custodian_email"`
 	DocumentIDs    []uuid.UUID `json:"document_ids"`
+	// ADR 0038: optional matter context. When set, the EDRM
+	// manifest's UserDefinedFields carry these instead of the
+	// legacy CaseID/CaseName free strings. Empty values fall back
+	// to the legacy fields so existing callers keep working.
+	MatterNumber string `json:"matter_number,omitempty"`
+	MatterName   string `json:"matter_name,omitempty"`
+	ExportID     string `json:"export_id,omitempty"`
 }
 
 type DiscoveryManifest struct {
@@ -119,7 +126,13 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 		ExportedAt:     time.Now().UTC(),
 		Documents:      items,
 	}
-	if err := writeDiscoveryZip(w, manifest); err != nil {
+	edrmOpts := EDRMOptions{
+		MatterNumber:   firstNonEmpty(in.MatterNumber, in.CaseID),
+		MatterName:     firstNonEmpty(in.MatterName, in.CaseName),
+		ExportID:       in.ExportID,
+		CustodianEmail: in.CustodianEmail,
+	}
+	if err := writeDiscoveryZip(w, manifest, edrmOpts); err != nil {
 		return nil, fmt.Errorf("ediscovery: write zip: %w", err)
 	}
 
@@ -148,7 +161,7 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 
 // ---- internal helpers -------------------------------------------
 
-func writeDiscoveryZip(w io.Writer, manifest *DiscoveryManifest) error {
+func writeDiscoveryZip(w io.Writer, manifest *DiscoveryManifest, edrm EDRMOptions) error {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
@@ -167,6 +180,18 @@ func writeDiscoveryZip(w io.Writer, manifest *DiscoveryManifest) error {
 		return err
 	}
 
+	// ADR 0038: ship EDRM XML alongside the JSON manifest. Discovery
+	// vendors that already consume manifest.json keep working; vendors
+	// that need EDRM (Relativity, Concordance, Nuix) get it without
+	// hand-translation.
+	edrmBytes, err := RenderEDRM(manifest, edrm)
+	if err != nil {
+		return fmt.Errorf("render edrm: %w", err)
+	}
+	if err := writeZipEntry(zw, "manifest.xml", edrmBytes); err != nil {
+		return err
+	}
+
 	// Per-doc metadata blob — same information as the manifest item
 	// but one-file-per-doc so an auditor can extract a single record.
 	for _, it := range manifest.Documents {
@@ -176,6 +201,16 @@ func writeDiscoveryZip(w io.Writer, manifest *DiscoveryManifest) error {
 		}
 	}
 	return nil
+}
+
+// firstNonEmpty returns the first non-empty string. Used to fall back
+// from the new matter_number / matter_name fields to the legacy
+// case_id / case_name when the caller hasn't migrated.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func writeZipEntry(zw *zip.Writer, name string, data []byte) error {
