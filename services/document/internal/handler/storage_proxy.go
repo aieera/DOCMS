@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 )
@@ -84,6 +85,16 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := p.outbound(r)
 	defer cancel()
+	// Storage's OPA permission check needs at least one of
+	// (X-Document-ID, X-Folder-ID, X-Workspace-ID) on the gRPC metadata.
+	// The frontend posts folder_id / workspace_id in the JSON body; lift
+	// them into outgoing metadata so the rule has something to evaluate.
+	if in.FolderID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-folder-id", in.FolderID)
+	}
+	if in.WorkspaceID != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-workspace-id", in.WorkspaceID)
+	}
 	checksum := in.ChecksumSHA256
 	if checksum == "" {
 		checksum = in.SHA256Hash
@@ -179,10 +190,19 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 func (p *StorageProxy) outbound(r *http.Request) (context.Context, context.CancelFunc) {
 	tenantID := r.Header.Get(middleware.TenantHeader)
 	userID := r.Header.Get(userIDHeader)
-	md := metadata.Pairs(
+	userRole := r.Header.Get("X-User-Role")
+	pairs := []string{
 		middleware.TenantMetadataKey, tenantID,
 		"x-user-id", userID,
-	)
+	}
+	// Forward role so storage's OPA check sees it. Without this the
+	// admin-bypass rule (input.context.user_role == "admin") never
+	// fires and every upload requires an explicit permission grant
+	// on the target folder. CLAUDE.md cross-service auth section.
+	if userRole != "" {
+		pairs = append(pairs, "x-user-role", userRole)
+	}
+	md := metadata.Pairs(pairs...)
 	ctx, cancel := context.WithTimeout(r.Context(), proxyRPCBudget)
 	return metadata.NewOutgoingContext(ctx, md), cancel
 }
@@ -206,22 +226,74 @@ func writeProxyJSON(w http.ResponseWriter, s int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// writeGRPCErr translates a gRPC status error into a JSON HTTP response.
+//
+// Domain errors produced by pkg/errors encode a JSON envelope
+// ({type, message, details}) inside the gRPC status message; we unpack
+// that here so MIME_MISMATCH / PAYLOAD_TOO_LARGE / UNAVAILABLE etc.
+// reach the browser with the right HTTP status code AND the structured
+// body the uploader reads (declared_mime, detected_mime, …).
+//
+// Plain gRPC errors from outside the pkg/errors helpers fall through to
+// the code-string mapping below.
 func writeGRPCErr(w http.ResponseWriter, r *http.Request, err error) {
 	st, _ := status.FromError(err)
-	code := grpcToHTTP(st.Code().String())
-	writeProxyJSON(w, code, map[string]any{
+	corr := auth.GetCorrelationID(r.Context())
+
+	if wire, ok := vdmserr.DecodeWire(st.Message()); ok {
+		writeProxyJSON(w, httpStatusForWireType(wire.Type, st.Code().String()), map[string]any{
+			"type":           wire.Type,
+			"message":        wire.Message,
+			"field":          wire.Field,
+			"details":        wire.Details,
+			"correlation_id": corr,
+		})
+		return
+	}
+
+	writeProxyJSON(w, grpcToHTTP(st.Code().String()), map[string]any{
 		"type":           st.Code().String(),
 		"message":        st.Message(),
-		"correlation_id": auth.GetCorrelationID(r.Context()),
+		"correlation_id": corr,
 	})
+}
+
+// httpStatusForWireType maps the domain error Code to an HTTP status.
+// Kept in sync with pkg/errors/ToHTTPError — duplicating the mapping
+// here avoids a dependency on HTTPError's construction just for the code.
+func httpStatusForWireType(wireType, grpcCode string) int {
+	switch wireType {
+	case "MIME_MISMATCH", "CONFLICT", "LEGAL_HOLD", "ALREADY_EXISTS":
+		return http.StatusConflict
+	case "PAYLOAD_TOO_LARGE":
+		return http.StatusRequestEntityTooLarge
+	case "UNAVAILABLE":
+		return http.StatusServiceUnavailable
+	case "INVALID_ARGUMENT", "REGION_VIOLATION":
+		return http.StatusBadRequest
+	case "NOT_FOUND":
+		return http.StatusNotFound
+	case "FORBIDDEN":
+		return http.StatusForbidden
+	case "UNAUTHORIZED":
+		return http.StatusUnauthorized
+	case "RATE_LIMITED":
+		return http.StatusTooManyRequests
+	}
+	return grpcToHTTP(grpcCode)
 }
 
 func grpcToHTTP(code string) int {
 	switch code {
 	case "OK":
 		return http.StatusOK
-	case "InvalidArgument", "FailedPrecondition":
+	case "InvalidArgument":
 		return http.StatusBadRequest
+	case "FailedPrecondition":
+		// gRPC FailedPrecondition is the semantic analogue of HTTP 409.
+		// Previously mapped to 400 which was wrong for Conflict-kind
+		// errors; callers that need a 400 surface it via InvalidArgument.
+		return http.StatusConflict
 	case "NotFound":
 		return http.StatusNotFound
 	case "AlreadyExists":

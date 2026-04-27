@@ -35,9 +35,6 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if in.FolderID == uuid.Nil {
 		return nil, errInvalidInput("folder_id", "required")
 	}
-	if in.RegionPin == "" {
-		in.RegionPin = "us-east-1"
-	}
 
 	if err := s.requirePermission(ctx, userID, "edit", "folder", in.FolderID, map[string]any{
 		"workspace_id": in.WorkspaceID.String(),
@@ -70,6 +67,18 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	}
 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Resolve the final region inside the tx so allowed_regions is
+		// read under the same RLS context that the document INSERT
+		// will use. The resolver also emits dms.residency.violation.v1
+		// on rejection — keeping it inside the tx means the violation
+		// row lands only on successful commit-of-rollback-of-doc, same
+		// as any other audit event.
+		resolved, err := s.resolveRegionForCreate(ctx, tx, tenantID, userID, in.WorkspaceID, in.RegionPin)
+		if err != nil {
+			return err
+		}
+		doc.RegionPin = resolved
+
 		// Validate metadata against tenant schema.
 		schemaJSON, err := s.repos.MetadataSchema.Get(ctx, tx, tenantID)
 		if err != nil {

@@ -31,10 +31,38 @@ export async function resetMFA(id: string) {
   await api.post(`/admin/users/${id}/reset-mfa`)
 }
 
+// Force the target user into the must_change_password flow on next
+// login. Used when a credential is suspected leaked or a contractor
+// rotation is needed.
+export async function forcePasswordReset(id: string) {
+  await api.post(`/admin/users/${id}/force-password-reset`)
+}
+
+// Sweep across the whole tenant: every user whose password has
+// crossed the org's password_expiry_days threshold gets flagged
+// must_change_password=true. Owner-gated server-side. Returns the
+// number of users flagged.
+export async function sweepExpiredPasswords(): Promise<{ swept: number }> {
+  const { data } = await api.post<{ swept: number }>('/admin/password-policy/sweep-expired')
+  return data
+}
+
 export async function getAuditLog(params?: Record<string, string>) {
   // Backend path is /api/v1/audit/events (see services/audit handler).
   // The axios client already prefixes /api/v1.
   const { data } = await api.get('/audit/events', { params })
+  return data
+}
+
+export interface AuditIntegrityResult {
+  ok: boolean
+  verified_count: number
+  broken_at?: string // event id where the chain breaks, if any
+  message?: string
+}
+
+export async function verifyAuditIntegrity() {
+  const { data } = await api.post<AuditIntegrityResult>('/audit/verify-integrity')
   return data
 }
 
@@ -48,6 +76,32 @@ export async function exportAuditCSV(params?: Record<string, string>) {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+// eDiscovery export — streams a signed ZIP bundling docs by id.
+// The backend (services/document/internal/handler/ediscovery_handler.go)
+// is compliance-officer / admin / owner gated. Filename is set by
+// the server's Content-Disposition; we just pull it off the response
+// header so the saved file matches what audit logged.
+export async function exportEDiscovery(input: {
+  case_id: string
+  case_name: string
+  custodian_email: string
+  document_ids: string[]
+}): Promise<{ filename: string }> {
+  const resp = await api.post('/admin/ediscovery/export', input, { responseType: 'blob' })
+  const dispo = (resp.headers['content-disposition'] || resp.headers['Content-Disposition']) as string | undefined
+  const match = dispo?.match(/filename="([^"]+)"/)
+  const filename = match?.[1] ?? `ediscovery-${input.case_id}.zip`
+  const url = URL.createObjectURL(resp.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+  return { filename }
 }
 
 export async function getTenantSettings() {

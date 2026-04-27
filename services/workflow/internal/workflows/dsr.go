@@ -188,15 +188,40 @@ func mutateWorkflow(ctx workflow.Context, in DSRInput, mode string) (*DSROutcome
 	if held {
 		out.Status = "blocked"
 		out.BlockedReason = "subject has documents under active legal hold"
+
+		// ADR 0037: in addition to the free-text blocked_reason, write
+		// structured dsr_conflicts rows — one per active hold — so the
+		// compliance UI can iterate them and resolve each independently
+		// ('release matter A, keep matter B → partial erase'). A
+		// failure to fetch the detail is non-fatal; the request still
+		// blocks via blocked_reason and the next operator visit can
+		// re-derive conflicts from the hold tables.
+		var holds []activities.HeldHoldDetail
+		if err := workflow.ExecuteActivity(ctx, "SubjectHeldDocumentsDetail",
+			in.TenantID, subjectID,
+		).Get(ctx, &holds); err == nil {
+			for _, h := range holds {
+				_ = workflow.ExecuteActivity(ctx, "RecordDSRConflict",
+					in.TenantID, in.RequestID, "legal_hold",
+					map[string]any{
+						"hold_id":        h.HoldID,
+						"matter_name":    h.MatterName,
+						"document_count": h.DocumentCount,
+						"subject_id":     subjectID,
+					},
+				).Get(ctx, nil)
+			}
+		}
+
 		_ = writeLedger(ctx, in, "hold_block", "blocked",
-			map[string]any{"subject_id": subjectID})
+			map[string]any{"subject_id": subjectID, "hold_count": len(holds)})
 		_ = updateRequest(ctx, in, "blocked", out.BlockedReason,
-			map[string]any{"subject_id": subjectID}, "", nil)
+			map[string]any{"subject_id": subjectID, "hold_count": len(holds)}, "", nil)
 		_ = workflow.ExecuteActivity(ctx, "EmitDSREvent",
 			in.TenantID, in.RequestID, in.SubjectEmail, SubjectDSRBlocked,
-			map[string]any{"type": mode, "subject_id": subjectID, "reason": out.BlockedReason},
+			map[string]any{"type": mode, "subject_id": subjectID, "reason": out.BlockedReason, "hold_count": len(holds)},
 		).Get(ctx, nil)
-		logger.Info("dsr blocked by legal hold", "subject_id", subjectID)
+		logger.Info("dsr blocked by legal hold", "subject_id", subjectID, "hold_count", len(holds))
 		return out, nil
 	}
 

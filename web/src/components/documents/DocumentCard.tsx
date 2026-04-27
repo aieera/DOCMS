@@ -1,6 +1,7 @@
 import type { Document } from '@/types/api'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
+import { RegionPinBadge } from '@/components/shared/RegionPinBadge'
 import { formatFileSize, formatRelativeTime } from '@/lib/formatters'
 import { isPreviewable } from '@/lib/preview'
 import { Link } from '@tanstack/react-router'
@@ -37,6 +38,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
       </div>
       <div className="flex items-center justify-between gap-2">
         <Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge>
+        {doc.region_pin && <RegionPinBadge region={doc.region_pin} size="sm" />}
         {generating && (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
             Generating preview…

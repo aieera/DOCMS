@@ -62,7 +62,8 @@ func (h *RetentionSweepHandler) sweep(w http.ResponseWriter, r *http.Request) {
 		Str("tenant", tenantID.String()).
 		Int("policies_applied", result.PoliciesApplied).
 		Int("archived", result.Archived).
-		Int("disposed", result.Disposed).
+		Int("queued", result.Queued).
+		Int("already_queued", result.AlreadyQueued).
 		Int("skipped_by_hold", result.SkippedByHold).
 		Int("errors", result.Errors).
 		Msg("retention sweep complete")

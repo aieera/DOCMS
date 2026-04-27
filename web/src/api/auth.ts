@@ -44,6 +44,18 @@ export async function verifyMFA(mfaSessionToken: string, totpCode: string) {
   return data
 }
 
+// GAP-3: Public forgot-password entry. Always 202 with a generic
+// message regardless of whether the email matches a real user — the
+// no-oracle defense means the UI shouldn't surface backend distinctions
+// either. Errors are swallowed by the api client at this layer.
+export async function forgotPassword(tenantSlug: string, email: string) {
+  const { data } = await api.post<{ accepted: boolean; message: string }>(
+    '/auth/forgot-password',
+    { tenant_slug: tenantSlug, email },
+  )
+  return data
+}
+
 export async function recoverMFA(mfaSessionToken: string, recoveryCode: string) {
   const { data } = await api.post<{ user: User; expires_at?: string }>('/auth/mfa/recovery', {
     mfa_session_token: mfaSessionToken,

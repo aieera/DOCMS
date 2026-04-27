@@ -108,6 +108,33 @@ func (s *S3Client) GetObject(ctx context.Context, bucket, key string) (io.ReadCl
 	return obj, nil
 }
 
+// SetStorageClass moves an object to a different S3 storage class
+// (e.g. STANDARD → STANDARD_IA → GLACIER) by issuing a server-side
+// CopyObject onto itself with x-amz-storage-class set on the
+// destination. This is the AWS-canonical way to transition existing
+// objects without re-uploading. MinIO mirrors the API but treats the
+// class as metadata only — the bytes don't move tiers locally, which
+// is acceptable for dev/test (audit trail still records the
+// transition; bill-impact only matters in production AWS).
+//
+// Returns nil if the object is already in the target class.
+func (s *S3Client) SetStorageClass(ctx context.Context, bucket, key, storageClass string) error {
+	src := minio.CopySrcOptions{Bucket: bucket, Object: key}
+	dst := minio.CopyDestOptions{
+		Bucket:       bucket,
+		Object:       key,
+		UserMetadata: map[string]string{"x-amz-storage-class": storageClass},
+		// x-amz-metadata-directive: REPLACE so the new storage class
+		// takes effect; without it AWS preserves the source object's
+		// metadata including its current storage class.
+		ReplaceMetadata: true,
+	}
+	if _, err := s.c.CopyObject(ctx, dst, src); err != nil {
+		return fmt.Errorf("set storage class %s on %s/%s: %w", storageClass, bucket, key, err)
+	}
+	return nil
+}
+
 // DeleteObject removes an object. A missing object is not an error.
 func (s *S3Client) DeleteObject(ctx context.Context, bucket, key string) error {
 	if err := s.c.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil {

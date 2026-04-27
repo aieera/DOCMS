@@ -1,14 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Webhook, Copy, Trash2, RefreshCw, Send, ChevronDown, ChevronRight } from 'lucide-react'
+import { Webhook, Copy, Trash2, RefreshCw, Send, ChevronDown, ChevronRight, Pencil, Pause, Play } from 'lucide-react'
 
 import {
   createWebhook,
   deleteWebhook,
   listDeliveries,
   listWebhooks,
+  patchWebhook,
   redeliverDelivery,
   rotateWebhookSecret,
   type Webhook as WebhookT,
@@ -17,6 +18,8 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Dialog } from '@/components/ui/Dialog'
+import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
 
@@ -40,6 +43,21 @@ function WebhooksPage() {
   const [events, setEvents] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [newSecret, setNewSecret] = useState<{ id: string; secret: string } | null>(null)
+  const [editing, setEditing] = useState<WebhookT | null>(null)
+
+  const patch = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: { url?: string; events?: string[]; active?: boolean } }) =>
+      patchWebhook(id, body),
+    onSuccess: () => {
+      toast.success('Webhook updated')
+      qc.invalidateQueries({ queryKey: ['webhooks'] })
+      setEditing(null)
+    },
+    onError: (err: unknown) => {
+      const anyErr = err as { response?: { data?: { error?: string } }; message?: string }
+      toast.error(anyErr?.response?.data?.error ?? anyErr?.message ?? 'Update failed')
+    },
+  })
 
   const create = useMutation({
     mutationFn: () => createWebhook({ url, events }),
@@ -135,6 +153,13 @@ function WebhooksPage() {
           description="Subscribe to events to receive real-time HTTP callbacks."
         />
       ) : (
+        <>
+        <EditWebhookDialog
+          webhook={editing}
+          onClose={() => setEditing(null)}
+          onSubmit={(body) => editing && patch.mutate({ id: editing.id, body })}
+          submitting={patch.isPending}
+        />
         <ul className="space-y-2">
           {data.map((wh) => (
             <WebhookRow
@@ -143,16 +168,96 @@ function WebhooksPage() {
               expanded={expanded === wh.id}
               onToggle={() => setExpanded(expanded === wh.id ? null : wh.id)}
               onRotate={() => rotate.mutate(wh.id)}
+              onToggleActive={() => patch.mutate({ id: wh.id, body: { active: !wh.active } })}
+              onEdit={() => setEditing(wh)}
               onDelete={() => {
                 if (window.confirm(`Delete webhook ${wh.url}?`)) remove.mutate(wh.id)
               }}
               rotating={rotate.isPending}
+              patching={patch.isPending}
               deleting={remove.isPending}
             />
           ))}
         </ul>
+        </>
       )}
     </div>
+  )
+}
+
+function EditWebhookDialog({
+  webhook,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  webhook: WebhookT | null
+  onClose: () => void
+  onSubmit: (body: { url?: string; events?: string[] }) => void
+  submitting: boolean
+}) {
+  const [url, setUrl] = useState('')
+  const [events, setEvents] = useState<string[]>([])
+  const open = webhook !== null
+  // Re-seed local state each time a different webhook is opened. Using
+  // `webhook?.id` as the dependency avoids fighting React Query when
+  // a refetch returns a new object identity for the same row.
+  useEffect(() => {
+    if (webhook) {
+      setUrl(webhook.url)
+      setEvents(webhook.events)
+    }
+  }, [webhook?.id])
+
+  if (!webhook) return null
+
+  // Only send fields that actually changed; an empty events array would
+  // otherwise unsubscribe the webhook from everything in one click.
+  const submit = () => {
+    const body: { url?: string; events?: string[] } = {}
+    if (url !== webhook.url) body.url = url
+    if (
+      events.length !== webhook.events.length ||
+      events.some((e) => !webhook.events.includes(e))
+    ) {
+      body.events = events
+    }
+    if (Object.keys(body).length === 0) {
+      toast('No changes to save', { icon: 'ℹ️' })
+      return
+    }
+    onSubmit(body)
+  }
+
+  const toggle = (e: string) =>
+    setEvents((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]))
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()} title="Edit webhook" size="md">
+      <div className="space-y-3">
+        <Input label="URL" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <div>
+          <label className="mb-1 block text-xs font-medium">Events</label>
+          <div className="flex flex-wrap gap-2">
+            {EVENT_PRESETS.map((e) => (
+              <label key={e} className="flex items-center gap-1 text-xs">
+                <input type="checkbox" checked={events.includes(e)} onChange={() => toggle(e)} />
+                <span>{e}</span>
+              </label>
+            ))}
+          </div>
+          {events.length === 0 && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Saving with zero events will unsubscribe the webhook from every topic.
+            </p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-3">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" loading={submitting} onClick={submit}>Save changes</Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 
@@ -161,16 +266,22 @@ function WebhookRow({
   expanded,
   onToggle,
   onRotate,
+  onToggleActive,
+  onEdit,
   onDelete,
   rotating,
+  patching,
   deleting,
 }: {
   wh: WebhookT
   expanded: boolean
   onToggle: () => void
   onRotate: () => void
+  onToggleActive: () => void
+  onEdit: () => void
   onDelete: () => void
   rotating: boolean
+  patching: boolean
   deleting: boolean
 }) {
   return (
@@ -198,6 +309,17 @@ function WebhookRow({
           </div>
         </button>
         <div className="flex shrink-0 gap-2">
+          <Button
+            onClick={onToggleActive}
+            disabled={patching}
+            title={wh.active ? 'Pause deliveries — config and history are preserved' : 'Resume deliveries'}
+          >
+            {wh.active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {wh.active ? 'Pause' : 'Resume'}
+          </Button>
+          <Button onClick={onEdit} disabled={patching}>
+            <Pencil className="h-4 w-4" /> Edit
+          </Button>
           <Button onClick={onRotate} disabled={rotating}>
             <RefreshCw className="h-4 w-4" /> Rotate
           </Button>

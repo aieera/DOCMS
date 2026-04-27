@@ -7,7 +7,23 @@ import (
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/services/auth/internal/service"
 )
+
+// clientIP pulls the best-available client IP from the request.
+// Prefers the first X-Forwarded-For hop when present (set by the
+// gateway's trusted-proxy middleware; see pkg/trustedproxy). Falls back
+// to RemoteAddr. net.SplitHostPort trimming happens downstream in
+// IPBindingCIDR.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return r.RemoteAddr
+}
 
 // AuthMiddleware validates a session token OR API key and populates the
 // request context with UserInfo. This is the single middleware every other
@@ -47,17 +63,26 @@ func (h *Handler) AuthMiddleware(next http.Handler) http.Handler {
 				Role: "api_key",
 			}
 		} else {
-			cached, err := h.svc.ValidateSession(ctx, token)
+			res, err := h.svc.ValidateSessionWithBinding(ctx, token, service.ValidationRequest{
+				IP:        clientIP(r),
+				UserAgent: r.UserAgent(),
+			})
 			if err != nil {
 				h.writeError(w, r, err)
 				return
 			}
+			cached := res.Session
 			userInfo = auth.UserInfo{
 				ID:       cached.UserID,
 				TenantID: cached.TenantID,
 				Email:    cached.Email,
 				Role:     string(cached.Role),
 				Groups:   cached.Groups,
+			}
+			if res.BindingWarning {
+				// Client-visible heads-up for the "warn" strictness tier.
+				// Frontend renders a banner and can prompt re-auth.
+				w.Header().Set("X-Session-Warning", "binding-mismatch")
 			}
 		}
 

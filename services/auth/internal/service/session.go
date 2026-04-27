@@ -25,8 +25,9 @@ type CreatedSession struct {
 }
 
 // createSessionInTx writes a session row + primes the Redis cache, inside
-// the caller's TX. The concurrent-session limit is enforced here by
-// revoking the oldest session when N > 5.
+// the caller's TX. Enforces the tenant's concurrent-session limit: when
+// N > limit after insert, the oldest session is revoked and a
+// session.evicted audit event is appended to the same outbox tx.
 func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.User, ip, ua string) (*CreatedSession, error) {
 	plaintext, err := randomToken(32) // 256 bits → 64 hex chars
 	if err != nil {
@@ -38,6 +39,10 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 		return nil, err
 	}
 	now := s.clock()
+	// Per-tenant config; cheap DB read, but we're already in a tenant tx
+	// so this could be inlined in a single query later if profiling
+	// shows it matters.
+	cfg := s.LoadSessionConfig(ctx, user.TenantID)
 	session := &model.Session{
 		ID:             id,
 		TenantID:       user.TenantID,
@@ -45,7 +50,7 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 		TokenHash:      tokenHash,
 		IPAddress:      ip,
 		UserAgent:      ua,
-		ExpiresAt:      now.Add(SessionTTL),
+		ExpiresAt:      now.Add(cfg.TTL),
 		LastActivityAt: now,
 		CreatedAt:      now,
 	}
@@ -53,13 +58,24 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 		return nil, err
 	}
 
-	// Enforce concurrent session limit (N > limit → revoke oldest).
+	// Enforce concurrent session limit (N > limit → revoke oldest +
+	// emit session.evicted). The audit event fires once per eviction so
+	// a user who's been logging in aggressively has a clear trail.
 	n, err := s.sessions.CountActiveForUser(ctx, tx, user.TenantID, user.ID)
 	if err != nil {
 		return nil, err
 	}
-	for i := n; i > ConcurrentSessionLimit; i-- {
+	for i := n; i > cfg.ConcurrentLimit; i-- {
 		if err := s.sessions.DeleteOldestForUser(ctx, tx, user.TenantID, user.ID); err != nil {
+			return nil, err
+		}
+		if err := s.emitAuth(ctx, tx, user.TenantID, user.ID,
+			"dms.auth.session.evicted.v1", map[string]any{
+				"user_id":         user.ID.String(),
+				"reason":          "concurrent_limit",
+				"concurrent_cap":  cfg.ConcurrentLimit,
+				"evicted_at":      now.UTC().Format(time.RFC3339),
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -77,28 +93,82 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 	return &CreatedSession{Token: plaintext, Session: session, UserView: user.ToPublic()}, nil
 }
 
-// ValidateSession is the hot path that every other service hits via its
-// session-validation middleware. Order of operations:
-//   1. hash the presented token
-//   2. Redis GET session:{hash} — if present, return immediately
-//   3. on Redis miss, fall through to Postgres via sessions table
-//   4. if found and within SessionSlidingThreshold of expiry, extend
-//   5. if absolute lifetime exceeded, reject
-//
-// Returns a CachedSession populated from whichever source served the read.
+// ValidationRequest carries the request context bits ValidateSession
+// needs beyond the raw token. Empty IP / UA are tolerated (legacy
+// sessions and internal service-to-service callers may not populate
+// them) — BindingMatches treats unknown sides as "match" so the check
+// never spuriously revokes.
+type ValidationRequest struct {
+	IP        string
+	UserAgent string
+}
+
+// ValidationResult bundles the cached session plus a binding outcome
+// flag. Callers render the flag as X-Session-Warning in `warn` mode or
+// bubble up the 401 in `enforce` mode (ValidateSessionWithBinding
+// returns the error already for `enforce`).
+type ValidationResult struct {
+	Session        *model.CachedSession
+	BindingWarning bool
+}
+
+// ValidateSession preserves the old signature for any caller that does
+// not yet pass request context. It delegates to ValidateSessionWithBinding
+// with an empty ValidationRequest, so binding degrades to the unknown
+// case (no mismatch, no warning).
 func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*model.CachedSession, error) {
+	res, err := s.ValidateSessionWithBinding(ctx, plaintextToken, ValidationRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return res.Session, nil
+}
+
+// ValidateSessionWithBinding is the hot path that every other service hits via
+// its session-validation middleware. Order of operations:
+//   1. hash the presented token
+//   2. Redis GET session:{hash} — if present and unexpired, proceed to binding check
+//   3. on Redis miss, fall through to Postgres via sessions table
+//   4. if found, enforce absolute max lifetime + binding strictness
+//   5. sliding window: extend ExpiresAt if within threshold; coalesced activity touch (60s)
+//
+// BindingStrictness is read from the tenant config; on mismatch:
+//   - none:    no-op
+//   - warn:    sets BindingWarning=true for caller to surface in a header
+//   - enforce: revokes session + emits session.binding_mismatch audit, returns 401
+func (s *Service) ValidateSessionWithBinding(ctx context.Context, plaintextToken string, req ValidationRequest) (*ValidationResult, error) {
 	if plaintextToken == "" {
 		return nil, vdmserr.ErrUnauthorized
 	}
 	hash := sha256Hex(plaintextToken)
 
-	// 1. Redis fast path.
+	// 1. Redis fast path. Binding values live in the DB row so we always
+	//    need at least one DB hit to enforce binding — but the Redis
+	//    entry lets us skip the user re-hydration when the cached copy
+	//    is fresh enough.
 	if cached, err := s.readCachedSession(ctx, hash); err == nil && cached != nil {
 		if s.clock().After(cached.ExpiresAt) {
 			s.deleteCachedSession(ctx, hash)
 			return nil, vdmserr.ErrUnauthorized
 		}
-		return cached, nil
+		// Fetch the DB row ONLY to enforce binding + activity coalescing.
+		// When the tenant's strictness is `none` AND no UA/IP was
+		// provided, we can skip this altogether — the cached entry is
+		// enough.
+		cfg := s.LoadSessionConfig(ctx, cached.TenantID)
+		if cfg.BindingStrictness == BindingNone && req.IP == "" && req.UserAgent == "" {
+			return &ValidationResult{Session: cached}, nil
+		}
+		sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
+		if err == nil && sess != nil {
+			if warning, err := s.applyBinding(ctx, sess, cfg, req, hash); err != nil {
+				return nil, err
+			} else if warning {
+				return &ValidationResult{Session: cached, BindingWarning: true}, nil
+			}
+			s.coalesceActivity(ctx, sess)
+		}
+		return &ValidationResult{Session: cached}, nil
 	}
 
 	// 2. Postgres fallback.
@@ -110,8 +180,9 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	if now.After(sess.ExpiresAt) {
 		return nil, vdmserr.ErrUnauthorized
 	}
+	cfg := s.LoadSessionConfig(ctx, sess.TenantID)
 	// Absolute max lifetime.
-	if now.Sub(sess.CreatedAt) > SessionMaxLifetime {
+	if now.Sub(sess.CreatedAt) > cfg.AbsoluteMax {
 		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
 		s.deleteCachedSession(ctx, hash)
 		return nil, vdmserr.ErrUnauthorized
@@ -135,16 +206,30 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		return nil, vdmserr.ErrUnauthorized
 	}
 
+	// Binding check before we extend the session — if we're about to
+	// revoke it on mismatch in enforce mode, don't bother extending.
+	warning, err := s.applyBinding(ctx, sess, cfg, req, hash)
+	if err != nil {
+		return nil, err
+	}
+
 	// 3. Sliding window: extend if within threshold, capped by absolute max.
-	if sess.ExpiresAt.Sub(now) < SessionSlidingThreshold {
-		newExpiry := now.Add(SessionTTL)
-		if cap := sess.CreatedAt.Add(SessionMaxLifetime); newExpiry.After(cap) {
+	if sess.ExpiresAt.Sub(now) < cfg.SlidingThreshold {
+		newExpiry := now.Add(cfg.TTL)
+		if cap := sess.CreatedAt.Add(cfg.AbsoluteMax); newExpiry.After(cap) {
 			newExpiry = cap
 		}
 		_ = s.sessions.ExtendExpiry(ctx, s.pool, sess.ID, newExpiry)
 		sess.ExpiresAt = newExpiry
+		_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
+			return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
+				"dms.auth.session.refreshed.v1", map[string]any{
+					"session_id": sess.ID.String(),
+					"new_expiry": newExpiry.UTC().Format(time.RFC3339),
+				})
+		})
 	}
-	_ = s.sessions.TouchActivity(ctx, s.pool, sess.ID, now)
+	s.coalesceActivity(ctx, sess)
 
 	cached := &model.CachedSession{
 		UserID:    user.ID,
@@ -154,7 +239,69 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		ExpiresAt: sess.ExpiresAt,
 	}
 	s.cacheSession(ctx, hash, cached)
-	return cached, nil
+	return &ValidationResult{Session: cached, BindingWarning: warning}, nil
+}
+
+// applyBinding enforces the tenant's session_binding_strictness when the
+// request's IP CIDR + UA fingerprint drift from the session's. Returns
+// (warning, err):
+//   - warning=true  → caller surfaces X-Session-Warning (warn mode).
+//   - err=ErrUnauthorized → session revoked + binding_mismatch audited (enforce).
+//   - (false, nil)  → match OR strictness=none.
+func (s *Service) applyBinding(ctx context.Context, sess *model.Session, cfg SessionConfig, req ValidationRequest, hash string) (bool, error) {
+	if req.IP == "" && req.UserAgent == "" {
+		return false, nil // no request context; nothing to check
+	}
+	if BindingMatches(sess.IPAddress, sess.UserAgent, req.IP, req.UserAgent) {
+		return false, nil
+	}
+	switch cfg.BindingStrictness {
+	case BindingNone:
+		return false, nil
+	case BindingWarn:
+		_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
+			return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
+				"dms.auth.session.binding_mismatch.v1", map[string]any{
+					"session_id":     sess.ID.String(),
+					"strictness":     string(cfg.BindingStrictness),
+					"stored_ip_cidr": IPBindingCIDR(sess.IPAddress),
+					"req_ip_cidr":    IPBindingCIDR(req.IP),
+					"action":         "warn",
+				})
+		})
+		return true, nil
+	case BindingEnforce:
+		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
+		s.deleteCachedSession(ctx, hash)
+		_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
+			return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
+				"dms.auth.session.binding_mismatch.v1", map[string]any{
+					"session_id":     sess.ID.String(),
+					"strictness":     string(cfg.BindingStrictness),
+					"stored_ip_cidr": IPBindingCIDR(sess.IPAddress),
+					"req_ip_cidr":    IPBindingCIDR(req.IP),
+					"action":         "revoke",
+				})
+		})
+		return false, vdmserr.ErrUnauthorized
+	}
+	return false, nil
+}
+
+// coalesceActivity writes last_activity_at at most once per 60s per
+// session. Without coalescing, every authenticated request hits the DB
+// with an UPDATE against a row whose PK is the session_id — at N req/s
+// for one logged-in user that's a hot-write bottleneck. 60s is the
+// smallest window that keeps "last seen" timestamps actionable for
+// admins while cutting 99%+ of the writes.
+func (s *Service) coalesceActivity(ctx context.Context, sess *model.Session) {
+	const coalesceWindow = 60 * time.Second
+	now := s.clock()
+	if now.Sub(sess.LastActivityAt) < coalesceWindow {
+		return
+	}
+	_ = s.sessions.TouchActivity(ctx, s.pool, sess.ID, now)
+	sess.LastActivityAt = now
 }
 
 // Logout revokes by plaintext token (hashes it first).
@@ -184,6 +331,8 @@ func (s *Service) Logout(ctx context.Context, plaintextToken string) error {
 
 // RevokeAllOtherSessions revokes every active session for the caller
 // except currentTokenHash (the one they're using to make this request).
+// Emits a single session.revoked audit carrying the count so the trail
+// is usable (one row per revoked session would be noisy).
 func (s *Service) RevokeAllOtherSessions(ctx context.Context, tenantID, userID uuid.UUID, currentTokenHash string) (int64, error) {
 	// Look up the current session id, then revoke-all except that id.
 	var exceptID *uuid.UUID
@@ -196,8 +345,19 @@ func (s *Service) RevokeAllOtherSessions(ctx context.Context, tenantID, userID u
 	var n int64
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		cnt, err := s.sessions.RevokeAllForUser(ctx, tx, tenantID, userID, exceptID)
+		if err != nil {
+			return err
+		}
 		n = cnt
-		return err
+		if cnt > 0 {
+			return s.emitAuth(ctx, tx, tenantID, userID,
+				"dms.auth.session.revoked.v1", map[string]any{
+					"user_id": userID.String(),
+					"scope":   "all_other",
+					"count":   cnt,
+				})
+		}
+		return nil
 	})
 	// Best-effort Redis cleanup: we don't know every token_hash here, so
 	// we rely on the expires-at check in ValidateSession catching revoked
@@ -230,10 +390,19 @@ func (s *Service) ListUserSessions(ctx context.Context, tenantID, userID uuid.UU
 	return out, err
 }
 
-// RevokeSession deletes a specific session, asserting ownership.
+// RevokeSession deletes a specific session, asserting ownership. Emits
+// a session.revoked audit with scope=single and the target id.
 func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, id uuid.UUID) error {
 	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		return s.sessions.RevokeByID(ctx, tx, tenantID, userID, id)
+		if err := s.sessions.RevokeByID(ctx, tx, tenantID, userID, id); err != nil {
+			return err
+		}
+		return s.emitAuth(ctx, tx, tenantID, userID,
+			"dms.auth.session.revoked.v1", map[string]any{
+				"user_id":    userID.String(),
+				"session_id": id.String(),
+				"scope":      "single",
+			})
 	})
 }
 

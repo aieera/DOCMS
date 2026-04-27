@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as DsrStatusRouteImport } from './routes/dsr-status'
+import { Route as DsrRequestRouteImport } from './routes/dsr-request'
 import { Route as ChangePasswordRouteImport } from './routes/change-password'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
@@ -21,9 +23,14 @@ import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedAcknowledgementsRouteImport } from './routes/_authenticated/acknowledgements'
+import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedWorkflowsInstanceIdRouteImport } from './routes/_authenticated/workflows/$instanceId'
 import { Route as AuthenticatedSettingsSignaturesRouteImport } from './routes/_authenticated/settings/signatures'
+import { Route as AuthenticatedSettingsSessionsRouteImport } from './routes/_authenticated/settings/sessions'
+import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
+import { Route as AuthenticatedLegalHoldsMyRouteImport } from './routes/_authenticated/legal-holds/my'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -34,12 +41,14 @@ import { Route as AuthenticatedAdminShareLinksRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
 import { Route as AuthenticatedAdminRetentionRouteImport } from './routes/_authenticated/admin/retention'
 import { Route as AuthenticatedAdminResidencyRouteImport } from './routes/_authenticated/admin/residency'
+import { Route as AuthenticatedAdminQuarantineRouteImport } from './routes/_authenticated/admin/quarantine'
 import { Route as AuthenticatedAdminPrivacyRouteImport } from './routes/_authenticated/admin/privacy'
 import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_authenticated/admin/permissions'
 import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_authenticated/admin/metadata-schema'
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
 import { Route as AuthenticatedAdminGeofencesRouteImport } from './routes/_authenticated/admin/geofences'
+import { Route as AuthenticatedAdminDispositionRouteImport } from './routes/_authenticated/admin/disposition'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
@@ -47,8 +56,12 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedAdminAcknowledgementsRouteImport } from './routes/_authenticated/admin/acknowledgements'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminTenantSecurityRouteImport } from './routes/_authenticated/admin/tenant/security'
+import { Route as AuthenticatedAdminTenantResidencyRouteImport } from './routes/_authenticated/admin/tenant/residency'
+import { Route as AuthenticatedAdminPlatformSecurityRouteImport } from './routes/_authenticated/admin/platform/security'
 import { Route as AuthenticatedAdminPlatformSchedulesRouteImport } from './routes/_authenticated/admin/platform/schedules'
 import { Route as AuthenticatedAdminPlatformInternalAuthRouteImport } from './routes/_authenticated/admin/platform/internal-auth'
+import { Route as AuthenticatedAdminAcknowledgementsCampaignIdRouteImport } from './routes/_authenticated/admin/acknowledgements/$campaignId'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -64,6 +77,16 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DsrStatusRoute = DsrStatusRouteImport.update({
+  id: '/dsr-status',
+  path: '/dsr-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DsrRequestRoute = DsrRequestRouteImport.update({
+  id: '/dsr-request',
+  path: '/dsr-request',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChangePasswordRoute = ChangePasswordRouteImport.update({
@@ -112,6 +135,12 @@ const AuthenticatedAcknowledgementsRoute =
     path: '/acknowledgements',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedSettingsRouteRoute =
+  AuthenticatedSettingsRouteRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesIndexRoute =
   AuthenticatedWorkspacesIndexRouteImport.update({
     id: '/workspaces/',
@@ -123,10 +152,34 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedWorkflowsInstanceIdRoute =
+  AuthenticatedWorkflowsInstanceIdRouteImport.update({
+    id: '/workflows/$instanceId',
+    path: '/workflows/$instanceId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSettingsSignaturesRoute =
   AuthenticatedSettingsSignaturesRouteImport.update({
-    id: '/settings/signatures',
-    path: '/settings/signatures',
+    id: '/signatures',
+    path: '/signatures',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedSettingsSessionsRoute =
+  AuthenticatedSettingsSessionsRouteImport.update({
+    id: '/sessions',
+    path: '/sessions',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedSettingsNotificationsRoute =
+  AuthenticatedSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedLegalHoldsMyRoute =
+  AuthenticatedLegalHoldsMyRouteImport.update({
+    id: '/legal-holds/my',
+    path: '/legal-holds/my',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminWorkflowsRoute =
@@ -186,6 +239,12 @@ const AuthenticatedAdminResidencyRoute =
     path: '/admin/residency',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminQuarantineRoute =
+  AuthenticatedAdminQuarantineRouteImport.update({
+    id: '/admin/quarantine',
+    path: '/admin/quarantine',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminPrivacyRoute =
   AuthenticatedAdminPrivacyRouteImport.update({
     id: '/admin/privacy',
@@ -220,6 +279,12 @@ const AuthenticatedAdminGeofencesRoute =
   AuthenticatedAdminGeofencesRouteImport.update({
     id: '/admin/geofences',
     path: '/admin/geofences',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminDispositionRoute =
+  AuthenticatedAdminDispositionRouteImport.update({
+    id: '/admin/disposition',
+    path: '/admin/disposition',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminConnectorsRoute =
@@ -264,6 +329,24 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminTenantSecurityRoute =
+  AuthenticatedAdminTenantSecurityRouteImport.update({
+    id: '/admin/tenant/security',
+    path: '/admin/tenant/security',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminTenantResidencyRoute =
+  AuthenticatedAdminTenantResidencyRouteImport.update({
+    id: '/admin/tenant/residency',
+    path: '/admin/tenant/residency',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminPlatformSecurityRoute =
+  AuthenticatedAdminPlatformSecurityRouteImport.update({
+    id: '/admin/platform/security',
+    path: '/admin/platform/security',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminPlatformSchedulesRoute =
   AuthenticatedAdminPlatformSchedulesRouteImport.update({
     id: '/admin/platform/schedules',
@@ -276,6 +359,12 @@ const AuthenticatedAdminPlatformInternalAuthRoute =
     path: '/admin/platform/internal-auth',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminAcknowledgementsCampaignIdRoute =
+  AuthenticatedAdminAcknowledgementsCampaignIdRouteImport.update({
+    id: '/$campaignId',
+    path: '/$campaignId',
+    getParentRoute: () => AuthenticatedAdminAcknowledgementsRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -286,27 +375,32 @@ const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
-  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/admin/quarantine': typeof AuthenticatedAdminQuarantineRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
@@ -317,19 +411,30 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
+  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
+  '/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
+  '/admin/tenant/residency': typeof AuthenticatedAdminTenantResidencyRoute
+  '/admin/tenant/security': typeof AuthenticatedAdminTenantSecurityRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 export interface FileRoutesByTo {
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -337,18 +442,20 @@ export interface FileRoutesByTo {
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/': typeof AuthenticatedIndexRoute
-  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/admin/quarantine': typeof AuthenticatedAdminQuarantineRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
@@ -359,11 +466,19 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
+  '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
+  '/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
+  '/admin/tenant/residency': typeof AuthenticatedAdminTenantResidencyRoute
+  '/admin/tenant/security': typeof AuthenticatedAdminTenantSecurityRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -371,9 +486,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/change-password': typeof ChangePasswordRoute
+  '/dsr-request': typeof DsrRequestRoute
+  '/dsr-status': typeof DsrStatusRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/_authenticated/acknowledgements': typeof AuthenticatedAcknowledgementsRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
@@ -381,18 +499,20 @@ export interface FileRoutesById {
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRoute
+  '/_authenticated/admin/acknowledgements': typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/_authenticated/admin/disposition': typeof AuthenticatedAdminDispositionRoute
   '/_authenticated/admin/geofences': typeof AuthenticatedAdminGeofencesRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/_authenticated/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/_authenticated/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/_authenticated/admin/quarantine': typeof AuthenticatedAdminQuarantineRoute
   '/_authenticated/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/_authenticated/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
@@ -403,11 +523,19 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/legal-holds/my': typeof AuthenticatedLegalHoldsMyRoute
+  '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
+  '/_authenticated/settings/sessions': typeof AuthenticatedSettingsSessionsRoute
   '/_authenticated/settings/signatures': typeof AuthenticatedSettingsSignaturesRoute
+  '/_authenticated/workflows/$instanceId': typeof AuthenticatedWorkflowsInstanceIdRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/admin/acknowledgements/$campaignId': typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
   '/_authenticated/admin/platform/internal-auth': typeof AuthenticatedAdminPlatformInternalAuthRoute
   '/_authenticated/admin/platform/schedules': typeof AuthenticatedAdminPlatformSchedulesRoute
+  '/_authenticated/admin/platform/security': typeof AuthenticatedAdminPlatformSecurityRoute
+  '/_authenticated/admin/tenant/residency': typeof AuthenticatedAdminTenantResidencyRoute
+  '/_authenticated/admin/tenant/security': typeof AuthenticatedAdminTenantSecurityRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -416,9 +544,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/settings'
     | '/acknowledgements'
     | '/notifications'
     | '/search'
@@ -431,12 +562,14 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/disposition'
     | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
     | '/admin/permissions'
     | '/admin/privacy'
+    | '/admin/quarantine'
     | '/admin/residency'
     | '/admin/retention'
     | '/admin/settings'
@@ -447,19 +580,30 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/legal-holds/my'
+    | '/settings/notifications'
+    | '/settings/sessions'
     | '/settings/signatures'
+    | '/workflows/$instanceId'
     | '/admin/'
     | '/workspaces/'
+    | '/admin/acknowledgements/$campaignId'
     | '/admin/platform/internal-auth'
     | '/admin/platform/schedules'
+    | '/admin/platform/security'
+    | '/admin/tenant/residency'
+    | '/admin/tenant/security'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/settings'
     | '/acknowledgements'
     | '/notifications'
     | '/search'
@@ -473,12 +617,14 @@ export interface FileRouteTypes {
     | '/admin/billing'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/disposition'
     | '/admin/geofences'
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
     | '/admin/permissions'
     | '/admin/privacy'
+    | '/admin/quarantine'
     | '/admin/residency'
     | '/admin/retention'
     | '/admin/settings'
@@ -489,20 +635,31 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/legal-holds/my'
+    | '/settings/notifications'
+    | '/settings/sessions'
     | '/settings/signatures'
+    | '/workflows/$instanceId'
     | '/admin'
     | '/workspaces'
+    | '/admin/acknowledgements/$campaignId'
     | '/admin/platform/internal-auth'
     | '/admin/platform/schedules'
+    | '/admin/platform/security'
+    | '/admin/tenant/residency'
+    | '/admin/tenant/security'
     | '/workspaces/$workspaceId'
     | '/workspaces/$workspaceId/documents/$documentId'
   id:
     | '__root__'
     | '/_authenticated'
     | '/change-password'
+    | '/dsr-request'
+    | '/dsr-status'
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/_authenticated/settings'
     | '/_authenticated/acknowledgements'
     | '/_authenticated/notifications'
     | '/_authenticated/search'
@@ -516,12 +673,14 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/billing'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
+    | '/_authenticated/admin/disposition'
     | '/_authenticated/admin/geofences'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/legal-holds'
     | '/_authenticated/admin/metadata-schema'
     | '/_authenticated/admin/permissions'
     | '/_authenticated/admin/privacy'
+    | '/_authenticated/admin/quarantine'
     | '/_authenticated/admin/residency'
     | '/_authenticated/admin/retention'
     | '/_authenticated/admin/settings'
@@ -532,11 +691,19 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/legal-holds/my'
+    | '/_authenticated/settings/notifications'
+    | '/_authenticated/settings/sessions'
     | '/_authenticated/settings/signatures'
+    | '/_authenticated/workflows/$instanceId'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/admin/acknowledgements/$campaignId'
     | '/_authenticated/admin/platform/internal-auth'
     | '/_authenticated/admin/platform/schedules'
+    | '/_authenticated/admin/platform/security'
+    | '/_authenticated/admin/tenant/residency'
+    | '/_authenticated/admin/tenant/security'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
   fileRoutesById: FileRoutesById
@@ -544,6 +711,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   ChangePasswordRoute: typeof ChangePasswordRoute
+  DsrRequestRoute: typeof DsrRequestRoute
+  DsrStatusRoute: typeof DsrStatusRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -571,6 +740,20 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dsr-status': {
+      id: '/dsr-status'
+      path: '/dsr-status'
+      fullPath: '/dsr-status'
+      preLoaderRoute: typeof DsrStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dsr-request': {
+      id: '/dsr-request'
+      path: '/dsr-request'
+      fullPath: '/dsr-request'
+      preLoaderRoute: typeof DsrRequestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/change-password': {
@@ -636,6 +819,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAcknowledgementsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/': {
       id: '/_authenticated/workspaces/'
       path: '/workspaces'
@@ -650,11 +840,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/workflows/$instanceId': {
+      id: '/_authenticated/workflows/$instanceId'
+      path: '/workflows/$instanceId'
+      fullPath: '/workflows/$instanceId'
+      preLoaderRoute: typeof AuthenticatedWorkflowsInstanceIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings/signatures': {
       id: '/_authenticated/settings/signatures'
-      path: '/settings/signatures'
+      path: '/signatures'
       fullPath: '/settings/signatures'
       preLoaderRoute: typeof AuthenticatedSettingsSignaturesRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/settings/sessions': {
+      id: '/_authenticated/settings/sessions'
+      path: '/sessions'
+      fullPath: '/settings/sessions'
+      preLoaderRoute: typeof AuthenticatedSettingsSessionsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/settings/notifications': {
+      id: '/_authenticated/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/legal-holds/my': {
+      id: '/_authenticated/legal-holds/my'
+      path: '/legal-holds/my'
+      fullPath: '/legal-holds/my'
+      preLoaderRoute: typeof AuthenticatedLegalHoldsMyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
@@ -727,6 +945,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminResidencyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/quarantine': {
+      id: '/_authenticated/admin/quarantine'
+      path: '/admin/quarantine'
+      fullPath: '/admin/quarantine'
+      preLoaderRoute: typeof AuthenticatedAdminQuarantineRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/privacy': {
       id: '/_authenticated/admin/privacy'
       path: '/admin/privacy'
@@ -767,6 +992,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/geofences'
       fullPath: '/admin/geofences'
       preLoaderRoute: typeof AuthenticatedAdminGeofencesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/disposition': {
+      id: '/_authenticated/admin/disposition'
+      path: '/admin/disposition'
+      fullPath: '/admin/disposition'
+      preLoaderRoute: typeof AuthenticatedAdminDispositionRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/connectors': {
@@ -818,6 +1050,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/tenant/security': {
+      id: '/_authenticated/admin/tenant/security'
+      path: '/admin/tenant/security'
+      fullPath: '/admin/tenant/security'
+      preLoaderRoute: typeof AuthenticatedAdminTenantSecurityRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/tenant/residency': {
+      id: '/_authenticated/admin/tenant/residency'
+      path: '/admin/tenant/residency'
+      fullPath: '/admin/tenant/residency'
+      preLoaderRoute: typeof AuthenticatedAdminTenantResidencyRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/platform/security': {
+      id: '/_authenticated/admin/platform/security'
+      path: '/admin/platform/security'
+      fullPath: '/admin/platform/security'
+      preLoaderRoute: typeof AuthenticatedAdminPlatformSecurityRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/platform/schedules': {
       id: '/_authenticated/admin/platform/schedules'
       path: '/admin/platform/schedules'
@@ -832,6 +1085,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPlatformInternalAuthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/acknowledgements/$campaignId': {
+      id: '/_authenticated/admin/acknowledgements/$campaignId'
+      path: '/$campaignId'
+      fullPath: '/admin/acknowledgements/$campaignId'
+      preLoaderRoute: typeof AuthenticatedAdminAcknowledgementsCampaignIdRouteImport
+      parentRoute: typeof AuthenticatedAdminAcknowledgementsRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -842,25 +1102,62 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedSettingsRouteRouteChildren {
+  AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
+  AuthenticatedSettingsSessionsRoute: typeof AuthenticatedSettingsSessionsRoute
+  AuthenticatedSettingsSignaturesRoute: typeof AuthenticatedSettingsSignaturesRoute
+}
+
+const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteChildren =
+  {
+    AuthenticatedSettingsNotificationsRoute:
+      AuthenticatedSettingsNotificationsRoute,
+    AuthenticatedSettingsSessionsRoute: AuthenticatedSettingsSessionsRoute,
+    AuthenticatedSettingsSignaturesRoute: AuthenticatedSettingsSignaturesRoute,
+  }
+
+const AuthenticatedSettingsRouteRouteWithChildren =
+  AuthenticatedSettingsRouteRoute._addFileChildren(
+    AuthenticatedSettingsRouteRouteChildren,
+  )
+
+interface AuthenticatedAdminAcknowledgementsRouteChildren {
+  AuthenticatedAdminAcknowledgementsCampaignIdRoute: typeof AuthenticatedAdminAcknowledgementsCampaignIdRoute
+}
+
+const AuthenticatedAdminAcknowledgementsRouteChildren: AuthenticatedAdminAcknowledgementsRouteChildren =
+  {
+    AuthenticatedAdminAcknowledgementsCampaignIdRoute:
+      AuthenticatedAdminAcknowledgementsCampaignIdRoute,
+  }
+
+const AuthenticatedAdminAcknowledgementsRouteWithChildren =
+  AuthenticatedAdminAcknowledgementsRoute._addFileChildren(
+    AuthenticatedAdminAcknowledgementsRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
+  AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedAcknowledgementsRoute: typeof AuthenticatedAcknowledgementsRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
-  AuthenticatedAdminAcknowledgementsRoute: typeof AuthenticatedAdminAcknowledgementsRoute
+  AuthenticatedAdminAcknowledgementsRoute: typeof AuthenticatedAdminAcknowledgementsRouteWithChildren
   AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
+  AuthenticatedAdminDispositionRoute: typeof AuthenticatedAdminDispositionRoute
   AuthenticatedAdminGeofencesRoute: typeof AuthenticatedAdminGeofencesRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
   AuthenticatedAdminPermissionsRoute: typeof AuthenticatedAdminPermissionsRoute
   AuthenticatedAdminPrivacyRoute: typeof AuthenticatedAdminPrivacyRoute
+  AuthenticatedAdminQuarantineRoute: typeof AuthenticatedAdminQuarantineRoute
   AuthenticatedAdminResidencyRoute: typeof AuthenticatedAdminResidencyRoute
   AuthenticatedAdminRetentionRoute: typeof AuthenticatedAdminRetentionRoute
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
@@ -871,16 +1168,21 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
-  AuthenticatedSettingsSignaturesRoute: typeof AuthenticatedSettingsSignaturesRoute
+  AuthenticatedLegalHoldsMyRoute: typeof AuthenticatedLegalHoldsMyRoute
+  AuthenticatedWorkflowsInstanceIdRoute: typeof AuthenticatedWorkflowsInstanceIdRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminPlatformInternalAuthRoute: typeof AuthenticatedAdminPlatformInternalAuthRoute
   AuthenticatedAdminPlatformSchedulesRoute: typeof AuthenticatedAdminPlatformSchedulesRoute
+  AuthenticatedAdminPlatformSecurityRoute: typeof AuthenticatedAdminPlatformSecurityRoute
+  AuthenticatedAdminTenantResidencyRoute: typeof AuthenticatedAdminTenantResidencyRoute
+  AuthenticatedAdminTenantSecurityRoute: typeof AuthenticatedAdminTenantSecurityRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedAcknowledgementsRoute: AuthenticatedAcknowledgementsRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
@@ -888,18 +1190,20 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminAcknowledgementsRoute:
-    AuthenticatedAdminAcknowledgementsRoute,
+    AuthenticatedAdminAcknowledgementsRouteWithChildren,
   AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
+  AuthenticatedAdminDispositionRoute: AuthenticatedAdminDispositionRoute,
   AuthenticatedAdminGeofencesRoute: AuthenticatedAdminGeofencesRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
   AuthenticatedAdminPermissionsRoute: AuthenticatedAdminPermissionsRoute,
   AuthenticatedAdminPrivacyRoute: AuthenticatedAdminPrivacyRoute,
+  AuthenticatedAdminQuarantineRoute: AuthenticatedAdminQuarantineRoute,
   AuthenticatedAdminResidencyRoute: AuthenticatedAdminResidencyRoute,
   AuthenticatedAdminRetentionRoute: AuthenticatedAdminRetentionRoute,
   AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
@@ -910,13 +1214,19 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
-  AuthenticatedSettingsSignaturesRoute: AuthenticatedSettingsSignaturesRoute,
+  AuthenticatedLegalHoldsMyRoute: AuthenticatedLegalHoldsMyRoute,
+  AuthenticatedWorkflowsInstanceIdRoute: AuthenticatedWorkflowsInstanceIdRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminPlatformInternalAuthRoute:
     AuthenticatedAdminPlatformInternalAuthRoute,
   AuthenticatedAdminPlatformSchedulesRoute:
     AuthenticatedAdminPlatformSchedulesRoute,
+  AuthenticatedAdminPlatformSecurityRoute:
+    AuthenticatedAdminPlatformSecurityRoute,
+  AuthenticatedAdminTenantResidencyRoute:
+    AuthenticatedAdminTenantResidencyRoute,
+  AuthenticatedAdminTenantSecurityRoute: AuthenticatedAdminTenantSecurityRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:
@@ -930,6 +1240,8 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ChangePasswordRoute: ChangePasswordRoute,
+  DsrRequestRoute: DsrRequestRoute,
+  DsrStatusRoute: DsrStatusRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,

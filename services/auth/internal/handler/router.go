@@ -35,6 +35,12 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/mfa/recovery", h.MFARecovery)
 		// Wave 15.3: one-time-token-authenticated, so public.
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/change-password", h.ChangePassword)
+		// GAP-3: Forgot password — unauthenticated, rate-limited.
+		// Always returns 202 with a generic message; the service
+		// handles its own oracle defense (unknown slug/email/SSO
+		// user are all silent no-ops, only the success path emits
+		// dms.notify.password_reset.v1).
+		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/forgot-password", h.ForgotPassword)
 
 		// ---- SAML 2.0 SSO (public; tenant identified by path slug) -------
 		if saml != nil {
@@ -68,6 +74,11 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Route("/sessions", func(r chi.Router) {
 				r.Get("/", h.ListSessions)
 				r.Post("/revoke-all", h.RevokeAllSessions)
+				// Blueprint §8.1 spec also accepts DELETE on the
+				// collection as "revoke all but current". Same
+				// semantics as POST /revoke-all; alias kept so clients
+				// using either idiom work.
+				r.Delete("/", h.RevokeAllSessions)
 				r.Delete("/{session_id}", h.RevokeSession)
 			})
 
@@ -92,6 +103,43 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Use(vdmsmw.CSRFDoubleSubmit())
 		r.Use(h.RequireRole("owner"))
 		r.Post("/sweep-expired", h.SweepExpiredPasswordsAdmin)
+	})
+
+	// ---- Tenant session policy (Blueprint §8.1) ---------------------------
+	// GET is authenticated-only so admins can render a read-only view;
+	// PUT is owner-gated (tenant-wide security policy change).
+	r.Route("/api/v1/tenant/session-policy", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Get("/", h.sessionPolicy.GetSessionPolicy)
+		r.With(h.RequireRole("owner")).Put("/", h.sessionPolicy.PutSessionPolicy)
+	})
+
+	// Plan lookup for the upload-tier tooltip + billing surfaces.
+	r.Route("/api/v1/tenant/plan", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Get("/", h.GetTenantPlan)
+	})
+
+	// ---- Tenant residency policy (Blueprint §9.1) -------------------------
+	// GET is authenticated-only — region pickers across the app need to
+	// know the allowlist + default to render correctly. PUT is
+	// owner-gated; allowing admins to flip the policy lets a single
+	// account-takeover quietly migrate every new doc to a different
+	// jurisdiction.
+	r.Route("/api/v1/tenant/residency-policy", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Get("/", h.GetTenantResidencyPolicy)
+		r.With(h.RequireRole("owner")).Put("/", h.PutTenantResidencyPolicy)
+	})
+
+	// Per-workspace region overrides — read-only listing. Admin UI
+	// surfaces these as a table; editing is done from each workspace's
+	// settings page (document service owns those routes).
+	r.Route("/api/v1/tenant/workspace-regions", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Get("/", h.ListWorkspaceRegions)
 	})
 
 	// ---- Admin user management ------------------------------------------------

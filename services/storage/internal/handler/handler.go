@@ -4,6 +4,7 @@ package handler
 import (
 	"context"
 
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/google/uuid"
@@ -14,6 +15,26 @@ import (
 	"github.com/vaultdms/vaultdms/services/storage/internal/model"
 	"github.com/vaultdms/vaultdms/services/storage/internal/service"
 )
+
+// uuidFromMD reads a single header off the incoming gRPC metadata and
+// parses it as a UUID. Returns nil for missing/empty/unparseable values
+// — the caller decides whether nil is a hard error (permission scope)
+// or just an absent optional.
+func uuidFromMD(ctx context.Context, key string) *uuid.UUID {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil
+	}
+	vals := md.Get(key)
+	if len(vals) == 0 || vals[0] == "" {
+		return nil
+	}
+	id, err := uuid.Parse(vals[0])
+	if err != nil {
+		return nil
+	}
+	return &id
+}
 
 // Handler is the gRPC boundary.
 type Handler struct {
@@ -32,14 +53,26 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUp
 	}
 	userID, _ := auth.GetUserID(ctx)
 
+	// Permission scope — the OPA check inside the service requires one
+	// of (DocumentID, FolderID, WorkspaceID). The document REST proxy
+	// (services/document/internal/handler/storage_proxy.go) forwards
+	// these as gRPC metadata after lifting them from the request body;
+	// read them back into the input here.
+	folderID := uuidFromMD(ctx, "x-folder-id")
+	workspaceID := uuidFromMD(ctx, "x-workspace-id")
+	documentID := uuidFromMD(ctx, "x-document-id")
+
 	res, err := h.svc.InitiateUpload(ctx, service.InitiateUploadInput{
-		TenantID:   tenantID,
-		UserID:     userID,
-		RegionPin:  req.GetRegionPin(),
-		Filename:   req.GetFilename(),
-		MimeType:   req.GetMimeType(),
-		SizeBytes:  req.GetSizeBytes(),
-		SHA256Hash: req.GetChecksumSha256(),
+		TenantID:    tenantID,
+		UserID:      userID,
+		RegionPin:   req.GetRegionPin(),
+		Filename:    req.GetFilename(),
+		MimeType:    req.GetMimeType(),
+		SizeBytes:   req.GetSizeBytes(),
+		SHA256Hash:  req.GetChecksumSha256(),
+		FolderID:    folderID,
+		WorkspaceID: workspaceID,
+		DocumentID:  documentID,
 	})
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -144,6 +177,84 @@ func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStat
 		Signature: rec.Signature,
 		ScannedAt: timestamppb.New(rec.ScannedAt),
 	}, nil
+}
+
+// ShredBlobs (ADR 0036) destroys wrapped DEKs for a set of content_blobs.
+// The tenant in the request body is authoritative — auth.GetTenantID is
+// the caller's identity (the document executor's system user), which
+// MAY operate on a different tenant than its own. Internal-auth
+// middleware on the route gates who can call this; the document service
+// is the only legitimate caller.
+func (h *Handler) ShredBlobs(ctx context.Context, req *vaultdmsv1.ShredBlobsRequest) (*vaultdmsv1.ShredBlobsResponse, error) {
+	tenantID, err := uuid.Parse(req.GetTenantId())
+	if err != nil || tenantID == uuid.Nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("tenant_id", "not a uuid"))
+	}
+	blobs := make([]uuid.UUID, 0, len(req.GetBlobIds()))
+	for _, raw := range req.GetBlobIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, vdmserr.ToGRPCError(vdmserr.Validation("blob_ids", "contains a non-uuid value"))
+		}
+		blobs = append(blobs, id)
+	}
+	res, err := h.svc.ShredBlobs(ctx, service.ShredBlobsInput{
+		TenantID:    tenantID,
+		BlobIDs:     blobs,
+		CandidateID: req.GetCandidateId(),
+		ActorID:     req.GetActorId(),
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &vaultdmsv1.ShredBlobsResponse{
+		Shredded:        uuidsToStrings(res.Shredded),
+		AlreadyShredded: uuidsToStrings(res.AlreadyShredded),
+		NotFound:        uuidsToStrings(res.NotFound),
+	}, nil
+}
+
+// TransitionBlobsTier moves a set of blobs to a target S3 storage
+// class. Internal-auth gated; the document service is the only
+// legitimate caller (retention archive path).
+func (h *Handler) TransitionBlobsTier(ctx context.Context, req *vaultdmsv1.TransitionBlobsTierRequest) (*vaultdmsv1.TransitionBlobsTierResponse, error) {
+	tenantID, err := uuid.Parse(req.GetTenantId())
+	if err != nil || tenantID == uuid.Nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("tenant_id", "not a uuid"))
+	}
+	if req.GetTargetClass() == "" {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("target_class", "required"))
+	}
+	blobs := make([]uuid.UUID, 0, len(req.GetBlobIds()))
+	for _, raw := range req.GetBlobIds() {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, vdmserr.ToGRPCError(vdmserr.Validation("blob_ids", "contains a non-uuid value"))
+		}
+		blobs = append(blobs, id)
+	}
+	res, err := h.svc.TransitionBlobsTier(ctx, service.TransitionBlobsTierInput{
+		TenantID:    tenantID,
+		BlobIDs:     blobs,
+		TargetClass: req.GetTargetClass(),
+		PolicyID:    req.GetPolicyId(),
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &vaultdmsv1.TransitionBlobsTierResponse{
+		Transitioned:    uuidsToStrings(res.Transitioned),
+		AlreadyInTarget: uuidsToStrings(res.AlreadyInTarget),
+		NotFound:        uuidsToStrings(res.NotFound),
+	}, nil
+}
+
+func uuidsToStrings(in []uuid.UUID) []string {
+	out := make([]string, len(in))
+	for i, id := range in {
+		out[i] = id.String()
+	}
+	return out
 }
 
 // ---- enum mappers --------------------------------------------------------

@@ -1,11 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ComplianceDashboard } from '@/components/admin/ComplianceDashboard'
+import { ResidencyComplianceCard } from '@/components/admin/ResidencyComplianceCard'
 
 function CompliancePage() {
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader title="Compliance" description="Data residency, encryption, and retention overview" />
+      <ResidencyComplianceCard />
       <ComplianceDashboard
         docsByState={[
           { name: 'active', count: 1240 }, { name: 'draft', count: 380 },

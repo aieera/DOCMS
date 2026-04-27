@@ -18,7 +18,7 @@ x-go-env: &go-env
   VAULTDMS_HEALTH_PORT:  "8081"
   VAULTDMS_HTTP_PORT:    "8080"
   VAULTDMS_GRPC_PORT:    "9090"
-  VAULTDMS_S3_ENDPOINT:  "http://minio:9000"
+  VAULTDMS_S3_ENDPOINT:  "minio:9000"
   VAULTDMS_S3_ACCESS_KEY: "minioadmin"
   VAULTDMS_S3_SECRET_KEY: "minioadmin"
   VAULTDMS_OPENSEARCH_URL: "http://opensearch:9200"
@@ -360,7 +360,7 @@ services:
       VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
       VAULTDMS_NATS_URL: "nats://nats:4222"
       VAULTDMS_QDRANT_URL: "http://qdrant:6333"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      VAULTDMS_S3_ENDPOINT: "minio:9000"
     ports: ["8194:8080"]
     depends_on:
       redis:    { condition: service_healthy }
@@ -392,7 +392,7 @@ services:
       VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
       VAULTDMS_NATS_URL: "nats://nats:4222"
       VAULTDMS_QDRANT_URL: "http://qdrant:6333"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      VAULTDMS_S3_ENDPOINT: "minio:9000"
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -422,7 +422,7 @@ services:
       - "preview,preview-video"
     environment:
       VAULTDMS_CELERY_BROKER_URL: "redis://redis:6379/2"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      VAULTDMS_S3_ENDPOINT: "minio:9000"
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:
@@ -475,7 +475,13 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: document }
     container_name: vaultdms-document
-    environment: *go-env
+    environment:
+      <<: *go-env
+      # Smoke-test override for ADR 0036/0037 internal cron endpoints
+      # (retention sweep, disposition execute, DSR SLA sweep). Real
+      # deploy injects via secret manager; dev compose treats it as
+      # any other shared dev key.
+      VAULTDMS_INTERNAL_API_KEY: dev-internal-api-key
     # Host health port 8084 instead of run-all-services.sh's 8083 to
     # avoid collision with the collaboration WS listener on 8083.
     ports: ["8084:8081", "9092:9090", "8182:8080"]
@@ -529,7 +535,12 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: workflow }
     container_name: vaultdms-workflow
-    environment: *go-env
+    environment:
+      <<: *go-env
+      # /api/v1/platform/security/posture proxies to the audit
+      # service's /audit/security-scans/latest. Without this URL the
+      # endpoint 503s. In-cluster DNS reaches audit at audit:8080.
+      VAULTDMS_AUDIT_URL: "http://audit:8080"
     ports: ["8088:8081", "9096:9090", "8186:8080"]
     depends_on:
       postgres: { condition: service_healthy }

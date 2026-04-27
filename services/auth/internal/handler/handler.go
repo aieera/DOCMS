@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
@@ -23,15 +24,17 @@ import (
 
 // Handler carries the service + logger + cookie settings.
 type Handler struct {
-	svc          *service.Service
-	log          zerolog.Logger
-	cookieName   string
-	cookieSecure bool
+	svc           *service.Service
+	log           zerolog.Logger
+	cookieName    string
+	cookieSecure  bool
+	sessionPolicy *SessionPolicyHandler
 }
 
 // Config is the handler's DI shape.
 type Config struct {
 	Service      *service.Service
+	Pool         *pgxpool.Pool // used by ancillary admin sub-handlers (session policy, …)
 	Logger       zerolog.Logger
 	CookieName   string // default "dms_session"
 	CookieSecure bool   // true in prod; false for local HTTP-only testing
@@ -44,10 +47,11 @@ func New(cfg Config) *Handler {
 		name = "dms_session"
 	}
 	return &Handler{
-		svc:          cfg.Service,
-		log:          cfg.Logger,
-		cookieName:   name,
-		cookieSecure: cfg.CookieSecure,
+		svc:           cfg.Service,
+		log:           cfg.Logger,
+		cookieName:    name,
+		cookieSecure:  cfg.CookieSecure,
+		sessionPolicy: NewSessionPolicyHandler(cfg.Pool, cfg.Logger),
 	}
 }
 

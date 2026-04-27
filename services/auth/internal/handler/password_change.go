@@ -27,6 +27,52 @@ type changePasswordResponse struct {
 	User         any        `json:"user,omitempty"`
 }
 
+// ForgotPassword handles POST /api/v1/auth/forgot-password. Public
+// route, rate-limited at the router. Body: { tenant_slug, email }.
+// Always returns 202 with a generic message regardless of whether
+// the email matches a real user — the no-oracle defense from ADR
+// 0037 applied here too. The actual reset email goes through the
+// notification service's existing email path; the magic link points
+// to the existing /change-password page which already handles the
+// one-time-token redeem flow.
+type forgotPasswordRequest struct {
+	TenantSlug string `json:"tenant_slug"`
+	Email      string `json:"email"`
+}
+
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req forgotPasswordRequest
+	if err := h.readJSON(r, &req); err != nil {
+		// Any input parse error → still return 202 with generic body.
+		// Don't give a callable a way to distinguish "well-formed but
+		// unknown email" from "malformed body".
+		h.writeJSON(w, http.StatusAccepted, map[string]any{
+			"accepted": true,
+			"message":  "If your email matches a record in our system you will receive a reset link within a few minutes.",
+		})
+		return
+	}
+	ip, ua := clientMeta(r)
+	// Service handles its own oracle defense — unknown slug/email/SSO
+	// user are all silent no-ops.
+	if err := h.svc.RequestPasswordReset(r.Context(), service.RequestPasswordResetInput{
+		TenantSlug: req.TenantSlug,
+		Email:      req.Email,
+		IPAddress:  ip,
+		UserAgent:  ua,
+	}); err != nil {
+		// Even genuine internal errors return 202 with the same
+		// message — operators see them in the service log via the
+		// existing writeErr-style logging; a public caller never finds
+		// out whether their attempt mutated state.
+		// We DO log here for ops.
+	}
+	h.writeJSON(w, http.StatusAccepted, map[string]any{
+		"accepted": true,
+		"message":  "If your email matches a record in our system you will receive a reset link within a few minutes.",
+	})
+}
+
 // ChangePassword handles POST /api/v1/auth/change-password. Public
 // route — authenticated by possession of the one-time token, not by
 // a session cookie.

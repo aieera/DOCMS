@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Users, Shield, Key, Workflow, Archive, Scale, ScrollText, Webhook, Settings, Tag, Link2, ShieldCheck, KeyRound, Plug, CreditCard, ShieldAlert, UserCog, Globe, FileJson, ClipboardCheck, MapPin, Activity, Clock } from 'lucide-react'
+import { Users, Shield, Key, Workflow, Archive, Scale, ScrollText, Webhook, Settings, Tag, Link2, ShieldCheck, KeyRound, Plug, CreditCard, ShieldAlert, UserCog, Globe, FileJson, ClipboardCheck, MapPin, Activity, Clock, ShieldOff, Lock } from 'lucide-react'
 
 const sections = [
   { to: '/admin/users', icon: Users, label: 'Users', desc: 'Manage team members' },
@@ -25,6 +25,10 @@ const sections = [
   { to: '/admin/geofences', icon: MapPin, label: 'Geofences', desc: 'Country + CIDR access policies' },
   { to: '/admin/platform/internal-auth', icon: Activity, label: 'Internal Auth', desc: 'mTLS + HMAC health per service' },
   { to: '/admin/platform/schedules', icon: Clock, label: 'Schedules', desc: 'Temporal schedules (password / ack / signature sweeps)' },
+  { to: '/admin/platform/security', icon: ShieldAlert, label: 'Security posture', desc: 'SAST + dep + DAST + secret scan CI gates (ADR 0033)' },
+  { to: '/admin/quarantine', icon: ShieldOff, label: 'Quarantine', desc: 'Review + release/delete virus-flagged and MIME-blocked uploads' },
+  { to: '/admin/tenant/security', icon: Lock, label: 'Session Policy', desc: 'TTL, sliding window, concurrent cap, binding strictness (§8.1)' },
+  { to: '/admin/tenant/residency', icon: Globe, label: 'Residency Policy', desc: 'Allowed regions + per-workspace defaults (§9.1)' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
 ] as const
 

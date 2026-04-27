@@ -31,6 +31,7 @@ type UserRepository interface {
 	SetMFAEnabled(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enabled bool) error
 	ClearMFA(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hashToRemove string) error
+	PurgeRecoveryCodes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.Status) error
 
 	// Password lifecycle (Wave 15.3).
@@ -149,6 +150,20 @@ func (r *userRepo) ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID,
 	_, err := tx.Exec(ctx, `
 		UPDATE users SET mfa_recovery_hashes = array_remove(mfa_recovery_hashes, $3), updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`, tenantID, id, hashToRemove)
+	return mapPgError(err)
+}
+
+// PurgeRecoveryCodes nulls every remaining recovery hash. Used after a
+// recovery code is successfully consumed (lost-device fallback) to
+// invalidate the rest of the printed sheet — the user has to regenerate
+// codes via /mfa/setup before they have any recovery path again. TOTP
+// secret is preserved; mfa_enabled stays true. Stronger posture than
+// ConsumeRecoveryHash alone, which only removed the matched code and
+// left the others usable by anyone who'd captured the original sheet.
+func (r *userRepo) PurgeRecoveryCodes(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users SET mfa_recovery_hashes = NULL, updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return mapPgError(err)
 }
 

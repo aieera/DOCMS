@@ -99,6 +99,13 @@ services:
       - { name: admin-users,      paths: [/api/v1/admin/users],       strip_path: false }
       - { name: admin-sso,        paths: [/api/v1/admin/sso-configs], strip_path: false }
       - { name: admin-tenants,    paths: [/api/v1/admin/tenants],     strip_path: false }
+      # Wave 16 — auth service exposes per-tenant config (session policy
+      # + plan lookup) under /api/v1/tenant/*. Without these routes the
+      # frontend's useTenantPlan + /admin/tenant/security pages 404.
+      - { name: tenant-plan,             paths: [/api/v1/tenant/plan],              strip_path: false }
+      - { name: tenant-session-policy,   paths: [/api/v1/tenant/session-policy],    strip_path: false }
+      - { name: tenant-residency-policy, paths: [/api/v1/tenant/residency-policy],  strip_path: false }
+      - { name: tenant-workspace-regions,paths: [/api/v1/tenant/workspace-regions], strip_path: false }
       - { name: scim,             paths: [/api/v1/scim/v2],           strip_path: false }
       - { name: api-v1-health,    paths: [/api/v1/health], methods: [GET], strip_path: true }
 
@@ -126,8 +133,15 @@ services:
           - name: rate-limiting
             config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
 
+  # The storage service is gRPC-only. Its HTTP/JSON surface (uploads,
+  # downloads) is served by the document service via the in-process
+  # StorageProxy (services/document/internal/handler/storage_proxy.go),
+  # which forwards every request over gRPC to storage:8081. Kong must
+  # therefore route /api/v1/storage/* to document:8081, NOT storage:8081
+  # — sending raw HTTP at the gRPC port produces the 404s users see in
+  # the browser network tab.
   - name: storage
-    url: http://storage:8081
+    url: http://document:8081
     routes:
       - name: storage
         paths: [/api/v1/storage]
@@ -137,6 +151,16 @@ services:
           # quotas live at the Storage Service itself.
           - name: rate-limiting
             config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
+          # Blueprint §22 anti-pattern #12 — size enforcement at the
+          # gateway edge. 50 GiB matches the Enterprise plan ceiling; the
+          # storage service does the per-tenant (Standard vs Enterprise)
+          # check at initiate, and the finalize path re-verifies actual
+          # bytes. Three layers of defense in depth.
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 51200   # MiB → 50 GiB
+              size_unit: megabytes
+              require_content_length: true
 
   - name: search
     url: http://search:8081
@@ -159,6 +183,11 @@ services:
     url: http://workflow:8081
     routes:
       - { name: workflows, paths: [/api/v1/workflows], strip_path: false }
+      # /api/v1/platform/* is the admin observability surface served by
+      # the workflow service: metrics query, trusted-proxy test,
+      # Temporal schedules, security-posture (ADR 0033). Without this
+      # route the /admin/platform/* pages 404 on every request.
+      - { name: platform,  paths: [/api/v1/platform],  strip_path: false }
 
   - name: notification
     url: http://notification:8081
@@ -175,3 +204,13 @@ services:
     routes:
       - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
       - { name: connectors, paths: [/api/v1/connectors], strip_path: false }
+      # MCP (Model Context Protocol) Server-Sent Events for AI tooling.
+      - { name: mcp,        paths: [/api/v1/mcp],        strip_path: false }
+
+  # Acknowledgement service — Wave 15 policy attestation campaigns.
+  # Was missing from Kong since the service shipped, so /admin/acknowledgements
+  # and /acknowledgements (user-side) both 404'd until now.
+  - name: acknowledgement
+    url: http://acknowledgement:8081
+    routes:
+      - { name: acknowledgements, paths: [/api/v1/acknowledgement], strip_path: false }

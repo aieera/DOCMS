@@ -28,6 +28,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"google.golang.org/grpc/metadata"
+
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
@@ -176,10 +179,15 @@ type InitiateUploadResult struct {
 // and returns everything the client needs to push bytes to S3 directly.
 func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*InitiateUploadResult, error) {
 	maxSize := s.cfg.MaxUploadSize
+	planLabel := "default"
 	if s.plans != nil && in.TenantID != uuid.Nil {
 		maxSize = s.plans.MaxUploadSize(ctx, in.TenantID)
+		planLabel = s.plans.Plan(ctx, in.TenantID)
 	}
 	if err := validateInitiate(in, maxSize); err != nil {
+		if vdmserr.KindOf(err) == vdmserr.KindPayloadTooLarge {
+			uploadSizeRejectedTotal.WithLabelValues(planLabel).Inc()
+		}
 		return nil, err
 	}
 	// MIME blocklist + extension blocklist at initiate time. This is the
@@ -413,14 +421,49 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 2b. MIME magic-byte detection. If detected type is executable OR
 	//     conflicts with declared type and detected is exec → quarantine.
+	//     On any mismatch (declared != detected, both known) we increment
+	//     the mime_mismatch counter and record the server-detected type as
+	//     authoritative downstream (content_blobs.mime_type).
 	detected, _ := scanner.DetectFromBytes(plainBytes[:min(len(plainBytes), 262)])
 	mimeMismatch := detected.IsKnown && !scanner.MIMEMatchesDeclared(session.MimeType, detected)
 	detectedExec := detected.IsKnown && scanner.IsBlockedMIME(detected.MIME)
-	mustQuarantineMIME := detectedExec || (mimeMismatch && detectedExec)
+	mustQuarantineMIME := detectedExec
+	if mimeMismatch {
+		mimeMismatchTotal.WithLabelValues(session.TenantID.String()).Inc()
+		s.log.Warn().
+			Str("upload_id", session.ID.String()).
+			Str("declared_mime", session.MimeType).
+			Str("detected_mime", detected.MIME).
+			Msg("mime mismatch: server-detected type is authoritative")
+	}
+	if detectedExec {
+		mimeRejectedTotal.WithLabelValues(session.TenantID.String()).Inc()
+	}
 
 	// 3. ClamAV stream scan against the in-memory bytes (no second S3 GET).
 	scanRes := s.scanBuffer(ctx, bytes.NewReader(plainBytes))
-	if mustQuarantineMIME {
+	// Fail-closed on scanner unavailability: reject the upload rather than
+	// admit untrusted bytes. See docs/runbooks/quarantine-response.md for
+	// operator guidance during a ClamAV outage.
+	if scanRes.result == model.ScanError {
+		s.failUpload(ctx, session, "clamav unavailable; fail-closed reject")
+		uploadFinalizeTotal.WithLabelValues("error").Inc()
+		return nil, vdmserr.Unavailable("virus scanner unavailable; please retry")
+	}
+	// Two quarantine paths that look the same at the storage layer but
+	// get different wire treatment for the uploader UX:
+	//
+	//   virus (ClamAV infected):  200 OK, scan_result=infected. The
+	//       client surfaces "your file was flagged for review"; admin
+	//       decides release/delete from the quarantine queue.
+	//
+	//   blocked_mime (MIME-only): 409 MIME_MISMATCH with declared vs
+	//       detected. The uploader shows an inline "file type doesn't
+	//       match extension" alert so the user can just re-upload the
+	//       right file — no admin loop needed.
+	//
+	// When BOTH fire, virus wins (more severe, admin must review).
+	if scanRes.result != model.ScanInfected && mustQuarantineMIME {
 		scanRes.result = model.ScanInfected
 		scanRes.signature = "BlockedMIME:" + detected.MIME
 	}
@@ -436,6 +479,7 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 
 	// 4. If infected / MIME-blocked: COPY to quarantine, delete from hot.
 	finalTier := "hot"
+	quarantineReason := ""
 	if scanRes.result == model.ScanInfected {
 		qKey := path.Join("infected", session.TenantID.String(), key)
 		if err := s.s3.CopyObject(ctx, bucket, key, s.cfg.QuarantineBucket, qKey); err != nil {
@@ -446,6 +490,12 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			key = qKey
 		}
 		finalTier = "quarantine"
+		if mustQuarantineMIME {
+			quarantineReason = "blocked_mime"
+		} else {
+			quarantineReason = "virus"
+		}
+		quarantineEventsTotal.WithLabelValues(quarantineReason).Inc()
 	}
 
 	// 5. Envelope encryption. If enabled, rewrap bytes with a fresh DEK and
@@ -483,12 +533,45 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			if err := s.repos.Uploads.UpdateStatus(ctx, tx, session.TenantID, session.ID, model.UploadQuarantine); err != nil {
 				return err
 			}
-			return s.emit(ctx, tx, session.TenantID, session.ID, "dms.storage.upload_quarantined.v1", map[string]any{
+			qeID, _ := uuid.NewV7()
+			if err := s.repos.Quarantine.Record(ctx, tx, &repository.QuarantineEvent{
+				ID:            qeID,
+				TenantID:      session.TenantID,
+				UploadID:      session.ID,
+				Reason:        quarantineReason,
+				Signature:     scanRes.signature,
+				DeclaredMIME:  session.MimeType,
+				DetectedMIME:  detected.MIME,
+				StorageBucket: bucket,
+				StorageKey:    key,
+				CreatedAt:     s.now().UTC(),
+			}); err != nil {
+				return err
+			}
+			if err := s.emit(ctx, tx, session.TenantID, session.ID, "dms.storage.upload_quarantined.v1", map[string]any{
 				"upload_id":      session.ID.String(),
 				"tenant_id":      session.TenantID.String(),
 				"signature":      scanRes.signature,
+				"reason":         quarantineReason,
+				"declared_mime":  session.MimeType,
+				"detected_mime":  detected.MIME,
 				"storage_bucket": bucket,
 				"storage_key":    key,
+			}); err != nil {
+				return err
+			}
+			// Fan-out to the notification service under the dms.notify.>
+			// carve-out (ADR 0032 / T-D-9). The notification worker turns
+			// this into an admin alert — the quarantine runbook points
+			// operators to the same payload for manual review.
+			return s.emit(ctx, tx, session.TenantID, session.ID, "dms.notify.quarantine.v1", map[string]any{
+				"tenant_id":     session.TenantID.String(),
+				"user_ids":      []string{}, // admin fan-out; notification service resolves
+				"title":         "File quarantined",
+				"body":          fmt.Sprintf("Upload %s was quarantined (%s). Signature: %s", session.ID, quarantineReason, scanRes.signature),
+				"resource_type": "upload",
+				"resource_id":   session.ID.String(),
+				"severity":      "warning",
 			})
 		}
 		// Happy path: insert content_blobs row capturing the final bytes,
@@ -541,6 +624,16 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		return nil, err
 	}
 
+	uploadFinalizeTotal.WithLabelValues(string(scanRes.result)).Inc()
+
+	// MIME-only quarantine (no real virus) returns a structured 409 so the
+	// uploader renders the inline "file type doesn't match extension" alert
+	// instead of a generic "flagged for review" — see the two-paths comment
+	// above. The file IS still in the quarantine bucket with a
+	// quarantine_events row and a notify.quarantine emission.
+	if quarantineReason == "blocked_mime" {
+		return nil, vdmserr.MIMEMismatch(session.MimeType, detected.MIME)
+	}
 	return &CompleteUploadResult{
 		StorageBucket: bucket,
 		StorageKey:    key,
@@ -613,6 +706,201 @@ func (s *Service) GetScanStatus(ctx context.Context, tenantID, uploadID uuid.UUI
 	return rec, err
 }
 
+// ShredBlobsInput is the service-layer input for ShredBlobs (ADR 0036).
+type ShredBlobsInput struct {
+	TenantID    uuid.UUID
+	BlobIDs     []uuid.UUID
+	CandidateID string // disposition_candidates.id authorising the shred
+	ActorID     string // reviewer who approved the candidate
+}
+
+// ShredBlobsResult mirrors the gRPC response shape.
+type ShredBlobsResult struct {
+	Shredded        []uuid.UUID
+	AlreadyShredded []uuid.UUID
+	NotFound        []uuid.UUID
+}
+
+// ShredBlobs (ADR 0036) crypto-shreds the wrapped DEKs for a set of
+// content_blobs. The DEK row in `content_blobs.encrypted_dek` is set
+// to NULL inside a single tenant tx along with `dek_nonce` and a
+// `shredded_at` timestamp; the CHECK constraint
+// content_blobs_shred_consistency makes the (NULL DEK ∧ shredded_at NOT
+// NULL) invariant DB-enforced.
+//
+// Idempotent: blobs already shredded are skipped silently and reported
+// separately; missing blobs likewise. Per-blob audit events
+// (dms.blob.shredded.v1) land in the outbox so an auditor can pivot
+// from any blob row to the disposition candidate that authorised it.
+//
+// The S3 object delete is **not** done here — it's a best-effort async
+// hygiene operation handled by the disposition executor in the document
+// service after this RPC returns. Once the DEK is null the ciphertext
+// is mathematically unrecoverable; deletion of the bytes is cleanup,
+// not a security boundary.
+func (s *Service) ShredBlobs(ctx context.Context, in ShredBlobsInput) (*ShredBlobsResult, error) {
+	if in.TenantID == uuid.Nil {
+		return nil, vdmserr.Validation("tenant_id", "required")
+	}
+	if len(in.BlobIDs) == 0 {
+		// Empty input is a programmer error, not a runtime case.
+		return nil, vdmserr.Validation("blob_ids", "at least one required")
+	}
+	res := &ShredBlobsResult{
+		Shredded:        make([]uuid.UUID, 0, len(in.BlobIDs)),
+		AlreadyShredded: make([]uuid.UUID, 0),
+		NotFound:        make([]uuid.UUID, 0),
+	}
+	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+		for _, id := range in.BlobIDs {
+			outcome, err := s.repos.ContentBlobs.Shred(ctx, tx, in.TenantID, id)
+			if err != nil {
+				return err
+			}
+			switch outcome {
+			case repository.ShredOutcomeShredded:
+				res.Shredded = append(res.Shredded, id)
+				if err := s.emit(ctx, tx, in.TenantID, id, "dms.blob.shredded.v1", map[string]any{
+					"blob_id":      id.String(),
+					"tenant_id":    in.TenantID.String(),
+					"candidate_id": in.CandidateID,
+					"actor_id":     in.ActorID,
+				}); err != nil {
+					// Outbox failure rolls back the entire tx — the audit
+					// trail is non-negotiable for a destructive op.
+					return fmt.Errorf("emit shredded event for %s: %w", id, err)
+				}
+			case repository.ShredOutcomeAlreadyShredded:
+				res.AlreadyShredded = append(res.AlreadyShredded, id)
+			case repository.ShredOutcomeNotFound:
+				res.NotFound = append(res.NotFound, id)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info().
+		Str("tenant_id", in.TenantID.String()).
+		Str("candidate_id", in.CandidateID).
+		Int("shredded", len(res.Shredded)).
+		Int("already", len(res.AlreadyShredded)).
+		Int("not_found", len(res.NotFound)).
+		Msg("crypto-shred completed")
+	return res, nil
+}
+
+// TransitionBlobsTierInput is the service-layer input.
+type TransitionBlobsTierInput struct {
+	TenantID    uuid.UUID
+	BlobIDs     []uuid.UUID
+	TargetClass string // S3 class string, e.g. "STANDARD_IA"
+	PolicyID    string // retention_policy.id authorising the transition
+}
+
+// TransitionBlobsTierResult mirrors the gRPC response.
+type TransitionBlobsTierResult struct {
+	Transitioned    []uuid.UUID
+	AlreadyInTarget []uuid.UUID
+	NotFound        []uuid.UUID
+}
+
+// TransitionBlobsTier moves blobs to a colder S3 storage class. The S3
+// CopyObject is best-effort — if it fails, the DB column stays
+// unchanged and the next retention sweep retries. The audit event
+// (dms.blob.tier_transitioned.v1) is only emitted on a successful
+// transition; tenants reading the audit trail can rely on its
+// presence to mean the bytes really did move.
+func (s *Service) TransitionBlobsTier(ctx context.Context, in TransitionBlobsTierInput) (*TransitionBlobsTierResult, error) {
+	if in.TenantID == uuid.Nil {
+		return nil, vdmserr.Validation("tenant_id", "required")
+	}
+	if len(in.BlobIDs) == 0 {
+		return nil, vdmserr.Validation("blob_ids", "at least one required")
+	}
+	if in.TargetClass == "" {
+		return nil, vdmserr.Validation("target_class", "required")
+	}
+	res := &TransitionBlobsTierResult{
+		Transitioned:    make([]uuid.UUID, 0, len(in.BlobIDs)),
+		AlreadyInTarget: make([]uuid.UUID, 0),
+		NotFound:        make([]uuid.UUID, 0),
+	}
+
+	// Pre-load every blob's bucket+key so we can call S3 *outside* a DB
+	// tx — like ShredBlobs, gRPC/S3 calls under a held tx are a bad
+	// pattern. We then re-open a tx per-blob to update the column +
+	// emit audit, scoped tightly.
+	type blobRef struct {
+		id           uuid.UUID
+		bucket, key  string
+		currentClass string
+	}
+	var refs []blobRef
+	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+		for _, id := range in.BlobIDs {
+			b, err := s.repos.ContentBlobs.GetByID(ctx, tx, in.TenantID, id)
+			if err != nil {
+				if vdmserr.KindOf(err) == vdmserr.KindNotFound {
+					res.NotFound = append(res.NotFound, id)
+					continue
+				}
+				return err
+			}
+			refs = append(refs, blobRef{id: b.ID, bucket: b.StorageBucket, key: b.StorageKey, currentClass: b.StorageClass})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ref := range refs {
+		if ref.currentClass == in.TargetClass {
+			res.AlreadyInTarget = append(res.AlreadyInTarget, ref.id)
+			continue
+		}
+		// S3 CopyObject onto self with new class. Failure is per-blob;
+		// other blobs in the batch still try.
+		if err := s.s3.SetStorageClass(ctx, ref.bucket, ref.key, in.TargetClass); err != nil {
+			s.log.Warn().Err(err).
+				Str("blob_id", ref.id.String()).
+				Str("target", in.TargetClass).
+				Msg("storage class transition failed; will retry next sweep")
+			continue
+		}
+		// Persist + audit in one tenant tx.
+		if err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+			outcome, err := s.repos.ContentBlobs.TransitionStorageClass(ctx, tx, in.TenantID, ref.id, in.TargetClass)
+			if err != nil || outcome != repository.TransitionOutcomeMoved {
+				return err
+			}
+			return s.emit(ctx, tx, in.TenantID, ref.id, "dms.blob.tier_transitioned.v1", map[string]any{
+				"blob_id":      ref.id.String(),
+				"tenant_id":    in.TenantID.String(),
+				"from_class":   ref.currentClass,
+				"to_class":     in.TargetClass,
+				"policy_id":    in.PolicyID,
+			})
+		}); err != nil {
+			s.log.Error().Err(err).Str("blob_id", ref.id.String()).Msg("transition persist failed")
+			continue
+		}
+		res.Transitioned = append(res.Transitioned, ref.id)
+	}
+
+	s.log.Info().
+		Str("tenant_id", in.TenantID.String()).
+		Str("policy_id", in.PolicyID).
+		Str("target", in.TargetClass).
+		Int("transitioned", len(res.Transitioned)).
+		Int("already", len(res.AlreadyInTarget)).
+		Int("not_found", len(res.NotFound)).
+		Msg("tier transition completed")
+	return res, nil
+}
+
 // ---- internals ------------------------------------------------------------
 
 type scanOutcome struct {
@@ -636,18 +924,28 @@ func (s *Service) scanObject(ctx context.Context, bucket, key string) scanOutcom
 // scanBuffer runs ClamAV against an already-fetched byte source. Used by
 // CompleteUpload to avoid a second S3 GET when we already pulled bytes
 // into memory for SHA-256 / MIME / envelope-encrypt.
+//
+// Fail-closed: on scanner nil / transport error, returns ScanError and the
+// caller rejects with 503. This is a breaking change from the earlier
+// fail-open behavior — see docs/runbooks/quarantine-response.md.
 func (s *Service) scanBuffer(ctx context.Context, r io.Reader) scanOutcome {
+	start := time.Now()
 	if s.scanner == nil {
+		scanOutcomeTotal.WithLabelValues("unavailable").Inc()
 		return scanOutcome{result: model.ScanError}
 	}
 	res, err := s.scanner.Scan(ctx, r)
+	scanDurationSeconds.Observe(time.Since(start).Seconds())
 	if err != nil {
-		s.log.Error().Err(err).Msg("clamav scan failed; fail-open")
+		scanOutcomeTotal.WithLabelValues("error").Inc()
+		s.log.Error().Err(err).Msg("clamav scan failed; fail-closed")
 		return scanOutcome{result: model.ScanError}
 	}
 	if res.Infected {
+		scanOutcomeTotal.WithLabelValues("infected").Inc()
 		return scanOutcome{result: model.ScanInfected, signature: res.Signature}
 	}
+	scanOutcomeTotal.WithLabelValues("clean").Inc()
 	return scanOutcome{result: model.ScanClean}
 }
 
@@ -682,7 +980,15 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 		return nil
 	}
 	resKind, resID := "", ""
+	// Per CLAUDE.md cross-service auth section: OPA Rule 5 needs
+	// workspace_id and Rule 6 needs user_role. Without these the
+	// owner/admin allow-all branches never fire and every check
+	// default-denies. user_role is read from the gRPC metadata
+	// populated by middleware.UserIdentityInterceptor upstream.
 	extra := map[string]any{}
+	if role := auth.GetUserRole(ctx); role != "" {
+		extra["user_role"] = role
+	}
 	switch {
 	case in.DocumentID != nil:
 		resKind, resID = "document", in.DocumentID.String()
@@ -701,7 +1007,12 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 	if err != nil {
 		return fmt.Errorf("policy ctx build: %w", err)
 	}
-	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
+	// Forward caller identity to the policy service. Without this the
+	// downstream TenantInterceptor 401s and the fail-closed branch
+	// reports "policy service unavailable" — see CLAUDE.md cross-
+	// service auth section.
+	outCtx := withCallerMetadata(ctx, in.TenantID, in.UserID, auth.GetUserRole(ctx))
+	resp, err := s.policy.CheckPermission(outCtx, &vaultdmsv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    in.UserID.String(),
 		Action:       "edit",
@@ -730,7 +1041,12 @@ func validateInitiate(in InitiateUploadInput, maxSize int64) error {
 		return vdmserr.Validation("size_bytes", "must be > 0")
 	}
 	if in.SizeBytes > maxSize {
-		return vdmserr.Validation("size_bytes", fmt.Sprintf("exceeds single-PUT ceiling of %d bytes; use multipart", maxSize))
+		// 413 Payload Too Large. Blueprint §22 anti-pattern #12: size
+		// enforcement at three layers (gateway, presigned URL, storage
+		// finalize) — this is the finalize-layer gate.
+		return vdmserr.PayloadTooLarge(fmt.Sprintf(
+			"upload size %d exceeds tenant plan ceiling of %d bytes",
+			in.SizeBytes, maxSize))
 	}
 	if strings.TrimSpace(in.Filename) == "" {
 		return vdmserr.Validation("filename", "required")
@@ -798,6 +1114,18 @@ func rewriteHost(presigned, publicBase string) string {
 
 func isIdempotentDupe(err error) bool {
 	return err != nil && vdmserr.KindOf(err) == vdmserr.KindAlreadyExists
+}
+
+// withCallerMetadata copies tenant + user identity onto an outgoing
+// gRPC context so downstream services' TenantInterceptor +
+// UserIdentityInterceptor accept the call. Pattern documented in
+// CLAUDE.md cross-service auth section.
+func withCallerMetadata(ctx context.Context, tenantID, userID uuid.UUID, role string) context.Context {
+	pairs := []string{"x-tenant-id", tenantID.String(), "x-user-id", userID.String()}
+	if role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
 // silence unused imports in minimal builds

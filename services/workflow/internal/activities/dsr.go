@@ -323,6 +323,90 @@ func (a *Activities) UpdateDSRRequest(ctx context.Context, tenantID, requestID, 
 	})
 }
 
+// HeldHoldDetail is one row in the legal-hold conflict surface. The
+// erase workflow looks up these rows when the hold short-circuit
+// fires so it can write structured dsr_conflicts entries the
+// compliance UI can resolve.
+type HeldHoldDetail struct {
+	HoldID        string `json:"hold_id"`
+	MatterName    string `json:"matter_name"`
+	DocumentCount int    `json:"document_count"`
+}
+
+// SubjectHeldDocumentsDetail returns the per-hold breakdown of
+// documents authored by the subject under active legal hold. Empty
+// slice when nothing is held; the workflow's bool short-circuit is
+// equivalent to len(detail) > 0. Kept as a separate activity rather
+// than retrofitting SubjectHasHeldDocuments to preserve test coverage
+// of the boolean fast-path that the older workflows still rely on.
+func (a *Activities) SubjectHeldDocumentsDetail(ctx context.Context, tenantID, subjectID string) ([]HeldHoldDetail, error) {
+	out := []HeldHoldDetail{}
+	err := a.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT lh.id::text,
+			       lh.name,
+			       COUNT(*)::int
+			  FROM legal_hold_documents lhd
+			  JOIN legal_holds lh
+			    ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+			  JOIN documents d
+			    ON d.tenant_id = lhd.tenant_id AND d.id = lhd.document_id
+			 WHERE lhd.tenant_id = $1
+			   AND lh.is_active = true
+			   AND d.created_by = $2
+			 GROUP BY lh.id, lh.name`,
+			tenantID, subjectID,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var d HeldHoldDetail
+			if err := rows.Scan(&d.HoldID, &d.MatterName, &d.DocumentCount); err != nil {
+				return err
+			}
+			out = append(out, d)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// RecordDSRConflict inserts a row into dsr_conflicts (ADR 0037). One
+// call per conflict — the erase workflow loops over each hold from
+// SubjectHeldDocumentsDetail and records each as its own row so a
+// compliance officer can act on them independently (release matter A,
+// keep matter B → partial erase).
+//
+// conflictType is the CHECK-constrained string ('legal_hold' |
+// 'retention_conflict' | 'multi_tenant'); details is JSON-serialized
+// verbatim into the conflict_details column.
+func (a *Activities) RecordDSRConflict(
+	ctx context.Context,
+	tenantID, requestID, conflictType string,
+	details map[string]any,
+) (string, error) {
+	id := uuid.New()
+	payload, err := json.Marshal(details)
+	if err != nil {
+		return "", fmt.Errorf("marshal conflict details: %w", err)
+	}
+	err = a.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO dsr_conflicts (
+				id, tenant_id, request_id, conflict_type, conflict_details, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6)`,
+			id, tenantID, requestID, conflictType, payload, time.Now().UTC(),
+		)
+		return err
+	})
+	if err != nil {
+		return "", fmt.Errorf("insert conflict: %w", err)
+	}
+	return id.String(), nil
+}
+
 // EmitDSREvent writes a dms.dsr.* outbox row. Workflow uses this for
 // requested / completed / blocked emissions.
 func (a *Activities) EmitDSREvent(ctx context.Context, tenantID, requestID, subjectEmail, subject string, data map[string]any) error {

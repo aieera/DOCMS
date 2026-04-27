@@ -5,6 +5,8 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -68,6 +70,54 @@ func (r *Repository) GetWebhook(ctx context.Context, tenantID, id string) (*mode
 func (r *Repository) DeleteWebhook(ctx context.Context, tenantID, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM webhook_subscriptions WHERE tenant_id = $1 AND id = $2`, tenantID, id)
 	return err
+}
+
+// WebhookPatch carries optional field updates. nil = leave unchanged.
+// Only fields the operator can change at runtime are surfaced — secret
+// rotation has its own atomic path, and tenant_id / created_by /
+// created_at are immutable.
+type WebhookPatch struct {
+	URL    *string
+	Events *[]string
+	Active *bool
+}
+
+// PatchWebhook applies a partial update. Returns pgx.ErrNoRows if the
+// row doesn't exist for the tenant, so the caller can return 404
+// instead of a silent no-op.
+func (r *Repository) PatchWebhook(ctx context.Context, tenantID, id string, p WebhookPatch) error {
+	// Build the SET clause dynamically. Each field that's non-nil
+	// contributes one assignment + one parameter; the WHERE clause
+	// always pins (tenant_id, id) at the end.
+	setClauses := make([]string, 0, 3)
+	args := make([]any, 0, 5)
+	if p.URL != nil {
+		args = append(args, *p.URL)
+		setClauses = append(setClauses, "url = $"+strconv.Itoa(len(args)))
+	}
+	if p.Events != nil {
+		eventsJSON, _ := json.Marshal(*p.Events)
+		args = append(args, eventsJSON)
+		setClauses = append(setClauses, "events = $"+strconv.Itoa(len(args)))
+	}
+	if p.Active != nil {
+		args = append(args, *p.Active)
+		setClauses = append(setClauses, "active = $"+strconv.Itoa(len(args)))
+	}
+	if len(setClauses) == 0 {
+		return nil // empty patch is a no-op, not an error
+	}
+	args = append(args, tenantID, id)
+	query := "UPDATE webhook_subscriptions SET " + strings.Join(setClauses, ", ") +
+		" WHERE tenant_id = $" + strconv.Itoa(len(args)-1) + " AND id = $" + strconv.Itoa(len(args))
+	tag, err := r.pool.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 // RotateSecret atomically swaps the webhook's HMAC secret. Returns

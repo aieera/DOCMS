@@ -121,6 +121,13 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	// ADR 0036 — wire storage gRPC + outbox for the disposition executor.
+	// Storage client may be nil (boot-time outage); the executor refuses
+	// to run rather than silently skipping the shred.
+	if storageClient != nil {
+		svc.SetStorageClient(storageClient)
+	}
+	svc.SetOutbox(database.NewOutboxRepository())
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
 
@@ -150,6 +157,8 @@ func main() {
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
+	quarantineAdminHandler := handler.NewQuarantineAdminHandler(pool, database.NewOutboxRepository(), *log.Z())
+	dispositionHandler := handler.NewDispositionHandler(pool, database.NewOutboxRepository(), *log.Z())
 
 	storageProxy := handler.NewStorageProxy(storageClient)
 
@@ -281,11 +290,42 @@ func main() {
 	rootMux.Handle("/api/v1/admin/share-links/", middleware.CorrelationHTTP(shareLinksAdminMux))
 	rootMux.Handle("/api/v1/admin/documents/", middleware.CorrelationHTTP(shareLinksAdminMux))
 
+	// GAP-4 — soft-delete trash list + restore. Same /api/v1/admin/documents
+	// prefix as share-links; the rootMux pattern routing peels off the
+	// /trash and /{id}/restore sub-paths to the right mux.
+	trashMux := http.NewServeMux()
+	handler.NewTrashHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(trashMux)
+	rootMux.Handle("GET /api/v1/admin/documents/trash", middleware.CorrelationHTTP(trashMux))
+	rootMux.Handle("POST /api/v1/admin/documents/{id}/restore", middleware.CorrelationHTTP(trashMux))
+
 	// Retention policies admin — Wave 10.
 	retentionPolicyMux := http.NewServeMux()
 	retentionPolicyHandler.Register(retentionPolicyMux)
 	rootMux.Handle("/api/v1/admin/retention-policies", middleware.CorrelationHTTP(retentionPolicyMux))
 	rootMux.Handle("/api/v1/admin/retention-policies/", middleware.CorrelationHTTP(retentionPolicyMux))
+
+	// Quarantine review queue — admin releases/deletes/acks items that
+	// the storage finalize path moved to the quarantine bucket. Every
+	// mutation emits dms.audit.quarantine_*.v1 via the outbox.
+	quarantineMux := http.NewServeMux()
+	quarantineAdminHandler.Register(quarantineMux)
+	rootMux.Handle("/api/v1/admin/quarantine", middleware.CorrelationHTTP(quarantineMux))
+	rootMux.Handle("/api/v1/admin/quarantine/", middleware.CorrelationHTTP(quarantineMux))
+
+	// Disposition queue (ADR 0036) — compliance review of dispose
+	// candidates the retention sweeper enqueued. Approve/reject are
+	// gated to compliance_officer | owner inside the handler.
+	dispositionMux := http.NewServeMux()
+	dispositionHandler.Register(dispositionMux)
+	rootMux.Handle("/api/v1/admin/disposition/", middleware.CorrelationHTTP(dispositionMux))
+
+	// Public DSR intake (ADR 0037) — UNAUTHENTICATED. Gateway rate-limits
+	// per IP + per email. The session-auth middleware would fight these
+	// routes (no session yet); they're mounted on a bare mux outside
+	// the admin path.
+	dsrPublicMux := http.NewServeMux()
+	handler.NewDSRPublicHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(dsrPublicMux)
+	rootMux.Handle("/api/v1/dsr/", middleware.CorrelationHTTP(dsrPublicMux))
 
 	// Redaction endpoint — Wave 11.5. Uses Go 1.22 method+pattern
 	// routing so only the /redact suffix lands here; everything else
@@ -307,6 +347,22 @@ func main() {
 	handler.NewRetentionSweepHandler(svc, *log.Z()).Register(retentionSweepMux)
 	rootMux.Handle("POST /internal/v1/retention/sweep",
 		middleware.CorrelationHTTP(retentionSweepMux))
+
+	// ADR 0036 — internal disposition-execute endpoint for the
+	// vaultdms-disposition CronJob. Same auth (shared secret) as the
+	// retention sweep; runs hourly per tenant.
+	dispositionExecMux := http.NewServeMux()
+	handler.NewDispositionExecutorHandler(svc, *log.Z()).Register(dispositionExecMux)
+	rootMux.Handle("POST /internal/v1/disposition/execute",
+		middleware.CorrelationHTTP(dispositionExecMux))
+
+	// ADR 0037 — internal DSR SLA monitor for the vaultdms-dsr-sla CronJob.
+	// Cross-tenant scan; emits per-tenant warning / breach notifications
+	// for requests within 12h of (or past) the 30-day GDPR deadline.
+	dsrSLAMux := http.NewServeMux()
+	handler.NewDSRSLAHandler(pool, database.NewOutboxRepository(), *log.Z()).Register(dsrSLAMux)
+	rootMux.Handle("POST /internal/v1/dsr/sla-sweep",
+		middleware.CorrelationHTTP(dsrSLAMux))
 
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
@@ -351,6 +407,13 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Residency SLI reconciler (Wave 16, Blueprint §9.1) ---------------
+	// Daily sweep — populates the data_residency_compliance + per-region
+	// off_region gauges so the /admin/compliance widget surfaces a real
+	// SLI rather than "100% unless proven otherwise".
+	residency := service.NewResidencyReconciler(pool, *log.Z())
+	go residency.Start(ctx)
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")
@@ -361,6 +424,7 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+	residency.Stop()
 }
 
 // ---- deny-all fallback when Policy Service is unreachable -----------------

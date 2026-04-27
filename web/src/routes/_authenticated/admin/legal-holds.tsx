@@ -2,14 +2,17 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Scale, ShieldOff } from 'lucide-react'
+import { Scale, ShieldOff, Download } from 'lucide-react'
 
 import { listHolds, releaseHold, type LegalHold } from '@/api/holds'
+import { exportEDiscovery } from '@/api/admin'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Dialog } from '@/components/ui/Dialog'
+import { Input } from '@/components/ui/Input'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
 
 type StatusFilter = 'active' | 'released' | 'all'
@@ -33,6 +36,8 @@ function LegalHoldsPage() {
     },
     onError: (err: unknown) => toast.error(extractMessage(err)),
   })
+
+  const [exportTarget, setExportTarget] = useState<LegalHold | null>(null)
 
   const onRelease = (hold: LegalHold) => {
     const reason = window.prompt(`Release hold "${hold.name}"? Enter reason:`)
@@ -104,16 +109,115 @@ function LegalHoldsPage() {
                   {hold.released_at && <> · released {formatRelativeTime(hold.released_at)}</>}
                 </div>
               </div>
-              {hold.is_active && (
-                <Button onClick={() => onRelease(hold)} disabled={release.isPending}>
-                  <ShieldOff className="h-4 w-4" /> Release
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid={`hold-export-${hold.id}`}
+                  onClick={() => setExportTarget(hold)}
+                  title="Export attached documents as a signed ZIP for legal review"
+                >
+                  <Download className="h-4 w-4" /> Export
                 </Button>
-              )}
+                {hold.is_active && (
+                  <Button onClick={() => onRelease(hold)} disabled={release.isPending}>
+                    <ShieldOff className="h-4 w-4" /> Release
+                  </Button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
       )}
+
+      {exportTarget && (
+        <ExportDialog hold={exportTarget} onClose={() => setExportTarget(null)} />
+      )}
     </div>
+  )
+}
+
+function ExportDialog({
+  hold,
+  onClose,
+}: {
+  hold: LegalHold
+  onClose: () => void
+}) {
+  const [caseName, setCaseName] = useState(hold.name)
+  const [custodianEmail, setCustodianEmail] = useState('')
+
+  // matter_reference is the natural case_id; fall back to the hold's
+  // own UUID so the audit row + filename always have a stable handle.
+  const caseID = hold.matter_reference || hold.id
+
+  const exportMut = useMutation({
+    mutationFn: () =>
+      exportEDiscovery({
+        case_id: caseID,
+        case_name: caseName.trim() || hold.name,
+        custodian_email: custodianEmail.trim(),
+        document_ids: hold.document_ids ?? [],
+      }),
+    onSuccess: (r) => {
+      toast.success(`Exported ${r.filename}`)
+      onClose()
+    },
+    onError: (err: unknown) => toast.error(extractMessage(err) || 'Export failed'),
+  })
+
+  const docCount = hold.document_ids?.length ?? 0
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()} title="Export for eDiscovery" size="md">
+      <div className="space-y-3">
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          Streams a signed ZIP bundling every document attached to this hold. The export is
+          recorded as a <code>dms.audit.ediscovery_exported.v1</code> event for chain-of-custody.
+        </p>
+        <div>
+          <label htmlFor="ediscovery-case-id" className="text-xs font-medium">Case ID</label>
+          <Input id="ediscovery-case-id" data-testid="ediscovery-case-id" value={caseID} disabled />
+        </div>
+        <div>
+          <label htmlFor="ediscovery-case-name" className="text-xs font-medium">Case name</label>
+          <Input
+            id="ediscovery-case-name"
+            data-testid="ediscovery-case-name"
+            value={caseName}
+            onChange={(e) => setCaseName(e.target.value)}
+            placeholder="Smith v Acme — initial production"
+          />
+        </div>
+        <div>
+          <label htmlFor="ediscovery-custodian-email" className="text-xs font-medium">Custodian email</label>
+          <Input
+            id="ediscovery-custodian-email"
+            data-testid="ediscovery-custodian-email"
+            type="email"
+            value={custodianEmail}
+            onChange={(e) => setCustodianEmail(e.target.value)}
+            placeholder="legal@acme.example"
+          />
+        </div>
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          {docCount === 0
+            ? 'This hold has no documents attached — export will produce a manifest-only ZIP.'
+            : `${docCount} document${docCount === 1 ? '' : 's'} will be bundled.`}
+        </p>
+        <div className="flex justify-end gap-2 pt-3">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            data-testid="ediscovery-submit"
+            disabled={!custodianEmail.trim()}
+            loading={exportMut.isPending}
+            onClick={() => exportMut.mutate()}
+          >
+            <Download className="h-4 w-4" /> Export ZIP
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 

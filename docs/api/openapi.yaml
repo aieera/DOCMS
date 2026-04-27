@@ -74,8 +74,33 @@ components:
   schemas:
     Error:
       type: object
+      description: |
+        Canonical VaultDMS error body. `type` is a stable machine-readable
+        code; `message` is human-readable and safe to surface to end users
+        for most kinds (never for `INTERNAL`, which is scrubbed at the
+        edge). `correlation_id` threads through every log and metric for
+        the request.
       properties:
-        error: { type: string }
+        type:
+          type: string
+          enum:
+            - INVALID_ARGUMENT
+            - NOT_FOUND
+            - ALREADY_EXISTS
+            - CONFLICT
+            - FORBIDDEN
+            - UNAUTHORIZED
+            - RATE_LIMITED
+            - LEGAL_HOLD
+            - REGION_VIOLATION
+            - PAYLOAD_TOO_LARGE
+            - UNAVAILABLE
+            - INTERNAL
+        message: { type: string }
+        field: { type: string, description: 'Set when type=INVALID_ARGUMENT, names the offending field.' }
+        correlation_id: { type: string, format: uuid }
+        # Retained for wire compatibility with older clients.
+        error: { type: string, deprecated: true }
 
     Document:
       type: object
@@ -340,6 +365,62 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UploadSession' }
+        '400':
+          description: |
+            Request is malformed or the declared MIME / filename is in the
+            executable deny-list (Blueprint §22 anti-pattern #6).
+            `type` values: `INVALID_ARGUMENT`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: |
+            Declared size exceeds the tenant plan ceiling. Body `message`
+            names the plan limit so the client can render a useful hint.
+            `type`: `PAYLOAD_TOO_LARGE`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: |
+            A hard dependency (virus scanner) is unavailable. Clients
+            should retry with jittered backoff. `type`: `UNAVAILABLE`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /storage/uploads/{upload_id}/complete:
+    post:
+      tags: [Storage]
+      summary: Finalize upload — triggers ClamAV scan + server-side MIME detection
+      parameters:
+        - { name: upload_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: |
+            Upload accepted. Response includes `scan_result` (`clean`) and
+            the final `mime_type` — **server-detected**, which may differ
+            from the client-declared Content-Type if they disagreed
+            (mismatch is logged + counted on `storage_mime_mismatch_total`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadSession' }
+        '409':
+          description: |
+            Upload was quarantined. `type`: `CONFLICT`. Common causes:
+            ClamAV flagged bytes (`reason=virus`), server-detected MIME
+            was in the deny-list (`reason=blocked_mime`), or the object
+            was missing / size-mismatched in S3.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: |
+            ClamAV unavailable; fail-closed per Blueprint §22 anti-pattern
+            #7. Retry with backoff. `type`: `UNAVAILABLE`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /webhooks:
     post:

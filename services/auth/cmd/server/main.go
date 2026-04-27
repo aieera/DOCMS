@@ -95,6 +95,7 @@ func main() {
 	cookieSecure := cfg.Environment == "prod" || cfg.Environment == "staging"
 	h := handler.New(handler.Config{
 		Service:      svc,
+		Pool:         pool,
 		Logger:       *log.Z(),
 		CookieSecure: cookieSecure,
 	})

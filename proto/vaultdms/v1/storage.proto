@@ -19,6 +19,22 @@ service StorageService {
 
   rpc GetScanStatus    (GetScanStatusRequest)    returns (ScanStatus);
   rpc RequestLifecycle (RequestLifecycleRequest) returns (LifecycleJob);
+
+  // ShredBlobs cryptographically destroys the wrapped DEKs for a set
+  // of content_blobs (ADR 0036). The S3 objects are scheduled for
+  // best-effort async delete. Idempotent: blobs already shredded are
+  // skipped silently and reported in already_shredded. Caller must
+  // be the document service running under its internal-auth identity;
+  // user-facing requests have their own delete path.
+  rpc ShredBlobs (ShredBlobsRequest) returns (ShredBlobsResponse);
+
+  // TransitionBlobsTier moves a set of blobs to a colder S3 storage
+  // class (typically STANDARD → STANDARD_IA when a retention policy
+  // archives a document). Idempotent — blobs already in the target
+  // class are reported in already_in_target. Document service calls
+  // this from its archive lifecycle path; the per-blob mapping
+  // (blob_ids ← document.versions) is the document service's job.
+  rpc TransitionBlobsTier (TransitionBlobsTierRequest) returns (TransitionBlobsTierResponse);
 }
 
 enum StorageTier {
@@ -106,6 +122,43 @@ message RequestLifecycleRequest {
   string      document_id  = 1;
   StorageTier target_tier  = 2;
   string      reason       = 3;
+}
+
+message ShredBlobsRequest {
+  // Tenant + blob ids the document executor wants destroyed. The
+  // storage service does NOT cross-check the doc/blob mapping — that
+  // is the document service's job (it owns documents/versions). The
+  // storage tx zeros the DEK and emits an audit event per blob.
+  string          tenant_id = 1;
+  repeated string blob_ids  = 2;
+  // Audit context — the disposition_candidate id that authorised the
+  // shred. Recorded on the dms.blob.shredded.v1 event so an auditor
+  // can pivot from the blob row to the approval trail.
+  string candidate_id = 3;
+  string actor_id     = 4; // reviewer who approved (not the executor system user)
+}
+message TransitionBlobsTierRequest {
+  string          tenant_id     = 1;
+  repeated string blob_ids      = 2;
+  // Target S3 storage class string. We pass the string verbatim
+  // (e.g. "STANDARD_IA", "GLACIER", "DEEP_ARCHIVE") rather than
+  // re-using the StorageTier enum because S3's class names differ
+  // from the internal hot/warm/cold abstraction.
+  string          target_class  = 3;
+  // Audit context — the retention_policy id that authorised the
+  // transition. Logged on the dms.blob.tier_transitioned.v1 event.
+  string          policy_id     = 4;
+}
+message TransitionBlobsTierResponse {
+  repeated string transitioned     = 1; // blob ids moved by this call
+  repeated string already_in_target = 2; // blobs already in target_class
+  repeated string not_found        = 3;
+}
+
+message ShredBlobsResponse {
+  repeated string shredded         = 1; // blob ids zeroed by this call
+  repeated string already_shredded = 2; // blob ids that were already shredded
+  repeated string not_found        = 3; // blob ids that did not exist for this tenant
 }
 
 message LifecycleJob {

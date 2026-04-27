@@ -106,6 +106,9 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
+	// ADR 0033 — CI security-gate posture. Separate handler so the
+	// tenant-audit surface stays narrow; shares the same pool.
+	handler.NewSecurityScanHandler(pool).Register(mux)
 	// /internal/* goes through internalauth (mTLS/HMAC); /api/* keeps
 	// the Kong gateway signature. Carve-out for /healthz /readyz
 	// /metrics lives inside internalauth.Mux.

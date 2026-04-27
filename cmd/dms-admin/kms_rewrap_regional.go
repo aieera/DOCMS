@@ -7,18 +7,29 @@
 // respects idempotence (already-regional blobs no-op), and prints
 // progress so operators can resume after an interrupt.
 //
-// The CLI calls the storage service over gRPC — re-running the
-// crypto inside the CLI process would require embedding all the
-// KMS + S3 + pool wiring here, which is exactly what the service
-// already owns. Today the storage service has no public RPC for
-// this; the CLI therefore hits the admin-only HTTP endpoint
-// introduced here (storage service `/internal/v1/reencrypt-blob`).
-// Wired in Wave 12.3b once the storage-service HTTP handler ships.
+// CURRENT STATE (dry-run only):
+// The CLI enumerates pre-regional blobs from Postgres directly and
+// prints what WOULD be migrated. The --execute path is unimplemented;
+// triggering re-encrypt requires a storage-service RPC the storage
+// service does not yet expose.
 //
-// Until then this CLI runs in dry-run mode by default: it
-// enumerates the blobs that WOULD be migrated and prints them.
-// Use --execute to actually call the storage-service endpoint
-// (which the CLI will verify exists before writing).
+// REMAINING WORK to close GAP-6 (estimated 1 day):
+//
+//   1. Storage proto: add `rpc ReencryptBlob(...)` mirroring ShredBlobs
+//      + TransitionBlobsTier (commits c433d49 + 52a2f43). Service
+//      method service.ReencryptBlob already exists in
+//      services/storage/internal/service/reencrypt.go — only the
+//      handler binding + proto definition are missing.
+//
+//   2. dms-admin go.mod: add the proto/gen/go dependency and a gRPC
+//      client init. cmd/dms-admin is a separate go module; the proto
+//      package needs explicit replace + require lines.
+//
+//   3. Replace the per-blob fmt.Printf below with the gRPC client
+//      call. Idempotency + progress are already correct.
+//
+// Until that lands, --execute exits non-zero with the documented
+// error so a CI-driven runbook can detect the gap.
 package main
 
 import (
