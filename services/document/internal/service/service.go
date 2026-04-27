@@ -53,13 +53,22 @@ type HoldsChecker interface {
 	AnyActiveHoldFor(ctx context.Context, tenantID, documentID uuid.UUID) (bool, error)
 }
 
+// StorageHasher is the narrow subset of the storage gRPC client
+// DocumentService needs for ADR 0038 export-time tamper detection.
+// Local interface keeps tests injectable + avoids a hard dep on
+// vaultdmsv1 in this struct's signature.
+type StorageHasher interface {
+	HashBlob(ctx context.Context, in *vaultdmsv1.HashBlobRequest, opts ...grpc.CallOption) (*vaultdmsv1.HashBlobResponse, error)
+}
+
 // DocumentService orchestrates repositories + PolicyService.
 type DocumentService struct {
-	pool   *pgxpool.Pool
-	repos  *repository.Repositories
-	policy PermissionChecker
-	holds  HoldsChecker
-	log    zerolog.Logger
+	pool    *pgxpool.Pool
+	repos   *repository.Repositories
+	policy  PermissionChecker
+	holds   HoldsChecker
+	storage StorageHasher // optional; nil disables export-time re-hash (ADR 0038)
+	log     zerolog.Logger
 }
 
 // SetHoldsChecker wires a hold-binding checker into DocumentService.
@@ -67,6 +76,12 @@ type DocumentService struct {
 // lifecycle_state-based check only (Wave 8.2 keeps both paths so a
 // deployment without the compliance package still enforces via state).
 func (s *DocumentService) SetHoldsChecker(h HoldsChecker) { s.holds = h }
+
+// SetStorageHasher wires the storage HashBlob client. Optional —
+// when nil, the eDiscovery export skips the re-hash step and the
+// manifest carries only the upload-time SHA. Operators that care
+// about export-time tamper detection MUST set this.
+func (s *DocumentService) SetStorageHasher(h StorageHasher) { s.storage = h }
 
 // New constructs a DocumentService. Callers wire repositories and a Policy
 // gRPC client in cmd/server/main.go.

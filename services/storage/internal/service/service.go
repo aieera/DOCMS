@@ -14,6 +14,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -611,6 +613,60 @@ func (s *Service) GetScanStatus(ctx context.Context, tenantID, uploadID uuid.UUI
 		return err
 	})
 	return rec, err
+}
+
+// HashBlobResult is the service-layer return for HashBlob.
+type HashBlobResult struct {
+	SHA256Hex string
+	SizeBytes int64
+}
+
+// HashBlob streams a content_blob from S3 through SHA-256 and returns
+// the hex digest. Used by the eDiscovery export path (ADR 0038) to
+// detect storage-layer tamper between upload and export — the
+// recorded SHA in content_blobs.sha256_hash is the upload-time
+// digest; if the bytes were modified post-upload (operator error,
+// disk corruption, deliberate tampering), this catches it before
+// the export ships a manifest pointing at corrupted content.
+//
+// Streams through io.Copy + sha256.Sum, so memory cost is constant
+// regardless of blob size. The S3 fetch is a single GetObject —
+// no presign round-trip.
+//
+// Tenant isolation: blob lookup runs through the tenant-scoped tx;
+// a caller cannot hash a blob owned by another tenant.
+func (s *Service) HashBlob(ctx context.Context, tenantID, blobID uuid.UUID) (*HashBlobResult, error) {
+	if tenantID == uuid.Nil || blobID == uuid.Nil {
+		return nil, vdmserr.Validation("blob_id", "tenant_id and blob_id required")
+	}
+	var blob *model.ContentBlob
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		b, err := s.repos.ContentBlobs.GetByID(ctx, tx, tenantID, blobID)
+		blob = b
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if blob == nil {
+		return nil, vdmserr.ErrNotFound
+	}
+
+	obj, err := s.s3.GetObject(ctx, blob.StorageBucket, blob.StorageKey)
+	if err != nil {
+		return nil, fmt.Errorf("hash blob: get object %s/%s: %w", blob.StorageBucket, blob.StorageKey, err)
+	}
+	defer obj.Close()
+
+	h := sha256.New()
+	n, err := io.Copy(h, obj)
+	if err != nil {
+		return nil, fmt.Errorf("hash blob: stream: %w", err)
+	}
+	return &HashBlobResult{
+		SHA256Hex: hex.EncodeToString(h.Sum(nil)),
+		SizeBytes: n,
+	}, nil
 }
 
 // ---- internals ------------------------------------------------------------

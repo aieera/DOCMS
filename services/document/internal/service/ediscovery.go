@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
 
@@ -72,7 +73,18 @@ type DiscoveryManifestItem struct {
 	Title          string    `json:"title"`
 	LifecycleState string    `json:"lifecycle_state"`
 	CurrentVersion string    `json:"current_version_id"`
+	// ContentSHA256 is the upload-time SHA recorded on
+	// content_blobs.sha256_hash. Set on every doc.
 	ContentSHA256  string    `json:"content_sha256"`
+	// VerifiedSHA256 is the export-time recompute of the blob bytes
+	// (ADR 0038). Empty when the storage hasher isn't wired or the
+	// re-hash failed for this doc; auditors should treat empty +
+	// non-empty mismatch the same way (look at VerifiedAt to know
+	// whether the recompute actually ran). When non-empty, equals
+	// ContentSHA256 by export-time assertion — exports refuse to
+	// ship a manifest with a mismatch.
+	VerifiedSHA256 string    `json:"verified_sha256,omitempty"`
+	VerifiedAt     time.Time `json:"verified_at,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	VersionCount   int       `json:"version_count,omitempty"`
 }
@@ -113,6 +125,43 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 		if doc.CurrentVersionID != nil {
 			it.CurrentVersion = doc.CurrentVersionID.String()
 		}
+
+		// ADR 0038: re-hash the blob bytes at export time. Catches
+		// storage-layer tamper between upload (when sha256_hash was
+		// recorded) and now. When the storage hasher isn't wired
+		// (dev paths, tests) the manifest carries only ContentSHA256
+		// and the auditor implicitly trusts the upload-time digest.
+		if s.storage != nil && doc.CurrentVersionID != nil {
+			blobID, ok := s.resolveCurrentBlobID(ctx, tenantID, *doc.CurrentVersionID)
+			if ok {
+				resp, herr := s.storage.HashBlob(ctx, &vaultdmsv1.HashBlobRequest{
+					BlobId: blobID.String(),
+				})
+				if herr == nil && resp != nil {
+					it.VerifiedSHA256 = resp.GetSha256Hex()
+					it.VerifiedAt = time.Now().UTC()
+					if it.ContentSHA256 != "" && it.VerifiedSHA256 != "" && it.VerifiedSHA256 != it.ContentSHA256 {
+						// HARD FAIL: shipping a manifest with bytes
+						// that don't match upload-time would be
+						// chain-of-custody fraud. Refuse the entire
+						// export so the operator investigates rather
+						// than silently shipping bad data.
+						return nil, fmt.Errorf(
+							"ediscovery: blob tamper detected for doc %s: recorded %s != verified %s",
+							doc.ID, it.ContentSHA256, it.VerifiedSHA256,
+						)
+					}
+				} else if herr != nil {
+					// Re-hash failed (storage outage, blob missing).
+					// Don't sink the export; leave VerifiedSHA256
+					// empty and let the auditor see the gap. Log
+					// loudly.
+					s.log.Warn().Err(herr).Str("doc", doc.ID.String()).
+						Msg("ediscovery: re-hash failed; manifest item lacks verified_sha256")
+				}
+			}
+		}
+
 		items = append(items, it)
 	}
 
@@ -325,6 +374,30 @@ func (s *DocumentService) VerifyEDiscoveryExport(ctx context.Context, in VerifyE
 			ContentSHA256:  doc.SHA256Hash,
 			CreatedAt:      doc.CreatedAt,
 		})
+
+		// Re-hash at verify time too — catches storage-layer tamper
+		// post-export. Per-doc mismatches go into res.Mismatches; the
+		// overall manifest hash check stays the coarse signal.
+		if s.storage != nil && doc.CurrentVersionID != nil {
+			blobID, ok := s.resolveCurrentBlobID(ctx, tenantID, *doc.CurrentVersionID)
+			if !ok {
+				continue
+			}
+			resp, herr := s.storage.HashBlob(ctx, &vaultdmsv1.HashBlobRequest{
+				BlobId: blobID.String(),
+			})
+			if herr != nil || resp == nil {
+				continue
+			}
+			if resp.GetSha256Hex() != doc.SHA256Hash {
+				res.Mismatches = append(res.Mismatches, EDiscoveryVerifyMismatch{
+					DocumentID:  doc.ID.String(),
+					ExpectedSHA: doc.SHA256Hash,
+					CurrentSHA:  resp.GetSha256Hex(),
+					Reason:      "blob bytes drifted from upload-time SHA",
+				})
+			}
+		}
 	}
 
 	rebuiltManifest := &DiscoveryManifest{
@@ -412,6 +485,29 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// resolveCurrentBlobID looks up the content_blob_id for the given
+// version. Returns (uuid.Nil, false) on any error or if the version
+// has no content blob — caller treats both as "skip the re-hash for
+// this doc" rather than failing the export.
+func (s *DocumentService) resolveCurrentBlobID(ctx context.Context, tenantID, versionID uuid.UUID) (uuid.UUID, bool) {
+	var blobID uuid.UUID
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		v, err := s.repos.Versions.GetByID(ctx, tx, tenantID, versionID)
+		if err != nil {
+			return err
+		}
+		if v == nil {
+			return fmt.Errorf("version not found")
+		}
+		blobID = v.ContentBlobID
+		return nil
+	})
+	if err != nil || blobID == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return blobID, true
 }
 
 func writeZipEntry(zw *zip.Writer, name string, data []byte) error {

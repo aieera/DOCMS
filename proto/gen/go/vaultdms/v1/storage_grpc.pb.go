@@ -26,6 +26,7 @@ const (
 	StorageService_GetPreviewURL_FullMethodName    = "/vaultdms.v1.StorageService/GetPreviewURL"
 	StorageService_GetScanStatus_FullMethodName    = "/vaultdms.v1.StorageService/GetScanStatus"
 	StorageService_RequestLifecycle_FullMethodName = "/vaultdms.v1.StorageService/RequestLifecycle"
+	StorageService_HashBlob_FullMethodName         = "/vaultdms.v1.StorageService/HashBlob"
 )
 
 // StorageServiceClient is the client API for StorageService service.
@@ -39,6 +40,15 @@ type StorageServiceClient interface {
 	GetPreviewURL(ctx context.Context, in *GetPreviewURLRequest, opts ...grpc.CallOption) (*GetPreviewURLResponse, error)
 	GetScanStatus(ctx context.Context, in *GetScanStatusRequest, opts ...grpc.CallOption) (*ScanStatus, error)
 	RequestLifecycle(ctx context.Context, in *RequestLifecycleRequest, opts ...grpc.CallOption) (*LifecycleJob, error)
+	// HashBlob streams a blob from S3 through SHA-256 and returns the
+	// hex digest. Used by the eDiscovery export path (ADR 0038) to
+	// verify the bytes haven't been tampered with since upload —
+	// content_blobs.sha256_hash records the upload-time SHA, and
+	// HashBlob re-computes it at export time so a mismatch fails the
+	// export rather than shipping a manifest pointing at corrupted
+	// bytes. Tenant-scoped via auth context; the caller's tenant
+	// must own the blob.
+	HashBlob(ctx context.Context, in *HashBlobRequest, opts ...grpc.CallOption) (*HashBlobResponse, error)
 }
 
 type storageServiceClient struct {
@@ -112,6 +122,15 @@ func (c *storageServiceClient) RequestLifecycle(ctx context.Context, in *Request
 	return out, nil
 }
 
+func (c *storageServiceClient) HashBlob(ctx context.Context, in *HashBlobRequest, opts ...grpc.CallOption) (*HashBlobResponse, error) {
+	out := new(HashBlobResponse)
+	err := c.cc.Invoke(ctx, StorageService_HashBlob_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StorageServiceServer is the server API for StorageService service.
 // All implementations must embed UnimplementedStorageServiceServer
 // for forward compatibility
@@ -123,6 +142,15 @@ type StorageServiceServer interface {
 	GetPreviewURL(context.Context, *GetPreviewURLRequest) (*GetPreviewURLResponse, error)
 	GetScanStatus(context.Context, *GetScanStatusRequest) (*ScanStatus, error)
 	RequestLifecycle(context.Context, *RequestLifecycleRequest) (*LifecycleJob, error)
+	// HashBlob streams a blob from S3 through SHA-256 and returns the
+	// hex digest. Used by the eDiscovery export path (ADR 0038) to
+	// verify the bytes haven't been tampered with since upload —
+	// content_blobs.sha256_hash records the upload-time SHA, and
+	// HashBlob re-computes it at export time so a mismatch fails the
+	// export rather than shipping a manifest pointing at corrupted
+	// bytes. Tenant-scoped via auth context; the caller's tenant
+	// must own the blob.
+	HashBlob(context.Context, *HashBlobRequest) (*HashBlobResponse, error)
 	mustEmbedUnimplementedStorageServiceServer()
 }
 
@@ -150,6 +178,9 @@ func (UnimplementedStorageServiceServer) GetScanStatus(context.Context, *GetScan
 }
 func (UnimplementedStorageServiceServer) RequestLifecycle(context.Context, *RequestLifecycleRequest) (*LifecycleJob, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestLifecycle not implemented")
+}
+func (UnimplementedStorageServiceServer) HashBlob(context.Context, *HashBlobRequest) (*HashBlobResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HashBlob not implemented")
 }
 func (UnimplementedStorageServiceServer) mustEmbedUnimplementedStorageServiceServer() {}
 
@@ -290,6 +321,24 @@ func _StorageService_RequestLifecycle_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StorageService_HashBlob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HashBlobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).HashBlob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_HashBlob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).HashBlob(ctx, req.(*HashBlobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StorageService_ServiceDesc is the grpc.ServiceDesc for StorageService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -324,6 +373,10 @@ var StorageService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestLifecycle",
 			Handler:    _StorageService_RequestLifecycle_Handler,
+		},
+		{
+			MethodName: "HashBlob",
+			Handler:    _StorageService_HashBlob_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -121,6 +121,14 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	// ADR 0038 — wire the storage hash client into DocumentService so
+	// the eDiscovery export can re-hash blob bytes at export time.
+	// Falls through silently when the storage client is nil (boot-time
+	// outage); the export ships with only the upload-time SHA in that
+	// case.
+	if storageClient != nil {
+		svc.SetStorageHasher(storageClient)
+	}
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
 

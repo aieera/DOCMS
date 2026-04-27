@@ -19,6 +19,16 @@ service StorageService {
 
   rpc GetScanStatus    (GetScanStatusRequest)    returns (ScanStatus);
   rpc RequestLifecycle (RequestLifecycleRequest) returns (LifecycleJob);
+
+  // HashBlob streams a blob from S3 through SHA-256 and returns the
+  // hex digest. Used by the eDiscovery export path (ADR 0038) to
+  // verify the bytes haven't been tampered with since upload —
+  // content_blobs.sha256_hash records the upload-time SHA, and
+  // HashBlob re-computes it at export time so a mismatch fails the
+  // export rather than shipping a manifest pointing at corrupted
+  // bytes. Tenant-scoped via auth context; the caller's tenant
+  // must own the blob.
+  rpc HashBlob (HashBlobRequest) returns (HashBlobResponse);
 }
 
 enum StorageTier {
@@ -106,6 +116,18 @@ message RequestLifecycleRequest {
   string      document_id  = 1;
   StorageTier target_tier  = 2;
   string      reason       = 3;
+}
+
+message HashBlobRequest {
+  // tenant_id is read from auth context, not the request body — the
+  // RPC interceptor enforces it. blob_id is the content_blobs.id.
+  string blob_id = 1;
+}
+message HashBlobResponse {
+  // Hex SHA-256 of the blob bytes streamed from S3. Recomputed at
+  // call time, NOT read from content_blobs.sha256_hash.
+  string sha256_hex = 1;
+  int64  size_bytes = 2;
 }
 
 message LifecycleJob {
