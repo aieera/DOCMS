@@ -152,6 +152,32 @@ func TestOrgAdminAllPermissions(t *testing.T) {
 	require.False(t, eval(t, e, in, nil, nil, nil).Allowed)
 }
 
+// ---- Rule 7 + matching deny: ediscovery.export SoD ----------------------
+
+// TestEDiscoveryExportSoD verifies the ADR 0038 separation-of-duties
+// rule: compliance_officer + owner can run ediscovery.export, but
+// admin (which Rule 6 normally grants every action) is explicitly
+// denied this one action. An admin who'd configured a too-broad
+// retention policy could otherwise also export the evidence proving
+// that — exactly what SoD prevents.
+func TestEDiscoveryExportSoD(t *testing.T) {
+	e := mustEngine(t)
+	check := func(role string) bool {
+		return eval(t, e, model.CheckInput{
+			SubjectType:  "user",
+			SubjectID:    "u1",
+			Action:       "ediscovery.export",
+			ResourceType: "matter",
+			ResourceID:   "m1",
+			Context:      map[string]string{"user_role": role},
+		}, nil, nil, nil).Allowed
+	}
+	require.True(t, check("compliance_officer"), "compliance_officer should allow")
+	require.True(t, check("owner"), "owner should allow (break-glass)")
+	require.False(t, check("admin"), "admin must NOT allow (SoD per ADR 0038)")
+	require.False(t, check("member"), "member must NOT allow")
+}
+
 // ---- Deny rules -----------------------------------------------------------
 
 func TestDisposedDocumentBlockedForNonAdmin(t *testing.T) {

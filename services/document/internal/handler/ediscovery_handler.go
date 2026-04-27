@@ -47,7 +47,17 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+	// ADR 0038 separation-of-duties: admin authors retention policies +
+	// legal holds; compliance_officer approves evidence export under
+	// those policies. Without this split an admin who'd configured a
+	// too-broad retention policy could also export the evidence
+	// proving that — exactly what SoD prevents.
+	//
+	// The rego rule mirroring this gate lives at
+	// services/policy/internal/opa/policy.rego (Rule 7 + matching
+	// deny). Follow-up PR (F4 of ADR 0038) wires the policy gRPC
+	// call here; until then the hardcoded list IS the gate.
+	if !requireRole(w, r, "compliance_officer", "owner") {
 		return
 	}
 	var body ediscoveryExportBody
