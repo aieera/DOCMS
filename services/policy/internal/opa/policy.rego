@@ -77,6 +77,17 @@ allow if {
     input.context.user_role == "admin"
 }
 
+# Rule 7: compliance_officer can export evidence (ediscovery.export action).
+# ADR 0038 separation-of-duties: admin authors retention policies and
+# legal-holds; compliance_officer approves the destruction / export of
+# evidence under those policies. Owner can do both as a break-glass.
+# Rule 6 grants admin every capability — Rule-7-deny narrows that for
+# this specific action.
+allow if {
+    input.action == "ediscovery.export"
+    input.context.user_role == "compliance_officer"
+}
+
 # ─── DENY RULES (override allow) ───────────────────────────────────────────
 
 # Disposed documents are not accessible to non-owner/non-admin users.
@@ -90,6 +101,18 @@ deny if {
 # Deactivated users cannot access anything.
 deny if {
     input.context.user_status == "deactivated"
+}
+
+# ADR 0038 separation-of-duties on ediscovery.export. Rule 6 grants
+# admin universal capability; this deny narrows that one action so
+# admins must escalate to compliance_officer (or break-glass via
+# owner) to ship evidence outside the system. Without this, an
+# admin who'd configured a too-broad retention policy could also
+# export the evidence proving that — exactly what SoD prevents.
+deny if {
+    input.action == "ediscovery.export"
+    input.context.user_role == "admin"
+    not input.context.user_role == "owner"
 }
 
 # ─── HELPERS ───────────────────────────────────────────────────────────────
