@@ -146,6 +146,28 @@ func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStat
 	}, nil
 }
 
+// HashBlob streams a content_blob from S3 through SHA-256 and returns
+// the hex digest. Used by the eDiscovery export path (ADR 0038) for
+// tamper detection at export time.
+func (h *Handler) HashBlob(ctx context.Context, req *vaultdmsv1.HashBlobRequest) (*vaultdmsv1.HashBlobResponse, error) {
+	tenantID, err := auth.GetTenantID(ctx)
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
+	}
+	blobID, err := uuid.Parse(req.GetBlobId())
+	if err != nil || blobID == uuid.Nil {
+		return nil, vdmserr.ToGRPCError(vdmserr.Validation("blob_id", "not a uuid"))
+	}
+	res, err := h.svc.HashBlob(ctx, tenantID, blobID)
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &vaultdmsv1.HashBlobResponse{
+		Sha256Hex: res.SHA256Hex,
+		SizeBytes: res.SizeBytes,
+	}, nil
+}
+
 // ---- enum mappers --------------------------------------------------------
 
 func protoScanResult(r model.ScanResult) vaultdmsv1.ScanResult {

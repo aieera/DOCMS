@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  EDRM v1.2 LoadFile template (ADR 0038).
+
+  This is the *template* documented for reference; the live serializer
+  lives in services/document/internal/service/ediscovery_edrm.go and
+  produces the same shape from a DiscoveryManifest. We deliberately
+  keep the template here as a vendor-imports-it artifact: discovery
+  vendors typically grep an example before connecting our XML to
+  their loadfile-import tool.
+
+  Substitution tokens (replaced by the serializer):
+
+    {{TENANT_ID}}        UUID, the producing tenant
+    {{MATTER_NUMBER}}    operator-assigned matter number
+    {{MATTER_NAME}}      free-text name
+    {{EXPORT_ID}}        UUID, the ediscovery_exports row id
+    {{EXPORTED_AT}}      RFC3339 timestamp
+    {{CUSTODIAN_EMAIL}}  primary custodian's email
+    {{DOCUMENT_COUNT}}   integer
+    {{DOCUMENTS}}        repeated <Document> blocks, see template
+
+  EDRM v1.2 spec: http://www.edrm.net/resources/standards/edrm-xml/
+
+  Conformance: this file ships a minimum-viable LoadFile compatible
+  with Relativity, Concordance, and Nuix import paths. Vendor-specific
+  fields land in <UserDefinedField> elements per spec §3.4.
+-->
+<Root DataInterchangeType="LoadFile" MajorVersion="1" MinorVersion="2"
+      Description="VaultDMS eDiscovery export"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <Batch>
+    <Documents>
+      <!-- Each <Document> below is one item in the manifest. -->
+      <!-- {{DOCUMENTS}} -->
+    </Documents>
+  </Batch>
+
+  <Relationships>
+    <!--
+      Reserved for future use: parent/child (e.g. email + attachment),
+      duplicate, near-duplicate. Empty in v1; vendors expect the element
+      to exist even when empty.
+    -->
+  </Relationships>
+
+  <UserDefinedFields>
+    <UserDefinedField Name="vaultdms.tenant_id" DataType="Text">{{TENANT_ID}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.matter_number" DataType="Text">{{MATTER_NUMBER}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.matter_name" DataType="Text">{{MATTER_NAME}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.export_id" DataType="Text">{{EXPORT_ID}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.exported_at" DataType="DateTime">{{EXPORTED_AT}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.custodian_email" DataType="Text">{{CUSTODIAN_EMAIL}}</UserDefinedField>
+    <UserDefinedField Name="vaultdms.document_count" DataType="Integer">{{DOCUMENT_COUNT}}</UserDefinedField>
+  </UserDefinedFields>
+
+  <!-- ===== Per-document template ===========================================
+       The serializer renders this block once per manifest item. Substitution
+       tokens within the block:
+
+         {{DOC_ID}}              UUID
+         {{DOC_TITLE}}           XML-escaped title
+         {{DOC_CREATED_AT}}      RFC3339
+         {{DOC_LIFECYCLE}}       active|retained|archived|disposed|legal_hold
+         {{DOC_VERSION_ID}}      UUID, the current version
+         {{DOC_SHA256}}          hex digest of the version content
+         {{DOC_NATIVE_PATH}}     ZIP-relative path to the native file (optional)
+         {{DOC_TEXT_PATH}}       ZIP-relative path to extracted text (optional)
+  =========================================================================
+  <Document DocID="{{DOC_ID}}" MimeType="application/octet-stream">
+    <Tags>
+      <Tag TagDataType="Text" TagName="vaultdms.title" TagValue="{{DOC_TITLE}}"/>
+      <Tag TagDataType="DateTime" TagName="vaultdms.created_at" TagValue="{{DOC_CREATED_AT}}"/>
+      <Tag TagDataType="Text" TagName="vaultdms.lifecycle_state" TagValue="{{DOC_LIFECYCLE}}"/>
+      <Tag TagDataType="Text" TagName="vaultdms.version_id" TagValue="{{DOC_VERSION_ID}}"/>
+      <Tag TagDataType="Text" TagName="vaultdms.content_sha256" TagValue="{{DOC_SHA256}}"/>
+    </Tags>
+    <Files>
+      <File FileType="Native">
+        <ExternalFile FilePath="{{DOC_NATIVE_PATH}}"/>
+      </File>
+      <!-- <File FileType="Text"><ExternalFile FilePath="{{DOC_TEXT_PATH}}"/></File> -->
+    </Files>
+  </Document>
+  -->
+
+</Root>

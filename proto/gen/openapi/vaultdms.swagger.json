@@ -2183,6 +2183,19 @@
         }
       }
     },
+    "v1HashBlobResponse": {
+      "type": "object",
+      "properties": {
+        "sha256Hex": {
+          "type": "string",
+          "description": "Hex SHA-256 of the blob bytes streamed from S3. Recomputed at\r\ncall time, NOT read from content_blobs.sha256_hash."
+        },
+        "sizeBytes": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
     "v1InitiateUploadResponse": {
       "type": "object",
       "properties": {

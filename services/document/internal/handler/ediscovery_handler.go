@@ -33,6 +33,8 @@ func NewEDiscoveryHandler(svc *service.DocumentService, log zerolog.Logger) *EDi
 
 func (h *EDiscoveryHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/ediscovery/export", h.export)
+	// ADR 0038: per-export integrity verify.
+	mux.HandleFunc("POST /api/v1/admin/ediscovery/exports/{id}/verify", h.verify)
 }
 
 type ediscoveryExportBody struct {
@@ -80,6 +82,39 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Str("case", body.CaseID).Msg("ediscovery export failed")
 		return
 	}
+}
+
+// verify answers POST /admin/ediscovery/exports/{id}/verify. Reads the
+// recorded scope_json + manifest_sha256 from ediscovery_exports,
+// re-resolves the document set, and reports per-doc / per-manifest
+// drift. Strict mode treats missing-doc situations as failures
+// (default false because old matters frequently reference docs since
+// disposed under retention).
+func (h *EDiscoveryHandler) verify(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
+		return
+	}
+	strict := r.URL.Query().Get("strict") == "true"
+
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	res, err := h.svc.VerifyEDiscoveryExport(ctx, service.VerifyEDiscoveryExportInput{
+		ExportID: id,
+		Strict:   strict,
+	})
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, res)
 }
 
 func sanitizeFilename(s string) string {
