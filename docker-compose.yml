@@ -535,7 +535,12 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: workflow }
     container_name: vaultdms-workflow
-    environment: *go-env
+    environment:
+      <<: *go-env
+      # /api/v1/platform/security/posture proxies to the audit
+      # service's /audit/security-scans/latest. Without this URL the
+      # endpoint 503s. In-cluster DNS reaches audit at audit:8080.
+      VAULTDMS_AUDIT_URL: "http://audit:8080"
     ports: ["8088:8081", "9096:9090", "8186:8080"]
     depends_on:
       postgres: { condition: service_healthy }
