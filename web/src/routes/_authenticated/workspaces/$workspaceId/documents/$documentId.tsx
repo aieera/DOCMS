@@ -42,11 +42,11 @@ function DocumentDetailPage() {
             <Row label="Versions">{doc.version_count}</Row>
             <Row label="MIME">{doc.mime_type}</Row>
           </div>
-          {doc.tags.length > 0 && (
+          {(doc.tags?.length ?? 0) > 0 && (
             <div>
               <p className="mb-1 text-xs font-medium text-[var(--color-text-secondary)]">Tags</p>
               <div className="flex flex-wrap gap-1">
-                {doc.tags.map((t) => <Badge key={t}>{t}</Badge>)}
+                {(doc.tags ?? []).map((t) => <Badge key={t}>{t}</Badge>)}
               </div>
             </div>
           )}

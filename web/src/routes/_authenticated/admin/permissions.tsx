@@ -57,7 +57,7 @@ function PermissionsPage() {
           <thead className="bg-slate-50 dark:bg-slate-800/50">
             <tr>
               <th className="px-4 py-2 text-left">Role</th>
-              {data.resource_types.map((r) => (
+              {(data.resource_types ?? []).map((r) => (
                 <th key={r} className="px-4 py-2 text-left">
                   {r}
                 </th>
@@ -65,7 +65,7 @@ function PermissionsPage() {
             </tr>
           </thead>
           <tbody>
-            {data.roles.map((role) => (
+            {(data.roles ?? []).map((role) => (
               <tr key={role} className="border-t border-[var(--color-border)]">
                 <td className="px-4 py-2 font-medium">
                   <div className="flex items-center gap-2">
@@ -73,7 +73,7 @@ function PermissionsPage() {
                     {role}
                   </div>
                 </td>
-                {data.resource_types.map((rt) => {
+                {(data.resource_types ?? []).map((rt) => {
                   const c = cellFor(data.cells, role, rt)
                   const caps = includedCaps(c?.max_capability ?? '')
                   return (
@@ -121,7 +121,7 @@ function PermissionsPage() {
           Notes
         </div>
         <ul className="list-disc pl-6 text-xs text-[var(--color-text-secondary)]">
-          {data.notes.map((n, i) => (
+          {(data.notes ?? []).map((n, i) => (
             <li key={i}>{n}</li>
           ))}
         </ul>

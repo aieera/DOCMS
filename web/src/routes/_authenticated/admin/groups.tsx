@@ -186,11 +186,11 @@ function GroupsPage() {
                   </Button>
                 </div>
 
-                {detail.data.members.length === 0 ? (
+                {(detail.data.members?.length ?? 0) === 0 ? (
                   <p className="text-sm text-[var(--color-text-secondary)]">No members yet.</p>
                 ) : (
                   <ul className="space-y-1">
-                    {detail.data.members.map((m) => (
+                    {(detail.data.members ?? []).map((m) => (
                       <li
                         key={m.user_id}
                         className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2"
