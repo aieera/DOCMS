@@ -526,7 +526,29 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			blob.KEKID = envResult.KEKID
 		}
 		if err := s.repos.ContentBlobs.Insert(ctx, tx, blob); err != nil {
-			return err
+			// Late-detected dedup: same content already exists. Happens
+			// when the client didn't compute SHA-256 up front (so the
+			// initiate-time dedup check missed) and uploaded a file
+			// with bytes that match an existing blob. Treat as a dedup
+			// hit instead of failing — bump ref count, reuse the
+			// existing blob, surface its ID via the same return path.
+			if isIdempotentDupe(err) {
+				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, session.StorageRegion, actualSHA)
+				if lookupErr != nil {
+					return lookupErr
+				}
+				if incErr := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, session.TenantID, existing.ID); incErr != nil {
+					return incErr
+				}
+				// Best-effort cleanup of the just-uploaded duplicate
+				// object so we don't leak storage. Failure here is
+				// non-fatal; an orphan-blob sweeper handles drift.
+				_ = s.s3.DeleteObject(ctx, bucket, key)
+				blob = existing
+				blobID = existing.ID
+			} else {
+				return err
+			}
 		}
 		if err := s.repos.Uploads.Complete(ctx, tx, session.TenantID, session.ID, s.now().UTC()); err != nil {
 			return err

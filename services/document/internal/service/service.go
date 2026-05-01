@@ -317,7 +317,21 @@ func (s *DocumentService) requirePermission(ctx context.Context, userID uuid.UUI
 
 // summarizeDocumentPermissions issues a single BatchCheckPermission for the
 // 5 canonical actions on a document. One network round-trip per GetDocument.
+//
+// Same outgoing-metadata story as checkPermission: policy's
+// TenantInterceptor returns Unauthenticated unless tenant + user + role
+// land in gRPC metadata. Batch call had no metadata wiring; every
+// GetDocument logged "policy batch check unavailable" and returned a
+// zero-permission summary, which the handler turned into 403.
 func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, userID, docID uuid.UUID, extra map[string]any) (*DocumentPermissions, error) {
+	if extra == nil {
+		extra = map[string]any{}
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		if _, ok := extra["user_role"]; !ok {
+			extra["user_role"] = role
+		}
+	}
 	ctxStruct, err := structpb.NewStruct(stringifyMap(extra))
 	if err != nil {
 		return nil, fmt.Errorf("build context struct: %w", err)
@@ -334,6 +348,14 @@ func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, user
 			Context:      ctxStruct,
 		})
 	}
+	pairs := []string{"x-user-id", userID.String()}
+	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
+		pairs = append(pairs, "x-tenant-id", tid.String())
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
 	resp, err := s.policy.BatchCheckPermission(ctx, &vaultdmsv1.BatchCheckPermissionRequest{Checks: checks})
 	if err != nil {
 		s.log.Warn().Err(err).Msg("policy batch check unavailable; returning zero-permission summary")
