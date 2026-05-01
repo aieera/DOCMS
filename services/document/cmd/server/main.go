@@ -20,6 +20,7 @@ import (
 	temporalclient "go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/vaultdms/vaultdms/pkg/config"
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -195,7 +196,23 @@ func main() {
 	// headers (injected by the gateway in prod, by Vite in host dev).
 	// Whitelist them explicitly or every request arrives with empty
 	// tenant context → 401.
-	gwMux := runtime.NewServeMux()
+	// UseProtoNames keeps JSON keys in snake_case (workspace_id) to
+	// match the frontend type definitions and the rest of the REST
+	// surface. Without this, grpc-gateway defaults to lowerCamelCase
+	// (workspaceId) and the frontend's doc.workspace_id reads as
+	// undefined — URLs like /workspaces/undefined/documents/... were
+	// the visible symptom.
+	gwMux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			},
+			UnmarshalOptions: protojson.UnmarshalOptions{
+				DiscardUnknown: true,
+			},
+		}),
+	)
 
 	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
 	// HTTP headers land in gRPC metadata. runtime.WithMetadata /
