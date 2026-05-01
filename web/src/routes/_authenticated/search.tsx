@@ -85,15 +85,15 @@ function SearchPage() {
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
       )}
-      {data && data.results.length === 0 && query && (
+      {data && (data.results?.length ?? 0) === 0 && query && (
         <EmptyState title="No results" description={`No documents match "${query}"`} />
       )}
-      {data && data.results.length > 0 && (
+      {data && (data.results?.length ?? 0) > 0 && (
         <div className="space-y-2">
           <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
             {data.total_count} results in {data.latency_ms}ms
           </p>
-          {data.results.map((hit) => (
+          {(data.results ?? []).map((hit) => (
             <div key={hit.document_id} className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
               <FileIcon mime={hit.mime_type} className="mt-0.5" />
               <div className="min-w-0 flex-1">
