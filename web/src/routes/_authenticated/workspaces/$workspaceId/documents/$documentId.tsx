@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -102,6 +102,9 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  // Track previous status across renders so we only fire transition
+  // toasts on the actual change, not on every poll re-render.
+  const lastStatus = useRef<OCRStatus | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['ocr', documentId, versionId],
@@ -113,6 +116,43 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
       return status === 'running' || status === 'pending' ? 5000 : false
     },
   })
+
+  // Surface every status transition as a toast so the user sees real
+  // progress instead of a silently-changing badge. Only fires on
+  // change; the unknown→initial transition is suppressed so we don't
+  // spam a toast on first load.
+  useEffect(() => {
+    const cur = (data?.status ?? 'unknown') as OCRStatus
+    const prev = lastStatus.current
+    lastStatus.current = cur
+    if (prev === null || prev === cur) return
+    if (prev === 'unknown' && cur === 'pending') return
+    switch (cur) {
+      case 'running':
+        toast.loading('OCR processing — first run downloads models (~5 min)', {
+          id: `ocr-${versionId}`,
+          duration: 10000,
+        })
+        break
+      case 'completed':
+        toast.success(
+          `OCR completed${data?.total_pages ? ` — ${data.total_pages} page${data.total_pages === 1 ? '' : 's'} extracted` : ''}`,
+          { id: `ocr-${versionId}` },
+        )
+        break
+      case 'failed':
+        toast.error('OCR failed — check the runbook or re-run', {
+          id: `ocr-${versionId}`,
+        })
+        break
+      case 'pending':
+        toast(`OCR queued — waiting for the worker`, {
+          id: `ocr-${versionId}`,
+          icon: '⏳',
+        })
+        break
+    }
+  }, [data?.status, data?.total_pages, versionId])
 
   const rerun = useMutation({
     mutationFn: () => rerunOCR(documentId, versionId!),
