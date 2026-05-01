@@ -7,7 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN python -m spacy download en_core_web_trf
+# spacy en_core_web_trf is only used by services/intelligence/app/
+# models/ner_model.py. Build-time download was breaking image build
+# because spacy 3.7.4's model-index URL resolves to a 404. OCR /
+# classify / embed don't need this; NER falls back to a runtime
+# download on first invocation. Re-enable when spacy upgrades and
+# the model URL resolves correctly.
+# RUN python -m spacy download en_core_web_trf
 
 COPY app/ app/
 
