@@ -197,23 +197,65 @@ func (h *OCRHandler) rerun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("version_id", "not a uuid"))
 		return
 	}
-	// Build a minimal event payload that mirrors what the document
-	// service emits on a real upload (see services/document/internal/
-	// service/documents.go::CreateVersion). The intelligence
-	// consumer reads tenant_id / version_id / document_id from this.
+	// Build the SAME event payload shape the document service emits
+	// on a real upload (services/document/internal/service/documents.go
+	// CreateVersion). The intelligence consumer's _resolve_storage
+	// expects storage_uri (or bucket+key), and mime_type is checked
+	// against OCR_MIMES. A minimal {tenant,doc,version} payload causes
+	// the consumer to msg.term() the event as poisoned — no retry,
+	// no row in ocr_processed_events, silent drop.
+	//
+	// We look up the version's blob to populate storage_uri / mime /
+	// size / sha. content_blobs is owned by services/storage but
+	// reachable via the shared Postgres.
 	eventID, err := uuid.NewV7()
 	if err != nil {
 		writeErr(w, r, err)
 		return
 	}
+	ctx := r.Context()
+	var (
+		blobID     string
+		mimeType   string
+		sizeBytes  int64
+		sha256Hash string
+		bucket     string
+		storageKey string
+		versionNum int
+	)
+	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT v.content_blob_id::text, COALESCE(v.mime_type,''), v.size_bytes,
+			       COALESCE(v.sha256_hash,''), b.storage_bucket, b.storage_key,
+			       v.version_number
+			FROM document_versions v
+			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
+			WHERE v.tenant_id = $1 AND v.id = $2
+		`, tenantID, versionID).Scan(&blobID, &mimeType, &sizeBytes, &sha256Hash,
+			&bucket, &storageKey, &versionNum)
+	})
+	if err != nil {
+		h.log.Error().Err(err).Str("version", versionID.String()).Msg("ocr rerun: version+blob lookup failed")
+		writeErr(w, r, err)
+		return
+	}
+	storageURI := "s3://" + bucket + "/" + storageKey
 	payload := map[string]any{
-		"version_id":  versionID.String(),
-		"document_id": docID.String(),
-		"tenant_id":   tenantID.String(),
-		"reason":      "manual_rerun",
+		"event_id":           eventID.String(),
+		"tenant_id":          tenantID.String(),
+		"document_id":        docID.String(),
+		"version_id":         versionID.String(),
+		"version_number":     versionNum,
+		"content_blob_id":    blobID,
+		"storage_uri":        storageURI,
+		"mime_type":          mimeType,
+		"size_bytes":         sizeBytes,
+		"sha256":             sha256Hash,
+		"uploaded_by_user_id": "",
+		"uploaded_at":        time.Now().UTC().Format(time.RFC3339),
+		"reason":             "manual_rerun",
 	}
 	body, _ := json.Marshal(payload)
-	ctx := r.Context()
 	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
 		_, ierr := tx.Exec(ctx, `
 			INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id, payload)
