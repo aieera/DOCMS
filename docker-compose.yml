@@ -369,6 +369,14 @@ services:
       VAULTDMS_NATS_URL: "nats://nats:4222"
       VAULTDMS_QDRANT_URL: "http://qdrant:6333"
       VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      # boto3/botocore credentials for the OCR worker to download
+      # blobs. Use AWS_* names (boto3 reads these directly without
+      # any VaultDMS-side glue). In compose dev these are MinIO's
+      # admin creds; in prod each worker should use IRSA / instance
+      # role.
+      AWS_ACCESS_KEY_ID: "minioadmin"
+      AWS_SECRET_ACCESS_KEY: "minioadmin"
+      AWS_DEFAULT_REGION: "us-east-1"
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
