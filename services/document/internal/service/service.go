@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
@@ -254,11 +255,38 @@ func validateSharePermissions(perms []string) error {
 
 // checkPermission calls PolicyService. On transport error it logs and DENIES
 // (fail closed). The ABAC context is encoded as google.protobuf.Struct.
+//
+// Cross-service identity propagation (CLAUDE.md): the policy service's
+// TenantInterceptor returns Unauthenticated unless every outbound RPC
+// carries x-tenant-id (and x-user-id / x-user-role for OPA Rule 5/6).
+// Without this block every CheckPermission was Unauthenticated → the
+// fail-closed branch below turned that into a generic 403.
 func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID, action, resourceType string, resourceID uuid.UUID, extra map[string]any) (bool, error) {
 	ctxStruct, err := structpb.NewStruct(stringifyMap(extra))
 	if err != nil {
 		return false, fmt.Errorf("build context struct: %w", err)
 	}
+	pairs := []string{"x-user-id", userID.String()}
+	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
+		pairs = append(pairs, "x-tenant-id", tid.String())
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		pairs = append(pairs, "x-user-role", role)
+		// Forward role into the OPA context too so Rule 6 (owner/admin)
+		// fires. The interceptor doesn't know the input.context shape.
+		if extra == nil {
+			extra = map[string]any{}
+		}
+		if _, ok := extra["user_role"]; !ok {
+			extra["user_role"] = role
+		}
+		// Re-marshal the struct now that user_role landed.
+		ctxStruct, err = structpb.NewStruct(stringifyMap(extra))
+		if err != nil {
+			return false, fmt.Errorf("build context struct: %w", err)
+		}
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
 	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    userID.String(),

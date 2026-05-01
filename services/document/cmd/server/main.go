@@ -151,7 +151,7 @@ func main() {
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
 
-	storageProxy := handler.NewStorageProxy(storageClient)
+	storageProxy := handler.NewStorageProxy(storageClient, pool)
 
 	// ---- Health ------------------------------------------------------------
 	hs := health.NewServer(pool, rdb, nc, s3c)
@@ -167,6 +167,11 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		// CLAUDE.md: missing this interceptor causes auth.GetUserID/Role
+		// to return zero values inside handlers, which makes OPA Rule 5
+		// (workspace admin) and Rule 6 (owner/admin) silently deny —
+		// surfacing as PermissionDenied on every authenticated read.
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	vaultdmsv1.RegisterDocumentServiceServer(grpcSrv, docHandler)
@@ -251,7 +256,15 @@ func main() {
 	// gRPC metadata.
 	storageMux := http.NewServeMux()
 	storageProxy.Register(storageMux)
-	rootMux.Handle("/api/v1/storage/", middleware.CorrelationHTTP(storageMux))
+	// SessionAuth populates auth.UserInfo on ctx from the dms_session
+	// cookie; the proxy's outbound() reads tenant + user from ctx and
+	// injects them into outbound gRPC metadata. Without this the
+	// upstream Kong path wasn't in play (Vite host-mode proxy bypasses
+	// Kong) so X-Tenant-ID never reached the proxy and InitiateUpload
+	// failed with INVALID_ARGUMENT before doing any work.
+	rootMux.Handle("/api/v1/storage/", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(storageMux),
+	))
 
 	// Compliance REST endpoints (legal holds — Wave 8.2). Uses its own
 	// mux so 423 Locked + validation errors flow through the handler's

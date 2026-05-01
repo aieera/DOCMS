@@ -20,6 +20,54 @@ const TenantHeader = "X-Tenant-ID"
 // TenantMetadataKey is the gRPC metadata equivalent.
 const TenantMetadataKey = "x-tenant-id"
 
+// UserMetadataKey + UserRoleMetadataKey are the gRPC metadata keys
+// the document/policy/storage services use for caller identity. The
+// HTTP middleware chain on each service populates these via
+// SessionAuth → outgoing metadata; UserIdentityInterceptor below
+// reads them on the server side and stamps auth.UserInfo on ctx so
+// every handler that calls auth.GetUserID / auth.GetUserRole gets
+// real values. Without it, OPA Rule 5 / Rule 6 silently deny.
+const (
+	UserMetadataKey     = "x-user-id"
+	UserRoleMetadataKey = "x-user-role"
+)
+
+// UserIdentityInterceptor reads x-user-id + x-user-role from the
+// inbound gRPC metadata and writes auth.UserInfo onto ctx. Pair with
+// TenantInterceptor (which provides the TenantID this UserInfo is
+// stamped against). Pulled forward from admin-security-posture
+// (Wave 16 cross-service auth plumbing — see CLAUDE.md).
+func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return handler(ctx, req)
+		}
+		var (
+			userID uuid.UUID
+			role   string
+		)
+		if v := md.Get(UserMetadataKey); len(v) > 0 && v[0] != "" {
+			if id, err := uuid.Parse(v[0]); err == nil {
+				userID = id
+			}
+		}
+		if v := md.Get(UserRoleMetadataKey); len(v) > 0 {
+			role = v[0]
+		}
+		if userID == uuid.Nil && role == "" {
+			return handler(ctx, req)
+		}
+		tenantID, _ := auth.GetTenantID(ctx)
+		ctx = auth.WithUser(ctx, auth.UserInfo{
+			ID:       userID,
+			TenantID: tenantID,
+			Role:     role,
+		})
+		return handler(ctx, req)
+	}
+}
+
 // TenantHTTP extracts the tenant from the request header, stores it on the
 // context, and optionally validates it by running SET app.current_tenant on
 // a pool connection. If the tenant is missing or malformed, the request is

@@ -52,11 +52,23 @@ func (r *documentRepo) Create(ctx context.Context, tx pgx.Tx, d *model.Document)
 // GetByID returns one document by id, enforcing tenant isolation. Includes
 // soft-deleted rows; callers filter via DocumentFilter.IncludeDeleted.
 func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error) {
+	// Same COALESCE story as List — scanDocument's plain-string scan
+	// destinations (description / region_pin / document_class /
+	// sha256_hash / mime_type) panic on NULL. Pre-Wave-16 rows + docs
+	// without a completed first version both have NULLs in these
+	// columns, so every GET on those rows would 500 without this.
 	row := tx.QueryRow(ctx, `
-		SELECT id, tenant_id, workspace_id, folder_id, title, description,
-		       lifecycle_state, region_pin, custom_metadata, tags,
-		       current_version_id, document_class, classification_confidence,
-		       sha256_hash, total_size_bytes, mime_type,
+		SELECT id, tenant_id, workspace_id, folder_id, title,
+		       COALESCE(description, '') AS description,
+		       lifecycle_state,
+		       COALESCE(region_pin, '') AS region_pin,
+		       custom_metadata, tags,
+		       current_version_id,
+		       COALESCE(document_class, '') AS document_class,
+		       classification_confidence,
+		       COALESCE(sha256_hash, '') AS sha256_hash,
+		       total_size_bytes,
+		       COALESCE(mime_type, '') AS mime_type,
 		       created_by, created_at, updated_by, updated_at, deleted_at
 		FROM documents
 		WHERE tenant_id = $1 AND id = $2
@@ -233,11 +245,26 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		order = "ASC"
 	}
 
+	// COALESCE every nullable string column to '' so the plain-string
+	// scan destinations in scanDocument don't panic with
+	// "cannot scan NULL into *string". Per CLAUDE.md scanner discipline
+	// — every column is either pointer-scanned or COALESCE'd. Nullables:
+	// description (free text), region_pin (legacy rows pre-Wave 16),
+	// document_class (set by intelligence service after OCR),
+	// sha256_hash + mime_type (set after the first upload completes,
+	// NULL on docs that have no version yet).
 	q := fmt.Sprintf(`
-		SELECT id, tenant_id, workspace_id, folder_id, title, description,
-		       lifecycle_state, region_pin, custom_metadata, tags,
-		       current_version_id, document_class, classification_confidence,
-		       sha256_hash, total_size_bytes, mime_type,
+		SELECT id, tenant_id, workspace_id, folder_id, title,
+		       COALESCE(description, '') AS description,
+		       lifecycle_state,
+		       COALESCE(region_pin, '') AS region_pin,
+		       custom_metadata, tags,
+		       current_version_id,
+		       COALESCE(document_class, '') AS document_class,
+		       classification_confidence,
+		       COALESCE(sha256_hash, '') AS sha256_hash,
+		       total_size_bytes,
+		       COALESCE(mime_type, '') AS mime_type,
 		       created_by, created_at, updated_by, updated_at, deleted_at
 		FROM documents
 		WHERE %s

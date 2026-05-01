@@ -64,7 +64,16 @@ func main() {
 	}
 	defer nc.Close()
 
-	s3c, err := storage.NewS3Client(cfg.MinIOEndpoint, cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL)
+	// cfg.S3PublicBase is the address the user's BROWSER reaches
+	// MinIO/S3 at (in dev: "localhost:9000"; in prod usually equals
+	// MinIOEndpoint). The pkg/storage two-client split signs presigned
+	// URLs against this endpoint so the browser's Host header matches
+	// the signature — previous rewriteHost-after-signing path was
+	// broken (Sig V4 binds to Host).
+	s3c, err := storage.NewS3ClientWithPublicEndpoint(
+		cfg.MinIOEndpoint, cfg.S3PublicBase,
+		cfg.MinIOAccessKey, cfg.MinIOSecretKey, cfg.MinIOUseSSL,
+	)
 	if err != nil {
 		log.Fatal(ctx).Err(err).Msg("s3 connect")
 	}
@@ -145,6 +154,11 @@ func main() {
 		middleware.RecoveryInterceptor(log),
 		middleware.CorrelationInterceptor(),
 		middleware.TenantInterceptor(pool),
+		// Without this every InitiateUpload returned
+		// INVALID_ARGUMENT: required because the handler reads userID
+		// from ctx via auth.GetUserID and got uuid.Nil. Same gap that
+		// existed in services/document until the matching fix landed.
+		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
 	vaultdmsv1.RegisterStorageServiceServer(grpcSrv, handler.New(svc))

@@ -142,9 +142,14 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("http_port", "VAULTDMS_HTTP_PORT")
 	_ = v.BindEnv("grpc_port", "VAULTDMS_GRPC_PORT")
 	_ = v.BindEnv("health_port", "VAULTDMS_HEALTH_PORT")
-	_ = v.BindEnv("minio_endpoint", "VAULTDMS_MINIO_ENDPOINT")
-	_ = v.BindEnv("minio_access_key", "VAULTDMS_MINIO_ACCESS_KEY")
-	_ = v.BindEnv("minio_secret_key", "VAULTDMS_MINIO_SECRET_KEY")
+	// Per CLAUDE.md the S3-vs-MinIO naming sweep moved compose to
+	// VAULTDMS_S3_*; the struct fields kept their MinIO* names. Bind
+	// both spellings so either env wins (S3_* preferred — that's what
+	// compose ships today). Without this the storage service starts
+	// with cfg.MinIOEndpoint == "" and crashes at minio.New.
+	_ = v.BindEnv("minio_endpoint", "VAULTDMS_S3_ENDPOINT", "VAULTDMS_MINIO_ENDPOINT")
+	_ = v.BindEnv("minio_access_key", "VAULTDMS_S3_ACCESS_KEY", "VAULTDMS_MINIO_ACCESS_KEY")
+	_ = v.BindEnv("minio_secret_key", "VAULTDMS_S3_SECRET_KEY", "VAULTDMS_MINIO_SECRET_KEY")
 	_ = v.BindEnv("local_kek", "VAULTDMS_LOCAL_KEK")
 	_ = v.BindEnv("public_url", "VAULTDMS_PUBLIC_URL")
 	_ = v.BindEnv("internal_api_key", "VAULTDMS_INTERNAL_API_KEY")

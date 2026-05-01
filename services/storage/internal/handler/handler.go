@@ -4,6 +4,7 @@ package handler
 import (
 	"context"
 
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/google/uuid"
@@ -14,6 +15,31 @@ import (
 	"github.com/vaultdms/vaultdms/services/storage/internal/model"
 	"github.com/vaultdms/vaultdms/services/storage/internal/service"
 )
+
+// scopeFromMetadata pulls the upload-permission scope keys
+// (x-document-id / x-folder-id / x-workspace-id) out of the inbound
+// gRPC metadata. The upstream document service's storage proxy is
+// responsible for forwarding the JSON-body scope into metadata; the
+// keys are the standard ones documented in pkg/middleware. Returns
+// nil for any key that's missing or not a valid UUID.
+func scopeFromMetadata(ctx context.Context) (*uuid.UUID, *uuid.UUID, *uuid.UUID) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, nil, nil
+	}
+	parse := func(key string) *uuid.UUID {
+		v := md.Get(key)
+		if len(v) == 0 || v[0] == "" {
+			return nil
+		}
+		id, err := uuid.Parse(v[0])
+		if err != nil || id == uuid.Nil {
+			return nil
+		}
+		return &id
+	}
+	return parse("x-document-id"), parse("x-folder-id"), parse("x-workspace-id")
+}
 
 // Handler is the gRPC boundary.
 type Handler struct {
@@ -32,14 +58,23 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUp
 	}
 	userID, _ := auth.GetUserID(ctx)
 
+	// Permission-scope fields come from gRPC metadata (the upstream
+	// document service forwards them as x-document-id / x-folder-id /
+	// x-workspace-id). The service layer's ensureUploadPermission
+	// requires exactly one to know what to authorize against.
+	docID, folderID, workspaceID := scopeFromMetadata(ctx)
+
 	res, err := h.svc.InitiateUpload(ctx, service.InitiateUploadInput{
-		TenantID:   tenantID,
-		UserID:     userID,
-		RegionPin:  req.GetRegionPin(),
-		Filename:   req.GetFilename(),
-		MimeType:   req.GetMimeType(),
-		SizeBytes:  req.GetSizeBytes(),
-		SHA256Hash: req.GetChecksumSha256(),
+		TenantID:    tenantID,
+		UserID:      userID,
+		RegionPin:   req.GetRegionPin(),
+		Filename:    req.GetFilename(),
+		MimeType:    req.GetMimeType(),
+		SizeBytes:   req.GetSizeBytes(),
+		SHA256Hash:  req.GetChecksumSha256(),
+		DocumentID:  docID,
+		FolderID:    folderID,
+		WorkspaceID: workspaceID,
 	})
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)

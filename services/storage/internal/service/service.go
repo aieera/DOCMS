@@ -26,8 +26,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
@@ -74,9 +76,13 @@ type Config struct {
 	UploadTTL        time.Duration
 	MaxUploadSize    int64 // single-PUT ceiling; multipart lands in B1.1
 	PresignTTL       time.Duration
-	// PublicUploadBase is an optional override for presigned URLs when the
-	// service is behind a proxy (e.g. publicURL with TLS, even though the
-	// S3 endpoint itself is internal). Empty = use S3 endpoint as-is.
+	// PublicUploadBase is now applied at the S3 client layer (the
+	// pkg/storage NewS3ClientWithPublicEndpoint constructor takes a
+	// publicEndpoint and signs presigned URLs against it). Field kept
+	// here for compose-level back-compat with deployments that read
+	// it; service code no longer rewrites URLs post-sign because Sig V4
+	// signatures are bound to the host header — rewriting after signing
+	// produced SignatureDoesNotMatch on every upload.
 	PublicUploadBase string
 	// EncryptAtRest toggles per-file envelope encryption (AES-256-GCM with
 	// KMS-wrapped DEK). Defaults to true when KMS is configured, false
@@ -253,12 +259,13 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	bucket := bucketName(region, "hot")
 	key := contentAddressableKey(in.TenantID, id, in.Filename)
 
+	// pkg/storage already signs against the public endpoint when one
+	// is configured (see NewS3ClientWithPublicEndpoint in main.go). No
+	// post-sign rewrite — that path silently broke uploads via
+	// SignatureDoesNotMatch.
 	presignURL, err := s.s3.GeneratePresignedPutURL(ctx, bucket, key, s.cfg.UploadTTL)
 	if err != nil {
 		return nil, fmt.Errorf("presign put: %w", err)
-	}
-	if s.cfg.PublicUploadBase != "" {
-		presignURL = rewriteHost(presignURL, s.cfg.PublicUploadBase)
 	}
 
 	now := s.now().UTC()
@@ -596,9 +603,6 @@ func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UU
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if s.cfg.PublicUploadBase != "" {
-		url = rewriteHost(url, s.cfg.PublicUploadBase)
-	}
 	return url, s.now().Add(ttl), nil
 }
 
@@ -697,10 +701,26 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 		return vdmserr.Validation("resource_scope",
 			"X-Document-ID, X-Folder-ID, or X-Workspace-ID header required for permission check")
 	}
+	// Forward role into the OPA context so Rule 6 (owner/admin) fires.
+	if role := auth.GetUserRole(ctx); role != "" {
+		extra["user_role"] = role
+	}
 	ctxStruct, err := structpb.NewStruct(extra)
 	if err != nil {
 		return fmt.Errorf("policy ctx build: %w", err)
 	}
+	// Append outgoing gRPC metadata so the policy service's
+	// TenantInterceptor + UserIdentityInterceptor see the caller.
+	// Without this every CheckPermission returned Unauthenticated and
+	// the fail-closed branch below turned that into a 403.
+	pairs := []string{
+		"x-tenant-id", in.TenantID.String(),
+		"x-user-id", in.UserID.String(),
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
 	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    in.UserID.String(),
@@ -782,19 +802,9 @@ func sanitizeFilename(name string) string {
 // rewriteHost replaces the scheme+host of a presigned URL with the
 // publicUploadBase override, preserving the path and query string. Used
 // when the S3 endpoint is internal but clients reach it via a proxy.
-func rewriteHost(presigned, publicBase string) string {
-	if presigned == "" {
-		return presigned
-	}
-	base := strings.TrimRight(publicBase, "/")
-	// Find the path portion after scheme://host
-	if i := strings.Index(presigned, "://"); i > 0 {
-		if j := strings.Index(presigned[i+3:], "/"); j >= 0 {
-			return base + presigned[i+3+j:]
-		}
-	}
-	return presigned
-}
+// rewriteHost was the pre-fix approach — broken because Sig V4
+// signatures bind to the Host header. Removed; pkg/storage signs
+// against the public endpoint directly.
 
 func isIdempotentDupe(err error) bool {
 	return err != nil && vdmserr.KindOf(err) == vdmserr.KindAlreadyExists

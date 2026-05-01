@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -24,8 +25,35 @@ type ObjectInfo struct {
 }
 
 // S3Client is the minio-go wrapper.
+//
+// Two clients live inside, sharing credentials:
+//
+//   - c: the "internal" client. Used for every server-side operation —
+//     PutObject, GetObject, BucketExists, EnsureBucket, etc. Endpoint
+//     is the address the storage service can reach from inside its
+//     deploy environment (e.g. "minio:9000" in docker-compose).
+//
+//   - presign: the client used ONLY for GeneratePresignedPutURL /
+//     GeneratePresignedGetURL. Endpoint is whatever address the
+//     end-user's BROWSER can reach (in dev: "localhost:9000"). When
+//     PublicEndpoint is empty this points at the same client as c.
+//
+// Why two clients (instead of host-rewrite-after-sign): AWS Sig V4
+// binds the canonical request to the Host header. MinIO validates
+// strictly — a string-replaced URL host produces a 403
+// SignatureDoesNotMatch on the browser PUT. The only working path is
+// to sign with the host the browser will actually use. We tested
+// the rewrite path; MinIO rejected it.
+//
+// Region is set explicitly on BOTH clients so PresignedPutObject does
+// NOT make a GetBucketLocation HTTP call before signing. The presign
+// client uses the public endpoint hostname (e.g. "localhost:9000")
+// which is NOT reachable from inside the storage container —
+// GetBucketLocation would dial-out and fail "connection refused"
+// (the failure mode of the first two-client attempt).
 type S3Client struct {
-	c *minio.Client
+	c       *minio.Client
+	presign *minio.Client
 }
 
 // NewS3Client constructs a MinIO / S3 client.
@@ -42,18 +70,62 @@ type S3Client struct {
 // Mixing (one set, one empty) is rejected — that almost always signals a
 // misconfiguration where the operator forgot one half of the pair.
 func NewS3Client(endpoint, accessKey, secretKey string, useSSL bool) (*S3Client, error) {
+	return NewS3ClientWithPublicEndpoint(endpoint, "", accessKey, secretKey, useSSL)
+}
+
+// NewS3ClientWithPublicEndpoint is the full-shape constructor.
+//
+//   internalEndpoint: address the storage service uses for direct ops.
+//   publicEndpoint:   address presigned URLs are signed against; "" =
+//                     same as internal (production default).
+//   useSSL: applies to BOTH endpoints. If your public endpoint is
+//           HTTPS but internal is HTTP (or vice versa), call NewS3Client
+//           and call SetPresignClient yourself. We chose not to add a
+//           second SSL flag to keep the common signature small.
+func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, secretKey string, useSSL bool) (*S3Client, error) {
 	creds, err := resolveCreds(accessKey, secretKey)
 	if err != nil {
 		return nil, err
 	}
-	c, err := minio.New(endpoint, &minio.Options{
+	internalHost := stripScheme(internalEndpoint)
+	c, err := minio.New(internalHost, &minio.Options{
 		Creds:  creds,
 		Secure: useSSL,
+		Region: "us-east-1",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("new minio client: %w", err)
+		return nil, fmt.Errorf("new minio client (internal): %w", err)
 	}
-	return &S3Client{c: c}, nil
+	presign := c
+	if publicEndpoint != "" {
+		publicHost := stripScheme(publicEndpoint)
+		if publicHost != internalHost {
+			presign, err = minio.New(publicHost, &minio.Options{
+				Creds:  creds,
+				Secure: useSSL,
+				// Critical: explicit region prevents PresignedPutObject
+				// from making a GetBucketLocation call against the
+				// public host — which the storage container can't
+				// reach (it's "localhost:9000" from outside the
+				// container; from inside, that's the container's own
+				// loopback). Region is what GetBucketLocation would
+				// have returned anyway, so skipping the call is safe.
+				Region: "us-east-1",
+			})
+			if err != nil {
+				return nil, fmt.Errorf("new minio client (presign): %w", err)
+			}
+		}
+	}
+	return &S3Client{c: c, presign: presign}, nil
+}
+
+// stripScheme tolerates "http://host:port" / "https://host:port" /
+// trailing-slash inputs because operators set VAULTDMS_S3_ENDPOINT
+// with full URLs in compose; minio.New wants bare "host:port".
+func stripScheme(s string) string {
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "https://"), "http://")
+	return strings.TrimRight(s, "/")
 }
 
 // resolveCreds picks between static and chain auth. Kept separate so tests
@@ -121,18 +193,21 @@ func (s *S3Client) DeleteObject(ctx context.Context, bucket, key string) error {
 }
 
 // GeneratePresignedPutURL returns a URL the client can PUT to directly.
+// Uses the presign client so the URL host matches what the browser
+// will actually contact — Sig V4 stays valid.
 func (s *S3Client) GeneratePresignedPutURL(
 	ctx context.Context, bucket, key string, expiry time.Duration,
 ) (string, error) {
-	u, err := s.c.PresignedPutObject(ctx, bucket, key, expiry)
+	u, err := s.presign.PresignedPutObject(ctx, bucket, key, expiry)
 	return urlString(u), err
 }
 
 // GeneratePresignedGetURL returns a URL the client can GET from directly.
+// Uses the presign client — see GeneratePresignedPutURL.
 func (s *S3Client) GeneratePresignedGetURL(
 	ctx context.Context, bucket, key string, expiry time.Duration,
 ) (string, error) {
-	u, err := s.c.PresignedGetObject(ctx, bucket, key, expiry, url.Values{})
+	u, err := s.presign.PresignedGetObject(ctx, bucket, key, expiry, url.Values{})
 	return urlString(u), err
 }
 
