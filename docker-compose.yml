@@ -368,6 +368,7 @@ services:
       - app.worker
       - worker
       - "--loglevel=info"
+      - "--pool=solo"
       - "-Q"
       - "intelligence,intelligence-ocr,intelligence-embed,intelligence-rag"
     environment:
