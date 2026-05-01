@@ -324,6 +324,20 @@ func main() {
 	redactionHandler.Register(redactionMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/redact", middleware.CorrelationHTTP(redactionMux))
 
+	// OCR results read API + re-OCR trigger. Owned by document
+	// service because ocr_results lives in the document migration set;
+	// intelligence service writes the rows, document serves them.
+	ocrMux := http.NewServeMux()
+	handler.NewOCRHandler(pool, *log.Z()).Register(ocrMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/ocr",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ocrMux),
+		))
+	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/ocr/rerun",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ocrMux),
+		))
+
 	// §9.5 / G9 — eDiscovery signed-ZIP export.
 	ediscoveryMux := http.NewServeMux()
 	handler.NewEDiscoveryHandler(svc, *log.Z()).Register(ediscoveryMux)

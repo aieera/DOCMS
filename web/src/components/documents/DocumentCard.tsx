@@ -25,7 +25,17 @@ export function DocumentCard({ doc }: { doc: Document }) {
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge>
+        <div className="flex items-center gap-1">
+          <Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge>
+          {!(doc as unknown as { current_version_id?: string }).current_version_id && (
+            <span
+              title="Document has no uploaded content yet"
+              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+            >
+              No content
+            </span>
+          )}
+        </div>
         <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(doc.created_at)}</span>
       </div>
     </Link>
