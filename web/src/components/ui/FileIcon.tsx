@@ -10,8 +10,13 @@ const iconMap: Record<string, { icon: typeof File; color: string }> = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml': { icon: FileSpreadsheet, color: 'text-green-600' },
 }
 
-export function FileIcon({ mime, className }: { mime: string; className?: string }) {
-  const entry = Object.entries(iconMap).find(([k]) => mime.startsWith(k))
+export function FileIcon({ mime, className }: { mime?: string | null; className?: string }) {
+  // mime is empty/null for docs whose first version hasn't completed
+  // upload yet (sha256_hash + mime_type stay NULL on the documents
+  // row until SetCurrentVersion fires). Default to the generic icon
+  // instead of crashing the whole list with .startsWith on undefined.
+  const safe = mime || ''
+  const entry = Object.entries(iconMap).find(([k]) => safe.startsWith(k))
   const { icon: Icon, color } = entry?.[1] ?? { icon: File, color: 'text-slate-400' }
   return <Icon className={cn('h-5 w-5', color, className)} />
 }

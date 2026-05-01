@@ -14,6 +14,39 @@ export async function getDocument(id: string) {
   return data
 }
 
+// CreateDocument + CreateVersion are the two halves of the full upload
+// flow that the storage uploads/{initiate,complete} pair doesn't cover:
+// storage owns the bytes, document owns the row that ties bytes to a
+// workspace. Without these calls a file lands in MinIO with no
+// documents row pointing at it — invisible in the UI.
+
+export async function createDocument(input: {
+  workspace_id: string
+  folder_id?: string
+  title: string
+  description?: string
+  region_pin?: string
+  tags?: string[]
+}) {
+  const { data } = await api.post<Document>('/documents', input)
+  return data
+}
+
+export async function createVersion(input: {
+  document_id: string
+  content_blob_id: string
+  change_summary?: string
+}) {
+  const { data } = await api.post<Version>(
+    `/documents/${input.document_id}/versions`,
+    {
+      content_blob_id: input.content_blob_id,
+      change_summary: input.change_summary,
+    },
+  )
+  return data
+}
+
 export async function updateDocument(id: string, body: Partial<Document>) {
   const { data } = await api.patch<Document>(`/documents/${id}`, body)
   return data

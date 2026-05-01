@@ -1,16 +1,62 @@
 import { useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
+import { createDocument, createVersion } from '@/api/documents'
+import { getFolders } from '@/api/workspaces'
 import toast from 'react-hot-toast'
 
+// Full upload flow:
+//   1. CreateDocument          → documents row (no content yet)
+//   2. InitiateUpload          → upload_session + presigned PUT URL
+//   3. PUT to presigned URL    → bytes land in MinIO
+//   4. CompleteUpload          → content_blob row + scan + return blob_id
+//   5. CreateVersion           → links blob_id to documents row
+//
+// Steps 1 + 5 used to be missing — file landed in MinIO with no row in
+// documents table → invisible in the UI's ListDocuments query. Adding
+// them here completes the chain. Default title is the filename;
+// description blank; tags empty. The UI can grow a "rename / metadata"
+// pre-upload dialog later.
 export function useUpload(workspaceId?: string, folderId?: string) {
   const { addUpload, updateProgress, setStatus } = useUploadStore()
+  const qc = useQueryClient()
 
   const uploadFiles = useCallback(async (files: File[]) => {
+    if (!workspaceId) {
+      toast.error('Pick a workspace before uploading')
+      return
+    }
+    // Resolve target folder once for the batch. The CreateDocument
+    // endpoint requires a non-nil folder_id even at workspace root —
+    // every workspace has an auto-created root folder, find it via
+    // GET /workspaces/{id}/folders and use it when no explicit folder
+    // is selected. Caching at the batch level means we don't query
+    // for every file in the batch.
+    let resolvedFolderId = folderId
+    if (!resolvedFolderId) {
+      try {
+        const folders = await getFolders(workspaceId)
+        const root = (folders as { id: string; parent_folder_id: string | null }[])
+          .find((f) => !f.parent_folder_id)
+        if (root) resolvedFolderId = root.id
+      } catch {
+        // fall through; createDocument will surface a clearer error
+      }
+    }
     for (const file of files) {
       const id = crypto.randomUUID()
       addUpload({ id, file, progress: 0, status: 'pending' })
       try {
+        // Step 1: create the document row.
+        const doc = await createDocument({
+          workspace_id: workspaceId,
+          folder_id: resolvedFolderId,
+          title: file.name,
+          tags: [],
+        })
+
+        // Step 2: get a presigned URL.
         const session = await initiateUpload({
           filename: file.name,
           mime_type: file.type || 'application/octet-stream',
@@ -19,21 +65,53 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           folder_id: folderId,
         })
         if (session.deduplicated) {
+          // Deduplication still needs a version row pointing at the
+          // existing blob — the storage server returns the existing
+          // blob_id on a dedup hit.
+          if (session.content_blob_id) {
+            await createVersion({
+              document_id: doc.id,
+              content_blob_id: session.content_blob_id,
+              change_summary: 'initial',
+            })
+          }
           setStatus(id, 'completed')
           toast.success(`${file.name} — deduplicated, no upload needed`)
+          await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
           continue
         }
+
+        // Step 3: PUT bytes to MinIO.
         setStatus(id, 'uploading')
-        await uploadToPresigned(session.presigned_put_url, file, (pct) => updateProgress(id, pct))
-        await completeUpload(session.upload_id)
+        await uploadToPresigned(
+          session.presigned_put_url,
+          file,
+          (pct) => updateProgress(id, pct),
+        )
+
+        // Step 4: complete the upload (scan + persist blob).
+        const completion = await completeUpload(session.upload_id)
+        const blobID = completion?.content_blob_id || session.content_blob_id
+        if (!blobID) {
+          throw new Error('storage did not return a content_blob_id')
+        }
+
+        // Step 5: link the blob to the document.
+        await createVersion({
+          document_id: doc.id,
+          content_blob_id: blobID,
+          change_summary: 'initial',
+        })
+
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
+        await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
       } catch (e) {
         setStatus(id, 'failed', String(e))
         toast.error(`${file.name} upload failed`)
       }
     }
-  }, [workspaceId, folderId, addUpload, updateProgress, setStatus])
+  }, [workspaceId, folderId, addUpload, updateProgress, setStatus, qc])
 
   return { uploadFiles }
 }
