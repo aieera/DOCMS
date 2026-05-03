@@ -104,6 +104,8 @@ See `make help` for the full list.
 | **Smart routing** (ADR 0053) | `dms.classify.completed.v1` | `app.tasks.smart_route` | `route_suggestions` | `dms.routing.completed.v1` |
 | **Compliance scan** (ADR 0054) | `dms.ner.completed.v1` | `app.tasks.compliance_scan` | `compliance_findings`, `compliance_summary` | `dms.compliance.completed.v1` (+ `dms.notification.send.v1` on high+) |
 | **Document Q&A** (ADR 0055) | on-demand REST | `POST /api/v1/intelligence/qa{,/sync}`, `app.tasks.rag.stream_ask` | `qa_conversations`, `qa_messages` | — (SSE response stream) |
+| **Language detect** (ADR 0056) | `dms.version.ocr_completed.v1` | `app.tasks.lang_detect` | `document_languages` | `dms.language.detected.v1` |
+| **Translation** (ADR 0056) | on-demand REST | `POST /api/v1/intelligence/translate`, `app.tasks.translate` | `document_translations` | `dms.translation.completed.v1` |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -148,6 +150,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 02 — Smart routing** (ADR 0053)
 - [x] **Intel Feature 03 — Compliance heuristics (PII/PHI)** (ADR 0054)
 - [x] **Intel Feature 04 — Document Q&A chat** (ADR 0055)
+- [x] **Intel Feature 05 — Translation pipeline** (ADR 0056)
 
 ## License
 
