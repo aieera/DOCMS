@@ -20,6 +20,8 @@ import { ComplianceBadge } from '@/components/intelligence/ComplianceBadge'
 import { DocQAChat } from '@/components/intelligence/DocQAChat'
 import { LanguageBadge } from '@/components/intelligence/LanguageBadge'
 import { TranslationPanel } from '@/components/intelligence/TranslationPanel'
+import { OcrQualityBadge } from '@/components/intelligence/OcrQualityBadge'
+import { OcrQualityPanel } from '@/components/intelligence/OcrQualityPanel'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
@@ -43,6 +45,7 @@ function DocumentDetailPage() {
           <div className="flex items-center gap-2">
             <LanguageBadge documentId={documentId} />
             <ComplianceBadge documentId={documentId} />
+            <OcrQualityBadge documentId={documentId} />
           </div>
         </div>
 
@@ -88,6 +91,15 @@ function DocumentDetailPage() {
 
         {tab === 'compliance' && (
           <CompliancePanel documentId={documentId} />
+        )}
+
+        {/* OCR quality lives below the layout/text content because it
+            quotes per-page scores users compare against the actual
+            text. Self-hides when the scorer hasn't run. */}
+        {(tab === 'text' || tab === 'layout') && (
+          <div className="mt-4">
+            <OcrQualityPanel documentId={documentId} />
+          </div>
         )}
       </div>
 
