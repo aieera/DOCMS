@@ -19,6 +19,7 @@ from app.qa_persist import (
 from app.tasks.rag import ask, stream_ask
 from app.tasks.redact import apply_redactions, detect_redaction_candidates
 from app.tasks.summarize import summarize_document
+from app.tasks.translate import translate as translate_task
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
@@ -345,6 +346,207 @@ def _next_or_none(gen):
 
 def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
+
+
+class TranslateRequest(BaseModel):
+    document_id: str
+    version_id: str
+    target_language: str
+    model: Optional[str] = None
+
+
+@router.post("/translate")
+async def translate_endpoint(
+    body: TranslateRequest,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+):
+    """ADR 0056 — request a translation. Idempotent on
+    (version_id, target_language) — returns the existing row when
+    one is already pending/processing/completed."""
+    tenant = _require_tenant(x_tenant_id)
+    if not x_user_id:
+        raise HTTPException(400, "X-User-ID required")
+    if not body.document_id or not body.version_id or not body.target_language:
+        raise HTTPException(400, "document_id, version_id, target_language required")
+
+    from app.db.pool import get_pool
+    import uuid as _uuid
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant
+            )
+            existing = await conn.fetchrow(
+                """
+                SELECT id::text, status, target_language
+                  FROM document_translations
+                 WHERE tenant_id = $1 AND version_id = $2 AND target_language = $3
+                """,
+                tenant, body.version_id, body.target_language,
+            )
+            if existing:
+                return {
+                    "translation_id": existing["id"],
+                    "status": existing["status"],
+                    "target_language": existing["target_language"],
+                    "deduplicated": True,
+                }
+            new_id = _uuid.uuid4()
+            await conn.execute(
+                """
+                INSERT INTO document_translations
+                    (tenant_id, id, document_id, version_id,
+                     source_language, target_language, status, requested_by)
+                VALUES ($1, $2, $3, $4, 'auto', $5, 'pending', $6)
+                """,
+                tenant, new_id, body.document_id, body.version_id,
+                body.target_language, x_user_id,
+            )
+
+    translate_task.apply_async(
+        kwargs={
+            "tenant_id": tenant,
+            "translation_id": str(new_id),
+            "document_id": body.document_id,
+            "version_id": body.version_id,
+            "target_language": body.target_language,
+            "requested_by": x_user_id,
+            "event_id": str(new_id),
+        },
+        queue="intelligence",
+    )
+    return {
+        "translation_id": str(new_id),
+        "status": "pending",
+        "target_language": body.target_language,
+        "deduplicated": False,
+    }
+
+
+@router.get("/translations/{document_id}")
+async def list_translations_endpoint(
+    document_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+):
+    tenant = _require_tenant(x_tenant_id)
+    from app.db.pool import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant
+            )
+            rows = await conn.fetch(
+                """
+                SELECT id::text, version_id::text, source_language, target_language,
+                       status, COALESCE(model_used, '') AS model_used,
+                       COALESCE(word_count, 0) AS word_count,
+                       COALESCE(tokens_used, 0) AS tokens_used,
+                       COALESCE(error_message, '') AS error_message,
+                       created_at, completed_at
+                  FROM document_translations
+                 WHERE tenant_id = $1 AND document_id = $2
+                 ORDER BY created_at DESC
+                """,
+                tenant, document_id,
+            )
+    return {
+        "translations": [
+            {
+                "id": r["id"],
+                "version_id": r["version_id"],
+                "source_language": r["source_language"],
+                "target_language": r["target_language"],
+                "status": r["status"],
+                "model_used": r["model_used"],
+                "word_count": r["word_count"],
+                "tokens_used": r["tokens_used"],
+                "error_message": r["error_message"],
+                "created_at": r["created_at"].isoformat(),
+                "completed_at": r["completed_at"].isoformat() if r["completed_at"] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/translations/{translation_id}/text")
+async def get_translation_text_endpoint(
+    translation_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+):
+    tenant = _require_tenant(x_tenant_id)
+    from app.db.pool import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT status, source_language, target_language,
+                       COALESCE(translated_text, '') AS translated_text,
+                       COALESCE(model_used, '') AS model_used,
+                       COALESCE(word_count, 0) AS word_count,
+                       COALESCE(error_message, '') AS error_message
+                  FROM document_translations
+                 WHERE tenant_id = $1 AND id = $2
+                """,
+                tenant, translation_id,
+            )
+    if not row:
+        raise HTTPException(404, "translation not found")
+    return {
+        "status": row["status"],
+        "source_language": row["source_language"],
+        "target_language": row["target_language"],
+        "translated_text": row["translated_text"],
+        "model_used": row["model_used"],
+        "word_count": row["word_count"],
+        "error_message": row["error_message"],
+    }
+
+
+@router.get("/language/{document_id}")
+async def get_document_language_endpoint(
+    document_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+):
+    tenant = _require_tenant(x_tenant_id)
+    from app.db.pool import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT detected_language, confidence,
+                       COALESCE(secondary_languages, '[]'::jsonb) AS secondary,
+                       detected_at, version_id::text
+                  FROM document_languages
+                 WHERE tenant_id = $1 AND document_id = $2
+                 ORDER BY detected_at DESC LIMIT 1
+                """,
+                tenant, document_id,
+            )
+    if not row:
+        return {"detected_language": None}
+    sec = row["secondary"]
+    if isinstance(sec, str):
+        sec = json.loads(sec)
+    return {
+        "detected_language": row["detected_language"],
+        "confidence": float(row["confidence"]),
+        "secondary_languages": sec,
+        "version_id": row["version_id"],
+        "detected_at": row["detected_at"].isoformat(),
+    }
 
 
 @router.post("/redact/apply")

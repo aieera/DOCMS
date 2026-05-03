@@ -19,7 +19,7 @@ from app.events.publisher import publish_cloudevent
 
 log = logging.getLogger(__name__)
 
-Consumer = Literal["classify", "ner", "embed", "auto_tag", "smart_route", "compliance_scan"]
+Consumer = Literal["classify", "ner", "embed", "auto_tag", "smart_route", "compliance_scan", "lang_detect", "translate"]
 
 # DLQ_SUBJECT_PREFIX re-exported from error_classifier (zero-dep module)
 
