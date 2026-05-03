@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Brain } from 'lucide-react'
+import { Brain, CheckCircle2, KeyRound, Trash2 } from 'lucide-react'
 
-import { getNERConfig, updateNERConfig, type NERConfig } from '@/api/ner'
+import {
+  clearNERAPIKey,
+  getNERConfig,
+  setNERAPIKey,
+  updateNERConfig,
+  type NERConfig,
+} from '@/api/ner'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -147,13 +153,130 @@ function NERConfigPage() {
         </p>
       </section>
 
-      <p className="mt-6 text-xs text-[var(--color-text-secondary)]">
-        The LLM provider key is read from the intelligence worker's environment
-        (<code>ANTHROPIC_API_KEY</code> for Claude, <code>OPENAI_API_KEY</code> for GPT-4o-mini,
-        Ollama runs key-less). Toggling LLM on without a key configured is a no-op — the call fails
-        gracefully and only regex+SpaCy results are persisted.
-      </p>
+      <APIKeySection
+        hasKey={data?.has_api_key ?? false}
+        setAt={data?.api_key_set_at}
+        modelHint={draft.llm_model}
+      />
     </div>
+  )
+}
+
+function APIKeySection({
+  hasKey,
+  setAt,
+  modelHint,
+}: {
+  hasKey: boolean
+  setAt?: string
+  modelHint: string
+}) {
+  const qc = useQueryClient()
+  const [draft, setDraft] = useState('')
+
+  const save = useMutation({
+    mutationFn: (k: string) => setNERAPIKey(k),
+    onSuccess: () => {
+      toast.success('API key saved')
+      setDraft('')
+      qc.invalidateQueries({ queryKey: ['ner-config'] })
+    },
+    onError: (err: unknown) => {
+      const m = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      toast.error(m ?? 'Failed to save key')
+    },
+  })
+
+  const clear = useMutation({
+    mutationFn: clearNERAPIKey,
+    onSuccess: () => {
+      toast.success('API key cleared')
+      qc.invalidateQueries({ queryKey: ['ner-config'] })
+    },
+    onError: () => toast.error('Failed to clear key'),
+  })
+
+  const ollama = modelHint.startsWith('ollama/')
+
+  return (
+    <section className="mt-6 rounded border border-[var(--color-border)]">
+      <header className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm font-medium">
+        <KeyRound className="h-4 w-4 text-amber-500" />
+        Provider API key
+      </header>
+
+      <div className="space-y-4 p-4 text-sm">
+        {hasKey ? (
+          <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs dark:border-emerald-900 dark:bg-emerald-950">
+            <span className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200">
+              <CheckCircle2 className="h-4 w-4" />
+              Configured{setAt ? ` · set ${new Date(setAt).toLocaleString()}` : ''}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={clear.isPending}
+              onClick={() => {
+                if (window.confirm('Clear the saved API key? The LLM tier will silently no-op until a new key is set.')) {
+                  clear.mutate()
+                }
+              }}
+              aria-label="Clear API key"
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Clear
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            No key configured. The LLM tier silently skips when enabled without a key — only regex + SpaCy results land in the database.
+          </div>
+        )}
+
+        {ollama ? (
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            Ollama runs against your own server — no API key needed. Make sure
+            <code> OLLAMA_BASE_URL </code> is reachable from the intelligence
+            worker container.
+          </p>
+        ) : (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (draft.trim().length >= 16) save.mutate(draft.trim())
+            }}
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
+                {hasKey ? 'Replace key' : 'Paste new key'}
+              </span>
+              <Input
+                type="password"
+                placeholder={modelHint.startsWith('claude-') ? 'sk-ant-…' : 'sk-…'}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={save.isPending || draft.trim().length < 16}
+              >
+                {save.isPending ? 'Saving…' : 'Save key'}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <p className="text-xs text-[var(--color-text-secondary)]">
+          Stored encrypted (AES-256-GCM) under the deployment KEK. Never returned
+          to the UI in plaintext after save. The intelligence worker decrypts
+          per-request when calling the LLM provider.
+        </p>
+      </div>
+    </section>
   )
 }
 

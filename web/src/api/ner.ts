@@ -76,9 +76,16 @@ export interface NERConfig {
   llm_entity_types: string[]
   llm_batch_size: number
   llm_min_confidence: number
+  // The plaintext key never crosses the wire after Save — the GET
+  // response only reveals whether one is configured + when it was set.
+  has_api_key: boolean
+  api_key_set_at?: string
 }
 
-export type NERConfigPatch = Partial<NERConfig>
+// API-key fields are intentionally NOT in the patch type — they have
+// dedicated PUT/DELETE endpoints so the plaintext key never lands in
+// the same JSON body as the unrelated config knobs.
+export type NERConfigPatch = Partial<Omit<NERConfig, 'has_api_key' | 'api_key_set_at'>>
 
 export async function getNERConfig() {
   const { data } = await api.get<NERConfig>('/admin/ner-config')
@@ -88,6 +95,14 @@ export async function getNERConfig() {
 export async function updateNERConfig(patch: NERConfigPatch) {
   const { data } = await api.put<NERConfig>('/admin/ner-config', patch)
   return data
+}
+
+export async function setNERAPIKey(apiKey: string) {
+  await api.put('/admin/ner-config/api-key', { api_key: apiKey })
+}
+
+export async function clearNERAPIKey() {
+  await api.delete('/admin/ner-config/api-key')
 }
 
 export async function listEntityCorrections(documentId: string) {
