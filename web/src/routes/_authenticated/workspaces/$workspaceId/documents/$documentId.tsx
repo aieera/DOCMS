@@ -99,7 +99,7 @@ function DocumentDetailPage() {
         )}
 
         {tab === 'entities' && (
-          <EntitiesPanel documentId={documentId} />
+          <EntitiesPanel documentId={documentId} versionId={versionId} />
         )}
 
         {/* OCR quality lives below the layout/text content because it

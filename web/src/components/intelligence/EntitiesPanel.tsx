@@ -9,9 +9,11 @@ import {
   type Entity,
   type EntitySource,
 } from '@/api/ner'
+import { getOCR } from '@/api/ocr'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
+import { HighlightedText } from './HighlightedText'
 
 // Per ADR 0061. Keep in sync with allowedEntityTypes in ner_service.go.
 const ENTITY_TYPES = [
@@ -58,10 +60,17 @@ const SOURCE_LABEL: Record<EntitySource, string> = {
   manual: 'Manual',
 }
 
-export function EntitiesPanel({ documentId }: { documentId: string }) {
+export function EntitiesPanel({
+  documentId,
+  versionId,
+}: {
+  documentId: string
+  versionId?: string
+}) {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<string>('')
   const [showOnlyPII, setShowOnlyPII] = useState(false)
+  const [showInContext, setShowInContext] = useState(true)
 
   const { data, isLoading } = useQuery({
     queryKey: ['entities', documentId, filter, showOnlyPII],
@@ -72,6 +81,18 @@ export function EntitiesPanel({ documentId }: { documentId: string }) {
         limit: 500,
       }),
   })
+
+  // OCR text is what NER ran against; offsets line up. Joining pages
+  // with "\n\n" matches the worker's _build_full_text path in ocr.py.
+  const ocr = useQuery({
+    queryKey: ['ocr', documentId, versionId],
+    queryFn: () => getOCR(documentId, versionId!),
+    enabled: Boolean(versionId) && showInContext,
+  })
+  const fullText = useMemo(
+    () => (ocr.data?.pages ?? []).map((p) => p.text_content || '').join('\n\n'),
+    [ocr.data],
+  )
 
   const grouped = useMemo(() => {
     const out: Record<string, Entity[]> = {}
@@ -101,6 +122,14 @@ export function EntitiesPanel({ documentId }: { documentId: string }) {
         <label className="flex items-center gap-1 text-xs">
           <input
             type="checkbox"
+            checked={showInContext}
+            onChange={(e) => setShowInContext(e.target.checked)}
+          />
+          In context
+        </label>
+        <label className="flex items-center gap-1 text-xs">
+          <input
+            type="checkbox"
             checked={showOnlyPII}
             onChange={(e) => setShowOnlyPII(e.target.checked)}
           />
@@ -115,6 +144,25 @@ export function EntitiesPanel({ documentId }: { documentId: string }) {
           ]}
         />
       </div>
+
+      {showInContext && versionId && (
+        <section className="rounded border border-[var(--color-border)]" data-testid="entities-in-context">
+          <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+            In context
+          </header>
+          <div className="max-h-80 overflow-y-auto p-3">
+            {ocr.isLoading ? (
+              <div className="text-xs text-[var(--color-text-secondary)]">Loading text…</div>
+            ) : !fullText ? (
+              <div className="text-xs text-[var(--color-text-secondary)]">
+                OCR text not available — entities are still listed below.
+              </div>
+            ) : (
+              <HighlightedText text={fullText} entities={data?.entities ?? []} />
+            )}
+          </div>
+        </section>
+      )}
 
       {TYPE_GROUPS.map((g) => {
         const types = g.types.filter((t) => grouped[t]?.length)
