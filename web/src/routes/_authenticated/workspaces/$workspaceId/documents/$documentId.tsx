@@ -23,11 +23,12 @@ import { TranslationPanel } from '@/components/intelligence/TranslationPanel'
 import { OcrQualityBadge } from '@/components/intelligence/OcrQualityBadge'
 import { OcrQualityPanel } from '@/components/intelligence/OcrQualityPanel'
 import { CorrectClassificationButton } from '@/components/intelligence/CorrectClassificationButton'
+import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
-  const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance'>('preview')
+  const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities'>('preview')
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -70,6 +71,9 @@ function DocumentDetailPage() {
           <TabButton active={tab === 'compliance'} onClick={() => setTab('compliance')}>
             <AlertCircle className="mr-1 h-3 w-3" /> Compliance
           </TabButton>
+          <TabButton active={tab === 'entities'} onClick={() => setTab('entities')} data-testid="tab-entities">
+            <FileText className="mr-1 h-3 w-3" /> Entities
+          </TabButton>
         </div>
 
         {tab === 'preview' && (
@@ -92,6 +96,10 @@ function DocumentDetailPage() {
 
         {tab === 'compliance' && (
           <CompliancePanel documentId={documentId} />
+        )}
+
+        {tab === 'entities' && (
+          <EntitiesPanel documentId={documentId} />
         )}
 
         {/* OCR quality lives below the layout/text content because it
