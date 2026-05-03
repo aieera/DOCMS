@@ -22,6 +22,7 @@ import { LanguageBadge } from '@/components/intelligence/LanguageBadge'
 import { TranslationPanel } from '@/components/intelligence/TranslationPanel'
 import { OcrQualityBadge } from '@/components/intelligence/OcrQualityBadge'
 import { OcrQualityPanel } from '@/components/intelligence/OcrQualityPanel'
+import { CorrectClassificationButton } from '@/components/intelligence/CorrectClassificationButton'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
@@ -112,7 +113,15 @@ function DocumentDetailPage() {
           <h3 className="text-sm font-semibold">Details</h3>
           <div className="space-y-2 text-sm">
             <Row label="Status"><Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge></Row>
-            <Row label="Type">{doc.document_class || 'Unclassified'}</Row>
+            <Row label="Type">
+              <div className="flex items-center justify-between gap-2">
+                <span>{doc.document_class || 'Unclassified'}</span>
+                <CorrectClassificationButton
+                  documentId={documentId}
+                  currentCategory={doc.document_class || ''}
+                />
+              </div>
+            </Row>
             <Row label="Size">{formatFileSize(doc.size_bytes)}</Row>
             <Row label="Versions">{doc.version_count}</Row>
             <Row label="MIME">{doc.mime_type}</Row>
