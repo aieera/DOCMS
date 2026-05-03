@@ -68,6 +68,28 @@ export async function correctEntity(documentId: string, input: CorrectEntityInpu
   return data
 }
 
+// ---- Admin: per-tenant NER config (LLM toggle) ------------------------
+
+export interface NERConfig {
+  llm_enabled: boolean
+  llm_model: string
+  llm_entity_types: string[]
+  llm_batch_size: number
+  llm_min_confidence: number
+}
+
+export type NERConfigPatch = Partial<NERConfig>
+
+export async function getNERConfig() {
+  const { data } = await api.get<NERConfig>('/admin/ner-config')
+  return data
+}
+
+export async function updateNERConfig(patch: NERConfigPatch) {
+  const { data } = await api.put<NERConfig>('/admin/ner-config', patch)
+  return data
+}
+
 export async function listEntityCorrections(documentId: string) {
   const { data } = await api.get<{ corrections: EntityCorrection[] }>(
     `/documents/${documentId}/entities/corrections`,
