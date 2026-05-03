@@ -15,6 +15,8 @@ celery_app = Celery(
         "app.tasks.duplicate",
         "app.tasks.auto_tag",
         "app.tasks.smart_route",
+        "app.tasks.compliance_scan",
+        "app.tasks.compliance_scan",
         "app.tasks.rag",
         "app.tasks.summarize",
         "app.tasks.redact",
