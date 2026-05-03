@@ -221,6 +221,174 @@ func (s *Service) InviteUser(ctx context.Context, in InviteInput) (*model.User, 
 	return user, plaintextToken, nil
 }
 
+// ---- A) Direct create-with-password ---------------------------------------
+
+// CreateUserDirectInput is the validated shape consumed by CreateUserAdmin.
+type CreateUserDirectInput struct {
+	Email       string
+	Password    string
+	DisplayName string
+	Role        string
+	TenantID    uuid.UUID
+	CreatedBy   uuid.UUID
+}
+
+// CreateUserAdmin creates an active user with a known password — bypasses
+// the email-invite round trip. Useful for dev/demo bootstrap and for
+// air-gapped tenants. Validation rules match Register so the password
+// policy stays consistent across surfaces.
+func (s *Service) CreateUserAdmin(ctx context.Context, in CreateUserDirectInput) (*model.User, error) {
+	email, err := validateEmail(in.Email)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePassword(in.Password); err != nil {
+		return nil, err
+	}
+	displayName, err := validateDisplayName(in.DisplayName)
+	if err != nil {
+		return nil, err
+	}
+	role := model.Role(in.Role)
+	switch role {
+	case model.RoleAdmin, model.RoleMember, model.RoleGuest:
+	case model.RoleOwner:
+		return nil, vdmserr.Validation("role", "cannot create owners via this endpoint")
+	default:
+		return nil, vdmserr.Validation("role", "unsupported")
+	}
+	hash, err := bcryptHash(in.Password)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := newUUID()
+	if err != nil {
+		return nil, err
+	}
+	user := &model.User{
+		TenantID:     in.TenantID,
+		ID:           userID,
+		Email:        email,
+		DisplayName:  displayName,
+		PasswordHash: hash,
+		Role:         role,
+		Status:       model.StatusActive,
+		Settings: map[string]any{
+			"created_by": in.CreatedBy.String(),
+		},
+		CreatedAt: s.clock(),
+		UpdatedAt: s.clock(),
+	}
+	err = database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
+		if existing, gErr := s.users.GetByEmail(ctx, tx, in.TenantID, email); gErr == nil && existing != nil {
+			return vdmserr.Conflict("user with this email already exists")
+		}
+		if cErr := s.users.Create(ctx, tx, user); cErr != nil {
+			return cErr
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":      user.ID.String(),
+			"tenant_id":    user.TenantID.String(),
+			"email":        user.Email,
+			"display_name": user.DisplayName,
+			"role":         string(user.Role),
+			"created_by":   in.CreatedBy.String(),
+		})
+		evt := database.NewOutboxEvent(in.TenantID, "dms.user.created.v1", "user", user.ID, payload)
+		return s.outbox.Insert(ctx, tx, evt)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// ---- B) Accept invite -----------------------------------------------------
+
+// AcceptInviteInput carries everything the public accept-invite handler
+// needs. Tenant slug travels in the URL alongside the token because the
+// invitee has no session yet (and we don't trust client headers).
+type AcceptInviteInput struct {
+	TenantSlug string
+	Token      string
+	Password   string
+}
+
+// AcceptInvite consumes the plaintext invite token: looks up the user
+// in the named tenant by token-hash, sets the password, and clears the
+// invite metadata. Returns ErrNotFound on bad/expired tokens (the wire
+// message is intentionally generic to avoid token-existence oracles).
+func (s *Service) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*model.User, error) {
+	if in.Token == "" {
+		return nil, vdmserr.Validation("token", "required")
+	}
+	if err := validatePassword(in.Password); err != nil {
+		return nil, err
+	}
+	org, err := s.users.FindOrganizationBySlug(ctx, s.pool, in.TenantSlug)
+	if err != nil || org == nil {
+		return nil, vdmserr.Validation("tenant_slug", "unknown tenant")
+	}
+	tokenHash := sha256Hex(in.Token)
+	hash, err := bcryptHash(in.Password)
+	if err != nil {
+		return nil, err
+	}
+	var out *model.User
+	err = database.WithTenantTx(ctx, s.pool, org.ID, func(tx pgx.Tx) error {
+		u, gErr := s.users.GetByInviteTokenHash(ctx, tx, org.ID, tokenHash)
+		if gErr != nil {
+			if vdmserr.KindOf(gErr) == vdmserr.KindNotFound {
+				return errInviteFailed
+			}
+			return gErr
+		}
+		// Expiry check.
+		if exp, ok := u.Settings["invite_expires_at"].(string); ok {
+			if t, perr := time.Parse(time.RFC3339, exp); perr == nil && s.clock().After(t) {
+				return errInviteFailed
+			}
+		}
+		if sErr := s.users.SetPasswordHash(ctx, tx, org.ID, u.ID, hash); sErr != nil {
+			return sErr
+		}
+		if cErr := s.users.ClearInviteToken(ctx, tx, org.ID, u.ID); cErr != nil {
+			return cErr
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":   u.ID.String(),
+			"tenant_id": org.ID.String(),
+			"email":     u.Email,
+		})
+		evt := database.NewOutboxEvent(org.ID, "dms.user.invite_accepted.v1", "user", u.ID, payload)
+		if oErr := s.outbox.Insert(ctx, tx, evt); oErr != nil {
+			return oErr
+		}
+		out = u
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// errInviteFailed is the generic "bad/expired token" surface — same
+// message regardless of cause so we don't leak whether a token exists.
+var errInviteFailed = vdmserr.Validation("token", "invitation invalid or expired")
+
+// OrgSlugByID is a thin wrapper used by the admin handler to enrich the
+// invite response with the tenant slug (so the frontend can build the
+// activation URL). Returns "" on lookup failure rather than propagating
+// because the slug is non-essential — the invite itself still succeeded.
+func (s *Service) OrgSlugByID(ctx context.Context, id uuid.UUID) (string, error) {
+	org, err := s.users.GetOrganizationByID(ctx, s.pool, id)
+	if err != nil || org == nil {
+		return "", err
+	}
+	return org.Slug, nil
+}
+
 // SuspendUser flips the user's status to "suspended", revokes every active
 // session, and emits dms.user.suspended.v1.
 func (s *Service) SuspendUser(ctx context.Context, tenantID, actorID, userID uuid.UUID) error {

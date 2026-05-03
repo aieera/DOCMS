@@ -22,11 +22,14 @@ import (
 // hashes or MFA secrets.
 type UserRepository interface {
 	FindOrganizationBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (*model.Organization, error)
+	GetOrganizationByID(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*model.Organization, error)
 	Create(ctx context.Context, tx pgx.Tx, u *model.User) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.User, error)
 	GetByEmail(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, email string) (*model.User, error)
+	GetByInviteTokenHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, hash string) (*model.User, error)
 	UpdateLastLogin(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error
 	SetPasswordHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hash string) error
+	ClearInviteToken(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	SetMFASecret(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enc string, recoveryHashes []string) error
 	SetMFAEnabled(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, enabled bool) error
 	ClearMFA(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
@@ -48,6 +51,28 @@ func (r *userRepo) FindOrganizationBySlug(ctx context.Context, pool *pgxpool.Poo
 		WHERE slug = $1
 	`, strings.ToLower(strings.TrimSpace(slug)))
 
+	var (
+		o       model.Organization
+		deleted *time.Time
+	)
+	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.PrimaryRegion, &deleted); err != nil {
+		return nil, mapPgError(err)
+	}
+	o.DeletedAt = deleted
+	if deleted != nil {
+		return nil, vdmserr.ErrNotFound
+	}
+	return &o, nil
+}
+
+// GetOrganizationByID is the cross-tenant counterpart to FindOrganizationBySlug;
+// invite acceptance needs the slug→id lookup too.
+func (r *userRepo) GetOrganizationByID(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) (*model.Organization, error) {
+	row := pool.QueryRow(ctx, `
+		SELECT id, slug, name, primary_region, deleted_at
+		FROM organizations
+		WHERE id = $1
+	`, id)
 	var (
 		o       model.Organization
 		deleted *time.Time
@@ -102,6 +127,28 @@ func (r *userRepo) GetByEmail(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID
 	row := tx.QueryRow(ctx, selectUserSQL+` WHERE tenant_id = $1 AND lower(email) = lower($2) AND deleted_at IS NULL`,
 		tenantID, email)
 	return scanUser(row)
+}
+
+// GetByInviteTokenHash returns the (single) user in this tenant whose
+// settings.invite_token_hash matches. Returns ErrNotFound if no match.
+// The hash is sha256-hex of the plaintext token.
+func (r *userRepo) GetByInviteTokenHash(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, hash string) (*model.User, error) {
+	row := tx.QueryRow(ctx,
+		selectUserSQL+` WHERE tenant_id = $1 AND settings->>'invite_token_hash' = $2 AND deleted_at IS NULL`,
+		tenantID, hash)
+	return scanUser(row)
+}
+
+// ClearInviteToken removes the invite-related keys from settings once a
+// user has consumed their token. Idempotent.
+func (r *userRepo) ClearInviteToken(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE users
+		   SET settings = (settings - 'invite_token_hash' - 'invite_expires_at' - 'invited_by'),
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id)
+	return mapPgError(err)
 }
 
 func (r *userRepo) UpdateLastLogin(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error {

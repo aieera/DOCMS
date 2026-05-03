@@ -30,6 +30,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 	r.Route("/api/v1/auth", func(r chi.Router) {
 		// ---- Public -------------------------------------------------------
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/register", h.Register)
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/accept-invite", h.AcceptInvite)
 		r.Post("/login", h.Login)
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
@@ -91,6 +92,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Use(vdmsmw.CSRFDoubleSubmit())
 		r.Use(h.RequireRole("admin", "owner"))
 		r.Get("/", h.ListUsersAdmin)
+		r.Post("/", h.CreateUserAdmin)
 		r.Post("/invite", h.InviteUserAdmin)
 		r.Post("/{id}/suspend", h.SuspendUserAdmin)
 		r.Post("/{id}/reset-mfa", h.ResetUserMFAAdmin)

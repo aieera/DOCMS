@@ -54,6 +54,51 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 // ===========================================================================
+// Accept invite (public — token IS the auth)
+// ===========================================================================
+
+type acceptInviteRequest struct {
+	TenantSlug string `json:"tenant_slug"`
+	Token      string `json:"token"`
+	Password   string `json:"password"`
+}
+
+type acceptInviteResponse struct {
+	UserID      uuid.UUID `json:"user_id"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"display_name"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	TenantSlug  string    `json:"tenant_slug"`
+}
+
+// AcceptInvite handles POST /api/v1/auth/accept-invite. Public route —
+// the plaintext token is the only secret required, and the rate limiter
+// in the router caps brute-force attempts.
+func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
+	var req acceptInviteRequest
+	if err := h.readJSON(r, &req); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	user, err := h.svc.AcceptInvite(r.Context(), service.AcceptInviteInput{
+		TenantSlug: req.TenantSlug,
+		Token:      req.Token,
+		Password:   req.Password,
+	})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, acceptInviteResponse{
+		UserID:      user.ID,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		TenantID:    user.TenantID,
+		TenantSlug:  req.TenantSlug,
+	})
+}
+
+// ===========================================================================
 // Login + MFA verify
 // ===========================================================================
 

@@ -77,6 +77,7 @@ type inviteUserRequest struct {
 type inviteUserResponse struct {
 	User        adminUserDTO `json:"user"`
 	InviteToken string       `json:"invite_token"` // plaintext; caller forwards to email template
+	TenantSlug  string       `json:"tenant_slug"`  // so the UI can build the activation link
 }
 
 // InviteUserAdmin handles POST /api/v1/admin/users/invite.
@@ -102,9 +103,54 @@ func (h *Handler) InviteUserAdmin(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, err)
 		return
 	}
+	slug, _ := h.svc.OrgSlugByID(r.Context(), tenantID)
 	h.writeJSON(w, http.StatusCreated, inviteUserResponse{
 		User:        toAdminUserDTO(u.ToPublic()),
 		InviteToken: token,
+		TenantSlug:  slug,
+	})
+}
+
+// ---- POST /api/v1/admin/users ---------------------------------------------
+
+type createUserRequest struct {
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	DisplayName string `json:"display_name"`
+	Role        string `json:"role"`
+}
+
+type createUserResponse struct {
+	User adminUserDTO `json:"user"`
+}
+
+// CreateUserAdmin handles POST /api/v1/admin/users — sidesteps the
+// invite/email round-trip by setting the user's password directly.
+func (h *Handler) CreateUserAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	var req createUserRequest
+	if err := h.readJSON(r, &req); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	u, err := h.svc.CreateUserAdmin(r.Context(), service.CreateUserDirectInput{
+		Email:       req.Email,
+		Password:    req.Password,
+		DisplayName: req.DisplayName,
+		Role:        req.Role,
+		TenantID:    tenantID,
+		CreatedBy:   actorID,
+	})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, createUserResponse{
+		User: toAdminUserDTO(u.ToPublic()),
 	})
 }
 
