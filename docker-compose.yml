@@ -344,6 +344,12 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
+      # ADR 0061 — opt-in LLM NER. litellm reads these directly; the
+      # api container builds prompts (rare path) and the worker calls
+      # the LLM (hot path), so both need them. Empty in dev unless an
+      # admin sets a key in .env.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"
     ports: ["8194:8080"]
     depends_on:
       redis:    { condition: service_healthy }
@@ -385,6 +391,9 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
+      # ADR 0061 LLM NER — see the intelligence service block above.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
