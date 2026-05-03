@@ -471,6 +471,16 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/documents/bulk-reclassify",
 		middleware.CorrelationHTTP(classifyCorrectionsMux))
 
+	// ADR 0061 — NER read + correction surface.
+	nerMux := http.NewServeMux()
+	handler.NewNERHandler(svc, *log.Z()).Register(nerMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/entities",
+		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/entities/correct",
+		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/entities/corrections",
+		middleware.CorrelationHTTP(nerMux))
+
 	// ADR 0060 — active-learning model management surface (owner/admin gated).
 	activeLearningMux := http.NewServeMux()
 	handler.NewActiveLearningHandler(svc, *log.Z()).Register(activeLearningMux)

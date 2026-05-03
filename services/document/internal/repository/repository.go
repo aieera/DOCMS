@@ -113,6 +113,7 @@ type Repositories struct {
 	Anomaly            AnomalyRepository
 	ClassifyCorrections ClassifyCorrectionRepository
 	ActiveLearning      ActiveLearningRepository
+	NER                 NERRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -136,5 +137,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Anomaly:             NewAnomalyRepo(),
 		ClassifyCorrections: NewClassifyCorrectionRepo(),
 		ActiveLearning:      NewActiveLearningRepo(),
+		NER:                 NewNERRepo(),
 	}
 }
