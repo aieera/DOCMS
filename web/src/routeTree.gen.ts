@@ -41,6 +41,15 @@ import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminIntelligenceTagReviewRouteImport } from './routes/_authenticated/admin/intelligence/tag-review'
+import { Route as AuthenticatedAdminIntelligenceRoutingRulesRouteImport } from './routes/_authenticated/admin/intelligence/routing-rules'
+import { Route as AuthenticatedAdminIntelligenceOcrReviewRouteImport } from './routes/_authenticated/admin/intelligence/ocr-review'
+import { Route as AuthenticatedAdminIntelligenceModelsRouteImport } from './routes/_authenticated/admin/intelligence/models'
+import { Route as AuthenticatedAdminIntelligenceFilingAnalyticsRouteImport } from './routes/_authenticated/admin/intelligence/filing-analytics'
+import { Route as AuthenticatedAdminIntelligenceComplianceConfigRouteImport } from './routes/_authenticated/admin/intelligence/compliance-config'
+import { Route as AuthenticatedAdminIntelligenceComplianceRouteImport } from './routes/_authenticated/admin/intelligence/compliance'
+import { Route as AuthenticatedAdminIntelligenceAutoTagRouteImport } from './routes/_authenticated/admin/intelligence/auto-tag'
+import { Route as AuthenticatedAdminIntelligenceAnomaliesRouteImport } from './routes/_authenticated/admin/intelligence/anomalies'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -221,6 +230,60 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntelligenceTagReviewRoute =
+  AuthenticatedAdminIntelligenceTagReviewRouteImport.update({
+    id: '/admin/intelligence/tag-review',
+    path: '/admin/intelligence/tag-review',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceRoutingRulesRoute =
+  AuthenticatedAdminIntelligenceRoutingRulesRouteImport.update({
+    id: '/admin/intelligence/routing-rules',
+    path: '/admin/intelligence/routing-rules',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceOcrReviewRoute =
+  AuthenticatedAdminIntelligenceOcrReviewRouteImport.update({
+    id: '/admin/intelligence/ocr-review',
+    path: '/admin/intelligence/ocr-review',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceModelsRoute =
+  AuthenticatedAdminIntelligenceModelsRouteImport.update({
+    id: '/admin/intelligence/models',
+    path: '/admin/intelligence/models',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceFilingAnalyticsRoute =
+  AuthenticatedAdminIntelligenceFilingAnalyticsRouteImport.update({
+    id: '/admin/intelligence/filing-analytics',
+    path: '/admin/intelligence/filing-analytics',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceComplianceConfigRoute =
+  AuthenticatedAdminIntelligenceComplianceConfigRouteImport.update({
+    id: '/admin/intelligence/compliance-config',
+    path: '/admin/intelligence/compliance-config',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceComplianceRoute =
+  AuthenticatedAdminIntelligenceComplianceRouteImport.update({
+    id: '/admin/intelligence/compliance',
+    path: '/admin/intelligence/compliance',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceAutoTagRoute =
+  AuthenticatedAdminIntelligenceAutoTagRouteImport.update({
+    id: '/admin/intelligence/auto-tag',
+    path: '/admin/intelligence/auto-tag',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIntelligenceAnomaliesRoute =
+  AuthenticatedAdminIntelligenceAnomaliesRouteImport.update({
+    id: '/admin/intelligence/anomalies',
+    path: '/admin/intelligence/anomalies',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -259,6 +322,15 @@ export interface FileRoutesByFullPath {
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
+  '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
+  '/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
+  '/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
+  '/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
+  '/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
+  '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
+  '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -293,6 +365,15 @@ export interface FileRoutesByTo {
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
+  '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
+  '/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
+  '/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
+  '/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
+  '/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
+  '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
+  '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -329,6 +410,15 @@ export interface FileRoutesById {
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/_authenticated/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
+  '/_authenticated/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
+  '/_authenticated/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
+  '/_authenticated/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
+  '/_authenticated/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
+  '/_authenticated/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
+  '/_authenticated/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
+  '/_authenticated/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -365,6 +455,15 @@ export interface FileRouteTypes {
     | '/admin/workflows'
     | '/admin/'
     | '/workspaces/'
+    | '/admin/intelligence/anomalies'
+    | '/admin/intelligence/auto-tag'
+    | '/admin/intelligence/compliance'
+    | '/admin/intelligence/compliance-config'
+    | '/admin/intelligence/filing-analytics'
+    | '/admin/intelligence/models'
+    | '/admin/intelligence/ocr-review'
+    | '/admin/intelligence/routing-rules'
+    | '/admin/intelligence/tag-review'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
@@ -399,6 +498,15 @@ export interface FileRouteTypes {
     | '/admin/workflows'
     | '/admin'
     | '/workspaces'
+    | '/admin/intelligence/anomalies'
+    | '/admin/intelligence/auto-tag'
+    | '/admin/intelligence/compliance'
+    | '/admin/intelligence/compliance-config'
+    | '/admin/intelligence/filing-analytics'
+    | '/admin/intelligence/models'
+    | '/admin/intelligence/ocr-review'
+    | '/admin/intelligence/routing-rules'
+    | '/admin/intelligence/tag-review'
     | '/workspaces/$workspaceId'
     | '/workspaces/$workspaceId/documents/$documentId'
   id:
@@ -434,6 +542,15 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/workflows'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/admin/intelligence/anomalies'
+    | '/_authenticated/admin/intelligence/auto-tag'
+    | '/_authenticated/admin/intelligence/compliance'
+    | '/_authenticated/admin/intelligence/compliance-config'
+    | '/_authenticated/admin/intelligence/filing-analytics'
+    | '/_authenticated/admin/intelligence/models'
+    | '/_authenticated/admin/intelligence/ocr-review'
+    | '/_authenticated/admin/intelligence/routing-rules'
+    | '/_authenticated/admin/intelligence/tag-review'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
   fileRoutesById: FileRoutesById
@@ -672,6 +789,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/intelligence/tag-review': {
+      id: '/_authenticated/admin/intelligence/tag-review'
+      path: '/admin/intelligence/tag-review'
+      fullPath: '/admin/intelligence/tag-review'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceTagReviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/routing-rules': {
+      id: '/_authenticated/admin/intelligence/routing-rules'
+      path: '/admin/intelligence/routing-rules'
+      fullPath: '/admin/intelligence/routing-rules'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceRoutingRulesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/ocr-review': {
+      id: '/_authenticated/admin/intelligence/ocr-review'
+      path: '/admin/intelligence/ocr-review'
+      fullPath: '/admin/intelligence/ocr-review'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceOcrReviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/models': {
+      id: '/_authenticated/admin/intelligence/models'
+      path: '/admin/intelligence/models'
+      fullPath: '/admin/intelligence/models'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceModelsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/filing-analytics': {
+      id: '/_authenticated/admin/intelligence/filing-analytics'
+      path: '/admin/intelligence/filing-analytics'
+      fullPath: '/admin/intelligence/filing-analytics'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceFilingAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/compliance-config': {
+      id: '/_authenticated/admin/intelligence/compliance-config'
+      path: '/admin/intelligence/compliance-config'
+      fullPath: '/admin/intelligence/compliance-config'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceComplianceConfigRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/compliance': {
+      id: '/_authenticated/admin/intelligence/compliance'
+      path: '/admin/intelligence/compliance'
+      fullPath: '/admin/intelligence/compliance'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceComplianceRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/auto-tag': {
+      id: '/_authenticated/admin/intelligence/auto-tag'
+      path: '/admin/intelligence/auto-tag'
+      fullPath: '/admin/intelligence/auto-tag'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceAutoTagRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/intelligence/anomalies': {
+      id: '/_authenticated/admin/intelligence/anomalies'
+      path: '/admin/intelligence/anomalies'
+      fullPath: '/admin/intelligence/anomalies'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -709,6 +889,15 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
+  AuthenticatedAdminIntelligenceAnomaliesRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  AuthenticatedAdminIntelligenceAutoTagRoute: typeof AuthenticatedAdminIntelligenceAutoTagRoute
+  AuthenticatedAdminIntelligenceComplianceRoute: typeof AuthenticatedAdminIntelligenceComplianceRoute
+  AuthenticatedAdminIntelligenceComplianceConfigRoute: typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
+  AuthenticatedAdminIntelligenceFilingAnalyticsRoute: typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
+  AuthenticatedAdminIntelligenceModelsRoute: typeof AuthenticatedAdminIntelligenceModelsRoute
+  AuthenticatedAdminIntelligenceOcrReviewRoute: typeof AuthenticatedAdminIntelligenceOcrReviewRoute
+  AuthenticatedAdminIntelligenceRoutingRulesRoute: typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
+  AuthenticatedAdminIntelligenceTagReviewRoute: typeof AuthenticatedAdminIntelligenceTagReviewRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
@@ -740,6 +929,24 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
+  AuthenticatedAdminIntelligenceAnomaliesRoute:
+    AuthenticatedAdminIntelligenceAnomaliesRoute,
+  AuthenticatedAdminIntelligenceAutoTagRoute:
+    AuthenticatedAdminIntelligenceAutoTagRoute,
+  AuthenticatedAdminIntelligenceComplianceRoute:
+    AuthenticatedAdminIntelligenceComplianceRoute,
+  AuthenticatedAdminIntelligenceComplianceConfigRoute:
+    AuthenticatedAdminIntelligenceComplianceConfigRoute,
+  AuthenticatedAdminIntelligenceFilingAnalyticsRoute:
+    AuthenticatedAdminIntelligenceFilingAnalyticsRoute,
+  AuthenticatedAdminIntelligenceModelsRoute:
+    AuthenticatedAdminIntelligenceModelsRoute,
+  AuthenticatedAdminIntelligenceOcrReviewRoute:
+    AuthenticatedAdminIntelligenceOcrReviewRoute,
+  AuthenticatedAdminIntelligenceRoutingRulesRoute:
+    AuthenticatedAdminIntelligenceRoutingRulesRoute,
+  AuthenticatedAdminIntelligenceTagReviewRoute:
+    AuthenticatedAdminIntelligenceTagReviewRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:
