@@ -20,7 +20,7 @@ CREATE TABLE tag_suggestions (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id),
     FOREIGN KEY (tenant_id, reviewed_by) REFERENCES users     (tenant_id, id)
 );
 

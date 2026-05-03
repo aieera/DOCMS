@@ -97,7 +97,7 @@ CREATE TABLE route_suggestions (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id)         REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)          REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)          REFERENCES document_versions  (tenant_id, id),
     FOREIGN KEY (tenant_id, suggested_folder_id) REFERENCES folders   (tenant_id, id),
     FOREIGN KEY (tenant_id, accepted_by)         REFERENCES users     (tenant_id, id)
 );

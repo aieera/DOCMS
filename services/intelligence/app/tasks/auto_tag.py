@@ -296,7 +296,7 @@ async def _fetch_entities(tenant_id: str, version_id: str) -> list[dict]:
             rows = await conn.fetch(
                 """
                 SELECT entity_type, entity_value, confidence
-                  FROM entities
+                  FROM document_entities
                  WHERE tenant_id = $1 AND version_id = $2
                 """,
                 tenant_id, version_id,

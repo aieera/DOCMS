@@ -512,7 +512,7 @@ async def _fetch_workspace_docs(tenant_id: str, workspace_id: str | None) -> lis
                 WITH doc_words AS (
                   SELECT v.tenant_id, v.document_id,
                          COALESCE(SUM(array_length(string_to_array(o.text_content, ' '), 1)), 0) AS word_count
-                    FROM versions v
+                    FROM document_versions v
                     LEFT JOIN ocr_results o
                       ON o.tenant_id = v.tenant_id AND o.version_id = v.id
                    WHERE v.tenant_id = $1

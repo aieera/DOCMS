@@ -32,7 +32,7 @@ CREATE TABLE compliance_findings (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id),
     FOREIGN KEY (tenant_id, remediated_by) REFERENCES users   (tenant_id, id)
 );
 
@@ -80,7 +80,7 @@ CREATE TABLE compliance_summary (
 
     PRIMARY KEY (tenant_id, document_id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id)
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id)
 );
 
 CREATE INDEX idx_compliance_summary_risk

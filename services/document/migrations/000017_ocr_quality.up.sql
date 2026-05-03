@@ -26,7 +26,7 @@ CREATE TABLE ocr_quality_scores (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id),
     FOREIGN KEY (tenant_id, reviewed_by) REFERENCES users     (tenant_id, id),
     UNIQUE (tenant_id, version_id, page_number)
 );
@@ -67,7 +67,7 @@ CREATE TABLE ocr_quality_summary (
 
     PRIMARY KEY (tenant_id, document_id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id)
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id)
 );
 
 CREATE INDEX idx_ocr_quality_summary_grade

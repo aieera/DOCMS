@@ -17,7 +17,7 @@ CREATE TABLE document_languages (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id),
     UNIQUE (tenant_id, version_id)   -- one detection per version
 );
 
@@ -59,7 +59,7 @@ CREATE TABLE document_translations (
 
     PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id, document_id) REFERENCES documents (tenant_id, id),
-    FOREIGN KEY (tenant_id, version_id)  REFERENCES versions  (tenant_id, id),
+    FOREIGN KEY (tenant_id, version_id)  REFERENCES document_versions  (tenant_id, id),
     FOREIGN KEY (tenant_id, requested_by) REFERENCES users    (tenant_id, id),
     UNIQUE (tenant_id, version_id, target_language)
 );

@@ -284,7 +284,7 @@ async def _fetch_ner_entities(tenant_id: str, version_id: str) -> list[dict]:
                 """
                 SELECT entity_type, entity_value, confidence,
                        COALESCE(page_number, 0) AS page_number
-                  FROM entities
+                  FROM document_entities
                  WHERE tenant_id = $1 AND version_id = $2
                 """,
                 tenant_id, version_id,
