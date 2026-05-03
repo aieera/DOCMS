@@ -13,11 +13,18 @@ import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
 import { Download, Share, History, MessageSquare, FileText, RefreshCw, AlertCircle, Clock, CheckCircle2, LayoutGrid } from 'lucide-react'
+import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
+import { RouteSuggestionBanner } from '@/components/intelligence/RouteSuggestionBanner'
+import { CompliancePanel } from '@/components/intelligence/CompliancePanel'
+import { ComplianceBadge } from '@/components/intelligence/ComplianceBadge'
+import { DocQAChat } from '@/components/intelligence/DocQAChat'
+import { LanguageBadge } from '@/components/intelligence/LanguageBadge'
+import { TranslationPanel } from '@/components/intelligence/TranslationPanel'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
-  const [tab, setTab] = useState<'preview' | 'text' | 'layout'>('preview')
+  const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance'>('preview')
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -29,10 +36,20 @@ function DocumentDetailPage() {
       <div className="flex-1">
         <div className="mb-4 flex items-center gap-3">
           <FileIcon mime={doc.mime_type} className="h-8 w-8" />
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl font-bold">{doc.title}</h1>
             <p className="text-sm text-[var(--color-text-secondary)]">{doc.created_by_name} · {formatDateTime(doc.created_at)}</p>
           </div>
+          <div className="flex items-center gap-2">
+            <LanguageBadge documentId={documentId} />
+            <ComplianceBadge documentId={documentId} />
+          </div>
+        </div>
+
+        {/* ADR 0053 — banner appears only when smart_route produced
+            pending suggestions for this doc. Self-hides otherwise. */}
+        <div className="mb-3">
+          <RouteSuggestionBanner documentId={documentId} />
         </div>
 
         <div className="mb-3 flex gap-1 border-b border-[var(--color-border)]">
@@ -42,6 +59,12 @@ function DocumentDetailPage() {
           </TabButton>
           <TabButton active={tab === 'layout'} onClick={() => setTab('layout')}>
             <LayoutGrid className="mr-1 h-3 w-3" /> Layout
+          </TabButton>
+          <TabButton active={tab === 'qa'} onClick={() => setTab('qa')}>
+            <MessageSquare className="mr-1 h-3 w-3" /> Q&amp;A
+          </TabButton>
+          <TabButton active={tab === 'compliance'} onClick={() => setTab('compliance')}>
+            <AlertCircle className="mr-1 h-3 w-3" /> Compliance
           </TabButton>
         </div>
 
@@ -57,6 +80,14 @@ function DocumentDetailPage() {
 
         {tab === 'layout' && (
           <LayoutTab documentId={documentId} versionId={versionId} mimeType={doc.mime_type} />
+        )}
+
+        {tab === 'qa' && (
+          <DocQAChat documentId={documentId} />
+        )}
+
+        {tab === 'compliance' && (
+          <CompliancePanel documentId={documentId} />
         )}
       </div>
 
@@ -87,6 +118,14 @@ function DocumentDetailPage() {
           <Button variant="ghost" size="sm" className="justify-start"><History className="h-4 w-4" /> Version History</Button>
           <Button variant="ghost" size="sm" className="justify-start"><MessageSquare className="h-4 w-4" /> Comments</Button>
         </div>
+
+        {/* Intelligence panels — each component self-hides when it has
+            nothing to render, so the sidebar stays compact for docs
+            that haven't reached the relevant pipeline stage yet. */}
+        <TagSuggestionsPanel documentId={documentId} />
+        {versionId && (
+          <TranslationPanel documentId={documentId} versionId={versionId} />
+        )}
       </aside>
     </div>
   )
