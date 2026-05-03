@@ -101,6 +101,7 @@ See `make help` for the full list.
 | Duplicate (sha256/minhash/simhash) | `dms.version.ocr_completed.v1` | `app.tasks.duplicate` | `duplicate_candidates`, `document_fingerprints` | — |
 | Duplicate (embedding) | `dms.embed.completed.v1` | `app.tasks.dup_embedding` | `duplicate_candidates` | — |
 | **Auto-tag** (ADR 0052) | `dms.classify.completed.v1` + `dms.ner.completed.v1` | `app.tasks.auto_tag` | `tag_suggestions`, `documents.tags` | `dms.autotag.completed.v1` |
+| **Smart routing** (ADR 0053) | `dms.classify.completed.v1` | `app.tasks.smart_route` | `route_suggestions` | `dms.routing.completed.v1` |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -118,6 +119,12 @@ Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, de
 | GET | `/api/v1/admin/tag-suggestions` | Tenant-wide review queue (paginated) | admin/owner/compliance_officer |
 | GET | `/api/v1/admin/auto-tag-config` | Per-tenant thresholds & weights | admin/owner/compliance_officer |
 | PUT | `/api/v1/admin/auto-tag-config` | Patch config (partial update) | admin/owner |
+| GET | `/api/v1/documents/{id}/route-suggestions` | Folder suggestions for a doc | view |
+| POST | `/api/v1/documents/{id}/route-suggestions/{sid}/accept` | Move doc to suggested folder + record filing history | edit on both folders |
+| POST | `/api/v1/documents/{id}/route-suggestions/{sid}/dismiss` | Reject suggestion (audit only) | view |
+| GET/POST | `/api/v1/admin/routing-rules[/{id}]` | Per-tenant routing-rule CRUD | admin/owner (write), +compliance_officer (read) |
+| GET/PUT | `/api/v1/admin/smart-routing-config` | Per-tenant thresholds | admin/owner (write), +compliance_officer (read) |
+| GET | `/api/v1/admin/filing-analytics` | Filing patterns + suggestion acceptance rate | admin/owner/compliance_officer |
 
 ## Status
 
@@ -130,6 +137,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] Phase 5 — **document service reference implementation**. Template for the other 10 services.
 - [x] Waves 5–14 — full blueprint structurally complete.
 - [x] **Intel Feature 01 — Auto-tagging** (ADR 0052)
+- [x] **Intel Feature 02 — Smart routing** (ADR 0053)
 
 ## License
 
