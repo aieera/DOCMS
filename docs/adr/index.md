@@ -21,6 +21,7 @@ subsequent decisions that overturn an ADR supersede it via a new ADR.
 | [0024](0024-gdpr-dsr-strategy.md) | GDPR DSR: per-request Temporal workflow, hold short-circuit, 7-year ledger, HMAC anonymization | Accepted | 2026-04-17 |
 | [0025](0025-pades-library.md) | PAdES signing via EU Commission DSS (LGPL-2.1) as a Java sidecar; fallback Digidoc4j / commercial iText | Accepted | 2026-04-17 |
 | [0026](0026-per-region-kek-masters.md) | Per-region KEK master secrets; kekID gains `/region` suffix; cross-region isolation under ikm compromise | Accepted | 2026-04-18 |
+| [0052](0052-auto-tagging.md) | Auto-tagging from NER + classification; per-tenant thresholds; never auto-apply without admin-configured `auto_apply_threshold` | Accepted | 2026-05-03 |
 
 *Note: 0021 was promoted from its final.md-placeholder slot to document
 an actual Wave 5 decision. Wave 6.5 shipped without an ADR (no design
