@@ -30,6 +30,8 @@ func (h *NERHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/documents/{id}/entities", h.list)
 	mux.HandleFunc("POST /api/v1/documents/{id}/entities/correct", h.correct)
 	mux.HandleFunc("GET /api/v1/documents/{id}/entities/corrections", h.listCorrections)
+	mux.HandleFunc("GET /api/v1/admin/ner-config", h.getConfig)
+	mux.HandleFunc("PUT /api/v1/admin/ner-config", h.upsertConfig)
 }
 
 type entityDTO struct {
@@ -163,6 +165,82 @@ func (h *NERHandler) listCorrections(w http.ResponseWriter, r *http.Request) {
 		out = append(out, entityCorrectionToDTO(&c))
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{"corrections": out})
+}
+
+// ---- NER admin config -----------------------------------------------------
+
+type nerConfigDTO struct {
+	Enabled       bool     `json:"llm_enabled"`
+	Model         string   `json:"llm_model"`
+	EntityTypes   []string `json:"llm_entity_types"`
+	BatchSize     int32    `json:"llm_batch_size"`
+	MinConfidence float32  `json:"llm_min_confidence"`
+}
+
+type nerConfigBody struct {
+	Enabled       *bool     `json:"llm_enabled,omitempty"`
+	Model         *string   `json:"llm_model,omitempty"`
+	EntityTypes   *[]string `json:"llm_entity_types,omitempty"`
+	BatchSize     *int32    `json:"llm_batch_size,omitempty"`
+	MinConfidence *float32  `json:"llm_min_confidence,omitempty"`
+}
+
+func (h *NERHandler) getConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	c, err := h.svc.GetNERConfig(r.Context())
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if c == nil {
+		// No row yet — return migration-default shape so the UI can
+		// render fields without a separate "no config" branch.
+		writeJSONStatus(w, http.StatusOK, nerConfigDTO{
+			Enabled: false, Model: "claude-haiku-4-5",
+			EntityTypes: []string{
+				"party_name", "effective_date", "jurisdiction", "governing_law",
+				"account_number", "tax_id", "patient_id", "address", "national_id",
+			},
+			BatchSize: 5, MinConfidence: 0.6,
+		})
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, configToNERDTO(c))
+}
+
+func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	var body nerConfigBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	c, err := h.svc.UpsertNERConfig(r.Context(), repository.NERConfigPatch{
+		Enabled:       body.Enabled,
+		Model:         body.Model,
+		EntityTypes:   body.EntityTypes,
+		BatchSize:     body.BatchSize,
+		MinConfidence: body.MinConfidence,
+	})
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, configToNERDTO(c))
+}
+
+func configToNERDTO(c *repository.NERConfig) nerConfigDTO {
+	return nerConfigDTO{
+		Enabled:       c.Enabled,
+		Model:         c.Model,
+		EntityTypes:   c.EntityTypes,
+		BatchSize:     c.BatchSize,
+		MinConfidence: c.MinConfidence,
+	}
 }
 
 func entityToDTO(e *repository.Entity) entityDTO {

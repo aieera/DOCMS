@@ -67,6 +67,24 @@ type ListEntitiesOpts struct {
 	Offset     int32
 }
 
+// NERConfig — per-tenant LLM toggle, mirrored from the ner_config
+// table. Defaults match migration 000021.
+type NERConfig struct {
+	Enabled          bool
+	Model            string
+	EntityTypes      []string
+	BatchSize        int32
+	MinConfidence    float32
+}
+
+type NERConfigPatch struct {
+	Enabled       *bool
+	Model         *string
+	EntityTypes   *[]string
+	BatchSize     *int32
+	MinConfidence *float32
+}
+
 type NERRepository interface {
 	ListByDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID, opts ListEntitiesOpts) ([]Entity, int64, error)
 	GetEntity(ctx context.Context, tx pgx.Tx, tenantID, entityID uuid.UUID) (*Entity, error)
@@ -76,6 +94,8 @@ type NERRepository interface {
 	InsertCorrection(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, in EntityCorrectionInput) (*EntityCorrection, error)
 	ListCorrections(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) ([]EntityCorrection, error)
 	CurrentVersionID(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (uuid.UUID, error)
+	GetConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (*NERConfig, error)
+	UpsertConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, p NERConfigPatch) (*NERConfig, error)
 }
 
 type nerRepo struct{}
@@ -280,6 +300,67 @@ func (r *nerRepo) ListCorrections(ctx context.Context, tx pgx.Tx, tenantID, docu
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (r *nerRepo) GetConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (*NERConfig, error) {
+	row := tx.QueryRow(ctx, `
+        SELECT llm_enabled, llm_model, llm_entity_types,
+               llm_batch_size, llm_min_confidence
+          FROM ner_config WHERE tenant_id = $1`,
+		tenantID)
+	var c NERConfig
+	if err := row.Scan(&c.Enabled, &c.Model, &c.EntityTypes, &c.BatchSize, &c.MinConfidence); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (r *nerRepo) UpsertConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, p NERConfigPatch) (*NERConfig, error) {
+	// Defaults match migration 000021 — keep them in sync if the
+	// migration ever changes.
+	c := NERConfig{
+		Enabled: false, Model: "claude-haiku-4-5",
+		EntityTypes: []string{
+			"party_name", "effective_date", "jurisdiction", "governing_law",
+			"account_number", "tax_id", "patient_id", "address", "national_id",
+		},
+		BatchSize: 5, MinConfidence: 0.6,
+	}
+	if existing, _ := r.GetConfig(ctx, tx, tenantID); existing != nil {
+		c = *existing
+	}
+	if p.Enabled != nil {
+		c.Enabled = *p.Enabled
+	}
+	if p.Model != nil {
+		c.Model = *p.Model
+	}
+	if p.EntityTypes != nil {
+		c.EntityTypes = *p.EntityTypes
+	}
+	if p.BatchSize != nil {
+		c.BatchSize = *p.BatchSize
+	}
+	if p.MinConfidence != nil {
+		c.MinConfidence = *p.MinConfidence
+	}
+	_, err := tx.Exec(ctx, `
+        INSERT INTO ner_config (
+            tenant_id, llm_enabled, llm_model, llm_entity_types,
+            llm_batch_size, llm_min_confidence, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, now())
+        ON CONFLICT (tenant_id) DO UPDATE SET
+            llm_enabled        = EXCLUDED.llm_enabled,
+            llm_model          = EXCLUDED.llm_model,
+            llm_entity_types   = EXCLUDED.llm_entity_types,
+            llm_batch_size     = EXCLUDED.llm_batch_size,
+            llm_min_confidence = EXCLUDED.llm_min_confidence,
+            updated_at         = now()`,
+		tenantID, c.Enabled, c.Model, c.EntityTypes, c.BatchSize, c.MinConfidence)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 // itoa: small dependency-free integer→string for SQL placeholder building.

@@ -480,6 +480,10 @@ func main() {
 		middleware.CorrelationHTTP(nerMux))
 	rootMux.Handle("GET /api/v1/documents/{id}/entities/corrections",
 		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("GET /api/v1/admin/ner-config",
+		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("PUT /api/v1/admin/ner-config",
+		middleware.CorrelationHTTP(nerMux))
 
 	// ADR 0060 — active-learning model management surface (owner/admin gated).
 	activeLearningMux := http.NewServeMux()

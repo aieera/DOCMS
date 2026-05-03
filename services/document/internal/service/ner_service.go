@@ -255,6 +255,65 @@ func mustCallerUserID(ctx context.Context) uuid.UUID {
 	return userID
 }
 
+// ---- NER config admin -----------------------------------------------------
+
+func (s *DocumentService) GetNERConfig(ctx context.Context) (*repository.NERConfig, error) {
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out *repository.NERConfig
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		c, gErr := s.repos.NER.GetConfig(ctx, tx, tenantID)
+		if gErr != nil && !isNotFound(gErr) {
+			return gErr
+		}
+		out = c
+		return nil
+	})
+	return out, err
+}
+
+func (s *DocumentService) UpsertNERConfig(ctx context.Context, p repository.NERConfigPatch) (*repository.NERConfig, error) {
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateNERConfigPatch(p); err != nil {
+		return nil, err
+	}
+	var out *repository.NERConfig
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		c, uErr := s.repos.NER.UpsertConfig(ctx, tx, tenantID, p)
+		if uErr != nil {
+			return uErr
+		}
+		out = c
+		return nil
+	})
+	return out, err
+}
+
+func validateNERConfigPatch(p repository.NERConfigPatch) error {
+	if p.BatchSize != nil && (*p.BatchSize < 1 || *p.BatchSize > 20) {
+		return vdmserr.Validation("llm_batch_size", "must be in [1, 20]")
+	}
+	if p.MinConfidence != nil && (*p.MinConfidence < 0 || *p.MinConfidence > 1) {
+		return vdmserr.Validation("llm_min_confidence", "must be in [0.0, 1.0]")
+	}
+	if p.Model != nil && strings.TrimSpace(*p.Model) == "" {
+		return vdmserr.Validation("llm_model", "must not be empty")
+	}
+	if p.EntityTypes != nil {
+		for _, t := range *p.EntityTypes {
+			if !allowedEntityTypes[t] {
+				return vdmserr.Validation("llm_entity_types", "unknown entity type: "+t)
+			}
+		}
+	}
+	return nil
+}
+
 type entityCorrectedPayload struct {
 	CorrectionID  string `json:"correction_id"`
 	TenantID      string `json:"tenant_id"`
