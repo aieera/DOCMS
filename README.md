@@ -108,6 +108,7 @@ See `make help` for the full list.
 | **Translation** (ADR 0056) | on-demand REST | `POST /api/v1/intelligence/translate`, `app.tasks.translate` | `document_translations` | `dms.translation.completed.v1` |
 | **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr_quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
 | **Anomaly detection** (ADR 0058) | on-demand REST | `POST /api/v1/intelligence/anomaly/run`, `app.tasks.anomaly_detect.run` | `anomaly_reports`, `anomaly_findings` | `dms.anomaly.completed.v1` |
+| **Classify corrections** (ADR 0059) | user click in UI | `POST /api/v1/documents/{id}/classify/correct` (Go); bulk variant on `/admin/documents/bulk-reclassify` | `classification_corrections`, updates `documents.document_class` | `dms.classify.corrected.v1` |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -164,6 +165,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 05 — Translation pipeline** (ADR 0056)
 - [x] **Intel Feature 06 — OCR quality scoring** (ADR 0057)
 - [x] **Intel Feature 07 — Anomaly detection** (ADR 0058)
+- [x] **Intel Feature 08 — Bulk reclassify + corrections ledger** (ADR 0059)
 
 ## License
 
