@@ -13,6 +13,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/compliance"
 )
@@ -224,11 +226,11 @@ func (h *HoldsHandler) release(w http.ResponseWriter, r *http.Request) {
 
 // ---- helpers --------------------------------------------------------------
 
-// callers extracts tenant + user from the X-Tenant-ID / X-User-ID
-// request headers (same pattern as storage_proxy). Returns zeros and
-// writes 401 on failure. This is plain HTTP; the grpc-gateway /
-// middleware chain for /api/v1/* isn't applied here because the
-// compliance routes mount on a dedicated mux.
+// callers extracts tenant + user from the X-Auth-Tenant-ID / X-User-ID
+// request headers (gateway-injected, trusted via RequireGatewaySignature
+// upstream). Returns zeros and writes 401 on failure. This is plain HTTP;
+// the grpc-gateway / middleware chain for /api/v1/* isn't applied here
+// because the intelligence/compliance routes mount on dedicated muxes.
 func callers(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
 	tenantID, err := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
 	if err != nil || tenantID == uuid.Nil {
@@ -241,6 +243,28 @@ func callers(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool
 		return uuid.Nil, uuid.Nil, false
 	}
 	return tenantID, userID, true
+}
+
+// authedContext bundles callers() with the role-extracting and ctx-stamping
+// step every intelligence handler needs to do. Returns a context with
+// tenant/user/role attached so the service layer's mustCaller +
+// requireDocPermission see the right values, and OPA's input.context
+// .user_role is populated (Rule 6 owner|admin shortcut). Without this
+// the role never reaches OPA and Rule 6 silently fails to fire — every
+// admin-looking request then has to pass via workspace_members or
+// direct grants, which is why intelligence reads were 403'ing for docs
+// in workspaces the admin wasn't an explicit member of.
+func authedContext(w http.ResponseWriter, r *http.Request) (context.Context, uuid.UUID, uuid.UUID, bool) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return nil, uuid.Nil, uuid.Nil, false
+	}
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{
+		TenantID: tenantID,
+		ID:       userID,
+		Role:     r.Header.Get("X-User-Role"),
+	})
+	return ctx, tenantID, userID, true
 }
 
 // requireRole is the Wave 11.2 OPA gate on mutating compliance

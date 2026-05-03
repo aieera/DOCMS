@@ -116,7 +116,7 @@ func (h *ComplianceHandler) getForDoc(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	summary, findings, err := h.svc.GetComplianceForDocument(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -151,7 +151,7 @@ func (h *ComplianceHandler) review(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	updated, err := h.svc.ReviewComplianceFinding(ctx, docID, fid, body.Status, body.Note)
 	if err != nil {
 		writeErr(w, r, err)
@@ -168,7 +168,7 @@ func (h *ComplianceHandler) dashboard(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	d, err := h.svc.ComplianceDashboard(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -208,7 +208,7 @@ func (h *ComplianceHandler) listPending(w http.ResponseWriter, r *http.Request) 
 		Limit:      int32(parseInt(q.Get("limit"), 50)),
 		Offset:     int32(parseInt(q.Get("offset"), 0)),
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	rows, total, err := h.svc.ListPendingComplianceFindings(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -230,7 +230,7 @@ func (h *ComplianceHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.GetComplianceConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -256,7 +256,7 @@ func (h *ComplianceHandler) upsertConfig(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.UpsertComplianceConfig(ctx, repository.ComplianceConfigPatch{
 		Enabled:                body.Enabled,
 		AutoHoldOnCritical:     body.AutoHoldOnCritical,
@@ -286,7 +286,7 @@ func (h *ComplianceHandler) rescan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	if err := h.svc.RescanCompliance(ctx, docID); err != nil {
 		writeErr(w, r, err)
 		return

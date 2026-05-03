@@ -98,7 +98,7 @@ func (h *AutoTagHandler) listForDocument(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	rows, conf, err := h.svc.ListTagSuggestions(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -140,7 +140,7 @@ func (h *AutoTagHandler) batchReview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	summary, err := h.svc.BatchReviewTagSuggestions(ctx, docID, actions)
 	if err != nil {
 		writeErr(w, r, err)
@@ -170,7 +170,7 @@ func (h *AutoTagHandler) listPending(w http.ResponseWriter, r *http.Request) {
 		Limit:         int32(parseInt(q.Get("limit"), 50)),
 		Offset:        int32(parseInt(q.Get("offset"), 0)),
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	rows, total, err := h.svc.ListPendingTagSuggestions(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -192,7 +192,7 @@ func (h *AutoTagHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.GetAutoTagConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -226,7 +226,7 @@ func (h *AutoTagHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 		BlockedTags:        body.BlockedTags,
 		SourceWeights:      body.SourceWeights,
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.UpsertAutoTagConfig(ctx, patch)
 	if err != nil {
 		writeErr(w, r, err)

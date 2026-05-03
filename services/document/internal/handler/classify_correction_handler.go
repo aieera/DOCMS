@@ -91,7 +91,7 @@ func (h *ClassifyCorrectionHandler) correct(w http.ResponseWriter, r *http.Reque
 		}
 		in.VersionID = &v
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.CorrectClassification(ctx, in)
 	if err != nil {
 		writeErr(w, r, err)
@@ -110,7 +110,7 @@ func (h *ClassifyCorrectionHandler) list(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	rows, err := h.svc.ListClassificationCorrections(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -145,7 +145,7 @@ func (h *ClassifyCorrectionHandler) bulk(w http.ResponseWriter, r *http.Request)
 		}
 		ids = append(ids, id)
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	count, err := h.svc.BulkCorrectClassification(ctx, ids, body.CorrectedCategory, body.Note)
 	if err != nil {
 		writeErr(w, r, err)

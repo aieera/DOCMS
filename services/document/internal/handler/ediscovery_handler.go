@@ -68,7 +68,7 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	if _, err := h.svc.ExportForDiscovery(ctx, w, service.DiscoveryExportInput{
 		CaseID:         body.CaseID,
 		CaseName:       body.CaseName,

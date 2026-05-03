@@ -80,6 +80,10 @@ type entityCorrectionDTO struct {
 }
 
 func (h *NERHandler) list(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	docID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
@@ -98,7 +102,7 @@ func (h *NERHandler) list(w http.ResponseWriter, r *http.Request) {
 			opts.VersionID = &vid
 		}
 	}
-	rows, total, err := h.svc.ListEntities(r.Context(), docID, opts)
+	rows, total, err := h.svc.ListEntities(ctx, docID, opts)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -116,6 +120,10 @@ func (h *NERHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NERHandler) correct(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	docID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
@@ -143,7 +151,7 @@ func (h *NERHandler) correct(w http.ResponseWriter, r *http.Request) {
 		}
 		in.OriginalEntityID = &eid
 	}
-	c, cErr := h.svc.CorrectEntity(r.Context(), docID, in)
+	c, cErr := h.svc.CorrectEntity(ctx, docID, in)
 	if cErr != nil {
 		writeErr(w, r, cErr)
 		return
@@ -152,12 +160,16 @@ func (h *NERHandler) correct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NERHandler) listCorrections(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	docID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	rows, lErr := h.svc.ListEntityCorrections(r.Context(), docID)
+	rows, lErr := h.svc.ListEntityCorrections(ctx, docID)
 	if lErr != nil {
 		writeErr(w, r, lErr)
 		return

@@ -120,7 +120,7 @@ func (h *AnomalyHandler) listReports(w http.ResponseWriter, r *http.Request) {
 			opts.WorkspaceID = &parsed
 		}
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	rows, total, err := h.svc.ListAnomalyReports(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -151,7 +151,7 @@ func (h *AnomalyHandler) getReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	report, findings, err := h.svc.GetAnomalyReport(ctx, id)
 	if err != nil {
 		writeErr(w, r, err)
@@ -181,7 +181,7 @@ func (h *AnomalyHandler) resolveFinding(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	updated, err := h.svc.ResolveAnomalyFinding(ctx, fid, body.Status, body.Note)
 	if err != nil {
 		writeErr(w, r, err)
@@ -198,7 +198,7 @@ func (h *AnomalyHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.GetAnomalyConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -224,7 +224,7 @@ func (h *AnomalyHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	c, err := h.svc.UpsertAnomalyConfig(ctx, repository.AnomalyConfigPatch{
 		Enabled:                  body.Enabled,
 		ScheduleCron:             body.ScheduleCron,

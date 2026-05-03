@@ -78,7 +78,7 @@ func (h *AnnotationsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	ann, err := h.svc.CreateAnnotation(ctx, &service.CreateAnnotationInput{
 		DocumentID: docID,
 		VersionID:  versionID,
@@ -108,7 +108,7 @@ func (h *AnnotationsHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	items, err := h.svc.ListAnnotations(ctx, docID, versionID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -137,7 +137,7 @@ func (h *AnnotationsHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	ann, err := h.svc.UpdateAnnotation(ctx, &service.UpdateAnnotationInput{
 		ID:   id,
 		Page: body.Page,
@@ -160,7 +160,7 @@ func (h *AnnotationsHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID})
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
 	if err := h.svc.DeleteAnnotation(ctx, id); err != nil {
 		writeErr(w, r, err)
 		return
