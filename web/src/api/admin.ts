@@ -13,12 +13,40 @@ export async function getUsers(params?: Record<string, string>): Promise<Paginat
   }
 }
 
-export async function inviteUser(email: string, role: string, displayName: string, workspaceIds?: string[]) {
-  const { data } = await api.post('/admin/users/invite', {
+export interface InviteUserResponse {
+  user: User
+  invite_token: string
+  tenant_slug: string
+}
+
+export async function inviteUser(
+  email: string,
+  role: string,
+  displayName: string,
+  workspaceIds?: string[],
+): Promise<InviteUserResponse> {
+  const { data } = await api.post<InviteUserResponse>('/admin/users/invite', {
     email,
     role,
     display_name: displayName,
     workspace_ids: workspaceIds,
+  })
+  return data
+}
+
+// createUser sidesteps the invite/email round-trip by setting the password
+// directly. Useful for dev/demo bootstrap when SMTP isn't wired up.
+export async function createUser(
+  email: string,
+  password: string,
+  displayName: string,
+  role: string,
+): Promise<{ user: User }> {
+  const { data } = await api.post<{ user: User }>('/admin/users', {
+    email,
+    password,
+    display_name: displayName,
+    role,
   })
   return data
 }

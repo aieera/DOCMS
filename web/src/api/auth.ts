@@ -17,6 +17,17 @@ export async function register(email: string, password: string, display_name: st
   return data
 }
 
+export async function acceptInvite(tenantSlug: string, token: string, password: string) {
+  const { data } = await api.post<{
+    user_id: string
+    email: string
+    display_name: string
+    tenant_id: string
+    tenant_slug: string
+  }>('/auth/accept-invite', { tenant_slug: tenantSlug, token, password })
+  return data
+}
+
 export async function getCurrentUser() {
   const { data } = await api.get<User>('/auth/me')
   return data
