@@ -31,6 +31,7 @@ from app.dedupe import (
 )
 from app.metrics import ocr_queue_depth
 from app.tasks.auto_tag import auto_tag
+from app.tasks.smart_route import smart_route
 from app.tasks.classify import classify_document
 from app.tasks.duplicate import detect_duplicates
 from app.tasks.embed import generate_embeddings
@@ -102,6 +103,14 @@ class IntelligenceConsumer:
             "dms.ner.completed.v1",
             durable="intel-autotag-ner",
             cb=self._on_autotag_trigger,
+            manual_ack=True,
+        )
+        # ADR 0053 — smart routing also fans in from classify, but with
+        # its own durable so the auto-tag pipeline can't backpressure it.
+        await js.subscribe(
+            "dms.classify.completed.v1",
+            durable="intel-smart-route",
+            cb=self._on_smart_route_trigger,
             manual_ack=True,
         )
         log.info("intelligence consumer started")
@@ -289,6 +298,37 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue auto_tag failed")
+            await msg.nak(delay=5)
+
+    async def _on_smart_route_trigger(self, msg) -> None:
+        """ADR 0053 — fire smart_route after classify completes."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        did = data.get("document_id", "")
+        vid = data.get("version_id", "")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and did and vid):
+            await msg.term()
+            return
+        try:
+            smart_route.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "document_id": did,
+                    "version_id": vid,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue smart_route failed")
             await msg.nak(delay=5)
 
     async def _on_redaction_requested(self, msg) -> None:

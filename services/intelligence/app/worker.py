@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.embed",
         "app.tasks.duplicate",
         "app.tasks.auto_tag",
+        "app.tasks.smart_route",
         "app.tasks.rag",
         "app.tasks.summarize",
         "app.tasks.redact",
