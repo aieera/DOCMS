@@ -24,6 +24,7 @@ subsequent decisions that overturn an ADR supersede it via a new ADR.
 | [0052](0052-auto-tagging.md) | Auto-tagging from NER + classification; per-tenant thresholds; never auto-apply without admin-configured `auto_apply_threshold` | Accepted | 2026-05-03 |
 | [0053](0053-smart-routing.md) | Smart routing via three strategies (rule, history, similarity); never auto-moves in v1; folder placement always traverses document-service permission/lifecycle gates | Accepted | 2026-05-03 |
 | [0054](0054-compliance-pii-detection.md) | Compliance scanning: NER + regex PII/PHI detection, per-tenant config, never auto-holds (recommends only), redacted sample context, encrypted values column reserved for v2 | Accepted | 2026-05-03 |
+| [0055](0055-document-qa-chat.md) | Document Q&A chat panel: SSE streaming + sync fallback, conversations persisted in qa_conversations + qa_messages, citations carry page/start/end_char for PDF viewer highlight, multi-turn context capped at last 6 messages | Accepted | 2026-05-03 |
 
 *Note: 0021 was promoted from its final.md-placeholder slot to document
 an actual Wave 5 decision. Wave 6.5 shipped without an ADR (no design
