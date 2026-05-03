@@ -430,6 +430,22 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/compliance/rescan/{id}",
 		middleware.CorrelationHTTP(piiComplianceMux))
 
+	// ADR 0057 — OCR quality scoring review surface + admin config.
+	ocrQualityMux := http.NewServeMux()
+	handler.NewOCRQualityHandler(svc, *log.Z()).Register(ocrQualityMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/ocr-quality",
+		middleware.CorrelationHTTP(ocrQualityMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/ocr-quality/{vid}/{page}/review",
+		middleware.CorrelationHTTP(ocrQualityMux))
+	rootMux.Handle("GET /api/v1/admin/ocr-quality/review-queue",
+		middleware.CorrelationHTTP(ocrQualityMux))
+	rootMux.Handle("GET /api/v1/admin/ocr-quality/stats",
+		middleware.CorrelationHTTP(ocrQualityMux))
+	rootMux.Handle("GET /api/v1/admin/ocr-quality/config",
+		middleware.CorrelationHTTP(ocrQualityMux))
+	rootMux.Handle("PUT /api/v1/admin/ocr-quality/config",
+		middleware.CorrelationHTTP(ocrQualityMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when

@@ -109,6 +109,7 @@ type Repositories struct {
 	TagSuggestions  TagSuggestionRepository
 	Routing         RoutingRepository
 	Compliance      ComplianceRepository
+	OCRQuality      OCRQualityRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -128,5 +129,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		TagSuggestions:  NewTagSuggestionRepo(),
 		Routing:         NewRoutingRepo(),
 		Compliance:      NewComplianceRepo(),
+		OCRQuality:      NewOCRQualityRepo(),
 	}
 }
