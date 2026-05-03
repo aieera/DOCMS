@@ -82,8 +82,9 @@ async def replace_entities(
                     """
                     INSERT INTO document_entities
                         (tenant_id, id, version_id, document_id, entity_type,
-                         entity_value, start_offset, end_offset, confidence, is_pii, detected_at)
-                    VALUES ($1, gen_random_uuid(), $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                         entity_value, start_offset, end_offset, confidence,
+                         is_pii, source, detected_at)
+                    VALUES ($1, gen_random_uuid(), $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
                     """,
                     tenant_id,
                     version_id,
@@ -94,6 +95,7 @@ async def replace_entities(
                     int(e.get("end_offset", 0)),
                     float(e.get("confidence", 0.0)),
                     bool(e.get("is_pii", False)),
+                    str(e.get("source", "spacy")),
                 )
                 inserted += 1
     return inserted

@@ -1,8 +1,13 @@
-"""Named Entity Recognition — SpaCy + regex PII detection.
+"""Named Entity Recognition — three-tier ensemble (regex + SpaCy + LLM).
 
-Wave 5 Prompt 5.4 hardening mirrors classify: acks_late, 3 jittered
-retries, dedupe, DB persistence, NATS emit on success, DLQ on terminal
-failure.
+ADR 0061: SpaCy / regex / LLM all write to document_entities with a
+`source` column for provenance. Regex wins ties (cheaper, deterministic);
+LLM only runs for the types ner_config.llm_entity_types asks for, and
+only when the tenant has opted in.
+
+Hardening (Wave 5 Prompt 5.4) is unchanged: acks_late, 3 jittered
+retries, dedupe via intel_processed_events, NATS emit on success, DLQ
+on terminal failure.
 """
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from app.config import settings
 from app.events.publisher import publish_cloudevent
@@ -29,12 +35,15 @@ from app.metrics import (
     ner_entities_total,
 )
 from app.persist import replace_entities
+from app.tasks.ner_llm import extract_via_llm, load_ner_config
 from app.worker import celery_app
 
 log = logging.getLogger(__name__)
 
 NER_COMPLETED_SUBJECT = "dms.ner.completed.v1"
 CONSUMER = "ner"
+
+# ---- Regex matchers (deterministic, fast) --------------------------------
 
 SSN_RE = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
 CC_RE = re.compile(r'\b(?:\d{4}[\s-]?){3}\d{4}\b')
@@ -44,6 +53,28 @@ DOB_RE = re.compile(
     r'(?:DOB|Date of Birth|Born)[\s:]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
     re.IGNORECASE,
 )
+# ICD-10: letter (not U) + 2 digits + optional decimal subcode (1-4 digits).
+# Common false-positive guard: require a non-alphanumeric on both sides.
+ICD10_RE = re.compile(
+    r'(?<![A-Za-z0-9])([A-TV-Z]\d{2}(?:\.\d{1,4})?)(?![A-Za-z0-9])',
+)
+# CPT: 5 digits, surrounded by non-digits. Filter out years and amounts
+# in the validator below.
+CPT_RE = re.compile(r'(?<!\d)(\d{5})(?!\d)')
+# Currency-prefixed amount: $1,234.56  /  USD 1234  /  £99.00
+AMOUNT_RE = re.compile(
+    r'(?P<currency>\$|€|£|¥|USD|EUR|GBP|JPY|INR|AUD|CAD)\s?'
+    r'(?P<amount>\d{1,3}(?:[,.]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)',
+    re.IGNORECASE,
+)
+# Account-number heuristic: "Account #12345678" / "Acct No: 9876543210"
+ACCOUNT_RE = re.compile(
+    r'\b(?:account|acct|a/c)\s*(?:#|no\.?|number)?\s*[:.]?\s*([0-9]{6,18})\b',
+    re.IGNORECASE,
+)
+# US EIN: 12-3456789 ; UK NINO and other tax-ids vary too much for a
+# generic regex — leave to the LLM.
+EIN_RE = re.compile(r'\b\d{2}-\d{7}\b')
 
 
 def _luhn_valid(number: str) -> bool:
@@ -60,27 +91,125 @@ def _luhn_valid(number: str) -> bool:
     return total % 10 == 0
 
 
-def _regex_pii(text: str) -> list[dict]:
+def _emit(entities: list[dict], **kwargs: Any) -> None:
+    """Append an entity row with source defaulting to 'regex'."""
+    kwargs.setdefault("source", "regex")
+    entities.append(kwargs)
+
+
+def _regex_pass(text: str) -> list[dict]:
+    """All regex matchers in one pass. Order matters for dedupe in the
+    final merge — these run first so they win offset collisions."""
     entities: list[dict] = []
     for m in SSN_RE.finditer(text):
-        entities.append({"entity_type": "SSN", "entity_value": m.group(), "start_offset": m.start(),
-                         "end_offset": m.end(), "confidence": 0.95, "is_pii": True})
+        _emit(entities, entity_type="national_id", entity_value=m.group(),
+              start_offset=m.start(), end_offset=m.end(), confidence=0.95, is_pii=True)
     for m in CC_RE.finditer(text):
         if _luhn_valid(m.group()):
-            entities.append({"entity_type": "CREDIT_CARD", "entity_value": m.group(),
-                             "start_offset": m.start(), "end_offset": m.end(),
-                             "confidence": 0.95, "is_pii": True})
+            _emit(entities, entity_type="credit_card", entity_value=m.group(),
+                  start_offset=m.start(), end_offset=m.end(), confidence=0.95, is_pii=True)
     for m in EMAIL_RE.finditer(text):
-        entities.append({"entity_type": "EMAIL", "entity_value": m.group(), "start_offset": m.start(),
-                         "end_offset": m.end(), "confidence": 0.9, "is_pii": True})
+        _emit(entities, entity_type="email", entity_value=m.group(),
+              start_offset=m.start(), end_offset=m.end(), confidence=0.9, is_pii=True)
     for m in PHONE_RE.finditer(text):
-        entities.append({"entity_type": "PHONE", "entity_value": m.group(), "start_offset": m.start(),
-                         "end_offset": m.end(), "confidence": 0.85, "is_pii": True})
+        _emit(entities, entity_type="phone", entity_value=m.group(),
+              start_offset=m.start(), end_offset=m.end(), confidence=0.85, is_pii=True)
     for m in DOB_RE.finditer(text):
-        entities.append({"entity_type": "DATE_OF_BIRTH", "entity_value": m.group(1),
-                         "start_offset": m.start(1), "end_offset": m.end(1),
-                         "confidence": 0.9, "is_pii": True})
+        _emit(entities, entity_type="dob", entity_value=m.group(1),
+              start_offset=m.start(1), end_offset=m.end(1), confidence=0.9, is_pii=True)
+    for m in ICD10_RE.finditer(text):
+        _emit(entities, entity_type="icd_code", entity_value=m.group(1),
+              start_offset=m.start(1), end_offset=m.end(1), confidence=0.85, is_pii=False)
+    for m in CPT_RE.finditer(text):
+        # Filter obvious false positives: years and ZIP+4 fragments. CPT
+        # codes are always 5 digits; we keep them only if surrounded by
+        # CPT-context words.
+        v = m.group(1)
+        if 1900 <= int(v) <= 2099:
+            continue
+        ctx_start = max(0, m.start() - 40)
+        ctx = text[ctx_start:m.start()].lower()
+        if not any(kw in ctx for kw in ("cpt", "procedure", "service code", "hcpcs")):
+            continue
+        _emit(entities, entity_type="cpt_code", entity_value=v,
+              start_offset=m.start(1), end_offset=m.end(1), confidence=0.8, is_pii=False)
+    for m in AMOUNT_RE.finditer(text):
+        _emit(entities, entity_type="amount",
+              entity_value=f"{m.group('currency')}{m.group('amount')}",
+              start_offset=m.start(), end_offset=m.end(), confidence=0.85, is_pii=False)
+        # Also emit currency separately so reporting can group on it.
+        _emit(entities, entity_type="currency", entity_value=m.group("currency"),
+              start_offset=m.start("currency"), end_offset=m.end("currency"),
+              confidence=0.95, is_pii=False)
+    for m in ACCOUNT_RE.finditer(text):
+        _emit(entities, entity_type="account_number", entity_value=m.group(1),
+              start_offset=m.start(1), end_offset=m.end(1), confidence=0.85, is_pii=True)
+    for m in EIN_RE.finditer(text):
+        _emit(entities, entity_type="tax_id", entity_value=m.group(),
+              start_offset=m.start(), end_offset=m.end(), confidence=0.9, is_pii=True)
     return entities
+
+
+# Map SpaCy's pretrained label set to our ADR 0061 taxonomy. Labels
+# not listed are dropped (we only persist what the consumers can use).
+_SPACY_TYPE_MAP = {
+    "PERSON": "name",
+    "ORG":    "party_name",
+    "GPE":    "jurisdiction",
+    "LOC":    "address",
+    "DATE":   "effective_date",
+    "MONEY":  "amount",
+    "PERCENT": "percent",
+}
+
+
+def _spacy_pass(text: str) -> list[dict]:
+    try:
+        from app.models.ner_model import extract_entities as _spacy_extract
+    except Exception as e:  # noqa: BLE001
+        log.warning("SpaCy NER unavailable: %s", e)
+        return []
+    raw = _spacy_extract(text) or []
+    out: list[dict] = []
+    for r in raw:
+        # Existing SpaCy wrapper returns {entity_type, entity_value,
+        # start_offset, end_offset, confidence, is_pii}. Map the type.
+        src_type = str(r.get("entity_type", "")).upper()
+        mapped = _SPACY_TYPE_MAP.get(src_type)
+        if not mapped:
+            continue
+        out.append({
+            "entity_type": mapped,
+            "entity_value": r.get("entity_value", ""),
+            "start_offset": int(r.get("start_offset", 0)),
+            "end_offset":   int(r.get("end_offset", 0)),
+            "confidence":   float(r.get("confidence", 0.7)),
+            "is_pii":       mapped in {"name", "address"},
+            "source":       "spacy",
+        })
+    return out
+
+
+def _dedupe(entities: list[dict]) -> list[dict]:
+    """Drop entities whose (start_offset, end_offset) span is already
+    covered by a higher-priority source. Priority: regex > spacy > llm.
+    Preserves the first occurrence per (start, end) range."""
+    priority = {"regex": 0, "spacy": 1, "llm": 2, "manual": -1}
+    # Sort: cheaper sources first, then longer spans first within source.
+    entities = sorted(
+        entities,
+        key=lambda e: (priority.get(e.get("source", "spacy"), 9),
+                       -(int(e["end_offset"]) - int(e["start_offset"]))),
+    )
+    seen: list[tuple[int, int]] = []
+    out: list[dict] = []
+    for e in entities:
+        s, t = int(e["start_offset"]), int(e["end_offset"])
+        if any(not (t <= a or s >= b) for (a, b) in seen):
+            continue
+        seen.append((s, t))
+        out.append(e)
+    return out
 
 
 def _build_completed_envelope(
@@ -91,6 +220,7 @@ def _build_completed_envelope(
     entities: list[dict],
     pii_count: int,
     entity_types: list[str],
+    sources_used: list[str],
     correlation_id: str,
 ) -> dict:
     return {
@@ -110,11 +240,25 @@ def _build_completed_envelope(
             "entity_count": len(entities),
             "pii_count": pii_count,
             "entity_types": entity_types,
-            "model_version": "spacy-en_core_web_sm+regex-v1",
-            # entities themselves can be large; consumers fetch from
-            # document_entities table keyed by version_id.
+            "sources_used": sources_used,
+            "model_version": "ensemble-v2-regex+spacy+llm",
         },
     }
+
+
+async def _run_async(
+    *,
+    tenant_id: str,
+    document_id: str,
+    version_id: str,
+    text: str,
+) -> list[dict]:
+    """The actual NER pipeline, async so the LLM call can await."""
+    regex_hits = _regex_pass(text)
+    spacy_hits = _spacy_pass(text)
+    cfg = await load_ner_config(tenant_id)
+    llm_hits = await extract_via_llm(text, cfg) if cfg.enabled else []
+    return _dedupe(regex_hits + spacy_hits + llm_hits)
 
 
 @celery_app.task(
@@ -149,15 +293,16 @@ def detect_entities(
             version_id=version_id,
         ))
 
-        entities = _regex_pii(text)
-        try:
-            from app.models.ner_model import extract_entities as spacy_extract
-            entities.extend(spacy_extract(text))
-        except Exception as e:
-            log.warning("SpaCy NER failed: %s", e)
+        entities = asyncio.run(_run_async(
+            tenant_id=tenant_id,
+            document_id=document_id,
+            version_id=version_id,
+            text=text,
+        ))
 
         pii_count = sum(1 for e in entities if e.get("is_pii"))
         entity_types = sorted({e["entity_type"] for e in entities})
+        sources_used = sorted({e.get("source", "spacy") for e in entities})
 
         asyncio.run(replace_entities(
             tenant_id=tenant_id,
@@ -179,6 +324,7 @@ def detect_entities(
             entities=entities,
             pii_count=pii_count,
             entity_types=entity_types,
+            sources_used=sources_used,
             correlation_id=correlation_id,
         )
         try:
@@ -202,6 +348,7 @@ def detect_entities(
                 "version_id": version_id,
                 "entity_count": len(entities),
                 "pii_count": pii_count,
+                "sources": ",".join(sources_used),
                 "attempt": self.request.retries + 1,
             },
         )
@@ -213,6 +360,7 @@ def detect_entities(
             "entity_count": len(entities),
             "pii_count": pii_count,
             "entity_types_found": entity_types,
+            "sources_used": sources_used,
             "processing_time_ms": int((time.monotonic() - start) * 1000),
         }
     except Exception as exc:
