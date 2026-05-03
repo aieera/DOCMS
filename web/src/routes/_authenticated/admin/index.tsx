@@ -1,8 +1,20 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Users, Shield, Key, Workflow, Archive, Scale, ScrollText, Webhook, Settings, Tag, Link2, ShieldCheck, KeyRound, Plug, CreditCard, ShieldAlert, UserCog, Globe, FileJson } from 'lucide-react'
+import {
+  AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
+  Key, KeyRound, Languages, Link2, MapPinned, Plug, Scale, ScrollText, Settings,
+  Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
+  UserCog, Users, Webhook, Workflow,
+} from 'lucide-react'
 
-const sections = [
+interface Section {
+  to: string
+  icon: typeof Users
+  label: string
+  desc: string
+}
+
+const tenantSections: Section[] = [
   { to: '/admin/users', icon: Users, label: 'Users', desc: 'Manage team members' },
   { to: '/admin/groups', icon: Shield, label: 'Groups', desc: 'Group permissions' },
   { to: '/admin/permissions', icon: ShieldCheck, label: 'Permission Matrix', desc: 'Role × resource grid (read-only)' },
@@ -22,23 +34,55 @@ const sections = [
   { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
   { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
-] as const
+]
+
+// All Intel-Feature 01–10 admin surfaces in one group so they're
+// discoverable from the admin landing page rather than hidden behind
+// direct URLs only.
+const intelligenceSections: Section[] = [
+  { to: '/admin/intelligence/auto-tag', icon: Sparkles, label: 'Auto-tag config', desc: 'Thresholds + weights for tag suggestions (ADR 0052)' },
+  { to: '/admin/intelligence/tag-review', icon: TagsIcon, label: 'Tag review queue', desc: 'Tenant-wide pending tag suggestions' },
+  { to: '/admin/intelligence/routing-rules', icon: MapPinned, label: 'Routing rules', desc: 'Smart-routing rules + config (ADR 0053)' },
+  { to: '/admin/intelligence/filing-analytics', icon: FileSearch, label: 'Filing analytics', desc: 'Suggestion acceptance + filing patterns' },
+  { to: '/admin/intelligence/compliance', icon: ShieldAlert, label: 'PII/PHI findings', desc: 'Open compliance findings queue (ADR 0054)' },
+  { to: '/admin/intelligence/compliance-config', icon: Shield, label: 'Compliance config', desc: 'PHI opt-in, custom patterns, thresholds' },
+  { to: '/admin/intelligence/ocr-review', icon: FileSearch, label: 'OCR review queue', desc: 'Pages flagged by OCR-quality scoring (ADR 0057)' },
+  { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans (ADR 0058)' },
+  { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers (ADR 0060)' },
+  { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key (ADR 0061)' },
+]
 
 function AdminPage() {
   return (
     <div>
       <PageHeader title="Administration" description="Manage your VaultDMS tenant" />
-      <div className="grid grid-cols-3 gap-4">
-        {sections.map(({ to, icon: Icon, label, desc }) => (
-          <Link key={to} to={to} className="flex items-center gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-shadow hover:shadow-md">
-            <Icon className="h-6 w-6 text-[var(--color-primary)]" />
-            <div>
-              <p className="font-medium">{label}</p>
-              <p className="text-xs text-[var(--color-text-secondary)]">{desc}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
+
+      <SectionGrid sections={tenantSections} />
+
+      <h2 className="mt-10 mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+        Intelligence
+      </h2>
+      <SectionGrid sections={intelligenceSections} />
+    </div>
+  )
+}
+
+function SectionGrid({ sections }: { sections: Section[] }) {
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      {sections.map(({ to, icon: Icon, label, desc }) => (
+        <Link
+          key={to}
+          to={to}
+          className="flex items-center gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-shadow hover:shadow-md"
+        >
+          <Icon className="h-6 w-6 text-[var(--color-primary)]" />
+          <div>
+            <p className="font-medium">{label}</p>
+            <p className="text-xs text-[var(--color-text-secondary)]">{desc}</p>
+          </div>
+        </Link>
+      ))}
     </div>
   )
 }
