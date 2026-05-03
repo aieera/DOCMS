@@ -30,6 +30,7 @@ from app.dedupe import (
     record_dedupe_hit,
 )
 from app.metrics import ocr_queue_depth
+from app.tasks.auto_tag import auto_tag
 from app.tasks.classify import classify_document
 from app.tasks.duplicate import detect_duplicates
 from app.tasks.embed import generate_embeddings
@@ -86,6 +87,21 @@ class IntelligenceConsumer:
             "dms.document.redacted.v1",
             durable="intel-redaction",
             cb=self._on_redaction_requested,
+            manual_ack=True,
+        )
+        # ADR 0052 — auto-tagging fires after either classify or NER
+        # finishes. Two durable consumers so a slow auto-tag pipeline
+        # can't backpressure either upstream task.
+        await js.subscribe(
+            "dms.classify.completed.v1",
+            durable="intel-autotag-classify",
+            cb=self._on_autotag_trigger,
+            manual_ack=True,
+        )
+        await js.subscribe(
+            "dms.ner.completed.v1",
+            durable="intel-autotag-ner",
+            cb=self._on_autotag_trigger,
             manual_ack=True,
         )
         log.info("intelligence consumer started")
@@ -232,6 +248,47 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue post-OCR failed")
+            await msg.nak(delay=5)
+
+    async def _on_autotag_trigger(self, msg) -> None:
+        """ADR 0052 — fan-in from dms.classify.completed.v1 and
+        dms.ner.completed.v1 to the auto_tag Celery task.
+
+        Both upstream events carry the same (tenant, document, version)
+        triple. The task itself is idempotent (intel_processed_events
+        ledger keyed by event_id), so a re-fire from the second source
+        after the first already finished is a fast no-op.
+        """
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        did = data.get("document_id", "")
+        vid = data.get("version_id", "")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and did and vid):
+            await msg.term()
+            return
+        try:
+            subject = getattr(msg, "subject", "") or ""
+            source_event = "classify" if "classify" in subject else "ner"
+            auto_tag.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "document_id": did,
+                    "version_id": vid,
+                    "source_event": source_event,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue auto_tag failed")
             await msg.nak(delay=5)
 
     async def _on_redaction_requested(self, msg) -> None:

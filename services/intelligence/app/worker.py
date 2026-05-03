@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.ner",
         "app.tasks.embed",
         "app.tasks.duplicate",
+        "app.tasks.auto_tag",
         "app.tasks.rag",
         "app.tasks.summarize",
         "app.tasks.redact",
