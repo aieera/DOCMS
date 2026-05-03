@@ -107,6 +107,7 @@ See `make help` for the full list.
 | **Language detect** (ADR 0056) | `dms.version.ocr_completed.v1` | `app.tasks.lang_detect` | `document_languages` | `dms.language.detected.v1` |
 | **Translation** (ADR 0056) | on-demand REST | `POST /api/v1/intelligence/translate`, `app.tasks.translate` | `document_translations` | `dms.translation.completed.v1` |
 | **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr_quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
+| **Anomaly detection** (ADR 0058) | on-demand REST | `POST /api/v1/intelligence/anomaly/run`, `app.tasks.anomaly_detect.run` | `anomaly_reports`, `anomaly_findings` | `dms.anomaly.completed.v1` |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -141,6 +142,10 @@ Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, de
 | GET | `/api/v1/admin/ocr-quality/review-queue` | Documents flagged for review (paginated) | admin/owner/compliance_officer |
 | GET | `/api/v1/admin/ocr-quality/stats` | Tenant rollup by grade | admin/owner/compliance_officer |
 | GET/PUT | `/api/v1/admin/ocr-quality/config` | Per-tenant thresholds | admin/owner (write) |
+| GET | `/api/v1/admin/anomalies` | Paginated anomaly reports | admin/owner/compliance_officer |
+| GET | `/api/v1/admin/anomalies/{id}` | Report + findings bundle | admin/owner/compliance_officer |
+| POST | `/api/v1/admin/anomalies/findings/{fid}/resolve` | Acknowledge / resolve / mark false-positive | admin/owner/compliance_officer |
+| GET/PUT | `/api/v1/admin/anomaly-config` | Per-tenant config (z-score, content distance, strategy toggles) | admin/owner (write) |
 
 ## Status
 
@@ -158,6 +163,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 04 — Document Q&A chat** (ADR 0055)
 - [x] **Intel Feature 05 — Translation pipeline** (ADR 0056)
 - [x] **Intel Feature 06 — OCR quality scoring** (ADR 0057)
+- [x] **Intel Feature 07 — Anomaly detection** (ADR 0058)
 
 ## License
 
