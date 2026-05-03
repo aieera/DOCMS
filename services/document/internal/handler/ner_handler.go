@@ -32,6 +32,8 @@ func (h *NERHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/documents/{id}/entities/corrections", h.listCorrections)
 	mux.HandleFunc("GET /api/v1/admin/ner-config", h.getConfig)
 	mux.HandleFunc("PUT /api/v1/admin/ner-config", h.upsertConfig)
+	mux.HandleFunc("PUT /api/v1/admin/ner-config/api-key", h.setAPIKey)
+	mux.HandleFunc("DELETE /api/v1/admin/ner-config/api-key", h.clearAPIKey)
 }
 
 type entityDTO struct {
@@ -175,6 +177,12 @@ type nerConfigDTO struct {
 	EntityTypes   []string `json:"llm_entity_types"`
 	BatchSize     int32    `json:"llm_batch_size"`
 	MinConfidence float32  `json:"llm_min_confidence"`
+	HasAPIKey     bool     `json:"has_api_key"`
+	APIKeySetAt   *string  `json:"api_key_set_at,omitempty"`
+}
+
+type setAPIKeyBody struct {
+	APIKey string `json:"api_key"`
 }
 
 type nerConfigBody struct {
@@ -233,14 +241,47 @@ func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusOK, configToNERDTO(c))
 }
 
+func (h *NERHandler) setAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	var body setAPIKeyBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	if err := h.svc.SetLLMAPIKey(r.Context(), body.APIKey); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusNoContent, nil)
+}
+
+func (h *NERHandler) clearAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	if err := h.svc.ClearLLMAPIKey(r.Context()); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusNoContent, nil)
+}
+
 func configToNERDTO(c *repository.NERConfig) nerConfigDTO {
-	return nerConfigDTO{
+	dto := nerConfigDTO{
 		Enabled:       c.Enabled,
 		Model:         c.Model,
 		EntityTypes:   c.EntityTypes,
 		BatchSize:     c.BatchSize,
 		MinConfidence: c.MinConfidence,
+		HasAPIKey:     c.APIKeyEncrypted != "",
 	}
+	if c.APIKeySetAt != nil {
+		s := c.APIKeySetAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		dto.APIKeySetAt = &s
+	}
+	return dto
 }
 
 func entityToDTO(e *repository.Entity) entityDTO {

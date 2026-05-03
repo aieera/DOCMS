@@ -68,13 +68,17 @@ type ListEntitiesOpts struct {
 }
 
 // NERConfig — per-tenant LLM toggle, mirrored from the ner_config
-// table. Defaults match migration 000021.
+// table. Defaults match migration 000021. Encrypted key fields added
+// in migration 000022 are populated by the API-key Set/Clear methods
+// only — never written by UpsertConfig.
 type NERConfig struct {
-	Enabled          bool
-	Model            string
-	EntityTypes      []string
-	BatchSize        int32
-	MinConfidence    float32
+	Enabled              bool
+	Model                string
+	EntityTypes          []string
+	BatchSize            int32
+	MinConfidence        float32
+	APIKeyEncrypted      string     // base64(nonce || ciphertext); empty = unset
+	APIKeySetAt          *time.Time // nil when unset
 }
 
 type NERConfigPatch struct {
@@ -96,6 +100,8 @@ type NERRepository interface {
 	CurrentVersionID(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (uuid.UUID, error)
 	GetConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (*NERConfig, error)
 	UpsertConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, p NERConfigPatch) (*NERConfig, error)
+	SetEncryptedAPIKey(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, encrypted string, setAt time.Time) error
+	ClearAPIKey(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error
 }
 
 type nerRepo struct{}
@@ -305,14 +311,44 @@ func (r *nerRepo) ListCorrections(ctx context.Context, tx pgx.Tx, tenantID, docu
 func (r *nerRepo) GetConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (*NERConfig, error) {
 	row := tx.QueryRow(ctx, `
         SELECT llm_enabled, llm_model, llm_entity_types,
-               llm_batch_size, llm_min_confidence
+               llm_batch_size, llm_min_confidence,
+               COALESCE(llm_api_key_encrypted, ''), llm_api_key_set_at
           FROM ner_config WHERE tenant_id = $1`,
 		tenantID)
 	var c NERConfig
-	if err := row.Scan(&c.Enabled, &c.Model, &c.EntityTypes, &c.BatchSize, &c.MinConfidence); err != nil {
+	if err := row.Scan(
+		&c.Enabled, &c.Model, &c.EntityTypes, &c.BatchSize, &c.MinConfidence,
+		&c.APIKeyEncrypted, &c.APIKeySetAt,
+	); err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+func (r *nerRepo) SetEncryptedAPIKey(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, encrypted string, setAt time.Time) error {
+	// Upsert: if no row exists yet (admin sets key before saving any
+	// other config field), insert with migration defaults so the next
+	// GetConfig works.
+	_, err := tx.Exec(ctx, `
+        INSERT INTO ner_config (tenant_id, llm_api_key_encrypted, llm_api_key_set_at, updated_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (tenant_id) DO UPDATE SET
+            llm_api_key_encrypted = EXCLUDED.llm_api_key_encrypted,
+            llm_api_key_set_at    = EXCLUDED.llm_api_key_set_at,
+            updated_at            = now()`,
+		tenantID, encrypted, setAt)
+	return err
+}
+
+func (r *nerRepo) ClearAPIKey(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+        UPDATE ner_config
+           SET llm_api_key_encrypted = NULL,
+               llm_api_key_set_at    = NULL,
+               updated_at            = now()
+         WHERE tenant_id = $1`,
+		tenantID)
+	return err
 }
 
 func (r *nerRepo) UpsertConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, p NERConfigPatch) (*NERConfig, error) {

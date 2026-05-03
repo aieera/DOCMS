@@ -114,6 +114,25 @@ func TestValidateNERConfig_UnknownEntityTypeRejected(t *testing.T) {
 	}))
 }
 
+// ---- API-key validator ----------------------------------------------------
+
+func TestValidateAPIKey_OK(t *testing.T) {
+	require.NoError(t, validateAPIKey("sk-ant-api03-AAAAbbbbCCCCddddEE"))
+}
+
+func TestValidateAPIKey_TooShort(t *testing.T) {
+	require.Error(t, validateAPIKey("sk-short"))
+}
+
+func TestValidateAPIKey_TooLong(t *testing.T) {
+	require.Error(t, validateAPIKey(strings.Repeat("k", 513)))
+}
+
+func TestValidateAPIKey_RejectsLeadingTrailingWhitespace(t *testing.T) {
+	require.Error(t, validateAPIKey("  sk-ant-api03-AAAAbbbbCCCCddddEE"))
+	require.Error(t, validateAPIKey("sk-ant-api03-AAAAbbbbCCCCddddEE\n"))
+}
+
 func TestIsPIIType(t *testing.T) {
 	for _, tc := range []struct {
 		t    string

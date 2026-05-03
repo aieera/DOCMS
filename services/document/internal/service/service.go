@@ -56,12 +56,20 @@ type HoldsChecker interface {
 
 // DocumentService orchestrates repositories + PolicyService.
 type DocumentService struct {
-	pool   *pgxpool.Pool
-	repos  *repository.Repositories
-	policy PermissionChecker
-	holds  HoldsChecker
-	log    zerolog.Logger
+	pool     *pgxpool.Pool
+	repos    *repository.Repositories
+	policy   PermissionChecker
+	holds    HoldsChecker
+	log      zerolog.Logger
+	localKEK []byte // 32 bytes; nil disables tenant-secret encrypt/decrypt paths
 }
+
+// SetLocalKEK installs the AES-256 key used to encrypt/decrypt small
+// per-tenant secrets stored in the document DB (currently the LLM API
+// key in ner_config). Loaded from VAULTDMS_LOCAL_KEK in main.go; nil
+// or wrong size means encrypt-requiring endpoints fail with a clear
+// 500 instead of silently storing plaintext.
+func (s *DocumentService) SetLocalKEK(kek []byte) { s.localKEK = kek }
 
 // SetHoldsChecker wires a hold-binding checker into DocumentService.
 // Optional: when nil, delete/dispose paths fall back to the

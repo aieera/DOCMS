@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -122,6 +123,18 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	// ADR 0061 — base64-decode VAULTDMS_LOCAL_KEK so the NER api-key
+	// Set/Clear endpoints can encrypt with AES-256-GCM. Same key the
+	// auth service uses for MFA secrets and the intelligence worker
+	// uses to decrypt the per-tenant LLM key. Empty / wrong-size KEK
+	// leaves the path disabled — Set returns 500 with a clear error.
+	if kekB64 := os.Getenv("VAULTDMS_LOCAL_KEK"); kekB64 != "" {
+		if kek, err := base64.StdEncoding.DecodeString(kekB64); err == nil {
+			svc.SetLocalKEK(kek)
+		} else {
+			log.Warn(ctx).Err(err).Msg("VAULTDMS_LOCAL_KEK base64 decode failed; tenant secrets disabled")
+		}
+	}
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
 
@@ -483,6 +496,10 @@ func main() {
 	rootMux.Handle("GET /api/v1/admin/ner-config",
 		middleware.CorrelationHTTP(nerMux))
 	rootMux.Handle("PUT /api/v1/admin/ner-config",
+		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("PUT /api/v1/admin/ner-config/api-key",
+		middleware.CorrelationHTTP(nerMux))
+	rootMux.Handle("DELETE /api/v1/admin/ner-config/api-key",
 		middleware.CorrelationHTTP(nerMux))
 
 	// ADR 0060 — active-learning model management surface (owner/admin gated).

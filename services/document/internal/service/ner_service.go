@@ -4,12 +4,15 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/vaultdms/vaultdms/pkg/crypto"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
@@ -292,6 +295,93 @@ func (s *DocumentService) UpsertNERConfig(ctx context.Context, p repository.NERC
 		return nil
 	})
 	return out, err
+}
+
+// SetLLMAPIKey encrypts the plaintext key with the per-deployment KEK
+// and persists base64(nonce||ct) on the tenant's ner_config row. Audit:
+// emits dms.ner_config.api_key_set.v1 (no payload of the plaintext).
+func (s *DocumentService) SetLLMAPIKey(ctx context.Context, plain string) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	if err := validateAPIKey(plain); err != nil {
+		return err
+	}
+	encoded, err := s.encryptTenantSecret(plain)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		if sErr := s.repos.NER.SetEncryptedAPIKey(ctx, tx, tenantID, encoded, now); sErr != nil {
+			return sErr
+		}
+		evt, oErr := model.NewOutboxEvent(tenantID, "dms.ner_config.api_key_set.v1", "ner_config", tenantID,
+			map[string]any{
+				"tenant_id": tenantID.String(),
+				"set_by":    userID.String(),
+				"set_at":    now.Format(time.RFC3339Nano),
+			})
+		if oErr != nil {
+			return oErr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// ClearLLMAPIKey unsets the per-tenant key. The LLM tier silently
+// no-ops on the next call until a new key is set.
+func (s *DocumentService) ClearLLMAPIKey(ctx context.Context) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		if cErr := s.repos.NER.ClearAPIKey(ctx, tx, tenantID); cErr != nil {
+			return cErr
+		}
+		evt, oErr := model.NewOutboxEvent(tenantID, "dms.ner_config.api_key_cleared.v1", "ner_config", tenantID,
+			map[string]any{
+				"tenant_id":  tenantID.String(),
+				"cleared_by": userID.String(),
+				"cleared_at": time.Now().UTC().Format(time.RFC3339Nano),
+			})
+		if oErr != nil {
+			return oErr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// encryptTenantSecret wraps a small secret (≤ a few KB) with the
+// service's local KEK (AES-256-GCM). Returns base64(nonce || ct).
+// Same wire format the auth service uses for MFA secrets, and the
+// Python intelligence worker decrypts using the same key + format
+// (services/intelligence/app/secrets.py).
+func (s *DocumentService) encryptTenantSecret(plain string) (string, error) {
+	if len(s.localKEK) != crypto.DEKSize {
+		return "", vdmserr.Internal("local KEK not configured (set VAULTDMS_LOCAL_KEK)")
+	}
+	ct, nonce, err := crypto.EncryptData([]byte(plain), s.localKEK)
+	if err != nil {
+		return "", fmt.Errorf("encrypt tenant secret: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(append(nonce, ct...)), nil
+}
+
+func validateAPIKey(plain string) error {
+	p := strings.TrimSpace(plain)
+	if p != plain {
+		return vdmserr.Validation("api_key", "must not have leading/trailing whitespace")
+	}
+	if len(p) < 16 {
+		return vdmserr.Validation("api_key", "looks too short to be a real key")
+	}
+	if len(p) > 512 {
+		return vdmserr.Validation("api_key", "max 512 chars")
+	}
+	return nil
 }
 
 func validateNERConfigPatch(p repository.NERConfigPatch) error {
