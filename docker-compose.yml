@@ -42,6 +42,10 @@ x-go-env: &go-env
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
+  # ADR 0061 — small-secret AES-256 KEK shared with the intelligence
+  # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
+  # service uses for MFA secrets.
+  VAULTDMS_LOCAL_KEK:    "${VAULTDMS_LOCAL_KEK:-}"
 
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }
@@ -344,12 +348,14 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
-      # ADR 0061 — opt-in LLM NER. litellm reads these directly; the
-      # api container builds prompts (rare path) and the worker calls
-      # the LLM (hot path), so both need them. Empty in dev unless an
-      # admin sets a key in .env.
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"
+      # ADR 0061 — opt-in LLM NER. The per-tenant key is now stored
+      # encrypted in ner_config (set via /admin/intelligence/ner-config);
+      # the worker decrypts using VAULTDMS_LOCAL_KEK. The plain
+      # ANTHROPIC_API_KEY / OPENAI_API_KEY env vars are still honored
+      # by litellm as a fallback if no per-tenant key is configured.
+      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     ports: ["8194:8080"]
     depends_on:
       redis:    { condition: service_healthy }
@@ -392,8 +398,9 @@ services:
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
       # ADR 0061 LLM NER — see the intelligence service block above.
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      OPENAI_API_KEY:    "${OPENAI_API_KEY:-}"
+      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     depends_on:
       redis:    { condition: service_healthy }
       postgres: { condition: service_healthy }
