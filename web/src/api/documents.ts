@@ -61,6 +61,13 @@ export async function moveDocument(id: string, folderId: string) {
   return data
 }
 
+export async function getDownloadURL(documentId: string, versionId: string) {
+  const { data } = await api.get<{ url: string; expires_at: string }>(
+    `/storage/downloads/${documentId}/${versionId}`,
+  )
+  return data
+}
+
 export async function getVersions(documentId: string) {
   const { data } = await api.get<Version[]>(`/documents/${documentId}/versions`)
   return data

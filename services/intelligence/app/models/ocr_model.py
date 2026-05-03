@@ -8,10 +8,15 @@ _surya_det = None
 _surya_rec = None
 
 def load_surya():
+    # surya-ocr 0.4.x renamed the loader symbols: detection and recognition
+    # both expose `load_model` / `load_processor` from their own submodules,
+    # so we alias them locally to keep the call sites readable. (Pre-0.4
+    # exported load_det_model/load_rec_model directly.)
     global _surya_det, _surya_rec
     if _surya_det is None:
-        from surya.model.detection.model import load_det_model, load_det_processor
-        from surya.model.recognition.model import load_rec_model, load_rec_processor
+        from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
+        from surya.model.recognition.model import load_model as load_rec_model
+        from surya.model.recognition.processor import load_processor as load_rec_processor
         log.info("loading surya OCR models")
         _surya_det = load_det_model(), load_det_processor()
         _surya_rec = load_rec_model(), load_rec_processor()

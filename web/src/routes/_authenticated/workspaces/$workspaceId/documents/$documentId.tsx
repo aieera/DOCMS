@@ -5,17 +5,19 @@ import toast from 'react-hot-toast'
 import { useDocument } from '@/hooks/useDocuments'
 import { useAuthStore } from '@/store/authStore'
 import { getOCR, rerunOCR, type OCRStatus } from '@/api/ocr'
+import { getDownloadURL } from '@/api/documents'
+import { PDFLayoutViewer } from '@/components/viewer/PDFLayoutViewer'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
-import { Download, Share, History, MessageSquare, FileText, RefreshCw, AlertCircle, Clock, CheckCircle2 } from 'lucide-react'
+import { Download, Share, History, MessageSquare, FileText, RefreshCw, AlertCircle, Clock, CheckCircle2, LayoutGrid } from 'lucide-react'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
-  const [tab, setTab] = useState<'preview' | 'text'>('preview')
+  const [tab, setTab] = useState<'preview' | 'text' | 'layout'>('preview')
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -36,7 +38,10 @@ function DocumentDetailPage() {
         <div className="mb-3 flex gap-1 border-b border-[var(--color-border)]">
           <TabButton active={tab === 'preview'} onClick={() => setTab('preview')}>Preview</TabButton>
           <TabButton active={tab === 'text'} onClick={() => setTab('text')}>
-            <FileText className="mr-1 h-3 w-3" /> Extracted text
+            <FileText className="mr-1 h-3 w-3" /> Raw text
+          </TabButton>
+          <TabButton active={tab === 'layout'} onClick={() => setTab('layout')}>
+            <LayoutGrid className="mr-1 h-3 w-3" /> Layout
           </TabButton>
         </div>
 
@@ -48,6 +53,10 @@ function DocumentDetailPage() {
 
         {tab === 'text' && (
           <OCRPanel documentId={documentId} versionId={versionId} />
+        )}
+
+        {tab === 'layout' && (
+          <LayoutTab documentId={documentId} versionId={versionId} mimeType={doc.mime_type} />
         )}
       </div>
 
@@ -251,6 +260,96 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// LayoutTab renders the PDF page-by-page with Surya bounding boxes
+// overlaid, color-coded by per-line confidence. Read-only for now —
+// click a box to see its text + confidence in a tooltip. Only supports
+// PDFs (Surya boxes are rasterized in PDF page-pixel space); other mime
+// types fall back to an explanatory empty state.
+function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; versionId?: string; mimeType: string }) {
+  const isPdf = mimeType === 'application/pdf'
+  const qc = useQueryClient()
+  const role = useAuthStore((s) => s.user?.role)
+  const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  const ocr = useQuery({
+    queryKey: ['ocr', documentId, versionId],
+    queryFn: () => getOCR(documentId, versionId!),
+    enabled: Boolean(versionId) && isPdf,
+  })
+  const dl = useQuery({
+    queryKey: ['download-url', documentId, versionId],
+    queryFn: () => getDownloadURL(documentId, versionId!),
+    enabled: Boolean(versionId) && isPdf,
+    // Presigned URLs are short-lived (5 min default) and we'd rather
+    // refetch than serve a stale 404 from a transient backend error.
+    staleTime: 60 * 1000,
+    retry: 1,
+  })
+  const forceSurya = useMutation({
+    mutationFn: () => rerunOCR(documentId, versionId!, { forceEngine: 'surya' }),
+    onSuccess: () => {
+      toast.success('Re-running OCR with Surya — boxes will appear when complete')
+      qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
+    },
+    onError: () => toast.error('Force-Surya rerun failed'),
+  })
+
+  if (!isPdf) {
+    return (
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+        Layout view is only available for PDF documents.
+      </div>
+    )
+  }
+  if (!versionId) {
+    return (
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+        No version available — upload a file to enable layout analysis.
+      </div>
+    )
+  }
+  if (ocr.isLoading || dl.isLoading) {
+    return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+  }
+  if (!dl.data?.url) {
+    return (
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+        Could not load document URL.
+      </div>
+    )
+  }
+  const pages = ocr.data?.pages ?? []
+  const totalBoxes = pages.reduce((acc, p) => {
+    const raw = p.bounding_boxes
+    const arr = Array.isArray(raw) ? raw : Array.isArray((raw as { lines?: unknown[] })?.lines) ? (raw as { lines: unknown[] }).lines : []
+    return acc + arr.length
+  }, 0)
+  return (
+    <div className="space-y-3">
+      {totalBoxes === 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+          <span>
+            This PDF was processed via the text-extraction fast path (pymupdf) — no bounding boxes were captured.
+          </span>
+          {canRerun && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => forceSurya.mutate()}
+              disabled={forceSurya.isPending}
+            >
+              {forceSurya.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+              Force Surya
+            </Button>
+          )}
+        </div>
+      )}
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+        <PDFLayoutViewer url={dl.data.url} pages={pages} />
+      </div>
     </div>
   )
 }

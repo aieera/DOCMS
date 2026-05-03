@@ -126,8 +126,14 @@ services:
           - name: rate-limiting
             config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
 
+  # /api/v1/storage/* is served by the document service's REST proxy
+  # (services/document/internal/handler/storage_proxy.go), which forwards
+  # to the storage gRPC backend. The storage container itself only
+  # exposes gRPC + healthcheck, so routing /api/v1/storage to it
+  # produces 404. Keep the same URL prefix on the public side; just
+  # repoint the upstream.
   - name: storage
-    url: http://storage:8081
+    url: http://document:8080
     routes:
       - name: storage
         paths: [/api/v1/storage]

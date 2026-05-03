@@ -168,6 +168,11 @@ class IntelligenceConsumer:
                         "correlation_id": correlation_id,
                         "language": data.get("language", "en"),
                         "event_id": event_id,
+                        # Optional engine override carried through from the
+                        # rerun endpoint so users can force Surya on
+                        # text-PDFs (which would otherwise hit the pymupdf
+                        # fast path and skip layout box capture).
+                        "force_engine": data.get("force_engine", ""),
                     },
                     queue="intelligence-ocr",
                 )

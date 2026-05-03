@@ -12,13 +12,17 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/vaultdms/vaultdms/pkg/database"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
@@ -196,11 +200,51 @@ func (p *StorageProxy) abort(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// download presigns a GET URL for a specific version's bytes. The
+// storage gRPC service keys downloads by upload_session_id, not by
+// document_id/version_id, because upload sessions are content-addressed
+// and the upload happens before the document row exists. We resolve
+// version_id → upload_session_id by parsing it out of the
+// content_blobs.storage_key (which has shape
+// `{tenant}/{YYYY}/{MM}/{upload_session_id}/{filename}`). Done in-proxy
+// to avoid a proto change on GetDownloadURLRequest.
 func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := auth.GetTenantID(r.Context())
+	if err != nil || tenantID == uuid.Nil {
+		writeProxyJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		return
+	}
+	versionID, err := uuid.Parse(r.PathValue("version_id"))
+	if err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]any{"error": "version_id not a uuid"})
+		return
+	}
+	if p.pool == nil {
+		writeProxyJSON(w, http.StatusInternalServerError, map[string]any{"error": "proxy missing db pool"})
+		return
+	}
+	var storageKey string
+	err = database.WithTenantTx(r.Context(), p.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT b.storage_key
+			FROM document_versions v
+			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
+			WHERE v.tenant_id = $1 AND v.id = $2
+		`, tenantID, versionID).Scan(&storageKey)
+	})
+	if err != nil {
+		writeProxyJSON(w, http.StatusNotFound, map[string]any{"error": "version or blob not found"})
+		return
+	}
+	uploadID := extractUploadID(storageKey)
+	if uploadID == "" {
+		writeProxyJSON(w, http.StatusInternalServerError, map[string]any{"error": "could not parse upload_id from storage_key"})
+		return
+	}
 	ctx, cancel := p.outbound(r)
 	defer cancel()
 	resp, err := p.client.GetDownloadURL(ctx, &vaultdmsv1.GetDownloadURLRequest{
-		DocumentId: r.PathValue("document_id"),
+		DocumentId: uploadID,
 		VersionId:  r.PathValue("version_id"),
 	})
 	if err != nil {
@@ -211,6 +255,17 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 		"url":        resp.GetUrl(),
 		"expires_at": formatTs(resp.GetExpiresAt()),
 	})
+}
+
+// extractUploadID parses the 4th path segment from a content-addressed
+// storage key like `{tenant}/{YYYY}/{MM}/{upload_id}/{filename}`. Returns
+// "" if the shape doesn't match.
+func extractUploadID(storageKey string) string {
+	parts := strings.Split(storageKey, "/")
+	if len(parts) < 5 {
+		return ""
+	}
+	return parts[3]
 }
 
 // outbound builds a gRPC-outgoing context carrying the tenant + user

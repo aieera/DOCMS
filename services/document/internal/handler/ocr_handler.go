@@ -255,6 +255,11 @@ func (h *OCRHandler) rerun(w http.ResponseWriter, r *http.Request) {
 		"uploaded_at":        time.Now().UTC().Format(time.RFC3339),
 		"reason":             "manual_rerun",
 	}
+	// ?force=surya bypasses the pymupdf text-extraction fast path on
+	// the worker so the layout viewer can get real bounding boxes.
+	if r.URL.Query().Get("force") == "surya" {
+		payload["force_engine"] = "surya"
+	}
 	body, _ := json.Marshal(payload)
 	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
 		_, ierr := tx.Exec(ctx, `

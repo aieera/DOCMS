@@ -281,6 +281,7 @@ def process_ocr(
     correlation_id: str = "",
     language: str = "en",
     event_id: str = "",
+    force_engine: str = "",
 ):
     """Run OCR for one document. Per Wave 5 Prompt 5.3:
 
@@ -306,10 +307,12 @@ def process_ocr(
         _s3().download_file(storage_bucket, storage_key, src)
 
         if mime_type == "application/pdf":
-            if _pdf_has_text(src):
-                pages = _extract_text_pdf(src)
-            else:
+            # force_engine="surya" bypasses the pymupdf fast path so the
+            # layout viewer can get bounding boxes even on text-PDFs.
+            if force_engine == "surya" or not _pdf_has_text(src):
                 pages = _ocr_pdf_pages(src)
+            else:
+                pages = _extract_text_pdf(src)
         else:
             pages = _ocr_image(src)
 

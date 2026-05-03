@@ -39,9 +39,14 @@ export async function getOCR(documentId: string, versionId: string): Promise<OCR
   }
 }
 
-export async function rerunOCR(documentId: string, versionId: string): Promise<{ status: string; event_id: string }> {
-  const { data } = await api.post<{ status: string; event_id: string }>(
-    `/documents/${documentId}/versions/${versionId}/ocr/rerun`,
-  )
+export async function rerunOCR(
+  documentId: string,
+  versionId: string,
+  opts: { forceEngine?: 'surya' } = {},
+): Promise<{ status: string; event_id: string }> {
+  const url = `/documents/${documentId}/versions/${versionId}/ocr/rerun${
+    opts.forceEngine ? `?force=${opts.forceEngine}` : ''
+  }`
+  const { data } = await api.post<{ status: string; event_id: string }>(url)
   return data
 }
