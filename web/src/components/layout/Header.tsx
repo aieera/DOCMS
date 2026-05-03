@@ -1,10 +1,16 @@
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
+import { useLogout } from '@/hooks/useAuth'
 import { Bell, Moon, Sun, LogOut, Search } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
 export function Header() {
-  const { user, logout } = useAuthStore()
+  const user = useAuthStore((s) => s.user)
+  // useLogout POSTs /api/v1/auth/logout to invalidate the session
+  // cookie server-side, clears the local store, then navigates to
+  // /login. Calling authStore.logout() directly skips the first two
+  // and leaves the user stranded on the same page.
+  const logout = useLogout()
   const { theme, toggleTheme } = useUIStore()
   const navigate = useNavigate()
 
