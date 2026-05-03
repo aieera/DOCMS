@@ -89,6 +89,36 @@ contribute a "healthy" status).
 
 See `make help` for the full list.
 
+## Intelligence pipeline
+
+| Stage | Trigger | Task | Persists to | Emits |
+|---|---|---|---|---|
+| OCR | `dms.version.uploaded.v1` | `app.tasks.ocr` | `ocr_results` | `dms.version.ocr_completed.v1` |
+| Classify | `dms.version.ocr_completed.v1` | `app.tasks.classify` | `document_classifications` | `dms.classify.completed.v1` |
+| NER | `dms.version.ocr_completed.v1` | `app.tasks.ner` | `entities` | `dms.ner.completed.v1` |
+| Extract | `dms.version.ocr_completed.v1` | `app.tasks.extract` | `extraction_results` | `dms.extract.completed.v1` |
+| Embed | `dms.version.ocr_completed.v1` | `app.tasks.embed` | Qdrant | `dms.embed.completed.v1` |
+| Duplicate (sha256/minhash/simhash) | `dms.version.ocr_completed.v1` | `app.tasks.duplicate` | `duplicate_candidates`, `document_fingerprints` | — |
+| Duplicate (embedding) | `dms.embed.completed.v1` | `app.tasks.dup_embedding` | `duplicate_candidates` | — |
+| **Auto-tag** (ADR 0052) | `dms.classify.completed.v1` + `dms.ner.completed.v1` | `app.tasks.auto_tag` | `tag_suggestions`, `documents.tags` | `dms.autotag.completed.v1` |
+| Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
+| Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
+
+Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, dedupe via `intel_processed_events` (tenant + consumer + event_id), DLQ on terminal failure to `dms.dlq.intel_events.<consumer>.<reason>`.
+
+## Document-service intelligence endpoints
+
+| Method | Path | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/v1/documents/{id}/duplicates` | Pending duplicate candidates | view |
+| POST | `/api/v1/duplicate-candidates/{id}/confirm` | Merge: superseded → canonical | admin on retired doc |
+| POST | `/api/v1/duplicate-candidates/{id}/reject` | Dismiss candidate (audit only) | view |
+| GET | `/api/v1/documents/{id}/tag-suggestions` | List pending + auto-applied tags | view |
+| POST | `/api/v1/documents/{id}/tag-suggestions/review` | Batch accept/reject | edit |
+| GET | `/api/v1/admin/tag-suggestions` | Tenant-wide review queue (paginated) | admin/owner/compliance_officer |
+| GET | `/api/v1/admin/auto-tag-config` | Per-tenant thresholds & weights | admin/owner/compliance_officer |
+| PUT | `/api/v1/admin/auto-tag-config` | Patch config (partial update) | admin/owner |
+
 ## Status
 
 This repository is scaffolded in phases. See `docs/phases.md` for progress.
@@ -98,6 +128,8 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] Phase C — proto contracts
 - [x] Phase D — service scaffolds (build + boot; proto handlers land in Phase E)
 - [x] Phase 5 — **document service reference implementation**. Template for the other 10 services.
+- [x] Waves 5–14 — full blueprint structurally complete.
+- [x] **Intel Feature 01 — Auto-tagging** (ADR 0052)
 
 ## License
 
