@@ -461,6 +461,16 @@ func main() {
 	rootMux.Handle("PUT /api/v1/admin/anomaly-config",
 		middleware.CorrelationHTTP(anomalyMux))
 
+	// ADR 0059 — classification correction surface (single + bulk).
+	classifyCorrectionsMux := http.NewServeMux()
+	handler.NewClassifyCorrectionHandler(svc, *log.Z()).Register(classifyCorrectionsMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/classify/correct",
+		middleware.CorrelationHTTP(classifyCorrectionsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/classify/corrections",
+		middleware.CorrelationHTTP(classifyCorrectionsMux))
+	rootMux.Handle("POST /api/v1/admin/documents/bulk-reclassify",
+		middleware.CorrelationHTTP(classifyCorrectionsMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when
