@@ -102,6 +102,7 @@ See `make help` for the full list.
 | Duplicate (embedding) | `dms.embed.completed.v1` | `app.tasks.dup_embedding` | `duplicate_candidates` | — |
 | **Auto-tag** (ADR 0052) | `dms.classify.completed.v1` + `dms.ner.completed.v1` | `app.tasks.auto_tag` | `tag_suggestions`, `documents.tags` | `dms.autotag.completed.v1` |
 | **Smart routing** (ADR 0053) | `dms.classify.completed.v1` | `app.tasks.smart_route` | `route_suggestions` | `dms.routing.completed.v1` |
+| **Compliance scan** (ADR 0054) | `dms.ner.completed.v1` | `app.tasks.compliance_scan` | `compliance_findings`, `compliance_summary` | `dms.compliance.completed.v1` (+ `dms.notification.send.v1` on high+) |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -125,6 +126,12 @@ Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, de
 | GET/POST | `/api/v1/admin/routing-rules[/{id}]` | Per-tenant routing-rule CRUD | admin/owner (write), +compliance_officer (read) |
 | GET/PUT | `/api/v1/admin/smart-routing-config` | Per-tenant thresholds | admin/owner (write), +compliance_officer (read) |
 | GET | `/api/v1/admin/filing-analytics` | Filing patterns + suggestion acceptance rate | admin/owner/compliance_officer |
+| GET | `/api/v1/documents/{id}/compliance` | PII/PHI summary + findings | view |
+| POST | `/api/v1/documents/{id}/compliance/{fid}/review` | Acknowledge / remediate / mark false-positive | edit |
+| GET | `/api/v1/admin/compliance/dashboard` | Tenant rollup (counts, risk dist, top entity types) | admin/owner/compliance_officer |
+| GET | `/api/v1/admin/compliance/findings` | Paginated open-findings queue | admin/owner/compliance_officer |
+| GET/PUT | `/api/v1/admin/compliance/config` | Per-tenant config (PHI opt-in, thresholds, custom patterns) | admin/owner (write) |
+| POST | `/api/v1/admin/compliance/rescan/{id}` | Re-trigger compliance scan | admin/owner/compliance_officer |
 
 ## Status
 
@@ -138,6 +145,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] Waves 5–14 — full blueprint structurally complete.
 - [x] **Intel Feature 01 — Auto-tagging** (ADR 0052)
 - [x] **Intel Feature 02 — Smart routing** (ADR 0053)
+- [x] **Intel Feature 03 — Compliance heuristics (PII/PHI)** (ADR 0054)
 
 ## License
 
