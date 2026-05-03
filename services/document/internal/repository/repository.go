@@ -112,6 +112,7 @@ type Repositories struct {
 	OCRQuality         OCRQualityRepository
 	Anomaly            AnomalyRepository
 	ClassifyCorrections ClassifyCorrectionRepository
+	ActiveLearning      ActiveLearningRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -134,5 +135,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		OCRQuality:          NewOCRQualityRepo(),
 		Anomaly:             NewAnomalyRepo(),
 		ClassifyCorrections: NewClassifyCorrectionRepo(),
+		ActiveLearning:      NewActiveLearningRepo(),
 	}
 }

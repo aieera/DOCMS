@@ -471,6 +471,28 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/documents/bulk-reclassify",
 		middleware.CorrelationHTTP(classifyCorrectionsMux))
 
+	// ADR 0060 — active-learning model management surface (owner/admin gated).
+	activeLearningMux := http.NewServeMux()
+	handler.NewActiveLearningHandler(svc, *log.Z()).Register(activeLearningMux)
+	rootMux.Handle("GET /api/v1/admin/models",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("GET /api/v1/admin/models/{id}",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("POST /api/v1/admin/models/{id}/promote",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("POST /api/v1/admin/models/{id}/retire",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("POST /api/v1/admin/models/retrain",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("GET /api/v1/admin/training-examples/stats",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("DELETE /api/v1/admin/training-examples/{id}",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("GET /api/v1/admin/active-learning/config",
+		middleware.CorrelationHTTP(activeLearningMux))
+	rootMux.Handle("PUT /api/v1/admin/active-learning/config",
+		middleware.CorrelationHTTP(activeLearningMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when
