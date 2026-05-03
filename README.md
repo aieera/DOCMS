@@ -109,6 +109,9 @@ See `make help` for the full list.
 | **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr_quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
 | **Anomaly detection** (ADR 0058) | on-demand REST | `POST /api/v1/intelligence/anomaly/run`, `app.tasks.anomaly_detect.run` | `anomaly_reports`, `anomaly_findings` | `dms.anomaly.completed.v1` |
 | **Classify corrections** (ADR 0059) | user click in UI | `POST /api/v1/documents/{id}/classify/correct` (Go); bulk variant on `/admin/documents/bulk-reclassify` | `classification_corrections`, updates `documents.document_class` | `dms.classify.corrected.v1` |
+| **Training collector** (ADR 0060) | `dms.classify.corrected.v1` | `app.tasks.training_collector` | `training_examples` (deterministic train/val/test split) | dispatches `app.tasks.model_retrain` at threshold |
+| **Model retrain** (ADR 0060) | dispatched by collector | `app.tasks.model_retrain` (DistilBERT fine-tune via transformers.Trainer; artifacts to MinIO) | `model_versions` (status `training`→`evaluating`) | dispatches `app.tasks.model_evaluate` |
+| **Model evaluate** (ADR 0060) | dispatched by retrain | `app.tasks.model_evaluate` (test-set accuracy + macro P/R/F1; promote/candidate/retire decision) | `model_versions` (atomic prod swap) | `dms.model.promoted.v1` (evicts intelligence LRU cache) |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -147,6 +150,14 @@ Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, de
 | GET | `/api/v1/admin/anomalies/{id}` | Report + findings bundle | admin/owner/compliance_officer |
 | POST | `/api/v1/admin/anomalies/findings/{fid}/resolve` | Acknowledge / resolve / mark false-positive | admin/owner/compliance_officer |
 | GET/PUT | `/api/v1/admin/anomaly-config` | Per-tenant config (z-score, content distance, strategy toggles) | admin/owner (write) |
+| GET | `/api/v1/admin/models` | Paginated model versions (filter by status / type) | admin/owner |
+| GET | `/api/v1/admin/models/{id}` | Single version + metrics | admin/owner |
+| POST | `/api/v1/admin/models/{id}/promote` | Atomic swap: retire prev production, mark this one production; emits `dms.model.promoted.v1` | admin/owner |
+| POST | `/api/v1/admin/models/{id}/retire` | Manual retire | admin/owner |
+| POST | `/api/v1/admin/models/retrain` | Force-trigger retrain (emits `dms.model.retrain_requested.v1`) | admin/owner |
+| GET | `/api/v1/admin/training-examples/stats` | Total / unused / per-split / per-label counts | admin/owner |
+| DELETE | `/api/v1/admin/training-examples/{id}` | Drop a bad example | admin/owner |
+| GET/PUT | `/api/v1/admin/active-learning/config` | Thresholds, splits, auto-promote toggle, GPU queue | admin/owner (write) |
 
 ## Status
 
@@ -166,6 +177,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 06 — OCR quality scoring** (ADR 0057)
 - [x] **Intel Feature 07 — Anomaly detection** (ADR 0058)
 - [x] **Intel Feature 08 — Bulk reclassify + corrections ledger** (ADR 0059)
+- [x] **Intel Feature 09 — Active learning loop** (ADR 0060) — per-tenant DistilBERT fine-tuning from manual corrections, MinIO-backed artifacts, atomic promote/retire
 
 ## License
 
