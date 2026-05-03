@@ -446,6 +446,21 @@ func main() {
 	rootMux.Handle("PUT /api/v1/admin/ocr-quality/config",
 		middleware.CorrelationHTTP(ocrQualityMux))
 
+	// ADR 0058 — anomaly detection review surface (the trigger lives
+	// on the intelligence service, POST /api/v1/intelligence/anomaly/run).
+	anomalyMux := http.NewServeMux()
+	handler.NewAnomalyHandler(svc, *log.Z()).Register(anomalyMux)
+	rootMux.Handle("GET /api/v1/admin/anomalies",
+		middleware.CorrelationHTTP(anomalyMux))
+	rootMux.Handle("GET /api/v1/admin/anomalies/{id}",
+		middleware.CorrelationHTTP(anomalyMux))
+	rootMux.Handle("POST /api/v1/admin/anomalies/findings/{fid}/resolve",
+		middleware.CorrelationHTTP(anomalyMux))
+	rootMux.Handle("GET /api/v1/admin/anomaly-config",
+		middleware.CorrelationHTTP(anomalyMux))
+	rootMux.Handle("PUT /api/v1/admin/anomaly-config",
+		middleware.CorrelationHTTP(anomalyMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when

@@ -19,6 +19,7 @@ from app.qa_persist import (
 from app.tasks.rag import ask, stream_ask
 from app.tasks.redact import apply_redactions, detect_redaction_candidates
 from app.tasks.summarize import summarize_document
+from app.tasks.anomaly_detect import run as anomaly_detect_run
 from app.tasks.translate import translate as translate_task
 
 log = logging.getLogger(__name__)
@@ -546,6 +547,69 @@ async def get_document_language_endpoint(
         "secondary_languages": sec,
         "version_id": row["version_id"],
         "detected_at": row["detected_at"].isoformat(),
+    }
+
+
+class AnomalyRunRequest(BaseModel):
+    workspace_id: Optional[str] = None
+    analysis_type: str = "combined"   # 'metadata'|'content'|'behavioral'|'combined'
+
+
+@router.post("/anomaly/run")
+async def anomaly_run_endpoint(
+    body: AnomalyRunRequest,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+):
+    """ADR 0058 — kick off a workspace-level outlier scan.
+
+    Creates the anomaly_reports row (status='pending') in the same
+    transaction so the row exists before the Celery task picks it up;
+    apply_async then drives status forward to processing/completed.
+    """
+    tenant = _require_tenant(x_tenant_id)
+    if not x_user_id:
+        raise HTTPException(400, "X-User-ID required")
+    if body.analysis_type not in ("metadata", "content", "behavioral", "combined"):
+        raise HTTPException(400, "analysis_type invalid")
+
+    from app.db.pool import get_pool
+    import uuid as _uuid
+    pool = await get_pool()
+    new_id = _uuid.uuid4()
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant
+            )
+            await conn.execute(
+                """
+                INSERT INTO anomaly_reports
+                    (tenant_id, id, workspace_id, analysis_type,
+                     status, triggered_by, requested_by)
+                VALUES ($1, $2, $3, $4, 'pending', 'manual', $5)
+                """,
+                tenant, new_id,
+                body.workspace_id if body.workspace_id else None,
+                body.analysis_type, x_user_id,
+            )
+
+    anomaly_detect_run.apply_async(
+        kwargs={
+            "tenant_id": tenant,
+            "report_id": str(new_id),
+            "workspace_id": body.workspace_id,
+            "analysis_type": body.analysis_type,
+            "event_id": str(new_id),
+        },
+        queue="intelligence",
+    )
+    return {
+        "report_id": str(new_id),
+        "status": "pending",
+        "analysis_type": body.analysis_type,
+        "workspace_id": body.workspace_id,
     }
 
 

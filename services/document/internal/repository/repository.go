@@ -110,6 +110,7 @@ type Repositories struct {
 	Routing         RoutingRepository
 	Compliance      ComplianceRepository
 	OCRQuality      OCRQualityRepository
+	Anomaly         AnomalyRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -130,5 +131,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Routing:         NewRoutingRepo(),
 		Compliance:      NewComplianceRepo(),
 		OCRQuality:      NewOCRQualityRepo(),
+		Anomaly:         NewAnomalyRepo(),
 	}
 }
