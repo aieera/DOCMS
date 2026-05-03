@@ -1,0 +1,132 @@
+import { api } from './client'
+
+export interface Citation {
+  chunk_index: number
+  text: string
+  page?: number
+  start_char?: number
+  end_char?: number
+  similarity_score: number
+  document_id: string
+  version_id: string
+}
+
+export interface QAMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  citations: Citation[]
+  model_used: string
+  tokens_used: number
+  created_at: string
+}
+
+export interface QAConversation {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export type QAStreamEvent =
+  | { type: 'conversation'; conversation_id: string }
+  | { type: 'citations'; citations: Citation[] }
+  | { type: 'chunk'; text: string }
+  | { type: 'done'; full_text: string; citations: Citation[]; model: string; output_tokens: number }
+  | { type: 'error'; message: string }
+
+interface AskParams {
+  documentId: string
+  question: string
+  conversationId?: string
+  model?: string
+  signal?: AbortSignal
+  onEvent: (event: QAStreamEvent) => void
+}
+
+/**
+ * Open the SSE Q&A stream. Returns once the stream completes (or aborts).
+ * Caller drives state via onEvent. Errors during the request itself are
+ * thrown; per-event errors arrive as type='error' through onEvent.
+ */
+export async function streamQA(params: AskParams): Promise<void> {
+  const { documentId, question, conversationId, model, signal, onEvent } = params
+  const baseURL = api.defaults.baseURL ?? '/api/v1'
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+  }
+  // Mirror the axios client's auth header injection for fetch().
+  // Axios interceptor sets X-Auth-Tenant-ID + X-Auth-User-ID, plus CSRF.
+  // For SSE we don't have access to that interceptor, so we forward the
+  // session cookie (same-origin fetch + credentials:include) and let the
+  // backend's session middleware re-derive identity.
+  const resp = await fetch(`${baseURL}/intelligence/qa`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: JSON.stringify({
+      document_id: documentId,
+      question,
+      conversation_id: conversationId,
+      model,
+    }),
+    signal,
+  })
+  if (!resp.ok || !resp.body) {
+    throw new Error(`qa stream failed: ${resp.status}`)
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    // Parse SSE events terminated by `\n\n`.
+    let idx
+    while ((idx = buf.indexOf('\n\n')) !== -1) {
+      const block = buf.slice(0, idx)
+      buf = buf.slice(idx + 2)
+      const dataLine = block.split('\n').find((l) => l.startsWith('data: '))
+      if (!dataLine) continue
+      try {
+        const evt = JSON.parse(dataLine.slice(6)) as QAStreamEvent
+        onEvent(evt)
+      } catch {
+        // ignore malformed event line
+      }
+    }
+  }
+}
+
+export async function askQASync(params: {
+  documentId: string
+  question: string
+  conversationId?: string
+  model?: string
+}) {
+  const { data } = await api.post<{
+    conversation_id: string
+    answer: string
+    citations: Citation[]
+    model: string
+    output_tokens: number
+  }>('/intelligence/qa/sync', {
+    document_id: params.documentId,
+    question: params.question,
+    conversation_id: params.conversationId,
+    model: params.model,
+  })
+  return data
+}
+
+export async function getQAHistory(documentId: string, conversationId?: string) {
+  const { data } = await api.get<{
+    conversations: QAConversation[]
+    messages?: QAMessage[]
+  }>(`/intelligence/qa/history/${documentId}`, {
+    params: conversationId ? { conversation_id: conversationId } : undefined,
+  })
+  return data
+}
