@@ -387,6 +387,30 @@ func main() {
 	rootMux.Handle("PUT /api/v1/admin/auto-tag-config",
 		middleware.CorrelationHTTP(autoTagMux))
 
+	// ADR 0053 — smart-routing review surface + admin rule CRUD.
+	smartRouteMux := http.NewServeMux()
+	handler.NewSmartRouteHandler(svc, *log.Z()).Register(smartRouteMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/route-suggestions",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/route-suggestions/{sid}/accept",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/route-suggestions/{sid}/dismiss",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("GET /api/v1/admin/routing-rules",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("POST /api/v1/admin/routing-rules",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("PUT /api/v1/admin/routing-rules/{id}",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("DELETE /api/v1/admin/routing-rules/{id}",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("GET /api/v1/admin/smart-routing-config",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("PUT /api/v1/admin/smart-routing-config",
+		middleware.CorrelationHTTP(smartRouteMux))
+	rootMux.Handle("GET /api/v1/admin/filing-analytics",
+		middleware.CorrelationHTTP(smartRouteMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when

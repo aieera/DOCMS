@@ -107,6 +107,7 @@ type Repositories struct {
 	Outbox          OutboxRepository
 	Annotations     AnnotationRepository
 	TagSuggestions  TagSuggestionRepository
+	Routing         RoutingRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -124,5 +125,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Outbox:          &outboxRepo{},
 		Annotations:     NewAnnotationRepo(),
 		TagSuggestions:  NewTagSuggestionRepo(),
+		Routing:         NewRoutingRepo(),
 	}
 }
