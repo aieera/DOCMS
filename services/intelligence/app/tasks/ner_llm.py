@@ -42,6 +42,10 @@ class NERConfig:
     entity_types: list[str]
     batch_size: int
     min_confidence: float
+    # api_key_plaintext is hydrated only inside the worker (via
+    # secrets.decrypt_tenant_secret). None means "no key configured" or
+    # "decrypt failed" — both treated the same: skip the LLM call.
+    api_key: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "NERConfig":
@@ -52,6 +56,7 @@ class NERConfig:
             entity_types=list(merged["llm_entity_types"]),
             batch_size=int(merged["llm_batch_size"]),
             min_confidence=float(merged["llm_min_confidence"]),
+            api_key=merged.get("api_key"),
         )
 
 
@@ -126,7 +131,14 @@ def _validate_and_realign(
 async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
     """Returns NER entities from the LLM, validated and aligned to text
     offsets. Returns [] on any failure path — NER is best-effort, never
-    block the pipeline on a hallucinating model."""
+    block the pipeline on a hallucinating model.
+
+    Key resolution: cfg.api_key (per-tenant, set via the admin UI) takes
+    precedence; if None we fall through to litellm's own env-var lookup
+    (ANTHROPIC_API_KEY / OPENAI_API_KEY) so an operator who prefers env
+    config still works. If neither is set, the call fails on the
+    provider side and we swallow it like any other LLM failure.
+    """
     if not cfg.enabled or not text.strip():
         return []
     try:
@@ -137,15 +149,18 @@ async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
         return []
 
     prompt = _build_prompt(text, cfg.entity_types)
+    kwargs: dict[str, Any] = {
+        "model": cfg.model,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "max_tokens": 2000,
+        "timeout": 30,
+    }
+    if cfg.api_key:
+        kwargs["api_key"] = cfg.api_key
     try:
-        resp = await litellm.acompletion(  # type: ignore
-            model=cfg.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=2000,
-            timeout=30,
-        )
+        resp = await litellm.acompletion(**kwargs)  # type: ignore
     except Exception as e:  # noqa: BLE001 — we *do* want to swallow everything here
         log.warning("ner_llm: %s call failed: %s", cfg.model, e)
         return []
@@ -164,8 +179,9 @@ async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
 
 
 async def load_ner_config(tenant_id: str) -> NERConfig:
-    """Loads ner_config for the tenant, falling back to DEFAULT_NER_CONFIG
-    if no row exists. Same pattern as auto_tag's _load_config."""
+    """Loads ner_config for the tenant, decrypts the per-tenant LLM key
+    if present, and falls back to DEFAULT_NER_CONFIG when no row exists.
+    Same pattern as auto_tag's _load_config."""
     try:
         from app.persist import get_pool
     except ImportError:
@@ -175,16 +191,25 @@ async def load_ner_config(tenant_id: str) -> NERConfig:
         await conn.execute("SELECT set_config('app.current_tenant', $1, true)", tenant_id)
         row = await conn.fetchrow(
             """SELECT llm_enabled, llm_model, llm_entity_types,
-                      llm_batch_size, llm_min_confidence
+                      llm_batch_size, llm_min_confidence,
+                      llm_api_key_encrypted
                  FROM ner_config WHERE tenant_id = $1""",
             tenant_id,
         )
     if not row:
         return NERConfig.from_dict({})
+    # Decrypt is best-effort: a stale ciphertext after a key rotation
+    # surfaces as "no key" and the LLM call falls back to env vars
+    # before silently no-op'ing. Never raises.
+    api_key: str | None = None
+    if row["llm_api_key_encrypted"]:
+        from app.secrets import decrypt_tenant_secret
+        api_key = decrypt_tenant_secret(row["llm_api_key_encrypted"])
     return NERConfig.from_dict({
         "llm_enabled": row["llm_enabled"],
         "llm_model": row["llm_model"],
         "llm_entity_types": list(row["llm_entity_types"]),
         "llm_batch_size": row["llm_batch_size"],
         "llm_min_confidence": row["llm_min_confidence"],
+        "api_key": api_key,
     })
