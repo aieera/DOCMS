@@ -74,7 +74,18 @@ def _tier1_rules(text: str) -> tuple[str, float, list[dict]]:
     return top, min(top_score / 10.0, 0.99), top3
 
 
-def _tier2_ml(text: str) -> tuple[str, float, str]:
+def _tier2_ml(text: str, tenant_id: str = "") -> tuple[str, float, str]:
+    """Tier-2 classifier. ADR 0060 — when a tenant has a production
+    fine-tuned model, use it; otherwise fall through to the default
+    classifier so behaviour is unchanged for opt-out tenants."""
+    if tenant_id:
+        try:
+            from app.tenant_classifier import classify_with_tenant_model
+            cls, conf, model_tag = classify_with_tenant_model(tenant_id, text)
+            if cls is not None:
+                return cls, conf, model_tag
+        except Exception:
+            log.exception("tenant model load failed; falling back to default")
     from app.models.classifier import classify
     cls, conf = classify(text)
     return cls, conf, "distilbert-base-uncased"
@@ -180,7 +191,7 @@ def classify_document(
 
         if conf < 0.85:
             try:
-                ml_cls, ml_conf, ml_version = _tier2_ml(text)
+                ml_cls, ml_conf, ml_version = _tier2_ml(text, tenant_id)
                 if ml_conf > conf:
                     cls, conf, method, model_version = ml_cls, ml_conf, "ml", ml_version
             except Exception as e:

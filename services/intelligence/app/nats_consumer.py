@@ -36,6 +36,7 @@ from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
 from app.tasks.ocr_quality import score as ocr_quality_score
 from app.tasks.smart_route import smart_route
+from app.tasks.training_collector import collect as training_collect
 from app.tasks.classify import classify_document
 from app.tasks.duplicate import detect_duplicates
 from app.tasks.embed import generate_embeddings
@@ -140,6 +141,14 @@ class IntelligenceConsumer:
             "dms.version.ocr_completed.v1",
             durable="intel-ocr-quality",
             cb=self._on_ocr_quality_trigger,
+            manual_ack=True,
+        )
+        # ADR 0060 — active-learning training collector, fans in from
+        # the corrections ledger (ADR 0059).
+        await js.subscribe(
+            "dms.classify.corrected.v1",
+            durable="intel-training-collector",
+            cb=self._on_training_collector_trigger,
             manual_ack=True,
         )
         log.info("intelligence consumer started")
@@ -327,6 +336,41 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue auto_tag failed")
+            await msg.nak(delay=5)
+
+    async def _on_training_collector_trigger(self, msg) -> None:
+        """ADR 0060 — pick up classify corrections, queue training collector."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        cid = data.get("correction_id", "")
+        did = data.get("document_id", "")
+        vid = data.get("version_id", "")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and cid and did and vid):
+            await msg.term()
+            return
+        try:
+            training_collect.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "correction_id": cid,
+                    "document_id": did,
+                    "version_id": vid,
+                    "original_category":  data.get("original_category", "") or "",
+                    "corrected_category": data.get("corrected_category", "") or "",
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue training_collector failed")
             await msg.nak(delay=5)
 
     async def _on_ocr_quality_trigger(self, msg) -> None:
