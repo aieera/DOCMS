@@ -411,6 +411,25 @@ func main() {
 	rootMux.Handle("GET /api/v1/admin/filing-analytics",
 		middleware.CorrelationHTTP(smartRouteMux))
 
+	// ADR 0054 — compliance PII/PHI review surface + admin config.
+	// Distinct mux from the legal-hold complianceMux above.
+	piiComplianceMux := http.NewServeMux()
+	handler.NewComplianceHandler(svc, *log.Z()).Register(piiComplianceMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/compliance",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/compliance/{fid}/review",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("GET /api/v1/admin/compliance/dashboard",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("GET /api/v1/admin/compliance/findings",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("GET /api/v1/admin/compliance/config",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("PUT /api/v1/admin/compliance/config",
+		middleware.CorrelationHTTP(piiComplianceMux))
+	rootMux.Handle("POST /api/v1/admin/compliance/rescan/{id}",
+		middleware.CorrelationHTTP(piiComplianceMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when
