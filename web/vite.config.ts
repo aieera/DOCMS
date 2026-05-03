@@ -45,6 +45,22 @@ export default defineConfig({
             '/api/v1/admin/share-links':        withSig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
             '/api/v1/admin/documents':          withSig('http://localhost:8182'),
+            // Document-service intelligence-admin endpoints (must list
+            // each explicitly because the catch-all `/api/v1/admin`
+            // below sends anything else to the auth service).
+            '/api/v1/admin/auto-tag-config':    withSig('http://localhost:8182'),
+            '/api/v1/admin/tag-suggestions':    withSig('http://localhost:8182'),
+            '/api/v1/admin/routing-rules':      withSig('http://localhost:8182'),
+            '/api/v1/admin/smart-routing-config': withSig('http://localhost:8182'),
+            '/api/v1/admin/filing-analytics':   withSig('http://localhost:8182'),
+            '/api/v1/admin/compliance':         withSig('http://localhost:8182'),
+            '/api/v1/admin/ocr-quality':        withSig('http://localhost:8182'),
+            '/api/v1/admin/anomalies':          withSig('http://localhost:8182'),
+            '/api/v1/admin/anomaly-config':     withSig('http://localhost:8182'),
+            '/api/v1/admin/models':             withSig('http://localhost:8182'),
+            '/api/v1/admin/training-examples':  withSig('http://localhost:8182'),
+            '/api/v1/admin/active-learning':    withSig('http://localhost:8182'),
+            '/api/v1/admin/ner-config':         withSig('http://localhost:8182'),
             '/api/v1/admin/settings':           withSig('http://localhost:8189'),
             '/api/v1/admin':                    withSig('http://localhost:8180'),
             '/api/v1/permissions':              withSig('http://localhost:8181'),
