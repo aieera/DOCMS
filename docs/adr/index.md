@@ -27,6 +27,7 @@ subsequent decisions that overturn an ADR supersede it via a new ADR.
 | [0055](0055-document-qa-chat.md) | Document Q&A chat panel: SSE streaming + sync fallback, conversations persisted in qa_conversations + qa_messages, citations carry page/start/end_char for PDF viewer highlight, multi-turn context capped at last 6 messages | Accepted | 2026-05-03 |
 | [0056](0056-translation-pipeline.md) | Translation pipeline: auto langdetect post-OCR, on-demand LLM translation via chunked calls, per-tenant cost guard via max_chars_per_doc, translations are separate artifacts keyed on (version, target_language) | Accepted | 2026-05-03 |
 | [0057](0057-ocr-quality-scoring.md) | OCR quality scoring: 5 sub-scores composite + 4-tier grade per-page + per-doc summary, language-agnostic heuristic (no dictionary), single-shot auto-retry with engine swap, opt-in poor-grade notification | Accepted | 2026-05-03 |
+| [0058](0058-anomaly-detection.md) | Anomaly detection: workspace-level outlier scan across metadata (z-score), content (Qdrant centroid distance), and behavioral signals; manual REST trigger only in v1 (no Beat); never auto-acts | Accepted | 2026-05-03 |
 
 *Note: 0021 was promoted from its final.md-placeholder slot to document
 an actual Wave 5 decision. Wave 6.5 shipped without an ADR (no design
