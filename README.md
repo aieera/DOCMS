@@ -106,6 +106,7 @@ See `make help` for the full list.
 | **Document Q&A** (ADR 0055) | on-demand REST | `POST /api/v1/intelligence/qa{,/sync}`, `app.tasks.rag.stream_ask` | `qa_conversations`, `qa_messages` | — (SSE response stream) |
 | **Language detect** (ADR 0056) | `dms.version.ocr_completed.v1` | `app.tasks.lang_detect` | `document_languages` | `dms.language.detected.v1` |
 | **Translation** (ADR 0056) | on-demand REST | `POST /api/v1/intelligence/translate`, `app.tasks.translate` | `document_translations` | `dms.translation.completed.v1` |
+| **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr_quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
 | Summarize | on demand (REST) | `app.tasks.summarize` | — | `dms.summarize.completed.v1` |
 | Redact | `dms.document.redacted.v1` | `app.tasks.redact` | `document_redactions` | — |
 
@@ -135,6 +136,11 @@ Every task: `acks_late=True`, ≤3 retries with exponential backoff + jitter, de
 | GET | `/api/v1/admin/compliance/findings` | Paginated open-findings queue | admin/owner/compliance_officer |
 | GET/PUT | `/api/v1/admin/compliance/config` | Per-tenant config (PHI opt-in, thresholds, custom patterns) | admin/owner (write) |
 | POST | `/api/v1/admin/compliance/rescan/{id}` | Re-trigger compliance scan | admin/owner/compliance_officer |
+| GET | `/api/v1/documents/{id}/ocr-quality` | Per-page scores + summary | view |
+| POST | `/api/v1/documents/{id}/ocr-quality/{vid}/{page}/review` | Mark a flagged page reviewed | edit |
+| GET | `/api/v1/admin/ocr-quality/review-queue` | Documents flagged for review (paginated) | admin/owner/compliance_officer |
+| GET | `/api/v1/admin/ocr-quality/stats` | Tenant rollup by grade | admin/owner/compliance_officer |
+| GET/PUT | `/api/v1/admin/ocr-quality/config` | Per-tenant thresholds | admin/owner (write) |
 
 ## Status
 
@@ -151,6 +157,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 03 — Compliance heuristics (PII/PHI)** (ADR 0054)
 - [x] **Intel Feature 04 — Document Q&A chat** (ADR 0055)
 - [x] **Intel Feature 05 — Translation pipeline** (ADR 0056)
+- [x] **Intel Feature 06 — OCR quality scoring** (ADR 0057)
 
 ## License
 
