@@ -371,6 +371,22 @@ func main() {
 	rootMux.Handle("PATCH /api/v1/annotations/{id}", middleware.CorrelationHTTP(annotationsMux))
 	rootMux.Handle("DELETE /api/v1/annotations/{id}", middleware.CorrelationHTTP(annotationsMux))
 
+	// ADR 0052 — auto-tagging review surface. Pinned method+path so
+	// only the auto-tag sub-paths land here; other /api/v1/documents/*
+	// continues to the gRPC-gateway.
+	autoTagMux := http.NewServeMux()
+	handler.NewAutoTagHandler(svc, *log.Z()).Register(autoTagMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/tag-suggestions",
+		middleware.CorrelationHTTP(autoTagMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/tag-suggestions/review",
+		middleware.CorrelationHTTP(autoTagMux))
+	rootMux.Handle("GET /api/v1/admin/tag-suggestions",
+		middleware.CorrelationHTTP(autoTagMux))
+	rootMux.Handle("GET /api/v1/admin/auto-tag-config",
+		middleware.CorrelationHTTP(autoTagMux))
+	rootMux.Handle("PUT /api/v1/admin/auto-tag-config",
+		middleware.CorrelationHTTP(autoTagMux))
+
 	// All other routes (including gRPC-Gateway) go through default chain
 	// TenantHTTP sets auth.SetTenantID on the request context from
 	// X-Tenant-ID. TenantInterceptor now falls back to that when

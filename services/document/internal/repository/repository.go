@@ -104,8 +104,9 @@ type Repositories struct {
 	Tags          TagRepository
 	LegalHolds    LegalHoldRepository
 	MetadataSchema MetadataSchemaRepository
-	Outbox        OutboxRepository
-	Annotations   AnnotationRepository
+	Outbox          OutboxRepository
+	Annotations     AnnotationRepository
+	TagSuggestions  TagSuggestionRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -120,7 +121,8 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Tags:           &tagRepo{},
 		LegalHolds:     &legalHoldRepo{},
 		MetadataSchema: &metadataSchemaRepo{},
-		Outbox:         &outboxRepo{},
-		Annotations:    NewAnnotationRepo(),
+		Outbox:          &outboxRepo{},
+		Annotations:     NewAnnotationRepo(),
+		TagSuggestions:  NewTagSuggestionRepo(),
 	}
 }
