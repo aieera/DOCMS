@@ -92,6 +92,84 @@ def completion(
     }
 
 
+def stream_completion(
+    tenant_id: str,
+    messages: list[dict[str, str]],
+    model: str | None = None,
+    temperature: float = 0.1,
+    max_tokens: int = 2000,
+):
+    """Yield (text_chunk, is_final, metadata) tuples as the LLM streams.
+
+    metadata is None for chunk events; on the final yield it carries
+    {"model", "input_tokens", "output_tokens", "cost_usd", "elapsed_ms"}.
+
+    Token counts are approximate during the stream (litellm doesn't always
+    fill usage on intermediate chunks); the final yield is the source of
+    truth and drives the meter exactly once.
+    """
+    config = _load_tenant_config(tenant_id)
+    llm_model = model or (config or {}).get("model") or settings.default_llm_model
+    api_key = (config or {}).get("api_key")
+    api_base = (config or {}).get("base_url")
+
+    start = time.monotonic()
+    full_text_parts: list[str] = []
+    last_chunk_obj = None
+    try:
+        stream = litellm.completion(
+            model=llm_model, messages=messages,
+            temperature=temperature, max_tokens=max_tokens,
+            api_key=api_key, api_base=api_base,
+            timeout=settings.llm_timeout_seconds,
+            stream=True,
+        )
+        for chunk in stream:
+            last_chunk_obj = chunk
+            try:
+                delta = chunk.choices[0].delta
+                text = getattr(delta, "content", "") or ""
+            except Exception:
+                text = ""
+            if text:
+                full_text_parts.append(text)
+                yield text, False, None
+    except litellm.RateLimitError:
+        log.warning("rate limited mid-stream on %s for tenant %s", llm_model, tenant_id)
+        raise
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    full_text = "".join(full_text_parts)
+    # Best-effort token + cost from the final chunk; litellm doesn't
+    # always populate usage on streamed responses, so we approximate
+    # output_tokens from the text length when missing.
+    input_tokens = 0
+    output_tokens = 0
+    cost = 0.0
+    try:
+        if last_chunk_obj and hasattr(last_chunk_obj, "usage") and last_chunk_obj.usage:
+            input_tokens = getattr(last_chunk_obj.usage, "prompt_tokens", 0) or 0
+            output_tokens = getattr(last_chunk_obj.usage, "completion_tokens", 0) or 0
+        if not output_tokens and full_text:
+            # ~4 chars per token rule of thumb.
+            output_tokens = max(1, len(full_text) // 4)
+        cost = litellm.completion_cost(
+            completion_response=last_chunk_obj
+        ) if last_chunk_obj else 0.0
+    except Exception:
+        pass
+
+    _meter_usage(tenant_id, llm_model, input_tokens, output_tokens, cost, elapsed_ms)
+    yield "", True, {
+        "model": llm_model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd": cost,
+        "elapsed_ms": elapsed_ms,
+        "full_text": full_text,
+    }
+
+
 def _meter_usage(tenant_id: str, model: str, input_t: int, output_t: int, cost: float, elapsed_ms: int):
     try:
         r = _get_redis()

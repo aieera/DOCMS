@@ -28,7 +28,7 @@ def _qdrant():
 
 
 def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[str],
-                   scope_filter: dict | None = None, limit: int = 50) -> list[dict]:
+                   scope_filter: dict | None = None, limit: int = 50) -> list[dict]:  # noqa: D401
     must = [
         FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
         FieldCondition(key="readable_by", match=MatchAny(any=user_groups + ["everyone"])),
@@ -48,10 +48,16 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
         {
             "id": str(r.id),
             "score": r.score,
-            "text": r.payload.get("text", ""),
+            # Embed task writes the snippet as `text_snippet`; older payloads
+            # used `text`. Read both so this works against both eras.
+            "text": (r.payload.get("text_snippet")
+                     or r.payload.get("text") or ""),
             "document_id": r.payload.get("document_id", ""),
             "version_id": r.payload.get("version_id", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
+            "page": r.payload.get("page_number"),
+            "start_char": r.payload.get("start_char"),
+            "end_char": r.payload.get("end_char"),
         }
         for r in results
     ]
@@ -81,6 +87,120 @@ def _build_context(chunks: list[dict], max_tokens: int = 4000) -> str:
         parts.append(f'[Document: {c["document_id"]}, Chunk: {c["chunk_index"]}]\n{c["text"]}')
         total += tokens
     return "\n\n---\n\n".join(parts)
+
+
+def _retrieve(
+    *,
+    tenant_id: str,
+    user_groups: list[str],
+    question: str,
+    scope: str,
+    scope_id: str | None,
+    top_k: int = 5,
+) -> list[dict]:
+    """Shared retrieval pipeline used by both ask() and stream_ask().
+    Returns the top-k chunks with full payload metadata for citation
+    rendering."""
+    q_embedding = embed_single(question)
+    scope_filter = None
+    if scope == "document" and scope_id:
+        scope_filter = {"document_id": scope_id}
+    elif scope == "workspace" and scope_id:
+        scope_filter = {"workspace_id": scope_id}
+    vector_results = _vector_search(q_embedding, tenant_id, user_groups, scope_filter)
+    fused = _rrf_fuse([vector_results])
+    top_20_texts = [c["text"] for c in fused[:20]]
+    if top_20_texts:
+        scores = rerank(question, top_20_texts)
+        ranked_pairs = sorted(zip(scores, fused[:20]), reverse=True)
+        return [c for _, c in ranked_pairs[:top_k]]
+    return fused[:top_k]
+
+
+def _build_messages(*, system: str, history: list[dict] | None,
+                    context: str, question: str) -> list[dict]:
+    msgs = [{"role": "system", "content": system}]
+    if history:
+        msgs.extend(history[-6:])
+    msgs.append({"role": "user", "content": f"Documents:\n{context}\n\nQuestion: {question}"})
+    return msgs
+
+
+def stream_ask(
+    *,
+    tenant_id: str,
+    user_id: str,
+    user_groups: list[str],
+    question: str,
+    document_id: str,
+    conversation_history: list[dict] | None = None,
+    model: str | None = None,
+):
+    """Generator yielding events for the SSE /qa endpoint.
+
+    Yields tuples of (event_type, payload_dict). Event types:
+      'citations'  — emitted once before LLM streaming begins
+      'chunk'      — text token from the LLM
+      'done'       — final event with model + token totals + full_text
+    Caller is responsible for SSE-formatting and persistence.
+    """
+    from app import llm_gateway
+
+    top_chunks = _retrieve(
+        tenant_id=tenant_id, user_groups=user_groups,
+        question=question, scope="document", scope_id=document_id,
+    )
+    citations = [
+        {
+            "chunk_index": c.get("chunk_index", 0),
+            "text": c.get("text", "")[:400],
+            "page": c.get("page"),
+            "start_char": c.get("start_char"),
+            "end_char": c.get("end_char"),
+            "similarity_score": float(c.get("score", 0.0)),
+            "document_id": c.get("document_id", ""),
+            "version_id": c.get("version_id", ""),
+        }
+        for c in top_chunks
+    ]
+    yield "citations", {"citations": citations}
+
+    if not top_chunks:
+        msg = "I couldn't find relevant content in this document to answer your question."
+        yield "chunk", {"text": msg}
+        yield "done", {
+            "full_text": msg, "citations": citations,
+            "model": "", "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+        }
+        return
+
+    context = _build_context(top_chunks)
+    messages = _build_messages(
+        system=SYSTEM_PROMPT, history=conversation_history,
+        context=context, question=question,
+    )
+
+    full_text_parts: list[str] = []
+    final_meta: dict | None = None
+    for text, is_final, meta in llm_gateway.stream_completion(
+        tenant_id=tenant_id, messages=messages, model=model,
+    ):
+        if is_final:
+            final_meta = meta or {}
+            break
+        if text:
+            full_text_parts.append(text)
+            yield "chunk", {"text": text}
+    full_text = (final_meta or {}).get("full_text") or "".join(full_text_parts)
+    yield "done", {
+        "full_text": full_text,
+        "citations": citations,
+        "model": (final_meta or {}).get("model", ""),
+        "input_tokens": (final_meta or {}).get("input_tokens", 0),
+        "output_tokens": (final_meta or {}).get("output_tokens", 0),
+        "cost_usd": (final_meta or {}).get("cost_usd", 0.0),
+        "elapsed_ms": (final_meta or {}).get("elapsed_ms", 0),
+    }
 
 
 def ask(
