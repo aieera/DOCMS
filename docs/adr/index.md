@@ -28,6 +28,7 @@ subsequent decisions that overturn an ADR supersede it via a new ADR.
 | [0056](0056-translation-pipeline.md) | Translation pipeline: auto langdetect post-OCR, on-demand LLM translation via chunked calls, per-tenant cost guard via max_chars_per_doc, translations are separate artifacts keyed on (version, target_language) | Accepted | 2026-05-03 |
 | [0057](0057-ocr-quality-scoring.md) | OCR quality scoring: 5 sub-scores composite + 4-tier grade per-page + per-doc summary, language-agnostic heuristic (no dictionary), single-shot auto-retry with engine swap, opt-in poor-grade notification | Accepted | 2026-05-03 |
 | [0058](0058-anomaly-detection.md) | Anomaly detection: workspace-level outlier scan across metadata (z-score), content (Qdrant centroid distance), and behavioral signals; manual REST trigger only in v1 (no Beat); never auto-acts | Accepted | 2026-05-03 |
+| [0059](0059-classification-corrections.md) | Append-only classification_corrections ledger; emits dms.classify.corrected.v1 via outbox; powers active-learning training collector (ADR 0060) and bulk-reclassify audit | Accepted | 2026-05-03 |
 
 *Note: 0021 was promoted from its final.md-placeholder slot to document
 an actual Wave 5 decision. Wave 6.5 shipped without an ADR (no design
