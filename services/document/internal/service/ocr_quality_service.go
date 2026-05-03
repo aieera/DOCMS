@@ -21,7 +21,7 @@ func (s *DocumentService) GetOCRQualityForDocument(ctx context.Context, document
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.requirePermission(ctx, userID, "view", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "view"); err != nil {
 		return nil, nil, err
 	}
 	var (
@@ -54,7 +54,7 @@ func (s *DocumentService) ReviewOCRQualityPage(ctx context.Context, documentID, 
 	if page <= 0 {
 		return nil, vdmserr.Validation("page", "must be > 0")
 	}
-	if err := s.requirePermission(ctx, userID, "edit", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "edit"); err != nil {
 		return nil, err
 	}
 	var out *repository.OCRQualityScore

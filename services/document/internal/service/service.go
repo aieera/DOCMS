@@ -315,6 +315,42 @@ func (s *DocumentService) requirePermission(ctx context.Context, userID uuid.UUI
 	return nil
 }
 
+// requireDocPermission loads the document, then runs requirePermission
+// with the workspace + lifecycle + region context that OPA's document
+// rules need. Without this context the policy can't evaluate workspace-
+// membership and denies — the bug intelligence-feature endpoints hit
+// when they call requirePermission with a nil extra map.
+func (s *DocumentService) requireDocPermission(
+	ctx context.Context,
+	tenantID, userID, docID uuid.UUID,
+	action string,
+) (*model.Document, error) {
+	var doc *model.Document
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		d, err := s.repos.Documents.GetByID(ctx, tx, tenantID, docID)
+		if err != nil {
+			return err
+		}
+		if d.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		doc = d
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.requirePermission(ctx, userID, action, "document", docID, map[string]any{
+		"workspace_id":     doc.WorkspaceID.String(),
+		"lifecycle_state":  string(doc.LifecycleState),
+		"region_pin":       doc.RegionPin,
+		"classification":   doc.DocumentClass,
+		"under_legal_hold": doc.LifecycleState == model.StateLegalHold,
+	}); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
 // summarizeDocumentPermissions issues a single BatchCheckPermission for the
 // 5 canonical actions on a document. One network round-trip per GetDocument.
 //

@@ -23,7 +23,7 @@ func (s *DocumentService) GetComplianceForDocument(ctx context.Context, document
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.requirePermission(ctx, userID, "view", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "view"); err != nil {
 		return nil, nil, err
 	}
 	var (
@@ -58,7 +58,7 @@ func (s *DocumentService) ReviewComplianceFinding(ctx context.Context, documentI
 	default:
 		return nil, vdmserr.Validation("status", "must be acknowledged|remediated|false_positive|open")
 	}
-	if err := s.requirePermission(ctx, userID, "edit", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "edit"); err != nil {
 		return nil, err
 	}
 	var out *repository.ComplianceFinding

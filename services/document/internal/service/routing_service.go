@@ -19,7 +19,7 @@ func (s *DocumentService) ListRouteSuggestions(ctx context.Context, documentID u
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requirePermission(ctx, userID, "view", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "view"); err != nil {
 		return nil, err
 	}
 	var out []repository.RouteSuggestion
@@ -139,8 +139,8 @@ func (s *DocumentService) DismissRouteSuggestion(ctx context.Context, documentID
 		if sug.DocumentID != documentID {
 			return vdmserr.Validation("suggestion_id", "belongs to a different document")
 		}
-		if err := s.requirePermission(ctx, userID, "view", "document", documentID, nil); err != nil {
-			return err
+		if _, perr := s.requireDocPermission(ctx, tenantID, userID, documentID, "view"); perr != nil {
+			return perr
 		}
 		if _, mErr := s.repos.Routing.MarkSuggestionStatus(ctx, tx, tenantID, suggestionID, userID, "dismissed"); mErr != nil {
 			return mErr

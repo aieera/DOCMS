@@ -20,7 +20,7 @@ func (s *DocumentService) ListTagSuggestions(ctx context.Context, documentID uui
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := s.requirePermission(ctx, userID, "view", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "view"); err != nil {
 		return nil, nil, err
 	}
 	var (
@@ -62,7 +62,7 @@ func (s *DocumentService) BatchReviewTagSuggestions(ctx context.Context, documen
 			return nil, vdmserr.Validation("action", "must be accept or reject")
 		}
 	}
-	if err := s.requirePermission(ctx, userID, "edit", "document", documentID, nil); err != nil {
+	if _, err := s.requireDocPermission(ctx, tenantID, userID, documentID, "edit"); err != nil {
 		return nil, err
 	}
 
@@ -206,7 +206,7 @@ func validateAutoTagPatch(p repository.AutoTagConfigPatch) error {
 }
 
 func isNotFound(err error) bool {
-	return err == vdmserr.ErrNotFound
+	return vdmserr.KindOf(err) == vdmserr.KindNotFound
 }
 
 type autotagReviewedPayload struct {
