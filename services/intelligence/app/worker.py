@@ -18,6 +18,7 @@ celery_app = Celery(
         "app.tasks.compliance_scan",
         "app.tasks.lang_detect",
         "app.tasks.translate",
+        "app.tasks.ocr_quality",
         "app.tasks.rag",
         "app.tasks.summarize",
         "app.tasks.redact",
