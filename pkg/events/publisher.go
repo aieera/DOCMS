@@ -80,7 +80,11 @@ var DefaultStreams = []StreamSpec{
 	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
 	// Compliance + lifecycle events emitted by services/document/internal/compliance
 	// (legal holds) and services/workflow/internal/activities/residency.
-	{Name: "COMPLIANCE_EVENTS", Subjects: []string{"dms.hold.>", "dms.residency.>"}},
+	// dms.compliance.> covers the PII/PHI scan emit + admin rescan trigger
+	// (ADR 0054); without binding, those events were silently dropped by
+	// the broker — discovered when the "Run scan" admin button enqueued
+	// dms.compliance.rescan_requested.v1 with no stream to land on.
+	{Name: "COMPLIANCE_EVENTS", Subjects: []string{"dms.hold.>", "dms.residency.>", "dms.compliance.>"}},
 	// Signature lifecycle events emitted by services/signature and the
 	// workflow signature_stub activity (completed, declined).
 	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},

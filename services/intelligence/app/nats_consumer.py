@@ -126,6 +126,17 @@ class IntelligenceConsumer:
             cb=self._on_compliance_scan_trigger,
             manual_ack=True,
         )
+        # ADR 0054 — explicit "Rescan PII" admin trigger from the document
+        # service. Same callback shape as the NER fan-out: payload carries
+        # tenant_id / document_id / version_id, _on_compliance_scan_trigger
+        # already handles those fields. Separate durable so a backlog of
+        # admin rescans can't starve the natural NER-triggered queue.
+        await js.subscribe(
+            "dms.compliance.rescan_requested.v1",
+            durable="intel-compliance-rescan",
+            cb=self._on_compliance_scan_trigger,
+            manual_ack=True,
+        )
         # ADR 0056 — language detection fans in from OCR. Cheap (~10ms)
         # so the dedicated durable mostly serves to keep the consumer
         # isolated from upstream backpressure.
