@@ -24,6 +24,7 @@ from app.tasks.translate import translate as translate_task
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/intelligence", tags=["intelligence"])
+admin_router = APIRouter(prefix="/api/v1/admin", tags=["intelligence-admin"])
 
 # §7.1 / D6 part 2 — internal embed-query endpoint.
 # Not publicly routable through the gateway (path `/internal/` is not
@@ -628,3 +629,71 @@ def redact_apply_endpoint(
         "entities": body.entities,
     })
     return {"task_id": result.id, "status": "queued"}
+
+
+# ---- LLM usage admin --------------------------------------------------
+
+@admin_router.get("/llm-usage")
+async def llm_usage(
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Per-tenant LLM usage tally aggregated by model. Reads the
+    `llm_usage:{tenant_id}:{model}` Redis hashes that llm_gateway
+    increments on every completion. 30-day TTL — the entries refresh
+    on each call so an active tenant always shows a rolling window."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    from app.llm_gateway import _get_redis
+    r = _get_redis()
+    pattern = f"llm_usage:{tenant}:*"
+    out = []
+    grand_calls = 0
+    grand_input = 0
+    grand_output = 0
+    grand_cost = 0.0
+    for key in r.scan_iter(match=pattern, count=100):
+        key_str = key.decode() if isinstance(key, (bytes, bytearray)) else str(key)
+        model = key_str.split(":", 2)[2] if key_str.count(":") >= 2 else "unknown"
+        h = r.hgetall(key)
+        # h may be dict[bytes, bytes] or dict[str, str] depending on the
+        # Redis client decode_responses setting; coerce both.
+        def _i(k):
+            v = h.get(k.encode()) if isinstance(next(iter(h), b""), (bytes, bytearray)) else h.get(k)
+            try:
+                return int(v) if v is not None else 0
+            except (TypeError, ValueError):
+                return 0
+        def _f(k):
+            v = h.get(k.encode()) if isinstance(next(iter(h), b""), (bytes, bytearray)) else h.get(k)
+            try:
+                return float(v) if v is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+        calls = _i("calls")
+        input_t = _i("input_tokens")
+        output_t = _i("output_tokens")
+        cost = _f("cost_usd")
+        out.append({
+            "model": model,
+            "calls": calls,
+            "input_tokens": input_t,
+            "output_tokens": output_t,
+            "cost_usd": round(cost, 6),
+        })
+        grand_calls += calls
+        grand_input += input_t
+        grand_output += output_t
+        grand_cost += cost
+    out.sort(key=lambda x: -x["cost_usd"])
+    return {
+        "tenant_id": tenant,
+        "by_model": out,
+        "totals": {
+            "calls": grand_calls,
+            "input_tokens": grand_input,
+            "output_tokens": grand_output,
+            "cost_usd": round(grand_cost, 6),
+        },
+    }

@@ -26,6 +26,15 @@ interface UIMessage {
   content: string
   citations?: Citation[]
   pending?: boolean
+  // Filled from the SSE 'done' event so the bubble can show
+  // tokens/cost/latency under the answer.
+  usage?: {
+    model: string
+    input_tokens: number
+    output_tokens: number
+    cost_usd: number
+    elapsed_ms: number
+  }
 }
 
 export function DocQAChat({ documentId, onJumpToCitation }: Props) {
@@ -97,6 +106,13 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
               content: evt.full_text || a.content,
               citations: evt.citations,
               pending: false,
+              usage: {
+                model: evt.model,
+                input_tokens: evt.input_tokens ?? 0,
+                output_tokens: evt.output_tokens ?? 0,
+                cost_usd: evt.cost_usd ?? 0,
+                elapsed_ms: evt.elapsed_ms ?? 0,
+              },
             })))
           } else if (evt.type === 'error') {
             setMessages((m) => updateLastAssistant(m, (a) => ({
@@ -267,7 +283,33 @@ function Bubble({
             onJumpTo={onJumpToCitation}
           />
         )}
+        {!isUser && message.usage && !message.pending && (
+          <UsageChip usage={message.usage} />
+        )}
       </div>
+    </div>
+  )
+}
+
+function UsageChip({ usage }: { usage: NonNullable<UIMessage['usage']> }) {
+  const cost =
+    usage.cost_usd >= 0.01
+      ? `$${usage.cost_usd.toFixed(3)}`
+      : usage.cost_usd > 0
+        ? `$${usage.cost_usd.toFixed(5)}`
+        : '—'
+  const seconds = (usage.elapsed_ms / 1000).toFixed(1)
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-zinc-300/50 pt-1.5 text-[10px] text-zinc-500 dark:border-zinc-700/50 dark:text-zinc-400">
+      <span className="font-mono">{usage.model}</span>
+      <span>·</span>
+      <span title={`${usage.input_tokens.toLocaleString()} input + ${usage.output_tokens.toLocaleString()} output`}>
+        {usage.input_tokens.toLocaleString()} → {usage.output_tokens.toLocaleString()} tok
+      </span>
+      <span>·</span>
+      <span>{cost}</span>
+      <span>·</span>
+      <span>{seconds}s</span>
     </div>
   )
 }

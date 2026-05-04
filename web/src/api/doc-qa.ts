@@ -33,7 +33,7 @@ export type QAStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'citations'; citations: Citation[] }
   | { type: 'chunk'; text: string }
-  | { type: 'done'; full_text: string; citations: Citation[]; model: string; output_tokens: number }
+  | { type: 'done'; full_text: string; citations: Citation[]; model: string; input_tokens: number; output_tokens: number; cost_usd: number; elapsed_ms: number }
   | { type: 'error'; message: string }
 
 interface AskParams {

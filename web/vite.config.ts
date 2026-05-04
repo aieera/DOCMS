@@ -61,6 +61,7 @@ export default defineConfig({
             '/api/v1/admin/training-examples':  withSig('http://localhost:8182'),
             '/api/v1/admin/active-learning':    withSig('http://localhost:8182'),
             '/api/v1/admin/ner-config':         withSig('http://localhost:8182'),
+            '/api/v1/admin/llm-usage':          withSig('http://localhost:8194'),
             // Intelligence service hosts the on-demand REST surfaces
             // for Doc Q&A, Translation, and Language detection. The
             // catch-all '/api' below routes to auth (:8180), so this

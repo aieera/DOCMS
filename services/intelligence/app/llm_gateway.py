@@ -140,24 +140,52 @@ def stream_completion(
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
     full_text = "".join(full_text_parts)
-    # Best-effort token + cost from the final chunk; litellm doesn't
-    # always populate usage on streamed responses, so we approximate
-    # output_tokens from the text length when missing.
+    # Streaming responses from Anthropic don't carry prompt_tokens or
+    # completion_tokens on intermediate chunks; the final chunk's
+    # `usage` field is set with stream_options={"include_usage": True}
+    # in newer providers but isn't guaranteed. Fall through three
+    # tiers so we always end up with non-zero counts:
+    #   1. last_chunk.usage  — the truth when the provider sends it
+    #   2. litellm.token_counter on prompt + the streamed text — exact
+    #      token count using the model's tokenizer
+    #   3. character / 4 heuristic — final fallback when the tokenizer
+    #      isn't available for that model id
     input_tokens = 0
     output_tokens = 0
     cost = 0.0
-    try:
-        if last_chunk_obj and hasattr(last_chunk_obj, "usage") and last_chunk_obj.usage:
+    if last_chunk_obj and hasattr(last_chunk_obj, "usage") and last_chunk_obj.usage:
+        try:
             input_tokens = getattr(last_chunk_obj.usage, "prompt_tokens", 0) or 0
             output_tokens = getattr(last_chunk_obj.usage, "completion_tokens", 0) or 0
-        if not output_tokens and full_text:
-            # ~4 chars per token rule of thumb.
+        except Exception:
+            pass
+    if not input_tokens:
+        try:
+            input_tokens = litellm.token_counter(model=llm_model, messages=messages)
+        except Exception:
+            input_tokens = max(1, sum(len(m.get("content", "")) for m in messages) // 4)
+    if not output_tokens and full_text:
+        try:
+            output_tokens = litellm.token_counter(
+                model=llm_model,
+                messages=[{"role": "assistant", "content": full_text}],
+            )
+        except Exception:
             output_tokens = max(1, len(full_text) // 4)
-        cost = litellm.completion_cost(
-            completion_response=last_chunk_obj
-        ) if last_chunk_obj else 0.0
+    try:
+        cost = litellm.cost_per_token(
+            model=llm_model,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+        )
+        # cost_per_token returns (prompt_cost, completion_cost) in newer
+        # litellm; older returned a single float. Sum either way.
+        if isinstance(cost, tuple):
+            cost = float(sum(cost))
+        else:
+            cost = float(cost or 0)
     except Exception:
-        pass
+        cost = 0.0
 
     _meter_usage(tenant_id, llm_model, input_tokens, output_tokens, cost, elapsed_ms)
     yield "", True, {

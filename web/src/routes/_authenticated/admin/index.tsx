@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import {
-  AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
+  Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
   Key, KeyRound, Languages, Link2, MapPinned, Plug, Scale, ScrollText, Settings,
   Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
   UserCog, Users, Webhook, Workflow,
@@ -50,6 +50,7 @@ const intelligenceSections: Section[] = [
   { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans (ADR 0058)' },
   { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers (ADR 0060)' },
   { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key (ADR 0061)' },
+  { to: '/admin/intelligence/usage', icon: Activity, label: 'LLM usage', desc: 'Per-tenant token + cost tally across all models' },
 ]
 
 function AdminPage() {
