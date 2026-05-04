@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     classifier_model: str = "distilbert-base-uncased"
 
-    default_llm_model: str = "gpt-4o-mini"
+    # Default model used by RAG (Doc Q&A) and other litellm-routed paths
+    # when no per-tenant override exists in Redis (llm_config:{tenant_id}).
+    # Pydantic-settings reads VAULTDMS_DEFAULT_LLM_MODEL from env, so an
+    # operator can override per-deployment without touching code.
+    default_llm_model: str = "claude-haiku-4-5"
     llm_timeout_seconds: int = 30
     llm_max_concurrent_per_tenant: int = 10
 
