@@ -41,7 +41,14 @@ class Settings(BaseSettings):
     # when no per-tenant override exists in Redis (llm_config:{tenant_id}).
     # Pydantic-settings reads VAULTDMS_DEFAULT_LLM_MODEL from env, so an
     # operator can override per-deployment without touching code.
-    default_llm_model: str = "claude-haiku-4-5"
+    #
+    # The "anthropic/" prefix forces litellm to use the Messages API
+    # (/v1/messages) instead of the deprecated text-completion endpoint —
+    # litellm 1.16.0 (pinned in requirements.txt) routes bare "claude-*"
+    # IDs to /v1/complete, which Anthropic deprecated in 2024 and now
+    # rejects with "endpoint deprecated". Explicit provider prefix
+    # bypasses the legacy router.
+    default_llm_model: str = "anthropic/claude-haiku-4-5"
     llm_timeout_seconds: int = 30
     llm_max_concurrent_per_tenant: int = 10
 
