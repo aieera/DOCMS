@@ -1,4 +1,5 @@
 import { api } from './client'
+import { useAuthStore } from '@/store/authStore'
 
 export interface Citation {
   chunk_index: number
@@ -52,15 +53,21 @@ interface AskParams {
 export async function streamQA(params: AskParams): Promise<void> {
   const { documentId, question, conversationId, model, signal, onEvent } = params
   const baseURL = api.defaults.baseURL ?? '/api/v1'
+  const { tenantId, user } = useAuthStore.getState()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
   }
-  // Mirror the axios client's auth header injection for fetch().
-  // Axios interceptor sets X-Auth-Tenant-ID + X-Auth-User-ID, plus CSRF.
-  // For SSE we don't have access to that interceptor, so we forward the
-  // session cookie (same-origin fetch + credentials:include) and let the
-  // backend's session middleware re-derive identity.
+  // The axios interceptor injects identity headers on every request,
+  // but fetch() bypasses interceptors — so we mirror the same shape
+  // here. The intelligence service reads X-Tenant-ID + X-User-ID
+  // directly (no session-cookie path), and 400s without them.
+  if (tenantId) {
+    headers['X-Auth-Tenant-ID'] = tenantId
+    headers['X-Tenant-ID'] = tenantId
+  }
+  if (user?.id)   headers['X-User-ID']   = user.id
+  if (user?.role) headers['X-User-Role'] = user.role
   const resp = await fetch(`${baseURL}/intelligence/qa`, {
     method: 'POST',
     credentials: 'include',
