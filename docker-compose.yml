@@ -407,11 +407,19 @@ services:
     # Celery worker: no HTTP surface. `inspect ping` round-trips the
     # broker so a healthy status means (worker process up) AND (worker
     # can still talk to Redis) — stronger than a port probe.
+    #
+    # Generous retry budget on purpose: with --pool=solo the worker
+    # can't answer inspect ping while a long task (OCR is ~30-180s on
+    # CPU) is running. Without the budget Docker marks unhealthy mid-
+    # OCR and restart kills the task before it can ack, so the
+    # document never gets indexed and Q&A has nothing to retrieve.
+    # 15s × 30 retries = 7.5 min grace covers the worst-case Surya
+    # multi-page run while still catching a truly dead worker.
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 5 | grep -q pong"]
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 10 | grep -q pong"]
       interval: 15s
-      timeout: 10s
-      retries: 5
+      timeout: 12s
+      retries: 30
       start_period: 60s
     restart: unless-stopped
 
