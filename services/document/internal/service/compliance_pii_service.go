@@ -183,7 +183,7 @@ func (s *DocumentService) RescanCompliance(ctx context.Context, documentID uuid.
 		// Resolve current version_id so the worker doesn't have to re-derive.
 		var versionID uuid.UUID
 		if err := tx.QueryRow(ctx,
-			`SELECT id FROM versions WHERE tenant_id = $1 AND document_id = $2
+			`SELECT id FROM document_versions WHERE tenant_id = $1 AND document_id = $2
 			 ORDER BY version_number DESC LIMIT 1`,
 			tenantID, documentID,
 		).Scan(&versionID); err != nil {
