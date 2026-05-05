@@ -24,6 +24,8 @@ import { OcrQualityBadge } from '@/components/intelligence/OcrQualityBadge'
 import { OcrQualityPanel } from '@/components/intelligence/OcrQualityPanel'
 import { CorrectClassificationButton } from '@/components/intelligence/CorrectClassificationButton'
 import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
+import { HighlightedText } from '@/components/intelligence/HighlightedText'
+import { listEntities, type Entity } from '@/api/ner'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
@@ -179,6 +181,7 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  const [highlight, setHighlight] = useState(true)
   // Track previous status across renders so we only fire transition
   // toasts on the actual change, not on every poll re-render.
   const lastStatus = useRef<OCRStatus | null>(null)
@@ -192,6 +195,15 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
       const status = (query.state.data?.status ?? 'unknown') as OCRStatus
       return status === 'running' || status === 'pending' ? 5000 : false
     },
+  })
+
+  // ADR 0061 — entities are stored against the worker's joined
+  // ("\n\n".join) full text. We split that back to per-page slices
+  // client-side so HighlightedText can paint each <details> block.
+  const entitiesQuery = useQuery({
+    queryKey: ['entities', documentId, 'for-raw-text'],
+    queryFn: () => listEntities(documentId, { limit: 1000 }),
+    enabled: Boolean(versionId) && highlight,
   })
 
   // Surface every status transition as a toast so the user sees real
@@ -283,6 +295,14 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-3 w-3" />
           </Button>
+          <label className="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
+            <input
+              type="checkbox"
+              checked={highlight}
+              onChange={(e) => setHighlight(e.target.checked)}
+            />
+            Highlight entities
+          </label>
           {canRerun && (
             <Button
               variant="outline"
@@ -307,29 +327,74 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
         </div>
       ) : (
         <div className="space-y-2">
-          {pages.map((p) => (
-            <details
-              key={p.id}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] open:bg-[var(--color-bg)]"
-              open={pages.length <= 3}
-            >
-              <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
-                Page {p.page_number}
-                <span className="ml-2 text-xs font-normal text-[var(--color-text-secondary)]">
-                  · {(p.confidence * 100).toFixed(1)}% conf
-                  {p.processing_time_ms ? ` · ${p.processing_time_ms}ms` : ''}
-                  {p.language ? ` · ${p.language}` : ''}
-                </span>
-              </summary>
-              <pre className="whitespace-pre-wrap break-words border-t border-[var(--color-border)] p-3 text-xs">
-                {p.text_content || <span className="italic text-[var(--color-text-secondary)]">No text on this page</span>}
-              </pre>
-            </details>
-          ))}
+          {pages.map((p, idx) => {
+            const pageEntities = highlight
+              ? entitiesForPage(entitiesQuery.data?.entities ?? [], pages, idx)
+              : []
+            return (
+              <details
+                key={p.id}
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] open:bg-[var(--color-bg)]"
+                open={pages.length <= 3}
+              >
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                  Page {p.page_number}
+                  <span className="ml-2 text-xs font-normal text-[var(--color-text-secondary)]">
+                    · {(p.confidence * 100).toFixed(1)}% conf
+                    {p.processing_time_ms ? ` · ${p.processing_time_ms}ms` : ''}
+                    {p.language ? ` · ${p.language}` : ''}
+                    {highlight && pageEntities.length > 0 && (
+                      <span className="ml-2">· {pageEntities.length} entit{pageEntities.length === 1 ? 'y' : 'ies'}</span>
+                    )}
+                  </span>
+                </summary>
+                {!p.text_content ? (
+                  <div className="border-t border-[var(--color-border)] p-3 text-xs italic text-[var(--color-text-secondary)]">
+                    No text on this page
+                  </div>
+                ) : highlight ? (
+                  <div className="border-t border-[var(--color-border)] p-3 text-xs">
+                    <HighlightedText text={p.text_content} entities={pageEntities} />
+                  </div>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words border-t border-[var(--color-border)] p-3 text-xs">
+                    {p.text_content}
+                  </pre>
+                )}
+              </details>
+            )
+          })}
         </div>
       )}
     </div>
   )
+}
+
+// entitiesForPage filters & re-bases the doc-wide entity offsets
+// (which the worker computes against "\n\n".join(pages)) to a
+// specific page's local offsets so HighlightedText can render them.
+// Pages with no overlap return [] — callers can fall back to the
+// plain <pre> render.
+function entitiesForPage(
+  all: Entity[],
+  pages: { text_content: string }[],
+  pageIndex: number,
+): Entity[] {
+  // \n\n separator matches services/intelligence/app/tasks/ocr.py
+  // (`total_text = "\n\n".join(...)`).
+  let cursor = 0
+  for (let i = 0; i < pageIndex; i++) {
+    cursor += (pages[i].text_content?.length ?? 0) + 2
+  }
+  const pageStart = cursor
+  const pageEnd = pageStart + (pages[pageIndex].text_content?.length ?? 0)
+  return all
+    .filter((e) => e.start_offset >= pageStart && e.end_offset <= pageEnd)
+    .map((e) => ({
+      ...e,
+      start_offset: e.start_offset - pageStart,
+      end_offset: e.end_offset - pageStart,
+    }))
 }
 
 // LayoutTab renders the PDF page-by-page with Surya bounding boxes
