@@ -200,6 +200,97 @@ async def insert_query_log(
     return str(qid)
 
 
+async def upsert_workspace_ai_settings(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    rag_enabled: bool | None = None,
+    answer_model: str | None = None,
+    embedding_model: str | None = None,
+    rag_queries_per_day: int | None = None,
+) -> dict[str, Any]:
+    """Insert-or-update the workspace_ai_settings row. Only the
+    supplied fields are written; the rest fall back to the existing
+    row's values (or schema defaults on first write). Returns the
+    row state after the upsert so the UI can re-render without a
+    second GET."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            # Upsert in one statement so concurrent admins don't race.
+            row = await conn.fetchrow(
+                """
+                INSERT INTO workspace_ai_settings
+                    (tenant_id, workspace_id, rag_enabled, answer_model,
+                     embedding_model, rag_queries_per_day, updated_at)
+                VALUES ($1, $2,
+                        COALESCE($3, TRUE),
+                        COALESCE($4, 'anthropic/claude-haiku-4-5'),
+                        COALESCE($5, 'bge-large-en-v1.5'),
+                        COALESCE($6, 200),
+                        now())
+                ON CONFLICT (tenant_id, workspace_id) DO UPDATE
+                   SET rag_enabled         = COALESCE($3, workspace_ai_settings.rag_enabled),
+                       answer_model        = COALESCE($4, workspace_ai_settings.answer_model),
+                       embedding_model     = COALESCE($5, workspace_ai_settings.embedding_model),
+                       rag_queries_per_day = COALESCE($6, workspace_ai_settings.rag_queries_per_day),
+                       updated_at          = now()
+                RETURNING rag_enabled, answer_model, embedding_model,
+                          rag_queries_per_day, updated_at
+                """,
+                tenant_id, workspace_id,
+                rag_enabled, answer_model, embedding_model, rag_queries_per_day,
+            )
+    return {
+        "rag_enabled": bool(row["rag_enabled"]),
+        "answer_model": row["answer_model"],
+        "embedding_model": row["embedding_model"],
+        "rag_queries_per_day": int(row["rag_queries_per_day"]),
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+async def get_workspace_ai_settings_full(
+    *, tenant_id: str, workspace_id: str,
+) -> dict[str, Any]:
+    """Same shape as upsert_workspace_ai_settings returns. When no row
+    exists yet, returns the schema defaults so the UI can render a
+    consistent form before the admin's first save."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT rag_enabled, answer_model, embedding_model,
+                       rag_queries_per_day, updated_at
+                  FROM workspace_ai_settings
+                 WHERE tenant_id = $1 AND workspace_id = $2
+                """,
+                tenant_id, workspace_id,
+            )
+    if not row:
+        return {
+            "rag_enabled": True,
+            "answer_model": DEFAULT_ANSWER_MODEL,
+            "embedding_model": "bge-large-en-v1.5",
+            "rag_queries_per_day": DEFAULT_RAG_QUERIES_PER_DAY,
+            "updated_at": None,
+        }
+    return {
+        "rag_enabled": bool(row["rag_enabled"]),
+        "answer_model": row["answer_model"],
+        "embedding_model": row["embedding_model"],
+        "rag_queries_per_day": int(row["rag_queries_per_day"]),
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
 async def record_feedback(
     *,
     tenant_id: str,

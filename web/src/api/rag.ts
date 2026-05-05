@@ -36,6 +36,33 @@ export async function queryRAG(input: {
   return data
 }
 
+export interface WorkspaceAISettings {
+  rag_enabled: boolean
+  answer_model: string
+  embedding_model: string
+  rag_queries_per_day: number
+  updated_at: string | null
+}
+
+export async function getWorkspaceAISettings(workspaceId: string) {
+  const { data } = await api.get<WorkspaceAISettings>(
+    `/intelligence/workspaces/${workspaceId}/ai-settings`,
+  )
+  return data
+}
+
+export async function updateWorkspaceAISettings(
+  workspaceId: string,
+  patch: Partial<Pick<WorkspaceAISettings,
+    'rag_enabled' | 'answer_model' | 'embedding_model' | 'rag_queries_per_day'>>,
+) {
+  const { data } = await api.put<WorkspaceAISettings>(
+    `/intelligence/workspaces/${workspaceId}/ai-settings`,
+    patch,
+  )
+  return data
+}
+
 export async function sendRAGFeedback(
   queryId: string,
   feedback: RAGFeedback,

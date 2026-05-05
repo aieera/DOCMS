@@ -743,6 +743,54 @@ async def rag_feedback_endpoint(
     return {"status": "recorded"}
 
 
+class WorkspaceAISettingsBody(BaseModel):
+    rag_enabled: Optional[bool] = None
+    answer_model: Optional[str] = None
+    embedding_model: Optional[str] = None
+    rag_queries_per_day: Optional[int] = None
+
+
+@router.get("/workspaces/{workspace_id}/ai-settings")
+async def get_workspace_ai_settings_endpoint(
+    workspace_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+):
+    """Return the per-workspace AI/RAG settings. Falls back to schema
+    defaults when no row exists yet (workspace was created before the
+    settings panel shipped, or the admin hasn't saved anything)."""
+    tenant = _require_tenant(x_tenant_id)
+    from app import rag_persist
+    return await rag_persist.get_workspace_ai_settings_full(
+        tenant_id=tenant, workspace_id=workspace_id,
+    )
+
+
+@router.put("/workspaces/{workspace_id}/ai-settings")
+async def update_workspace_ai_settings_endpoint(
+    workspace_id: str,
+    body: WorkspaceAISettingsBody,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Admin-only — patch the per-workspace AI settings. Workspace
+    admins are scoped via the policy service in production; here we
+    require tenant role owner|admin since intelligence doesn't speak
+    OPA. Workspace-scoped ACL refinement is a follow-up."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    if body.rag_queries_per_day is not None and body.rag_queries_per_day < 0:
+        raise HTTPException(400, "rag_queries_per_day must be >= 0")
+    from app import rag_persist
+    return await rag_persist.upsert_workspace_ai_settings(
+        tenant_id=tenant, workspace_id=workspace_id,
+        rag_enabled=body.rag_enabled,
+        answer_model=body.answer_model,
+        embedding_model=body.embedding_model,
+        rag_queries_per_day=body.rag_queries_per_day,
+    )
+
+
 # ---- LLM usage admin --------------------------------------------------
 
 @admin_router.get("/llm-usage")
