@@ -90,6 +90,89 @@ def _embed_in_batches(texts: list[str]) -> list[list[float]]:
     return out
 
 
+async def _load_pages_for_version(tenant_id: str, version_id: str) -> list[dict]:
+    """Fetch ocr_results rows in page order so the chunker can map
+    char offsets back to page numbers + ride along the
+    "\n\n".join(pages) shape OCR emits to NER. Returns [] when no
+    OCR data exists yet — the chunker treats that as "no page
+    info" and emits page_number=None on every chunk."""
+    try:
+        from app.persist import get_pool
+    except ImportError:
+        return []
+    try:
+        pool = await get_pool()
+    except Exception:
+        return []
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            rows = await conn.fetch(
+                """SELECT page_number, text_content
+                     FROM ocr_results
+                    WHERE tenant_id = $1 AND version_id = $2
+                    ORDER BY page_number ASC""",
+                tenant_id, version_id,
+            )
+            return [
+                {"page_number": r["page_number"], "text_content": r["text_content"]}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+async def _persist_chunks(
+    *,
+    tenant_id: str,
+    document_id: str,
+    version_id: str,
+    chunks: list[dict],
+    embed_model: str,
+) -> None:
+    """Idempotent upsert into document_chunks. DELETE-then-INSERT
+    inside one tx so a re-embed cleanly replaces the prior rows for
+    this version. Mirrors the persist pattern in ocr / ner workers."""
+    from app.persist import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            await conn.execute(
+                """DELETE FROM document_chunks
+                    WHERE tenant_id = $1 AND version_id = $2""",
+                tenant_id, version_id,
+            )
+            for c in chunks:
+                page_no = c.get("page_number")
+                page_array = [int(page_no)] if page_no is not None else []
+                await conn.execute(
+                    """INSERT INTO document_chunks (
+                           tenant_id, id, document_id, version_id,
+                           chunk_index, text_content, token_count,
+                           embedding_model, page_numbers,
+                           section_path, char_offset_start, char_offset_end,
+                           page_number, created_at
+                       ) VALUES (
+                           $1, gen_random_uuid(), $2, $3,
+                           $4, $5, $6,
+                           $7, $8::int[],
+                           $9, $10, $11,
+                           $12, now()
+                       )""",
+                    tenant_id, document_id, version_id,
+                    int(c["chunk_index"]), c["text"], int(c.get("token_count") or 0),
+                    embed_model, page_array,
+                    c.get("section_path"),
+                    int(c.get("start_char") or 0), int(c.get("end_char") or 0),
+                    page_no,
+                )
+
+
 def _build_completed_envelope(
     *,
     tenant_id: str,
@@ -153,10 +236,17 @@ def generate_embeddings(
             version_id=version_id,
         ))
 
+        # ADR 0063 §"Chunking" — pull per-page text so the chunker can
+        # resolve section_path + page_number for each emitted chunk.
+        # Falls through with pages=[] for callers that pass plain
+        # text (e.g. the unit tests); chunker handles None/[] safely.
+        pages = asyncio.run(_load_pages_for_version(tenant_id, version_id))
+
         chunks = chunk_text(
             text,
             chunk_size_tokens=settings.chunk_size_tokens,
             chunk_overlap_tokens=settings.chunk_overlap_tokens,
+            pages=pages,
         )
         if not chunks:
             embed_documents_total.labels(status="skipped").inc()
@@ -167,6 +257,8 @@ def generate_embeddings(
 
         texts = [c["text"] for c in chunks]
         vectors = _embed_in_batches(texts)
+
+        embed_model = getattr(settings, "embed_model", "all-MiniLM-L6-v2")
 
         points = []
         for chunk, vec in zip(chunks, vectors):
@@ -183,6 +275,8 @@ def generate_embeddings(
                     token_count=chunk["token_count"],
                     text_snippet=chunk["text"],
                     readable_by=readable_by,
+                    section_path=chunk.get("section_path"),
+                    page_number=chunk.get("page_number"),
                 ),
             ))
 
@@ -193,6 +287,23 @@ def generate_embeddings(
                 collection_name=settings.qdrant_collection,
                 points=points[i:i + QDRANT_UPSERT_BATCH],
             )
+
+        # Persist to document_chunks so non-Qdrant queries (citation
+        # renderer, audit, /chunks endpoint) can hit Postgres without
+        # a vector roundtrip. Idempotent via DELETE-then-INSERT.
+        try:
+            asyncio.run(_persist_chunks(
+                tenant_id=tenant_id,
+                document_id=document_id,
+                version_id=version_id,
+                chunks=chunks,
+                embed_model=embed_model,
+            ))
+        except Exception:
+            # Persistence is non-critical for retrieval (Qdrant is the
+            # source of truth for vector search). Log + continue so
+            # an upstream DB hiccup doesn't undo a successful embed.
+            log.exception("embed: document_chunks persist failed")
 
         envelope = _build_completed_envelope(
             tenant_id=tenant_id,
