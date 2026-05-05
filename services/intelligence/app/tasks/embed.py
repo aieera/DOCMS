@@ -90,6 +90,37 @@ def _embed_in_batches(texts: list[str]) -> list[list[float]]:
     return out
 
 
+async def _load_workspace_id(tenant_id: str, document_id: str) -> str | None:
+    """Look up the document's workspace so embed payloads can carry
+    workspace_id. Used by the §6.8 /rag/query citation links — the
+    UI can deep-link straight to the doc detail page only when each
+    citation knows its workspace.
+
+    Returns None on lookup failure; build_payload simply omits the key
+    in that case. Cheap, single-row read so we don't hold the txn."""
+    try:
+        from app.persist import get_pool
+    except ImportError:
+        return None
+    try:
+        pool = await get_pool()
+    except Exception:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            row = await conn.fetchrow(
+                "SELECT workspace_id::text AS wid FROM documents "
+                " WHERE tenant_id = $1 AND id = $2",
+                tenant_id, document_id,
+            )
+            return row["wid"] if row else None
+    except Exception:
+        return None
+
+
 async def _load_pages_for_version(tenant_id: str, version_id: str) -> list[dict]:
     """Fetch ocr_results rows in page order so the chunker can map
     char offsets back to page numbers + ride along the
@@ -241,6 +272,7 @@ def generate_embeddings(
         # Falls through with pages=[] for callers that pass plain
         # text (e.g. the unit tests); chunker handles None/[] safely.
         pages = asyncio.run(_load_pages_for_version(tenant_id, version_id))
+        workspace_id = asyncio.run(_load_workspace_id(tenant_id, document_id))
 
         chunks = chunk_text(
             text,
@@ -269,6 +301,7 @@ def generate_embeddings(
                     tenant_id=tenant_id,
                     document_id=document_id,
                     version_id=version_id,
+                    workspace_id=workspace_id,
                     chunk_index=chunk["chunk_index"],
                     start_char=chunk["start_char"],
                     end_char=chunk["end_char"],

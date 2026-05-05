@@ -258,6 +258,7 @@ def build_payload(
     readable_by: list | None = None,
     section_path: Optional[str] = None,
     page_number: Optional[int] = None,
+    workspace_id: Optional[str] = None,
 ) -> dict:
     """Spec-shaped Qdrant payload. tenant_id is mandatory and every
     search query MUST filter on it to enforce isolation. ADR 0063
@@ -280,4 +281,9 @@ def build_payload(
         payload["section_path"] = section_path
     if page_number is not None:
         payload["page_number"] = page_number
+    if workspace_id:
+        # ADR 0063 — citation links in /ask need workspace_id to deep-
+        # link to the doc detail page. Optional to keep older callers
+        # (and the unit tests in test_chunker_sections.py) working.
+        payload["workspace_id"] = workspace_id
     return payload

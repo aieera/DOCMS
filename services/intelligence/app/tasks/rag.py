@@ -65,6 +65,7 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
             "text": (r.payload.get("text_snippet")
                      or r.payload.get("text") or ""),
             "document_id": r.payload.get("document_id", ""),
+            "workspace_id": r.payload.get("workspace_id", ""),
             "version_id": r.payload.get("version_id", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
             "page": r.payload.get("page_number"),
@@ -297,6 +298,7 @@ def workspace_query(
         blocks.append(f"{marker}\n{c.get('text', '')}")
         citations.append({
             "doc_id": doc_id,
+            "workspace_id": c.get("workspace_id") or None,
             "page": page,
             "chunk_id": c.get("chunk_index"),
             "section_path": c.get("section_path"),
