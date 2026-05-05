@@ -106,9 +106,13 @@ matches_principal(p, inp) if {
     p.principal_id == gid
 }
 
-# Capability hierarchy: admin > delete > edit > share > view.
+# Capability hierarchy: admin > delete > edit > share > view_unredacted > view.
+# `view_unredacted` (ADR 0062) sits intentionally between view and share.
+# Granting `view` does NOT cascade to seeing the source of a redacted
+# document — that's the whole point. Granting any of {share, edit,
+# delete, admin} does cascade (your administrators see everything).
 capability_includes(granted, requested) if {
-    hierarchy := {"admin": 50, "delete": 40, "edit": 30, "share": 20, "view": 10}
+    hierarchy := {"admin": 50, "delete": 40, "edit": 30, "share": 20, "view_unredacted": 15, "view": 10}
     hierarchy[granted] >= hierarchy[requested]
 }
 

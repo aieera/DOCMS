@@ -484,6 +484,18 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/documents/bulk-reclassify",
 		middleware.CorrelationHTTP(classifyCorrectionsMux))
 
+	// ADR 0062 — redaction review queue + apply + gated unredacted download.
+	redactionReviewMux := http.NewServeMux()
+	handler.NewRedactionReviewHandler(svc, *log.Z()).Register(redactionReviewMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/redaction-candidates",
+		middleware.CorrelationHTTP(redactionReviewMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/redaction/candidates/{cid}/review",
+		middleware.CorrelationHTTP(redactionReviewMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/redaction/apply",
+		middleware.CorrelationHTTP(redactionReviewMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/unredacted",
+		middleware.CorrelationHTTP(redactionReviewMux))
+
 	// ADR 0061 — NER read + correction surface.
 	nerMux := http.NewServeMux()
 	handler.NewNERHandler(svc, *log.Z()).Register(nerMux)

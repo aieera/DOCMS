@@ -114,6 +114,7 @@ type Repositories struct {
 	ClassifyCorrections ClassifyCorrectionRepository
 	ActiveLearning      ActiveLearningRepository
 	NER                 NERRepository
+	Redaction           RedactionRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -138,5 +139,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		ClassifyCorrections: NewClassifyCorrectionRepo(),
 		ActiveLearning:      NewActiveLearningRepo(),
 		NER:                 NewNERRepo(),
+		Redaction:           NewRedactionRepo(),
 	}
 }
