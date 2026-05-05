@@ -152,11 +152,19 @@ async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
     kwargs: dict[str, Any] = {
         "model": cfg.model,
         "messages": [{"role": "user", "content": prompt}],
-        "response_format": {"type": "json_object"},
         "temperature": 0,
         "max_tokens": 2000,
         "timeout": 30,
     }
+    # litellm forwards response_format={type:json_object} to Anthropic
+    # as a tool-use schema that fails draft-2020-12 validation in
+    # current Claude APIs (verified live with claude-haiku-4-5). We
+    # only set the param for OpenAI-family providers where the JSON
+    # mode is natively supported; the prompt's "Return JSON with this
+    # exact shape" instruction is enough for Claude in practice, and
+    # _validate_and_realign drops anything malformed.
+    if cfg.model.startswith(("openai/", "gpt-")):
+        kwargs["response_format"] = {"type": "json_object"}
     if cfg.api_key:
         kwargs["api_key"] = cfg.api_key
     try:
@@ -167,7 +175,21 @@ async def extract_via_llm(text: str, cfg: NERConfig) -> list[dict[str, Any]]:
 
     try:
         content = resp["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
+        # Without response_format=json_object (Anthropic path), the
+        # model sometimes wraps its JSON in ```json ... ``` fences or
+        # prefaces it with a sentence. Strip both — find the first {
+        # and the last matching } and parse that slice.
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```", 2)[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.strip().rstrip("`").strip()
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+        if first_brace >= 0 and last_brace > first_brace:
+            cleaned = cleaned[first_brace : last_brace + 1]
+        parsed = json.loads(cleaned)
         raw_entities = parsed.get("entities", [])
         if not isinstance(raw_entities, list):
             return []
