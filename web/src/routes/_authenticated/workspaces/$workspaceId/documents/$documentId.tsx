@@ -26,11 +26,18 @@ import { CorrectClassificationButton } from '@/components/intelligence/CorrectCl
 import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { listEntities, type Entity } from '@/api/ner'
+import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
+import { Eraser } from 'lucide-react'
 
 function DocumentDetailPage() {
   const { documentId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
-  const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities'>('preview')
+  const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'redaction'>('preview')
+  const userRole = useAuthStore((s) => s.user?.role)
+  // ADR 0062 — bulk-apply redaction gate. Compliance officer also
+  // counts because they're the typical reviewers.
+  const isAdminCaller =
+    userRole === 'owner' || userRole === 'admin' || userRole === 'compliance_officer'
 
   if (isLoading) return <div className="flex justify-center py-16"><Spinner className="h-8 w-8" /></div>
   if (!doc) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">Document not found</div>
@@ -76,6 +83,9 @@ function DocumentDetailPage() {
           <TabButton active={tab === 'entities'} onClick={() => setTab('entities')} data-testid="tab-entities">
             <FileText className="mr-1 h-3 w-3" /> Entities
           </TabButton>
+          <TabButton active={tab === 'redaction'} onClick={() => setTab('redaction')} data-testid="tab-redaction">
+            <Eraser className="mr-1 h-3 w-3" /> Redaction
+          </TabButton>
         </div>
 
         {tab === 'preview' && (
@@ -102,6 +112,14 @@ function DocumentDetailPage() {
 
         {tab === 'entities' && (
           <EntitiesPanel documentId={documentId} versionId={versionId} />
+        )}
+
+        {tab === 'redaction' && (
+          <RedactionReviewPanel
+            documentId={documentId}
+            versionId={versionId}
+            isAdminCaller={isAdminCaller}
+          />
         )}
 
         {/* OCR quality lives below the layout/text content because it

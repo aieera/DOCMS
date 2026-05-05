@@ -3,7 +3,10 @@ export interface User {
   tenant_id?: string
   email: string
   display_name: string
-  role: 'owner' | 'admin' | 'member' | 'guest'
+  // compliance_officer was added in Wave 11.2 (legal-hold flow); the
+  // type lagged the backend. Widening here fixes pre-existing TS
+  // errors in the doc detail page comparing role === 'compliance_officer'.
+  role: 'owner' | 'admin' | 'member' | 'guest' | 'compliance_officer'
   status?: 'active' | 'suspended' | 'deactivated'
   avatar_url?: string
   mfa_enabled: boolean
