@@ -104,6 +104,132 @@ func TestCapabilityHierarchy(t *testing.T) {
 	require.False(t, eval(t, e, base("edit"), view, nil, nil).Allowed)
 }
 
+// ---- view_unredacted (ADR 0062) -------------------------------------------
+
+// view_unredacted sits in the hierarchy between view (10) and share (20)
+// at rank 15. The policy invariant is asymmetric on purpose:
+//   - granting `view` does NOT cascade to view_unredacted (that defeats
+//     the whole point of redacting on the visible version)
+//   - granting any of {share, edit, delete, admin} DOES cascade
+//   - owner / admin via Rule 6 still pass automatically
+
+func TestViewUnredacted_DirectGrantAllows(t *testing.T) {
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{},
+	}
+	perms := []PermissionDoc{{
+		ResourceType: "document", ResourceID: "d1",
+		PrincipalType: "user", PrincipalID: "u1",
+		Capability: "view_unredacted",
+	}}
+	require.True(t, eval(t, e, in, perms, nil, nil).Allowed)
+}
+
+func TestViewUnredacted_OwnerRolePasses(t *testing.T) {
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{"user_role": "owner"},
+	}
+	require.True(t, eval(t, e, in, nil, nil, nil).Allowed)
+}
+
+func TestViewUnredacted_AdminRolePasses(t *testing.T) {
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{"user_role": "admin"},
+	}
+	require.True(t, eval(t, e, in, nil, nil, nil).Allowed)
+}
+
+func TestViewUnredacted_ViewGrantDoesNotCascade(t *testing.T) {
+	// THIS is the load-bearing assertion of ADR 0062 — a user with
+	// `view` on the document must NOT be able to see the source of a
+	// redacted version. If this ever flips to true the privacy
+	// guarantee of redact-then-share is broken.
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{},
+	}
+	perms := []PermissionDoc{{
+		ResourceType: "document", ResourceID: "d1",
+		PrincipalType: "user", PrincipalID: "u1",
+		Capability: "view",
+	}}
+	require.False(t, eval(t, e, in, perms, nil, nil).Allowed,
+		"granting `view` must NOT cascade to view_unredacted")
+}
+
+func TestViewUnredacted_ShareEditDeleteAdminAllCascade(t *testing.T) {
+	// share/edit/delete/admin sit above view_unredacted in the
+	// hierarchy and intentionally cascade — operators with those
+	// caps already see the source through other paths anyway.
+	e := mustEngine(t)
+	for _, cap := range []string{"share", "edit", "delete", "admin"} {
+		in := model.CheckInput{
+			SubjectType: "user", SubjectID: "u1",
+			Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+			Context: map[string]string{},
+		}
+		perms := []PermissionDoc{{
+			ResourceType: "document", ResourceID: "d1",
+			PrincipalType: "user", PrincipalID: "u1",
+			Capability: cap,
+		}}
+		require.True(t, eval(t, e, in, perms, nil, nil).Allowed,
+			"capability %s must cascade to view_unredacted", cap)
+	}
+}
+
+func TestViewUnredacted_NoGrantNoRoleDenies(t *testing.T) {
+	// Member role with no explicit grant — the realistic "tenant
+	// member opens a redacted doc and clicks /unredacted" path.
+	// 403 is what we want.
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{"user_role": "member"},
+	}
+	require.False(t, eval(t, e, in, nil, nil, nil).Allowed)
+}
+
+func TestViewUnredacted_GuestRoleDenies(t *testing.T) {
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{"user_role": "guest"},
+	}
+	require.False(t, eval(t, e, in, nil, nil, nil).Allowed)
+}
+
+func TestViewUnredacted_GroupGrantAllows(t *testing.T) {
+	// Compliance reviewers typically get the cap via group membership,
+	// not direct user grant. Make sure group cascade works for the
+	// new capability.
+	e := mustEngine(t)
+	in := model.CheckInput{
+		SubjectType: "user", SubjectID: "u1",
+		Action: "view_unredacted", ResourceType: "document", ResourceID: "d1",
+		Context: map[string]string{},
+	}
+	perms := []PermissionDoc{{
+		ResourceType: "document", ResourceID: "d1",
+		PrincipalType: "group", PrincipalID: "compliance-reviewers",
+		Capability: "view_unredacted",
+	}}
+	require.True(t, eval(t, e, in, perms, []string{"compliance-reviewers"}, nil).Allowed)
+}
+
 // ---- Rule 3: folder cascade -----------------------------------------------
 
 func TestFolderCascadeToDocument(t *testing.T) {
