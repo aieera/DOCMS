@@ -34,6 +34,7 @@ from app.tasks.auto_tag import auto_tag
 from app.tasks.compliance_scan import compliance_scan
 from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
+from app.tasks.model_retrain import retrain as model_retrain
 from app.tasks.ocr_quality import score as ocr_quality_score
 from app.tasks.smart_route import smart_route
 from app.tasks.training_collector import collect as training_collect
@@ -160,6 +161,15 @@ class IntelligenceConsumer:
             "dms.classify.corrected.v1",
             durable="intel-training-collector",
             cb=self._on_training_collector_trigger,
+            manual_ack=True,
+        )
+        # ADR 0060 — explicit "Trigger retrain" admin button on the
+        # model registry. Document service emits the event with
+        # tenant_id + model_type; we dispatch the Celery retrain task.
+        await js.subscribe(
+            "dms.model.retrain_requested.v1",
+            durable="intel-model-retrain",
+            cb=self._on_model_retrain_trigger,
             manual_ack=True,
         )
         log.info("intelligence consumer started")
@@ -382,6 +392,37 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue training_collector failed")
+            await msg.nak(delay=5)
+
+    async def _on_model_retrain_trigger(self, msg) -> None:
+        """ADR 0060 — admin "Trigger retrain" button. Document service
+        emits dms.model.retrain_requested.v1 with tenant_id + model_type
+        + requested_by. Dispatches the Celery retrain task."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        model_type = data.get("model_type", "classification") or "classification"
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not tid:
+            await msg.term()
+            return
+        try:
+            model_retrain.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "model_type": model_type,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue model_retrain failed")
             await msg.nak(delay=5)
 
     async def _on_ocr_quality_trigger(self, msg) -> None:
