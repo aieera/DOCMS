@@ -104,7 +104,11 @@ func (s *Service) BatchCheck(ctx context.Context, inputs []CheckInput) ([]model.
 var (
 	validSubjectTypes  = map[string]struct{}{"user": {}, "group": {}}
 	validResourceTypes = map[string]struct{}{"document": {}, "folder": {}, "workspace": {}}
-	validActions       = map[string]struct{}{"view": {}, "share": {}, "edit": {}, "delete": {}, "admin": {}}
+	// view_unredacted (ADR 0062) — gated download of the source
+	// version after a candidate-review redaction has produced a
+	// redacted current version. Hierarchy rank 15, between view (10)
+	// and share (20); see services/policy/internal/opa/policy.rego.
+	validActions       = map[string]struct{}{"view": {}, "view_unredacted": {}, "share": {}, "edit": {}, "delete": {}, "admin": {}}
 )
 
 func validateCheck(in CheckInput) error {
