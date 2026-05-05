@@ -80,7 +80,7 @@ var DefaultStreams = []StreamSpec{
 	// retrain_requested / trained / evaluated / promoted. Without
 	// binding, every "Trigger retrain" click left the outbox publisher
 	// in an infinite retry loop ("nats: no response from stream").
-	{Name: "INTEL_EVENTS", Subjects: []string{"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>", "dms.model.>"}},
+	{Name: "INTEL_EVENTS", Subjects: []string{"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>", "dms.model.>", "dms.redaction.>"}},
 	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
 	// Compliance + lifecycle events emitted by services/document/internal/compliance
 	// (legal holds) and services/workflow/internal/activities/residency.

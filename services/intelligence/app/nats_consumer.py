@@ -36,6 +36,7 @@ from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
 from app.tasks.model_retrain import retrain as model_retrain
 from app.tasks.ocr_quality import score as ocr_quality_score
+from app.tasks.redact import apply_redaction_job, populate_candidates as redact_populate
 from app.tasks.smart_route import smart_route
 from app.tasks.training_collector import collect as training_collect
 from app.tasks.classify import classify_document
@@ -170,6 +171,22 @@ class IntelligenceConsumer:
             "dms.model.retrain_requested.v1",
             durable="intel-model-retrain",
             cb=self._on_model_retrain_trigger,
+            manual_ack=True,
+        )
+        # ADR 0062 — populate redaction_candidates after NER finishes.
+        # Reads document_entities (is_pii=true) + ocr_results.word_boxes.
+        await js.subscribe(
+            "dms.ner.completed.v1",
+            durable="intel-redact-populate",
+            cb=self._on_redact_populate_trigger,
+            manual_ack=True,
+        )
+        # ADR 0062 — explicit "Apply all" admin button on the redaction
+        # review panel. Burns approved candidates → new version → re-OCR.
+        await js.subscribe(
+            "dms.redaction.apply_requested.v1",
+            durable="intel-redact-apply",
+            cb=self._on_redact_apply_trigger,
             manual_ack=True,
         )
         log.info("intelligence consumer started")
@@ -392,6 +409,83 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue training_collector failed")
+            await msg.nak(delay=5)
+
+    async def _on_redact_populate_trigger(self, msg) -> None:
+        """ADR 0062 — fire populate_candidates after NER finishes.
+        Same envelope shape as compliance_scan."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        did = data.get("document_id", "")
+        vid = data.get("version_id", "")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and did and vid):
+            await msg.term()
+            return
+        try:
+            redact_populate.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "document_id": did,
+                    "version_id": vid,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue redact_populate failed")
+            await msg.nak(delay=5)
+
+    async def _on_redact_apply_trigger(self, msg) -> None:
+        """ADR 0062 — admin "Apply all" → burn-in worker.
+        Document service builds the candidates_snapshot in the
+        redaction_jobs row; this consumer dispatches the worker
+        with everything it needs to download → burn → upload →
+        re-emit dms.version.uploaded.v1."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        job_id = data.get("job_id", "")
+        did = data.get("document_id", "")
+        svid = data.get("source_version_id", "")
+        bucket = data.get("storage_bucket", "")
+        key = data.get("storage_key", "")
+        candidates = data.get("candidates", []) or []
+        applied_by = data.get("applied_by", "")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and job_id and did and svid and bucket and key):
+            await msg.term()
+            return
+        try:
+            apply_redaction_job.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "job_id": job_id,
+                    "document_id": did,
+                    "source_version_id": svid,
+                    "storage_bucket": bucket,
+                    "storage_key": key,
+                    "candidates": candidates,
+                    "applied_by": applied_by,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue apply_redaction_job failed")
             await msg.nak(delay=5)
 
     async def _on_model_retrain_trigger(self, msg) -> None:
