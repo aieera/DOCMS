@@ -412,6 +412,13 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
     queryFn: () => getOCR(documentId, versionId!),
     enabled: Boolean(versionId) && isPdf,
   })
+  // Entities feed the PDF overlay (ADR 0061 follow-up) — same query
+  // key/shape as the Entities tab so the cache is shared.
+  const entitiesQ = useQuery({
+    queryKey: ['entities', documentId, 'for-raw-text'],
+    queryFn: () => listEntities(documentId, { limit: 1000 }),
+    enabled: Boolean(versionId) && isPdf,
+  })
   const dl = useQuery({
     queryKey: ['download-url', documentId, versionId],
     queryFn: () => getDownloadURL(documentId, versionId!),
@@ -481,7 +488,11 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
         </div>
       )}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
-        <PDFLayoutViewer url={dl.data.url} pages={pages} />
+        <PDFLayoutViewer
+          url={dl.data.url}
+          pages={pages}
+          entities={entitiesQ.data?.entities}
+        />
       </div>
     </div>
   )

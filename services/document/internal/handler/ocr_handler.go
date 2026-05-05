@@ -55,6 +55,10 @@ type OCRPage struct {
 	Confidence       float32 `json:"confidence"`
 	Language         string  `json:"language,omitempty"`
 	BoundingBoxes    json.RawMessage `json:"bounding_boxes"`
+	// WordBoxes carries the per-word PDF coordinates the entity
+	// overlay needs (ADR 0061 follow-up). Empty array when the
+	// engine doesn't produce them (Surya line-only path).
+	WordBoxes        json.RawMessage `json:"word_boxes"`
 	ProcessingTimeMS *int    `json:"processing_time_ms,omitempty"`
 	Engine           string  `json:"engine,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -111,7 +115,9 @@ func (h *OCRHandler) queryOCR(ctx context.Context, tenantID, versionID uuid.UUID
 			SELECT id::text, version_id::text, page_number,
 			       text_content, confidence,
 			       COALESCE(language, '') AS language,
-			       bounding_boxes, processing_time_ms,
+			       bounding_boxes,
+			       COALESCE(word_boxes, '[]'::jsonb) AS word_boxes,
+			       processing_time_ms,
 			       COALESCE(engine, '') AS engine,
 			       created_at
 			FROM ocr_results
@@ -127,7 +133,7 @@ func (h *OCRHandler) queryOCR(ctx context.Context, tenantID, versionID uuid.UUID
 			if scanErr := rows.Scan(
 				&p.ID, &p.VersionID, &p.PageNumber,
 				&p.TextContent, &p.Confidence, &p.Language,
-				&p.BoundingBoxes, &p.ProcessingTimeMS,
+				&p.BoundingBoxes, &p.WordBoxes, &p.ProcessingTimeMS,
 				&p.Engine, &p.CreatedAt,
 			); scanErr != nil {
 				return scanErr

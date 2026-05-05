@@ -11,6 +11,10 @@ export interface OCRPage {
   confidence: number
   language?: string
   bounding_boxes: unknown
+  /** Per-word PDF coordinates for the entity overlay (ADR 0061
+   * follow-up). Empty array on the Surya path or pre-migration
+   * rows; wrapper {page_width, page_height, words:[…]} on pymupdf. */
+  word_boxes?: unknown
   processing_time_ms?: number
   engine?: string
   created_at: string

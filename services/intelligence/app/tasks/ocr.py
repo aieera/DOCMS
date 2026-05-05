@@ -69,6 +69,18 @@ def _extract_text_pdf(path: str) -> list[dict]:
     for i, page in enumerate(doc):
         t0 = time.perf_counter()
         text = page.get_text("text").strip()
+        words = _pymupdf_word_boxes(page, text) if text else []
+        # Wrap with page dimensions so the frontend can scale word
+        # rectangles against the rendered PDF without a separate dim
+        # column. Empty wrapper when no words to keep the shape stable.
+        word_boxes_payload: dict | list = (
+            {
+                "page_width": float(page.rect.width),
+                "page_height": float(page.rect.height),
+                "words": words,
+            }
+            if words else []
+        )
         dur = time.perf_counter() - t0
         pages.append({
             "page_number": i + 1,
@@ -76,11 +88,61 @@ def _extract_text_pdf(path: str) -> list[dict]:
             "confidence": 1.0 if text else 0.0,
             "method": "pymupdf" if text else "none",
             "boxes": [],
+            "word_boxes": word_boxes_payload,
             "processing_time_ms": int(dur * 1000),
         })
         ocr_processing_seconds.labels(engine="pymupdf").observe(dur)
     doc.close()
     return pages
+
+
+def _pymupdf_word_boxes(page, page_text: str) -> list[dict]:
+    """Map pymupdf's word records to {start, end, x0, y0, x1, y1} dicts
+    where start/end are character offsets into `page_text`.
+
+    pymupdf returns words in reading order with PDF user-space coords
+    (top-left origin, y-down) but no character offsets — we reconstruct
+    them by scanning page_text forward from the previous cursor and
+    matching each word substring. Words that can't be located (rare;
+    usually OCR artifacts where pymupdf and get_text disagree on
+    whitespace handling) are dropped — better to lose a box than emit
+    one with bogus offsets.
+    """
+    try:
+        # get_text("words") returns
+        #   [(x0, y0, x1, y1, "word", block, line, word), ...]
+        records = page.get_text("words")
+    except Exception:
+        return []
+    out: list[dict] = []
+    cursor = 0
+    n = len(page_text)
+    for r in records:
+        if len(r) < 5:
+            continue
+        x0, y0, x1, y1 = float(r[0]), float(r[1]), float(r[2]), float(r[3])
+        word = r[4]
+        if not word:
+            continue
+        # Scan forward in the page text starting at the cursor.
+        idx = page_text.find(word, cursor)
+        if idx < 0:
+            # Pymupdf occasionally normalizes ligatures or hyphens; try
+            # a slightly broader scan from the beginning before giving
+            # up. Cheap because pages are usually <50KB.
+            idx = page_text.find(word)
+            if idx < 0:
+                continue
+        end = idx + len(word)
+        out.append({
+            "start": idx,
+            "end": end,
+            "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+        })
+        cursor = end
+        if cursor >= n:
+            break
+    return out
 
 
 def _pdf_has_text(path: str) -> bool:
@@ -159,10 +221,10 @@ async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], lan
                     INSERT INTO ocr_results (
                         tenant_id, id, version_id, page_number,
                         text_content, confidence, language,
-                        bounding_boxes, processing_time_ms, engine, created_at
+                        bounding_boxes, word_boxes, processing_time_ms, engine, created_at
                     ) VALUES (
                         $1, gen_random_uuid(), $2, $3, $4, $5, $6,
-                        $7::jsonb, $8, $9, NOW()
+                        $7::jsonb, $8::jsonb, $9, $10, NOW()
                     )
                     """,
                     tenant_id,
@@ -172,6 +234,7 @@ async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], lan
                     float(p["confidence"]),
                     language,
                     json.dumps(p.get("boxes") or []),
+                    json.dumps(p.get("word_boxes") or []),
                     int(p.get("processing_time_ms") or 0),
                     p.get("method") or "surya",
                 )
