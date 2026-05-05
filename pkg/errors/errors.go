@@ -50,6 +50,20 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Cause }
 
+// Is implements errors.Is so wrapped sentinels still match. Wrap()
+// copies the sentinel and sets Cause; the resulting pointer is not
+// the same as the sentinel, so the default pointer-equality check
+// in errors.Is fails. Two domain errors are "the same" when they
+// share Kind + Code — the human-readable Message and the wrapped
+// Cause are decorations, not identity.
+func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+	if !ok {
+		return false
+	}
+	return e.Kind == t.Kind && e.Code == t.Code
+}
+
 // Sentinel errors allow callers to use errors.Is / errors.As naturally.
 var (
 	ErrNotFound        = &Error{Kind: KindNotFound, Code: "NOT_FOUND", Message: "resource not found"}
