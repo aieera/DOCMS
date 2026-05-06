@@ -20,6 +20,7 @@ import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
@@ -110,6 +111,11 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAskRoute = AuthenticatedAskRouteImport.update({
+  id: '/ask',
+  path: '/ask',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedWorkspacesIndexRoute =
   AuthenticatedWorkspacesIndexRouteImport.update({
     id: '/workspaces/',
@@ -317,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
@@ -362,6 +369,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
@@ -410,6 +418,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/_authenticated/ask': typeof AuthenticatedAskRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
@@ -459,6 +468,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/ask'
     | '/notifications'
     | '/search'
     | '/tasks'
@@ -504,6 +514,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/ask'
     | '/notifications'
     | '/search'
     | '/tasks'
@@ -551,6 +562,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/register'
+    | '/_authenticated/ask'
     | '/_authenticated/notifications'
     | '/_authenticated/search'
     | '/_authenticated/tasks'
@@ -679,6 +691,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ask': {
+      id: '/_authenticated/ask'
+      path: '/ask'
+      fullPath: '/ask'
+      preLoaderRoute: typeof AuthenticatedAskRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/workspaces/': {
@@ -923,6 +942,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAskRoute: typeof AuthenticatedAskRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
@@ -965,6 +985,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAskRoute: AuthenticatedAskRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,

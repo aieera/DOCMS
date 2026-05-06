@@ -28,7 +28,8 @@ def _qdrant():
 
 
 def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[str],
-                   scope_filter: dict | None = None, limit: int = 50) -> list[dict]:  # noqa: D401
+                   scope_filter: dict | None = None, limit: int = 50,
+                   allowed_doc_ids: list[str] | None = None) -> list[dict]:  # noqa: D401
     must = [
         FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
         FieldCondition(key="readable_by", match=MatchAny(any=user_groups + ["everyone"])),
@@ -36,6 +37,17 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
     if scope_filter:
         for k, v in scope_filter.items():
             must.append(FieldCondition(key=k, match=MatchValue(value=v)))
+    # ADR 0063 §"Permission-filtered retrieval" — when the caller has
+    # already done a BatchCheckPermission and built an allowed doc_ids
+    # set, restrict retrieval to that set. Layered on top of the
+    # readable_by group filter as defense-in-depth.
+    if allowed_doc_ids is not None:
+        if not allowed_doc_ids:
+            # Empty set means caller has access to nothing; short-circuit.
+            return []
+        must.append(FieldCondition(
+            key="document_id", match=MatchAny(any=list(allowed_doc_ids)),
+        ))
 
     client = _qdrant()
     results = client.search(
@@ -53,9 +65,11 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
             "text": (r.payload.get("text_snippet")
                      or r.payload.get("text") or ""),
             "document_id": r.payload.get("document_id", ""),
+            "workspace_id": r.payload.get("workspace_id", ""),
             "version_id": r.payload.get("version_id", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
             "page": r.payload.get("page_number"),
+            "section_path": r.payload.get("section_path"),
             "start_char": r.payload.get("start_char"),
             "end_char": r.payload.get("end_char"),
         }
@@ -200,6 +214,117 @@ def stream_ask(
         "output_tokens": (final_meta or {}).get("output_tokens", 0),
         "cost_usd": (final_meta or {}).get("cost_usd", 0.0),
         "elapsed_ms": (final_meta or {}).get("elapsed_ms", 0),
+    }
+
+
+# ADR 0063 system prompt — explicit "answer only from context" + the
+# fixed "I don't know" sentinel the spec asks for so callers can
+# detect not-in-corpus responses by string match.
+WORKSPACE_SYSTEM_PROMPT = (
+    "You are a workspace assistant for VaultDMS. Answer using only the "
+    "provided context. Cite sources as [doc_id:page_X] inline next to "
+    "the claims they support. If the answer is not in the context, "
+    "respond with the exact phrase \"I don't know.\" and nothing else."
+)
+
+
+def workspace_query(
+    *,
+    tenant_id: str,
+    user_id: str,
+    user_groups: list[str],
+    question: str,
+    workspace_id: str | None = None,
+    allowed_doc_ids: list[str] | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """ADR 0063 — workspace-scoped RAG for the /rag/query endpoint.
+
+    Different from `ask()` in three ways:
+    - Permission-filtered retrieval: caller passes the BatchCheckPermission
+      result as `allowed_doc_ids` so retrieval can't surface chunks from
+      docs the user isn't allowed to read (defense-in-depth on top of the
+      readable_by group filter that's already there).
+    - Fixed "I don't know." sentinel for not-in-corpus questions so the
+      caller can flag unanswerables without parsing free-form responses.
+    - Citation shape matches §6.8 spec: each cite carries
+      {doc_id, page, chunk_id, snippet, score} so the UI can render
+      clickable links straight to the source page.
+
+    Stateless per query — no conversation_history. Multi-turn workspace
+    RAG is a follow-up tracked in the ADR.
+    """
+    start = time.monotonic()
+
+    q_embedding = embed_single(question)
+    scope_filter = None
+    if workspace_id:
+        scope_filter = {"workspace_id": workspace_id}
+
+    vector_results = _vector_search(
+        q_embedding, tenant_id, user_groups,
+        scope_filter=scope_filter, allowed_doc_ids=allowed_doc_ids,
+    )
+    fused = _rrf_fuse([vector_results])
+
+    top_20_texts = [c["text"] for c in fused[:20]]
+    if top_20_texts:
+        scores = rerank(question, top_20_texts)
+        ranked_pairs = sorted(zip(scores, fused[:20]), reverse=True)
+        top_pairs = ranked_pairs[:5]
+    else:
+        top_pairs = [(0.0, c) for c in fused[:5]]
+
+    if not top_pairs:
+        return {
+            "answer": "I don't know.",
+            "citations": [],
+            "model": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "elapsed_ms": int((time.monotonic() - start) * 1000),
+        }
+
+    # Build context with explicit doc_id markers the prompt asks the
+    # LLM to cite back. Each block is prefixed with [doc_id:page_X]
+    # so the LLM has a stable token sequence to copy into its answer.
+    blocks: list[str] = []
+    citations: list[dict] = []
+    for score, c in top_pairs:
+        doc_id = c.get("document_id", "")
+        page = c.get("page")
+        marker = f"[{doc_id}:page_{page}]" if page is not None else f"[{doc_id}]"
+        blocks.append(f"{marker}\n{c.get('text', '')}")
+        citations.append({
+            "doc_id": doc_id,
+            "workspace_id": c.get("workspace_id") or None,
+            "page": page,
+            "chunk_id": c.get("chunk_index"),
+            "section_path": c.get("section_path"),
+            "snippet": (c.get("text") or "")[:240],
+            "score": float(score),
+        })
+    context = "\n\n---\n\n".join(blocks)
+
+    messages = [
+        {"role": "system", "content": WORKSPACE_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
+    ]
+
+    from app import llm_gateway
+    resp = llm_gateway.completion(
+        tenant_id=tenant_id, messages=messages, model=model, max_tokens=2000,
+    )
+
+    return {
+        "answer": resp["content"],
+        "citations": citations,
+        "model": resp["model"],
+        "input_tokens": resp["input_tokens"],
+        "output_tokens": resp["output_tokens"],
+        "cost_usd": resp["cost_usd"],
+        "elapsed_ms": int((time.monotonic() - start) * 1000),
     }
 
 

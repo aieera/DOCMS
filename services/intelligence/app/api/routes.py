@@ -16,7 +16,7 @@ from app.qa_persist import (
     list_conversations,
     list_messages,
 )
-from app.tasks.rag import ask, stream_ask
+from app.tasks.rag import ask, stream_ask, workspace_query
 from app.tasks.redact import apply_redactions, detect_redaction_candidates
 from app.tasks.summarize import summarize_document
 from app.tasks.anomaly_detect import run as anomaly_detect_run
@@ -629,6 +629,166 @@ def redact_apply_endpoint(
         "entities": body.entities,
     })
     return {"task_id": result.id, "status": "queued"}
+
+
+# ---- ADR 0063 — workspace-scoped /rag/query --------------------------
+
+class RAGQueryRequest(BaseModel):
+    question: str
+    workspace_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+class RAGFeedbackRequest(BaseModel):
+    feedback: str  # 'up'|'down'|'flag'
+    note: Optional[str] = None
+
+
+@router.post("/rag/query")
+async def rag_query_endpoint(
+    body: RAGQueryRequest,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
+):
+    """ADR 0063 — workspace-scoped RAG. Different from /qa in that
+    retrieval spans many docs (the user's workspace[s] rather than a
+    single doc), there's no conversation history, and each call is
+    audited + rate-limited via rag_query_log.
+
+    Permission flow: derive allowed_doc_ids from workspace_members +
+    documents, pass to workspace_query so retrieval is filtered both
+    by readable_by groups (existing) and by the explicit doc-id set
+    (defense-in-depth)."""
+    tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
+    question = (body.question or "").strip()
+    if not question:
+        raise HTTPException(400, "question required")
+    if len(question) > 4000:
+        raise HTTPException(400, "question too long (max 4000 chars)")
+
+    from app import rag_persist
+
+    settings_row = await rag_persist.get_workspace_ai_settings(
+        tenant_id=tenant, workspace_id=body.workspace_id,
+    )
+    if not settings_row["rag_enabled"]:
+        raise HTTPException(403, "rag is disabled for this workspace")
+
+    quota = settings_row["rag_queries_per_day"]
+    if quota > 0:
+        used = await rag_persist.count_user_queries_24h(
+            tenant_id=tenant, user_id=user_id,
+        )
+        if used >= quota:
+            # 429 so the UI can render a "you've hit today's limit"
+            # state without falling back to the generic 5xx path.
+            raise HTTPException(429, f"daily rag query limit reached ({quota})")
+
+    allowed = await rag_persist.list_allowed_doc_ids(
+        tenant_id=tenant, user_id=user_id, workspace_id=body.workspace_id,
+    )
+
+    chosen_model = body.model or settings_row["answer_model"]
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: workspace_query(
+            tenant_id=tenant,
+            user_id=user_id,
+            user_groups=groups,
+            question=question,
+            workspace_id=body.workspace_id,
+            allowed_doc_ids=allowed,
+            model=chosen_model,
+        ),
+    )
+
+    query_id = await rag_persist.insert_query_log(
+        tenant_id=tenant, user_id=user_id,
+        workspace_id=body.workspace_id,
+        question=question, result=result,
+    )
+
+    return {"query_id": query_id, **result}
+
+
+@router.post("/rag/query/{query_id}/feedback")
+async def rag_feedback_endpoint(
+    query_id: str,
+    body: RAGFeedbackRequest,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+):
+    """Record thumbs-up/-down/flag on a prior /rag/query result.
+    Scoped to the user who issued the original query (no editing
+    someone else's feedback)."""
+    tenant = _require_tenant(x_tenant_id)
+    if not x_user_id:
+        raise HTTPException(400, "X-User-ID required")
+    if body.feedback not in ("up", "down", "flag"):
+        raise HTTPException(400, "feedback must be up|down|flag")
+    note = (body.note or "").strip()
+    if len(note) > 1000:
+        raise HTTPException(400, "note too long (max 1000 chars)")
+
+    from app import rag_persist
+    ok = await rag_persist.record_feedback(
+        tenant_id=tenant, query_id=query_id, user_id=x_user_id,
+        feedback=body.feedback, note=note or None,
+    )
+    if not ok:
+        raise HTTPException(404, "query not found")
+    return {"status": "recorded"}
+
+
+class WorkspaceAISettingsBody(BaseModel):
+    rag_enabled: Optional[bool] = None
+    answer_model: Optional[str] = None
+    embedding_model: Optional[str] = None
+    rag_queries_per_day: Optional[int] = None
+
+
+@router.get("/workspaces/{workspace_id}/ai-settings")
+async def get_workspace_ai_settings_endpoint(
+    workspace_id: str,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+):
+    """Return the per-workspace AI/RAG settings. Falls back to schema
+    defaults when no row exists yet (workspace was created before the
+    settings panel shipped, or the admin hasn't saved anything)."""
+    tenant = _require_tenant(x_tenant_id)
+    from app import rag_persist
+    return await rag_persist.get_workspace_ai_settings_full(
+        tenant_id=tenant, workspace_id=workspace_id,
+    )
+
+
+@router.put("/workspaces/{workspace_id}/ai-settings")
+async def update_workspace_ai_settings_endpoint(
+    workspace_id: str,
+    body: WorkspaceAISettingsBody,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Admin-only — patch the per-workspace AI settings. Workspace
+    admins are scoped via the policy service in production; here we
+    require tenant role owner|admin since intelligence doesn't speak
+    OPA. Workspace-scoped ACL refinement is a follow-up."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    if body.rag_queries_per_day is not None and body.rag_queries_per_day < 0:
+        raise HTTPException(400, "rag_queries_per_day must be >= 0")
+    from app import rag_persist
+    return await rag_persist.upsert_workspace_ai_settings(
+        tenant_id=tenant, workspace_id=workspace_id,
+        rag_enabled=body.rag_enabled,
+        answer_model=body.answer_model,
+        embedding_model=body.embedding_model,
+        rag_queries_per_day=body.rag_queries_per_day,
+    )
 
 
 # ---- LLM usage admin --------------------------------------------------
