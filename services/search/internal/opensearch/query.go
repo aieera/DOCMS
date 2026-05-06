@@ -88,15 +88,29 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	}
 
 	// ---- aggregations -----------------------------------------------------
+	// ADR 0065 — facet shapes resolved through the FacetSpec registry
+	// so terms / date_histogram / range all work uniformly. Unknown
+	// facet names are dropped silently rather than 4xx'd; a stale
+	// client requesting a deprecated facet should still get a working
+	// search.
 	if len(req.Facets) > 0 {
 		aggs := map[string]any{}
-		for _, f := range req.Facets {
-			sz, ok := FacetSizes[f]
+		for _, name := range req.Facets {
+			// Backwards-compat: legacy callers passed raw OpenSearch
+			// field names (mime_type, document_class, ...). When a name
+			// isn't in the registry, fall back to a terms aggregation
+			// using the legacy FacetSizes map. ADR 0065 prefers the
+			// new symbolic names (doc_type, classification, ...).
+			if spec, ok := ResolveFacet(name); ok {
+				aggs[name] = spec.BuildAgg()
+				continue
+			}
+			sz, ok := FacetSizes[name]
 			if !ok {
 				sz = 20
 			}
-			aggs[f] = map[string]any{
-				"terms": map[string]any{"field": f, "size": sz},
+			aggs[name] = map[string]any{
+				"terms": map[string]any{"field": name, "size": sz},
 			}
 		}
 		body["aggs"] = aggs

@@ -287,7 +287,7 @@ func parseSearchResult(raw map[string]any) (*RawSearchResult, error) {
 		buckets, _ := aggMap["buckets"].([]any)
 		for _, b := range buckets {
 			bm, _ := b.(map[string]any)
-			rb := RawBucket{Key: fmt.Sprint(bm["key"])}
+			rb := RawBucket{Key: bucketKey(bm)}
 			if dc, ok := bm["doc_count"].(float64); ok {
 				rb.DocCount = int64(dc)
 			}
@@ -295,6 +295,25 @@ func parseSearchResult(raw map[string]any) (*RawSearchResult, error) {
 		}
 	}
 	return out, nil
+}
+
+// bucketKey extracts the human-meaningful label for a bucket. Three
+// shapes show up depending on aggregation kind:
+//   - terms:          key is the term itself ("contract", "invoice", …)
+//   - date_histogram: key is a unix-ms float; key_as_string is the ISO date
+//   - range:          key is the caller-supplied label ("100KB-1MB"),
+//                     and from/to come along but we only surface the label
+//
+// The `key_as_string` field is what the UI wants to render for date
+// buckets, so prefer it when present.
+func bucketKey(bm map[string]any) string {
+	if s, ok := bm["key_as_string"].(string); ok && s != "" {
+		return s
+	}
+	if s, ok := bm["key"].(string); ok {
+		return s
+	}
+	return fmt.Sprint(bm["key"])
 }
 
 func strVal(m map[string]any, key string) string {
