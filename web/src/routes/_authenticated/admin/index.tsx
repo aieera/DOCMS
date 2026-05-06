@@ -34,6 +34,7 @@ const tenantSections: Section[] = [
   { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
   { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
+  { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI (ADR 0066)' },
 ]
 
 // All Intel-Feature 01–10 admin surfaces in one group so they're

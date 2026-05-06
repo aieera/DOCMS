@@ -156,7 +156,7 @@ func main() {
 
 	// ---- HTTP REST ---------------------------------------------------------
 	mux := http.NewServeMux()
-	h := handler.New(svc, *log.Z())
+	h := handler.New(svc, debouncer, *log.Z())
 	h.Register(mux)
 
 	httpSrv := &http.Server{

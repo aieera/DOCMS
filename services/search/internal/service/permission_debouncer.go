@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/rs/zerolog"
 )
 
@@ -276,4 +277,121 @@ func (d *PermissionDebouncer) PendingCount() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return len(d.pending)
+}
+
+// PropagationStats is the JSON shape the admin endpoint serves.
+// Pulled from the live Prometheus histogram so /metrics scraping
+// isn't a prerequisite — the admin page works on a fresh deploy
+// before Grafana is wired.
+type PropagationStats struct {
+	P50Seconds    float64 `json:"p50_seconds"`
+	P95Seconds    float64 `json:"p95_seconds"`
+	P99Seconds    float64 `json:"p99_seconds"`
+	TotalSuccess  uint64  `json:"total_success"`
+	TotalFailure  uint64  `json:"total_failure"`
+	PendingCount  int     `json:"pending_count"`
+}
+
+// CollectPropagationStats reads the in-process Prometheus histogram
+// and returns the SLI summary for the admin dashboard. Approximate
+// quantiles are computed from cumulative bucket counts using the
+// usual linear-interpolation formula — matches the
+// histogram_quantile() PromQL function the runbook will alert on.
+func (d *PermissionDebouncer) CollectPropagationStats() PropagationStats {
+	stats := PropagationStats{PendingCount: d.PendingCount()}
+	successHist, _ := readHistogram(permissionPropagationLag, "success")
+	if successHist != nil {
+		stats.P50Seconds = histogramQuantile(successHist, 0.50)
+		stats.P95Seconds = histogramQuantile(successHist, 0.95)
+		stats.P99Seconds = histogramQuantile(successHist, 0.99)
+	}
+	stats.TotalSuccess = readCounter(permissionPropagationTotal, "success")
+	stats.TotalFailure = readCounter(permissionPropagationTotal, "failure")
+	return stats
+}
+
+// readHistogram pulls the per-bucket cumulative counts for a label
+// value out of a Prometheus HistogramVec. Returns (buckets, count)
+// where buckets is a slice of (upperBound, cumulativeCount) pairs
+// and count is the total observation count. nil on missing label.
+func readHistogram(h *prometheus.HistogramVec, label string) ([]histogramBucket, uint64) {
+	m, err := h.GetMetricWithLabelValues(label)
+	if err != nil {
+		return nil, 0
+	}
+	pb := &dto.Metric{}
+	if err := m.(prometheus.Metric).Write(pb); err != nil {
+		return nil, 0
+	}
+	hist := pb.Histogram
+	if hist == nil {
+		return nil, 0
+	}
+	buckets := make([]histogramBucket, 0, len(hist.Bucket))
+	for _, b := range hist.Bucket {
+		if b.UpperBound != nil && b.CumulativeCount != nil {
+			buckets = append(buckets, histogramBucket{
+				upperBound: *b.UpperBound,
+				count:      *b.CumulativeCount,
+			})
+		}
+	}
+	var total uint64
+	if hist.SampleCount != nil {
+		total = *hist.SampleCount
+	}
+	return buckets, total
+}
+
+// readCounter reads the current value of a Prometheus CounterVec
+// at the given label. Returns 0 on missing label rather than
+// raising — admin dashboards must handle no-data gracefully.
+func readCounter(c *prometheus.CounterVec, label string) uint64 {
+	m, err := c.GetMetricWithLabelValues(label)
+	if err != nil {
+		return 0
+	}
+	pb := &dto.Metric{}
+	if err := m.(prometheus.Metric).Write(pb); err != nil {
+		return 0
+	}
+	cv := pb.Counter
+	if cv == nil || cv.Value == nil {
+		return 0
+	}
+	return uint64(*cv.Value)
+}
+
+type histogramBucket struct {
+	upperBound float64
+	count      uint64
+}
+
+// histogramQuantile mirrors PromQL's histogram_quantile — takes the
+// rank (0-1) and the cumulative-count buckets, returns the
+// linearly-interpolated value at that rank. Returns 0 on insufficient
+// data.
+func histogramQuantile(buckets []histogramBucket, q float64) float64 {
+	if len(buckets) == 0 {
+		return 0
+	}
+	total := buckets[len(buckets)-1].count
+	if total == 0 {
+		return 0
+	}
+	target := float64(total) * q
+	var prevBound float64
+	var prevCount uint64
+	for _, b := range buckets {
+		if float64(b.count) >= target {
+			if b.count == prevCount {
+				return prevBound
+			}
+			frac := (target - float64(prevCount)) / float64(b.count-prevCount)
+			return prevBound + frac*(b.upperBound-prevBound)
+		}
+		prevBound = b.upperBound
+		prevCount = b.count
+	}
+	return buckets[len(buckets)-1].upperBound
 }

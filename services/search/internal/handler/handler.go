@@ -17,13 +17,17 @@ import (
 
 // Handler holds HTTP route handlers for the search service.
 type Handler struct {
-	svc *service.Service
-	log zerolog.Logger
+	svc       *service.Service
+	debouncer *service.PermissionDebouncer
+	log       zerolog.Logger
 }
 
-// New constructs a Handler.
-func New(svc *service.Service, log zerolog.Logger) *Handler {
-	return &Handler{svc: svc, log: log}
+// New constructs a Handler. debouncer may be nil — when nil the
+// /admin/permission-propagation-stats endpoint reports zeros for
+// the queue depth (the histogram percentiles still come through
+// from the global Prometheus registry).
+func New(svc *service.Service, debouncer *service.PermissionDebouncer, log zerolog.Logger) *Handler {
+	return &Handler{svc: svc, debouncer: debouncer, log: log}
 }
 
 // Register mounts all routes onto the supplied mux.
@@ -37,6 +41,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/saved-searches", h.createSavedSearch)
 	mux.HandleFunc("GET /api/v1/saved-searches", h.listSavedSearches)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", h.deleteSavedSearch)
+	// ADR 0066 §"SLI" — admin dashboard for permission-propagation lag.
+	// Returns histogram percentiles + counter totals + debouncer
+	// queue depth so the page works without Grafana.
+	mux.HandleFunc("GET /api/v1/admin/permission-propagation-stats", h.permissionPropagationStats)
 	// Wave 12.4: internal DSR subject-erase endpoint. Callers are
 	// the workflow service's EraseWorkflow activity, running behind
 	// the platform's internal-API-key middleware.
@@ -294,6 +302,34 @@ func (h *Handler) deleteSavedSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// permissionPropagationStats serves the §7.3 SLI summary the admin
+// dashboard polls — p50/p95/p99 of the propagation-lag histogram +
+// success/failure counts + the debouncer's pending-queue depth.
+//
+// Owner|admin gated. Reads in-process Prometheus state, so the
+// histogram_quantile() math matches what Grafana would compute
+// scraping /metrics.
+func (h *Handler) permissionPropagationStats(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	role := r.Header.Get("X-User-Role")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	if role != "owner" && role != "admin" {
+		writeError(w, http.StatusForbidden, "owner|admin required")
+		return
+	}
+	if h.debouncer == nil {
+		// Service started without the debouncer (e.g. legacy deploy).
+		// Report zeros rather than 5xx — the page renders an empty
+		// state.
+		writeJSON(w, http.StatusOK, service.PropagationStats{})
+		return
+	}
+	writeJSON(w, http.StatusOK, h.debouncer.CollectPropagationStats())
 }
 
 // ---- helpers --------------------------------------------------------------
