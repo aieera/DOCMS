@@ -29,6 +29,10 @@ func New(svc *service.Service, log zerolog.Logger) *Handler {
 // Register mounts all routes onto the supplied mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/search", h.search)
+	// ADR 0065 — GET variant accepts the spec's URL syntax:
+	// /search?q=X&facet=tag,author&filter=tag:contract&filter=author:alice
+	// Same service-layer entry point as POST; only the parsing differs.
+	mux.HandleFunc("GET /api/v1/search", h.searchGET)
 	mux.HandleFunc("GET /api/v1/search/autocomplete", h.autocomplete)
 	mux.HandleFunc("POST /api/v1/saved-searches", h.createSavedSearch)
 	mux.HandleFunc("GET /api/v1/saved-searches", h.listSavedSearches)
@@ -154,6 +158,27 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	result, err := h.svc.Search(r.Context(), req)
 	if err != nil {
 		h.log.Error().Err(err).Msg("search failed")
+		writeError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// searchGET handles the spec's URL-style search shape (ADR 0065).
+// Identity headers + parsing logic live in url_search.go; this
+// handler glues them together with the same service.Search() entry
+// point used by the POST path.
+func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	req := parseSearchRequestFromURL(r)
+	result, err := h.svc.Search(r.Context(), req)
+	if err != nil {
+		h.log.Error().Err(err).Msg("search GET failed")
 		writeError(w, http.StatusInternalServerError, "search failed")
 		return
 	}

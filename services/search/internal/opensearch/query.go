@@ -88,15 +88,29 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	}
 
 	// ---- aggregations -----------------------------------------------------
+	// ADR 0065 — facet shapes resolved through the FacetSpec registry
+	// so terms / date_histogram / range all work uniformly. Unknown
+	// facet names are dropped silently rather than 4xx'd; a stale
+	// client requesting a deprecated facet should still get a working
+	// search.
 	if len(req.Facets) > 0 {
 		aggs := map[string]any{}
-		for _, f := range req.Facets {
-			sz, ok := FacetSizes[f]
+		for _, name := range req.Facets {
+			// Backwards-compat: legacy callers passed raw OpenSearch
+			// field names (mime_type, document_class, ...). When a name
+			// isn't in the registry, fall back to a terms aggregation
+			// using the legacy FacetSizes map. ADR 0065 prefers the
+			// new symbolic names (doc_type, classification, ...).
+			if spec, ok := ResolveFacet(name); ok {
+				aggs[name] = spec.BuildAgg()
+				continue
+			}
+			sz, ok := FacetSizes[name]
 			if !ok {
 				sz = 20
 			}
-			aggs[f] = map[string]any{
-				"terms": map[string]any{"field": f, "size": sz},
+			aggs[name] = map[string]any{
+				"terms": map[string]any{"field": name, "size": sz},
 			}
 		}
 		body["aggs"] = aggs
@@ -172,6 +186,12 @@ func buildFilters(req *model.SearchRequest) []any {
 	if f.CreatedBy != "" {
 		filters = append(filters, map[string]any{"term": map[string]any{"created_by": f.CreatedBy}})
 	}
+	if len(f.CreatedByName) > 0 {
+		filters = append(filters, map[string]any{"terms": map[string]any{"created_by_name": f.CreatedByName}})
+	}
+	if len(f.RegionPin) > 0 {
+		filters = append(filters, map[string]any{"terms": map[string]any{"region_pin": f.RegionPin}})
+	}
 
 	rangeQ := map[string]any{}
 	if f.CreatedAfter != nil {
@@ -235,6 +255,31 @@ func buildSort(sortBy, sortOrder string) []any {
 	default: // "relevance"
 		return []any{"_score"}
 	}
+}
+
+// QueryOnlyBody extracts just the `query` clause from a full
+// search body so it can be reused as the body of a _count request.
+// Aggregations / sort / size / from / highlight all dropped — _count
+// rejects them.
+func QueryOnlyBody(searchBody map[string]any) map[string]any {
+	if q, ok := searchBody["query"]; ok {
+		return map[string]any{"query": q}
+	}
+	return map[string]any{"query": map[string]any{"match_all": map[string]any{}}}
+}
+
+// StripAggs returns a shallow copy of the search body with `aggs`
+// removed. Used when the count gate decides the query is too large
+// to aggregate over.
+func StripAggs(searchBody map[string]any) map[string]any {
+	out := make(map[string]any, len(searchBody))
+	for k, v := range searchBody {
+		if k == "aggs" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // DecodePageTokenInt is the exported counterpart used by the service layer.
