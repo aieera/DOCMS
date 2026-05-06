@@ -188,6 +188,25 @@ func (c *RealClient) Search(ctx context.Context, tenantID string, query map[stri
 	return parseSearchResult(result)
 }
 
+// Count returns the number of documents matching the supplied
+// query (the body should contain only `query`, no aggs / sort /
+// size). Used by the facet pipeline to decide whether to skip
+// aggregations on >1M-hit queries — counts are O(log N) inverted-
+// index walks, vastly cheaper than running aggregations across
+// millions of buckets.
+func (c *RealClient) Count(ctx context.Context, tenantID string, query map[string]any) (int64, error) {
+	idx := indexName(tenantID)
+	path := fmt.Sprintf("/%s/_count?routing=%s", idx, tenantID)
+	result, err := c.raw.doJSON(ctx, http.MethodPost, path, query)
+	if err != nil {
+		return 0, err
+	}
+	if v, ok := result["count"].(float64); ok {
+		return int64(v), nil
+	}
+	return 0, nil
+}
+
 // UpdateByQuery runs an update-by-query for bulk field changes (e.g.
 // permission propagation).
 func (c *RealClient) UpdateByQuery(ctx context.Context, tenantID string, query map[string]any) error {

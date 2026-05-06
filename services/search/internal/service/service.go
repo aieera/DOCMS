@@ -94,6 +94,41 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 	mode := model.NormalizeMode(req.Mode)
 
 	query := opensearch.BuildSearchQuery(req)
+
+	// ADR 0065 — facet pipeline. Two short-circuits:
+	// 1. Cache hit: build query without aggs, take buckets from Redis.
+	// 2. Skip-flag hit (this shape was over the threshold within
+	//    the last 60s): same — drop aggs, return facets={}.
+	// Cache miss + facets requested: run a Count first; if over
+	// threshold, drop aggs and set the skip flag for next time.
+	var cachedFacets map[string][]model.FacetBucket
+	var cacheKey string
+	facetsRequested := len(req.Facets) > 0
+	if facetsRequested {
+		cacheKey = facetCacheKey(req)
+		if s.shouldSkipFacets(ctx, cacheKey) {
+			query = opensearch.StripAggs(query)
+			s.log.Debug().Str("cache_key", stringForLogging(cacheKey)).
+				Msg("facets skip-flag hit; aggs dropped")
+		} else if cached := s.loadCachedFacets(ctx, cacheKey); cached != nil {
+			cachedFacets = cached
+			query = opensearch.StripAggs(query)
+		} else {
+			// Pre-flight: count the filtered hit set. If it's huge,
+			// skip the aggregation — the user gets a fast response
+			// with empty facets, and the skip-flag spares the next
+			// caller the same probe.
+			countBody := opensearch.QueryOnlyBody(query)
+			if total, err := s.os.Count(ctx, req.TenantID, countBody); err == nil &&
+				total > facetSkipThresholdValue() {
+				query = opensearch.StripAggs(query)
+				s.markFacetsSkipped(ctx, cacheKey)
+				s.log.Info().Int64("total", total).
+					Msg("facet skip threshold exceeded; aggs dropped")
+			}
+		}
+	}
+
 	raw, err := s.os.Search(ctx, req.TenantID, query)
 	if err != nil {
 		return nil, fmt.Errorf("opensearch search: %w", err)
@@ -131,7 +166,11 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 		result.Results = append(result.Results, hit)
 	}
 
-	if len(raw.Aggs) > 0 {
+	if cachedFacets != nil {
+		// Cache hit — buckets came from Redis, OpenSearch ran without
+		// aggs to skip the bucket compute.
+		result.Facets = cachedFacets
+	} else if len(raw.Aggs) > 0 {
 		result.Facets = make(map[string][]model.FacetBucket)
 		for k, buckets := range raw.Aggs {
 			for _, b := range buckets {
@@ -140,6 +179,13 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 					Count: b.DocCount,
 				})
 			}
+		}
+		// Fresh aggs — populate the cache for the next 60s of
+		// repeat-the-query traffic. Done after we've returned the
+		// data to the caller logically; storeCachedFacets is
+		// best-effort and never blocks the response.
+		if facetsRequested && cacheKey != "" {
+			s.storeCachedFacets(ctx, cacheKey, result.Facets)
 		}
 	}
 

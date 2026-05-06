@@ -251,6 +251,31 @@ func buildSort(sortBy, sortOrder string) []any {
 	}
 }
 
+// QueryOnlyBody extracts just the `query` clause from a full
+// search body so it can be reused as the body of a _count request.
+// Aggregations / sort / size / from / highlight all dropped — _count
+// rejects them.
+func QueryOnlyBody(searchBody map[string]any) map[string]any {
+	if q, ok := searchBody["query"]; ok {
+		return map[string]any{"query": q}
+	}
+	return map[string]any{"query": map[string]any{"match_all": map[string]any{}}}
+}
+
+// StripAggs returns a shallow copy of the search body with `aggs`
+// removed. Used when the count gate decides the query is too large
+// to aggregate over.
+func StripAggs(searchBody map[string]any) map[string]any {
+	out := make(map[string]any, len(searchBody))
+	for k, v := range searchBody {
+		if k == "aggs" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
 // DecodePageTokenInt is the exported counterpart used by the service layer.
 func DecodePageTokenInt(token string) int { return decodePageToken(token) }
 
