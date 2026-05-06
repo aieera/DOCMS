@@ -67,6 +67,16 @@ def completion(
         result.input_tokens, result.output_tokens,
         result.cost_usd, result.elapsed_ms,
     )
+    _emit_billing_usage(
+        tenant_id=tenant_id,
+        model=result.model,
+        provider=result.provider,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cost_usd=result.cost_usd,
+        elapsed_ms=result.elapsed_ms,
+        fallback_used=result.fallback_used,
+    )
     return {
         "content": result.content,
         "model": result.model,
@@ -199,6 +209,16 @@ def stream_completion(
         cost = 0.0
 
     _meter_usage(tenant_id, llm_model, input_tokens, output_tokens, cost, elapsed_ms)
+    _emit_billing_usage(
+        tenant_id=tenant_id,
+        model=llm_model,
+        provider=provider,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=cost,
+        elapsed_ms=elapsed_ms,
+        fallback_used=False,  # streaming has no fallback
+    )
     yield "", True, {
         "model": llm_model,
         "input_tokens": input_tokens,
@@ -207,6 +227,61 @@ def stream_completion(
         "elapsed_ms": elapsed_ms,
         "full_text": full_text,
     }
+
+
+def _emit_billing_usage(
+    *,
+    tenant_id: str,
+    model: str,
+    provider: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: float,
+    elapsed_ms: int,
+    fallback_used: bool = False,
+    user_id: str | None = None,
+) -> None:
+    """ADR 0064 — fire-and-forget publish of dms.billing.llm.usage.v1
+    to the BILLING_EVENTS JetStream stream. The billing service rolls
+    these into per-tenant invoice lines (see services/billing).
+
+    Best-effort: a NATS hiccup must not fail the LLM call. The Redis
+    counter is the source of truth for the admin dashboard's
+    rolling-30-day view; the billing event is the source of truth
+    for the invoice.
+
+    cost_usd is converted to integer cents to avoid float drift in
+    the billing aggregation (the billing service stores everything
+    as bigint cents)."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    cost_cents = int(round(float(cost_usd or 0.0) * 100))
+    envelope = {
+        "specversion": "1.0",
+        "id": str(_uuid.uuid4()),
+        "source": "dms.intelligence",
+        "type": "dms.billing.llm.usage.v1",
+        "subject": f"tenant/{tenant_id}",
+        "time": datetime.now(timezone.utc).isoformat(),
+        "datacontenttype": "application/json",
+        "data": {
+            "tenant_id":       tenant_id,
+            "user_id":         user_id,
+            "model":           model,
+            "provider":        provider,
+            "input_tokens":    int(input_tokens or 0),
+            "output_tokens":   int(output_tokens or 0),
+            "cost_usd_cents":  cost_cents,
+            "elapsed_ms":      int(elapsed_ms or 0),
+            "fallback_used":   bool(fallback_used),
+        },
+    }
+    try:
+        from app.events.publisher import publish_cloudevent
+        asyncio.run(publish_cloudevent("dms.billing.llm.usage.v1", envelope))
+    except Exception as e:  # noqa: BLE001 — explicitly fire-and-forget
+        log.warning("billing.llm.usage publish failed: %s", e)
 
 
 def _meter_usage(tenant_id: str, model: str, input_t: int, output_t: int, cost: float, elapsed_ms: int):
