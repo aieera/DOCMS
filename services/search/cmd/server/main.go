@@ -111,8 +111,17 @@ func main() {
 		Logger: *log.Z(),
 	})
 
+	// ---- ADR 0066 permission-event debouncer ------------------------------
+	// Coalesces dms.permission.changed.v1 events on a 5s window per
+	// (tenant, resource_type, resource_id) so a bulk grant rollout
+	// fans out as one OpenSearch update per resource, not N.
+	lagObserver := service.NewLagObserver()
+	debouncer := service.NewPermissionDebouncer(svc, *log.Z(), lagObserver)
+	go debouncer.Run(ctx)
+	defer debouncer.Close()
+
 	// ---- NATS indexer ------------------------------------------------------
-	indexer := service.NewIndexer(svc, js, *log.Z())
+	indexer := service.NewIndexer(svc, debouncer, js, *log.Z())
 	if err := indexer.Start(ctx); err != nil {
 		log.Fatal(ctx).Err(err).Msg("indexer start")
 	}
@@ -147,7 +156,7 @@ func main() {
 
 	// ---- HTTP REST ---------------------------------------------------------
 	mux := http.NewServeMux()
-	h := handler.New(svc, *log.Z())
+	h := handler.New(svc, debouncer, *log.Z())
 	h.Register(mux)
 
 	httpSrv := &http.Server{

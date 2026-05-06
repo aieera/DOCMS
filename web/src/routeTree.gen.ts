@@ -34,6 +34,7 @@ import { Route as AuthenticatedAdminRetentionRouteImport } from './routes/_authe
 import { Route as AuthenticatedAdminResidencyRouteImport } from './routes/_authenticated/admin/residency'
 import { Route as AuthenticatedAdminPrivacyRouteImport } from './routes/_authenticated/admin/privacy'
 import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_authenticated/admin/permissions'
+import { Route as AuthenticatedAdminPermissionLagRouteImport } from './routes/_authenticated/admin/permission-lag'
 import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_authenticated/admin/metadata-schema'
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
@@ -191,6 +192,12 @@ const AuthenticatedAdminPermissionsRoute =
     path: '/admin/permissions',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPermissionLagRoute =
+  AuthenticatedAdminPermissionLagRouteImport.update({
+    id: '/admin/permission-lag',
+    path: '/admin/permission-lag',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminMetadataSchemaRoute =
   AuthenticatedAdminMetadataSchemaRouteImport.update({
     id: '/admin/metadata-schema',
@@ -344,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
@@ -392,6 +400,7 @@ export interface FileRoutesByTo {
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
@@ -442,6 +451,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/_authenticated/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/_authenticated/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
   '/_authenticated/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/_authenticated/admin/residency': typeof AuthenticatedAdminResidencyRoute
@@ -492,6 +502,7 @@ export interface FileRouteTypes {
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
+    | '/admin/permission-lag'
     | '/admin/permissions'
     | '/admin/privacy'
     | '/admin/residency'
@@ -540,6 +551,7 @@ export interface FileRouteTypes {
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
+    | '/admin/permission-lag'
     | '/admin/permissions'
     | '/admin/privacy'
     | '/admin/residency'
@@ -589,6 +601,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/legal-holds'
     | '/_authenticated/admin/metadata-schema'
+    | '/_authenticated/admin/permission-lag'
     | '/_authenticated/admin/permissions'
     | '/_authenticated/admin/privacy'
     | '/_authenticated/admin/residency'
@@ -804,6 +817,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPermissionsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/permission-lag': {
+      id: '/_authenticated/admin/permission-lag'
+      path: '/admin/permission-lag'
+      fullPath: '/admin/permission-lag'
+      preLoaderRoute: typeof AuthenticatedAdminPermissionLagRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/metadata-schema': {
       id: '/_authenticated/admin/metadata-schema'
       path: '/admin/metadata-schema'
@@ -976,6 +996,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
+  AuthenticatedAdminPermissionLagRoute: typeof AuthenticatedAdminPermissionLagRoute
   AuthenticatedAdminPermissionsRoute: typeof AuthenticatedAdminPermissionsRoute
   AuthenticatedAdminPrivacyRoute: typeof AuthenticatedAdminPrivacyRoute
   AuthenticatedAdminResidencyRoute: typeof AuthenticatedAdminResidencyRoute
@@ -1020,6 +1041,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
+  AuthenticatedAdminPermissionLagRoute: AuthenticatedAdminPermissionLagRoute,
   AuthenticatedAdminPermissionsRoute: AuthenticatedAdminPermissionsRoute,
   AuthenticatedAdminPrivacyRoute: AuthenticatedAdminPrivacyRoute,
   AuthenticatedAdminResidencyRoute: AuthenticatedAdminResidencyRoute,
