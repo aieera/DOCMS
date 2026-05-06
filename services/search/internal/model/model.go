@@ -158,7 +158,24 @@ type IndexDocument struct {
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         *time.Time         `json:"updated_at,omitempty"`
 	CustomMetadata    map[string]any     `json:"custom_metadata,omitempty"`
+	// ReadableBy is the legacy mixed field — user_ids, group_ids,
+	// and "everyone" all in one keyword. Kept populated for the
+	// migration window so docs indexed before ADR 0066 still match
+	// queries from clients that already use the split fields.
 	ReadableBy        []string           `json:"readable_by"`
+	// ReadableByUsers — direct grants + group memberships expanded
+	// to individual user_ids. Owned by the document service's
+	// publish-time expansion (ADR 0066 §"Indexer split"). Falls back
+	// to ReadableBy when an upstream hasn't been updated yet.
+	ReadableByUsers   []string           `json:"readable_by_users,omitempty"`
+	// ReadableByGroups — group_ids the doc grants access to (no
+	// expansion). Used so a query for a user newly added to a group
+	// matches without having to wait for the doc's reindex.
+	ReadableByGroups  []string           `json:"readable_by_groups,omitempty"`
+	// ShareTokens — opaque token strings for unauthenticated shared
+	// links. Separate from user/group access so revoking a share
+	// link doesn't have to re-publish the whole readable_by set.
+	ShareTokens       []string           `json:"share_tokens,omitempty"`
 	HasThumbnail      bool               `json:"has_thumbnail"`
 	VersionCount      int                `json:"version_count"`
 	ExtractedEntities *ExtractedEntities `json:"extracted_entities,omitempty"`

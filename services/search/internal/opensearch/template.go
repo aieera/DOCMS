@@ -39,6 +39,9 @@ const TemplateJSON = `{
         "updated_at":      {"type": "date"},
         "custom_metadata": {"type": "object", "dynamic": true},
         "readable_by":     {"type": "keyword"},
+        "readable_by_users":  {"type": "keyword"},
+        "readable_by_groups": {"type": "keyword"},
+        "share_tokens":       {"type": "keyword"},
         "has_thumbnail":   {"type": "boolean"},
         "version_count":   {"type": "integer"},
         "extracted_entities": {
