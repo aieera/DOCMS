@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 )
 
@@ -88,18 +90,54 @@ type LagObserver interface {
 	ObservePropagation(lag time.Duration, success bool)
 }
 
-// noopLagObserver is the placeholder until commit 5 wires the real
-// Prometheus histogram. Lets the cmd/server entry compile + run
-// today without the metric showing up in /metrics; commit 5
-// replaces this with prometheus.NewHistogramVec + counter.
-type noopLagObserver struct{}
+// promLagObserver is the production observer — wires
+// search_permission_propagation_lag_seconds (histogram) and
+// search_permission_propagation_total{result} (counter). Buckets
+// match ADR 0066 §"SLI": [0.1, 0.5, 1, 2, 5, 10, 30] — the 5s mark
+// is the alert threshold the runbook will eventually wire as
+// `histogram_quantile(0.95, …) > 5`.
+type promLagObserver struct {
+	histogram *prometheus.HistogramVec
+	counter   *prometheus.CounterVec
+}
 
-func (noopLagObserver) ObservePropagation(time.Duration, bool) {}
+var (
+	permissionPropagationLag = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "search_permission_propagation_lag_seconds",
+			Help:    "Time from dms.permission.changed.v1 emission to OpenSearch index update commit. ADR 0066.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
+		},
+		[]string{"result"},
+	)
+	permissionPropagationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "search_permission_propagation_total",
+			Help: "Count of permission propagations by outcome (success|failure).",
+		},
+		[]string{"result"},
+	)
+)
 
-// NewLagObserver returns the default observer. Callers don't care
-// about the concrete type — they hand it to NewPermissionDebouncer
-// and the metric (or no-op) just lands.
-func NewLagObserver() LagObserver { return noopLagObserver{} }
+func (o *promLagObserver) ObservePropagation(lag time.Duration, success bool) {
+	result := "success"
+	if !success {
+		result = "failure"
+	}
+	o.histogram.WithLabelValues(result).Observe(lag.Seconds())
+	o.counter.WithLabelValues(result).Inc()
+}
+
+// NewLagObserver returns the production observer. Wired from
+// cmd/server during startup so the histogram + counter register
+// against the default Prometheus registry — visible at /metrics
+// without per-service plumbing.
+func NewLagObserver() LagObserver {
+	return &promLagObserver{
+		histogram: permissionPropagationLag,
+		counter:   permissionPropagationTotal,
+	}
+}
 
 // NewPermissionDebouncer wires the debouncer to a search Service.
 // The flusher loop starts when Run is called — usually from main()
