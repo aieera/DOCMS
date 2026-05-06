@@ -37,6 +37,38 @@ def _load_kek() -> Optional[bytes]:
     return kek
 
 
+def encrypt_tenant_secret(plaintext: str) -> Optional[str]:
+    """Symmetric counterpart of decrypt_tenant_secret — produces a
+    base64 string of `nonce || AES-256-GCM(plaintext)` using the
+    deploy's VAULTDMS_LOCAL_KEK. Returns None when KEK is missing or
+    malformed; callers MUST treat None as "refuse to write" (the
+    endpoint should 503) since silently storing plaintext defeats
+    the whole at-rest guarantee.
+
+    Wire-compatible with services/document/internal/service/
+    ner_service.go::encryptTenantSecret + auth/internal/service/
+    mfa.go::encryptMFASecret.
+    """
+    if not plaintext:
+        return None
+    kek = _load_kek()
+    if kek is None:
+        return None
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        log.warning("secrets: cryptography not installed; cannot encrypt")
+        return None
+    import os as _os
+    nonce = _os.urandom(NONCE_SIZE)
+    try:
+        ct = AESGCM(kek).encrypt(nonce, plaintext.encode("utf-8"), None)
+    except Exception as e:  # noqa: BLE001
+        log.warning("secrets: AES-GCM encrypt failed: %s", e)
+        return None
+    return base64.b64encode(nonce + ct).decode("ascii")
+
+
 def decrypt_tenant_secret(encoded: str) -> Optional[str]:
     """Returns plaintext or None on any failure (missing/garbage KEK,
     bad ciphertext, auth-tag mismatch). Never raises — the LLM call
