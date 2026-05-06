@@ -11,6 +11,67 @@ Runbook for the per-tenant LiteLLM routing introduced in ADR 0064.
   recovery state. Hot-path read is the in-process cache; this row
   is for replica restart + admin visibility.
 
+## KEK source — Vault Transit vs local AES-GCM
+
+The intelligence service envelope-encrypts the `api_key_encrypted`
+column with one of two backends, picked at runtime:
+
+| When... | Backend | Ciphertext shape |
+|---------|---------|------------------|
+| `VAULT_ADDR` + `VAULT_TOKEN` + `VAULT_TRANSIT_KEY` all set | Vault Transit — KEK material lives **inside Vault**; every encrypt/decrypt round-trips to `/v1/transit/{op}/{key}` | `vault:v1:...` |
+| `VAULTDMS_LOCAL_KEK` set, Vault not | In-process AES-256-GCM | base64(`nonce` + `ct` + `tag`) |
+| neither | encrypt returns None → admin PUT 503s | n/a |
+
+Decrypt detects which scheme produced a row by prefix and dispatches
+back to the matching backend. **This is what makes the local→Vault
+migration incremental** — existing rows written with the local KEK
+keep decrypting via the in-process path after Vault is rolled out;
+only new writes go through Vault.
+
+### Enabling Vault Transit on an existing deploy
+
+```sh
+# 1. Configure the Transit secrets engine in Vault (one-time).
+vault secrets enable transit
+vault write -f transit/keys/vaultdms-tenant-secrets
+
+# 2. Mint a token with encrypt + decrypt on that key only.
+vault policy write vaultdms-llm-secrets - <<POL
+path "transit/encrypt/vaultdms-tenant-secrets" { capabilities = ["update"] }
+path "transit/decrypt/vaultdms-tenant-secrets" { capabilities = ["update"] }
+POL
+vault token create -policy=vaultdms-llm-secrets
+
+# 3. Set the three env vars on every intelligence pod.
+VAULT_ADDR=https://vault.internal:8200
+VAULT_TOKEN=<token from step 2>
+VAULT_TRANSIT_KEY=vaultdms-tenant-secrets
+
+# 4. KEEP VAULTDMS_LOCAL_KEK set during the rollout window so the
+#    decrypt fallback path can still read rows written before
+#    Vault Transit was enabled. Drop it only after every existing
+#    row has been re-encrypted (admin re-paste of each api_key, OR
+#    a one-shot migration job — TODO).
+```
+
+The migration is intentionally lazy — there's no big-bang re-encrypt
+step. Re-pasting an api_key in `/admin/tenant/ai` rewrites that row
+under the new backend.
+
+### Vault outage behavior
+
+When Vault is configured but unreachable:
+- **Encrypt**: falls back to local AES-GCM if `VAULTDMS_LOCAL_KEK` is
+  also set. The new row's ciphertext lacks the `vault:` prefix and
+  decrypts via the local path going forward (mixed-mode is fine).
+  If neither backend is available the PUT 503s — admin sees the
+  outage.
+- **Decrypt**: existing `vault:v1:...` rows return None until Vault
+  recovers. The LLM tier degrades to "no plaintext available" —
+  callers (RAG, NER LLM, /llm/completions) silently fall through
+  to the deploy-default key as if no per-tenant config was set.
+  Logs warn-level `vault decrypt failed`.
+
 ## Routine ops
 
 ### Setting a tenant's API key
