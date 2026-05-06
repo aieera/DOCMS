@@ -55,6 +55,10 @@ func facetCacheKey(req *model.SearchRequest) string {
 	sort.Strings(lifecycle)
 	mime := append([]string(nil), req.Filters.MimeType...)
 	sort.Strings(mime)
+	authors := append([]string(nil), req.Filters.CreatedByName...)
+	sort.Strings(authors)
+	regions := append([]string(nil), req.Filters.RegionPin...)
+	sort.Strings(regions)
 	facets := append([]string(nil), req.Facets...)
 	sort.Strings(facets)
 
@@ -70,6 +74,8 @@ func facetCacheKey(req *model.SearchRequest) string {
 		Tags           []string          `json:"tg"`
 		MimeType       []string          `json:"mt"`
 		CreatedBy      string            `json:"cb"`
+		Authors        []string          `json:"au"`
+		Regions        []string          `json:"rg"`
 		HasContent     *bool             `json:"hc"`
 		CreatedAfter   string            `json:"ca"`
 		CreatedBefore  string            `json:"cb2"`
@@ -89,6 +95,8 @@ func facetCacheKey(req *model.SearchRequest) string {
 		Tags:           tags,
 		MimeType:       mime,
 		CreatedBy:      req.Filters.CreatedBy,
+		Authors:        authors,
+		Regions:        regions,
 		HasContent:     req.Filters.HasContent,
 		SizeMin:        req.Filters.SizeMinBytes,
 		SizeMax:        req.Filters.SizeMaxBytes,

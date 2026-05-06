@@ -186,6 +186,12 @@ func buildFilters(req *model.SearchRequest) []any {
 	if f.CreatedBy != "" {
 		filters = append(filters, map[string]any{"term": map[string]any{"created_by": f.CreatedBy}})
 	}
+	if len(f.CreatedByName) > 0 {
+		filters = append(filters, map[string]any{"terms": map[string]any{"created_by_name": f.CreatedByName}})
+	}
+	if len(f.RegionPin) > 0 {
+		filters = append(filters, map[string]any{"terms": map[string]any{"region_pin": f.RegionPin}})
+	}
 
 	rangeQ := map[string]any{}
 	if f.CreatedAfter != nil {

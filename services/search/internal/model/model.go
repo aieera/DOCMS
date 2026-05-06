@@ -59,6 +59,14 @@ type SearchFilters struct {
 	SizeMinBytes   *int64
 	SizeMaxBytes   *int64
 	CreatedBy      string
+	// CreatedByName is the display-name field; the §7.2 "author"
+	// facet maps to it. Filter shape mirrors the symbolic facet
+	// name to keep URLs self-consistent.
+	CreatedByName  []string
+	// RegionPin is the data-residency keyword. Top-level field on
+	// the index — cannot be routed through CustomMetadata which
+	// adds the `custom_metadata.` prefix.
+	RegionPin      []string
 	CustomMetadata map[string]string
 	HasContent     *bool
 }
