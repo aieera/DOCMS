@@ -35,16 +35,20 @@ func handlerCtx(parent context.Context, msg *nats.Msg) (context.Context, context
 // the Service layer. Each handler acks on success, naks (redelivery) on
 // transient errors, and terms malformed messages.
 type Indexer struct {
-	svc    *Service
-	js     nats.JetStreamContext
-	log    zerolog.Logger
-	subs   []*nats.Subscription
-	parent context.Context
+	svc        *Service
+	debouncer  *PermissionDebouncer // ADR 0066 — coalesces permission events
+	js         nats.JetStreamContext
+	log        zerolog.Logger
+	subs       []*nats.Subscription
+	parent     context.Context
 }
 
 // NewIndexer creates the consumer. Call Start to begin receiving.
-func NewIndexer(svc *Service, js nats.JetStreamContext, log zerolog.Logger) *Indexer {
-	return &Indexer{svc: svc, js: js, log: log, parent: context.Background()}
+// debouncer may be nil — when nil, permission events propagate
+// synchronously (the legacy path), which is convenient for tests
+// that want deterministic timing.
+func NewIndexer(svc *Service, debouncer *PermissionDebouncer, js nats.JetStreamContext, log zerolog.Logger) *Indexer {
+	return &Indexer{svc: svc, debouncer: debouncer, js: js, log: log, parent: context.Background()}
 }
 
 // Start subscribes to all search-relevant subjects. Idempotent if called
@@ -228,6 +232,35 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 		fields["readable_by_groups"] = readableByGroups
 	}
 
+	if resourceType != "document" && resourceType != "folder" && resourceType != "workspace" {
+		ix.log.Warn().Str("type", resourceType).Msg("unknown resource type in permission.changed")
+		_ = msg.Term()
+		return
+	}
+
+	// ADR 0066 — debounced batch path. The flusher loop owns the
+	// actual OpenSearch update; we ack the NATS message immediately
+	// because at-least-once delivery on the same key would just be
+	// coalesced anyway.
+	//
+	// Acking before the index write lands is safe here: the
+	// debouncer's flushAll() drains on shutdown, so a SIGTERM mid-
+	// flight doesn't lose work.
+	if ix.debouncer != nil {
+		// Parse the CloudEvents `time` field if present so propagation
+		// lag is measured against when the publisher emitted the
+		// change, not when the subscriber happened to poll.
+		var emittedAt time.Time
+		if t, _ := parseCloudEventTime(msg); !t.IsZero() {
+			emittedAt = t
+		}
+		ix.debouncer.Submit(tenantID, resourceType, resourceID, fields, emittedAt)
+		_ = msg.Ack()
+		return
+	}
+
+	// Synchronous path — kept for tests + deploys that haven't wired
+	// the debouncer yet.
 	ctx, cancel := handlerCtx(ix.parent, msg)
 	defer cancel()
 	var err error
@@ -238,10 +271,6 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 		err = ix.svc.UpdateReadableByFolder(ctx, tenantID, resourceID, readableBy)
 	case "workspace":
 		err = ix.svc.UpdateReadableByWorkspace(ctx, tenantID, resourceID, readableBy)
-	default:
-		ix.log.Warn().Str("type", resourceType).Msg("unknown resource type in permission.changed")
-		_ = msg.Term()
-		return
 	}
 	if err != nil {
 		ix.log.Error().Err(err).Str("resource", resourceType+"/"+resourceID).Msg("readable_by update failed")
@@ -249,6 +278,25 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 		return
 	}
 	_ = msg.Ack()
+}
+
+// parseCloudEventTime pulls the `time` field out of the CloudEvents
+// envelope. Returns zero time on missing/malformed — caller treats
+// that as "use now()" rather than skipping the propagation.
+func parseCloudEventTime(msg *nats.Msg) (time.Time, error) {
+	var env map[string]any
+	if err := json.Unmarshal(msg.Data, &env); err != nil {
+		return time.Time{}, err
+	}
+	s, _ := env["time"].(string)
+	if s == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
 }
 
 func (ix *Indexer) onClassified(msg *nats.Msg) {
