@@ -172,8 +172,36 @@ type SavedSearch struct {
 	Filters               SearchFilters `json:"filters"`
 	Notify                bool          `json:"notify"`
 	NotifyIntervalMinutes int           `json:"notify_interval_minutes,omitempty"`
-	CreatedAt             time.Time     `json:"created_at"`
-	LastRunAt             *time.Time    `json:"last_run_at,omitempty"`
+	// AlertFrequencyCron — optional cron expression. When set, the
+	// alert workflow uses it instead of NotifyIntervalMinutes. ADR
+	// 0068 §"Cron".
+	AlertFrequencyCron    string                  `json:"alert_frequency_cron,omitempty"`
+	// WorkflowID — Temporal handle the alert is bound to. Empty
+	// when notify=false. Set by the service layer when an alert
+	// is started; cleared on stop.
+	WorkflowID            string                  `json:"workflow_id,omitempty"`
+	// LastMatchDocIDs — diff cursor, written by the alert
+	// workflow. Not exposed to API callers in plaintext (the JSON
+	// tag is on the response shape; keeping the field on the model
+	// for serialization). Empty until the first run lands.
+	LastMatchDocIDs       []string                `json:"last_match_doc_ids,omitempty"`
+	CreatedAt             time.Time               `json:"created_at"`
+	LastRunAt             *time.Time              `json:"last_run_at,omitempty"`
+	// Subscribers — embedded on GET responses. Owner is always
+	// implicitly subscribed when notify=true; explicit subscribers
+	// fan out to a team.
+	Subscribers           []SavedSearchSubscriber `json:"subscribers,omitempty"`
+	SubscriberCount       int                     `json:"subscriber_count"`
+}
+
+// SavedSearchSubscriber is one row in saved_search_subscribers.
+// Channels carries the per-user delivery preference; valid values
+// mirror the notifications service: "in_app", "email", "digest".
+type SavedSearchSubscriber struct {
+	UserID        string    `json:"user_id"`
+	Channels      []string  `json:"channels"`
+	SubscribedBy  string    `json:"subscribed_by"`
+	SubscribedAt  time.Time `json:"subscribed_at"`
 }
 
 // IndexDocument is the shape upserted into OpenSearch. Field names match

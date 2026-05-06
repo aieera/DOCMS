@@ -19,6 +19,7 @@ import { Route as SharedTokenRouteImport } from './routes/shared.$token'
 import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated/trash'
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
+import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authenticated/saved-searches'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
@@ -107,6 +108,12 @@ const AuthenticatedSearchRoute = AuthenticatedSearchRouteImport.update({
   path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSavedSearchesRoute =
+  AuthenticatedSavedSearchesRouteImport.update({
+    id: '/saved-searches',
+    path: '/saved-searches',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedNotificationsRoute =
   AuthenticatedNotificationsRouteImport.update({
     id: '/notifications',
@@ -339,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
@@ -387,6 +395,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
@@ -438,6 +447,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/ask': typeof AuthenticatedAskRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
@@ -490,6 +500,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/ask'
     | '/notifications'
+    | '/saved-searches'
     | '/search'
     | '/tasks'
     | '/trash'
@@ -538,6 +549,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/ask'
     | '/notifications'
+    | '/saved-searches'
     | '/search'
     | '/tasks'
     | '/trash'
@@ -588,6 +600,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/ask'
     | '/_authenticated/notifications'
+    | '/_authenticated/saved-searches'
     | '/_authenticated/search'
     | '/_authenticated/tasks'
     | '/_authenticated/trash'
@@ -710,6 +723,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/search'
       preLoaderRoute: typeof AuthenticatedSearchRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/saved-searches': {
+      id: '/_authenticated/saved-searches'
+      path: '/saved-searches'
+      fullPath: '/saved-searches'
+      preLoaderRoute: typeof AuthenticatedSavedSearchesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/notifications': {
@@ -984,6 +1004,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedAskRoute: typeof AuthenticatedAskRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedSavedSearchesRoute: typeof AuthenticatedSavedSearchesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
@@ -1029,6 +1050,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAskRoute: AuthenticatedAskRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedSavedSearchesRoute: AuthenticatedSavedSearchesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,

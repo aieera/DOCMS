@@ -350,14 +350,81 @@ func (s *Service) CreateSavedSearch(ctx context.Context, ss *model.SavedSearch) 
 	return s.repo.CreateSavedSearch(ctx, ss)
 }
 
-// ListSavedSearches returns the user's saved searches.
+// ListSavedSearches returns the user's saved searches with embedded
+// subscriber lists. ADR 0068: GET response always carries
+// `subscribers[]` + `subscriber_count` so the UI can render the
+// roster without a per-row fetch.
 func (s *Service) ListSavedSearches(ctx context.Context, tenantID, userID string) ([]*model.SavedSearch, error) {
-	return s.repo.ListSavedSearches(ctx, tenantID, userID)
+	rows, err := s.repo.ListSavedSearches(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, ss := range rows {
+		subs, err := s.repo.ListSubscribers(ctx, tenantID, ss.ID)
+		if err != nil {
+			s.log.Warn().Err(err).Str("id", ss.ID).Msg("list subscribers failed; continuing")
+			continue
+		}
+		ss.Subscribers = subs
+		ss.SubscriberCount = len(subs)
+	}
+	return rows, nil
 }
 
-// DeleteSavedSearch removes a saved search.
+// DeleteSavedSearch removes a saved search. Cascade-cancels the
+// bound Temporal workflow and drops subscriber rows.
 func (s *Service) DeleteSavedSearch(ctx context.Context, tenantID, userID, id string) error {
+	// Subscribers cascade via direct delete (no FK cascade because
+	// we want explicit control + audit). Best-effort; the saved-
+	// search delete is the load-bearing operation.
+	if err := s.repo.DeleteAllSubscribers(ctx, tenantID, id); err != nil {
+		s.log.Warn().Err(err).Msg("subscriber cascade delete failed; continuing")
+	}
+	// TODO commit 3 — cancel the Temporal workflow if WorkflowID set.
 	return s.repo.DeleteSavedSearch(ctx, tenantID, userID, id)
+}
+
+// UpdateSavedSearch patches mutable fields. ADR 0068 §"PATCH".
+// Returns ErrNotFound when the row doesn't belong to the user.
+func (s *Service) UpdateSavedSearch(
+	ctx context.Context,
+	tenantID, userID, id string,
+	patch repository.SavedSearchPatch,
+) (*model.SavedSearch, error) {
+	if err := s.repo.UpdateSavedSearch(ctx, tenantID, userID, id, patch); err != nil {
+		return nil, err
+	}
+	ss, err := s.repo.GetSavedSearch(ctx, tenantID, userID, id)
+	if err != nil {
+		return nil, err
+	}
+	subs, _ := s.repo.ListSubscribers(ctx, tenantID, id)
+	ss.Subscribers = subs
+	ss.SubscriberCount = len(subs)
+	return ss, nil
+}
+
+// AddSubscriber adds (or updates the channels of) a subscriber. The
+// owner is implicitly subscribed when notify=true; this method is
+// for ADDITIONAL subscribers — typically a team member or admin
+// bulk-subscribe.
+func (s *Service) AddSubscriber(
+	ctx context.Context,
+	tenantID, savedSearchID, userID, subscribedBy string,
+	channels []string,
+) error {
+	if len(channels) == 0 {
+		channels = []string{"in_app"}
+	}
+	return s.repo.AddSubscriber(ctx, tenantID, savedSearchID, userID, subscribedBy, channels)
+}
+
+// RemoveSubscriber drops a subscription row.
+func (s *Service) RemoveSubscriber(
+	ctx context.Context,
+	tenantID, savedSearchID, userID string,
+) error {
+	return s.repo.RemoveSubscriber(ctx, tenantID, savedSearchID, userID)
 }
 
 // ---- Indexing (called by the NATS consumer) -------------------------------
