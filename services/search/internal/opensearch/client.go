@@ -207,6 +207,21 @@ func (c *RealClient) Count(ctx context.Context, tenantID string, query map[strin
 	return 0, nil
 }
 
+// FederatedSearch hits the cross-tenant index pattern with no
+// routing key — used ONLY by the platform-admin federated path
+// (ADR 0069). The caller MUST have already verified the
+// platform_admins membership + recorded the audit row before
+// reaching this method; nothing in this method enforces
+// tenant scope.
+func (c *RealClient) FederatedSearch(ctx context.Context, query map[string]any) (*RawSearchResult, error) {
+	path := "/" + FederatedIndexPattern + "/_search"
+	result, err := c.raw.doJSON(ctx, http.MethodPost, path, query)
+	if err != nil {
+		return nil, err
+	}
+	return parseSearchResult(result)
+}
+
 // UpdateByQuery runs an update-by-query for bulk field changes (e.g.
 // permission propagation).
 func (c *RealClient) UpdateByQuery(ctx context.Context, tenantID string, query map[string]any) error {

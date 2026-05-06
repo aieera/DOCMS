@@ -46,6 +46,7 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
+import { Route as AuthenticatedAdminPlatformSupportSearchRouteImport } from './routes/_authenticated/admin/platform/support-search'
 import { Route as AuthenticatedAdminIntelligenceUsageRouteImport } from './routes/_authenticated/admin/intelligence/usage'
 import { Route as AuthenticatedAdminIntelligenceTagReviewRouteImport } from './routes/_authenticated/admin/intelligence/tag-review'
 import { Route as AuthenticatedAdminIntelligenceRoutingRulesRouteImport } from './routes/_authenticated/admin/intelligence/routing-rules'
@@ -265,6 +266,12 @@ const AuthenticatedAdminTenantAiRoute =
     path: '/admin/tenant/ai',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPlatformSupportSearchRoute =
+  AuthenticatedAdminPlatformSupportSearchRouteImport.update({
+    id: '/admin/platform/support-search',
+    path: '/admin/platform/support-search',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntelligenceUsageRoute =
   AuthenticatedAdminIntelligenceUsageRouteImport.update({
     id: '/admin/intelligence/usage',
@@ -384,6 +391,7 @@ export interface FileRoutesByFullPath {
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
@@ -434,6 +442,7 @@ export interface FileRoutesByTo {
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
@@ -486,6 +495,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/_authenticated/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/_authenticated/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/_authenticated/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
@@ -538,6 +548,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
     | '/admin/intelligence/usage'
+    | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/workspaces/$workspaceId/'
     | '/workspaces/$workspaceId/documents/$documentId'
@@ -588,6 +599,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
     | '/admin/intelligence/usage'
+    | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/workspaces/$workspaceId'
     | '/workspaces/$workspaceId/documents/$documentId'
@@ -639,6 +651,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/intelligence/routing-rules'
     | '/_authenticated/admin/intelligence/tag-review'
     | '/_authenticated/admin/intelligence/usage'
+    | '/_authenticated/admin/platform/support-search'
     | '/_authenticated/admin/tenant/ai'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
@@ -914,6 +927,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTenantAiRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/platform/support-search': {
+      id: '/_authenticated/admin/platform/support-search'
+      path: '/admin/platform/support-search'
+      fullPath: '/admin/platform/support-search'
+      preLoaderRoute: typeof AuthenticatedAdminPlatformSupportSearchRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/intelligence/usage': {
       id: '/_authenticated/admin/intelligence/usage'
       path: '/admin/intelligence/usage'
@@ -1042,6 +1062,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIntelligenceRoutingRulesRoute: typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   AuthenticatedAdminIntelligenceTagReviewRoute: typeof AuthenticatedAdminIntelligenceTagReviewRoute
   AuthenticatedAdminIntelligenceUsageRoute: typeof AuthenticatedAdminIntelligenceUsageRoute
+  AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
@@ -1099,6 +1120,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntelligenceTagReviewRoute,
   AuthenticatedAdminIntelligenceUsageRoute:
     AuthenticatedAdminIntelligenceUsageRoute,
+  AuthenticatedAdminPlatformSupportSearchRoute:
+    AuthenticatedAdminPlatformSupportSearchRoute,
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
