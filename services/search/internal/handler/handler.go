@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/vaultdms/vaultdms/services/search/internal/repository"
 	"github.com/vaultdms/vaultdms/services/search/internal/service"
 )
 
@@ -43,6 +44,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/saved-searches", h.createSavedSearch)
 	mux.HandleFunc("GET /api/v1/saved-searches", h.listSavedSearches)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", h.deleteSavedSearch)
+	// ADR 0068 — edit + alert + subscribe.
+	mux.HandleFunc("PATCH /api/v1/saved-searches/{id}", h.patchSavedSearch)
+	mux.HandleFunc("POST /api/v1/saved-searches/{id}/subscribe", h.subscribeSavedSearch)
+	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}/subscribe/{user_id}", h.unsubscribeSavedSearch)
 	// ADR 0066 §"SLI" — admin dashboard for permission-propagation lag.
 	// Returns histogram percentiles + counter totals + debouncer
 	// queue depth so the page works without Grafana.
@@ -338,6 +343,134 @@ func (h *Handler) deleteSavedSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.svc.DeleteSavedSearch(r.Context(), tenantID, userID, id); err != nil {
 		writeError(w, http.StatusNotFound, "saved search not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- ADR 0068 — saved-search edit + alert + subscribe ----------------
+
+type patchSavedSearchBody struct {
+	Name                  *string      `json:"name,omitempty"`
+	Query                 *string      `json:"query,omitempty"`
+	Filters               *filtersBody `json:"filters,omitempty"`
+	Notify                *bool        `json:"notify,omitempty"`
+	NotifyIntervalMinutes *int         `json:"notify_interval_minutes,omitempty"`
+	AlertFrequencyCron    *string      `json:"alert_frequency_cron,omitempty"`
+}
+
+func (h *Handler) patchSavedSearch(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "saved search id required")
+		return
+	}
+	var body patchSavedSearchBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	patch := repository.SavedSearchPatch{
+		Name:                  body.Name,
+		Query:                 body.Query,
+		Notify:                body.Notify,
+		NotifyIntervalMinutes: body.NotifyIntervalMinutes,
+		AlertFrequencyCron:    body.AlertFrequencyCron,
+	}
+	if body.Filters != nil {
+		f := model.SearchFilters{
+			WorkspaceID:    body.Filters.WorkspaceID,
+			FolderID:       body.Filters.FolderID,
+			DocumentClass:  body.Filters.DocumentClass,
+			LifecycleState: body.Filters.LifecycleState,
+			Tags:           body.Filters.Tags,
+			MimeType:       body.Filters.MimeType,
+			SizeMinBytes:   body.Filters.SizeMinBytes,
+			SizeMaxBytes:   body.Filters.SizeMaxBytes,
+			CreatedBy:      body.Filters.CreatedBy,
+			CustomMetadata: body.Filters.CustomMetadata,
+			HasContent:     body.Filters.HasContent,
+		}
+		patch.Filters = &f
+	}
+	updated, err := h.svc.UpdateSavedSearch(r.Context(), tenantID, userID, id, patch)
+	if err != nil {
+		h.log.Error().Err(err).Msg("patch saved search failed")
+		writeError(w, http.StatusNotFound, "saved search not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+type subscribeBody struct {
+	UserID   string   `json:"user_id"`
+	Channels []string `json:"channels"`
+}
+
+func (h *Handler) subscribeSavedSearch(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	role := r.Header.Get("X-User-Role")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "saved search id required")
+		return
+	}
+	var body subscribeBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	target := body.UserID
+	if target == "" {
+		// Self-subscribe shorthand — empty body or {channels} only.
+		target = userID
+	}
+	// Adding someone else as a subscriber requires admin role.
+	// Self-subscribing is always allowed.
+	if target != userID && role != "owner" && role != "admin" {
+		writeError(w, http.StatusForbidden, "owner|admin required to subscribe other users")
+		return
+	}
+	if err := h.svc.AddSubscriber(r.Context(), tenantID, id, target, userID, body.Channels); err != nil {
+		h.log.Error().Err(err).Msg("add subscriber failed")
+		writeError(w, http.StatusInternalServerError, "subscribe failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "subscribed", "user_id": target})
+}
+
+func (h *Handler) unsubscribeSavedSearch(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	role := r.Header.Get("X-User-Role")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	id := r.PathValue("id")
+	target := r.PathValue("user_id")
+	if id == "" || target == "" {
+		writeError(w, http.StatusBadRequest, "saved search id and user_id required")
+		return
+	}
+	// A user can always remove themselves; admin can remove anyone.
+	if target != userID && role != "owner" && role != "admin" {
+		writeError(w, http.StatusForbidden, "owner|admin required to unsubscribe other users")
+		return
+	}
+	if err := h.svc.RemoveSubscriber(r.Context(), tenantID, id, target); err != nil {
+		writeError(w, http.StatusNotFound, "subscription not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
