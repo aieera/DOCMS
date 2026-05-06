@@ -179,31 +179,45 @@ func buildFilters(req *model.SearchRequest) []any {
 	// these access paths must match". Wrapped under bool.filter so
 	// the match runs in the non-scoring context — same as the legacy
 	// shape, no scoring impact.
-	groups := req.GroupIDs
-	if groups == nil {
-		groups = []string{}
-	}
-	// Always include "everyone" — tenant-wide visible docs match
-	// regardless of identity.
-	groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
+	//
+	// §7.3 SHARE-TOKEN ISOLATION: when the request is from an
+	// unauthenticated share-link follower (UserID empty/sentinel
+	// AND ShareToken set), the should chain becomes share-only.
+	// We do NOT inject the user/group/everyone clauses, otherwise
+	// the auto-injected "everyone" group would leak the full
+	// "tenant-wide visible" corpus to anyone with any valid
+	// share token. The spec calls this out: "External share token:
+	// separate matching logic."
+	shareOnly := req.ShareToken != "" && isAnonymousPrincipal(req.UserID)
 
-	shoulds := []any{
-		// New shapes (ADR 0066 §"Schema").
-		map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
-		map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
-		// Migration bridge — docs indexed before ADR 0066 only carry
-		// the mixed `readable_by` field. Drop this clause once the
-		// backfill is complete and every deploy is on the new shape.
-		map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},
-	}
-	if req.ShareToken != "" {
-		// Share-token followers are unauthenticated; the gateway
-		// resolves the URL token to this field. UserID + GroupIDs may
-		// also be set if the follower is logged in — the should chain
-		// admits either path.
-		shoulds = append(shoulds, map[string]any{
-			"terms": map[string]any{"share_tokens": []string{req.ShareToken}},
-		})
+	var shoulds []any
+	if shareOnly {
+		shoulds = []any{
+			map[string]any{"terms": map[string]any{"share_tokens": []string{req.ShareToken}}},
+		}
+	} else {
+		groups := req.GroupIDs
+		if groups == nil {
+			groups = []string{}
+		}
+		// Authenticated path — always include "everyone" so tenant-
+		// wide visible docs match regardless of identity.
+		groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
+		shoulds = []any{
+			map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
+			map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
+			// Migration bridge — docs indexed before ADR 0066 only
+			// carry the mixed `readable_by` field. Drop this clause
+			// once the backfill is complete.
+			map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},
+		}
+		if req.ShareToken != "" {
+			// Logged-in user following a share link — sees the union
+			// of their normal access AND what the token grants.
+			shoulds = append(shoulds, map[string]any{
+				"terms": map[string]any{"share_tokens": []string{req.ShareToken}},
+			})
+		}
 	}
 
 	// Mandatory security filters — never omitted. tenant_id is a
@@ -279,6 +293,18 @@ func buildFilters(req *model.SearchRequest) []any {
 	}
 
 	return filters
+}
+
+// isAnonymousPrincipal returns true when the request lacks a real
+// authenticated user identity. The gateway routes a public
+// share-link URL with one of these sentinels in X-User-ID:
+//   - "" (empty): preferred shape, no header at all
+//   - "anonymous": legacy alias kept for in-flight integrations
+// Any other value means a logged-in user is making the request, in
+// which case the share-token clause stacks ON TOP of their normal
+// access (logged-in user following a share link sees the union).
+func isAnonymousPrincipal(userID string) bool {
+	return userID == "" || userID == "anonymous"
 }
 
 func buildPrincipals(userID string, groupIDs []string) []string {

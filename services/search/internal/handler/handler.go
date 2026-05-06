@@ -89,6 +89,12 @@ type searchRequestBody struct {
 	SearchMode string            `json:"search_mode"`
 	Highlight  bool              `json:"highlight"`
 	Explain    bool              `json:"explain"`
+	// ADR 0066 — share-link follower path. In production this should
+	// come from a gateway-injected header rather than a free-text
+	// POST body field; allowed here for development + integration
+	// testing. The model.SearchRequest field threads it into the
+	// share_tokens query clause.
+	ShareToken string            `json:"share_token,omitempty"`
 }
 
 type filtersBody struct {
@@ -123,10 +129,11 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := &model.SearchRequest{
-		TenantID:  tenantID,
-		UserID:    userID,
-		GroupIDs:  groupIDs,
-		Query:     body.Query,
+		TenantID:   tenantID,
+		UserID:     userID,
+		GroupIDs:   groupIDs,
+		ShareToken: body.ShareToken,
+		Query:      body.Query,
 		// §7.1 / D6 — normalize mode at the edge; unknown values
 		// fall back to "lexical" so a stale client can't silently
 		// get a degraded search.

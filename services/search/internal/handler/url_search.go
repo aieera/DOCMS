@@ -138,15 +138,23 @@ func parseSearchRequestFromURL(r *http.Request) *model.SearchRequest {
 	userID := r.Header.Get("X-User-ID")
 	groups := splitHeader(r.Header.Get("X-Group-IDs"))
 
+	// share_token via header is the production shape (gateway-injected
+	// from the public URL); query-param accepted as a fallback for
+	// dev + integration testing.
+	shareToken := r.Header.Get("X-Share-Token")
+	if shareToken == "" {
+		shareToken = q.Get("share_token")
+	}
 	req := &model.SearchRequest{
-		TenantID:  tenantID,
-		UserID:    userID,
-		GroupIDs:  groups,
-		Query:     q.Get("q"),
-		Mode:      model.NormalizeMode(q.Get("mode")),
-		SortBy:    q.Get("sort_by"),
-		SortOrder: q.Get("sort_order"),
-		PageToken: q.Get("page_token"),
+		TenantID:   tenantID,
+		UserID:     userID,
+		GroupIDs:   groups,
+		ShareToken: shareToken,
+		Query:      q.Get("q"),
+		Mode:       model.NormalizeMode(q.Get("mode")),
+		SortBy:     q.Get("sort_by"),
+		SortOrder:  q.Get("sort_order"),
+		PageToken:  q.Get("page_token"),
 	}
 	if v, err := strconv.Atoi(q.Get("page_size")); err == nil {
 		req.PageSize = v
