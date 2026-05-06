@@ -51,6 +51,7 @@ const intelligenceSections: Section[] = [
   { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers (ADR 0060)' },
   { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key (ADR 0061)' },
   { to: '/admin/intelligence/usage', icon: Activity, label: 'LLM usage', desc: 'Per-tenant token + cost tally across all models' },
+  { to: '/admin/tenant/ai', icon: KeyRound, label: 'AI provider', desc: 'Per-tenant LiteLLM routing — provider, model, fallback, key, budget (ADR 0064)' },
 ]
 
 function AdminPage() {
