@@ -8,7 +8,13 @@ type SearchRequest struct {
 	TenantID  string
 	UserID    string
 	GroupIDs  []string
-	Query     string
+	// ShareToken — when non-empty, the request is from an unauthenticated
+	// share-link follower. Mapped to a `terms share_tokens [token]`
+	// match clause in addition to the user/group clauses, so a share
+	// link's recipient can also be a logged-in user with no overlap.
+	// Empty string means "no share-token path; only user/group access".
+	ShareToken string
+	Query      string
 	// §7.1 / D6 — Mode controls the ranker stack:
 	//   "" or "lexical" : BM25 only (OpenSearch)
 	//   "semantic"      : dense-vector ANN only (Qdrant)

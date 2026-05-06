@@ -124,12 +124,16 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 }
 
 // BuildAutocompleteQuery returns a lightweight title.autocomplete query
-// with the readable_by security filter.
+// with the ADR 0066 split-readable security filter.
 func BuildAutocompleteQuery(tenantID, userID string, groupIDs []string, q string, limit int) map[string]any {
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
-	principals := buildPrincipals(userID, groupIDs)
+	groups := groupIDs
+	if groups == nil {
+		groups = []string{}
+	}
+	groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
 	return map[string]any{
 		"query": map[string]any{
 			"bool": map[string]any{
@@ -144,7 +148,17 @@ func BuildAutocompleteQuery(tenantID, userID string, groupIDs []string, q string
 				},
 				"filter": []any{
 					map[string]any{"term": map[string]any{"tenant_id": tenantID}},
-					map[string]any{"terms": map[string]any{"readable_by": principals}},
+					map[string]any{
+						"bool": map[string]any{
+							"should": []any{
+								map[string]any{"terms": map[string]any{"readable_by_users": []string{userID}}},
+								map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
+								// Legacy bridge — see buildFilters().
+								map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(userID, groupIDs)}},
+							},
+							"minimum_should_match": 1,
+						},
+					},
 				},
 			},
 		},
@@ -156,12 +170,53 @@ func BuildAutocompleteQuery(tenantID, userID string, groupIDs []string, q string
 // ---- internal helpers -----------------------------------------------------
 
 func buildFilters(req *model.SearchRequest) []any {
-	principals := buildPrincipals(req.UserID, req.GroupIDs)
+	// ADR 0066 — split readable_by into per-shape clauses so the
+	// matched access path is identifiable post-hoc, AND so a user
+	// newly-added to a group matches docs without waiting for a
+	// reindex (the group_id is on the doc; the user_id isn't).
+	//
+	// bool.should + minimum_should_match=1 means "at least one of
+	// these access paths must match". Wrapped under bool.filter so
+	// the match runs in the non-scoring context — same as the legacy
+	// shape, no scoring impact.
+	groups := req.GroupIDs
+	if groups == nil {
+		groups = []string{}
+	}
+	// Always include "everyone" — tenant-wide visible docs match
+	// regardless of identity.
+	groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
 
-	// Mandatory security filters — never omitted.
+	shoulds := []any{
+		// New shapes (ADR 0066 §"Schema").
+		map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
+		map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
+		// Migration bridge — docs indexed before ADR 0066 only carry
+		// the mixed `readable_by` field. Drop this clause once the
+		// backfill is complete and every deploy is on the new shape.
+		map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},
+	}
+	if req.ShareToken != "" {
+		// Share-token followers are unauthenticated; the gateway
+		// resolves the URL token to this field. UserID + GroupIDs may
+		// also be set if the follower is logged in — the should chain
+		// admits either path.
+		shoulds = append(shoulds, map[string]any{
+			"terms": map[string]any{"share_tokens": []string{req.ShareToken}},
+		})
+	}
+
+	// Mandatory security filters — never omitted. tenant_id is a
+	// hard term filter (not part of the should chain) so a
+	// misconfigured shoulds list can't cause cross-tenant leaks.
 	filters := []any{
 		map[string]any{"term": map[string]any{"tenant_id": req.TenantID}},
-		map[string]any{"terms": map[string]any{"readable_by": principals}},
+		map[string]any{
+			"bool": map[string]any{
+				"should":               shoulds,
+				"minimum_should_match": 1,
+			},
+		},
 	}
 
 	f := req.Filters
