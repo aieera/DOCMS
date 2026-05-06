@@ -48,6 +48,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/saved-searches/{id}", h.patchSavedSearch)
 	mux.HandleFunc("POST /api/v1/saved-searches/{id}/subscribe", h.subscribeSavedSearch)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}/subscribe/{user_id}", h.unsubscribeSavedSearch)
+	// ADR 0069 — platform-admin federated search.
+	mux.HandleFunc("POST /api/v1/platform/search/federated", h.federatedSearch)
+	mux.HandleFunc("GET /api/v1/platform/search/federated/audit", h.listFederatedAudit)
 	// ADR 0066 §"SLI" — admin dashboard for permission-propagation lag.
 	// Returns histogram percentiles + counter totals + debouncer
 	// queue depth so the page works without Grafana.
@@ -474,6 +477,94 @@ func (h *Handler) unsubscribeSavedSearch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- ADR 0069 — platform-admin federated search ---------------------
+
+type federatedSearchBody struct {
+	Query        string      `json:"query"`
+	Filters      filtersBody `json:"filters"`
+	Reason       string      `json:"reason"`
+	MaxPerTenant int         `json:"max_per_tenant"`
+	PageSize     int         `json:"page_size"`
+}
+
+func (h *Handler) federatedSearch(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	var body federatedSearchBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	in := service.FederatedSearchInput{
+		CallerID: userID,
+		Reason:   body.Reason,
+		Query:    body.Query,
+		Filters: model.SearchFilters{
+			WorkspaceID:    body.Filters.WorkspaceID,
+			DocumentClass:  body.Filters.DocumentClass,
+			LifecycleState: body.Filters.LifecycleState,
+			Tags:           body.Filters.Tags,
+			MimeType:       body.Filters.MimeType,
+			CreatedBy:      body.Filters.CreatedBy,
+		},
+		MaxPerTenant: body.MaxPerTenant,
+		PageSize:     body.PageSize,
+	}
+	result, err := h.svc.FederatedSearch(r.Context(), in)
+	if err != nil {
+		// Map the sentinel errors to canonical HTTP codes. Audit
+		// rows for denial paths are written by the service before
+		// the error returns; the handler's only job here is the
+		// status code.
+		switch err {
+		case service.ErrFederatedReasonTooShort:
+			writeError(w, http.StatusBadRequest, "reason must be at least 10 chars — explain why this cross-tenant search is needed")
+			return
+		case service.ErrFederatedNotPlatformAdmin:
+			writeError(w, http.StatusForbidden, "platform.search.federated permission required")
+			return
+		case service.ErrFederatedQuotaExceeded:
+			writeError(w, http.StatusTooManyRequests, "daily federated query limit reached (100/day)")
+			return
+		}
+		h.log.Error().Err(err).Msg("federated search failed")
+		writeError(w, http.StatusInternalServerError, "federated search failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) listFederatedAudit(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	// No platform-admin gate on the LIST: anyone can ask for their
+	// own audit rows, but the SQL predicate scopes to caller_id so
+	// non-admins just see an empty list (their successful queries
+	// never landed there).
+	limit := 20
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	rows, err := h.svc.ListMyFederatedAudit(r.Context(), userID, limit)
+	if err != nil {
+		h.log.Error().Err(err).Msg("list federated audit failed")
+		writeError(w, http.StatusInternalServerError, "list audit failed")
+		return
+	}
+	if rows == nil {
+		rows = []repository.FederatedAuditRecord{}
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 // permissionPropagationStats serves the §7.3 SLI summary the admin
