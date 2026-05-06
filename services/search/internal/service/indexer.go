@@ -127,13 +127,15 @@ func (ix *Indexer) onDocCreatedOrUpdated(msg *nats.Msg) {
 			}
 		}
 	}
-	if rb, ok := data["readable_by"].([]any); ok {
-		for _, r := range rb {
-			if s, ok := r.(string); ok {
-				doc.ReadableBy = append(doc.ReadableBy, s)
-			}
-		}
-	}
+	doc.ReadableBy = strSliceField(data, "readable_by")
+	// ADR 0066 — when the publisher provides pre-split fields, take
+	// them verbatim. When only the legacy mixed field is present
+	// (older publishers, e.g. document service before its ADR 0066
+	// follow-up), leave the new fields empty — the query bridge
+	// clause still matches via `readable_by`.
+	doc.ReadableByUsers = strSliceField(data, "readable_by_users")
+	doc.ReadableByGroups = strSliceField(data, "readable_by_groups")
+	doc.ShareTokens = strSliceField(data, "share_tokens")
 	if doc.TenantID == "" || doc.DocumentID == "" {
 		ix.log.Warn().Msg("doc event missing tenant_id or document_id")
 		_ = msg.Term()
@@ -207,9 +209,23 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 	resourceType := strField(data, "resource_type")
 	resourceID := strField(data, "resource_id")
 	readableBy := strSliceField(data, "readable_by")
+	// ADR 0066 — when the publisher provides pre-split user/group
+	// sets, propagate them too. Legacy publishers only send the
+	// mixed `readable_by` array; in that case the new fields stay
+	// untouched on the index doc.
+	readableByUsers := strSliceField(data, "readable_by_users")
+	readableByGroups := strSliceField(data, "readable_by_groups")
 	if tenantID == "" || resourceID == "" {
 		_ = msg.Term()
 		return
+	}
+
+	fields := map[string]any{"readable_by": readableBy}
+	if readableByUsers != nil {
+		fields["readable_by_users"] = readableByUsers
+	}
+	if readableByGroups != nil {
+		fields["readable_by_groups"] = readableByGroups
 	}
 
 	ctx, cancel := handlerCtx(ix.parent, msg)
@@ -217,9 +233,7 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 	var err error
 	switch resourceType {
 	case "document":
-		err = ix.svc.PartialUpdate(ctx, tenantID, resourceID, map[string]any{
-			"readable_by": readableBy,
-		})
+		err = ix.svc.PartialUpdate(ctx, tenantID, resourceID, fields)
 	case "folder":
 		err = ix.svc.UpdateReadableByFolder(ctx, tenantID, resourceID, readableBy)
 	case "workspace":
