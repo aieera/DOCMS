@@ -127,6 +127,41 @@ type Suggestion struct {
 	Source string `json:"source"` // "index" | "recent"
 }
 
+// SuggestResult is the ADR 0067 grouped autocomplete shape.
+// Each group is independently capped at the request's `limit` so a
+// no-tags / no-people corpus doesn't crowd out documents and vice
+// versa. Empty groups serialize as empty arrays so the UI can render
+// section headers without a per-field nil check.
+type SuggestResult struct {
+	Documents []DocumentSuggestion `json:"documents"`
+	Tags      []ValueSuggestion    `json:"tags"`
+	People    []ValueSuggestion    `json:"people"`
+	Recent    []RecentSuggestion   `json:"recent"`
+}
+
+// DocumentSuggestion is one row in the Documents group. Carries the
+// document_id so the UI can navigate straight to the doc detail
+// page on enter.
+type DocumentSuggestion struct {
+	Text       string  `json:"text"`
+	DocumentID string  `json:"document_id"`
+	Score      float64 `json:"score"`
+}
+
+// ValueSuggestion is one row in the Tags or People group.
+// Count is the number of docs in the user's permission scope that
+// carry this value — the same number the corresponding facet would
+// surface, useful as a relevance tiebreaker in the UI.
+type ValueSuggestion struct {
+	Text  string `json:"text"`
+	Count int64  `json:"count"`
+}
+
+// RecentSuggestion is one entry from the user's saved-recent ledger.
+type RecentSuggestion struct {
+	Text string `json:"text"`
+}
+
 // SavedSearch represents a user's saved query persisted in Postgres.
 type SavedSearch struct {
 	ID                    string        `json:"id"`

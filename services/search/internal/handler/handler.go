@@ -38,6 +38,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Same service-layer entry point as POST; only the parsing differs.
 	mux.HandleFunc("GET /api/v1/search", h.searchGET)
 	mux.HandleFunc("GET /api/v1/search/autocomplete", h.autocomplete)
+	// ADR 0067 — grouped suggester: documents/tags/people/recent.
+	mux.HandleFunc("GET /api/v1/search/suggest", h.suggest)
 	mux.HandleFunc("POST /api/v1/saved-searches", h.createSavedSearch)
 	mux.HandleFunc("GET /api/v1/saved-searches", h.listSavedSearches)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", h.deleteSavedSearch)
@@ -195,6 +197,36 @@ func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log.Error().Err(err).Msg("search GET failed")
 		writeError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// suggest serves the §7.5 / ADR 0067 grouped autocomplete shape.
+// Three OpenSearch sources (title / tags / created_by_name) plus
+// the user's recent-search ledger, all under the standard tenant +
+// readable_by permission filter.
+func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
+		return
+	}
+	groups := splitHeader(r.Header.Get("X-Group-IDs"))
+	q := r.URL.Query().Get("q")
+	limit := 10
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+	}
+
+	req := &model.SearchRequest{
+		TenantID: tenantID, UserID: userID, GroupIDs: groups,
+	}
+	result, err := h.svc.Suggest(r.Context(), req, q, limit)
+	if err != nil {
+		h.log.Error().Err(err).Msg("suggest failed")
+		writeError(w, http.StatusInternalServerError, "suggest failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)

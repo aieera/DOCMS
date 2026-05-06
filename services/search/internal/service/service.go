@@ -206,6 +206,94 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 	return result, nil
 }
 
+// ---- ADR 0067 grouped suggester -------------------------------------------
+
+// Suggest returns the §7.5 grouped autocomplete shape — separate
+// Documents/Tags/People rows plus the user's recent searches. One
+// OpenSearch round-trip + one Redis read; sub-50ms p99 budget.
+//
+// Permission scope is the same bool.filter the main /search uses
+// (tenant_id + ADR 0066 split-readable_by), so suggestions never
+// surface values from docs the user can't read.
+func (s *Service) Suggest(ctx context.Context, req *model.SearchRequest, q string, limit int) (*model.SuggestResult, error) {
+	if limit <= 0 {
+		limit = opensearch.DefaultSuggestLimit
+	}
+	if limit > opensearch.MaxSuggestLimit {
+		limit = opensearch.MaxSuggestLimit
+	}
+
+	result := &model.SuggestResult{
+		// Pre-allocate to empty so the JSON serializes as `[]`, not
+		// `null`. The frontend renders section headers without a
+		// per-field nil check.
+		Documents: []model.DocumentSuggestion{},
+		Tags:      []model.ValueSuggestion{},
+		People:    []model.ValueSuggestion{},
+		Recent:    []model.RecentSuggestion{},
+	}
+
+	// Recent searches first — Redis is much faster than OS, so
+	// readying this list while the OS query is in flight gives the
+	// caller a populated `recent` even if OS is briefly unhappy.
+	for _, r := range s.getRecentSearches(ctx, req.TenantID, req.UserID, limit) {
+		if q == "" || containsPrefix(r, q) {
+			result.Recent = append(result.Recent, model.RecentSuggestion{Text: r})
+			if len(result.Recent) >= limit {
+				break
+			}
+		}
+	}
+
+	// Empty q + no recent matches → return early. The OS prefix-only
+	// suggester would return the top-N globally on an empty prefix,
+	// which is not what we want for this shape.
+	if q == "" {
+		return result, nil
+	}
+
+	body := opensearch.BuildSuggestQuery(req, q, limit)
+	raw, err := s.os.Search(ctx, req.TenantID, body)
+	if err != nil {
+		// OS failure shouldn't blow up the whole response — recent
+		// searches are still useful. Log + return what we have.
+		s.log.Warn().Err(err).Str("q", q).Msg("suggest opensearch query failed")
+		return result, nil
+	}
+
+	// Dedupe by title — a tenant with N copies of "Contract A" should
+	// surface ONE row per title, not N. The first hit for a title
+	// wins (highest-scored, since OS returns sorted by relevance).
+	// The UI navigates to that doc on click; users can drill into
+	// the Search page to see the rest.
+	seenTitles := make(map[string]bool)
+	for _, hit := range raw.Hits {
+		title, _ := hit.Source["title"].(string)
+		docID, _ := hit.Source["document_id"].(string)
+		if title == "" || docID == "" || seenTitles[title] {
+			continue
+		}
+		seenTitles[title] = true
+		result.Documents = append(result.Documents, model.DocumentSuggestion{
+			Text:       title,
+			DocumentID: docID,
+			Score:      hit.Score,
+		})
+		if len(result.Documents) >= limit {
+			break
+		}
+	}
+
+	for _, b := range raw.Aggs["tags_prefix"] {
+		result.Tags = append(result.Tags, model.ValueSuggestion{Text: b.Key, Count: b.DocCount})
+	}
+	for _, b := range raw.Aggs["authors_prefix"] {
+		result.People = append(result.People, model.ValueSuggestion{Text: b.Key, Count: b.DocCount})
+	}
+
+	return result, nil
+}
+
 // ---- Autocomplete ---------------------------------------------------------
 
 // Autocomplete combines index suggestions with recent searches from Redis.

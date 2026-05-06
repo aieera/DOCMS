@@ -12,3 +12,21 @@ export async function autocomplete(q: string, limit = 10) {
   )
   return data.suggestions
 }
+
+// ADR 0067 — grouped autocomplete. Used by the global CommandPalette.
+// Each group is independently capped at the request's `limit`; the
+// backend dedupes documents by title before returning.
+export interface SuggestResult {
+  documents: { text: string; document_id: string; score: number }[]
+  tags:      { text: string; count: number }[]
+  people:    { text: string; count: number }[]
+  recent:    { text: string }[]
+}
+
+export async function suggest(q: string, limit = 10): Promise<SuggestResult> {
+  const { data } = await api.get<SuggestResult>('/search/suggest', {
+    params: { q, limit },
+  })
+  return data
+}
+
