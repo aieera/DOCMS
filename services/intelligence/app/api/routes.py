@@ -743,6 +743,123 @@ async def rag_feedback_endpoint(
     return {"status": "recorded"}
 
 
+# ---- ADR 0064 — POST /llm/completions + admin tenant config ----------
+
+class LLMCompletionsRequest(BaseModel):
+    messages: list[dict]
+    model: Optional[str] = None
+    temperature: Optional[float] = 0.1
+    max_tokens: Optional[int] = 2000
+
+
+@router.post("/llm/completions")
+def llm_completions_endpoint(
+    body: LLMCompletionsRequest,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+):
+    """First-class completions endpoint that the admin "Test" button
+    calls. Routes through the same llm_gateway.completion() path as
+    every other internal LLM call so the admin's test result reflects
+    real production behavior (provider, fallback, breaker, budget,
+    air-gapped) — not a sanitized happy path."""
+    tenant = _require_tenant(x_tenant_id)
+    if not x_user_id:
+        raise HTTPException(400, "X-User-ID required")
+    if not body.messages:
+        raise HTTPException(400, "messages required")
+
+    from app import llm_gateway
+    from app.llm_routing import (
+        AirGappedError, BudgetExceededError, AllProvidersDownError,
+    )
+    try:
+        result = llm_gateway.completion(
+            tenant_id=tenant,
+            messages=body.messages,
+            model=body.model,
+            temperature=body.temperature or 0.1,
+            max_tokens=body.max_tokens or 2000,
+        )
+    except AirGappedError as exc:
+        raise HTTPException(403, str(exc))
+    except BudgetExceededError as exc:
+        raise HTTPException(402, str(exc))
+    except AllProvidersDownError as exc:
+        raise HTTPException(503, str(exc))
+    return result
+
+
+class TenantLLMConfigBody(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    fallback_model: Optional[str] = None
+    # Empty string explicitly clears; None preserves the existing key.
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    rate_limit_rpm: Optional[int] = None
+    daily_budget_usd: Optional[float] = None
+    air_gapped: Optional[bool] = None
+
+
+@admin_router.get("/tenant/llm-config")
+async def get_tenant_llm_config_endpoint(
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Return the per-tenant LLM routing config — provider, model,
+    fallback, base_url, limits, air_gapped flag — plus the boolean
+    `key_set` and `key_set_at`. Never returns the api_key in any
+    form (even encrypted)."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    from app import tenant_llm_config_repo
+    return await tenant_llm_config_repo.get_full_config(tenant)
+
+
+@admin_router.put("/tenant/llm-config")
+async def put_tenant_llm_config_endpoint(
+    body: TenantLLMConfigBody,
+    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Patch any subset of fields. api_key is write-only — once set,
+    only `key_set` and `key_set_at` come back from GET. Pass empty
+    string to clear; pass None (omit the field) to preserve the
+    existing ciphertext while changing other fields."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    if body.provider is not None and body.provider not in (
+        "openai", "anthropic", "bedrock", "vllm_local", "custom",
+    ):
+        raise HTTPException(400, "invalid provider")
+    if body.rate_limit_rpm is not None and body.rate_limit_rpm < 0:
+        raise HTTPException(400, "rate_limit_rpm must be >= 0")
+    if body.daily_budget_usd is not None and body.daily_budget_usd < 0:
+        raise HTTPException(400, "daily_budget_usd must be >= 0")
+
+    from app import tenant_llm_config_repo
+    try:
+        return await tenant_llm_config_repo.upsert_config(
+            tenant_id=tenant,
+            provider=body.provider,
+            model=body.model,
+            fallback_model=body.fallback_model,
+            api_key_plaintext=body.api_key,
+            base_url=body.base_url,
+            rate_limit_rpm=body.rate_limit_rpm,
+            daily_budget_usd=body.daily_budget_usd,
+            air_gapped=body.air_gapped,
+        )
+    except RuntimeError as exc:
+        # KEK not configured — refuse to write rather than silently
+        # storing plaintext. 503 prompts the admin to fix the deploy
+        # config; the call doesn't degrade silently.
+        raise HTTPException(503, str(exc))
+
+
 class WorkspaceAISettingsBody(BaseModel):
     rag_enabled: Optional[bool] = None
     answer_model: Optional[str] = None
