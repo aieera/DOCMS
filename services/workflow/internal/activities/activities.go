@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -29,7 +30,12 @@ type Activities struct {
 	// activities (Wave 12.4). Keys: "search", "qdrant", "connector".
 	// Empty map or missing key → activity soft-no-ops + logs.
 	ServiceURLs map[string]string
-	Log         zerolog.Logger
+	// JS is the JetStream context for emitting CloudEvents from
+	// activities. ADR 0068 saved-search alert workflow uses this
+	// to publish dms.notify.saved_search_match.v1. nil is accepted;
+	// EmitSavedSearchMatch returns a typed error when JS isn't wired.
+	JS nats.JetStreamContext
+	Log zerolog.Logger
 }
 
 // CreateTask inserts a pending task row.

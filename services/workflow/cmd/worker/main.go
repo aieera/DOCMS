@@ -20,6 +20,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -65,6 +66,27 @@ func main() {
 	})
 	defer func() { _ = rdb.Close() }()
 
+	// ---- NATS / JetStream -------------------------------------------------
+	// Optional dep for ADR 0068 saved-search alert event emission.
+	// Failure here is logged-but-not-fatal: the worker stays up to
+	// serve every other workflow, and EmitSavedSearchMatch returns a
+	// typed error when JS is nil.
+	var js nats.JetStreamContext
+	if natsURL := os.Getenv("VAULTDMS_NATS_URL"); natsURL != "" {
+		nc, nerr := nats.Connect(natsURL, nats.Name(serviceName))
+		if nerr != nil {
+			log.Warn(ctx).Err(nerr).Msg("nats connect; alert events will fail until restored")
+		} else {
+			defer nc.Drain()
+			j, jerr := nc.JetStream()
+			if jerr != nil {
+				log.Warn(ctx).Err(jerr).Msg("jetstream init")
+			} else {
+				js = j
+			}
+		}
+	}
+
 	// ---- Temporal ---------------------------------------------------------
 	tc, err := client.Dial(client.Options{
 		HostPort:  cfg.TemporalAddr,
@@ -91,6 +113,7 @@ func main() {
 			"qdrant":    os.Getenv("VAULTDMS_QDRANT_URL"),
 			"connector": os.Getenv("VAULTDMS_CONNECTOR_URL"),
 		},
+		JS:  js,
 		Log: *log.Z(),
 	}
 	w := worker.New(tc, queue, worker.Options{})
@@ -103,6 +126,8 @@ func main() {
 	w.RegisterWorkflow(workflows.EraseWorkflow)
 	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
+	// ADR 0068 — saved-search alert.
+	w.RegisterWorkflow(workflows.SavedSearchAlertWorkflow)
 	w.RegisterActivity(acts)
 
 	log.Info(ctx).
@@ -121,6 +146,15 @@ func main() {
 		log.Error(ctx).Err(err).Msg("retention schedules bootstrap failed")
 	} else if n > 0 {
 		log.Info(ctx).Int("created", n).Msg("retention schedules registered")
+	}
+
+	// ADR 0068 — bootstrap saved-search alert schedules. Same logged-
+	// but-not-fatal contract as retention; the data plane keeps
+	// serving even if Schedules can't register.
+	if n, err := workflows.RegisterSavedSearchAlertSchedules(ctx, pool, tc, queue); err != nil {
+		log.Error(ctx).Err(err).Msg("saved-search alert schedules bootstrap failed")
+	} else if n > 0 {
+		log.Info(ctx).Int("created", n).Msg("saved-search alert schedules registered")
 	}
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
