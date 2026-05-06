@@ -106,6 +106,60 @@ func DeleteSavedSearchAlertSchedule(
 	return fmt.Errorf("delete alert schedule %s: %w", id, err)
 }
 
+// ReconcileSavedSearchAlertSchedules walks the saved_searches table
+// and brings the Temporal Schedule set in sync with the database:
+//   - notify=true rows missing a schedule  → CreateSchedule
+//   - notify=false rows with a schedule    → DeleteSchedule
+//   - notify=true rows with a schedule already → no-op
+//
+// Idempotent + cheap (one DB scan + one Temporal Describe per row).
+// Run periodically by the worker (every 60s) so a search-service
+// PATCH that flips notify becomes effective within a minute without
+// the search service needing a Temporal client.
+//
+// Returns (created, deleted, err) for logging.
+func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool, tc client.Client, taskQueue string) (int, int, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id::text, tenant_id::text, notify,
+		       COALESCE(alert_frequency_cron, ''),
+		       COALESCE(notify_interval_minutes, 15)
+		  FROM saved_searches
+	`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+
+	created, deleted := 0, 0
+	sc := tc.ScheduleClient()
+	for rows.Next() {
+		var id, tenantID, cronExpr string
+		var notify bool
+		var intervalMin int
+		if err := rows.Scan(&id, &tenantID, &notify, &cronExpr, &intervalMin); err != nil {
+			return created, deleted, err
+		}
+		schedID := SavedSearchAlertScheduleID(id)
+		handle := sc.GetHandle(ctx, schedID)
+		_, descErr := handle.Describe(ctx)
+		exists := descErr == nil
+
+		switch {
+		case notify && !exists:
+			if err := CreateSavedSearchAlertSchedule(ctx, tc, taskQueue, id, tenantID, cronExpr, intervalMin); err != nil {
+				return created, deleted, err
+			}
+			created++
+		case !notify && exists:
+			if err := DeleteSavedSearchAlertSchedule(ctx, tc, id); err != nil {
+				return created, deleted, err
+			}
+			deleted++
+		}
+	}
+	return created, deleted, rows.Err()
+}
+
 // RegisterSavedSearchAlertSchedules walks notify=true saved searches
 // and bootstraps a schedule for each. Returns the count newly
 // created. Failure here is logged-but-not-fatal in the worker (the

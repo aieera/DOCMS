@@ -189,13 +189,26 @@ type EmitMatchInput struct {
 }
 
 // EmitSavedSearchMatch publishes dms.notify.saved_search_match.v1
-// to JetStream. Channel-routing happens in the notifications
-// service; this activity emits the canonical event with the
-// subscriber + channel pre-resolved.
+// to JetStream. The CloudEvents `data` block is shaped to match the
+// notification service's DeliveryPayload struct so its existing
+// `dms.notify.>` consumer routes the in-app/email/digest delivery
+// without any notification-service-side change.
+//
+// Channel preference is per-subscriber (one event per pairing),
+// surfaced in the in-app notification's resource_type so a future
+// digest worker can group across multiple matches.
 func (a *Activities) EmitSavedSearchMatch(ctx context.Context, in EmitMatchInput) error {
 	if a.JS == nil {
 		return errors.New("jetstream not configured on activities")
 	}
+	count := len(in.MatchedDocIDs)
+	plural := "matches"
+	if count == 1 {
+		plural = "match"
+	}
+	title := fmt.Sprintf("New %s for %q", plural, in.SavedSearchName)
+	body := fmt.Sprintf("%d new %s in your saved search", count, plural)
+
 	envelope := map[string]any{
 		"specversion": "1.0",
 		"id":          uuid.New().String(),
@@ -203,13 +216,23 @@ func (a *Activities) EmitSavedSearchMatch(ctx context.Context, in EmitMatchInput
 		"type":        "dms.notify.saved_search_match.v1",
 		"subject":     "saved_search/" + in.SavedSearchID,
 		"time":        time.Now().UTC().Format(time.RFC3339),
+		// DeliveryPayload-shaped — notification service consumes this
+		// directly. saved_search_id rides along as resource_id so the
+		// in-app row can deep-link back to the saved-search detail.
 		"data": map[string]any{
-			"tenant_id":         in.TenantID,
-			"saved_search_id":   in.SavedSearchID,
-			"saved_search_name": in.SavedSearchName,
-			"subscriber_id":     in.SubscriberID,
-			"channel":           in.Channel,
-			"matched_doc_ids":   in.MatchedDocIDs,
+			"tenant_id":     in.TenantID,
+			"user_ids":      []string{in.SubscriberID},
+			"type":          "saved_search_match",
+			"title":         title,
+			"body":          body,
+			"resource_type": "saved_search",
+			"resource_id":   in.SavedSearchID,
+			// Sidecar fields below the DeliveryPayload schema —
+			// preserved verbatim by the notification service's
+			// fallback unmarshal but not required by it. A future
+			// digest worker reads matched_doc_ids to group + dedupe.
+			"channel":         in.Channel,
+			"matched_doc_ids": in.MatchedDocIDs,
 		},
 	}
 	payload, err := json.Marshal(envelope)

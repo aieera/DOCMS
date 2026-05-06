@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
@@ -156,6 +157,31 @@ func main() {
 	} else if n > 0 {
 		log.Info(ctx).Int("created", n).Msg("saved-search alert schedules registered")
 	}
+
+	// ADR 0068 — periodic reconciler. The search service's PATCH
+	// endpoint flips `notify` in the DB; this loop ensures the
+	// Temporal Schedule set tracks within ~60s without the search
+	// service needing a Temporal client. Logged-but-not-fatal on
+	// every iteration; one bad scan won't stop the next.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				c, d, err := workflows.ReconcileSavedSearchAlertSchedules(ctx, pool, tc, queue)
+				if err != nil {
+					log.Warn(ctx).Err(err).Msg("alert reconciler iteration failed")
+					continue
+				}
+				if c > 0 || d > 0 {
+					log.Info(ctx).Int("created", c).Int("deleted", d).Msg("alert reconciler synced")
+				}
+			}
+		}
+	}()
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatal(ctx).Err(err).Msg("temporal worker run")
