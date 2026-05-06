@@ -46,49 +46,36 @@ def completion(
     temperature: float = 0.1,
     max_tokens: int = 2000,
 ) -> dict[str, Any]:
-    """Synchronous LLM completion with per-tenant config + metering."""
-    config = _load_tenant_config(tenant_id)
-    llm_model = model or (config or {}).get("model") or settings.default_llm_model
-    api_key = (config or {}).get("api_key")
-    api_base = (config or {}).get("base_url")
+    """Synchronous LLM completion with per-tenant routing.
 
-    start = time.monotonic()
-    try:
-        resp = litellm.completion(
-            model=llm_model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            api_key=api_key,
-            api_base=api_base,
-            timeout=settings.llm_timeout_seconds,
-        )
-    except litellm.RateLimitError:
-        log.warning("rate limited on %s for tenant %s, retrying once", llm_model, tenant_id)
-        time.sleep(2)
-        resp = litellm.completion(
-            model=llm_model, messages=messages,
-            temperature=temperature, max_tokens=max_tokens,
-            api_key=api_key, api_base=api_base,
-            timeout=settings.llm_timeout_seconds,
-        )
+    ADR 0064: actual routing (provider resolution, air-gapped gate,
+    budget gate, circuit breaker, fallback model) lives in
+    llm_routing.route_completion. We keep the dict-shaped return
+    here for backward compatibility with every existing caller (Doc
+    Q&A, summarize, NER LLM, anomaly, classify, RAG)."""
+    from app.llm_routing import route_completion
 
-    elapsed_ms = int((time.monotonic() - start) * 1000)
-    usage = resp.usage if hasattr(resp, "usage") else None
-    input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
-    output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
-    cost = litellm.completion_cost(completion_response=resp) if resp else 0.0
-
-    _meter_usage(tenant_id, llm_model, input_tokens, output_tokens, cost, elapsed_ms)
-
-    content = resp.choices[0].message.content if resp.choices else ""
+    result = route_completion(
+        tenant_id=tenant_id,
+        messages=messages,
+        model_override=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    _meter_usage(
+        tenant_id, result.model,
+        result.input_tokens, result.output_tokens,
+        result.cost_usd, result.elapsed_ms,
+    )
     return {
-        "content": content,
-        "model": llm_model,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "cost_usd": cost,
-        "elapsed_ms": elapsed_ms,
+        "content": result.content,
+        "model": result.model,
+        "provider": result.provider,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "elapsed_ms": result.elapsed_ms,
+        "fallback_used": result.fallback_used,
     }
 
 
@@ -108,10 +95,28 @@ def stream_completion(
     fill usage on intermediate chunks); the final yield is the source of
     truth and drives the meter exactly once.
     """
-    config = _load_tenant_config(tenant_id)
-    llm_model = model or (config or {}).get("model") or settings.default_llm_model
-    api_key = (config or {}).get("api_key")
-    api_base = (config or {}).get("base_url")
+    # ADR 0064: pull tenant config through the new repo so streaming
+    # and non-streaming paths see the same provider/model/key/limits.
+    # Air-gapped enforcement also runs here — streaming has no
+    # fallback, but it must still fail closed against external
+    # providers when air_gapped is true.
+    from app.llm_routing import (
+        AirGappedError, BreakerOpenError, BudgetExceededError,
+        _check_air_gapped, _check_breaker, _check_budget,
+        _record_failure, _record_success,
+        _classify_error, resolve_provider,
+    )
+    from app.tenant_llm_config_repo import load_for_gateway
+    config = asyncio.run(load_for_gateway(tenant_id))
+
+    llm_model = model or config.get("model") or settings.default_llm_model
+    api_key = config.get("api_key")
+    api_base = config.get("base_url")
+
+    provider = resolve_provider(llm_model)
+    _check_air_gapped(config, provider)
+    _check_budget(tenant_id, config.get("daily_budget_usd") or 0.0)
+    _check_breaker(tenant_id, provider)
 
     start = time.monotonic()
     full_text_parts: list[str] = []
@@ -136,7 +141,13 @@ def stream_completion(
                 yield text, False, None
     except litellm.RateLimitError:
         log.warning("rate limited mid-stream on %s for tenant %s", llm_model, tenant_id)
+        _record_failure(tenant_id, provider, _classify_error(litellm.RateLimitError("rl")))
         raise
+    except (litellm.Timeout, litellm.APIConnectionError, litellm.APIError) as exc:
+        _record_failure(tenant_id, provider, _classify_error(exc))
+        raise
+    else:
+        _record_success(tenant_id, provider)
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
     full_text = "".join(full_text_parts)
