@@ -1,6 +1,6 @@
 import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/lib/cn'
-import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Bell, Sparkles, Bookmark } from 'lucide-react'
+import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Bell, Sparkles, Bookmark, ShieldCheck } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/search', icon: Search, label: 'Search' },
   { to: '/ask', icon: Sparkles, label: 'Ask' },
   { to: '/saved-searches', icon: Bookmark, label: 'Saved searches' },
+  { to: '/settings/security', icon: ShieldCheck, label: 'Security' },
   { to: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { to: '/notifications', icon: Bell, label: 'Notifications' },
   { to: '/trash', icon: Trash2, label: 'Trash' },

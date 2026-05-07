@@ -33,9 +33,15 @@ export function Header() {
           {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
         </button>
         <div className="ms-2 flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs font-medium text-white">
+          <button
+            onClick={() => navigate({ to: '/settings/security' })}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)] text-xs font-medium text-white hover:opacity-80"
+            aria-label="Security settings"
+            title="Security settings"
+            data-testid="user-avatar-button"
+          >
             {user?.display_name?.charAt(0)?.toUpperCase() || '?'}
-          </div>
+          </button>
           <button onClick={logout} className="rounded-md p-2 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Logout">
             <LogOut className="h-4 w-4" />
           </button>
