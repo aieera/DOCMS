@@ -291,7 +291,10 @@ func (s *Service) PasskeyLoginStart(ctx context.Context, tenantSlug, email strin
 		return nil, "", ErrInvalidCredentials
 	}
 	if len(creds) == 0 {
-		return nil, "", errors.New("no passkeys registered for this account")
+		// Typed sentinel so the handler returns 404 with a
+		// "register one in Settings → Security" hint, NOT a
+		// generic 500 from errors.New.
+		return nil, "", ErrNoPasskeysRegistered
 	}
 
 	wu := buildLibUser(user, creds)

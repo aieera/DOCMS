@@ -108,9 +108,23 @@ function SecuritySettingsPage() {
         {isLoading ? (
           <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
         ) : (passkeys ?? []).length === 0 ? (
-          <div className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-text-secondary)]">
-            <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
-            <p>No passkeys yet. Add one for phishing-resistant sign-in.</p>
+          // Empty state with prominent CTA — first-time visitors
+          // need a clear "click here to start" affordance, not just
+          // a placeholder with the action hidden in the header.
+          <div className="rounded-md border border-dashed border-[var(--color-border)] p-8 text-center">
+            <ShieldCheck className="mx-auto mb-3 h-10 w-10 text-[var(--color-primary)] opacity-70" />
+            <p className="mb-1 font-medium">You don&apos;t have any passkeys yet</p>
+            <p className="mb-4 text-sm text-[var(--color-text-secondary)]">
+              Passkeys let you sign in without a password — they&apos;re also phishing-resistant.
+              Use your laptop&apos;s fingerprint reader, your phone, or a Yubikey.
+            </p>
+            <Button
+              onClick={() => setAdding(true)}
+              disabled={!supported}
+              data-testid="add-first-passkey"
+            >
+              <Plus className="h-4 w-4" /> Add your first passkey
+            </Button>
           </div>
         ) : (
           <ul className="space-y-2" data-testid="passkey-list">

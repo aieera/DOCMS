@@ -49,8 +49,15 @@ function LoginPage() {
       const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string }
       if (e.response?.status === 501) {
         toast.error('Passkeys not enabled on this deploy. Use your password.')
+      } else if (e.response?.status === 404) {
+        // Backend signals "this account exists but has no passkey
+        // yet" with 404 + the hint copy. Toast a friendly version
+        // pointing at the registration path.
+        toast.error('No passkey for this account yet. Sign in with password, then add one in Settings → Security.', {
+          duration: 6000,
+        })
       } else if (e.response?.status === 401) {
-        toast.error('No passkey found for this account')
+        toast.error('Invalid credentials')
       } else {
         toast.error(e.message ?? 'Passkey sign-in failed')
       }

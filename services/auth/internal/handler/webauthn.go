@@ -227,9 +227,11 @@ func (h *Handler) WebAuthnDelete(w http.ResponseWriter, r *http.Request) {
 // ---- error mapping --------------------------------------------------
 
 // writeWebAuthnError maps the service's typed errors to canonical
-// HTTP codes. ErrWebAuthnNotImplemented → 501; ErrInvalidSession →
-// 400 with "restart the flow" hint; everything else falls through
-// to the generic mapper.
+// HTTP codes:
+//   ErrWebAuthnNotImplemented → 501
+//   ErrInvalidSession         → 400 (restart the flow)
+//   ErrNoPasskeysRegistered   → 404 (register one in Settings → Security)
+//   anything else             → writeError (typically 500)
 func (h *Handler) writeWebAuthnError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, service.ErrWebAuthnNotImplemented):
@@ -239,6 +241,13 @@ func (h *Handler) writeWebAuthnError(w http.ResponseWriter, r *http.Request, err
 	case errors.Is(err, service.ErrInvalidSession):
 		h.writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "session_token invalid or expired — restart the flow",
+		})
+	case errors.Is(err, service.ErrNoPasskeysRegistered):
+		// First-time visitor clicking "Sign in with passkey" before
+		// registering one. 404 with a hint pointing at the
+		// registration path; frontend surfaces a friendlier toast.
+		h.writeJSON(w, http.StatusNotFound, map[string]string{
+			"error": "no passkey registered for this account — sign in with your password and add one in Settings → Security",
 		})
 	default:
 		h.writeError(w, r, err)

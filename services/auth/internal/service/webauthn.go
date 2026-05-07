@@ -41,6 +41,16 @@ const StepUpTTL = 5 * time.Minute
 // the flow" hint.
 var ErrInvalidSession = errors.New("webauthn: session token invalid or expired")
 
+// ErrNoPasskeysRegistered — login flow attempted but the user has
+// no creds. Distinct from ErrInvalidCredentials so the handler can
+// surface the chicken-and-egg case (user has an account, just
+// hasn't added a passkey yet) without leaking enumeration of which
+// emails exist — first-time visitors trying the passkey button get
+// the same shape as a logged-out attacker probing for users.
+// Maps to 404 so the frontend can show "no passkey for this
+// account — use password and add one in Settings → Security".
+var ErrNoPasskeysRegistered = errors.New("webauthn: no passkeys registered for this account")
+
 // ErrWebAuthnNotImplemented — the per-flow handler hasn't been
 // wired yet. Surfaces as 501 from the route. The stub state is
 // deliberate: ships the data layer + URL surface so the frontend
