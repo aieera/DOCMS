@@ -48,9 +48,15 @@ type Service struct {
 	users    repository.UserRepository
 	sessions repository.SessionRepository
 	apiKeys  repository.APIKeyRepository
+	webauthn repository.WebAuthnRepository
 	outbox   *database.OutboxRepository
 	kms      crypto.KeyManager // used to wrap MFA secrets; falls back if nil
 	localKek []byte            // non-nil in dev with VAULTDMS_LOCAL_KEK set
+	// WebAuthnLib is the *webauthn.WebAuthn instance, opaque to the
+	// rest of the service. Wired by webauthn.go when the
+	// VAULTDMS_WEBAUTHN_RPID env var is present; nil otherwise
+	// (handlers return ErrWebAuthnNotImplemented in that case).
+	WebAuthnLib any
 	log      zerolog.Logger
 	now      func() time.Time
 }
@@ -62,6 +68,7 @@ type Config struct {
 	Users    repository.UserRepository
 	Sessions repository.SessionRepository
 	APIKeys  repository.APIKeyRepository
+	WebAuthn repository.WebAuthnRepository // optional; nil disables passkey routes
 	Outbox   *database.OutboxRepository
 	KMS      crypto.KeyManager // optional; if nil, LocalKEK used as-is for MFA encryption
 	LocalKEK []byte            // 32 bytes, required only when KMS is nil
@@ -76,6 +83,7 @@ func New(cfg Config) *Service {
 		users:    cfg.Users,
 		sessions: cfg.Sessions,
 		apiKeys:  cfg.APIKeys,
+		webauthn: cfg.WebAuthn,
 		outbox:   cfg.Outbox,
 		kms:      cfg.KMS,
 		localKek: cfg.LocalKEK,

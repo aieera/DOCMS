@@ -85,10 +85,27 @@ func main() {
 		Users:    repository.NewUserRepo(),
 		Sessions: repository.NewSessionRepo(),
 		APIKeys:  repository.NewAPIKeyRepo(),
+		WebAuthn: repository.NewWebAuthnRepo(),
 		Outbox:   database.NewOutboxRepository(),
 		LocalKEK: localKEK,
 		Logger:   *log.Z(),
 	})
+
+	// ADR 0070 — wire the WebAuthn lib instance when env is configured.
+	// Nil falls through to ErrWebAuthnNotImplemented in the handlers,
+	// so a deploy that hasn't set VAULTDMS_WEBAUTHN_RPID gets a clean
+	// 501 rather than a 5xx panic.
+	if waCfg := service.LoadWebAuthnConfigFromEnv(); waCfg != nil {
+		wa, err := service.NewWebAuthnLib(waCfg)
+		if err != nil {
+			log.Warn(ctx).Err(err).Msg("webauthn lib init failed; passkey routes will 501")
+		} else {
+			svc.WebAuthnLib = wa
+			log.Info(ctx).Str("rpid", waCfg.RPID).Msg("webauthn passkey support enabled")
+		}
+	} else {
+		log.Info(ctx).Msg("webauthn not configured (VAULTDMS_WEBAUTHN_RPID unset); passkey routes will 501")
+	}
 
 	// ---- Handler ----------------------------------------------------------
 	cookieSecure := cfg.Environment == "prod" || cfg.Environment == "staging"

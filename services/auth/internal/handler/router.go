@@ -35,6 +35,12 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
 
+		// ADR 0070 — passkey login (public; no prior session needed).
+		// Same rate-limit class as password login since they serve the
+		// same auth-attempt role.
+		r.With(vdmsmw.NewIPRateLimiter(20, 10, time.Minute)).Post("/webauthn/login/begin", h.WebAuthnLoginStart)
+		r.With(vdmsmw.NewIPRateLimiter(20, 10, time.Minute)).Post("/webauthn/login/finish", h.WebAuthnLoginFinish)
+
 		// ---- SAML 2.0 SSO (public; tenant identified by path slug) -------
 		if saml != nil {
 			r.Route("/saml/{tenant_slug}", func(r chi.Router) {
@@ -81,6 +87,14 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 				r.With(h.RequireRole("admin", "owner")).Post("/", h.IssueAPIKey)
 				r.Get("/", h.ListAPIKeys)
 				r.Delete("/{key_id}", h.RevokeAPIKey)
+			})
+
+			// ADR 0070 — passkey registration + management (authed).
+			r.Route("/webauthn", func(r chi.Router) {
+				r.Post("/registration/begin", h.WebAuthnRegistrationStart)
+				r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
+				r.Get("/credentials", h.WebAuthnList)
+				r.Delete("/credentials/{id}", h.WebAuthnDelete)
 			})
 		})
 	})
