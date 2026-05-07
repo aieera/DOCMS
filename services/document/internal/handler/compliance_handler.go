@@ -21,23 +21,32 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	vdmsmw "github.com/vaultdms/vaultdms/pkg/middleware"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/compliance"
 )
 
 // HoldsHandler mounts legal-hold endpoints on a ServeMux.
 type HoldsHandler struct {
-	svc *compliance.HoldsService
-	log zerolog.Logger
+	svc  *compliance.HoldsService
+	pool *pgxpool.Pool // nil disables ADR 0070 step-up gate on /release
+	log  zerolog.Logger
 }
 
 // NewHoldsHandler constructs the handler.
 func NewHoldsHandler(svc *compliance.HoldsService, log zerolog.Logger) *HoldsHandler {
 	return &HoldsHandler{svc: svc, log: log}
 }
+
+// SetStepUpPool wires the DB pool used by the ADR 0070 step-up
+// check on /release. main.go calls this once at startup. When pool
+// is nil (e.g. dev deploy without WebAuthn configured), the
+// endpoint works as before — role gate only.
+func (h *HoldsHandler) SetStepUpPool(p *pgxpool.Pool) { h.pool = p }
 
 // Register mounts:
 //
@@ -194,6 +203,14 @@ func (h *HoldsHandler) release(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	// ADR 0070 — releasing a legal hold is irreversible + auditable;
+	// require fresh passkey presence within the last 5 minutes. When
+	// the deploy hasn't wired WebAuthn (pool nil), the legacy role
+	// check is the only gate — a deploy-time choice the runbook
+	// documents.
+	if h.pool != nil && !vdmsmw.EnforceStepUp(w, r, h.pool, "legal_hold:release", h.log) {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))

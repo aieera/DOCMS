@@ -137,6 +137,11 @@ func main() {
 	}
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
+	// ADR 0070 — gate /compliance/holds/{id}/release behind a
+	// 5-min fresh-passkey grant. Pool is the same one the rest of
+	// the service uses; nil disables the gate (dev deploys without
+	// WebAuthn configured).
+	holdsHandler.SetStepUpPool(pool)
 
 	// Temporal client for DSR workflow dispatch (Wave 8.3). Best-effort:
 	// if Temporal is unreachable at boot the handler surface still
