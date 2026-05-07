@@ -163,6 +163,17 @@ routes:
     prefix: /api/v1/saved-searches
     methods: []
     auth: required
+  # ADR 0066 — admin permission-propagation SLI dashboard.
+  - service: search
+    prefix: /api/v1/admin/permission-propagation-stats
+    methods: [GET]
+    auth: admin
+  # ADR 0069 — platform-admin federated (cross-tenant) search.
+  - service: search
+    prefix: /api/v1/platform/search
+    methods: []
+    auth: admin
+    rate: search
 
   # ---- audit ----------------------------------------------------------
   - service: audit
