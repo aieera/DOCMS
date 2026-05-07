@@ -89,10 +89,11 @@ func deny(w http.ResponseWriter, reason string) {
 // false it has ALREADY written the 401 response (caller just
 // returns).
 //
-// Used by handlers that don't have an easy place to wrap with
-// RequireStepUp middleware — e.g. http.ServeMux-registered routes
-// where the wrap happens at registration time but the handler
-// would prefer an inline check next to its other guards.
+// Reads tenant + user from the request context (populated by the
+// pkg/auth-aware AuthMiddleware). Handlers that read identity
+// from headers directly (e.g. the document service's callers()
+// helper that reads X-Auth-Tenant-ID + X-User-ID) should use
+// EnforceStepUpExplicit instead.
 func EnforceStepUp(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, scope string, log zerolog.Logger) bool {
 	tenantID, err := vdmsauth.GetTenantID(r.Context())
 	if err != nil {
@@ -104,6 +105,21 @@ func EnforceStepUp(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, s
 		deny(w, "user_required")
 		return false
 	}
+	return EnforceStepUpExplicit(w, r, pool, tenantID, userID, scope, log)
+}
+
+// EnforceStepUpExplicit is the parameter-driven variant. Used when
+// the calling handler has resolved (tenantID, userID) by some
+// other path (header parse, gRPC metadata, signed JWT) and just
+// wants the SQL gate.
+func EnforceStepUpExplicit(
+	w http.ResponseWriter,
+	r *http.Request,
+	pool *pgxpool.Pool,
+	tenantID, userID uuid.UUID,
+	scope string,
+	log zerolog.Logger,
+) bool {
 	ok, err := hasActiveStepUp(r.Context(), pool, tenantID, userID, scope)
 	if err != nil {
 		log.Error().Err(err).Msg("stepup: db lookup failed")

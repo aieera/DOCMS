@@ -209,8 +209,10 @@ func (h *HoldsHandler) release(w http.ResponseWriter, r *http.Request) {
 	// require fresh passkey presence within the last 5 minutes. When
 	// the deploy hasn't wired WebAuthn (pool nil), the legacy role
 	// check is the only gate — a deploy-time choice the runbook
-	// documents.
-	if h.pool != nil && !vdmsmw.EnforceStepUp(w, r, h.pool, "legal_hold:release", h.log) {
+	// documents. Uses EnforceStepUpExplicit because the document
+	// service's `callers()` helper reads identity from headers
+	// directly, not from pkg/auth's request context.
+	if h.pool != nil && !vdmsmw.EnforceStepUpExplicit(w, r, h.pool, tenantID, userID, "legal_hold:release", h.log) {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
