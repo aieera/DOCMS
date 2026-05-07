@@ -24,6 +24,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -137,6 +138,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSettingsSecurityRoute =
+  AuthenticatedSettingsSecurityRouteImport.update({
+    id: '/settings/security',
+    path: '/settings/security',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminWorkflowsRoute =
   AuthenticatedAdminWorkflowsRouteImport.update({
     id: '/admin/workflows',
@@ -378,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -429,6 +437,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -482,6 +491,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/settings/security'
     | '/admin/'
     | '/workspaces/'
     | '/admin/intelligence/anomalies'
@@ -586,6 +597,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/settings/security'
     | '/admin'
     | '/workspaces'
     | '/admin/intelligence/anomalies'
@@ -638,6 +650,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/settings/security'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/intelligence/anomalies'
@@ -771,6 +784,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/security': {
+      id: '/_authenticated/settings/security'
+      path: '/settings/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof AuthenticatedSettingsSecurityRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
@@ -1049,6 +1069,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
+  AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminIntelligenceAnomaliesRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -1096,6 +1117,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
+  AuthenticatedSettingsSecurityRoute: AuthenticatedSettingsSecurityRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminIntelligenceAnomaliesRoute:

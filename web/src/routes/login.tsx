@@ -1,9 +1,11 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { Fingerprint } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAuthStore } from '@/store/authStore'
 import { login } from '@/api/auth'
+import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
 import toast from 'react-hot-toast'
 
 function LoginPage() {
@@ -28,6 +30,35 @@ function LoginPage() {
     }
   }
 
+  // ADR 0070 — passkey-as-primary path. Skips the password entirely
+  // for users with a registered cred. Failure modes (no passkey,
+  // user-cancelled, browser doesn't support) toast and stay on the
+  // login page so the user can fall back to password.
+  const handlePasskey = async () => {
+    if (!email) {
+      toast.error('Enter your email first — we use it to find your passkeys')
+      return
+    }
+    setLoading(true)
+    try {
+      const data = await loginWithPasskey({ tenant_slug: tenantSlug, email })
+      const u = data.user as { tenant_id?: string }
+      authLogin(data.user as Parameters<typeof authLogin>[0], u.tenant_id ?? '')
+      navigate({ to: '/' })
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string }
+      if (e.response?.status === 501) {
+        toast.error('Passkeys not enabled on this deploy. Use your password.')
+      } else if (e.response?.status === 401) {
+        toast.error('No passkey found for this account')
+      } else {
+        toast.error(e.message ?? 'Passkey sign-in failed')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
       <div className="w-full max-w-sm space-y-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 shadow-lg">
@@ -38,6 +69,27 @@ function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input label="Tenant" type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required />
           <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+
+          {/* ADR 0070 — passkey-as-primary. Shown above password so a
+              user with a registered passkey can skip the password entirely. */}
+          {isWebAuthnSupported() && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handlePasskey}
+              disabled={loading || !email}
+              className="w-full"
+              data-testid="login-passkey"
+            >
+              <Fingerprint className="h-4 w-4" /> Sign in with passkey
+            </Button>
+          )}
+
+          <div className="relative my-2 text-center text-xs text-[var(--color-text-secondary)]">
+            <span className="relative z-10 bg-[var(--color-bg-secondary)] px-2">or</span>
+            <span className="absolute left-0 right-0 top-1/2 border-t border-[var(--color-border)]" />
+          </div>
+
           <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           <Button type="submit" className="w-full" loading={loading}>Sign In</Button>
         </form>
