@@ -1,8 +1,10 @@
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 import { useLogout } from '@/hooks/useAuth'
-import { Bell, Moon, Sun, LogOut, Search } from 'lucide-react'
+import { Bell, Moon, Sun, LogOut, Search, CheckSquare } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { listMyTasks } from '@/api/tasks'
 
 export function Header() {
   const user = useAuthStore((s) => s.user)
@@ -26,6 +28,11 @@ export function Header() {
       </button>
 
       <div className="flex items-center gap-2">
+        {/* ADR 0068 — My Tasks badge. Counts open + in-progress
+            tasks assigned to the caller. Polls every 30s; the
+            /tasks page invalidates this query when the user
+            completes/cancels something so the count updates fast. */}
+        <MyTasksBadge />
         <button onClick={() => navigate({ to: '/notifications' })} className="relative rounded-md p-2 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Notifications">
           <Bell className="h-5 w-5" />
         </button>
@@ -48,5 +55,37 @@ export function Header() {
         </div>
       </div>
     </header>
+  )
+}
+
+// MyTasksBadge — top-nav button with a count of open tasks assigned
+// to the caller. Click → /tasks. Hidden when count = 0.
+function MyTasksBadge() {
+  const navigate = useNavigate()
+  const { data } = useQuery({
+    queryKey: ['my-tasks-count'],
+    queryFn: () => listMyTasks(false),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  })
+  const count = (data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress').length
+  return (
+    <button
+      onClick={() => navigate({ to: '/tasks' })}
+      className="relative rounded-md p-2 hover:bg-slate-100 dark:hover:bg-slate-800"
+      aria-label="My tasks"
+      title={count > 0 ? `${count} open task${count === 1 ? '' : 's'}` : 'My tasks'}
+      data-testid="my-tasks-badge"
+    >
+      <CheckSquare className="h-5 w-5" />
+      {count > 0 && (
+        <span
+          className="absolute -right-1 -top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+          data-testid="my-tasks-count"
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
   )
 }

@@ -7,12 +7,17 @@ import { useAuthStore } from '@/store/authStore'
 import { getOCR, rerunOCR, type OCRStatus } from '@/api/ocr'
 import { getDownloadURL } from '@/api/documents'
 import { PDFLayoutViewer } from '@/components/viewer/PDFLayoutViewer'
+import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
+import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
+import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
+import { CommentsPanel } from '@/components/documents/CommentsPanel'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
-import { Download, Share, History, MessageSquare, FileText, RefreshCw, AlertCircle, Clock, CheckCircle2, LayoutGrid } from 'lucide-react'
+import { Download, Share, History, MessageSquare, FileText, RefreshCw, AlertCircle, Clock, CheckCircle2, LayoutGrid, CheckSquare } from 'lucide-react'
+import { CreateTaskDialog } from '@/routes/_authenticated/tasks'
 import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
 import { RouteSuggestionBanner } from '@/components/intelligence/RouteSuggestionBanner'
 import { CompliancePanel } from '@/components/intelligence/CompliancePanel'
@@ -34,7 +39,7 @@ function DocumentDetailPage() {
   const { data: doc, isLoading } = useDocument(documentId)
   const [tab, setTab] = useState<'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'redaction'>('preview')
   const userRole = useAuthStore((s) => s.user?.role)
-  // ADR 0062 — bulk-apply redaction gate. Compliance officer also
+  // ADR 0079 — bulk-apply redaction gate. Compliance officer also
   // counts because they're the typical reviewers.
   const isAdminCaller =
     userRole === 'owner' || userRole === 'admin' || userRole === 'compliance_officer'
@@ -133,10 +138,49 @@ function DocumentDetailPage() {
       </div>
 
       <aside className="w-80 shrink-0 space-y-4">
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm"><Download className="h-4 w-4" /> Download</Button>
           <Button variant="outline" size="sm"><Share className="h-4 w-4" /> Share</Button>
+          {/* ADR 0068 — create a lightweight task pre-linked to this doc. */}
+          <CreateTaskFromDocButton documentId={documentId} />
         </div>
+        {/* ADR 0065 — co-authoring entrypoint. Renders only for
+            Office mime types and only when the configured editor is
+            reachable; falls back to "Open in desktop app" otherwise. */}
+        {versionId && (
+          <CoauthorEditor
+            documentId={documentId}
+            versionId={versionId}
+            mimeType={doc.mime_type ?? ''}
+            fileName={doc.title ?? 'document'}
+            downloadUrl={`/api/v1/documents/${documentId}/versions/${versionId}/download`}
+            canEdit={true}
+          />
+        )}
+        {/* ADR 0067 — image + video annotation layers. Mime-based
+            dispatch; PDF stays on the existing PDFLayoutViewer +
+            highlight/note/stamp/drawing flow. */}
+        {versionId && doc.mime_type?.startsWith('image/') && (
+          <ImageAnnotationLayer
+            documentId={documentId}
+            versionId={versionId}
+            imageUrl={`/api/v1/documents/${documentId}/versions/${versionId}/download`}
+            canCreate={true}
+          />
+        )}
+        {versionId && doc.mime_type?.startsWith('video/') && (
+          <VideoAnnotationLayer
+            documentId={documentId}
+            versionId={versionId}
+            videoUrl={`/api/v1/documents/${documentId}/versions/${versionId}/download`}
+            canCreate={true}
+          />
+        )}
+
+        {/* ADR 0066 — comments side panel. Threads + replies +
+            reactions + @mention autocomplete + real-time updates. */}
+        <CommentsPanel documentId={documentId} />
+
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 space-y-3">
           <h3 className="text-sm font-semibold">Details</h3>
           <div className="space-y-2 text-sm">
@@ -215,7 +259,7 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
     },
   })
 
-  // ADR 0061 — entities are stored against the worker's joined
+  // ADR 0078 — entities are stored against the worker's joined
   // ("\n\n".join) full text. We split that back to per-page slices
   // client-side so HighlightedText can paint each <details> block.
   const entitiesQuery = useQuery({
@@ -430,7 +474,7 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
     queryFn: () => getOCR(documentId, versionId!),
     enabled: Boolean(versionId) && isPdf,
   })
-  // Entities feed the PDF overlay (ADR 0061 follow-up) — same query
+  // Entities feed the PDF overlay (ADR 0078 follow-up) — same query
   // key/shape as the Entities tab so the cache is shared.
   const entitiesQ = useQuery({
     queryKey: ['entities', documentId, 'for-raw-text'],
@@ -540,6 +584,26 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="text-[var(--color-text-secondary)]">{label}</span>
       <span>{children}</span>
     </div>
+  )
+}
+
+// ADR 0068 — opens the shared CreateTaskDialog with the doc id
+// pre-filled so the new task lands linked to this document.
+function CreateTaskFromDocButton({ documentId }: { documentId: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid="create-task-from-doc">
+        <CheckSquare className="h-4 w-4" /> New task
+      </Button>
+      {open && (
+        <CreateTaskDialog
+          linkedDocumentId={documentId}
+          onClose={() => setOpen(false)}
+          onCreated={() => { /* the badge polls every 30s; nothing local to invalidate */ }}
+        />
+      )}
+    </>
   )
 }
 

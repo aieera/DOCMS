@@ -115,6 +115,10 @@ type Repositories struct {
 	ActiveLearning      ActiveLearningRepository
 	NER                 NERRepository
 	Redaction           RedactionRepository
+	// ADR 0066 — threaded comments + reactions.
+	Comments            CommentRepository
+	// ADR 0068 — lightweight tasks (separate from workflow_tasks).
+	Tasks               TaskRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -140,5 +144,7 @@ func New(pool *pgxpool.Pool) *Repositories {
 		ActiveLearning:      NewActiveLearningRepo(),
 		NER:                 NewNERRepo(),
 		Redaction:           NewRedactionRepo(),
+		Comments:            NewCommentRepo(),
+		Tasks:               NewTaskRepo(),
 	}
 }

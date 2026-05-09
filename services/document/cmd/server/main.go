@@ -123,7 +123,7 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
-	// ADR 0061 — base64-decode VAULTDMS_LOCAL_KEK so the NER api-key
+	// ADR 0078 — base64-decode VAULTDMS_LOCAL_KEK so the NER api-key
 	// Set/Clear endpoints can encrypt with AES-256-GCM. Same key the
 	// auth service uses for MFA secrets and the intelligence worker
 	// uses to decrypt the per-tenant LLM key. Empty / wrong-size KEK
@@ -137,7 +137,7 @@ func main() {
 	}
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
 	holdsHandler := handler.NewHoldsHandler(holdsService, *log.Z())
-	// ADR 0070 — gate /compliance/holds/{id}/release behind a
+	// ADR 0061 — gate /compliance/holds/{id}/release behind a
 	// 5-min fresh-passkey grant. Pool is the same one the rest of
 	// the service uses; nil disables the gate (dev deploys without
 	// WebAuthn configured).
@@ -377,6 +377,91 @@ func main() {
 	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback",
 		middleware.CorrelationHTTP(onlyOfficeMux))
 
+	// ADR 0065 — WOPI host. Mounted at /wopi/* so editors (Collabora,
+	// OnlyOffice over WOPI, future Office Web) hit the spec-compliant
+	// surface alongside the legacy /onlyoffice/* path.
+	//
+	// IMPORTANT: WOPI does NOT carry the gateway signature header —
+	// editors call us directly. The middleware chain wrapping rootMux
+	// includes RequireGatewaySignature which would 403 every WOPI
+	// call, so we mount the WOPI mux at the very top before the
+	// signature gate. The access_token query param is the auth
+	// boundary instead.
+	wopiMux := http.NewServeMux()
+	wopiH := handler.NewWOPIHandler(rdb, *log.Z())
+	// ADR 0065 — concrete auditor wired to the existing outbox so
+	// session_started / session_ended events flow through the same
+	// publisher every other audit row uses.
+	wopiH.Auditor = handler.NewOutboxWOPIAuditor(pool, database.NewOutboxRepository(), *log.Z())
+	wopiH.Register(wopiMux)
+	// File resolver wiring is intentionally deferred — the default
+	// Resolve/Open/Save impl ties to storage + policy gRPC and is
+	// kept out of this PR to limit scope. When the deploy hasn't
+	// wired one, GetFile/PutFile return 503 with a clear message.
+
+	// ADR 0065 — POST /api/v1/documents/{id}/versions/{vid}/coauth/start
+	// mints WOPI access_tokens for the calling user and returns the
+	// iframe URL. This route IS gateway-signed (it's the
+	// authenticated kickoff from the FE), so it lives on rootMux.
+	coauthStartMux := http.NewServeMux()
+	handler.NewCoauthStartHandler(*log.Z()).Register(coauthStartMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/coauth/start",
+		middleware.CorrelationHTTP(coauthStartMux))
+
+	// ADR 0066 — threaded comments + reactions. Real-time fan-out
+	// happens via the collaboration WS service which consumes the
+	// dms.comment.* outbox subjects we emit on every transition.
+	commentsMux := http.NewServeMux()
+	handler.NewCommentsHandler(svc, *log.Z()).Register(commentsMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/comments",    middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/comments",     middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/replies",     middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("PATCH /api/v1/comments/{cid}",            middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("DELETE /api/v1/comments/{cid}",           middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/resolve",     middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/unresolve",   middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/reactions",   middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("DELETE /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/comments/{cid}/reactions",    middleware.CorrelationHTTP(commentsMux))
+
+	// ADR 0068 — lightweight tasks. Distinct from workflow_tasks
+	// (approval-step state) which lives in services/workflow.
+	tasksMux := http.NewServeMux()
+	handler.NewTasksHandler(svc, *log.Z()).Register(tasksMux)
+	rootMux.Handle("POST /api/v1/tasks",                   middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/mine",               middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks",                    middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/{id}",               middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("PATCH /api/v1/tasks/{id}",             middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/assign",       middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/unassign",     middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/complete",     middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/reopen",       middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/cancel",       middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("DELETE /api/v1/tasks/{id}",            middleware.CorrelationHTTP(tasksMux))
+
+	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at
+	// on tasks crossing the 24h-out and overdue thresholds; emits one
+	// notify event per claimed row. UPDATE…RETURNING makes the claim
+	// + emit pair effectively idempotent (no double-fire on next tick).
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		// Run once on boot so a deploy doesn't wait an hour to send
+		// the first reminder after a cold start.
+		_ = svc.SweepTaskNotifications(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := svc.SweepTaskNotifications(ctx); err != nil {
+					log.Warn(ctx).Err(err).Msg("task notification sweep failed")
+				}
+			}
+		}
+	}()
+
 	// §17.3 / D10 — annotation CRUD. Pinned method+path patterns so
 	// only the annotation surface lands here; other
 	// /api/v1/documents/* paths continue to the grpc-gateway.
@@ -489,7 +574,7 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/documents/bulk-reclassify",
 		middleware.CorrelationHTTP(classifyCorrectionsMux))
 
-	// ADR 0062 — redaction review queue + apply + gated unredacted download.
+	// ADR 0079 — redaction review queue + apply + gated unredacted download.
 	redactionReviewMux := http.NewServeMux()
 	handler.NewRedactionReviewHandler(svc, *log.Z()).Register(redactionReviewMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/redaction-candidates",
@@ -501,7 +586,7 @@ func main() {
 	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/unredacted",
 		middleware.CorrelationHTTP(redactionReviewMux))
 
-	// ADR 0061 — NER read + correction surface.
+	// ADR 0078 — NER read + correction surface.
 	nerMux := http.NewServeMux()
 	handler.NewNERHandler(svc, *log.Z()).Register(nerMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/entities",
@@ -548,9 +633,17 @@ func main() {
 	// gateway's header forwarding is lossy.
 	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux)))))
 
+	// ADR 0065 — WOPI bypass. Editors hit /wopi/* directly (no
+	// gateway in front), so we route /wopi/* to wopiMux without the
+	// gateway-signature check. Auth is via the access_token query
+	// param (see wopi_handler.go IssueWOPIToken).
+	wopiAndRoot := http.NewServeMux()
+	wopiAndRoot.Handle("/wopi/", wopiMux)
+	wopiAndRoot.Handle("/", middleware.RequireGatewaySignature()(rootMux))
+
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(rootMux),
+		Handler:           wopiAndRoot,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
