@@ -303,14 +303,35 @@ func (s *Service) IngestWebhook(ctx context.Context, tenantID string, evt *esign
 	return nil
 }
 
-// ingestSignedDocument pulls the signed PDF + CoC from the vendor.
-// Hand-off to the document service for "create new version"
-// happens via the dms.document.version_uploaded.v1 outbox path
-// (ADR 0021); for now we emit a direct dms.signature.completed.v1
-// payload that the document worker subscribes to with the bytes
-// already in S3. The full upload-and-version step depends on the
-// storage service's PutObject API which is wired separately.
+// ingestSignedDocument pulls the signed PDF + CoC from the vendor
+// and hands off to the document service so the signed bytes
+// materialize as a real new version (ADR 0021 path) rather than
+// dying as byte counts in an outbox event.
+//
+// Idempotency: a redelivered webhook hits this twice. First call
+// flips signature_requests.status to 'completed'; subsequent calls
+// see status='completed' upfront and short-circuit. This lets us
+// re-run safely without uploading duplicate blobs or minting
+// duplicate versions.
+//
+// When the ingest pipeline isn't configured (storage / document
+// services unreachable at boot), we still flip the status + emit
+// the outbox event so observability survives. The new-version
+// hand-off is the only thing that's skipped.
 func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID, envelopeID string, provider esign.Provider) error {
+	// Pre-check: short-circuit on already-completed requests.
+	existing, err := s.repo.GetByID(ctx, tenantID, requestID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return errors.New("ingest: request not found")
+	}
+	if existing.Status == "completed" {
+		s.log.Debug().Str("request_id", requestID).Msg("esign ingest: already completed — skipping (idempotent)")
+		return nil
+	}
+
 	client, err := s.resolveClient(ctx, tenantID, provider)
 	if err != nil {
 		return err
@@ -321,18 +342,68 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 	if err != nil {
 		return err
 	}
+
+	// Hand off to the storage + document services. When the ingest
+	// client isn't wired, log + continue so the request still
+	// transitions to completed; that's better than blocking on a
+	// dependency that doesn't exist in the local-dev environment.
+	var versionID, contentBlobID, cocBlobID string
+	if s.ingest != nil {
+		region, _ := s.ingest.ResolveDocumentRegion(ctx, tenantID, existing.DocumentID)
+		filename := "signed.pdf"
+		change := fmt.Sprintf("Signed via %s envelope %s", provider, envelopeID)
+		vID, blobID, err := s.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{
+			TenantID: tenantID, UserID: existing.CreatedBy,
+			Filename: filename, MimeType: "application/pdf",
+			Bytes: got.SignedPDF, RegionPin: region,
+		}, existing.DocumentID, existing.CreatedBy, change)
+		if err != nil {
+			s.log.Error().Err(err).Str("request_id", requestID).Msg("esign ingest: signed PDF hand-off failed")
+			// Don't return — proceed to mark completed + emit the
+			// audit event so the signature isn't stranded as
+			// in_progress. The version-create failure is observable
+			// in the outbox event below (version_id empty).
+		} else {
+			versionID = vID
+			contentBlobID = blobID
+		}
+		// CoC: upload only — there's no semantic for "the audit log
+		// IS a version of the doc", so we ship the bytes to storage
+		// for future retrieval and embed the blob_id in the audit
+		// event. Best-effort; failure here doesn't gate completion.
+		if len(got.CoCPDF) > 0 {
+			cocPut, err := s.ingest.client.PutSignedBlob(ctx, PutSignedBlobInput{
+				TenantID: tenantID, UserID: existing.CreatedBy,
+				Filename: "certificate-of-completion.pdf",
+				MimeType: "application/pdf",
+				Bytes:    got.CoCPDF, RegionPin: region,
+			})
+			if err != nil {
+				s.log.Warn().Err(err).Str("request_id", requestID).Msg("esign ingest: CoC upload failed")
+			} else {
+				cocBlobID = cocPut.ContentBlobID
+			}
+		}
+	} else {
+		s.log.Warn().Str("request_id", requestID).Msg("esign ingest: pipeline not configured; skipping new-version hand-off")
+	}
+
 	tenantUUID, _ := uuid.Parse(tenantID)
 	reqUUID, _ := uuid.Parse(requestID)
 	completedPayload, _ := json.Marshal(map[string]any{
 		"specversion": "1.0", "type": "dms.signature.completed.v1",
 		"source": "/vaultdms/signature",
 		"data": map[string]any{
-			"tenant_id":   tenantID,
-			"request_id":  requestID,
-			"provider":    string(provider),
-			"envelope_id": envelopeID,
-			"signed_pdf_bytes": len(got.SignedPDF),
-			"coc_pdf_bytes":    len(got.CoCPDF),
+			"tenant_id":          tenantID,
+			"request_id":         requestID,
+			"document_id":        existing.DocumentID,
+			"provider":           string(provider),
+			"envelope_id":        envelopeID,
+			"signed_pdf_bytes":   len(got.SignedPDF),
+			"coc_pdf_bytes":      len(got.CoCPDF),
+			"signed_version_id":  versionID,
+			"content_blob_id":    contentBlobID,
+			"coc_content_blob_id": cocBlobID,
 		},
 	})
 	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {

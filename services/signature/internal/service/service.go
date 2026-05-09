@@ -34,6 +34,21 @@ type Service struct {
 	// esign is the optional ADR 0071 wiring for DocuSign/Adobe Sign.
 	// nil → connector routes return "not configured".
 	esign *ESignConfig
+	// ingest is the post-completion bytes-to-storage hand-off used
+	// by both QES (ADR 0070) and the third-party connectors (ADR
+	// 0071). nil → completion still flips the request status +
+	// emits the outbox event with byte counts; only the new-version
+	// hand-off is skipped.
+	ingest *ingestPipeline
+}
+
+// AddIngest plugs the upload + create-version round-trip into the
+// service. main.go calls this when the storage and document gRPC
+// clients are reachable; otherwise post-completion still emits the
+// audit + status events but the signed PDF doesn't materialize as
+// a new version.
+func (s *Service) AddIngest(c IngestSignedClient) {
+	s.ingest = &ingestPipeline{pool: s.pool, client: c}
 }
 
 type Config struct {

@@ -14,6 +14,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 
 	"github.com/vaultdms/vaultdms/pkg/config"
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -79,6 +82,31 @@ func main() {
 		S3:     s3c,
 		Logger: *log.Z(),
 	})
+
+	// ADR 0070 / 0071 follow-up — bytes-to-storage hand-off. Dial
+	// storage + document gRPC and plug the resulting clients into
+	// the service so post-completion pulls a real new version. If
+	// either dial fails we keep going: completion still flips
+	// status + emits the audit event, just without the version.
+	storageConn := dialServiceOpt(ctx, log, "storage", cfg.StorageServiceAddr)
+	documentConn := dialServiceOpt(ctx, log, "document", cfg.DocumentServiceAddr)
+	if storageConn != nil && documentConn != nil {
+		ingestClient := service.NewGRPCIngestClient(
+			vaultdmsv1.NewStorageServiceClient(storageConn),
+			vaultdmsv1.NewDocumentServiceClient(documentConn),
+			pool,
+		)
+		svc.AddIngest(ingestClient)
+		log.Info(ctx).Msg("ingest pipeline wired: storage + document gRPC reachable")
+	} else {
+		log.Warn(ctx).Msg("ingest pipeline unavailable; signed PDFs will not materialize as new versions")
+	}
+	if storageConn != nil {
+		defer func() { _ = storageConn.Close() }()
+	}
+	if documentConn != nil {
+		defer func() { _ = documentConn.Close() }()
+	}
 
 	hs := health.NewServer(pool, rdb, nc, s3c)
 	go func() {
@@ -231,6 +259,29 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// dialServiceOpt opens a gRPC connection with a 5-second deadline.
+// Returns nil + warns on failure rather than crashing — the
+// signature service can still serve every other route when storage
+// or document is briefly down at boot.
+func dialServiceOpt(ctx context.Context, log *logger.Logger, name, addr string) *grpc.ClientConn {
+	if addr == "" {
+		log.Warn(ctx).Str("service", name).Msg("addr empty; ingest pipeline will skip this dependency")
+		return nil
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(dialCtx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		log.Warn(ctx).Err(err).Str("service", name).Str("addr", addr).
+			Msg("gRPC dial failed; ingest pipeline will skip this dependency")
+		return nil
+	}
+	return conn
 }
 
 // deriveSealingKey returns a 32-byte AES key derived from the
