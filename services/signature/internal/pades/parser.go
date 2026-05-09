@@ -368,6 +368,80 @@ func signedBytes(raw []byte, br [4]int64) ([]byte, error) {
 	return out, nil
 }
 
+// extractStream returns the body of `N 0 obj << ... >> stream\n
+// ...bytes... \nendstream endobj` for the given object number.
+// Returns ErrParse-wrapped error when the object exists but isn't
+// a stream (which is a valid PDF shape we just don't surface here),
+// nil error + empty bytes when the object isn't found at all.
+//
+// We intentionally don't apply any /Filter — PDF DSS streams are
+// stored uncompressed by every signer we've inspected (Adobe,
+// DSS-Java, the EU validator's own samples). If a future sample
+// turns up with FlateDecode we'll add a decompress step here.
+func extractStream(raw []byte, objNum int) ([]byte, error) {
+	prefix := []byte(fmt.Sprintf("\n%d 0 obj", objNum))
+	idx := bytes.Index(raw, prefix)
+	if idx < 0 {
+		// Try without leading newline (object at file start).
+		prefix = []byte(fmt.Sprintf("%d 0 obj", objNum))
+		idx = bytes.Index(raw, prefix)
+		if idx < 0 {
+			return nil, nil
+		}
+	}
+	body := raw[idx:]
+	streamMarker := []byte("\nstream\n")
+	streamIdx := bytes.Index(body, streamMarker)
+	if streamIdx < 0 {
+		// Some PDFs use \r\n line endings.
+		streamMarker = []byte("\nstream\r\n")
+		streamIdx = bytes.Index(body, streamMarker)
+		if streamIdx < 0 {
+			return nil, nil
+		}
+	}
+	contentStart := streamIdx + len(streamMarker)
+
+	// Prefer /Length when present — DER-encoded OCSP/CRL bytes can
+	// contain a literal `\nendstream` substring, so a string scan
+	// would truncate. /Length is the canonical PDF way to size a
+	// stream and every well-formed embedder writes it.
+	if length, ok := readLengthFromStreamDict(body[:streamIdx]); ok {
+		end := contentStart + length
+		if end <= len(body) {
+			return body[contentStart:end], nil
+		}
+	}
+	endStreamIdx := bytes.Index(body[contentStart:], []byte("\nendstream"))
+	if endStreamIdx < 0 {
+		endStreamIdx = bytes.Index(body[contentStart:], []byte("\r\nendstream"))
+		if endStreamIdx < 0 {
+			return nil, nil
+		}
+	}
+	return body[contentStart : contentStart+endStreamIdx], nil
+}
+
+// readLengthFromStreamDict pulls `/Length N` (literal int, not an
+// indirect reference) out of the dict portion that precedes the
+// `stream\n` marker. Returns false on indirect-reference-only
+// dicts; the caller falls back to the `\nendstream` scan.
+func readLengthFromStreamDict(dict []byte) (int, bool) {
+	m := streamLengthRE.FindSubmatch(dict)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// streamLengthRE matches `/Length N` where N is a literal integer
+// and not an indirect reference (`/Length N M R`).
+var streamLengthRE = regexp.MustCompile(`/Length\s+(\d+)(?:[^0-9].|\s|>)`)
+
 // fullCoverage reports whether the ByteRange covers everything
 // except the Contents gap. If a doc has bytes after br[2]+br[3],
 // those bytes WERE NOT signed — set TamperEvident=false on the

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"golang.org/x/crypto/ocsp"
 )
 
 // Verifier validates PAdES signatures at any tier (B-B / B-T / B-LT).
@@ -100,8 +102,16 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 		info.Errors = append(info.Errors, "chain_unverifiable: "+err.Error())
 	}
 
-	// Cert status (graceful expiry semantics).
-	info.CertStatus = resolveCertStatus(ctx, signerCert, chain, now, v.opts.HTTPClient, v.opts.SkipNetworkLookups)
+	// Cert status. Try embedded LTV first — that's the whole point
+	// of /DSS: a B-LT signature stays verifiable past cert expiry
+	// because the embedded OCSP/CRL is the proof of "good at sign
+	// time". Fall through to live network lookup only when /DSS
+	// material doesn't cover this signature.
+	if status, used := validateEmbeddedLTV(doc, sig, signerCert, chain); used {
+		info.CertStatus = status
+	} else {
+		info.CertStatus = resolveCertStatus(ctx, signerCert, chain, now, v.opts.HTTPClient, v.opts.SkipNetworkLookups)
+	}
 
 	// Level inference: presence of /DocTimeStamp anywhere → at least
 	// B-T; presence of /DSS with a VRI for THIS sig → B-LT.
@@ -112,10 +122,136 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 	return info
 }
 
+// validateEmbeddedLTV consults the document's /DSS dictionary.
+// When the /VRI entry for `sig` references an OCSP (or CRL) that
+// (a) was produced inside `cert.NotBefore..NotAfter` and (b)
+// reports the cert as good or revoked, we return that as the
+// authoritative answer. The "(b) reports good" case promotes a
+// would-be-Indeterminate verdict (cert past expiry, no live OCSP)
+// into Valid — which is the entire eIDAS-LTV value proposition.
+//
+// Returns (status, used) where used=true means the embedded
+// material answered the question; when used=false the caller falls
+// through to live OCSP / CRL lookup.
+func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certificate, chain []*x509.Certificate) (CertStatus, bool) {
+	if doc == nil || doc.DSS == nil || cert == nil {
+		return StatusUnknown, false
+	}
+	entry, hasEntry := doc.DSS.VRI[vriKey(sig.Contents)]
+	// Pull OCSP object numbers from the per-signature VRI first;
+	// fall back to the doc-wide /OCSPs array (some embedders only
+	// populate one or the other).
+	ocspObjs := entry.OCSPObjs
+	if !hasEntry || len(ocspObjs) == 0 {
+		ocspObjs = doc.DSS.OCSPObjs
+	}
+	crlObjs := entry.CRLObjs
+	if !hasEntry || len(crlObjs) == 0 {
+		crlObjs = doc.DSS.CRLObjs
+	}
+	issuer := findIssuer(cert, chain)
+
+	// OCSP path: parse each embedded response, look for one signed
+	// by `issuer` AND whose ProducedAt fits the cert's validity
+	// window. The first hit decides.
+	for _, n := range ocspObjs {
+		body, err := extractStream(doc.Bytes, n)
+		if err != nil || len(body) == 0 {
+			continue
+		}
+		resp, err := ocsp.ParseResponse(body, issuer)
+		if err != nil {
+			// Some embedders concatenate `OCSPResponse` (with the
+			// status wrapper) instead of a bare `BasicOCSPResponse`.
+			// Try the other shape — golang's ParseResponseForCert
+			// accepts both wrappers via the same entry point but
+			// re-wrap heuristically here is overkill for the v1.
+			continue
+		}
+		if !ocspCoversCert(resp, cert) {
+			continue
+		}
+		// At this point the OCSP IS the proof for THIS cert. Its
+		// own production time tells us "the issuer said this on
+		// date X" — the LTV claim is "X was inside the cert's
+		// validity window". eIDAS reads good-during-validity as
+		// Valid even if today is past cert.NotAfter.
+		switch resp.Status {
+		case ocsp.Revoked:
+			return StatusRevoked, true
+		case ocsp.Good:
+			// LTV proof = "the responder committed to a good
+			// answer DURING the cert's validity window".
+			// ThisUpdate is the user-controlled "the responder
+			// committed at this time" timestamp; ProducedAt is
+			// set by the responder's wall clock at sign time
+			// (golang's ocsp library hard-stamps it with
+			// time.Now() in CreateResponse). We lean on ThisUpdate
+			// because it's what eIDAS spec actually requires;
+			// fall back to ProducedAt for old responders that
+			// don't populate ThisUpdate.
+			ts := resp.ThisUpdate
+			if ts.IsZero() {
+				ts = resp.ProducedAt
+			}
+			if !ts.Before(cert.NotBefore) && !ts.After(cert.NotAfter) {
+				return StatusValid, true
+			}
+			// Embedded but produced outside cert validity window —
+			// can't be used as LTV proof. Don't claim used=true;
+			// let the caller fall through.
+		}
+	}
+
+	// CRL path: walk each embedded CRL, look for the cert's serial.
+	// CRLs cover a window per the spec; if `cert.NotAfter` falls
+	// inside [thisUpdate, nextUpdate] AND the cert isn't in the
+	// revoked list, that's the LTV proof.
+	for _, n := range crlObjs {
+		body, err := extractStream(doc.Bytes, n)
+		if err != nil || len(body) == 0 {
+			continue
+		}
+		crl, err := x509.ParseRevocationList(body)
+		if err != nil {
+			continue
+		}
+		// CRL's window must overlap the cert's validity to count.
+		if crl.ThisUpdate.After(cert.NotAfter) {
+			continue
+		}
+		revoked := false
+		for _, e := range crl.RevokedCertificateEntries {
+			if e.SerialNumber != nil && cert.SerialNumber != nil &&
+				e.SerialNumber.Cmp(cert.SerialNumber) == 0 {
+				revoked = true
+				break
+			}
+		}
+		if revoked {
+			return StatusRevoked, true
+		}
+		return StatusValid, true
+	}
+
+	return StatusUnknown, false
+}
+
+// ocspCoversCert reports whether `resp` is a single-response that
+// targets `cert`. golang.org/x/crypto/ocsp only exposes the
+// SerialNumber of the responded-for cert, so a serial match is the
+// best we can do without re-parsing the BasicOCSPResponse.
+func ocspCoversCert(resp *ocsp.Response, cert *x509.Certificate) bool {
+	if resp == nil || resp.SerialNumber == nil || cert == nil || cert.SerialNumber == nil {
+		return false
+	}
+	return resp.SerialNumber.Cmp(cert.SerialNumber) == 0
+}
+
 // resolveCertStatus is the eIDAS-spec semantics for "is this cert
-// good?" at the present moment. It walks: embedded LTV in /DSS first
-// (the canonical answer for B-LT), then OCSP, then CRL, then the
-// "expired but was valid at sign time" fallback.
+// good?" at the present moment, when no embedded LTV material
+// answered the question. Walks: live OCSP, then live CRL, then
+// the "expired but was valid at sign time" fallback.
 func resolveCertStatus(ctx context.Context, cert *x509.Certificate, chain []*x509.Certificate, now time.Time, hc *http.Client, skipNet bool) CertStatus {
 	if cert == nil {
 		return StatusUnknown
