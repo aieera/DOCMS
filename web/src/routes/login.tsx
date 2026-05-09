@@ -1,11 +1,13 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, ArrowLeft } from 'lucide-react'
+import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, ArrowLeft, Loader2 } from 'lucide-react'
+import toast from 'react-hot-toast'
+
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { AuthShell } from '@/components/layout/auth-shell'
 import { useAuthStore } from '@/store/authStore'
-import { login } from '@/api/auth'
-import { verifyMFA } from '@/api/auth'
+import { login, verifyMFA } from '@/api/auth'
 import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
 import {
   startEmailOTP, verifyEmailOTP,
@@ -13,7 +15,6 @@ import {
   startPushChallenge, verifyPushChallenge,
   type MFAMethod,
 } from '@/api/mfa'
-import toast from 'react-hot-toast'
 
 interface MethodOption { method: MFAMethod; strength: number; destination?: string }
 
@@ -63,14 +64,8 @@ function LoginPage() {
     setCode('')
     try {
       switch (m.method) {
-        case 'email':
-          await startEmailOTP(mfaToken)
-          toast.success('Code sent to your email')
-          break
-        case 'sms':
-          await startSMSOTP(mfaToken)
-          toast.success('Code sent by SMS')
-          break
+        case 'email': await startEmailOTP(mfaToken); toast.success('Code sent to your email'); break
+        case 'sms':   await startSMSOTP(mfaToken);   toast.success('Code sent by SMS'); break
         case 'push': {
           const { challenge_id } = await startPushChallenge(mfaToken)
           setPushChallengeID(challenge_id)
@@ -86,11 +81,8 @@ function LoginPage() {
       }
     } catch (e: any) {
       const status = e?.response?.status
-      if (status === 409) {
-        toast.error('That method is unavailable on this deploy.')
-      } else {
-        toast.error(e?.response?.data?.error ?? 'Failed to start verification')
-      }
+      if (status === 409) toast.error('That method is unavailable on this deploy.')
+      else toast.error(e?.response?.data?.error ?? 'Failed to start verification')
       setChosen(null)
     }
   }
@@ -139,12 +131,7 @@ function LoginPage() {
       if (e.response?.status === 501) {
         toast.error('Passkeys not enabled on this deploy. Use your password.')
       } else if (e.response?.status === 404) {
-        // Backend signals "this account exists but has no passkey
-        // yet" with 404 + the hint copy. Toast a friendly version
-        // pointing at the registration path.
-        toast.error('No passkey for this account yet. Sign in with password, then add one in Settings → Security.', {
-          duration: 6000,
-        })
+        toast.error('No passkey for this account yet. Sign in with password, then add one in Settings → Security.', { duration: 6000 })
       } else if (e.response?.status === 401) {
         toast.error('Invalid credentials')
       } else {
@@ -155,106 +142,141 @@ function LoginPage() {
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 shadow-lg">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-[var(--color-primary)]">VaultDMS</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Sign in to your account</p>
-        </div>
+  // --- view selection ---------------------------------------------------
 
-        {/* ADR 0063 — MFA picker. Replaces the password form once the
-            backend says mfa_required. Shows methods strongest-first. */}
-        {mfaToken && !chosen && (
-          <div className="space-y-2" data-testid="mfa-picker">
-            <p className="text-sm">Choose a sign-in method:</p>
-            {methods.length === 0 && (
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                No methods enrolled — contact your admin.
-              </p>
-            )}
-            {methods.map((m) => (
-              <Button
+  if (mfaToken && !chosen) {
+    return (
+      <AuthShell
+        title="Two-step verification"
+        description="Pick how you'd like to confirm it's you. Stronger methods are listed first."
+      >
+        <div className="space-y-2" data-testid="mfa-picker">
+          {methods.length === 0 ? (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              No methods enrolled — contact your administrator.
+            </p>
+          ) : (
+            methods.map((m) => (
+              <button
                 key={m.method}
                 type="button"
-                variant="outline"
-                className="w-full justify-start"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
+                className="group flex w-full items-center gap-3 rounded-md border border-input bg-background px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <MethodIcon m={m.method} />
-                <span className="ml-2 capitalize">{m.method}</span>
-                {m.destination && (
-                  <span className="ml-auto text-xs text-[var(--color-text-secondary)]">{m.destination}</span>
-                )}
-              </Button>
-            ))}
-            <Button type="button" variant="ghost" className="w-full" onClick={() => { setMfaToken(null); setMethods([]); setPassword('') }}>
-              <ArrowLeft className="h-4 w-4" /> Cancel
-            </Button>
-          </div>
-        )}
-
-        {mfaToken && chosen && (
-          <form onSubmit={submitCode} className="space-y-3" data-testid="mfa-verify">
-            <p className="text-sm">
-              <strong className="capitalize">{chosen.method}</strong>
-              {chosen.destination && <> — sent to <code>{chosen.destination}</code></>}
-            </p>
-            {chosen.method === 'push' ? (
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                Waiting for approval on your device. Tap "Approve" there to continue.
-              </p>
-            ) : (
-              <Input
-                label="Code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="123456"
-                inputMode="numeric"
-                autoFocus
-                required
-                data-testid="mfa-code"
-              />
-            )}
-            <Button type="submit" className="w-full" loading={loading}>Verify</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
-              <ArrowLeft className="h-4 w-4" /> Pick a different method
-            </Button>
-          </form>
-        )}
-
-        {!mfaToken && (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input label="Tenant" type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required />
-          <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
-
-          {/* ADR 0061 — passkey-as-primary. Shown above password so a
-              user with a registered passkey can skip the password entirely. */}
-          {isWebAuthnSupported() && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handlePasskey}
-              disabled={loading || !email}
-              className="w-full"
-              data-testid="login-passkey"
-            >
-              <Fingerprint className="h-4 w-4" /> Sign in with passkey
-            </Button>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+                  <MethodIcon m={m.method} />
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-medium capitalize">{m.method}</span>
+                  {m.destination && (
+                    <span className="block text-xs text-muted-foreground">{m.destination}</span>
+                  )}
+                </span>
+              </button>
+            ))
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            onClick={() => { setMfaToken(null); setMethods([]); setPassword('') }}
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" /> Back
+          </Button>
+        </div>
+      </AuthShell>
+    )
+  }
 
-          <div className="relative my-2 text-center text-xs text-[var(--color-text-secondary)]">
-            <span className="relative z-10 bg-[var(--color-bg-secondary)] px-2">or</span>
-            <span className="absolute left-0 right-0 top-1/2 border-t border-[var(--color-border)]" />
-          </div>
-
-          <Input label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          <Button type="submit" className="w-full" loading={loading}>Sign In</Button>
+  if (mfaToken && chosen) {
+    return (
+      <AuthShell
+        title={`Enter your ${chosen.method.toUpperCase()} code`}
+        description={chosen.destination ? `We sent a code to ${chosen.destination}.` : 'Open your authenticator and enter the 6-digit code.'}
+      >
+        <form onSubmit={submitCode} className="space-y-4" data-testid="mfa-verify">
+          {chosen.method === 'push' ? (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              Waiting for approval on your device. Tap <strong className="text-foreground">Approve</strong> there to continue.
+            </p>
+          ) : (
+            <Input
+              label="Verification code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="123456"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              data-testid="mfa-code"
+            />
+          )}
+          <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
+          <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
+            <ArrowLeft className="mr-1 h-4 w-4" /> Use a different method
+          </Button>
         </form>
+      </AuthShell>
+    )
+  }
+
+  return (
+    <AuthShell
+      title="Welcome back"
+      description="Sign in to continue to your VaultDMS workspace."
+      footer={
+        <>
+          New to VaultDMS?{' '}
+          <Link to="/register" className="font-medium text-foreground underline-offset-4 hover:underline">Create an account</Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input label="Tenant" type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required autoComplete="organization" />
+        <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus autoComplete="email" />
+
+        {/* ADR 0061 — passkey-as-primary. Above the password so a user
+            with a registered passkey can skip the password entirely. */}
+        {isWebAuthnSupported() && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handlePasskey}
+            disabled={loading || !email}
+            className="w-full"
+            data-testid="login-passkey"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
+            Sign in with passkey
+          </Button>
         )}
-      </div>
-    </div>
+
+        <div className="relative my-1 text-center text-xs uppercase tracking-wider text-muted-foreground">
+          <span className="relative z-10 bg-background px-2">or with password</span>
+          <span className="absolute inset-x-0 top-1/2 border-t border-border" aria-hidden />
+        </div>
+
+        <div>
+          <Input
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+          <div className="mt-1.5 flex justify-end">
+            <Link to="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+        </div>
+
+        <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+      </form>
+    </AuthShell>
   )
 }
 

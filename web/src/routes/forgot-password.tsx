@@ -1,37 +1,81 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { Mail } from 'lucide-react'
+import toast from 'react-hot-toast'
+
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import toast from 'react-hot-toast'
+import { AuthShell } from '@/components/layout/auth-shell'
 
 function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    setSent(true)
-    toast.success('If that email exists, a reset link has been sent')
+    setLoading(true)
+    // Backend wiring stays a no-op behind the scenes — the toast +
+    // ambiguous "if that email exists" copy is intentional so we
+    // don't leak whether an account exists. The 600ms artificial
+    // delay matches what a real round-trip feels like.
+    setTimeout(() => {
+      setSent(true)
+      setLoading(false)
+      toast.success('If that email exists, a reset link has been sent')
+    }, 600)
+  }
+
+  if (sent) {
+    return (
+      <AuthShell
+        title="Check your inbox"
+        description={`If an account is registered to ${email}, we've sent a link with instructions to reset your password.`}
+        footer={
+          <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Back to sign in</Link>
+        }
+      >
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-muted/40 p-6 text-center">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-background text-foreground">
+            <Mail className="h-5 w-5" />
+          </span>
+          <p className="text-sm text-muted-foreground">
+            The link expires in 30 minutes. Didn't get it? Check your spam folder, then{' '}
+            <button
+              type="button"
+              onClick={() => setSent(false)}
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              try again
+            </button>
+            .
+          </p>
+        </div>
+      </AuthShell>
+    )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 shadow-lg">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-[var(--color-primary)]">VaultDMS</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Reset your password</p>
-        </div>
-        {sent ? (
-          <p className="text-center text-sm text-[var(--color-text-secondary)]">Check your email for a reset link.</p>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
-            <Button type="submit" className="w-full">Send Reset Link</Button>
-          </form>
-        )}
-        <p className="text-center text-sm"><Link to="/login" className="text-[var(--color-primary)] hover:underline">Back to login</Link></p>
-      </div>
-    </div>
+    <AuthShell
+      title="Reset your password"
+      description="Enter the email associated with your account and we'll send you a reset link."
+      footer={
+        <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Back to sign in</Link>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoFocus
+          autoComplete="email"
+        />
+        <Button type="submit" className="w-full" loading={loading}>Send reset link</Button>
+      </form>
+    </AuthShell>
   )
 }
 

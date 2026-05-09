@@ -1,14 +1,32 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { AlertCircle, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { AuthShell } from '@/components/layout/auth-shell'
+import { cn } from '@/lib/cn'
 
 interface InviteSearch {
   tenant?: string
   token?: string
+}
+
+interface PolicyCheck {
+  label: string
+  ok: boolean
+}
+
+function evaluatePolicy(password: string, confirm: string): PolicyCheck[] {
+  return [
+    { label: 'At least 12 characters', ok: password.length >= 12 },
+    { label: 'Mix of upper and lowercase', ok: /[a-z]/.test(password) && /[A-Z]/.test(password) },
+    { label: 'At least one digit', ok: /\d/.test(password) },
+    { label: 'At least one symbol', ok: /[^A-Za-z0-9]/.test(password) },
+    { label: 'Both fields match', ok: password.length > 0 && password === confirm },
+  ]
 }
 
 function AcceptInvitePage() {
@@ -23,7 +41,8 @@ function AcceptInvitePage() {
   const [done, setDone] = useState(false)
 
   const linkOK = tenantSlug !== '' && token !== ''
-  const passwordOK = password.length >= 12 && password === confirm
+  const checks = useMemo(() => evaluatePolicy(password, confirm), [password, confirm])
+  const passwordOK = checks.every((c) => c.ok)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,57 +61,98 @@ function AcceptInvitePage() {
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-8 shadow-lg">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-[var(--color-primary)]">VaultDMS</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Set your password</p>
+  if (!linkOK) {
+    return (
+      <AuthShell
+        title="This activation link is invalid"
+        description="The link is missing a tenant or token. Ask your administrator to resend the invitation."
+        footer={
+          <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Back to sign in</Link>
+        }
+      >
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <AlertCircle className="h-5 w-5" />
+          </span>
+          <p className="text-sm text-muted-foreground">
+            Activation links expire after 7 days. If yours is older, request a new one from the admin who invited you.
+          </p>
         </div>
+      </AuthShell>
+    )
+  }
 
-        {!linkOK ? (
-          <p className="text-center text-sm text-red-500">
-            This activation link is missing required parameters. Ask your administrator to resend.
-          </p>
-        ) : done ? (
-          <p className="text-center text-sm text-[var(--color-text-secondary)]">
-            All set — redirecting you to sign in…
-          </p>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="rounded bg-[var(--color-bg)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-              Tenant: <span className="font-mono">{tenantSlug}</span>
-            </div>
-            <Input
-              label="New password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="≥12 chars, mix of upper/lower/digit/special"
-              required
-              autoFocus
-            />
-            <Input
-              label="Confirm password"
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              required
-            />
-            <Button type="submit" className="w-full" loading={loading} disabled={!passwordOK}>
-              Activate account
-            </Button>
-          </form>
-        )}
+  if (done) {
+    return (
+      <AuthShell title="Account activated" description="Sending you to the sign-in page…">
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-success/30 bg-success/10 p-6 text-center">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/20 text-success">
+            <Check className="h-5 w-5" />
+          </span>
+          <p className="text-sm text-muted-foreground">Your password has been set. You'll be redirected in a moment.</p>
+        </div>
+      </AuthShell>
+    )
+  }
 
-        <p className="text-center text-sm text-[var(--color-text-secondary)]">
+  return (
+    <AuthShell
+      title="Set your password"
+      description={
+        <>
+          You're activating an account on tenant{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tenantSlug}</code>.
+        </>
+      }
+      footer={
+        <>
           Already activated?{' '}
-          <Link to="/login" className="text-[var(--color-primary)] hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+          <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Sign in</Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          label="New password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Pick something strong"
+          required
+          autoFocus
+          autoComplete="new-password"
+        />
+        <Input
+          label="Confirm password"
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required
+          autoComplete="new-password"
+        />
+
+        <ul className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
+          {checks.map((c) => (
+            <li key={c.label} className="flex items-center gap-2 text-xs">
+              <span
+                className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                  c.ok ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground',
+                )}
+                aria-hidden
+              >
+                {c.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+              </span>
+              <span className={cn(c.ok ? 'text-foreground' : 'text-muted-foreground')}>{c.label}</span>
+            </li>
+          ))}
+        </ul>
+
+        <Button type="submit" className="w-full" loading={loading} disabled={!passwordOK}>
+          Activate account
+        </Button>
+      </form>
+    </AuthShell>
   )
 }
 
