@@ -3,7 +3,7 @@
 Date: 2026-05-06
 Status: Accepted
 Supersedes: nothing (was scheduled as ADR 0060 in §7.7; 0060 is taken
-by Active Learning Pipeline. Same shift as 0061-0068.)
+by Active Learning Pipeline. Same shift as 0078-0068.)
 
 ## Context
 

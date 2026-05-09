@@ -1,4 +1,4 @@
-# ADR 0061 — NER Pipeline (SpaCy + Regex + LLM Ensemble)
+# ADR 0078 — NER Pipeline (SpaCy + Regex + LLM Ensemble)
 
 Date: 2026-05-03
 Status: Accepted

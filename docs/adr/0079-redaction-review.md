@@ -1,4 +1,4 @@
-# ADR 0062 — Redaction Review Queue + Burn-in via PyMuPDF
+# ADR 0079 — Redaction Review Queue + Burn-in via PyMuPDF
 
 Date: 2026-05-05
 Status: Accepted
@@ -114,5 +114,5 @@ tables with clear names is cleaner; the existing path stays untouched.
   image (TIFF, JPEG) requires rasterize-then-overlay which is a
   separate worker path. Tracked separately.
 - Cross-tenant / customer-managed redaction policies (e.g. "always
-  redact phone numbers, never review"). The ADR 0061 `ner_config
+  redact phone numbers, never review"). The ADR 0078 `ner_config
   .llm_entity_types` knob is the right home for that follow-up.

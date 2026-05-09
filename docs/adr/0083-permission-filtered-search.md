@@ -1,10 +1,10 @@
-# ADR 0066 — Permission-filtered search + propagation SLI
+# ADR 0083 — Permission-filtered search + propagation SLI
 
 Date: 2026-05-06
 Status: Accepted
 Supersedes: nothing (was scheduled as ADR 0057 in the §7.3 blueprint;
 0057 is taken by OCR Quality Scoring. Same numbering shift as
-0061-0065.)
+0078-0065.)
 
 ## Context
 
@@ -77,7 +77,7 @@ non-scoring context — same as today, no scoring impact.
 ### Permission-change propagation
 
 Existing handler updates `readable_by` synchronously on every
-`dms.permission.changed.v1`. ADR 0066 adds a debouncer keyed on
+`dms.permission.changed.v1`. ADR 0083 adds a debouncer keyed on
 `(tenant_id, resource_type, resource_id)`:
 
 - Each event tickles the entry's deadline 5s into the future.

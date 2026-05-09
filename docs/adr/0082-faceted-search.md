@@ -1,4 +1,4 @@
-# ADR 0065 — Faceted search aggregations + caching
+# ADR 0082 — Faceted search aggregations + caching
 
 Date: 2026-05-06
 Status: Accepted

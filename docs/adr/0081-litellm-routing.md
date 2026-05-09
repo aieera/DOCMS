@@ -1,4 +1,4 @@
-# ADR 0064 — LiteLLM tenant routing, fallback, circuit breaker
+# ADR 0081 — LiteLLM tenant routing, fallback, circuit breaker
 
 Date: 2026-05-06
 Status: Accepted

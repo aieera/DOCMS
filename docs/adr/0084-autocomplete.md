@@ -1,10 +1,10 @@
-# ADR 0067 — Grouped autocomplete suggester
+# ADR 0084 — Grouped autocomplete suggester
 
 Date: 2026-05-06
 Status: Accepted
 Supersedes: nothing (was scheduled as ADR 0058 in the §7.5 blueprint;
 0058 is taken by Anomaly Detection. Same numbering shift as
-0061-0066.)
+0078-0066.)
 
 ## Context
 
@@ -73,7 +73,7 @@ clients migrate at their own pace.
 ```
 bool.filter:
   - term tenant_id = $tenant
-  - bool.should: <ADR 0066 split-readable_by chain>
+  - bool.should: <ADR 0083 split-readable_by chain>
   - minimum_should_match: 1
 bool.must:
   - bool.should:
@@ -100,7 +100,7 @@ prefix, not by the full corpus size.
 ### Permission scoping
 
 Same as the rest of the search service — the standard
-`bool.filter` with `tenant_id` + the ADR 0066 split-readable_by
+`bool.filter` with `tenant_id` + the ADR 0083 split-readable_by
 should chain. Tag and people aggregations run inside that scope, so
 suggestions for a user who can't see any docs containing a tag will
 not have that tag in their suggestions.

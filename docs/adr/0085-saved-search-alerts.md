@@ -1,9 +1,9 @@
-# ADR 0068 — Saved-search alerts + subscribers
+# ADR 0085 — Saved-search alerts + subscribers
 
 Date: 2026-05-06
 Status: Accepted
 Supersedes: nothing (was scheduled as ADR 0059 in §7.6; 0059 is taken
-by Classification Corrections. Same shift as 0061-0067.)
+by Classification Corrections. Same shift as 0078-0067.)
 
 ## Context
 

@@ -1,4 +1,4 @@
-# ADR 0063 — Workspace-Scoped RAG Pipeline
+# ADR 0080 — Workspace-Scoped RAG Pipeline
 
 Date: 2026-05-05
 Status: Accepted

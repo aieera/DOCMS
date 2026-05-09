@@ -1,9 +1,7 @@
-# ADR 0070 — Passkeys / WebAuthn
+# ADR 0061 — Passkeys / WebAuthn
 
 Date: 2026-05-07
 Status: Accepted
-Supersedes: nothing (was scheduled as ADR 0061 in §8.1; 0061 is taken
-by NER Pipeline. Same shift as 0061-0069.)
 
 ## Context
 
