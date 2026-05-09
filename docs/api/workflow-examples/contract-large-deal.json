@@ -1,0 +1,43 @@
+{
+  "$comment": "ADR 0064 worked example — 'contract > $100k adds VP approval step'. The conditional step uses a Rego expression over document.custom_metadata; on_true branches into the VP approval; on_false skips straight to the next step (legal sign-off, which is implicit because the step list continues after the conditional resolves).",
+  "name": "Contract approval (large-deal aware)",
+  "description": "Standard contract review with an extra VP gate when the deal exceeds $100k.",
+  "version": 1,
+  "steps": [
+    {
+      "id": "legal-review",
+      "type": "approval",
+      "name": "Legal review",
+      "assignee": { "type": "group", "value": "00000000-0000-0000-0000-000000000001" },
+      "sla_hours": 48,
+      "on_expire": "escalate",
+      "escalation": { "strategy": "manager", "max_steps": 2 }
+    },
+    {
+      "id": "vp-gate",
+      "type": "conditional",
+      "name": "Big-deal gate",
+      "condition_rego": "input.document.custom_metadata.contract_value > 100000",
+      "on_true":  ["vp-approval"],
+      "on_false": []
+    },
+    {
+      "id": "vp-approval",
+      "type": "approval",
+      "name": "VP Finance approval",
+      "assignee": { "type": "user", "value": "00000000-0000-0000-0000-000000000002" },
+      "sla_hours": 24,
+      "on_expire": "auto_reject",
+      "allow_delegate": false
+    },
+    {
+      "id": "ceo-sign",
+      "type": "signature",
+      "name": "CEO countersign",
+      "assignee": { "type": "user", "value": "00000000-0000-0000-0000-000000000003" },
+      "sla_hours": 72,
+      "on_expire": "escalate",
+      "escalation": { "strategy": "fixed", "fixed_to": "00000000-0000-0000-0000-000000000004" }
+    }
+  ]
+}

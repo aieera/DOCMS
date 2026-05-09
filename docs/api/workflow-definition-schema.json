@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vaultdms.app/schemas/workflow-definition.json",
+  "title": "WorkflowDefinition",
+  "description": "ADR 0064 — canonical shape for a saved approval workflow. Six routing patterns (sequential, parallel-all, parallel-first, conditional, delegation, escalation) compose from these primitives. The service rejects definitions that don't match this schema.",
+  "type": "object",
+  "required": ["name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "id":          { "type": "string", "format": "uuid", "description": "Server-assigned on POST." },
+    "name":        { "type": "string", "minLength": 1, "maxLength": 200 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "version":     { "type": "integer", "minimum": 1 },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/Step" }
+    }
+  },
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id":   { "type": "string", "minLength": 1, "maxLength": 100 },
+        "type": {
+          "type": "string",
+          "enum": ["approval", "parallel", "conditional", "notification", "signature"]
+        },
+        "assignee":     { "$ref": "#/$defs/Assignee" },
+        "approvers":    {
+          "description": "parallel-only: explicit list of approver user ids.",
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" }
+        },
+        "mode": {
+          "description": "parallel-only: require_all (every approver) | require_any (first wins).",
+          "type": "string",
+          "enum": ["require_all", "require_any"]
+        },
+        "sla_hours":  { "type": "integer", "minimum": 1, "maximum": 720 },
+        "on_expire": {
+          "description": "What happens when SLA elapses without action.",
+          "type": "string",
+          "enum": ["escalate", "auto_approve", "auto_reject"]
+        },
+        "escalation":      { "$ref": "#/$defs/Escalation" },
+        "condition_rego": {
+          "description": "conditional-only: Rego expression evaluated with input={document, workflow, user}.",
+          "type": "string"
+        },
+        "on_true":  {
+          "description": "conditional-only: step ids to execute when condition_rego is truthy.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "on_false": {
+          "description": "conditional-only: step ids to execute when condition_rego is falsy.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "name":          { "type": "string", "maxLength": 200, "description": "Display label." },
+        "allow_delegate": {
+          "description": "When false, the assignee cannot delegate per-instance. Tenant-wide delegation rules still apply.",
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "allOf": [
+        {
+          "if":   { "properties": { "type": { "const": "approval" } } },
+          "then": { "required": ["assignee"] }
+        },
+        {
+          "if":   { "properties": { "type": { "const": "parallel" } } },
+          "then": { "required": ["approvers", "mode"] }
+        },
+        {
+          "if":   { "properties": { "type": { "const": "conditional" } } },
+          "then": { "required": ["condition_rego"] }
+        }
+      ]
+    },
+    "Assignee": {
+      "type": "object",
+      "required": ["type", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "type":  { "type": "string", "enum": ["user", "group", "dynamic"] },
+        "value": {
+          "type": "string",
+          "description": "user|group: a UUID. dynamic: an expression like 'document.created_by' resolved at runtime."
+        }
+      }
+    },
+    "Escalation": {
+      "description": "How to escalate when on_expire=escalate.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["manager", "fixed", "chain"],
+          "default": "manager",
+          "description": "manager: walk users.manager_id. fixed: re-route to escalation.fixed_to. chain: walk an explicit list."
+        },
+        "fixed_to":  { "type": "string", "format": "uuid" },
+        "chain":     {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "maxItems": 5
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 1,
+          "description": "How many escalation hops before the step auto-rejects."
+        }
+      }
+    }
+  }
+}

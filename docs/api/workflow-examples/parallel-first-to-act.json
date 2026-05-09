@@ -1,0 +1,20 @@
+{
+  "$comment": "ADR 0064 worked example — three reviewers in parallel; first to approve wins. Useful for routine policy doc sign-off where any of three legal team members can ratify.",
+  "name": "Policy doc sign-off (any-of-three)",
+  "version": 1,
+  "steps": [
+    {
+      "id": "legal-pool",
+      "type": "parallel",
+      "name": "Any one of legal team",
+      "approvers": [
+        "00000000-0000-0000-0000-000000000010",
+        "00000000-0000-0000-0000-000000000011",
+        "00000000-0000-0000-0000-000000000012"
+      ],
+      "mode": "require_any",
+      "sla_hours": 24,
+      "on_expire": "auto_reject"
+    }
+  ]
+}

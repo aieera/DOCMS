@@ -70,3 +70,66 @@ export async function startWorkflow(documentId: string, workflowId: string) {
   const { data } = await api.post('/workflows/instances', { document_id: documentId, workflow_id: workflowId })
   return data
 }
+
+// ---- ADR 0064 — wider step shape, delegations, recall --------------------
+// Legacy WorkflowStep stays for back-compat with definitions written
+// before this ADR; new definitions saved by the designer use ADR0073Step.
+
+export interface ADR0073Step {
+  id: string
+  type: 'approval' | 'parallel' | 'conditional' | 'notification' | 'signature'
+  name?: string
+  assignee?: { type: 'user' | 'group' | 'dynamic'; value: string }
+  approvers?: string[]
+  mode?: 'require_all' | 'require_any'
+  sla_hours?: number
+  on_expire?: 'escalate' | 'auto_approve' | 'auto_reject'
+  escalation?: {
+    strategy?: 'manager' | 'fixed' | 'chain'
+    fixed_to?: string
+    chain?: string[]
+    max_steps?: number
+  }
+  condition_rego?: string
+  on_true?: string[]
+  on_false?: string[]
+  allow_delegate?: boolean
+}
+
+export interface Delegation {
+  id: string
+  tenant_id: string
+  delegator_id: string
+  delegate_id: string
+  starts_at: string
+  ends_at: string
+  reason?: string
+  revoked_at?: string | null
+  created_at: string
+}
+
+export async function listDelegations(): Promise<Delegation[]> {
+  const { data } = await api.get<Delegation[]>('/workflows/delegations')
+  return data ?? []
+}
+
+export async function createDelegation(input: {
+  delegator_id?: string
+  delegate_id: string
+  starts_at: string
+  ends_at: string
+  reason?: string
+}): Promise<Delegation> {
+  const { data } = await api.post<Delegation>('/workflows/delegations', input)
+  return data
+}
+
+export async function revokeDelegation(id: string): Promise<void> {
+  await api.delete(`/workflows/delegations/${id}`)
+}
+
+// Initiator-only recall. Backend rejects with 409 when any approver
+// has already acted; UI surfaces the message verbatim.
+export async function recallInstance(instanceId: string): Promise<void> {
+  await api.post(`/workflows/instances/${instanceId}/recall`)
+}
