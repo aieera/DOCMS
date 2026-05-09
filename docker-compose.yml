@@ -42,7 +42,7 @@ x-go-env: &go-env
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
-  # ADR 0061 — small-secret AES-256 KEK shared with the intelligence
+  # ADR 0078 — small-secret AES-256 KEK shared with the intelligence
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
   VAULTDMS_LOCAL_KEK:    "${VAULTDMS_LOCAL_KEK:-}"
@@ -89,6 +89,34 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ADR 0062 — slapd for LDAP/AD direct-bind integration tests + dev.
+  # Bootstraps an "Example Inc" tree with two groups (engineers,
+  # finance) and two users (alice, bob) so the admin UI has something
+  # to bind against out of the box. Production deploys point the
+  # auth service at the customer's real directory, not this container.
+  slapd:
+    image: bitnami/openldap:2.6
+    container_name: vaultdms-slapd
+    environment:
+      LDAP_ROOT: "dc=example,dc=com"
+      LDAP_ADMIN_USERNAME: "admin"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_USERS: "alice,bob"
+      LDAP_PASSWORDS: "alice-pw,bob-pw"
+      LDAP_USER_DC: "users"
+      LDAP_GROUP: "engineers"
+    ports:
+      - "1389:1389"
+      - "1636:1636"
+    volumes:
+      - slapddata:/bitnami/openldap
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:1389", "-b", "dc=example,dc=com", "-D", "cn=admin,dc=example,dc=com", "-w", "admin", "-s", "base"]
+      interval: 10s
+      timeout: 5s
       retries: 5
     restart: unless-stopped
 
@@ -169,6 +197,31 @@ services:
   # §10.3 / E6 — OnlyOffice Document Server for DOCX/XLSX/PPTX
   # co-editing. JWT-enabled so the document service signs the editor
   # config and OnlyOffice refuses unsigned load requests.
+  # ADR 0065 — Collabora Online as the WOPI alternative to OnlyOffice.
+  # AGPLv3; the admin UI gates exposure of this option behind an
+  # explicit license acknowledgement (tenant_settings.agpl_acknowledged_at).
+  # The host (document service) speaks WOPI at /wopi/*; Collabora's
+  # `aliasgroup1` config tells it which host to trust for the
+  # WOPISrc query param it follows from discovery.xml.
+  collabora:
+    image: collabora/code:24.04.6.1.1
+    container_name: vaultdms-collabora
+    environment:
+      domain: "document\\:8080|localhost\\:8080|host\\.docker\\.internal\\:8080"
+      username: "admin"
+      password: "${VAULTDMS_COLLABORA_ADMIN_PASSWORD:-dev-only-rotate-in-prod}"
+      extra_params: "--o:ssl.enable=false --o:ssl.termination=true --o:storage.wopi.alias_groups.group[1].host=document"
+    ports: ["9980:9980"]
+    cap_add: ["MKNOD"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9980/hosting/discovery"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    profiles: ["collabora"] # opt-in: docker compose --profile collabora up
+
   # 4 GB RAM + 2 vCPU is the vendor-minimum; tune in production.
   onlyoffice:
     image: onlyoffice/documentserver:8.0
@@ -348,7 +401,7 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
-      # ADR 0061 — opt-in LLM NER. The per-tenant key is now stored
+      # ADR 0078 — opt-in LLM NER. The per-tenant key is now stored
       # encrypted in ner_config (set via /admin/intelligence/ner-config);
       # the worker decrypts using VAULTDMS_LOCAL_KEK. The plain
       # ANTHROPIC_API_KEY / OPENAI_API_KEY env vars are still honored
@@ -397,7 +450,7 @@ services:
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
-      # ADR 0061 LLM NER — see the intelligence service block above.
+      # ADR 0078 LLM NER — see the intelligence service block above.
       VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
@@ -611,3 +664,4 @@ volumes:
   natsdata:
   qdrantdata:
   clamdata:
+  slapddata:
