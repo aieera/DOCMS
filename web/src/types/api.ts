@@ -7,6 +7,11 @@ export interface User {
   // type lagged the backend. Widening here fixes pre-existing TS
   // errors in the doc detail page comparing role === 'compliance_officer'.
   role: 'owner' | 'admin' | 'member' | 'guest' | 'compliance_officer'
+  // ADR 0069 — platform-admin is membership in the platform_admins
+  // table, not a user role. The /auth/me handler joins against it
+  // so the frontend can gate cross-tenant features (federated
+  // search, support search). Unset for every regular tenant user.
+  is_platform_admin?: boolean
   status?: 'active' | 'suspended' | 'deactivated'
   avatar_url?: string
   mfa_enabled: boolean

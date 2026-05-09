@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { useAuthStore } from '@/store/authStore'
 import {
   Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
   Key, KeyRound, Languages, Link2, MapPinned, Network, PenTool, Plug, Scale, ScrollText, Settings,
@@ -37,6 +38,15 @@ const tenantSections: Section[] = [
   { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
   { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI (ADR 0083)' },
+]
+
+// ADR 0069 — platform-admin-only sections. Membership is in the
+// `platform_admins` table, separate from a user's tenant role; the
+// /auth/me response sets `is_platform_admin` when the join hits.
+// We hide the link entirely from regular tenant users so they
+// don't click through to a guaranteed 403 — the runtime backend
+// check is what actually enforces the gate.
+const platformSections: Section[] = [
   { to: '/admin/platform/support-search', icon: ShieldAlert, label: 'Support search (cross-tenant)', desc: 'Platform-admin only — every query audited (ADR 0069)' },
 ]
 
@@ -59,6 +69,7 @@ const intelligenceSections: Section[] = [
 ]
 
 function AdminPage() {
+  const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
   return (
     <div>
       <PageHeader title="Administration" description="Manage your VaultDMS tenant" />
@@ -69,6 +80,15 @@ function AdminPage() {
         Intelligence
       </h2>
       <SectionGrid sections={intelligenceSections} />
+
+      {isPlatformAdmin && (
+        <>
+          <h2 className="mt-10 mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+            Platform admin
+          </h2>
+          <SectionGrid sections={platformSections} />
+        </>
+      )}
     </div>
   )
 }

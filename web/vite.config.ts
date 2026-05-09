@@ -91,6 +91,10 @@ export default defineConfig({
             '/api/v1/audit':                    withSig('http://localhost:8185'),
             '/api/v1/workflows':                withSig('http://localhost:8186'),
             '/api/v1/notifications':            withSig('http://localhost:8187'),
+            // ADR 0068 — lightweight tasks live in the document
+            // service. Without this entry /api/v1/tasks/mine falls
+            // through to the auth catch-all (8180) and 404s.
+            '/api/v1/tasks':                    withSig('http://localhost:8182'),
             '/api/v1/signatures':               withSig('http://localhost:8188'),
             '/api/v1/webhooks':                 withSig('http://localhost:8190'),
             '/api/v1/connectors':               withSig('http://localhost:8190'),
