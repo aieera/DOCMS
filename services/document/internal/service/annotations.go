@@ -42,8 +42,50 @@ type UpdateAnnotationInput struct {
 	Data map[string]any
 }
 
+// requireAnnotationPermission implements the ADR 0067 resolution
+// order:
+//
+//   1. `edit` on the document → allow (back-compat with the
+//      original PDF-only flow).
+//   2. `annotation.<action>` capability on the document → allow.
+//   3. action == "delete"|"update" AND caller is the author → allow.
+//   4. else 403.
+//
+// `action` is "create" | "update" | "delete". `authorID` is the
+// row's `created_by` for delete/update; pass uuid.Nil on create.
+func (s *DocumentService) requireAnnotationPermission(
+	ctx context.Context,
+	userID, docID uuid.UUID,
+	action string,
+	authorID uuid.UUID,
+	extra map[string]any,
+) error {
+	// 1. Heavy-hammer: anyone with edit may do everything.
+	if ok, err := s.checkPermission(ctx, userID, "edit", "document", docID, extra); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	// 2. Fine-grained capability.
+	cap := "annotation.create"
+	if action == "delete" {
+		cap = "annotation.delete"
+	}
+	if ok, err := s.checkPermission(ctx, userID, cap, "document", docID, extra); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	// 3. Author bypass — owners of a row can always update or delete it.
+	if (action == "delete" || action == "update") && authorID != uuid.Nil && authorID == userID {
+		return nil
+	}
+	return vdmserr.ErrForbidden
+}
+
 // CreateAnnotation persists a new annotation, checks the caller has
-// edit permission on the document, and emits dms.annotation.created.v1.
+// permission to create annotations on the parent document (per ADR
+// 0076), and emits dms.annotation.created.v1.
 func (s *DocumentService) CreateAnnotation(ctx context.Context, in *CreateAnnotationInput) (*model.Annotation, error) {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
@@ -91,7 +133,7 @@ func (s *DocumentService) CreateAnnotation(ctx context.Context, in *CreateAnnota
 		if doc.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
-		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
+		if err := s.requireAnnotationPermission(ctx, userID, doc.ID, "create", uuid.Nil, map[string]any{
 			"workspace_id":    doc.WorkspaceID.String(),
 			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
@@ -190,7 +232,7 @@ func (s *DocumentService) UpdateAnnotation(ctx context.Context, in *UpdateAnnota
 		if err != nil {
 			return err
 		}
-		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
+		if err := s.requireAnnotationPermission(ctx, userID, doc.ID, "update", cur.CreatedBy, map[string]any{
 			"workspace_id":    doc.WorkspaceID.String(),
 			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
@@ -246,7 +288,7 @@ func (s *DocumentService) DeleteAnnotation(ctx context.Context, id uuid.UUID) er
 		if err != nil {
 			return err
 		}
-		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
+		if err := s.requireAnnotationPermission(ctx, userID, doc.ID, "delete", cur.CreatedBy, map[string]any{
 			"workspace_id":    doc.WorkspaceID.String(),
 			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
