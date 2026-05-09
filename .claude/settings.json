@@ -2,7 +2,33 @@
   "permissions": {
     "allow": [
       "Bash(/c/Users/dell/AppData/Local/Programs/Python/Python313/python.exe -m pytest tests/test_embed.py -q)",
-      "Read(//c/Users/dell/Documents/DOCMS/services/auth/**)"
+      "Read(//c/Users/dell/Documents/DOCMS/services/auth/**)",
+      "Bash(curl -s -i \"http://localhost:3000/api/v1/documents/019df42e-1c7a-78e0-bc7b-0019ad175eb2/tag-suggestions\")",
+      "Bash(curl -s -i \"http://localhost:3000/api/v1/documents/019df42e-1c7a-78e0-bc7b-0019ad175eb2/compliance\")",
+      "Bash(bash -c 'curl -s -i '\\\\''http://localhost:8182/api/v1/documents/019df42e-1c7a-78e0-bc7b-0019ad175eb2/compliance'\\\\'' -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\"')",
+      "Bash(bash -c 'curl -s -o /dev/null -w '\\\\''%{http_code}'\\\\'' '\\\\''http://localhost:8182/api/v1/documents/019df42e-1c7a-78e0-bc7b-0019ad175eb2/__TRACKED_VAR__'\\\\'' -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\"')",
+      "Bash(curl -s -o /dev/null -w \"qa-with-headers: %{http_code}\\\\n\" -X POST 'http://localhost:3000/api/v1/intelligence/qa' -H \"Content-Type: application/json\" -H \"X-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -d '{\"document_id\":\"019df42e-1c7a-78e0-bc7b-0019ad175eb2\",\"question\":\"hello\"}')",
+      "Bash(grep -n \"^@router\\\\\\\\|router = APIRouter\" services/intelligence/app/api/routes.py)",
+      "Read(//c/Users/dell/Documents/DOCMS/web/src/routes/_authenticated/workspaces/$workspaceId/documents/**)",
+      "Bash(grep -E \"documentId\\\\\\\\.tsx|HighlightedText|entitiesForPage\")",
+      "Bash(grep -n \"Scan\\(\\\\\\\\&p\\\\\\\\.ID\\\\\\\\|p.BoundingBoxes\" services/document/internal/handler/ocr_handler.go)",
+      "Bash(curl -s -o /dev/null -w \"vite up: %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/__TRACKED_VAR__)",
+      "Bash(curl -s \"http://localhost:3000/src/components/intelligence/DocQAChat.tsx\")",
+      "Bash(curl -s \"http://localhost:3000/src/routes/_authenticated/admin/intelligence/usage.tsx\")",
+      "Bash(curl -s 'http://localhost:3000/src/routes/_authenticated/workspaces/$workspaceId/documents/$documentId.tsx')",
+      "Bash(curl -s \"http://localhost:3000/src/components/viewer/PDFLayoutViewer.tsx\")",
+      "Bash(curl -s \"http://localhost:3000/src/components/layout/Header.tsx\")",
+      "Bash(curl -s \"http://localhost:3000/src/routes/_authenticated/admin/intelligence/ner-config.tsx\")",
+      "Bash(curl -s -o /dev/null -w \"via-vite-PUT: %{http_code}\\\\n\" -X PUT \"http://localhost:3000/api/v1/admin/active-learning/config\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -o /dev/null -w \"via-vite-GET: %{http_code}\\\\n\" -X GET  \"http://localhost:3000/api/v1/admin/active-learning/config\")",
+      "Bash(curl -s -o /dev/null -w \"direct-PUT: %{http_code}\\\\n\" -X PUT \"http://localhost:8182/api/v1/admin/active-learning/config\" -H \"Content-Type: application/json\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -d '{}')",
+      "Bash(curl -s -o /dev/null -w \"direct-GET: %{http_code}\\\\n\" -X GET  \"http://localhost:8182/api/v1/admin/active-learning/config\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\")",
+      "Bash(curl -v -X PUT \"http://localhost:8182/api/v1/admin/active-learning/config\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(grep -n \"app.tasks.redact\\\\|include=\\\\\\\\[\" services/intelligence/app/worker.py)",
+      "Bash(bash -c 'curl -s -o /dev/null -w '\\\\''%{http_code}'\\\\'' -X POST '\\\\''http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/__TRACKED_VAR__'\\\\'' -H '\\\\''Content-Type: application/json'\\\\'' -d '\\\\''{}'\\\\'' __TRACKED_VAR__')",
+      "Bash(bash -c 'curl -s -o /dev/null -w '\\\\''%{http_code}'\\\\'' '\\\\''http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/__TRACKED_VAR__'\\\\'' __TRACKED_VAR__')",
+      "Bash(curl -s -i \"http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/redaction-candidates\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\")"
     ]
   }
 }
