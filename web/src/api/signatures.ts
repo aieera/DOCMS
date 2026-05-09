@@ -174,6 +174,49 @@ export async function sendViaESign(input: SendESignInput): Promise<{ envelope_id
   return data
 }
 
+// ----- PAdES-LTV validator (ADR 0072) ----------------------------
+
+export type CertStatus = 'valid' | 'indeterminate' | 'revoked' | 'unknown'
+export type PAdESLevel = 'PAdES-B-B' | 'PAdES-B-T' | 'PAdES-B-LT' | 'PAdES-B-LTA'
+
+export interface PAdESSignatureInfo {
+  field_name?: string
+  signer_name: string
+  signer_email?: string
+  issuer?: string
+  serial_hex?: string
+  signed_at?: string
+  level: PAdESLevel
+  cert_status: CertStatus
+  chain_valid: boolean
+  timestamp_valid: boolean
+  tamper_evident: boolean
+  reason?: string
+  location?: string
+  errors?: string[]
+}
+
+export interface PAdESReport {
+  signature_count: number
+  signatures: PAdESSignatureInfo[]
+  ltv_enabled: boolean
+  ltv_age?: number          // ns; backend serializes time.Duration as int
+  tamper_evident: boolean
+  errors?: string[]
+  parsed_at: string
+}
+
+// validatePDF posts the raw PDF bytes to /signatures/verify-bytes
+// and returns the structured report. The "Re-validate" action
+// passes the document's current version through here.
+export async function validatePDF(pdf: Blob | ArrayBuffer): Promise<PAdESReport> {
+  const body = pdf instanceof Blob ? pdf : new Blob([pdf], { type: 'application/pdf' })
+  const { data } = await api.post<PAdESReport>('/signatures/verify-bytes', body, {
+    headers: { 'Content-Type': 'application/pdf' },
+  })
+  return data
+}
+
 // SIGNATURE_TYPE_DESCRIPTIONS feeds the type-selector UI.
 export const SIGNATURE_TYPE_DESCRIPTIONS: Record<SignatureType, { label: string; help: string }> = {
   simple:    { label: 'Simple',    help: 'Type-or-draw signature image. Legally weakest; fast.' },

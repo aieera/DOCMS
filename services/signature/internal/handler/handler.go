@@ -3,6 +3,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -28,6 +29,24 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/sign/{signerId}", h.recordSignature)
 	mux.HandleFunc("POST /api/v1/signatures/requests/{id}/cancel", h.cancelRequest)
 	mux.HandleFunc("GET /api/v1/signatures/verify/{documentId}", h.verify)
+	// ADR 0072 — PAdES-LTV validator. Body is the raw PDF bytes;
+	// content-type is application/pdf. Used by the "Re-validate"
+	// UX in the signature panel.
+	mux.HandleFunc("POST /api/v1/signatures/verify-bytes", h.verifyBytes)
+}
+
+func (h *Handler) verifyBytes(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 50<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read body")
+		return
+	}
+	rep, err := h.svc.VerifyPDF(r.Context(), body)
+	if err != nil && rep == nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
 }
 
 type createBody struct {

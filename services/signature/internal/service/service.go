@@ -18,6 +18,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/storage"
 	"github.com/vaultdms/vaultdms/services/signature/internal/model"
+	"github.com/vaultdms/vaultdms/services/signature/internal/pades"
 	"github.com/vaultdms/vaultdms/services/signature/internal/repository"
 )
 
@@ -40,6 +41,10 @@ type Service struct {
 	// emits the outbox event with byte counts; only the new-version
 	// hand-off is skipped.
 	ingest *ingestPipeline
+	// padesVerifier is the lazily-initialized PAdES-LTV validator
+	// (ADR 0072). nil-allocated on first VerifyPDF call so callers
+	// that never validate don't pay the regex compilation cost.
+	padesVerifier *pades.Verifier
 }
 
 // AddIngest plugs the upload + create-version round-trip into the
@@ -197,6 +202,19 @@ func (s *Service) RecordSignature(ctx context.Context, tenantID, requestID, sign
 // CancelRequest cancels a pending signature request.
 func (s *Service) CancelRequest(ctx context.Context, tenantID, id string) error {
 	return s.repo.UpdateStatus(ctx, tenantID, id, "cancelled")
+}
+
+// VerifyPDF runs the full PAdES-LTV validator (ADR 0072) against
+// the bytes the caller supplies. Used by the new /signatures/verify-bytes
+// route + the "Re-validate" UX. The legacy Verify method below
+// remains for back-compat — it answered "is there a completed
+// signature_request for this document?" without ever reading the
+// PDF.
+func (s *Service) VerifyPDF(ctx context.Context, pdf []byte) (*pades.Report, error) {
+	if s.padesVerifier == nil {
+		s.padesVerifier = pades.NewVerifier(pades.VerifierOptions{})
+	}
+	return s.padesVerifier.Validate(ctx, pdf)
 }
 
 // Verify checks signatures on a document (stub — real impl uses PDF library).

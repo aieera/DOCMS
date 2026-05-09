@@ -120,6 +120,14 @@ jobs:
           ADOBESIGN_SANDBOX_TOKEN_URL:        ${{ secrets.ADOBESIGN_SANDBOX_TOKEN_URL }}
           ADOBESIGN_SANDBOX_SIGNER_EMAIL:     ${{ secrets.ADOBESIGN_SANDBOX_SIGNER_EMAIL }}
 
+      # ADR 0072 — PAdES-LTV Tier-2 conformance against the EU DSS
+      # public validator. Runs nightly; manual fail isn't a customer
+      # outage but signals our /DSS embed shape has drifted from
+      # what external validators expect.
+      - name: Tier-2 — EU DSS validator
+        if: ${{ !cancelled() }}
+        run: go test -tags tier2 -count=1 -v ./services/signature/internal/pades/...
+
       - name: Notify on failure
         if: failure()
         run: |
