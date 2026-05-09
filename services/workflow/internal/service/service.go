@@ -106,6 +106,13 @@ func (s *Service) ListTasks(ctx context.Context, tenantID, assigneeID, status st
 	return s.repo.ListTasks(ctx, tenantID, assigneeID, status)
 }
 
+// GetInstanceTimeline returns the ordered task history for an instance.
+// Each task represents a step transition; the page renders these as
+// timeline events.
+func (s *Service) GetInstanceTimeline(ctx context.Context, tenantID, instanceID string) ([]*model.Task, error) {
+	return s.repo.ListTasksByInstance(ctx, tenantID, instanceID)
+}
+
 // CancelInstance cancels a running workflow.
 func (s *Service) CancelInstance(ctx context.Context, tenantID, instanceID string) error {
 	inst, err := s.repo.GetInstance(ctx, tenantID, instanceID)

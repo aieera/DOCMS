@@ -182,6 +182,37 @@ func (r *Repository) ListTasks(ctx context.Context, tenantID, assigneeID, status
 	return out, err
 }
 
+// ListTasksByInstance returns every task for one instance, oldest first.
+// Used by the timeline endpoint to render the run history.
+func (r *Repository) ListTasksByInstance(ctx context.Context, tenantID, instanceID string) ([]*model.Task, error) {
+	var out []*model.Task
+	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT t.id, t.tenant_id, t.instance_id, COALESCE(t.document_id::text, '') AS document_id,
+			       COALESCE(d.title, '') AS document_title,
+			       t.step_name, t.assignee_id, t.status, COALESCE(t.notes, '') AS notes,
+			       t.due_at, t.created_at, t.completed_at
+			  FROM workflow_tasks t
+			  LEFT JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id
+			 WHERE t.tenant_id = $1 AND t.instance_id = $2
+			 ORDER BY t.created_at ASC`, tenantID, instanceID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			t := &model.Task{}
+			if err := rows.Scan(&t.ID, &t.TenantID, &t.InstanceID, &t.DocumentID, &t.DocumentTitle, &t.StepName,
+				&t.AssigneeID, &t.Status, &t.Notes, &t.DueAt, &t.CreatedAt, &t.CompletedAt); err != nil {
+				return err
+			}
+			out = append(out, t)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // CompleteTask marks a task completed and sets the outcome.
 func (r *Repository) CompleteTask(ctx context.Context, tenantID, taskID, status, notes string) error {
 	return r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {

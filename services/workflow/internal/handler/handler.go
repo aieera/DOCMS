@@ -28,6 +28,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/workflows/definitions", h.createDefinition)
 	mux.HandleFunc("POST /api/v1/workflows/instances", h.startInstance)
 	mux.HandleFunc("GET /api/v1/workflows/instances/{id}", h.getInstance)
+	mux.HandleFunc("GET /api/v1/workflows/instances/{id}/timeline", h.getInstanceTimeline)
 	mux.HandleFunc("POST /api/v1/workflows/instances/{id}/signal", h.signalStep)
 	mux.HandleFunc("POST /api/v1/workflows/instances/{id}/cancel", h.cancelInstance)
 	mux.HandleFunc("GET /api/v1/workflows/tasks/mine", h.listMyTasks)
@@ -105,6 +106,24 @@ func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, inst)
+}
+
+func (h *Handler) getInstanceTimeline(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	tasks, err := h.svc.GetInstanceTimeline(r.Context(), tenantID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	if tasks == nil {
+		tasks = []*model.Task{}
+	}
+	writeJSON(w, http.StatusOK, tasks)
 }
 
 func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
