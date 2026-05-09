@@ -44,6 +44,26 @@ func New(cfg Config) *Service {
 func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) error {
 	now := time.Now().UTC()
 	for _, uid := range payload.UserIDs {
+		// ADR 0086 — pre-delivery gate. Skip the user entirely on
+		// snooze; otherwise the returned channel set tells us
+		// which channels survive matrix + DND + digest. Decide()
+		// is best-effort: on error we fall back to the legacy
+		// flat-pref behavior so a Postgres blip can't lose
+		// notifications.
+		eventPayload := map[string]any{
+			"title": payload.Title, "body": payload.Body,
+			"resource_type": payload.ResourceType, "resource_id": payload.ResourceID,
+		}
+		channels, decideErr := s.Decide(ctx, payload.TenantID, uid, payload.Type,
+			[]model.Channel{model.ChannelInApp, model.ChannelEmail}, eventPayload)
+		if decideErr == nil && len(channels) == 0 {
+			// Active snooze (channels=nil) or every channel was
+			// either disabled or folded into a digest row. Either
+			// way nothing to deliver right now.
+			continue
+		}
+		emailAllowed := containsChan(channels, model.ChannelEmail) || decideErr != nil
+
 		pref, _ := s.repo.GetPreference(ctx, payload.TenantID, uid)
 
 		// In-app always.
@@ -70,7 +90,7 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 		// observability breadcrumb for dev. Failure to send is
 		// logged at Error; we don't fail the whole Deliver loop
 		// because in-app notification has already landed.
-		if pref != nil && pref.EmailEnabled {
+		if emailAllowed && pref != nil && pref.EmailEnabled {
 			if s.smtp != nil && s.smtp.Enabled() {
 				// payload.UserIDs carries user UUIDs today; the
 				// DSR-verify publisher (Wave 11.4) passes email
@@ -126,10 +146,52 @@ func (s *Service) UpdatePreference(ctx context.Context, p *model.UserPreference)
 	return s.repo.UpsertPreference(ctx, p)
 }
 
+// ----- ADR 0086 pass-throughs ------------------------------------
+// Thin wrappers so the handler talks to one Service surface; the
+// business logic for each lives in the repo (CRUD) or decide.go
+// (the gating pipeline).
+
+func (s *Service) ListMatrix(ctx context.Context, tenantID, userID string) ([]model.PrefCell, error) {
+	return s.repo.ListMatrix(ctx, tenantID, userID)
+}
+func (s *Service) ReplaceMatrix(ctx context.Context, tenantID, userID string, cells []model.PrefCell) error {
+	return s.repo.ReplaceMatrix(ctx, tenantID, userID, cells)
+}
+func (s *Service) UpsertCell(ctx context.Context, c model.PrefCell) error {
+	return s.repo.UpsertCell(ctx, c)
+}
+func (s *Service) ListActiveSnoozes(ctx context.Context, tenantID, userID string) ([]model.Snooze, error) {
+	return s.repo.ListActiveSnoozes(ctx, tenantID, userID)
+}
+func (s *Service) CreateSnooze(ctx context.Context, sn model.Snooze, dur time.Duration) (*model.Snooze, error) {
+	return s.repo.CreateSnooze(ctx, sn, dur)
+}
+func (s *Service) DeleteSnooze(ctx context.Context, tenantID, userID, id string) error {
+	return s.repo.DeleteSnooze(ctx, tenantID, userID, id)
+}
+func (s *Service) GetDND(ctx context.Context, tenantID, userID string) (*model.DND, error) {
+	return s.repo.GetDND(ctx, tenantID, userID)
+}
+func (s *Service) UpsertDND(ctx context.Context, d model.DND) error {
+	return s.repo.UpsertDND(ctx, d)
+}
+func (s *Service) DeleteDND(ctx context.Context, tenantID, userID string) error {
+	return s.repo.DeleteDND(ctx, tenantID, userID)
+}
+
 // containsAt reports whether s looks like an email address. Used
 // by the email-channel path to distinguish "this is a user UUID"
 // (looked up via DB — not yet wired) from "this is already an
 // email" (DSR verify path).
+func containsChan(set []model.Channel, c model.Channel) bool {
+	for _, x := range set {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
 func containsAt(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '@' {

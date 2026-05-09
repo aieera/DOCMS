@@ -76,6 +76,10 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
 	}
 
+	// ADR 0086 — 1-minute sweep that flushes ripe digest rows.
+	// Cancels with the service lifecycle ctx; no separate Stop().
+	go svc.StartDigestFlusher(ctx)
+
 	hs := health.NewServer(pool, rdb, nc, nil)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {

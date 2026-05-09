@@ -32,6 +32,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/notifications/unread-count", h.unreadCount)
 	mux.HandleFunc("GET /api/v1/notifications/preferences", h.getPreferences)
 	mux.HandleFunc("PUT /api/v1/notifications/preferences", h.updatePreferences)
+	// ADR 0086 — matrix preferences, snooze, DND.
+	h.RegisterPrefs(mux)
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
