@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -320,6 +321,9 @@ func (r *nerRepo) GetConfig(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) 
 		&c.Enabled, &c.Model, &c.EntityTypes, &c.BatchSize, &c.MinConfidence,
 		&c.APIKeyEncrypted, &c.APIKeySetAt,
 	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &c, nil

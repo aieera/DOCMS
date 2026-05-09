@@ -206,10 +206,14 @@ type nerConfigBody struct {
 }
 
 func (h *NERHandler) getConfig(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
-	c, err := h.svc.GetNERConfig(r.Context())
+	c, err := h.svc.GetNERConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
 		return
@@ -231,6 +235,10 @@ func (h *NERHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
@@ -239,7 +247,7 @@ func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	c, err := h.svc.UpsertNERConfig(r.Context(), repository.NERConfigPatch{
+	c, err := h.svc.UpsertNERConfig(ctx, repository.NERConfigPatch{
 		Enabled:       body.Enabled,
 		Model:         body.Model,
 		EntityTypes:   body.EntityTypes,
@@ -254,6 +262,10 @@ func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NERHandler) setAPIKey(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
@@ -262,7 +274,7 @@ func (h *NERHandler) setAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	if err := h.svc.SetLLMAPIKey(r.Context(), body.APIKey); err != nil {
+	if err := h.svc.SetLLMAPIKey(ctx, body.APIKey); err != nil {
 		writeErr(w, r, err)
 		return
 	}
@@ -270,10 +282,14 @@ func (h *NERHandler) setAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NERHandler) clearAPIKey(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
-	if err := h.svc.ClearLLMAPIKey(r.Context()); err != nil {
+	if err := h.svc.ClearLLMAPIKey(ctx); err != nil {
 		writeErr(w, r, err)
 		return
 	}
