@@ -1,0 +1,146 @@
+// ADR 0065 — POST /api/v1/documents/{id}/versions/{vid}/coauth/start
+//
+// Mints a WOPI access_token for the calling user, scoped to (tenant,
+// user, version_id, expiry, can_write). The frontend embeds this in
+// the iframe URL so the editor (OnlyOffice or Collabora) can call
+// /wopi/* on our behalf.
+//
+// Provider selection:
+//   - VAULTDMS_COAUTH_PROVIDER (env): "onlyoffice" | "collabora" | "disabled"
+//   - VAULTDMS_COAUTH_URL (env): base URL of the editor
+// Per-tenant overrides land later via a tenant_settings row; today
+// it's deploy-wide.
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+
+	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+)
+
+// CoauthStartHandler mounts /coauth/start.
+type CoauthStartHandler struct {
+	log zerolog.Logger
+}
+
+// NewCoauthStartHandler constructs the handler.
+func NewCoauthStartHandler(log zerolog.Logger) *CoauthStartHandler {
+	return &CoauthStartHandler{log: log}
+}
+
+// Register attaches the route.
+func (h *CoauthStartHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/coauth/start", h.start)
+}
+
+type coauthStartReq struct {
+	Mode string `json:"mode"` // edit | view
+}
+
+type coauthStartResp struct {
+	IframeURL       string `json:"iframe_url"`
+	Provider        string `json:"provider"` // onlyoffice | collabora | disabled
+	EditorHealthURL string `json:"editor_health_url"`
+	AccessToken     string `json:"access_token"`
+	AccessTokenTTL  int64  `json:"access_token_ttl"` // ms
+	Mode            string `json:"mode"`
+}
+
+func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	versionID, err := uuid.Parse(r.PathValue("vid"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
+		return
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("VAULTDMS_COAUTH_PROVIDER")))
+	if provider == "" {
+		provider = "disabled"
+	}
+	if provider == "disabled" {
+		writeJSONStatus(w, http.StatusOK, coauthStartResp{Provider: "disabled"})
+		return
+	}
+
+	editorBase := strings.TrimRight(os.Getenv("VAULTDMS_COAUTH_URL"), "/")
+	if editorBase == "" {
+		writeErr(w, r, vdmserr.Internal("VAULTDMS_COAUTH_URL not set"))
+		return
+	}
+
+	secret := os.Getenv("VAULTDMS_WOPI_SECRET")
+	if secret == "" {
+		writeErr(w, r, vdmserr.Internal("VAULTDMS_WOPI_SECRET not set"))
+		return
+	}
+
+	publicBase := os.Getenv("VAULTDMS_PUBLIC_URL")
+	if publicBase == "" {
+		publicBase = "http://localhost:8080"
+	}
+
+	var body coauthStartReq
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	mode := body.Mode
+	if mode != "view" {
+		mode = "edit"
+	}
+
+	ttl := 1 * time.Hour
+	claims := WOPIClaims{
+		TenantID:  tenantID,
+		UserID:    userID,
+		FileID:    versionID,
+		ExpiresAt: time.Now().Add(ttl),
+		CanWrite:  mode == "edit",
+	}
+	token := IssueWOPIToken(secret, claims)
+
+	// WOPISrc the editor calls back into. Both OnlyOffice (when
+	// running in WOPI mode) and Collabora follow the same shape.
+	wopiSrc := publicBase + "/wopi/files/" + versionID.String()
+
+	var iframeURL, healthURL string
+	switch provider {
+	case "collabora":
+		// Collabora reads its discovery.xml at boot; the iframe URL
+		// shape is /browser/<hash>/cool.html?WOPISrc=...&access_token=...
+		// Discovery action URL we serve is fine to drop into here —
+		// Collabora replaces <wopisrc> with the encoded host URL.
+		iframeURL = fmt.Sprintf("%s/browser/dist/cool.html?WOPISrc=%s&access_token=%s&lang=en",
+			editorBase, url.QueryEscape(wopiSrc), url.QueryEscape(token))
+		healthURL = editorBase + "/hosting/discovery"
+	case "onlyoffice":
+		// OnlyOffice in WOPI mode uses /hosting/discovery action
+		// URLs. We pass WOPISrc + token; OnlyOffice fetches
+		// CheckFileInfo + GetFile from us.
+		iframeURL = fmt.Sprintf("%s/hosting/wopi/word/edit?WOPISrc=%s&access_token=%s",
+			editorBase, url.QueryEscape(wopiSrc), url.QueryEscape(token))
+		healthURL = editorBase + "/healthcheck"
+	default:
+		writeErr(w, r, vdmserr.Validation("provider", "must be onlyoffice|collabora|disabled"))
+		return
+	}
+
+	writeJSONStatus(w, http.StatusOK, coauthStartResp{
+		IframeURL:       iframeURL,
+		Provider:        provider,
+		EditorHealthURL: healthURL,
+		AccessToken:     token,
+		AccessTokenTTL:  ttl.Milliseconds(),
+		Mode:            mode,
+	})
+}
