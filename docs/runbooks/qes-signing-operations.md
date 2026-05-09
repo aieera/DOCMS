@@ -119,6 +119,62 @@ QTSP doesn't need to be involved past initial signing. See
 | `qes_session_expired_total{provider}`        | Reaper rate — high = TSP issues  |
 | `qes_certificate_chain_size_bytes`           | Cert-chain payload — sudden jump means TSP changed CA layout |
 
+## Sandbox smoke harness
+
+Nightly GitHub Actions workflow at
+[.github/workflows/esign-sandbox.yml](../../.github/workflows/esign-sandbox.yml)
+runs the **Tier A** tests in
+[pkg/esign/sandbox_test.go](../../pkg/esign/sandbox_test.go) +
+[pkg/signing/tsp/sandbox_test.go](../../pkg/signing/tsp/sandbox_test.go)
+against the live vendor sandboxes. Tier A is wire-shape only — it
+sends an envelope or opens a QES Authorize transaction, polls
+status / asserts the redirect URL came back, and cleans up. No
+human in the loop. Tier B (full round-trip with API-driven
+signing for DocuSign + Adobe Sign) is opt-in via `workflow_dispatch`
+with `tier=b`.
+
+### Where the credentials live
+
+GitHub Environment **`esign-sandbox`** — only `main` is allowed to
+use it; PR branches never see the secrets. The workflow's `env:`
+blocks list the exact secret names; each one is documented inline
+in the corresponding `sandbox_test.go`. To add a new vendor, the
+shape is:
+
+1. Add the env vars to `sandbox_test.go`'s file-level comment.
+2. Add `mustEnvSandbox(t, "...")` calls in the new test.
+3. Wire the secret into the workflow's two `env:` blocks (Tier A +
+   Tier B if applicable).
+
+### Reading a failed run
+
+Look at the failing test name first:
+
+| Test name suffix      | What broke                                              |
+|-----------------------|---------------------------------------------------------|
+| `_TierA`              | Wire shape changed at the vendor, or a credential expired. Compare the test's request body with the vendor's current docs. |
+| `_TierB_FullCycle`    | Wire-shape OK, but auto-signing failed or the signed PDF didn't materialize. Most often: vendor changed their auto-sign API, or our `assertLooksLikePDF` is too strict. |
+
+If a single vendor fails but the others pass, that's almost always
+a credential-rotation issue at that vendor. Re-issue the dev token
+or refresh-token grant from the vendor portal and update the
+GitHub Environment secret. **Do not** disable the failing test —
+write a tracking ticket and let the workflow stay red until the
+underlying issue is fixed; the red signal is the value.
+
+### Local run
+
+```
+DOCUSIGN_SANDBOX_ACCESS_TOKEN=... \
+DOCUSIGN_SANDBOX_ACCOUNT_ID=... \
+DOCUSIGN_SANDBOX_BASE_URI=https://demo.docusign.net \
+DOCUSIGN_SANDBOX_SIGNER_EMAIL=you@example.com \
+  go test -tags sandbox -v -run TestSandbox_DocuSign_TierA ./pkg/esign/...
+```
+
+Without the env vars the tests skip cleanly (`mustEnv` calls
+`t.Skipf`); they don't fail the default `make test` run.
+
 ## Incident severity matrix
 
 | Symptom                                       | Severity | First action                       |

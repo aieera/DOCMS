@@ -1,0 +1,126 @@
+name: eSign + QES Sandbox Smoke
+
+# Nightly smoke tests against the live DocuSign / Adobe Sign / QTSP
+# sandboxes. Runs the `//go:build sandbox` tier-A tests defined in
+#   pkg/esign/sandbox_test.go
+#   pkg/signing/tsp/sandbox_test.go
+#
+# These tests verify that the wire shapes we depend on haven't
+# drifted at any vendor — they're the canary for "did DocuSign
+# rev their API and break us silently?"
+#
+# Tier A (default): Send/Authorize + GetStatus + cleanup. No real
+# signature; no human in the loop. Cheap on quota.
+#
+# Tier B (workflow_dispatch only): full round-trip including a
+# fake sign via each vendor's API, asserts the resulting PDF
+# parses. Consumes real envelope quota — hence the manual gate.
+#
+# Credentials live in the sealed `esign-sandbox` GitHub Environment,
+# which only `main` is allowed to use. Pull-request branches
+# never see them.
+
+on:
+  schedule:
+    # Nightly at 06:00 UTC.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Which tier to run (a = no human, b = full cycle)"
+        required: true
+        default: "a"
+        type: choice
+        options: [a, b]
+
+concurrency:
+  group: esign-sandbox
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  esign-sandbox:
+    name: eSign + QES sandbox smoke
+    runs-on: ubuntu-latest
+    environment: esign-sandbox
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # Tier A — runs nightly + on every workflow_dispatch.
+      - name: Tier A — DocuSign + Adobe Sign + QES authorize
+        run: |
+          set -euo pipefail
+          go test -tags sandbox -count=1 -v \
+            -run "TestSandbox_(DocuSign_TierA|AdobeSign_TierA|Intesi_TierA|InfoCert_TierA|Swisscom_TierA)" \
+            ./pkg/esign/... ./pkg/signing/tsp/...
+        env:
+          # ---- DocuSign ----
+          DOCUSIGN_SANDBOX_ACCESS_TOKEN: ${{ secrets.DOCUSIGN_SANDBOX_ACCESS_TOKEN }}
+          DOCUSIGN_SANDBOX_ACCOUNT_ID:   ${{ secrets.DOCUSIGN_SANDBOX_ACCOUNT_ID }}
+          DOCUSIGN_SANDBOX_BASE_URI:     ${{ secrets.DOCUSIGN_SANDBOX_BASE_URI }}
+          DOCUSIGN_SANDBOX_HMAC_SECRET:  ${{ secrets.DOCUSIGN_SANDBOX_HMAC_SECRET }}
+          DOCUSIGN_SANDBOX_SIGNER_EMAIL: ${{ secrets.DOCUSIGN_SANDBOX_SIGNER_EMAIL }}
+
+          # ---- Adobe Sign ----
+          ADOBESIGN_SANDBOX_REFRESH_TOKEN:    ${{ secrets.ADOBESIGN_SANDBOX_REFRESH_TOKEN }}
+          ADOBESIGN_SANDBOX_API_ACCESS_POINT: ${{ secrets.ADOBESIGN_SANDBOX_API_ACCESS_POINT }}
+          ADOBESIGN_SANDBOX_CLIENT_ID:        ${{ secrets.ADOBESIGN_SANDBOX_CLIENT_ID }}
+          ADOBESIGN_SANDBOX_CLIENT_SECRET:    ${{ secrets.ADOBESIGN_SANDBOX_CLIENT_SECRET }}
+          ADOBESIGN_SANDBOX_TOKEN_URL:        ${{ secrets.ADOBESIGN_SANDBOX_TOKEN_URL }}
+          ADOBESIGN_SANDBOX_SIGNER_EMAIL:     ${{ secrets.ADOBESIGN_SANDBOX_SIGNER_EMAIL }}
+
+          # ---- QES (Intesi / InfoCert / Swisscom) ----
+          INTESI_SANDBOX_BASE_URL:        ${{ secrets.INTESI_SANDBOX_BASE_URL }}
+          INTESI_SANDBOX_CLIENT_ID:       ${{ secrets.INTESI_SANDBOX_CLIENT_ID }}
+          INTESI_SANDBOX_CLIENT_SECRET:   ${{ secrets.INTESI_SANDBOX_CLIENT_SECRET }}
+          INTESI_SANDBOX_PINNED_CA_PEM:   ${{ secrets.INTESI_SANDBOX_PINNED_CA_PEM }}
+          INTESI_SANDBOX_SIGNER_EMAIL:    ${{ secrets.INTESI_SANDBOX_SIGNER_EMAIL }}
+
+          INFOCERT_SANDBOX_BASE_URL:      ${{ secrets.INFOCERT_SANDBOX_BASE_URL }}
+          INFOCERT_SANDBOX_CLIENT_ID:     ${{ secrets.INFOCERT_SANDBOX_CLIENT_ID }}
+          INFOCERT_SANDBOX_CLIENT_SECRET: ${{ secrets.INFOCERT_SANDBOX_CLIENT_SECRET }}
+          INFOCERT_SANDBOX_ORG_ID:        ${{ secrets.INFOCERT_SANDBOX_ORG_ID }}
+          INFOCERT_SANDBOX_SIGNER_EMAIL:  ${{ secrets.INFOCERT_SANDBOX_SIGNER_EMAIL }}
+
+          SWISSCOM_SANDBOX_BASE_URL:        ${{ secrets.SWISSCOM_SANDBOX_BASE_URL }}
+          SWISSCOM_SANDBOX_CUSTOMER_ID:     ${{ secrets.SWISSCOM_SANDBOX_CUSTOMER_ID }}
+          SWISSCOM_SANDBOX_CLIENT_CERT_PEM: ${{ secrets.SWISSCOM_SANDBOX_CLIENT_CERT_PEM }}
+          SWISSCOM_SANDBOX_CLIENT_KEY_PEM:  ${{ secrets.SWISSCOM_SANDBOX_CLIENT_KEY_PEM }}
+          SWISSCOM_SANDBOX_SIGNER_EMAIL:    ${{ secrets.SWISSCOM_SANDBOX_SIGNER_EMAIL }}
+
+      # Tier B — only on workflow_dispatch with input tier=b.
+      # Burns real envelope quota; opt-in.
+      - name: Tier B — DocuSign + Adobe Sign full cycle
+        if: github.event_name == 'workflow_dispatch' && inputs.tier == 'b'
+        run: |
+          set -euo pipefail
+          go test -tags sandbox -count=1 -v \
+            -run "TestSandbox_(DocuSign|AdobeSign)_TierB_FullCycle" \
+            ./pkg/esign/...
+        env:
+          DOCUSIGN_SANDBOX_AUTOSIGN: "1"
+          ADOBESIGN_SANDBOX_AUTOSIGN: "1"
+          # Same secrets as above — duplicated because each `env:` block
+          # is independent in Actions.
+          DOCUSIGN_SANDBOX_ACCESS_TOKEN: ${{ secrets.DOCUSIGN_SANDBOX_ACCESS_TOKEN }}
+          DOCUSIGN_SANDBOX_ACCOUNT_ID:   ${{ secrets.DOCUSIGN_SANDBOX_ACCOUNT_ID }}
+          DOCUSIGN_SANDBOX_BASE_URI:     ${{ secrets.DOCUSIGN_SANDBOX_BASE_URI }}
+          DOCUSIGN_SANDBOX_SIGNER_EMAIL: ${{ secrets.DOCUSIGN_SANDBOX_SIGNER_EMAIL }}
+          ADOBESIGN_SANDBOX_REFRESH_TOKEN:    ${{ secrets.ADOBESIGN_SANDBOX_REFRESH_TOKEN }}
+          ADOBESIGN_SANDBOX_API_ACCESS_POINT: ${{ secrets.ADOBESIGN_SANDBOX_API_ACCESS_POINT }}
+          ADOBESIGN_SANDBOX_CLIENT_ID:        ${{ secrets.ADOBESIGN_SANDBOX_CLIENT_ID }}
+          ADOBESIGN_SANDBOX_CLIENT_SECRET:    ${{ secrets.ADOBESIGN_SANDBOX_CLIENT_SECRET }}
+          ADOBESIGN_SANDBOX_TOKEN_URL:        ${{ secrets.ADOBESIGN_SANDBOX_TOKEN_URL }}
+          ADOBESIGN_SANDBOX_SIGNER_EMAIL:     ${{ secrets.ADOBESIGN_SANDBOX_SIGNER_EMAIL }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::Sandbox smoke failed. Either a vendor revved their API or a credential expired. Check the failing test name + the runbook at docs/runbooks/qes-signing-operations.md."
