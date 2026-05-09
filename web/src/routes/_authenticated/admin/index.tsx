@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import {
   Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
-  Key, KeyRound, Languages, Link2, MapPinned, Network, Plug, Scale, ScrollText, Settings,
+  Key, KeyRound, Languages, Link2, MapPinned, Network, PenTool, Plug, Scale, ScrollText, Settings,
   Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
   UserCog, Users, Webhook, Workflow,
 } from 'lucide-react'
@@ -30,6 +30,7 @@ const tenantSections: Section[] = [
   { to: '/admin/share-links', icon: Link2, label: 'Share Links', desc: 'Active tenant-wide links' },
   { to: '/admin/api-keys', icon: KeyRound, label: 'API Keys', desc: 'Programmatic access' },
   { to: '/admin/connectors', icon: Plug, label: 'Connectors', desc: 'M365 / Salesforce sync' },
+  { to: '/admin/integrations', icon: PenTool, label: 'eSignature integrations', desc: 'DocuSign + Adobe Sign — connect, status, envelopes (ADR 0071)' },
   { to: '/admin/privacy', icon: UserCog, label: 'Privacy Requests', desc: 'GDPR export / erase / anonymize' },
   { to: '/admin/residency', icon: Globe, label: 'Residency', desc: 'Regions + migrate docs' },
   { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },

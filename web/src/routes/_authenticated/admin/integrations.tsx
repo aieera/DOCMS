@@ -11,6 +11,7 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
+import { useAuthStore } from '@/store/authStore'
 
 // /admin/integrations — ADR 0071 OAuth + envelope-status surface.
 //
@@ -25,6 +26,10 @@ export const Route = createFileRoute('/_authenticated/admin/integrations')({
 function IntegrationsPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'connections' | 'envelopes'>('connections')
+  const tenantID = useAuthStore((s) => s.tenantId)
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const webhookURL = (provider: ESignProvider) =>
+    `${origin}/api/v1/signatures/esign/webhook/${provider}/${tenantID ?? ''}`
 
   const connsQ = useQuery({ queryKey: ['esign-connections'], queryFn: listESignConnections, refetchInterval: 30_000 })
   const envsQ = useQuery({ queryKey: ['esign-envelopes'], queryFn: listESignEnvelopes, refetchInterval: 30_000 })
@@ -102,6 +107,14 @@ function IntegrationsPage() {
                       {conn && (
                         <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
                           Token expires {new Date(conn.expires_at).toLocaleString()}
+                        </p>
+                      )}
+                      {conn && (
+                        <p className="mt-2 text-xs">
+                          <span className="text-[var(--color-text-secondary)]">Webhook URL: </span>
+                          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800" data-testid={`webhook-url-${p.id}`}>
+                            {webhookURL(p.id)}
+                          </code>
                         </p>
                       )}
                     </div>

@@ -11,6 +11,7 @@ import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
 import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
+import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
@@ -180,6 +181,11 @@ function DocumentDetailPage() {
         {/* ADR 0066 — comments side panel. Threads + replies +
             reactions + @mention autocomplete + real-time updates. */}
         <CommentsPanel documentId={documentId} />
+
+        {/* ADR 0070 / 0071 / 0072 — signatures panel. Always
+            renders so users have a predictable surface for "send
+            for signature" + the validity badge. */}
+        <SignaturesPanel documentId={documentId} />
 
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 space-y-3">
           <h3 className="text-sm font-semibold">Details</h3>

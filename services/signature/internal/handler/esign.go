@@ -29,7 +29,10 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)
 	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", e.disconnect)
 	mux.HandleFunc("GET /api/v1/signatures/esign/envelopes", e.envelopes)
-	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}", e.webhook)
+	// Webhook URL is tenant-scoped because vendors don't carry our
+	// session cookie. Admin pastes the per-tenant URL into the
+	// vendor portal at integration-setup time.
+	mux.HandleFunc("POST /api/v1/signatures/esign/webhook/{provider}/{tenant}", e.webhook)
 }
 
 type esignRoutes struct {
@@ -176,15 +179,17 @@ func (e *esignRoutes) envelopes(w http.ResponseWriter, r *http.Request) {
 
 // ----- Webhook ingest --------------------------------------------
 
-// webhook accepts vendor callbacks. The HMAC verification lives in
-// the adapter's ParseWebhook — we resolve a connector by provider
-// path-param + tenant header. Tenant header arrives via gateway
-// rewrite from the per-tenant webhook URL the admin configured at
-// the vendor side (see the integrations admin page).
+// webhook accepts vendor callbacks. Both DocuSign and Adobe Sign
+// hit us without our session cookie, so tenant is encoded in the
+// URL path — the admin pastes a per-tenant webhook URL into the
+// vendor portal during connect. HMAC verification (provider-
+// specific) is what authenticates the body; the tenant in the URL
+// is just the lookup key, so a wrong tenant + valid HMAC would
+// still fail safely (the envelope-id lookup wouldn't match).
 func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := r.PathValue("tenant")
 	if tenantID == "" {
-		writeError(w, http.StatusUnauthorized, "tenant context missing")
+		writeError(w, http.StatusBadRequest, "tenant required in path")
 		return
 	}
 	provider := esign.Provider(r.PathValue("provider"))

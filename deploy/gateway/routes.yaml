@@ -194,6 +194,15 @@ routes:
     auth: required
 
   # ---- signature ------------------------------------------------------
+  # ESign webhook URL: vendors (DocuSign / Adobe Sign) post here
+  # without our session cookie, so the tenant lives in the URL path
+  # and HMAC verification authenticates the body. Listed FIRST
+  # so a longest-prefix matcher routes webhooks via this entry
+  # before falling back to the catch-all. ADR 0071.
+  - service: signature
+    prefix: /api/v1/signatures/esign/webhook
+    methods: [POST]
+    auth: public
   - service: signature
     prefix: /api/v1/signatures
     methods: []
