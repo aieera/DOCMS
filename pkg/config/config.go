@@ -102,6 +102,32 @@ type Config struct {
 	// SMTPStartTLS toggles STARTTLS negotiation. Default true; set
 	// false only for a dev relay like MailHog.
 	SMTPStartTLS bool `mapstructure:"smtp_starttls"`
+
+	// ---- QES / TSP (ADR 0070) ---------------------------------------------
+	// Per-provider creds for the eIDAS QTSP integrations. Empty
+	// fields → adapter is unconfigured and StartQES rejects requests
+	// for that provider. Vault paths are documented in the QES
+	// runbook; these struct fields just carry whatever the secret
+	// store has resolved at boot.
+	QESSwisscomBaseURL    string `mapstructure:"qes_swisscom_base_url"`
+	QESSwisscomCustomerID string `mapstructure:"qes_swisscom_customer_id"`
+	QESSwisscomCertPEM    string `mapstructure:"qes_swisscom_cert_pem"`
+	QESSwisscomKeyPEM     string `mapstructure:"qes_swisscom_key_pem"`
+
+	QESIntesiBaseURL      string `mapstructure:"qes_intesi_base_url"`
+	QESIntesiClientID     string `mapstructure:"qes_intesi_client_id"`
+	QESIntesiClientSecret string `mapstructure:"qes_intesi_client_secret"`
+	QESIntesiPinnedCAPEM  string `mapstructure:"qes_intesi_pinned_ca_pem"`
+
+	QESInfoCertBaseURL      string `mapstructure:"qes_infocert_base_url"`
+	QESInfoCertClientID     string `mapstructure:"qes_infocert_client_id"`
+	QESInfoCertClientSecret string `mapstructure:"qes_infocert_client_secret"`
+	QESInfoCertOrgID        string `mapstructure:"qes_infocert_org_id"`
+
+	// QESMockOK enables the in-memory ProviderMock adapter for CI +
+	// Playwright. Refused outside of the dev/test environment by the
+	// service-layer factory.
+	QESMockOK bool `mapstructure:"qes_mock_ok"`
 }
 
 // Load reads configuration from (in order): env vars (VAULTDMS_* prefix),

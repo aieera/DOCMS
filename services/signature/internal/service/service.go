@@ -27,6 +27,10 @@ type Service struct {
 	outbox *database.OutboxRepository
 	s3     *storage.S3Client
 	log    zerolog.Logger
+	// qes is the optional ADR 0070 wiring. nil → QES routes return
+	// "not configured". main.go calls AddQES() when VAULTDMS_QES_*
+	// envs resolve to at least one TSP adapter.
+	qes *QESConfig
 }
 
 type Config struct {

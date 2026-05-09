@@ -21,6 +21,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/health"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/vaultdms/vaultdms/pkg/signing/tsp"
 	"github.com/vaultdms/vaultdms/pkg/storage"
 	"github.com/vaultdms/vaultdms/services/signature/internal/handler"
 	"github.com/vaultdms/vaultdms/services/signature/internal/repository"
@@ -100,9 +101,64 @@ func main() {
 		}
 	}()
 
+	// ADR 0070 — wire QES TSP adapters from per-provider env vars.
+	// Each adapter only initializes when its required creds are
+	// present; missing creds → the provider is silently absent from
+	// the resolution map and StartQES rejects requests for it. The
+	// mock adapter only joins when VAULTDMS_QES_MOCK_OK is set
+	// (CI + e2e — never prod).
+	tspClients := map[tsp.Provider]tsp.TSPClient{}
+	if cfg.QESSwisscomBaseURL != "" {
+		c, err := tsp.NewSwisscom(tsp.SwisscomConfig{
+			BaseURL: cfg.QESSwisscomBaseURL, CustomerID: cfg.QESSwisscomCustomerID,
+			ClientCertPEM: cfg.QESSwisscomCertPEM, ClientKeyPEM: cfg.QESSwisscomKeyPEM,
+		})
+		if err != nil {
+			log.Warn(ctx).Err(err).Msg("swisscom adapter not configured")
+		} else {
+			tspClients[tsp.ProviderSwisscom] = c
+		}
+	}
+	if cfg.QESIntesiBaseURL != "" {
+		c, err := tsp.NewIntesi(tsp.IntesiConfig{
+			BaseURL: cfg.QESIntesiBaseURL, ClientID: cfg.QESIntesiClientID,
+			ClientSecret: cfg.QESIntesiClientSecret, PinnedCAPEM: cfg.QESIntesiPinnedCAPEM,
+		})
+		if err != nil {
+			log.Warn(ctx).Err(err).Msg("intesi adapter not configured")
+		} else {
+			tspClients[tsp.ProviderIntesi] = c
+		}
+	}
+	if cfg.QESInfoCertBaseURL != "" {
+		c, err := tsp.NewInfoCert(tsp.InfoCertConfig{
+			BaseURL: cfg.QESInfoCertBaseURL, ClientID: cfg.QESInfoCertClientID,
+			ClientSecret: cfg.QESInfoCertClientSecret, OrgID: cfg.QESInfoCertOrgID,
+		})
+		if err != nil {
+			log.Warn(ctx).Err(err).Msg("infocert adapter not configured")
+		} else {
+			tspClients[tsp.ProviderInfoCert] = c
+		}
+	}
+	if cfg.QESMockOK {
+		tspClients[tsp.ProviderMock] = tsp.NewMock()
+	}
+	if len(tspClients) > 0 {
+		svc.AddQES(service.QESConfig{
+			Clients: tspClients, PublicBaseURL: cfg.PublicURL,
+			SessionTTL: 15 * time.Minute,
+		})
+		go svc.StartQESReaper(ctx)
+		log.Info(ctx).Int("providers", len(tspClients)).Msg("qes adapters wired")
+	}
+
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
+	// Frontend lands on /sign/done after the QTSP redirect; the page
+	// polls /qes/session/:id for the final status.
+	h.RegisterQES(mux, "/sign/done")
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
