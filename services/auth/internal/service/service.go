@@ -57,6 +57,13 @@ type Service struct {
 	// VAULTDMS_WEBAUTHN_RPID env var is present; nil otherwise
 	// (handlers return ErrWebAuthnNotImplemented in that case).
 	WebAuthnLib any
+	// ldap is the optional LDAP/AD bundle (ADR 0062). Zero value
+	// (Repo=nil) disables every LDAP code path.
+	ldap LDAPDeps
+	// mfa is the optional multi-method MFA bundle (ADR 0063).
+	// Nil-valued fields degrade gracefully — e.g. mfa.SMS=nil drops
+	// the SMS factor from the login picker.
+	mfa MFADeps
 	log      zerolog.Logger
 	now      func() time.Time
 }

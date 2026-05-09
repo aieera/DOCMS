@@ -12,6 +12,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/vaultdms/vaultdms/pkg/database"
+	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/services/auth/internal/ldap"
 	"github.com/vaultdms/vaultdms/services/auth/internal/model"
 )
 
@@ -80,6 +82,40 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 		return nil, ErrInvalidCredentials
 	}
 
+	// ADR 0062 — try LDAP first when active. The directory is the
+	// source of truth; local password is the fallback when the
+	// tenant has fallback_to_local on.
+	if s.HasActiveLDAP(ctx, org.ID) {
+		ldapUsername := emailLocalPart(email)
+		ldapRes, err := s.AuthenticateLDAP(ctx, org.ID, ldapUsername, in.Password)
+		switch {
+		case err == nil:
+			_ = s.rdb.Del(ctx, loginAttemptsKey(org.ID, email)).Err()
+			created, err := s.FinishLDAPLogin(ctx, ldapRes.User, in.IPAddress, in.UserAgent)
+			if err != nil {
+				return nil, err
+			}
+			return &LoginResult{Session: created}, nil
+		case errors.Is(err, ldap.ErrInvalidCredentials):
+			if !s.FallbackToLocal(ctx, org.ID) {
+				s.incrementLoginAttempt(ctx, org.ID, email)
+				_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "ldap_invalid")
+				return nil, ErrInvalidCredentials
+			}
+			// fall through to local bcrypt check below
+		case errors.Is(err, ErrLDAPDirectoryDown):
+			// Directory unreachable — surface as 503 by returning
+			// the wrapped error. The handler maps unknown errors to
+			// 500; we want explicit 503. Use a typed error so the
+			// handler can map it cleanly.
+			s.log.Error().Err(err).Msg("ldap directory unreachable on login")
+			return nil, vdmserr.Internal("identity provider unreachable")
+		default:
+			s.log.Error().Err(err).Msg("ldap auth unexpected error")
+			return nil, ErrInvalidCredentials
+		}
+	}
+
 	if !bcryptCompare(user.PasswordHash, in.Password) {
 		s.incrementLoginAttempt(ctx, org.ID, email)
 		_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "wrong_password")
@@ -89,7 +125,23 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 	// Clear attempt counter on success.
 	_ = s.rdb.Del(ctx, loginAttemptsKey(org.ID, email)).Err()
 
-	if user.MFAEnabled {
+	// ADR 0063 — pull tenant MFA policy. When mode=required, every
+	// login must clear an MFA challenge OR return ErrMFAEnrollmentRequired
+	// when the user has no methods to challenge with (so the admin can
+	// enroll them out-of-band). LoadMFAPolicy is best-effort cached;
+	// failure here falls open to the legacy mfa_enabled-only behavior.
+	mustChallenge := user.MFAEnabled
+	if policy, err := s.LoadMFAPolicy(ctx, user.TenantID); err == nil && policy.Mode == "required" {
+		methods, _ := s.ListEnrolledMethods(ctx, user.TenantID, user.ID)
+		if len(methods) == 0 && !user.MFAEnabled {
+			s.incrementLoginAttempt(ctx, org.ID, email)
+			_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "mfa_enrollment_required")
+			return nil, ErrMFAEnrollmentRequired
+		}
+		mustChallenge = true
+	}
+
+	if mustChallenge {
 		mfaToken, err := s.issueMFASession(ctx, user.TenantID, user.ID)
 		if err != nil {
 			return nil, err
@@ -104,6 +156,12 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 	}
 	return &LoginResult{Session: created}, nil
 }
+
+// ErrMFAEnrollmentRequired — tenant policy is `required` but this
+// user has zero methods enrolled. Login refuses; an admin must
+// pre-provision a method out-of-band (or temporarily flip the policy
+// to `optional`) before the user can sign in.
+var ErrMFAEnrollmentRequired = vdmserr.Forbidden("multi-factor authentication is required by your administrator; ask them to enroll a method on your account")
 
 // finishLogin completes a successful authentication by creating a session,
 // writing the audit event, and updating last_login_at — all in one TX.

@@ -22,7 +22,7 @@ type SCIMWiring struct {
 }
 
 // Router wires all auth HTTP routes. Each optional subsystem may be nil.
-func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, tenantAdmin *TenantAdminHandler) http.Handler {
+func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, tenantAdmin *TenantAdminHandler, ldapAdmin *LDAPAdminHandler) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
@@ -35,7 +35,17 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
 
-		// ADR 0070 — passkey login (public; no prior session needed).
+		// ADR 0063 — multi-method MFA, public (post-password,
+		// gated by mfa_session_token).
+		r.Post("/mfa/methods", h.MFAListMethods)
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/mfa/email/start", h.MFAEmailStart)
+		r.Post("/mfa/email/verify", h.MFAEmailVerify)
+		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/mfa/sms/start", h.MFASMSStart)
+		r.Post("/mfa/sms/verify", h.MFASMSVerify)
+		r.Post("/mfa/push/start", h.MFAPushStart)
+		r.Post("/mfa/push/verify", h.MFAPushVerify)
+
+		// ADR 0061 — passkey login (public; no prior session needed).
 		// Same rate-limit class as password login since they serve the
 		// same auth-attempt role.
 		r.With(vdmsmw.NewIPRateLimiter(20, 10, time.Minute)).Post("/webauthn/login/begin", h.WebAuthnLoginStart)
@@ -80,6 +90,13 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 				r.Post("/setup", h.MFASetup)
 				r.Post("/confirm", h.MFAConfirm)
 				r.Post("/disable", h.MFADisable)
+
+				// ADR 0063 — authenticated enrollment + management.
+				r.Get("/methods", h.MFAListMine)
+				r.Post("/email/enroll", h.MFAEnrollEmail)
+				r.Post("/sms/enroll", h.MFAEnrollSMS)
+				r.Post("/push/devices", h.MFARegisterPushDevice)
+				r.Delete("/methods/{method}", h.MFADisableMethod)
 			})
 
 			r.Route("/api-keys", func(r chi.Router) {
@@ -89,7 +106,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 				r.Delete("/{key_id}", h.RevokeAPIKey)
 			})
 
-			// ADR 0070 — passkey registration + management (authed).
+			// ADR 0061 — passkey registration + management (authed).
 			r.Route("/webauthn", func(r chi.Router) {
 				r.Post("/registration/begin", h.WebAuthnRegistrationStart)
 				r.Post("/registration/finish", h.WebAuthnRegistrationFinish)
@@ -129,6 +146,25 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Use(vdmsmw.CSRFDoubleSubmit())
 			r.Use(h.RequireRole("admin", "owner"))
 			ssoAdmin.Mount(r)
+		})
+	}
+
+	// ---- Admin MFA policy (ADR 0063) ------------------------------------
+	r.Route("/api/v1/admin/mfa", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Use(h.RequireRole("admin", "owner"))
+		r.Get("/policy", h.MFAGetPolicy)
+		r.Put("/policy", h.MFAPutPolicy)
+	})
+
+	// ---- Admin LDAP / AD direct bind (ADR 0062) -------------------------
+	if ldapAdmin != nil {
+		r.Route("/api/v1/admin/ldap", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Use(vdmsmw.CSRFDoubleSubmit())
+			r.Use(h.RequireRole("admin", "owner"))
+			ldapAdmin.Mount(r)
 		})
 	}
 

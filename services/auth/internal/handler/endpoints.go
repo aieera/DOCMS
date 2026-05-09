@@ -108,11 +108,15 @@ type loginRequest struct {
 	TenantSlug string `json:"tenant_slug"`
 }
 type loginResponse struct {
-	SessionToken    string              `json:"session_token,omitempty"`
-	ExpiresAt       *time.Time          `json:"expires_at,omitempty"`
-	User            any                 `json:"user,omitempty"`
-	MFARequired     bool                `json:"mfa_required,omitempty"`
-	MFASessionToken string              `json:"mfa_session_token,omitempty"`
+	SessionToken    string                    `json:"session_token,omitempty"`
+	ExpiresAt       *time.Time                `json:"expires_at,omitempty"`
+	User            any                       `json:"user,omitempty"`
+	MFARequired     bool                      `json:"mfa_required,omitempty"`
+	MFASessionToken string                    `json:"mfa_session_token,omitempty"`
+	// ADR 0063 — when MFARequired is true, the picker uses this list
+	// to render the strongest-first method choice. Empty array means
+	// "TOTP only" (legacy single-factor path).
+	MFAMethods      []service.EnrolledMethod  `json:"mfa_methods,omitempty"`
 }
 
 // Login handles POST /api/v1/auth/login.
@@ -135,9 +139,19 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if res.MFARequired {
+		// ADR 0063 — pull the user's enrolled-method list so the
+		// picker on the login page knows what to render. Best-
+		// effort: an error here doesn't fail the login (the legacy
+		// TOTP path still works) but is logged so monitoring picks
+		// up persistent breakage.
+		var methods []service.EnrolledMethod
+		if t, u, err := h.svc.MFASessionPeek(r.Context(), res.MFASessionToken); err == nil {
+			methods, _ = h.svc.ListEnrolledMethods(r.Context(), t, u)
+		}
 		h.writeJSON(w, http.StatusOK, loginResponse{
 			MFARequired:     true,
 			MFASessionToken: res.MFASessionToken,
+			MFAMethods:      methods,
 		})
 		return
 	}

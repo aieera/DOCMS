@@ -85,6 +85,13 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, err error) 
 		body.Code = http.StatusTooManyRequests
 		body.Type = "RATE_LIMITED"
 		body.Message = "account temporarily locked"
+	} else if errors.Is(err, service.ErrMethodUnavailable) {
+		// ADR 0063 — method picker hit a path the deploy / tenant
+		// hasn't enabled, or the user hasn't enrolled. 409 lets the
+		// frontend hide the method without re-rendering an error.
+		body.Code = http.StatusConflict
+		body.Type = "METHOD_UNAVAILABLE"
+		body.Message = err.Error()
 	}
 
 	h.writeJSON(w, body.Code, body)
