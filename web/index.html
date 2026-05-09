@@ -8,6 +8,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <title>VaultDMS</title>
+    <script>
+      // Apply the persisted theme before React mounts. Without this
+      // the page renders one frame in light mode then snaps to dark,
+      // which is jarring. ThemeProvider takes over from here.
+      (function () {
+        try {
+          var stored = localStorage.getItem('vaultdms-theme');
+          var mode = stored || 'system';
+          var resolved = mode === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : mode;
+          if (resolved === 'dark') document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) { /* localStorage unavailable; stay default */ }
+      })();
+    </script>
   </head>
   <body class="antialiased">
     <div id="root"></div>

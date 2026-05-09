@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
-import { AppLayout } from '@/components/layout/AppLayout'
+import { AppLayout } from '@/components/layout/app-layout'
 import { useAuthStore } from '@/store/authStore'
 import { getCurrentUser } from '@/api/auth'
 
