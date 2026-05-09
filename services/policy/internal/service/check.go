@@ -104,7 +104,7 @@ func (s *Service) BatchCheck(ctx context.Context, inputs []CheckInput) ([]model.
 var (
 	validSubjectTypes  = map[string]struct{}{"user": {}, "group": {}}
 	validResourceTypes = map[string]struct{}{"document": {}, "folder": {}, "workspace": {}}
-	// view_unredacted (ADR 0062) — gated download of the source
+	// view_unredacted (ADR 0079) — gated download of the source
 	// version after a candidate-review redaction has produced a
 	// redacted current version. Hierarchy rank 15, between view (10)
 	// and share (20); see services/policy/internal/opa/policy.rego.

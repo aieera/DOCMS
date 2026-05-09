@@ -1,4 +1,4 @@
-// ADR 0068 — Saved-search alert workflow.
+// ADR 0085 — Saved-search alert workflow.
 //
 // One Temporal schedule per saved-search alert. The schedule fires
 // the SavedSearchAlertWorkflow on the cadence the user configured

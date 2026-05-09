@@ -1,4 +1,4 @@
-// ADR 0061 — NER entities tab journey. Mocks every backend call so
+// ADR 0078 — NER entities tab journey. Mocks every backend call so
 // the spec runs without a real intelligence stack.
 //
 // Pattern matches 01-login.spec.ts: page.route() everything, assert

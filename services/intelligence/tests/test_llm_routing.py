@@ -1,4 +1,4 @@
-"""ADR 0064 — provider routing, circuit breaker, fallback, air-gapped.
+"""ADR 0081 — provider routing, circuit breaker, fallback, air-gapped.
 
 Tests that don't require live LLM calls — every litellm interaction is
 stubbed via mock.patch. Focus is on the routing policy itself: which

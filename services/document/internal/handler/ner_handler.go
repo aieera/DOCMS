@@ -1,4 +1,4 @@
-// NER REST endpoints (ADR 0061).
+// NER REST endpoints (ADR 0078).
 //
 //   GET  /api/v1/documents/{id}/entities
 //   POST /api/v1/documents/{id}/entities/correct

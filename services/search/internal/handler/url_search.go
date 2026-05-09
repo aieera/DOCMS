@@ -1,4 +1,4 @@
-// ADR 0065 — GET /api/v1/search URL syntax.
+// ADR 0082 — GET /api/v1/search URL syntax.
 //
 // Spec form (§7.2):
 //   /search?q=X&facet=tag,author&filter=tag:contract&filter=author:alice

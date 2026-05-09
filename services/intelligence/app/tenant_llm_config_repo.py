@@ -1,4 +1,4 @@
-"""ADR 0064 — persistence for the per-tenant LLM routing config.
+"""ADR 0081 — persistence for the per-tenant LLM routing config.
 
 The intelligence service was previously loading per-tenant LLM
 config out of a Redis hash with no admin write path. This module

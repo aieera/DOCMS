@@ -85,8 +85,9 @@ export default defineConfig({
             '/api/v1/saved-searches':           withSig('http://localhost:8184'),
             // Search-service-owned admin endpoints. Without these,
             // /api/v1/admin/* falls through to auth (8180) and 404s.
-            '/api/v1/admin/permission-propagation-stats': withSig('http://localhost:8184'), // ADR 0066
+            '/api/v1/admin/permission-propagation-stats': withSig('http://localhost:8184'), // ADR 0083
             '/api/v1/platform/search':          withSig('http://localhost:8184'),           // ADR 0069 federated
+            '/api/v1/admin/ldap':               withSig('http://localhost:8180'),            // ADR 0062 LDAP/AD admin
             '/api/v1/audit':                    withSig('http://localhost:8185'),
             '/api/v1/workflows':                withSig('http://localhost:8186'),
             '/api/v1/notifications':            withSig('http://localhost:8187'),

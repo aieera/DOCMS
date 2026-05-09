@@ -1,4 +1,4 @@
--- ADR 0062 — redaction review queue + applied-job ledger.
+-- ADR 0079 — redaction review queue + applied-job ledger.
 --
 -- Two new tables, deliberately disjoint from the existing
 -- document_redactions table (migration 8) which captures a different

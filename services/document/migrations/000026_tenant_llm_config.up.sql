@@ -1,4 +1,4 @@
--- ADR 0064 — per-tenant LiteLLM routing config.
+-- ADR 0081 — per-tenant LiteLLM routing config.
 --
 -- Each tenant picks its own provider, model, fallback, and rate
 -- limit. The intelligence service's llm_gateway loads this row on

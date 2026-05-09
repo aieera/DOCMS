@@ -1,4 +1,4 @@
-// ADR 0070 — step-up auth middleware.
+// ADR 0061 — step-up auth middleware.
 //
 // Wraps a handler with a check for an active step_up_grants row
 // matching (tenant, user, scope-or-wildcard, expires_at > now).

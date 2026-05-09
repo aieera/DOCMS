@@ -2,7 +2,7 @@
 (governing_law, effective_date, party_name, account_number, tax_id,
 patient_id, address, national_id).
 
-Per ADR 0061 this is opt-in per tenant via the ner_config table.
+Per ADR 0078 this is opt-in per tenant via the ner_config table.
 Default model is claude-haiku-4-5 (Anthropic; supports BAA which is
 required for the medical use case). litellm gives us the same call
 shape across providers, so a tenant can switch to ollama/llama3.1:8b

@@ -1,4 +1,4 @@
-"""Regex + dedupe + LLM-validation tests for the NER pipeline (ADR 0061).
+"""Regex + dedupe + LLM-validation tests for the NER pipeline (ADR 0078).
 SpaCy + the actual LLM call are stubbed; we test the deterministic logic."""
 from __future__ import annotations
 

@@ -6,7 +6,7 @@ import { Search, FileText, FolderOpen, Settings, Tag, User, Clock } from 'lucide
 
 import { suggest } from '@/api/search'
 
-// ADR 0067 — global Cmd+K palette wired to GET /search/suggest.
+// ADR 0084 — global Cmd+K palette wired to GET /search/suggest.
 //
 // Three live-fetched groups (documents / tags / people) plus the
 // user's recent searches. cmdk handles keyboard nav (arrows + enter)

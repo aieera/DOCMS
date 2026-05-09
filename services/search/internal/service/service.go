@@ -95,7 +95,7 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 
 	query := opensearch.BuildSearchQuery(req)
 
-	// ADR 0065 — facet pipeline. Two short-circuits:
+	// ADR 0082 — facet pipeline. Two short-circuits:
 	// 1. Cache hit: build query without aggs, take buckets from Redis.
 	// 2. Skip-flag hit (this shape was over the threshold within
 	//    the last 60s): same — drop aggs, return facets={}.
@@ -206,14 +206,14 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 	return result, nil
 }
 
-// ---- ADR 0067 grouped suggester -------------------------------------------
+// ---- ADR 0084 grouped suggester -------------------------------------------
 
 // Suggest returns the §7.5 grouped autocomplete shape — separate
 // Documents/Tags/People rows plus the user's recent searches. One
 // OpenSearch round-trip + one Redis read; sub-50ms p99 budget.
 //
 // Permission scope is the same bool.filter the main /search uses
-// (tenant_id + ADR 0066 split-readable_by), so suggestions never
+// (tenant_id + ADR 0083 split-readable_by), so suggestions never
 // surface values from docs the user can't read.
 func (s *Service) Suggest(ctx context.Context, req *model.SearchRequest, q string, limit int) (*model.SuggestResult, error) {
 	if limit <= 0 {
@@ -351,7 +351,7 @@ func (s *Service) CreateSavedSearch(ctx context.Context, ss *model.SavedSearch) 
 }
 
 // ListSavedSearches returns the user's saved searches with embedded
-// subscriber lists. ADR 0068: GET response always carries
+// subscriber lists. ADR 0085: GET response always carries
 // `subscribers[]` + `subscriber_count` so the UI can render the
 // roster without a per-row fetch.
 func (s *Service) ListSavedSearches(ctx context.Context, tenantID, userID string) ([]*model.SavedSearch, error) {
@@ -384,7 +384,7 @@ func (s *Service) DeleteSavedSearch(ctx context.Context, tenantID, userID, id st
 	return s.repo.DeleteSavedSearch(ctx, tenantID, userID, id)
 }
 
-// UpdateSavedSearch patches mutable fields. ADR 0068 §"PATCH".
+// UpdateSavedSearch patches mutable fields. ADR 0085 §"PATCH".
 // Returns ErrNotFound when the row doesn't belong to the user.
 func (s *Service) UpdateSavedSearch(
 	ctx context.Context,

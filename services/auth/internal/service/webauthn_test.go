@@ -1,4 +1,4 @@
-// ADR 0070 — HMAC session wrapper invariants.
+// ADR 0061 — HMAC session wrapper invariants.
 //
 // The wrapper is the load-bearing piece of the begin/finish dance —
 // no server-side session store means the HMAC IS the trust gate.

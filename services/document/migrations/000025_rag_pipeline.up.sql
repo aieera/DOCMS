@@ -1,4 +1,4 @@
--- ADR 0063 — RAG pipeline schema additions.
+-- ADR 0080 — RAG pipeline schema additions.
 --
 -- Builds on the existing document_chunks table that ADR 0055 (Doc Q&A)
 -- introduced. The §6.8 spec asks for richer chunk metadata so the
@@ -100,7 +100,7 @@ CREATE TABLE workspace_ai_settings (
     rag_enabled            BOOLEAN     NOT NULL DEFAULT TRUE,
     -- Embedding model used for new chunks. Existing chunks retain
     -- whatever embedding_model they were created with — switching
-    -- requires a re-embed pass per ADR 0063 §"Switching models".
+    -- requires a re-embed pass per ADR 0080 §"Switching models".
     embedding_model        TEXT        NOT NULL DEFAULT 'bge-large-en-v1.5',
     -- LLM that answers the question. litellm-style provider/model id.
     answer_model           TEXT        NOT NULL DEFAULT 'anthropic/claude-haiku-4-5',

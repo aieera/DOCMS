@@ -26,7 +26,7 @@ const LLM_TYPE_OPTIONS = [
 ] as const
 
 // litellm provider strings — the user can type a custom one but these
-// are the ones we recommend in ADR 0061.
+// are the ones we recommend in ADR 0078.
 const MODEL_PRESETS = [
   { value: 'claude-haiku-4-5',     label: 'Claude Haiku 4.5 (recommended; BAA-eligible)' },
   { value: 'claude-sonnet-4-6',    label: 'Claude Sonnet 4.6 (slower, higher quality)' },
@@ -83,7 +83,7 @@ function NERConfigPage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader
         title="NER configuration"
-        description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach (ADR 0061). Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
+        description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach (ADR 0078). Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
         actions={
           <Button
             size="sm"

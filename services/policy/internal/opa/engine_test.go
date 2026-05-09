@@ -104,7 +104,7 @@ func TestCapabilityHierarchy(t *testing.T) {
 	require.False(t, eval(t, e, base("edit"), view, nil, nil).Allowed)
 }
 
-// ---- view_unredacted (ADR 0062) -------------------------------------------
+// ---- view_unredacted (ADR 0079) -------------------------------------------
 
 // view_unredacted sits in the hierarchy between view (10) and share (20)
 // at rank 15. The policy invariant is asymmetric on purpose:
@@ -149,7 +149,7 @@ func TestViewUnredacted_AdminRolePasses(t *testing.T) {
 }
 
 func TestViewUnredacted_ViewGrantDoesNotCascade(t *testing.T) {
-	// THIS is the load-bearing assertion of ADR 0062 — a user with
+	// THIS is the load-bearing assertion of ADR 0079 — a user with
 	// `view` on the document must NOT be able to see the source of a
 	// redacted version. If this ever flips to true the privacy
 	// guarantee of redact-then-share is broken.

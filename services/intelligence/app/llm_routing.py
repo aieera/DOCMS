@@ -1,4 +1,4 @@
-"""ADR 0064 — provider abstraction, circuit breaker, fallback,
+"""ADR 0081 — provider abstraction, circuit breaker, fallback,
 air-gapped enforcement for the LiteLLM gateway.
 
 Sits between llm_gateway.completion() and litellm.completion(). The
@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 # Per-(tenant, provider) breaker — closed → open after this many
 # consecutive failures, then half-open after _BREAKER_OPEN_SECONDS.
-# 5 + 60s mirrors the runbook + ADR 0064.
+# 5 + 60s mirrors the runbook + ADR 0081.
 _BREAKER_THRESHOLD = 5
 _BREAKER_OPEN_SECONDS = 60.0
 

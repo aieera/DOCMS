@@ -95,7 +95,7 @@ See `make help` for the full list.
 |---|---|---|---|---|
 | OCR | `dms.version.uploaded.v1` | `app.tasks.ocr` | `ocr_results` | `dms.version.ocr_completed.v1` |
 | Classify | `dms.version.ocr_completed.v1` | `app.tasks.classify` | `document_classifications` | `dms.classify.completed.v1` |
-| **NER** (ADR 0061) | `dms.version.ocr_completed.v1` | `app.tasks.ner` (regex + SpaCy + opt-in LLM via litellm) | `document_entities` (with `source` provenance), `entity_corrections` | `dms.ner.completed.v1`, `dms.entity.corrected.v1` |
+| **NER** (ADR 0078) | `dms.version.ocr_completed.v1` | `app.tasks.ner` (regex + SpaCy + opt-in LLM via litellm) | `document_entities` (with `source` provenance), `entity_corrections` | `dms.ner.completed.v1`, `dms.entity.corrected.v1` |
 | Extract | `dms.version.ocr_completed.v1` | `app.tasks.extract` | `extraction_results` | `dms.extract.completed.v1` |
 | Embed | `dms.version.ocr_completed.v1` | `app.tasks.embed` | Qdrant | `dms.embed.completed.v1` |
 | Duplicate (sha256/minhash/simhash) | `dms.version.ocr_completed.v1` | `app.tasks.duplicate` | `duplicate_candidates`, `document_fingerprints` | — |
@@ -181,7 +181,7 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 - [x] **Intel Feature 07 — Anomaly detection** (ADR 0058)
 - [x] **Intel Feature 08 — Bulk reclassify + corrections ledger** (ADR 0059)
 - [x] **Intel Feature 09 — Active learning loop** (ADR 0060) — per-tenant DistilBERT fine-tuning from manual corrections, MinIO-backed artifacts, atomic promote/retire
-- [x] **Intel Feature 10 — NER ensemble** (ADR 0061) — regex + SpaCy + opt-in LLM via litellm; expanded taxonomy (PII / Financial / Legal / Medical); per-row Entities tab with relabel/confirm/delete that feeds active learning
+- [x] **Intel Feature 10 — NER ensemble** (ADR 0078) — regex + SpaCy + opt-in LLM via litellm; expanded taxonomy (PII / Financial / Legal / Medical); per-row Entities tab with relabel/confirm/delete that feeds active learning
 
 ## License
 

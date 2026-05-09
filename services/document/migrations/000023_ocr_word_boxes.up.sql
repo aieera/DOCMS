@@ -1,4 +1,4 @@
--- ADR 0061 follow-up — per-word bounding boxes for entity overlay on
+-- ADR 0078 follow-up — per-word bounding boxes for entity overlay on
 -- the PDF viewer. Stored as a JSONB array of word records:
 --
 --   [{"start": 1234, "end": 1238,

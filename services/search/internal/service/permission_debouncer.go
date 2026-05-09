@@ -1,4 +1,4 @@
-// ADR 0066 §"Permission-change propagation" — debounced batch
+// ADR 0083 §"Permission-change propagation" — debounced batch
 // reindex on permission events.
 //
 // Without debouncing, a bulk grant rollout (e.g. an admin adding a
@@ -94,7 +94,7 @@ type LagObserver interface {
 // promLagObserver is the production observer — wires
 // search_permission_propagation_lag_seconds (histogram) and
 // search_permission_propagation_total{result} (counter). Buckets
-// match ADR 0066 §"SLI": [0.1, 0.5, 1, 2, 5, 10, 30] — the 5s mark
+// match ADR 0083 §"SLI": [0.1, 0.5, 1, 2, 5, 10, 30] — the 5s mark
 // is the alert threshold the runbook will eventually wire as
 // `histogram_quantile(0.95, …) > 5`.
 type promLagObserver struct {
@@ -106,7 +106,7 @@ var (
 	permissionPropagationLag = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "search_permission_propagation_lag_seconds",
-			Help:    "Time from dms.permission.changed.v1 emission to OpenSearch index update commit. ADR 0066.",
+			Help:    "Time from dms.permission.changed.v1 emission to OpenSearch index update commit. ADR 0083.",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
 		},
 		[]string{"result"},

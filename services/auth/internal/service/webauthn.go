@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn / Passkey service skeleton.
+// ADR 0061 — WebAuthn / Passkey service skeleton.
 //
 // Scope of THIS commit: data layer + config + HMAC session-token
 // helpers + stub service methods that 501. The actual
@@ -30,10 +30,10 @@ import (
 )
 
 // SessionTokenTTL bounds the registration/login begin → finish
-// round-trip. ADR 0070 §"Flows" — 10 minutes is conservative.
+// round-trip. ADR 0061 §"Flows" — 10 minutes is conservative.
 const SessionTokenTTL = 10 * time.Minute
 
-// StepUpTTL is the fresh-presence window. ADR 0070 §"Step-up auth".
+// StepUpTTL is the fresh-presence window. ADR 0061 §"Step-up auth".
 const StepUpTTL = 5 * time.Minute
 
 // ErrInvalidSession — the HMAC token didn't verify or has expired
@@ -57,7 +57,7 @@ var ErrNoPasskeysRegistered = errors.New("webauthn: no passkeys registered for t
 // can build against it, then the production wiring lands as a
 // targeted follow-up that doesn't conflate 'add the API' with
 // 'integrate the lib'.
-var ErrWebAuthnNotImplemented = errors.New("webauthn: handler not yet wired (ADR 0070 follow-up)")
+var ErrWebAuthnNotImplemented = errors.New("webauthn: handler not yet wired (ADR 0061 follow-up)")
 
 // WebAuthnConfig — RP metadata from env. Nil when the deploy
 // hasn't set the required vars; service falls back to ALL handlers

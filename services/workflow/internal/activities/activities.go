@@ -31,7 +31,7 @@ type Activities struct {
 	// Empty map or missing key → activity soft-no-ops + logs.
 	ServiceURLs map[string]string
 	// JS is the JetStream context for emitting CloudEvents from
-	// activities. ADR 0068 saved-search alert workflow uses this
+	// activities. ADR 0085 saved-search alert workflow uses this
 	// to publish dms.notify.saved_search_match.v1. nil is accepted;
 	// EmitSavedSearchMatch returns a typed error when JS isn't wired.
 	JS nats.JetStreamContext

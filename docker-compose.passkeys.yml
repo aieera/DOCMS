@@ -1,4 +1,4 @@
-# ADR 0070 — dev override that enables WebAuthn on the auth service.
+# ADR 0061 — dev override that enables WebAuthn on the auth service.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.passkeys.yml up -d auth

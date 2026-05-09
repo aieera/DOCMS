@@ -26,12 +26,27 @@ func BuildFederatedSearchQuery(req *model.SearchRequest) map[string]any {
 
 	musts := []any{}
 	if req.Query != "" {
+		// Mirror the per-tenant field list so federated and per-tenant
+		// callers see consistent recall. See query.go for rationale.
 		musts = append(musts, map[string]any{
 			"multi_match": map[string]any{
-				"query":     req.Query,
-				"fields":    []string{"title^3", "title.keyword^5", "description^1.5", "content^1", "tags^2"},
+				"query": req.Query,
+				"fields": []string{
+					"title^3",
+					"title.keyword^5",
+					"title.autocomplete^2",
+					"tags^2",
+					"description^1.5",
+					"content^1",
+					"custom_metadata.*^1",
+					"extracted_entities.*",
+					"created_by_name",
+					"document_class",
+					"folder_path",
+				},
 				"type":      "best_fields",
 				"fuzziness": "AUTO",
+				"lenient":   true,
 			},
 		})
 	}

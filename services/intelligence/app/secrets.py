@@ -1,6 +1,6 @@
 """Tenant-secret envelope encryption with two backends.
 
-ADR 0064 — for the LLM API key in tenant_llm_config and the legacy
+ADR 0081 — for the LLM API key in tenant_llm_config and the legacy
 NER api key in ner_config, we store ciphertext in the DB column
 and decrypt only at LLM-call time. Two backends, picked at runtime:
 

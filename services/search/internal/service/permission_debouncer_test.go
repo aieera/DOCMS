@@ -1,4 +1,4 @@
-// ADR 0066 — debouncer + propagation lag SLI tests.
+// ADR 0083 — debouncer + propagation lag SLI tests.
 //
 // We don't run a real OpenSearch here; the debouncer's
 // flushOne() calls into Service methods, so we stand in a thin

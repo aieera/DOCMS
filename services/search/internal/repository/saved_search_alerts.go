@@ -1,4 +1,4 @@
-// ADR 0068 — saved-search alert + subscriber operations.
+// ADR 0085 — saved-search alert + subscriber operations.
 //
 // Lives next to the existing repository.go; new methods here keep
 // that file's existing CRUD untouched. The methods all run inside

@@ -17,7 +17,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 // falls back through gracefully.
 type SuryaBox = { x1: number; y1: number; x2: number; y2: number; text: string; confidence: number }
 
-// Per-page word-box payload the OCR worker writes (ADR 0061
+// Per-page word-box payload the OCR worker writes (ADR 0078
 // follow-up). Empty array when the engine doesn't produce them.
 type WordBox = { start: number; end: number; x0: number; y0: number; x1: number; y1: number }
 type WordBoxPayload = { page_width: number; page_height: number; words: WordBox[] }

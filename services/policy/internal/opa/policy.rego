@@ -107,7 +107,7 @@ matches_principal(p, inp) if {
 }
 
 # Capability hierarchy: admin > delete > edit > share > view_unredacted > view.
-# `view_unredacted` (ADR 0062) sits intentionally between view and share.
+# `view_unredacted` (ADR 0079) sits intentionally between view and share.
 # Granting `view` does NOT cascade to seeing the source of a redacted
 # document — that's the whole point. Granting any of {share, edit,
 # delete, admin} does cascade (your administrators see everything).

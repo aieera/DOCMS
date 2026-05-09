@@ -1,4 +1,4 @@
-// ADR 0065 — Redis-backed facet cache + skip-when-large gate for the
+// ADR 0082 — Redis-backed facet cache + skip-when-large gate for the
 // faceted-search path. 60s TTL on a per-(tenant, query, filters,
 // facets, principals) hash; tenants on a large workspace can run a
 // dashboard refresh loop without hammering OpenSearch with the same
@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	// 60s per ADR 0065. Bucket counts on a hot dashboard are
+	// 60s per ADR 0082. Bucket counts on a hot dashboard are
 	// inherently slightly stale; this is the right trade.
 	facetCacheTTL = 60 * time.Second
 
@@ -35,7 +35,7 @@ const (
 )
 
 // facetCacheKey is the stable hash that keys both the cache hit and
-// the skip-flag. ADR 0065: principals are part of the key so two
+// the skip-flag. ADR 0082: principals are part of the key so two
 // users in the same tenant with different group memberships don't
 // share buckets — a fresh user joining a group must see facet
 // counts that include their newly-readable docs.

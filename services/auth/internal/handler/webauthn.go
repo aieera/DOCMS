@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn / Passkey HTTP handlers.
+// ADR 0061 — WebAuthn / Passkey HTTP handlers.
 //
 // Six routes:
 //   POST   /api/v1/auth/webauthn/registration/begin   (authenticated)

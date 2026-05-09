@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -19,7 +19,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatRelativeTime } from '@/lib/formatters'
 
-// ADR 0065 — facet sidebar state lives entirely in the URL so any
+// ADR 0082 — facet sidebar state lives entirely in the URL so any
 // search-with-filters is bookmarkable. The route's validateSearch
 // types the params so a typo on either side is a build error.
 
@@ -83,9 +83,10 @@ function SearchPage() {
   )
   const closedGroups = new Set(asArray(params.closed))
 
-  // Build the SearchRequest body from the URL params. Always request
-  // the visible-facet aggregations; the backend's 60s cache handles
-  // repeat-load cost.
+  // Build the SearchRequest body from the URL params. Empty filter
+  // arrays are omitted so the request payload only carries dimensions
+  // the user actually selected — keeps the wire body small and
+  // backend logs readable.
   const searchBody = useMemo(() => {
     const tags = asArray(params.tag)
     const authors = asArray(params.author)
@@ -93,23 +94,15 @@ function SearchPage() {
     const regions = asArray(params.region_pin)
     const lifecycles = asArray(params.lifecycle_state)
     const mimeTypes = asArray(params.mime_type)
-    return {
-      query,
-      facets: facetsToShow,
-      filters: {
-        tags,
-        document_class: classifications,
-        lifecycle_state: lifecycles,
-        mime_type: mimeTypes,
-        // CreatedByName + RegionPin landed in the search service in
-        // commit d05b244; backend ignores unknown filter keys so we
-        // can pass them whether the deploy has the new code or not.
-        created_by_name: authors,
-        region_pin: regions,
-        workspace_id: params.workspace_id,
-      },
-      highlight: true,
-    }
+    const filters: Record<string, unknown> = {}
+    if (tags.length) filters.tags = tags
+    if (classifications.length) filters.document_class = classifications
+    if (lifecycles.length) filters.lifecycle_state = lifecycles
+    if (mimeTypes.length) filters.mime_type = mimeTypes
+    if (authors.length) filters.created_by_name = authors
+    if (regions.length) filters.region_pin = regions
+    if (params.workspace_id) filters.workspace_id = params.workspace_id
+    return { query, facets: facetsToShow, filters, highlight: true }
   }, [
     query, facetsToShow,
     params.tag, params.author, params.classification, params.region_pin,
@@ -343,16 +336,34 @@ function SearchPage() {
               {data.total_count} results in {data.latency_ms}ms
             </p>
             {(data.results ?? []).map((hit) => (
-              <div
+              // Each hit links to the workspace's document viewer.
+              // workspace_id + document_id are guaranteed populated
+              // by the indexer; clicking opens the same PDFLayoutViewer
+              // route that the workspace tree uses.
+              <Link
                 key={hit.document_id}
-                className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
+                to="/workspaces/$workspaceId/documents/$documentId"
+                params={{ workspaceId: hit.workspace_id, documentId: hit.document_id }}
+                className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-tertiary)]"
+                data-testid={`search-hit-${hit.document_id}`}
               >
                 <FileIcon mime={hit.mime_type} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <p
-                    className="font-medium"
-                    dangerouslySetInnerHTML={{ __html: hit.highlights?.title?.[0] || hit.title }}
-                  />
+                  {hit.highlights?.title?.[0] ? (
+                    // Highlight fragment is server-emitted with <mark>
+                    // wrappers around the matched run. Safe to inject
+                    // because the backend escapes everything else
+                    // before wrapping (see opensearch highlight config).
+                    <p
+                      className="font-medium"
+                      dangerouslySetInnerHTML={{ __html: hit.highlights.title[0] }}
+                    />
+                  ) : (
+                    // No highlight → raw title from the doc. React's
+                    // default text-node escaping is what we want here;
+                    // a filename like `<script>` must render literally.
+                    <p className="font-medium">{hit.title}</p>
+                  )}
                   {hit.highlights?.content?.[0] && (
                     <p
                       className="mt-1 text-sm text-[var(--color-text-secondary)]"
@@ -365,7 +376,7 @@ function SearchPage() {
                     <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(hit.created_at)}</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
@@ -385,7 +396,7 @@ function arrayOf(v: unknown): string[] | undefined {
 
 export const Route = createFileRoute('/_authenticated/search')({
   component: SearchPage,
-  // ADR 0065 — typed URL state. Strings come through as `string`, but
+  // ADR 0082 — typed URL state. Strings come through as `string`, but
   // repeated params (?tag=a&tag=b) arrive as `string[]`. Both shapes
   // accepted; asArray() in the component normalizes to []string.
   validateSearch: (raw: Record<string, unknown>): SearchParams => {

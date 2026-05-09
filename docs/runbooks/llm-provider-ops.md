@@ -1,6 +1,6 @@
 # LLM provider operations
 
-Runbook for the per-tenant LiteLLM routing introduced in ADR 0064.
+Runbook for the per-tenant LiteLLM routing introduced in ADR 0081.
 
 ## Tables
 

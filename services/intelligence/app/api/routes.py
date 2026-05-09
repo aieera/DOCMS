@@ -631,7 +631,7 @@ def redact_apply_endpoint(
     return {"task_id": result.id, "status": "queued"}
 
 
-# ---- ADR 0063 — workspace-scoped /rag/query --------------------------
+# ---- ADR 0080 — workspace-scoped /rag/query --------------------------
 
 class RAGQueryRequest(BaseModel):
     question: str
@@ -651,7 +651,7 @@ async def rag_query_endpoint(
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
 ):
-    """ADR 0063 — workspace-scoped RAG. Different from /qa in that
+    """ADR 0080 — workspace-scoped RAG. Different from /qa in that
     retrieval spans many docs (the user's workspace[s] rather than a
     single doc), there's no conversation history, and each call is
     audited + rate-limited via rag_query_log.
@@ -743,7 +743,7 @@ async def rag_feedback_endpoint(
     return {"status": "recorded"}
 
 
-# ---- ADR 0064 — POST /llm/completions + admin tenant config ----------
+# ---- ADR 0081 — POST /llm/completions + admin tenant config ----------
 
 class LLMCompletionsRequest(BaseModel):
     messages: list[dict]

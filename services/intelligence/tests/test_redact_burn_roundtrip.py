@@ -2,7 +2,7 @@
 the apply-redaction burn function over it, OCR the result, assert
 the original PII string no longer appears.
 
-This is the §6.7 / ADR 0062 acceptance test. It exercises the real
+This is the §6.7 / ADR 0079 acceptance test. It exercises the real
 PyMuPDF apply_redactions() path (no stubs) so a regression where the
 worker emits a visual overlay instead of physically removing the
 underlying text would fail this assertion.

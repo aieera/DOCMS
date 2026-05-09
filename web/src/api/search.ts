@@ -13,7 +13,7 @@ export async function autocomplete(q: string, limit = 10) {
   return data.suggestions
 }
 
-// ADR 0067 — grouped autocomplete. Used by the global CommandPalette.
+// ADR 0084 — grouped autocomplete. Used by the global CommandPalette.
 // Each group is independently capped at the request's `limit`; the
 // backend dedupes documents by title before returning.
 export interface SuggestResult {

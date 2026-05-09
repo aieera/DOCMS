@@ -1,4 +1,4 @@
-"""ADR 0064 — Vault Transit backend for tenant-secret envelope encryption.
+"""ADR 0081 — Vault Transit backend for tenant-secret envelope encryption.
 
 The encrypt/decrypt code paths must:
   - Route by ciphertext prefix (`vault:` → Vault, else → local AES-GCM)

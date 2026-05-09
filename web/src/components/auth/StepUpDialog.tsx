@@ -1,4 +1,4 @@
-// ADR 0070 — Step-up modal.
+// ADR 0061 — Step-up modal.
 //
 // Triggered when an axios response carries
 // `X-Step-Up-Required: webauthn`. Prompts the user to re-prove

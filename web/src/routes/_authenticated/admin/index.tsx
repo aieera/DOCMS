@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import {
   Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, Globe,
-  Key, KeyRound, Languages, Link2, MapPinned, Plug, Scale, ScrollText, Settings,
+  Key, KeyRound, Languages, Link2, MapPinned, Network, Plug, Scale, ScrollText, Settings,
   Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
   UserCog, Users, Webhook, Workflow,
 } from 'lucide-react'
@@ -19,6 +19,7 @@ const tenantSections: Section[] = [
   { to: '/admin/groups', icon: Shield, label: 'Groups', desc: 'Group permissions' },
   { to: '/admin/permissions', icon: ShieldCheck, label: 'Permission Matrix', desc: 'Role × resource grid (read-only)' },
   { to: '/admin/sso', icon: Key, label: 'SSO', desc: 'SAML/OIDC config' },
+  { to: '/admin/tenant/identity/ldap', icon: Network, label: 'LDAP / AD', desc: 'Direct-bind + group sync (ADR 0062)' },
   { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
   { to: '/admin/retention', icon: Archive, label: 'Retention', desc: 'Retention policies' },
   { to: '/admin/legal-holds', icon: Scale, label: 'Legal Holds', desc: 'Active holds' },
@@ -34,7 +35,7 @@ const tenantSections: Section[] = [
   { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
   { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
   { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
-  { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI (ADR 0066)' },
+  { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI (ADR 0083)' },
   { to: '/admin/platform/support-search', icon: ShieldAlert, label: 'Support search (cross-tenant)', desc: 'Platform-admin only — every query audited (ADR 0069)' },
 ]
 
@@ -51,9 +52,9 @@ const intelligenceSections: Section[] = [
   { to: '/admin/intelligence/ocr-review', icon: FileSearch, label: 'OCR review queue', desc: 'Pages flagged by OCR-quality scoring (ADR 0057)' },
   { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans (ADR 0058)' },
   { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers (ADR 0060)' },
-  { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key (ADR 0061)' },
+  { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key (ADR 0078)' },
   { to: '/admin/intelligence/usage', icon: Activity, label: 'LLM usage', desc: 'Per-tenant token + cost tally across all models' },
-  { to: '/admin/tenant/ai', icon: KeyRound, label: 'AI provider', desc: 'Per-tenant LiteLLM routing — provider, model, fallback, key, budget (ADR 0064)' },
+  { to: '/admin/tenant/ai', icon: KeyRound, label: 'AI provider', desc: 'Per-tenant LiteLLM routing — provider, model, fallback, key, budget (ADR 0081)' },
 ]
 
 function AdminPage() {

@@ -1,4 +1,4 @@
-// ADR 0070 — flow-level invariants that don't need a real DB.
+// ADR 0061 — flow-level invariants that don't need a real DB.
 //
 // The full begin/finish round-trip needs UserRepository + a live
 // Postgres + a virtual authenticator; that's covered by Playwright

@@ -1,4 +1,4 @@
-// ADR 0068 — saved-search alert schedule helpers.
+// ADR 0085 — saved-search alert schedule helpers.
 //
 // One Temporal Schedule per saved-search alert. Bootstrap on worker
 // startup walks the saved_searches table and ensures every row with
@@ -47,7 +47,7 @@ func CreateSavedSearchAlertSchedule(
 	if strings.TrimSpace(cronExpr) != "" {
 		spec.CronExpressions = []string{cronExpr}
 	} else {
-		// Fall back to interval-minutes mode. ADR 0068 covers both
+		// Fall back to interval-minutes mode. ADR 0085 covers both
 		// shapes; cron wins when set, this is the simpler knob.
 		minutes := intervalMinutes
 		if minutes <= 0 {

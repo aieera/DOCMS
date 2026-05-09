@@ -48,7 +48,7 @@ def completion(
 ) -> dict[str, Any]:
     """Synchronous LLM completion with per-tenant routing.
 
-    ADR 0064: actual routing (provider resolution, air-gapped gate,
+    ADR 0081: actual routing (provider resolution, air-gapped gate,
     budget gate, circuit breaker, fallback model) lives in
     llm_routing.route_completion. We keep the dict-shaped return
     here for backward compatibility with every existing caller (Doc
@@ -105,7 +105,7 @@ def stream_completion(
     fill usage on intermediate chunks); the final yield is the source of
     truth and drives the meter exactly once.
     """
-    # ADR 0064: pull tenant config through the new repo so streaming
+    # ADR 0081: pull tenant config through the new repo so streaming
     # and non-streaming paths see the same provider/model/key/limits.
     # Air-gapped enforcement also runs here — streaming has no
     # fallback, but it must still fail closed against external
@@ -241,7 +241,7 @@ def _emit_billing_usage(
     fallback_used: bool = False,
     user_id: str | None = None,
 ) -> None:
-    """ADR 0064 — fire-and-forget publish of dms.billing.llm.usage.v1
+    """ADR 0081 — fire-and-forget publish of dms.billing.llm.usage.v1
     to the BILLING_EVENTS JetStream stream. The billing service rolls
     these into per-tenant invoice lines (see services/billing).
 

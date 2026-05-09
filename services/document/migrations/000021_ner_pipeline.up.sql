@@ -1,4 +1,4 @@
--- NER pipeline (ADR 0061) — extends document_entities for the expanded
+-- NER pipeline (ADR 0078) — extends document_entities for the expanded
 -- entity taxonomy (PII / Financial / Legal / Medical) and adds two
 -- supporting tables:
 --   * entity_corrections: append-only ledger of label fixes — feeds

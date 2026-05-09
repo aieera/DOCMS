@@ -1,6 +1,6 @@
 """Throughput benchmark for the regex tier of the NER pipeline.
 
-Spec target (ADR 0061 §4): ≥500 docs/sec for the regex+SpaCy hot path
+Spec target (ADR 0078 §4): ≥500 docs/sec for the regex+SpaCy hot path
 on the worker pool. Marked @pytest.mark.benchmark so the regular
 `pytest tests/` command excludes it (these timings are sensitive to
 CI runner cores and would flake the unit suite). Run with
@@ -64,7 +64,7 @@ def test_regex_pass_throughput(n: int) -> None:
         f"\n[bench] regex_pass: {n} docs in {elapsed:.2f}s "
         f"= {rate:,.0f} docs/sec, {total_entities:,} total entities",
     )
-    # Target from ADR 0061. Loose floor (250) so a slow CI runner
+    # Target from ADR 0078. Loose floor (250) so a slow CI runner
     # doesn't false-fail; the assertion exists to catch regressions
     # an order of magnitude off, not to validate the exact ADR number.
     assert rate >= 250, f"regex throughput regressed: {rate:.0f} docs/sec < 250 floor"

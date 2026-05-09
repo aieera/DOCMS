@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import { useAuthStore } from '@/store/authStore'
 
-// ADR 0068 — saved-searches management page.
+// ADR 0085 — saved-searches management page.
 //
 // Lists every saved search the user owns. Per row:
 //   Run             → /search rehydrated with the saved query+filters

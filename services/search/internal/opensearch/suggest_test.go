@@ -1,7 +1,7 @@
-// ADR 0067 — suggest query construction tests.
+// ADR 0084 — suggest query construction tests.
 //
 // Pins the §7.5 invariants in place:
-//   - permission filter (tenant_id + ADR 0066 split-readable_by) is
+//   - permission filter (tenant_id + ADR 0083 split-readable_by) is
 //     present on every body — aggregations honor the user's ACL by
 //     construction
 //   - all three sources (title, tags, created_by_name) appear in the

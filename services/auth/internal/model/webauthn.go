@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn data model.
+// ADR 0061 — WebAuthn data model.
 //
 // Mirrors the shape of webauthn_credentials + step_up_grants in
 // services/document/migrations/000027_webauthn.up.sql.

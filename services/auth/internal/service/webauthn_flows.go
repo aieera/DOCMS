@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn flow handlers.
+// ADR 0061 — WebAuthn flow handlers.
 //
 // The four service methods Begin/FinishPasskeyRegistration and
 // Begin/FinishPasskeyLogin wrap go-webauthn/webauthn against our

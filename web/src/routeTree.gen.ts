@@ -24,6 +24,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedWorkflowsDesignerRouteImport } from './routes/_authenticated/workflows/designer'
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
@@ -46,6 +47,8 @@ import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
+import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
 import { Route as AuthenticatedAdminPlatformSupportSearchRouteImport } from './routes/_authenticated/admin/platform/support-search'
 import { Route as AuthenticatedAdminIntelligenceUsageRouteImport } from './routes/_authenticated/admin/intelligence/usage'
@@ -60,6 +63,8 @@ import { Route as AuthenticatedAdminIntelligenceComplianceRouteImport } from './
 import { Route as AuthenticatedAdminIntelligenceAutoTagRouteImport } from './routes/_authenticated/admin/intelligence/auto-tag'
 import { Route as AuthenticatedAdminIntelligenceAnomaliesRouteImport } from './routes/_authenticated/admin/intelligence/anomalies'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
+import { Route as AuthenticatedSettingsSecurityMfaRecoveryRouteImport } from './routes/_authenticated/settings/security/mfa.recovery'
+import { Route as AuthenticatedAdminTenantIdentityLdapRouteImport } from './routes/_authenticated/admin/tenant/identity/ldap'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -138,6 +143,12 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedWorkflowsDesignerRoute =
+  AuthenticatedWorkflowsDesignerRouteImport.update({
+    id: '/workflows/designer',
+    path: '/workflows/designer',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSettingsSecurityRoute =
   AuthenticatedSettingsSecurityRouteImport.update({
     id: '/settings/security',
@@ -267,6 +278,18 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedWorkflowsInstancesInstanceIdRoute =
+  AuthenticatedWorkflowsInstancesInstanceIdRouteImport.update({
+    id: '/workflows/instances/$instanceId',
+    path: '/workflows/instances/$instanceId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSettingsSecurityMfaRoute =
+  AuthenticatedSettingsSecurityMfaRouteImport.update({
+    id: '/mfa',
+    path: '/mfa',
+    getParentRoute: () => AuthenticatedSettingsSecurityRoute,
+  } as any)
 const AuthenticatedAdminTenantAiRoute =
   AuthenticatedAdminTenantAiRouteImport.update({
     id: '/admin/tenant/ai',
@@ -351,6 +374,18 @@ const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
     path: '/workspaces/$workspaceId/documents/$documentId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedSettingsSecurityMfaRecoveryRoute =
+  AuthenticatedSettingsSecurityMfaRecoveryRouteImport.update({
+    id: '/recovery',
+    path: '/recovery',
+    getParentRoute: () => AuthenticatedSettingsSecurityMfaRoute,
+  } as any)
+const AuthenticatedAdminTenantIdentityLdapRoute =
+  AuthenticatedAdminTenantIdentityLdapRouteImport.update({
+    id: '/admin/tenant/identity/ldap',
+    path: '/admin/tenant/identity/ldap',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -385,7 +420,8 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
-  '/settings/security': typeof AuthenticatedSettingsSecurityRoute
+  '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
+  '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -401,7 +437,11 @@ export interface FileRoutesByFullPath {
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
+  '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
+  '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
+  '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 export interface FileRoutesByTo {
@@ -437,7 +477,8 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
-  '/settings/security': typeof AuthenticatedSettingsSecurityRoute
+  '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
+  '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -453,7 +494,11 @@ export interface FileRoutesByTo {
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
+  '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
+  '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
+  '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 export interface FileRoutesById {
@@ -491,7 +536,8 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
-  '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute
+  '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
+  '/_authenticated/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -507,7 +553,11 @@ export interface FileRoutesById {
   '/_authenticated/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
   '/_authenticated/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
+  '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
+  '/_authenticated/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
+  '/_authenticated/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 export interface FileRouteTypes {
@@ -546,6 +596,7 @@ export interface FileRouteTypes {
     | '/admin/webhooks'
     | '/admin/workflows'
     | '/settings/security'
+    | '/workflows/designer'
     | '/admin/'
     | '/workspaces/'
     | '/admin/intelligence/anomalies'
@@ -561,7 +612,11 @@ export interface FileRouteTypes {
     | '/admin/intelligence/usage'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
+    | '/settings/security/mfa'
+    | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/'
+    | '/admin/tenant/identity/ldap'
+    | '/settings/security/mfa/recovery'
     | '/workspaces/$workspaceId/documents/$documentId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -598,6 +653,7 @@ export interface FileRouteTypes {
     | '/admin/webhooks'
     | '/admin/workflows'
     | '/settings/security'
+    | '/workflows/designer'
     | '/admin'
     | '/workspaces'
     | '/admin/intelligence/anomalies'
@@ -613,7 +669,11 @@ export interface FileRouteTypes {
     | '/admin/intelligence/usage'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
+    | '/settings/security/mfa'
+    | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId'
+    | '/admin/tenant/identity/ldap'
+    | '/settings/security/mfa/recovery'
     | '/workspaces/$workspaceId/documents/$documentId'
   id:
     | '__root__'
@@ -651,6 +711,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
     | '/_authenticated/settings/security'
+    | '/_authenticated/workflows/designer'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/intelligence/anomalies'
@@ -666,7 +727,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/intelligence/usage'
     | '/_authenticated/admin/platform/support-search'
     | '/_authenticated/admin/tenant/ai'
+    | '/_authenticated/settings/security/mfa'
+    | '/_authenticated/workflows/instances/$instanceId'
     | '/_authenticated/workspaces/$workspaceId/'
+    | '/_authenticated/admin/tenant/identity/ldap'
+    | '/_authenticated/settings/security/mfa/recovery'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
   fileRoutesById: FileRoutesById
 }
@@ -784,6 +849,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/workflows/designer': {
+      id: '/_authenticated/workflows/designer'
+      path: '/workflows/designer'
+      fullPath: '/workflows/designer'
+      preLoaderRoute: typeof AuthenticatedWorkflowsDesignerRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings/security': {
@@ -940,6 +1012,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/workflows/instances/$instanceId': {
+      id: '/_authenticated/workflows/instances/$instanceId'
+      path: '/workflows/instances/$instanceId'
+      fullPath: '/workflows/instances/$instanceId'
+      preLoaderRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/security/mfa': {
+      id: '/_authenticated/settings/security/mfa'
+      path: '/mfa'
+      fullPath: '/settings/security/mfa'
+      preLoaderRoute: typeof AuthenticatedSettingsSecurityMfaRouteImport
+      parentRoute: typeof AuthenticatedSettingsSecurityRoute
+    }
     '/_authenticated/admin/tenant/ai': {
       id: '/_authenticated/admin/tenant/ai'
       path: '/admin/tenant/ai'
@@ -1038,8 +1124,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/settings/security/mfa/recovery': {
+      id: '/_authenticated/settings/security/mfa/recovery'
+      path: '/recovery'
+      fullPath: '/settings/security/mfa/recovery'
+      preLoaderRoute: typeof AuthenticatedSettingsSecurityMfaRecoveryRouteImport
+      parentRoute: typeof AuthenticatedSettingsSecurityMfaRoute
+    }
+    '/_authenticated/admin/tenant/identity/ldap': {
+      id: '/_authenticated/admin/tenant/identity/ldap'
+      path: '/admin/tenant/identity/ldap'
+      fullPath: '/admin/tenant/identity/ldap'
+      preLoaderRoute: typeof AuthenticatedAdminTenantIdentityLdapRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
+
+interface AuthenticatedSettingsSecurityMfaRouteChildren {
+  AuthenticatedSettingsSecurityMfaRecoveryRoute: typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
+}
+
+const AuthenticatedSettingsSecurityMfaRouteChildren: AuthenticatedSettingsSecurityMfaRouteChildren =
+  {
+    AuthenticatedSettingsSecurityMfaRecoveryRoute:
+      AuthenticatedSettingsSecurityMfaRecoveryRoute,
+  }
+
+const AuthenticatedSettingsSecurityMfaRouteWithChildren =
+  AuthenticatedSettingsSecurityMfaRoute._addFileChildren(
+    AuthenticatedSettingsSecurityMfaRouteChildren,
+  )
+
+interface AuthenticatedSettingsSecurityRouteChildren {
+  AuthenticatedSettingsSecurityMfaRoute: typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
+}
+
+const AuthenticatedSettingsSecurityRouteChildren: AuthenticatedSettingsSecurityRouteChildren =
+  {
+    AuthenticatedSettingsSecurityMfaRoute:
+      AuthenticatedSettingsSecurityMfaRouteWithChildren,
+  }
+
+const AuthenticatedSettingsSecurityRouteWithChildren =
+  AuthenticatedSettingsSecurityRoute._addFileChildren(
+    AuthenticatedSettingsSecurityRouteChildren,
+  )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAskRoute: typeof AuthenticatedAskRoute
@@ -1069,7 +1199,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
-  AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRoute
+  AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRouteWithChildren
+  AuthenticatedWorkflowsDesignerRoute: typeof AuthenticatedWorkflowsDesignerRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminIntelligenceAnomaliesRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRoute
@@ -1085,7 +1216,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIntelligenceUsageRoute: typeof AuthenticatedAdminIntelligenceUsageRoute
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
+  AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
+  AuthenticatedAdminTenantIdentityLdapRoute: typeof AuthenticatedAdminTenantIdentityLdapRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
 }
 
@@ -1117,7 +1250,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
-  AuthenticatedSettingsSecurityRoute: AuthenticatedSettingsSecurityRoute,
+  AuthenticatedSettingsSecurityRoute:
+    AuthenticatedSettingsSecurityRouteWithChildren,
+  AuthenticatedWorkflowsDesignerRoute: AuthenticatedWorkflowsDesignerRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminIntelligenceAnomaliesRoute:
@@ -1145,8 +1280,12 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminPlatformSupportSearchRoute:
     AuthenticatedAdminPlatformSupportSearchRoute,
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
+  AuthenticatedWorkflowsInstancesInstanceIdRoute:
+    AuthenticatedWorkflowsInstancesInstanceIdRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
+  AuthenticatedAdminTenantIdentityLdapRoute:
+    AuthenticatedAdminTenantIdentityLdapRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:
     AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute,
 }

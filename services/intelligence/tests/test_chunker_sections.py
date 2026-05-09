@@ -1,4 +1,4 @@
-"""Section-aware chunking tests (ADR 0063 §"Chunking").
+"""Section-aware chunking tests (ADR 0080 §"Chunking").
 
 Covers the heading detector + section_path stamping + page resolution
 that the workspace RAG path relies on for precise citations. The

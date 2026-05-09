@@ -3,7 +3,7 @@
 Kept separate from `tasks/embed.py` so we can unit-test chunk boundaries
 without loading tiktoken+embedder+qdrant clients at import time.
 
-Strategy (ADR 0055 floor + ADR 0063 enrichments):
+Strategy (ADR 0055 floor + ADR 0080 enrichments):
 - Sentence-split, pack sentences into a budget of
   `chunk_size_tokens` (default 512).
 - Overlap the tail `chunk_overlap_tokens` (default 64) into the next
@@ -261,7 +261,7 @@ def build_payload(
     workspace_id: Optional[str] = None,
 ) -> dict:
     """Spec-shaped Qdrant payload. tenant_id is mandatory and every
-    search query MUST filter on it to enforce isolation. ADR 0063
+    search query MUST filter on it to enforce isolation. ADR 0080
     additions: section_path + page_number ride along so retrieval
     can return precise citations without a second fetch."""
     if not tenant_id:
@@ -282,7 +282,7 @@ def build_payload(
     if page_number is not None:
         payload["page_number"] = page_number
     if workspace_id:
-        # ADR 0063 — citation links in /ask need workspace_id to deep-
+        # ADR 0080 — citation links in /ask need workspace_id to deep-
         # link to the doc detail page. Optional to keep older callers
         # (and the unit tests in test_chunker_sections.py) working.
         payload["workspace_id"] = workspace_id

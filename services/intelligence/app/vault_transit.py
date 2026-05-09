@@ -1,4 +1,4 @@
-"""ADR 0064 — Vault Transit client for envelope-encrypted tenant secrets.
+"""ADR 0081 — Vault Transit client for envelope-encrypted tenant secrets.
 
 When VAULT_ADDR + VAULT_TOKEN + VAULT_TRANSIT_KEY are configured the
 key NEVER leaves Vault — every encrypt/decrypt round-trips to

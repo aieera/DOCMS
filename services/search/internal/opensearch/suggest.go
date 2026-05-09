@@ -1,11 +1,11 @@
-// ADR 0067 — grouped autocomplete suggester.
+// ADR 0084 — grouped autocomplete suggester.
 //
 // One _search body that produces three groups in a single round-trip:
 //   - documents — match_phrase_prefix on title.autocomplete
 //   - tags      — terms agg on `tags` keyword field, prefix-filtered
 //   - people    — terms agg on `created_by_name`, prefix-filtered
 //
-// Permission scope: the same `tenant_id` + ADR 0066 split-readable_by
+// Permission scope: the same `tenant_id` + ADR 0083 split-readable_by
 // filter that the main /search uses, so suggestions always honor the
 // user's ACL. Tag and people aggregations run inside that scope, so
 // values that only appear on docs the user can't read are absent.

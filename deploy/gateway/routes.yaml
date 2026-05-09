@@ -163,7 +163,7 @@ routes:
     prefix: /api/v1/saved-searches
     methods: []
     auth: required
-  # ADR 0066 — admin permission-propagation SLI dashboard.
+  # ADR 0083 — admin permission-propagation SLI dashboard.
   - service: search
     prefix: /api/v1/admin/permission-propagation-stats
     methods: [GET]

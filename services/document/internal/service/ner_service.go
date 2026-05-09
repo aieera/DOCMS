@@ -1,4 +1,4 @@
-// NER service surface (ADR 0061). Read entities for a doc; record a
+// NER service surface (ADR 0078). Read entities for a doc; record a
 // label correction. The actual extraction runs on the intelligence side.
 package service
 
@@ -18,7 +18,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 )
 
-// allowedEntityTypes is the ADR 0061 taxonomy plus the two legacy
+// allowedEntityTypes is the ADR 0078 taxonomy plus the two legacy
 // regex types that already shipped (credit_card, percent). Validators
 // enforce this on writes (corrections + manual adds) but reads
 // pass through anything in the table — old data may have other types.

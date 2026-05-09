@@ -1,4 +1,4 @@
-// ADR 0066 — split-readable_by query construction.
+// ADR 0083 — split-readable_by query construction.
 //
 // The §7.3 invariant: every search query MUST scope by tenant_id
 // AND match at least one of (readable_by_users, readable_by_groups,

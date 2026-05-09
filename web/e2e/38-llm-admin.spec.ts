@@ -1,4 +1,4 @@
-// ADR 0064 — /admin/tenant/ai journey. Asserts the write-only key
+// ADR 0081 — /admin/tenant/ai journey. Asserts the write-only key
 // invariant, the export-control banner, and the test button flow.
 // All backend calls mocked.
 

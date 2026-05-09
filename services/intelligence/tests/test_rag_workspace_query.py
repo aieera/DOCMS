@@ -1,4 +1,4 @@
-"""ADR 0063 — workspace_query unit tests.
+"""ADR 0080 — workspace_query unit tests.
 
 Focus on the pieces that are pure logic + the cross-tenant denial
 invariant that the permission pre-filter guarantees. Qdrant + LLM are

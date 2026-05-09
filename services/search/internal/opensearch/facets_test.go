@@ -1,4 +1,4 @@
-// ADR 0065 — facet registry + aggregation builders.
+// ADR 0082 — facet registry + aggregation builders.
 //
 // Coverage focuses on:
 //   - Symbolic facet names resolve to the right OpenSearch field

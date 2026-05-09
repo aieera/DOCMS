@@ -1,4 +1,4 @@
-// ADR 0070 — passkey registration + login + step-up journeys.
+// ADR 0061 — passkey registration + login + step-up journeys.
 //
 // Uses Chrome DevTools Protocol's WebAuthn domain to add a virtual
 // authenticator to the page's CDP session. The virtual authenticator

@@ -1,5 +1,5 @@
 """Unit tests for the pymupdf word-box → page-relative offset mapping
-that backs the PDF entity overlay (ADR 0061 follow-up, migration 23).
+that backs the PDF entity overlay (ADR 0078 follow-up, migration 23).
 
 Pymupdf is fast enough that we don't bother stubbing it — the tests
 build a real one-page PDF in memory and call the worker helper end-

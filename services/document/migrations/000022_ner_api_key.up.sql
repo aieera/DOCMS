@@ -1,4 +1,4 @@
--- ADR 0061 follow-up — store the per-tenant LLM API key in ner_config
+-- ADR 0078 follow-up — store the per-tenant LLM API key in ner_config
 -- so admins can manage it from the UI without restarting workers or
 -- editing .env. Encrypted at rest with the tenant KEK (AES-256-GCM,
 -- base64(nonce || ciphertext) — same wire format the auth service uses

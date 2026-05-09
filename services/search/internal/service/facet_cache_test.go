@@ -1,4 +1,4 @@
-// ADR 0065 — facet cache key invariants.
+// ADR 0082 — facet cache key invariants.
 //
 // We don't unit-test the Redis read/write path here (covered by
 // integration tests against a real container); instead we pin the

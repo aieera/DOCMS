@@ -42,7 +42,7 @@ export async function deleteSavedSearch(id: string) {
   await api.delete(`/saved-searches/${id}`)
 }
 
-// ADR 0068 — PATCH any subset of fields. Pointer-style on the
+// ADR 0085 — PATCH any subset of fields. Pointer-style on the
 // backend so an unset field stays unchanged. Used to convert a
 // saved search into an alert (notify: true), edit the query, or
 // change frequency.

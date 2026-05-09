@@ -267,7 +267,7 @@ def generate_embeddings(
             version_id=version_id,
         ))
 
-        # ADR 0063 §"Chunking" — pull per-page text so the chunker can
+        # ADR 0080 §"Chunking" — pull per-page text so the chunker can
         # resolve section_path + page_number for each emitted chunk.
         # Falls through with pages=[] for callers that pass plain
         # text (e.g. the unit tests); chunker handles None/[] safely.

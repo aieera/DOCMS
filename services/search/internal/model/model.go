@@ -127,7 +127,7 @@ type Suggestion struct {
 	Source string `json:"source"` // "index" | "recent"
 }
 
-// SuggestResult is the ADR 0067 grouped autocomplete shape.
+// SuggestResult is the ADR 0084 grouped autocomplete shape.
 // Each group is independently capped at the request's `limit` so a
 // no-tags / no-people corpus doesn't crowd out documents and vice
 // versa. Empty groups serialize as empty arrays so the UI can render
@@ -229,12 +229,12 @@ type IndexDocument struct {
 	CustomMetadata    map[string]any     `json:"custom_metadata,omitempty"`
 	// ReadableBy is the legacy mixed field — user_ids, group_ids,
 	// and "everyone" all in one keyword. Kept populated for the
-	// migration window so docs indexed before ADR 0066 still match
+	// migration window so docs indexed before ADR 0083 still match
 	// queries from clients that already use the split fields.
 	ReadableBy        []string           `json:"readable_by"`
 	// ReadableByUsers — direct grants + group memberships expanded
 	// to individual user_ids. Owned by the document service's
-	// publish-time expansion (ADR 0066 §"Indexer split"). Falls back
+	// publish-time expansion (ADR 0083 §"Indexer split"). Falls back
 	// to ReadableBy when an upstream hasn't been updated yet.
 	ReadableByUsers   []string           `json:"readable_by_users,omitempty"`
 	// ReadableByGroups — group_ids the doc grants access to (no

@@ -1,4 +1,4 @@
-// Redaction review REST endpoints (ADR 0062).
+// Redaction review REST endpoints (ADR 0079).
 //
 //   GET  /api/v1/documents/{id}/redaction-candidates
 //   POST /api/v1/documents/{id}/redaction/candidates/{cid}/review

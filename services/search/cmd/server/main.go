@@ -111,7 +111,7 @@ func main() {
 		Logger: *log.Z(),
 	})
 
-	// ---- ADR 0066 permission-event debouncer ------------------------------
+	// ---- ADR 0083 permission-event debouncer ------------------------------
 	// Coalesces dms.permission.changed.v1 events on a 5s window per
 	// (tenant, resource_type, resource_id) so a bulk grant rollout
 	// fans out as one OpenSearch update per resource, not N.

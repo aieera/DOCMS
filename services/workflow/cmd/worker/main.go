@@ -68,7 +68,7 @@ func main() {
 	defer func() { _ = rdb.Close() }()
 
 	// ---- NATS / JetStream -------------------------------------------------
-	// Optional dep for ADR 0068 saved-search alert event emission.
+	// Optional dep for ADR 0085 saved-search alert event emission.
 	// Failure here is logged-but-not-fatal: the worker stays up to
 	// serve every other workflow, and EmitSavedSearchMatch returns a
 	// typed error when JS is nil.
@@ -127,7 +127,7 @@ func main() {
 	w.RegisterWorkflow(workflows.EraseWorkflow)
 	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
-	// ADR 0068 — saved-search alert.
+	// ADR 0085 — saved-search alert.
 	w.RegisterWorkflow(workflows.SavedSearchAlertWorkflow)
 	w.RegisterActivity(acts)
 
@@ -149,7 +149,7 @@ func main() {
 		log.Info(ctx).Int("created", n).Msg("retention schedules registered")
 	}
 
-	// ADR 0068 — bootstrap saved-search alert schedules. Same logged-
+	// ADR 0085 — bootstrap saved-search alert schedules. Same logged-
 	// but-not-fatal contract as retention; the data plane keeps
 	// serving even if Schedules can't register.
 	if n, err := workflows.RegisterSavedSearchAlertSchedules(ctx, pool, tc, queue); err != nil {
@@ -158,7 +158,7 @@ func main() {
 		log.Info(ctx).Int("created", n).Msg("saved-search alert schedules registered")
 	}
 
-	// ADR 0068 — periodic reconciler. The search service's PATCH
+	// ADR 0085 — periodic reconciler. The search service's PATCH
 	// endpoint flips `notify` in the DB; this loop ensures the
 	// Temporal Schedule set tracks within ~60s without the search
 	// service needing a Temporal client. Logged-but-not-fatal on

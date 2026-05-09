@@ -1,4 +1,4 @@
-"""Persistence helpers for ADR 0063 — rag_query_log + workspace_ai_settings.
+"""Persistence helpers for ADR 0080 — rag_query_log + workspace_ai_settings.
 
 The /rag/query endpoint uses these to:
   - resolve workspace_ai_settings (toggle, model, per-day quota),
@@ -94,7 +94,7 @@ async def list_allowed_doc_ids(
     *, tenant_id: str, user_id: str, workspace_id: str | None,
 ) -> list[str]:
     """Compute the set of document ids the user can read. Used to
-    pre-filter Qdrant retrieval (ADR 0063 §"Permission-filtered
+    pre-filter Qdrant retrieval (ADR 0080 §"Permission-filtered
     retrieval").
 
     Workspace-scoped: docs in that workspace, gated by membership.

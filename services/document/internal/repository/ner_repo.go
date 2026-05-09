@@ -1,4 +1,4 @@
-// NER repo (ADR 0061) — reads from document_entities (written by the
+// NER repo (ADR 0078) — reads from document_entities (written by the
 // intelligence service's ner.py) and writes to entity_corrections.
 package repository
 

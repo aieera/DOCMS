@@ -1,7 +1,7 @@
 # Runbook: Redaction Review
 
 Operational playbook for the candidate-review redaction workflow
-introduced in ADR 0062. For the legal-hold ad-hoc `/redact` path see
+introduced in ADR 0079. For the legal-hold ad-hoc `/redact` path see
 [runbooks/legal-holds.md](legal-holds.md) instead.
 
 ## Quick map
@@ -83,7 +83,7 @@ introduced in ADR 0062. For the legal-hold ad-hoc `/redact` path see
 
 ## Related
 
-- ADR 0062 — design rationale + table layout
-- ADR 0061 — NER pipeline that produces the candidates
+- ADR 0079 — design rationale + table layout
+- ADR 0078 — NER pipeline that produces the candidates
 - ADR 0054 — compliance findings UI (different surface; some
   reviewers will use both)

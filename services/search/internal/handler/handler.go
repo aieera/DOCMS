@@ -34,24 +34,24 @@ func New(svc *service.Service, debouncer *service.PermissionDebouncer, log zerol
 // Register mounts all routes onto the supplied mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/search", h.search)
-	// ADR 0065 — GET variant accepts the spec's URL syntax:
+	// ADR 0082 — GET variant accepts the spec's URL syntax:
 	// /search?q=X&facet=tag,author&filter=tag:contract&filter=author:alice
 	// Same service-layer entry point as POST; only the parsing differs.
 	mux.HandleFunc("GET /api/v1/search", h.searchGET)
 	mux.HandleFunc("GET /api/v1/search/autocomplete", h.autocomplete)
-	// ADR 0067 — grouped suggester: documents/tags/people/recent.
+	// ADR 0084 — grouped suggester: documents/tags/people/recent.
 	mux.HandleFunc("GET /api/v1/search/suggest", h.suggest)
 	mux.HandleFunc("POST /api/v1/saved-searches", h.createSavedSearch)
 	mux.HandleFunc("GET /api/v1/saved-searches", h.listSavedSearches)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", h.deleteSavedSearch)
-	// ADR 0068 — edit + alert + subscribe.
+	// ADR 0085 — edit + alert + subscribe.
 	mux.HandleFunc("PATCH /api/v1/saved-searches/{id}", h.patchSavedSearch)
 	mux.HandleFunc("POST /api/v1/saved-searches/{id}/subscribe", h.subscribeSavedSearch)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}/subscribe/{user_id}", h.unsubscribeSavedSearch)
 	// ADR 0069 — platform-admin federated search.
 	mux.HandleFunc("POST /api/v1/platform/search/federated", h.federatedSearch)
 	mux.HandleFunc("GET /api/v1/platform/search/federated/audit", h.listFederatedAudit)
-	// ADR 0066 §"SLI" — admin dashboard for permission-propagation lag.
+	// ADR 0083 §"SLI" — admin dashboard for permission-propagation lag.
 	// Returns histogram percentiles + counter totals + debouncer
 	// queue depth so the page works without Grafana.
 	mux.HandleFunc("GET /api/v1/admin/permission-propagation-stats", h.permissionPropagationStats)
@@ -99,7 +99,7 @@ type searchRequestBody struct {
 	SearchMode string            `json:"search_mode"`
 	Highlight  bool              `json:"highlight"`
 	Explain    bool              `json:"explain"`
-	// ADR 0066 — share-link follower path. In production this should
+	// ADR 0083 — share-link follower path. In production this should
 	// come from a gateway-injected header rather than a free-text
 	// POST body field; allowed here for development + integration
 	// testing. The model.SearchRequest field threads it into the
@@ -119,6 +119,14 @@ type filtersBody struct {
 	SizeMinBytes   *int64            `json:"size_min_bytes"`
 	SizeMaxBytes   *int64            `json:"size_max_bytes"`
 	CreatedBy      string            `json:"created_by"`
+	// Sidebar "Author" facet filter — display-name set, multi-valued.
+	// Mirrors model.SearchFilters.CreatedByName. Was missing from this
+	// struct, so the JSON decoder silently dropped the key and Author
+	// filtering was a no-op end-to-end.
+	CreatedByName  []string          `json:"created_by_name"`
+	// Residency-region filter. Same story as CreatedByName — the
+	// model has it, the wire body had to be added.
+	RegionPin      []string          `json:"region_pin"`
 	CustomMetadata map[string]string `json:"custom_metadata"`
 	HasContent     *bool             `json:"has_content"`
 }
@@ -165,6 +173,8 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 			SizeMinBytes:   body.Filters.SizeMinBytes,
 			SizeMaxBytes:   body.Filters.SizeMaxBytes,
 			CreatedBy:      body.Filters.CreatedBy,
+			CreatedByName:  body.Filters.CreatedByName,
+			RegionPin:      body.Filters.RegionPin,
 			CustomMetadata: body.Filters.CustomMetadata,
 			HasContent:     body.Filters.HasContent,
 		},
@@ -189,7 +199,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// searchGET handles the spec's URL-style search shape (ADR 0065).
+// searchGET handles the spec's URL-style search shape (ADR 0082).
 // Identity headers + parsing logic live in url_search.go; this
 // handler glues them together with the same service.Search() entry
 // point used by the POST path.
@@ -210,7 +220,7 @@ func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// suggest serves the §7.5 / ADR 0067 grouped autocomplete shape.
+// suggest serves the §7.5 / ADR 0084 grouped autocomplete shape.
 // Three OpenSearch sources (title / tags / created_by_name) plus
 // the user's recent-search ledger, all under the standard tenant +
 // readable_by permission filter.
@@ -351,7 +361,7 @@ func (h *Handler) deleteSavedSearch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ---- ADR 0068 — saved-search edit + alert + subscribe ----------------
+// ---- ADR 0085 — saved-search edit + alert + subscribe ----------------
 
 type patchSavedSearchBody struct {
 	Name                  *string      `json:"name,omitempty"`

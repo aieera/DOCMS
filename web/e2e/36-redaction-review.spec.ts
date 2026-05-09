@@ -1,4 +1,4 @@
-// ADR 0062 — redaction review journey. Mocks every backend call so
+// ADR 0079 — redaction review journey. Mocks every backend call so
 // the spec runs without a real intelligence stack.
 //
 // Pattern matches 08-ner-entities.spec.ts: page.route() everything,

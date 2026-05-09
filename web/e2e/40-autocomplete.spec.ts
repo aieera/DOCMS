@@ -1,4 +1,4 @@
-// ADR 0067 — global CommandPalette autocomplete journey.
+// ADR 0084 — global CommandPalette autocomplete journey.
 //
 // Mocks /search/suggest and asserts:
 //   - Cmd+K opens the palette; Esc closes it

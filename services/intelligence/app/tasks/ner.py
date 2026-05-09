@@ -1,6 +1,6 @@
 """Named Entity Recognition — three-tier ensemble (regex + SpaCy + LLM).
 
-ADR 0061: SpaCy / regex / LLM all write to document_entities with a
+ADR 0078: SpaCy / regex / LLM all write to document_entities with a
 `source` column for provenance. Regex wins ties (cheaper, deterministic);
 LLM only runs for the types ner_config.llm_entity_types asks for, and
 only when the tenant has opted in.
@@ -150,7 +150,7 @@ def _regex_pass(text: str) -> list[dict]:
     return entities
 
 
-# Map SpaCy's pretrained label set to our ADR 0061 taxonomy. Labels
+# Map SpaCy's pretrained label set to our ADR 0078 taxonomy. Labels
 # not listed are dropped (we only persist what the consumers can use).
 _SPACY_TYPE_MAP = {
     "PERSON": "name",

@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn API client + browser-side helpers.
+// ADR 0061 — WebAuthn API client + browser-side helpers.
 //
 // The wire format is the standard WebAuthn JSON shape; binary
 // fields move as base64url strings. The browser's

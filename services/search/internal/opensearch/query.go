@@ -46,12 +46,39 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	// ---- bool query -------------------------------------------------------
 	musts := []any{}
 	if req.Query != "" {
+		// Fields searched per a single typed query. Ordered roughly by
+		// signal strength: title > tags > description > OCR'd body >
+		// custom metadata > NER entities > author/class/folder.
+		// `custom_metadata.*` is a field-wildcard so user-defined
+		// metadata fields (whatever shape the tenant adds via the
+		// JSON-Schema admin) are included automatically. `lenient:
+		// true` makes type mismatches between text/keyword/numeric
+		// custom-metadata children non-fatal.
 		musts = append(musts, map[string]any{
 			"multi_match": map[string]any{
-				"query":     req.Query,
-				"fields":    []string{"title^3", "title.keyword^5", "description^1.5", "content^1", "tags^2"},
+				"query": req.Query,
+				"fields": []string{
+					"title^3",
+					"title.keyword^5",
+					// Edge-ngram sub-field — required so filenames
+					// the standard analyzer leaves un-split (e.g.
+					// "Arabic.pdf" → single token "arabic.pdf") still
+					// match prefix-style queries like "arabic". Lower
+					// boost than `title` so an exact title hit still
+					// outranks a prefix-only one.
+					"title.autocomplete^2",
+					"tags^2",
+					"description^1.5",
+					"content^1",            // OCR / extracted text
+					"custom_metadata.*^1",  // tenant-defined metadata fields
+					"extracted_entities.*", // NER: people, organizations, locations, amounts, dates
+					"created_by_name",      // author
+					"document_class",       // classification
+					"folder_path",          // virtual file-path
+				},
 				"type":      "best_fields",
 				"fuzziness": "AUTO",
+				"lenient":   true,
 			},
 		})
 	}
@@ -88,7 +115,7 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	}
 
 	// ---- aggregations -----------------------------------------------------
-	// ADR 0065 — facet shapes resolved through the FacetSpec registry
+	// ADR 0082 — facet shapes resolved through the FacetSpec registry
 	// so terms / date_histogram / range all work uniformly. Unknown
 	// facet names are dropped silently rather than 4xx'd; a stale
 	// client requesting a deprecated facet should still get a working
@@ -99,7 +126,7 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 			// Backwards-compat: legacy callers passed raw OpenSearch
 			// field names (mime_type, document_class, ...). When a name
 			// isn't in the registry, fall back to a terms aggregation
-			// using the legacy FacetSizes map. ADR 0065 prefers the
+			// using the legacy FacetSizes map. ADR 0082 prefers the
 			// new symbolic names (doc_type, classification, ...).
 			if spec, ok := ResolveFacet(name); ok {
 				aggs[name] = spec.BuildAgg()
@@ -124,7 +151,7 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 }
 
 // BuildAutocompleteQuery returns a lightweight title.autocomplete query
-// with the ADR 0066 split-readable security filter.
+// with the ADR 0083 split-readable security filter.
 func BuildAutocompleteQuery(tenantID, userID string, groupIDs []string, q string, limit int) map[string]any {
 	if limit <= 0 || limit > 20 {
 		limit = 10
@@ -170,7 +197,7 @@ func BuildAutocompleteQuery(tenantID, userID string, groupIDs []string, q string
 // ---- internal helpers -----------------------------------------------------
 
 func buildFilters(req *model.SearchRequest) []any {
-	// ADR 0066 — split readable_by into per-shape clauses so the
+	// ADR 0083 — split readable_by into per-shape clauses so the
 	// matched access path is identifiable post-hoc, AND so a user
 	// newly-added to a group matches docs without waiting for a
 	// reindex (the group_id is on the doc; the user_id isn't).
@@ -206,7 +233,7 @@ func buildFilters(req *model.SearchRequest) []any {
 		shoulds = []any{
 			map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
 			map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
-			// Migration bridge — docs indexed before ADR 0066 only
+			// Migration bridge — docs indexed before ADR 0083 only
 			// carry the mixed `readable_by` field. Drop this clause
 			// once the backfill is complete.
 			map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},

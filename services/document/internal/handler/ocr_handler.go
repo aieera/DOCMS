@@ -56,7 +56,7 @@ type OCRPage struct {
 	Language         string  `json:"language,omitempty"`
 	BoundingBoxes    json.RawMessage `json:"bounding_boxes"`
 	// WordBoxes carries the per-word PDF coordinates the entity
-	// overlay needs (ADR 0061 follow-up). Empty array when the
+	// overlay needs (ADR 0078 follow-up). Empty array when the
 	// engine doesn't produce them (Surya line-only path).
 	WordBoxes        json.RawMessage `json:"word_boxes"`
 	ProcessingTimeMS *int    `json:"processing_time_ms,omitempty"`

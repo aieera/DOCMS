@@ -1,4 +1,4 @@
-// ADR 0063 — workspace-scoped /ask journey. Mocks the intelligence
+// ADR 0080 — workspace-scoped /ask journey. Mocks the intelligence
 // /rag/query endpoint and asserts that the answer renders, inline
 // citations are clickable, and thumbs feedback POSTs to the right
 // URL. Pattern matches 36-redaction-review.spec.ts.

@@ -1,4 +1,4 @@
-// ADR 0070 — step-up middleware error-path tests.
+// ADR 0061 — step-up middleware error-path tests.
 //
 // We don't run the SQL path here (would need testcontainers
 // Postgres + the migration applied); instead pin the

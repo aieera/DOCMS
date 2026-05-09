@@ -1,4 +1,4 @@
--- ADR 0070 — WebAuthn / Passkeys.
+-- ADR 0061 — WebAuthn / Passkeys.
 --
 -- Two new tables:
 --   webauthn_credentials  — public-key creds per user
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS step_up_grants (
     credential_id BYTEA,
     granted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- Hard expiry — the middleware computes "is now() < expires_at".
-    -- 5-minute default per ADR 0070 §"Step-up auth"; routes can
+    -- 5-minute default per ADR 0061 §"Step-up auth"; routes can
     -- request a tighter window via a service-layer parameter but
     -- not a wider one.
     expires_at   TIMESTAMPTZ NOT NULL,

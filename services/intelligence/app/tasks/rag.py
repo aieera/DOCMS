@@ -37,7 +37,7 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
     if scope_filter:
         for k, v in scope_filter.items():
             must.append(FieldCondition(key=k, match=MatchValue(value=v)))
-    # ADR 0063 §"Permission-filtered retrieval" — when the caller has
+    # ADR 0080 §"Permission-filtered retrieval" — when the caller has
     # already done a BatchCheckPermission and built an allowed doc_ids
     # set, restrict retrieval to that set. Layered on top of the
     # readable_by group filter as defense-in-depth.
@@ -217,7 +217,7 @@ def stream_ask(
     }
 
 
-# ADR 0063 system prompt — explicit "answer only from context" + the
+# ADR 0080 system prompt — explicit "answer only from context" + the
 # fixed "I don't know" sentinel the spec asks for so callers can
 # detect not-in-corpus responses by string match.
 WORKSPACE_SYSTEM_PROMPT = (
@@ -238,7 +238,7 @@ def workspace_query(
     allowed_doc_ids: list[str] | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """ADR 0063 — workspace-scoped RAG for the /rag/query endpoint.
+    """ADR 0080 — workspace-scoped RAG for the /rag/query endpoint.
 
     Different from `ask()` in three ways:
     - Permission-filtered retrieval: caller passes the BatchCheckPermission

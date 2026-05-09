@@ -1,4 +1,4 @@
-// Redaction review service surface (ADR 0062).
+// Redaction review service surface (ADR 0079).
 //
 // The candidate-review redaction flow is intentionally separate from
 // the legacy /redact endpoint:

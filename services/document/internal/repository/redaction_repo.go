@@ -1,4 +1,4 @@
-// Redaction review repo (ADR 0062). Reads redaction_candidates +
+// Redaction review repo (ADR 0079). Reads redaction_candidates +
 // redaction_jobs that the intelligence worker writes via the
 // candidate-review redaction flow. Disjoint from the legacy
 // document_redactions table used by the legal-hold ad-hoc /redact

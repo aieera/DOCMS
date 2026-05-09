@@ -36,7 +36,7 @@ func handlerCtx(parent context.Context, msg *nats.Msg) (context.Context, context
 // transient errors, and terms malformed messages.
 type Indexer struct {
 	svc        *Service
-	debouncer  *PermissionDebouncer // ADR 0066 — coalesces permission events
+	debouncer  *PermissionDebouncer // ADR 0083 — coalesces permission events
 	js         nats.JetStreamContext
 	log        zerolog.Logger
 	subs       []*nats.Subscription
@@ -132,9 +132,9 @@ func (ix *Indexer) onDocCreatedOrUpdated(msg *nats.Msg) {
 		}
 	}
 	doc.ReadableBy = strSliceField(data, "readable_by")
-	// ADR 0066 — when the publisher provides pre-split fields, take
+	// ADR 0083 — when the publisher provides pre-split fields, take
 	// them verbatim. When only the legacy mixed field is present
-	// (older publishers, e.g. document service before its ADR 0066
+	// (older publishers, e.g. document service before its ADR 0083
 	// follow-up), leave the new fields empty — the query bridge
 	// clause still matches via `readable_by`.
 	doc.ReadableByUsers = strSliceField(data, "readable_by_users")
@@ -213,7 +213,7 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 	resourceType := strField(data, "resource_type")
 	resourceID := strField(data, "resource_id")
 	readableBy := strSliceField(data, "readable_by")
-	// ADR 0066 — when the publisher provides pre-split user/group
+	// ADR 0083 — when the publisher provides pre-split user/group
 	// sets, propagate them too. Legacy publishers only send the
 	// mixed `readable_by` array; in that case the new fields stay
 	// untouched on the index doc.
@@ -238,7 +238,7 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 		return
 	}
 
-	// ADR 0066 — debounced batch path. The flusher loop owns the
+	// ADR 0083 — debounced batch path. The flusher loop owns the
 	// actual OpenSearch update; we ack the NATS message immediately
 	// because at-least-once delivery on the same key would just be
 	// coalesced anyway.

@@ -1,4 +1,4 @@
-// ADR 0070 — WebAuthn / Passkey + step-up persistence.
+// ADR 0061 — WebAuthn / Passkey + step-up persistence.
 //
 // Same `pgx.Tx`-wrapping pattern as user_repo.go: each method
 // accepts an in-flight tx so the calling service can wrap multiple
@@ -18,7 +18,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/auth/internal/model"
 )
 
-// WebAuthnRepository is the persistence interface for ADR 0070.
+// WebAuthnRepository is the persistence interface for ADR 0061.
 type WebAuthnRepository interface {
 	// UpsertCredential persists a new or re-registered credential.
 	// Re-registering the same credential_id is treated as an UPDATE

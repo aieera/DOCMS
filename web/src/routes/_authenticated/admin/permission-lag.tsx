@@ -6,7 +6,7 @@ import { getPermissionPropagationStats } from '@/api/permission-stats'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
 
-// ADR 0066 §"SLI" — admin dashboard for permission-propagation lag.
+// ADR 0083 §"SLI" — admin dashboard for permission-propagation lag.
 // Polls the search service's in-process Prometheus stats every 10s
 // (cheap; reads RAM, not OpenSearch). The 5s alert threshold is the
 // runbook's `histogram_quantile(0.95, …) > 5` line; we surface it
@@ -37,7 +37,7 @@ function PermissionLagPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Permission propagation lag"
-        description="Time from a permission change event to the search index update committing. ADR 0066. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
+        description="Time from a permission change event to the search index update committing. ADR 0083. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
       />
 
       {/* SLI breach banner */}

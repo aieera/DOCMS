@@ -1,4 +1,4 @@
--- ADR 0068 — saved-search alerting + subscribers.
+-- ADR 0085 — saved-search alerting + subscribers.
 --
 -- Builds on the existing saved_searches table from 000001. Two new
 -- shapes:
@@ -16,7 +16,7 @@ ALTER TABLE saved_searches
     -- one notification per NEW doc_id. Empty array on first run
     -- (no false-positive flood the moment an alert is created).
     ADD COLUMN IF NOT EXISTS last_match_doc_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-    -- ADR 0068 calls this `is_alert` in the spec; we keep the
+    -- ADR 0085 calls this `is_alert` in the spec; we keep the
     -- existing `notify` boolean column with the same semantics.
     -- Adding alert_frequency_cron in addition to the legacy
     -- notify_interval_minutes so admins can specify "9am every

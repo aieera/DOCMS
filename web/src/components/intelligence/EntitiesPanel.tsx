@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { HighlightedText } from './HighlightedText'
 
-// Per ADR 0061. Keep in sync with allowedEntityTypes in ner_service.go.
+// Per ADR 0078. Keep in sync with allowedEntityTypes in ner_service.go.
 const ENTITY_TYPES = [
   'name', 'email', 'phone', 'national_id', 'address', 'dob',
   'patient_id', 'credit_card',

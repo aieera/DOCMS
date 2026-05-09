@@ -1,6 +1,6 @@
 """PII redaction.
 
-Two pipelines coexist (see ADR 0062):
+Two pipelines coexist (see ADR 0079):
 
 1. **Legacy ad-hoc** — `apply_redactions` and
    `detect_redaction_candidates`. Used by the legal-hold
@@ -138,7 +138,7 @@ def apply_redactions(
 
 
 # ===========================================================================
-# Candidate review redaction (ADR 0062 — blueprint §6.7)
+# Candidate review redaction (ADR 0079 — blueprint §6.7)
 # ===========================================================================
 
 @celery_app.task(name="app.tasks.redact.populate_candidates", bind=True)

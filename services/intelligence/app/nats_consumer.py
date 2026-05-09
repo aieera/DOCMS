@@ -173,7 +173,7 @@ class IntelligenceConsumer:
             cb=self._on_model_retrain_trigger,
             manual_ack=True,
         )
-        # ADR 0062 — populate redaction_candidates after NER finishes.
+        # ADR 0079 — populate redaction_candidates after NER finishes.
         # Reads document_entities (is_pii=true) + ocr_results.word_boxes.
         await js.subscribe(
             "dms.ner.completed.v1",
@@ -181,7 +181,7 @@ class IntelligenceConsumer:
             cb=self._on_redact_populate_trigger,
             manual_ack=True,
         )
-        # ADR 0062 — explicit "Apply all" admin button on the redaction
+        # ADR 0079 — explicit "Apply all" admin button on the redaction
         # review panel. Burns approved candidates → new version → re-OCR.
         await js.subscribe(
             "dms.redaction.apply_requested.v1",
@@ -412,7 +412,7 @@ class IntelligenceConsumer:
             await msg.nak(delay=5)
 
     async def _on_redact_populate_trigger(self, msg) -> None:
-        """ADR 0062 — fire populate_candidates after NER finishes.
+        """ADR 0079 — fire populate_candidates after NER finishes.
         Same envelope shape as compliance_scan."""
         envelope = self._parse_envelope(msg)
         data = (envelope or {}).get("data") or envelope
@@ -444,7 +444,7 @@ class IntelligenceConsumer:
             await msg.nak(delay=5)
 
     async def _on_redact_apply_trigger(self, msg) -> None:
-        """ADR 0062 — admin "Apply all" → burn-in worker.
+        """ADR 0079 — admin "Apply all" → burn-in worker.
         Document service builds the candidates_snapshot in the
         redaction_jobs row; this consumer dispatches the worker
         with everything it needs to download → burn → upload →

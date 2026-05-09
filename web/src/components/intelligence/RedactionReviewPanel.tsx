@@ -1,4 +1,4 @@
-// Redaction review side panel (ADR 0062 / blueprint §6.7).
+// Redaction review side panel (ADR 0079 / blueprint §6.7).
 //
 // Lives next to the PDF Layout viewer and lets a reviewer walk
 // through every PII span the NER pipeline flagged. Each row carries

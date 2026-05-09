@@ -1,5 +1,5 @@
 // Package opensearch — facet registry + aggregation shape builder.
-// ADR 0065 covers the design.
+// ADR 0082 covers the design.
 package opensearch
 
 import (

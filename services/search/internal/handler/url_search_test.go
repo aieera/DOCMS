@@ -1,4 +1,4 @@
-// ADR 0065 — URL parser tests for the GET /search shape.
+// ADR 0082 — URL parser tests for the GET /search shape.
 package handler
 
 import (

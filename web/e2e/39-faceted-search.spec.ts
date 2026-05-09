@@ -1,4 +1,4 @@
-// ADR 0065 — /search facet sidebar journey. Mocks /search and
+// ADR 0082 — /search facet sidebar journey. Mocks /search and
 // /saved-searches; asserts URL state, sidebar interaction, bookmark
 // roundtrip, and saved-filter set hydration.
 
