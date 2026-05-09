@@ -117,6 +117,63 @@ export async function getQESCertificates(requestId: string): Promise<QESCertific
   return data?.certificates ?? []
 }
 
+// ----- Third-party connectors (DocuSign / Adobe Sign) — ADR 0071 --
+
+export type ESignProvider = 'docusign' | 'adobe_sign' | 'mock'
+
+export interface ESignConnection {
+  provider: ESignProvider
+  account_id?: string
+  base_uri?: string
+  scope?: string
+  connected_at: string
+  expires_at: string
+}
+
+export interface ESignEnvelope {
+  request_id: string
+  envelope_id: string
+  provider: ESignProvider
+  status: string
+}
+
+export interface SendESignInput {
+  request_id: string
+  provider: ESignProvider
+  document_name: string
+  document_bytes_b64: string
+  recipients: Array<{ email: string; name: string; order: number; role: string; embedded?: boolean }>
+  subject?: string
+  message?: string
+  return_url?: string
+}
+
+export async function listESignConnections(): Promise<ESignConnection[]> {
+  const { data } = await api.get<{ connections: ESignConnection[] }>('/signatures/esign/connections')
+  return data?.connections ?? []
+}
+
+export async function startESignOAuth(provider: ESignProvider): Promise<string> {
+  const { data } = await api.post<{ redirect_url: string }>('/signatures/esign/oauth/start', { provider })
+  return data.redirect_url
+}
+
+export async function disconnectESign(provider: ESignProvider): Promise<void> {
+  await api.post('/signatures/esign/disconnect', { provider })
+}
+
+export async function listESignEnvelopes(): Promise<ESignEnvelope[]> {
+  const { data } = await api.get<{ envelopes: ESignEnvelope[] }>('/signatures/esign/envelopes')
+  return data?.envelopes ?? []
+}
+
+export async function sendViaESign(input: SendESignInput): Promise<{ envelope_id: string; status: string; signing_urls?: Record<string, string> }> {
+  const { data } = await api.post<{ envelope_id: string; status: string; signing_urls?: Record<string, string> }>(
+    '/signatures/esign/send', input,
+  )
+  return data
+}
+
 // SIGNATURE_TYPE_DESCRIPTIONS feeds the type-selector UI.
 export const SIGNATURE_TYPE_DESCRIPTIONS: Record<SignatureType, { label: string; help: string }> = {
   simple:    { label: 'Simple',    help: 'Type-or-draw signature image. Legally weakest; fast.' },

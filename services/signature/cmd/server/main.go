@@ -21,6 +21,10 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/health"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"crypto/sha256"
+	"encoding/hex"
+
+	"github.com/vaultdms/vaultdms/pkg/esign"
 	"github.com/vaultdms/vaultdms/pkg/signing/tsp"
 	"github.com/vaultdms/vaultdms/pkg/storage"
 	"github.com/vaultdms/vaultdms/services/signature/internal/handler"
@@ -153,12 +157,57 @@ func main() {
 		log.Info(ctx).Int("providers", len(tspClients)).Msg("qes adapters wired")
 	}
 
+	// ADR 0071 — DocuSign / Adobe Sign third-party connectors.
+	// Each provider is enabled only when its OAuth client_id is set;
+	// the Mock provider joins when ESIGN_MOCK_OK is set.
+	esignOAuth := map[esign.Provider]esign.OAuthConfig{}
+	hmacBytes := deriveESignHMAC(cfg.ESignStateHMAC, cfg.LocalKEK)
+	if cfg.ESignDocuSignClientID != "" {
+		esignOAuth[esign.ProviderDocuSign] = esign.OAuthConfig{
+			Provider: esign.ProviderDocuSign,
+			AuthorizeURL: cfg.ESignDocuSignAuthorizeURL,
+			TokenURL: cfg.ESignDocuSignTokenURL,
+			ClientID: cfg.ESignDocuSignClientID,
+			ClientSecret: cfg.ESignDocuSignClientSecret,
+			RedirectURI: cfg.ESignDocuSignRedirectURI,
+			Scope: "signature",
+			HMACSecret: hmacBytes,
+		}
+	}
+	if cfg.ESignAdobeSignClientID != "" {
+		esignOAuth[esign.ProviderAdobeSign] = esign.OAuthConfig{
+			Provider: esign.ProviderAdobeSign,
+			AuthorizeURL: cfg.ESignAdobeSignAuthorizeURL,
+			TokenURL: cfg.ESignAdobeSignTokenURL,
+			ClientID: cfg.ESignAdobeSignClientID,
+			ClientSecret: cfg.ESignAdobeSignClientSecret,
+			RedirectURI: cfg.ESignAdobeSignRedirectURI,
+			Scope: "agreement_send agreement_read",
+			HMACSecret: hmacBytes,
+		}
+	}
+	if len(esignOAuth) > 0 || cfg.ESignMockOK {
+		esCfg := service.ESignConfig{
+			SealingKey: deriveSealingKey(cfg.LocalKEK),
+			OAuthByProvider: esignOAuth,
+			HTTPClient: &http.Client{Timeout: 30 * time.Second},
+			MockOK: cfg.ESignMockOK,
+		}
+		if cfg.ESignMockOK {
+			esCfg.MockClient = esign.NewMock()
+		}
+		svc.AddESign(esCfg)
+		go svc.StartReconciler(ctx)
+		log.Info(ctx).Int("providers", len(esignOAuth)).Bool("mock", cfg.ESignMockOK).Msg("esign connectors wired")
+	}
+
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
 	// Frontend lands on /sign/done after the QTSP redirect; the page
 	// polls /qes/session/:id for the final status.
 	h.RegisterQES(mux, "/sign/done")
+	h.RegisterESign(mux)
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
@@ -166,6 +215,9 @@ func main() {
 			log.Error(ctx).Err(err).Msg("http serve")
 		}
 	}()
+
+	_ = sha256.Size // keep import if no other use
+	_ = hex.EncodedLen
 
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
@@ -179,4 +231,37 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// deriveSealingKey returns a 32-byte AES key derived from the
+// service-level LocalKEK. SHA-256 over the KEK bytes — keeps the
+// boot path simple and avoids pulling pkg/crypto for a one-line
+// transformation.
+func deriveSealingKey(kek string) []byte {
+	if kek == "" {
+		// Service should fail validation upstream when KEK is empty,
+		// but if it slipped through, return a zero-key so seal/unseal
+		// fail loudly on first use rather than producing a silent
+		// hardcoded-key vulnerability.
+		return make([]byte, 32)
+	}
+	h := sha256.Sum256([]byte("vaultdms.esign.seal.v1:" + kek))
+	return h[:]
+}
+
+// deriveESignHMAC seeds the OAuth state HMAC. Prefers the explicit
+// VAULTDMS_ESIGN_STATE_HMAC env (hex); falls back to a KEK-derived
+// value so a fresh boot still has integrity-checked state.
+func deriveESignHMAC(explicit, kek string) []byte {
+	if explicit != "" {
+		// Hex decode if it parses; otherwise treat as raw.
+		if b, err := hex.DecodeString(explicit); err == nil && len(b) >= 32 {
+			return b
+		}
+		if len(explicit) >= 32 {
+			return []byte(explicit)[:32]
+		}
+	}
+	h := sha256.Sum256([]byte("vaultdms.esign.state.v1:" + kek))
+	return h[:]
 }

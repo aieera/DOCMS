@@ -42,6 +42,7 @@ import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminPermissionLagRouteImport } from './routes/_authenticated/admin/permission-lag'
 import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_authenticated/admin/metadata-schema'
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
+import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin/integrations'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
@@ -50,6 +51,7 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
+import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './routes/_authenticated/signatures.send.$documentId'
 import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes/_authenticated/sign.$requestId.$signerId'
 import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
@@ -250,6 +252,12 @@ const AuthenticatedAdminLegalHoldsRoute =
     path: '/admin/legal-holds',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntegrationsRoute =
+  AuthenticatedAdminIntegrationsRouteImport.update({
+    id: '/admin/integrations',
+    path: '/admin/integrations',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminGroupsRoute =
   AuthenticatedAdminGroupsRouteImport.update({
     id: '/admin/groups',
@@ -296,6 +304,12 @@ const AuthenticatedWorkflowsInstancesInstanceIdRoute =
   AuthenticatedWorkflowsInstancesInstanceIdRouteImport.update({
     id: '/workflows/instances/$instanceId',
     path: '/workflows/instances/$instanceId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSignaturesSendDocumentIdRoute =
+  AuthenticatedSignaturesSendDocumentIdRouteImport.update({
+    id: '/signatures/send/$documentId',
+    path: '/signatures/send/$documentId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedSignRequestIdSignerIdRoute =
@@ -426,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -461,6 +476,7 @@ export interface FileRoutesByFullPath {
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -486,6 +502,7 @@ export interface FileRoutesByTo {
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -521,6 +538,7 @@ export interface FileRoutesByTo {
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -548,6 +566,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
+  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/_authenticated/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -583,6 +602,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/_authenticated/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/_authenticated/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -610,6 +630,7 @@ export interface FileRouteTypes {
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/groups'
+    | '/admin/integrations'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
     | '/admin/permission-lag'
@@ -645,6 +666,7 @@ export interface FileRouteTypes {
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
+    | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/'
     | '/admin/tenant/identity/ldap'
@@ -670,6 +692,7 @@ export interface FileRouteTypes {
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/groups'
+    | '/admin/integrations'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
     | '/admin/permission-lag'
@@ -705,6 +728,7 @@ export interface FileRouteTypes {
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
+    | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId'
     | '/admin/tenant/identity/ldap'
@@ -731,6 +755,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
     | '/_authenticated/admin/groups'
+    | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/legal-holds'
     | '/_authenticated/admin/metadata-schema'
     | '/_authenticated/admin/permission-lag'
@@ -766,6 +791,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/tenant/ai'
     | '/_authenticated/settings/security/mfa'
     | '/_authenticated/sign/$requestId/$signerId'
+    | '/_authenticated/signatures/send/$documentId'
     | '/_authenticated/workflows/instances/$instanceId'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/admin/tenant/identity/ldap'
@@ -1015,6 +1041,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminLegalHoldsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/integrations': {
+      id: '/_authenticated/admin/integrations'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/groups': {
       id: '/_authenticated/admin/groups'
       path: '/admin/groups'
@@ -1069,6 +1102,13 @@ declare module '@tanstack/react-router' {
       path: '/workflows/instances/$instanceId'
       fullPath: '/workflows/instances/$instanceId'
       preLoaderRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/signatures/send/$documentId': {
+      id: '/_authenticated/signatures/send/$documentId'
+      path: '/signatures/send/$documentId'
+      fullPath: '/signatures/send/$documentId'
+      preLoaderRoute: typeof AuthenticatedSignaturesSendDocumentIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sign/$requestId/$signerId': {
@@ -1244,6 +1284,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
+  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
   AuthenticatedAdminPermissionLagRoute: typeof AuthenticatedAdminPermissionLagRoute
@@ -1278,6 +1319,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
+  AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
   AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedAdminTenantIdentityLdapRoute: typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -1298,6 +1340,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
+  AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
   AuthenticatedAdminPermissionLagRoute: AuthenticatedAdminPermissionLagRoute,
@@ -1347,6 +1390,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
   AuthenticatedSignRequestIdSignerIdRoute:
     AuthenticatedSignRequestIdSignerIdRoute,
+  AuthenticatedSignaturesSendDocumentIdRoute:
+    AuthenticatedSignaturesSendDocumentIdRoute,
   AuthenticatedWorkflowsInstancesInstanceIdRoute:
     AuthenticatedWorkflowsInstancesInstanceIdRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:

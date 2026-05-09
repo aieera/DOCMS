@@ -31,6 +31,9 @@ type Service struct {
 	// "not configured". main.go calls AddQES() when VAULTDMS_QES_*
 	// envs resolve to at least one TSP adapter.
 	qes *QESConfig
+	// esign is the optional ADR 0071 wiring for DocuSign/Adobe Sign.
+	// nil → connector routes return "not configured".
+	esign *ESignConfig
 }
 
 type Config struct {

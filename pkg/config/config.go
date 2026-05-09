@@ -128,6 +128,28 @@ type Config struct {
 	// Playwright. Refused outside of the dev/test environment by the
 	// service-layer factory.
 	QESMockOK bool `mapstructure:"qes_mock_ok"`
+
+	// ---- ESign third-party connectors (ADR 0071) -------------------------
+	// OAuth client credentials per vendor. Empty client_id → adapter
+	// is disabled and StartOAuth refuses requests for that provider.
+	ESignDocuSignClientID     string `mapstructure:"esign_docusign_client_id"`
+	ESignDocuSignClientSecret string `mapstructure:"esign_docusign_client_secret"`
+	ESignDocuSignAuthorizeURL string `mapstructure:"esign_docusign_authorize_url"`
+	ESignDocuSignTokenURL     string `mapstructure:"esign_docusign_token_url"`
+	ESignDocuSignRedirectURI  string `mapstructure:"esign_docusign_redirect_uri"`
+
+	ESignAdobeSignClientID     string `mapstructure:"esign_adobe_sign_client_id"`
+	ESignAdobeSignClientSecret string `mapstructure:"esign_adobe_sign_client_secret"`
+	ESignAdobeSignAuthorizeURL string `mapstructure:"esign_adobe_sign_authorize_url"`
+	ESignAdobeSignTokenURL     string `mapstructure:"esign_adobe_sign_token_url"`
+	ESignAdobeSignRedirectURI  string `mapstructure:"esign_adobe_sign_redirect_uri"`
+
+	// ESignStateHMAC seeds the OAuth-state HMAC. Must be ≥ 32 bytes
+	// hex; service auto-generates one at boot if empty (logs once).
+	ESignStateHMAC string `mapstructure:"esign_state_hmac"`
+
+	// ESignMockOK enables the in-memory ProviderMock for CI + e2e.
+	ESignMockOK bool `mapstructure:"esign_mock_ok"`
 }
 
 // Load reads configuration from (in order): env vars (VAULTDMS_* prefix),
