@@ -25,7 +25,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Select } from '@/components/ui/Select'
 
 type Tab = 'my' | 'approvals'

@@ -21,7 +21,7 @@ import { Plus, Trash2, ArrowUp, ArrowDown, Save, AlertTriangle, CheckCircle2 } f
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import type { ADR0073Step } from '@/api/workflows'

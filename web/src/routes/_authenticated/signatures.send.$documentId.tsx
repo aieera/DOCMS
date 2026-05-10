@@ -10,7 +10,7 @@ import {
 } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 
 // /signatures/send/$documentId — ADR 0071 sender flow.
 //

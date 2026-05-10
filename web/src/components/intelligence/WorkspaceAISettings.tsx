@@ -9,7 +9,7 @@ import {
 } from '@/api/rag'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'
 

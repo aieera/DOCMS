@@ -11,8 +11,8 @@ import {
   type FederatedAuditRecord,
 } from '@/api/federated-search'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Input } from '@/components/ui/Input'
-import { Textarea } from '@/components/ui/Textarea'
+import { Input } from '@/components/ui/shadcn/input'
+import { Textarea } from '@/components/ui/shadcn/textarea'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { Badge } from '@/components/ui/Badge'

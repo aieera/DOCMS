@@ -1,24 +1,46 @@
-import { forwardRef, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, useId, type TextareaHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '@/lib/cn'
+import { Label } from '@/components/ui/label'
 
-export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label?: ReactNode
+  error?: ReactNode
+}
 
-const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => (
-    <textarea
-      ref={ref}
-      className={cn(
-        'flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm',
-        'placeholder:text-muted-foreground',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive',
-        className,
-      )}
-      {...props}
-    />
-  ),
-)
+const TextareaBase = forwardRef<
+  HTMLTextAreaElement,
+  Omit<TextareaProps, 'label' | 'error'> & { hasError?: boolean }
+>(({ className, hasError, ...props }, ref) => (
+  <textarea
+    ref={ref}
+    aria-invalid={hasError || undefined}
+    className={cn(
+      'flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm',
+      'placeholder:text-muted-foreground',
+      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+      'disabled:cursor-not-allowed disabled:opacity-50',
+      'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive',
+      className,
+    )}
+    {...props}
+  />
+))
+TextareaBase.displayName = 'TextareaBase'
+
+const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(({ label, error, id, ...props }, ref) => {
+  const generated = useId()
+  const inputId = id ?? generated
+  if (!label && !error) {
+    return <TextareaBase ref={ref} id={inputId} {...props} />
+  }
+  return (
+    <div className="space-y-1.5">
+      {label && <Label htmlFor={inputId} className={error ? 'text-destructive' : undefined}>{label}</Label>}
+      <TextareaBase ref={ref} id={inputId} hasError={!!error} {...props} />
+      {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+    </div>
+  )
+})
 Textarea.displayName = 'Textarea'
 
 export { Textarea }

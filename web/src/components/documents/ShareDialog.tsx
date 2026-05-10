@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Select } from '@/components/ui/Select'
 import { Copy, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'

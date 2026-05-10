@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Dialog } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { EmptyState } from '@/components/ui/EmptyState'

@@ -13,7 +13,7 @@ import {
 } from '@/api/ner'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Select } from '@/components/ui/Select'
 
 // Mirrors the LLM-eligible types in services/document/internal/service/

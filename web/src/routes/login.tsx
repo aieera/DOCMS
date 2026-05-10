@@ -4,7 +4,7 @@ import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, ArrowLeft, Loader2 
 import toast from 'react-hot-toast'
 
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { useAuthStore } from '@/store/authStore'
 import { login, verifyMFA } from '@/api/auth'

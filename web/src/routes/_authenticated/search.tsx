@@ -11,7 +11,7 @@ import {
   useDeleteSavedSearch,
 } from '@/hooks/useSavedSearches'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'

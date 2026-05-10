@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sheet } from '@/components/ui/Sheet'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { Send, Bot, User } from 'lucide-react'
 import { askQuestion } from '@/api/intelligence'

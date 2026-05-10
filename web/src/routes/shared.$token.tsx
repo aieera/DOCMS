@@ -3,7 +3,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { Button } from '@/components/ui/shadcn/button'
 import { Download, Lock } from 'lucide-react'
 import { useState } from 'react'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 
 function SharedViewerPage() {
   const { token } = Route.useParams()

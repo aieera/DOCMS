@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { cn } from '@/lib/cn'
 

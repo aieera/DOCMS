@@ -11,7 +11,7 @@ import {
 } from '@/api/intelligence'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 
 const SOURCE_KEYS = ['ner', 'classification', 'llm', 'pattern'] as const
 

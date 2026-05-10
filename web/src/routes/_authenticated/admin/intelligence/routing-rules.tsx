@@ -14,7 +14,7 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/Input'
+import { Input } from '@/components/ui/shadcn/input'
 
 interface CreateForm {
   name: string
