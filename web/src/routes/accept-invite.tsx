@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { AlertCircle, Check, X } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/shadcn/button'

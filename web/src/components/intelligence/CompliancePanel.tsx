@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, RefreshCw, ShieldAlert } from 'lucide-react'
 
 import {

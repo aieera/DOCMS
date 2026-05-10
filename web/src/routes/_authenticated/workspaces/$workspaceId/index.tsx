@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { WorkspaceAISettingsDialog } from '@/components/intelligence/WorkspaceAISettings'
+import type { Document as ApiDocument } from '@/types/api'
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
@@ -100,9 +101,9 @@ function WorkspacePage() {
           the PaginatedResponse<T> type's `items` field is wrong for
           this endpoint. Read both for resilience. */}
       <DocumentList
-        documents={(data as unknown as { documents?: unknown[]; items?: unknown[] })?.documents
+        documents={((data as unknown as { documents?: unknown[]; items?: unknown[] })?.documents
           ?? (data as unknown as { items?: unknown[] })?.items
-          ?? []}
+          ?? []) as ApiDocument[]}
         isLoading={isLoading}
       />
 

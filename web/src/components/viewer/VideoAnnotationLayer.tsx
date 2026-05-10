@@ -9,7 +9,7 @@
 // pins layer overlays the bottom of the player. Clicking a pin
 // seeks the video to that timestamp.
 import { useEffect, useRef, useState } from 'react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type VideoTimestampData } from '@/api/annotations'
 import { AnnotationToolbar } from './AnnotationToolbar'

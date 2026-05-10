@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Clock,
   FolderOpen,
-  Plus,
   Search,
   Sparkles,
   Upload,
@@ -143,9 +142,9 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
         )}
       </div>
       <p className="mt-4 text-sm font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-3xl font-semibold tracking-tight">
+      <div className="mt-1 text-3xl font-semibold tracking-tight">
         {value === undefined ? <Skeleton className="h-8 w-16" /> : value}
-      </p>
+      </div>
       {hint && (
         <p
           className={cn(
@@ -163,12 +162,20 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
 
 // ---- Quick actions -------------------------------------------------------
 
-const QUICK_ACTIONS = [
+interface QuickAction {
+  icon: LucideIcon
+  label: string
+  href: string
+  description: string
+  kbd?: string
+}
+
+const QUICK_ACTIONS: readonly QuickAction[] = [
   { icon: Search, label: 'Search documents', href: '/search', description: 'Full-text + semantic across the tenant', kbd: '⌘K' },
   { icon: Sparkles, label: 'Ask the corpus', href: '/ask', description: 'RAG over the documents you can see' },
   { icon: Upload, label: 'Upload', href: '/workspaces', description: 'Drag a file into a workspace' },
   { icon: Workflow, label: 'Design a workflow', href: '/workflows/designer', description: 'Approval chains + signature steps' },
-] as const
+]
 
 function QuickActions() {
   return (

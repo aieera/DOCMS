@@ -4,7 +4,7 @@ import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
 import { createDocument, createVersion } from '@/api/documents'
 import { getFolders } from '@/api/workspaces'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 // Full upload flow:
 //   1. CreateDocument          → documents row (no content yet)
@@ -37,8 +37,8 @@ export function useUpload(workspaceId?: string, folderId?: string) {
     if (!resolvedFolderId) {
       try {
         const folders = await getFolders(workspaceId)
-        const root = (folders as { id: string; parent_folder_id: string | null }[])
-          .find((f) => !f.parent_folder_id)
+        const root = (folders as unknown as { id: string; parent_folder_id?: string | null; parent_id?: string | null }[])
+          .find((f) => !f.parent_folder_id && !f.parent_id)
         if (root) resolvedFolderId = root.id
       } catch {
         // fall through; createDocument will surface a clearer error
@@ -68,10 +68,12 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           // Deduplication still needs a version row pointing at the
           // existing blob — the storage server returns the existing
           // blob_id on a dedup hit.
-          if (session.content_blob_id) {
+          const dedupBlobId = (session as { content_blob_id?: string; existing_blob_id?: string }).content_blob_id
+            ?? session.existing_blob_id
+          if (dedupBlobId) {
             await createVersion({
               document_id: doc.id,
-              content_blob_id: session.content_blob_id,
+              content_blob_id: dedupBlobId,
               change_summary: 'initial',
             })
           }
@@ -91,7 +93,9 @@ export function useUpload(workspaceId?: string, folderId?: string) {
 
         // Step 4: complete the upload (scan + persist blob).
         const completion = await completeUpload(session.upload_id)
-        const blobID = completion?.content_blob_id || session.content_blob_id
+        const blobID = (completion as { content_blob_id?: string } | null)?.content_blob_id
+          ?? (session as { content_blob_id?: string }).content_blob_id
+          ?? session.existing_blob_id
         if (!blobID) {
           throw new Error('storage did not return a content_blob_id')
         }

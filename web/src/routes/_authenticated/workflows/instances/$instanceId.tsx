@@ -6,7 +6,7 @@
 //     approver has acted yet
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { ArrowLeft, RotateCcw, CheckCircle2, XCircle, Clock, UserPlus, AlertTriangle } from 'lucide-react'
 
 import { api } from '@/api/client'

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Shield, Download } from 'lucide-react'
 
 import { listDSR, requestDSRToken, submitDSR, type DSRRequest } from '@/api/privacy'

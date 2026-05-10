@@ -11,7 +11,7 @@
 // documentId and it manages its own queries + WS subscription.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import {
   MessageSquare, Send, Check, CheckCircle2, Reply, Trash2, Smile,
 } from 'lucide-react'

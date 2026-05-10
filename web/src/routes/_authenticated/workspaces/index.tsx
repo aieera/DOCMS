@@ -10,7 +10,7 @@ import {
   ChevronRight,
   Calendar,
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'

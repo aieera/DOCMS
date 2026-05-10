@@ -22,7 +22,7 @@ class ResizeObserverMock {
 }
 ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
 
-// jsdom lacks window.matchMedia — react-hot-toast and some Radix primitives
+// jsdom lacks window.matchMedia — sonner and some Radix primitives
 // call it to query prefers-reduced-motion.
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) =>

@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'

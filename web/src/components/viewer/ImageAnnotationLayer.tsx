@@ -6,7 +6,7 @@
 // is data-compatible. Each tool draws one shape on click-drag and
 // posts a new annotation row.
 import { useEffect, useRef, useState } from 'react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type ImageShapeData } from '@/api/annotations'
 import { AnnotationToolbar, type ImageMode } from './AnnotationToolbar'

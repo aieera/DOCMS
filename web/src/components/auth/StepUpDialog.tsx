@@ -13,7 +13,7 @@
 
 import { useState } from 'react'
 import { Fingerprint, AlertTriangle } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'

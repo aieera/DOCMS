@@ -2,7 +2,6 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { Toaster } from 'react-hot-toast'
 import { Toaster as SonnerToaster } from 'sonner'
 import { ThemeProvider, useTheme } from '@/components/layout/theme-provider'
 import { routeTree } from './routeTree.gen'
@@ -40,10 +39,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-        {/* react-hot-toast (legacy) and sonner (canonical) coexist
-            during the migration. Phase 2 will retarget call sites to
-            sonner and remove react-hot-toast. */}
-        <Toaster position="top-right" toastOptions={{ duration: 4000, style: { borderRadius: '8px', fontSize: '14px' } }} />
         <ThemedSonner />
       </QueryClientProvider>
     </ThemeProvider>

@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
 import * as authApi from '@/api/auth'
 import { useNavigate } from '@tanstack/react-router'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 export function useLogin() {
   const authLogin = useAuthStore((s) => s.login)

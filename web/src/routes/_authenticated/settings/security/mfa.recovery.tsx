@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Copy, RotateCcw, AlertTriangle, ArrowLeft } from 'lucide-react'
 
 import { api } from '@/api/client'

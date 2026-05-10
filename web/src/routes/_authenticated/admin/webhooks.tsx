@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { ChevronDown, ChevronRight, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle } from 'lucide-react'
 
 import {

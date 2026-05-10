@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { CheckCircle2, Pencil, X } from 'lucide-react'
 
 import { correctClassification } from '@/api/classify-corrections'

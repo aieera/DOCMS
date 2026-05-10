@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Dialog } from '@/components/ui/Dialog'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ShieldCheck, Smartphone, Trash2, Copy } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import {
   useSetupMFA, useConfirmMFA, useDisableMFA,
   useSessions, useRevokeSession, useRevokeAllOtherSessions,

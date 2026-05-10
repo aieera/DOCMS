@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Bell, BellOff, CheckCheck } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'

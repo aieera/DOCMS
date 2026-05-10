@@ -10,7 +10,7 @@
 // content blob and refreshes the badge in place.
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { CheckCircle2, AlertTriangle, ShieldQuestion, RotateCw, ShieldOff } from 'lucide-react'
 
 import { validatePDF, type PAdESReport, type CertStatus } from '@/api/signatures'

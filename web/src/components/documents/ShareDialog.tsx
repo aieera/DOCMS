@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Copy, Link2 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { createShareLink } from '@/api/shareLinks'
 
 interface Props { open: boolean; onOpenChange: (o: boolean) => void; documentId: string; documentTitle: string }

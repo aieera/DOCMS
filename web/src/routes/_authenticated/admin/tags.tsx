@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Plus, Tag as TagIcon, Trash2 } from 'lucide-react'
 
 import { createTag, deleteTag, listTags, type Tag } from '@/api/tags'

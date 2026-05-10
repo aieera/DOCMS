@@ -21,7 +21,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, ExternalLink, X, AlertTriangle } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 import { startCoauthSession, probeEditorReachable, type CoauthSession } from '@/api/coauth'
 import { Button } from '@/components/ui/shadcn/button'

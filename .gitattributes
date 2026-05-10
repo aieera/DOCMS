@@ -1,0 +1,24 @@
+# Normalize line endings to LF in the repo, regardless of the
+# contributor's platform. Without this, Windows checkouts can
+# silently rewrite every line to CRLF on save and produce noisy
+# whole-file diffs against an LF-canonical base.
+* text=auto eol=lf
+
+# Generated artifacts: keep diffs collapsed in PR review.
+*.pb.go linguist-generated=true
+*.pb.gw.go linguist-generated=true
+proto/gen/** linguist-generated=true
+web/src/routeTree.gen.ts linguist-generated=true
+web/package-lock.json linguist-generated=true
+
+# Binary blobs: skip text normalization.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

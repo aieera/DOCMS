@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { Sparkles, ThumbsUp, ThumbsDown, Flag, Send } from 'lucide-react'
 
 import { getWorkspaces } from '@/api/workspaces'
