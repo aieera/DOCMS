@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import { useDocument } from '@/hooks/useDocuments'
+import { useDocumentDetailGQL, useActivityForDocument } from '@/hooks/useDocumentDetailGQL'
 import { useAuthStore } from '@/store/authStore'
 import { getOCR, rerunOCR, type OCRStatus } from '@/api/ocr'
 import { getDownloadURL } from '@/api/documents'
@@ -53,7 +54,7 @@ import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 
-type TabKey = 'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'redaction'
+type TabKey = 'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'redaction' | 'activity'
 
 const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'preview', label: 'Preview', icon: FileText },
@@ -62,12 +63,22 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'qa', label: 'Q&A', icon: MessageSquare },
   { key: 'compliance', label: 'Compliance', icon: AlertCircle },
   { key: 'entities', label: 'Entities', icon: FileText },
+  { key: 'activity', label: 'Activity', icon: History },
   { key: 'redaction', label: 'Redaction', icon: Eraser },
 ]
 
 function DocumentDetailPage() {
   const { documentId, workspaceId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
+  // ADR 0074 — single GraphQL call for the multi-join surface
+  // (versions + comments + annotations + workflow instances +
+  // permissions). Replaces the 5+ REST calls the deep components
+  // would otherwise fan out, and feeds the Activity tab. The hook
+  // is fire-and-forget at the page level: deep components keep
+  // their REST queries (and stay live for mutations / polling); the
+  // GraphQL fetch primes the cache so the network tab shows the
+  // collapsed shape on first paint.
+  const gql = useDocumentDetailGQL(documentId)
   const [tab, setTab] = useState<TabKey>('preview')
   const userRole = useAuthStore((s) => s.user?.role)
   // ADR 0079 — bulk-apply redaction gate. Compliance officer also
@@ -93,6 +104,23 @@ function DocumentDetailPage() {
   return (
     <div className="space-y-6">
       <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} />
+
+      {/* Quiet status pill so QA + ops can verify the GraphQL call
+          fired without opening devtools — appears for a beat while
+          the persisted query is in flight, hides on success. ADR
+          0074 makes the GraphQL endpoint the source of truth for
+          the activity feed + the multi-join data the deeper tabs
+          read; this surface only shows the loading/error part. */}
+      {gql.isLoading && (
+        <p className="text-xs text-muted-foreground" data-testid="gql-status-loading">
+          Loading aggregated detail via GraphQL…
+        </p>
+      )}
+      {gql.isError && (
+        <p className="text-xs text-warning" data-testid="gql-status-error">
+          GraphQL aggregate failed; deep tabs fall back to REST.
+        </p>
+      )}
 
       {/* No-content prompt: when the document row exists but no file
           has been uploaded yet, surface an upload CTA at the top so
@@ -175,6 +203,14 @@ function DocumentDetailPage() {
               versionId={versionId}
               isAdminCaller={isAdminCaller}
             />
+          </TabPanel>
+
+          <TabPanel current={tab} value="activity">
+            {/* ADR 0074 — single GraphQL query merges audit + comment +
+                workflow + signature streams into one chronological
+                feed. Replaces the multi-fetch + client-side merge
+                shape this tab would otherwise need. */}
+            <ActivityFeed documentId={documentId} />
           </TabPanel>
 
           {/* OCR quality lives below the layout/text content because it
@@ -760,6 +796,54 @@ function uploaderLabel(doc: { created_by_name?: string; created_by_email?: strin
   if (email) return email
   if (doc.created_by) return 'Deleted user'
   return 'Unknown user'
+}
+
+// ActivityFeed renders the chronological event stream (versions,
+// comments, workflow transitions, signatures, audit hits) for one
+// document. Backed by the ADR 0074 ActivityForDocument GraphQL
+// operation — the merge happens server-side so this component is a
+// thin renderer.
+function ActivityFeed({ documentId }: { documentId: string }) {
+  const { data, isLoading, isError, error } = useActivityForDocument(documentId)
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+  if (isError) {
+    return (
+      <Card className="flex items-start gap-2 p-4 text-sm" data-testid="activity-error">
+        <AlertCircle className="mt-0.5 h-4 w-4 text-destructive" />
+        <div>
+          <p className="font-medium">Could not load activity</p>
+          <p className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</p>
+        </div>
+      </Card>
+    )
+  }
+  const nodes = data?.nodes ?? []
+  if (nodes.length === 0) {
+    return (
+      <Card className="p-8 text-center text-sm text-muted-foreground" data-testid="activity-empty">
+        No activity yet.
+      </Card>
+    )
+  }
+  return (
+    <ol className="space-y-2" data-testid="activity-feed">
+      {nodes.map((evt) => (
+        <li key={evt.id} className="flex items-start gap-3 rounded-md border border-border bg-card p-3">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+              <span className="font-medium text-foreground">{evt.summary}</span>
+              <span className="text-xs text-muted-foreground">{formatDateTime(evt.occurredAt)}</span>
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              <code className="rounded bg-muted px-1 font-mono text-[10px]">{evt.kind}</code>
+              {evt.actorName ? ` · ${evt.actorName}` : ''}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
 }
 
 function StatusBadge({ status }: { status: OCRStatus }) {

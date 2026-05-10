@@ -4,15 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/build-graphql-manifest.mjs && vite",
+    "build": "node scripts/build-graphql-manifest.mjs && tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:ci": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "graphql:manifest": "node scripts/build-graphql-manifest.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
@@ -39,6 +40,7 @@
     "@tanstack/react-router": "^1.15.0",
     "@tanstack/react-table": "^8.11.0",
     "@tanstack/router-vite-plugin": "^1.15.0",
+    "@urql/exchange-persisted": "^5.0.1",
     "@xyflow/react": "^12.10.2",
     "axios": "^1.6.5",
     "class-variance-authority": "^0.7.1",
@@ -46,6 +48,7 @@
     "cmdk": "^0.2.0",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.10",
+    "graphql": "^16.14.0",
     "lucide-react": "^0.311.0",
     "pdfjs-dist": "^4.0.0",
     "react": "^18.2.0",
@@ -59,6 +62,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.2.0",
     "tailwindcss-animate": "^1.0.7",
+    "urql": "^5.0.2",
     "vaul": "^1.1.2",
     "zod": "^3.22.4",
     "zustand": "^4.5.0"

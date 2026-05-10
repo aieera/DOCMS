@@ -52,6 +52,18 @@ type request struct {
 	Query         string         `json:"query,omitempty"`
 	OperationName string         `json:"operationName,omitempty"`
 	Variables     map[string]any `json:"variables,omitempty"`
+	// APQ-style envelope: { extensions: { persistedQuery: { version: 1,
+	// sha256Hash: "..." } } }. Lifted from the standard Apollo /
+	// urql persisted-query exchange so we can plug those clients in
+	// without a custom HTTP exchange. When both `id` and
+	// extensions.persistedQuery.sha256Hash are present, extensions
+	// wins (clients that opt into the APQ shape never set top-level id).
+	Extensions struct {
+		PersistedQuery struct {
+			Version    int    `json:"version,omitempty"`
+			SHA256Hash string `json:"sha256Hash,omitempty"`
+		} `json:"persistedQuery,omitempty"`
+	} `json:"extensions,omitempty"`
 }
 
 func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
@@ -68,18 +80,23 @@ func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
 		return
 	}
 
-	// Resolve the operation document. Persisted-query path takes
-	// precedence — if the client sent an id, we look it up; an
-	// inline query alongside an id is ignored to keep the contract
-	// strict.
+	// Resolve the operation document. Either `id` (our shape) or
+	// `extensions.persistedQuery.sha256Hash` (Apollo / urql APQ
+	// shape) selects a manifest entry; the two are equivalent and
+	// the APQ value wins when both are sent (urql opts into that
+	// shape exclusively).
+	hash := req.ID
+	if h := req.Extensions.PersistedQuery.SHA256Hash; h != "" {
+		hash = h
+	}
 	var query string
 	switch {
-	case req.ID != "":
-		entry, err := cfg.Persisted.Lookup(req.ID)
+	case hash != "":
+		entry, err := cfg.Persisted.Lookup(hash)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"error": "PersistedQueryNotFound",
-				"hash":  req.ID,
+				"hash":  hash,
 			})
 			return
 		}

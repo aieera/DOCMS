@@ -1,0 +1,1 @@
+query ActivityForDocument($id: ID!, $cursor: String) { activityForDocument(documentId: $id, cursor: $cursor, limit: 50) { nodes { id kind actorName summary occurredAt payload } nextCursor } }
