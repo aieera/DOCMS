@@ -118,7 +118,7 @@ function DocumentDetailPage() {
       )}
       {gql.isError && (
         <p className="text-xs text-warning" data-testid="gql-status-error">
-          GraphQL aggregate failed; deep tabs fall back to REST.
+          GraphQL aggregate failed; deep tabs fall back to REST. ({gql.error instanceof Error ? gql.error.message : String(gql.error)})
         </p>
       )}
 

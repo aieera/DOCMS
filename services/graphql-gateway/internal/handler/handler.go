@@ -42,9 +42,33 @@ func New(cfg Config) http.Handler {
 		})
 	})
 	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, r *http.Request) {
+		// Recover from any resolver / executor panic so the client
+		// receives a structured 500 + the message instead of the
+		// stdlib's stack-trace-as-text default. Logs the recovered
+		// error so operators can root-cause from server logs.
+		defer func() {
+			if rec := recover(); rec != nil {
+				cfg.Logger.Error().Interface("panic", rec).Msg("graphql handler panic")
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"error":  "ServerError",
+					"detail": stringifyPanic(rec),
+				})
+			}
+		}()
 		serve(w, r, cfg)
 	})
 	return mux
+}
+
+func stringifyPanic(rec any) string {
+	switch v := rec.(type) {
+	case string:
+		return v
+	case error:
+		return v.Error()
+	default:
+		return "panic"
+	}
 }
 
 type request struct {

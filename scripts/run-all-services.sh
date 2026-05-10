@@ -46,11 +46,12 @@ service_specs=(
   "signature:9098:8089:8188"
   "billing:9099:8090:8189"
   "connector:9100:8091:8190"
-  # graphql-gateway is HTTP-only (no gRPC); use 0 for the grpc port
-  # so the launcher leaves it unset. http_port 8191 matches the
-  # docker-compose mapping; the Vite proxy below routes /api/v1/graphql
-  # there in host mode.
-  "graphql-gateway:0:8093:8191"
+  # graphql-gateway is HTTP-only — it doesn't bind a gRPC listener,
+  # but pkg/config still validates VAULTDMS_GRPC_PORT (`gt=0,lt=65536`)
+  # at boot, so we pass a distinct unused port (9101) rather than 0.
+  # http_port 8191 matches the docker-compose mapping; the Vite proxy
+  # routes /api/v1/graphql there in host mode.
+  "graphql-gateway:9101:8093:8191"
 )
 
 # Inter-service addresses must match the per-service port assignments above.
