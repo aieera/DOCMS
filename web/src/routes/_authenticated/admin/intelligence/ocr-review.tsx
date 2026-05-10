@@ -9,7 +9,7 @@ import {
 } from '@/api/ocr-quality'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 const GRADES: QualityGrade[] = ['excellent', 'good', 'fair', 'poor']
 

@@ -6,7 +6,7 @@ import { CheckCircle2, FileJson, RotateCcw, Save, XCircle } from 'lucide-react'
 
 import { getMetadataSchema, updateMetadataSchema } from '@/api/metadataSchema'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/cn'

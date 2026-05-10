@@ -16,7 +16,7 @@ import { Fingerprint, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { stepUp, isWebAuthnSupported } from '@/api/webauthn'
 import { useAuthStore } from '@/store/authStore'
@@ -64,7 +64,7 @@ export function StepUpDialog({ open, reason, onComplete, onCancel }: Props) {
       open={open}
       onOpenChange={(o) => !o && onCancel()}
       title="Verify your identity"
-      size="md"
+     
     >
       <div className="space-y-4" data-testid="stepup-dialog">
         <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950">

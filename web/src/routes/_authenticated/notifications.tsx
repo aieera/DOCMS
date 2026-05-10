@@ -5,7 +5,7 @@ import { Bell, BellOff, CheckCheck } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'

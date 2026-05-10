@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import { CheckCircle2, Pencil, X } from 'lucide-react'
 
 import { correctClassification } from '@/api/classify-corrections'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 
 interface Props {

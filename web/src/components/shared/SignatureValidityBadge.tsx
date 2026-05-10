@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import { CheckCircle2, AlertTriangle, ShieldQuestion, RotateCw, ShieldOff } from 'lucide-react'
 
 import { validatePDF, type PAdESReport, type CertStatus } from '@/api/signatures'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 interface BadgeProps {
   documentId: string

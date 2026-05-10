@@ -12,7 +12,7 @@ import {
   type RiskLevel,
 } from '@/api/compliance-pii'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 interface Props {
   documentId: string

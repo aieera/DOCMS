@@ -4,7 +4,7 @@ import { AlertCircle, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { acceptInvite } from '@/api/auth'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { cn } from '@/lib/cn'

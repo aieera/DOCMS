@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Shield, Check } from 'lucide-react'
 import * as Checkbox from '@radix-ui/react-checkbox'
 import { detectRedactions } from '@/api/intelligence'

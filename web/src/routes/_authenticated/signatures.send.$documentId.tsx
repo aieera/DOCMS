@@ -9,7 +9,7 @@ import {
   type ESignProvider, type SignatureProvider,
 } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 
 // /signatures/send/$documentId — ADR 0071 sender flow.

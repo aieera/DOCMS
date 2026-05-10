@@ -1,5 +1,5 @@
 import { FileIcon } from '@/components/ui/FileIcon'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Download } from 'lucide-react'
 
 export function UnsupportedFormat({ url, mimeType }: { url: string; mimeType: string }) {

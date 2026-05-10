@@ -40,7 +40,7 @@ import {
 } from '@/api/ldap'
 import { listGroups } from '@/api/groups'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'

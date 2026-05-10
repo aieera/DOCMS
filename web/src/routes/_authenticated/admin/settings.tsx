@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Dialog } from '@/components/ui/Dialog'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -96,7 +96,7 @@ function MFACard() {
         open={!!setupData}
         onOpenChange={(o) => { if (!o) { setSetupData(null); setTotp('') } }}
         title="Enable MFA"
-        size="md"
+       
       >
         {setupData && (
           <div className="space-y-3">

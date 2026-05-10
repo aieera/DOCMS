@@ -12,7 +12,7 @@ import {
   type Channel, type PrefCell,
 } from '@/api/notification-prefs'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 
 // /settings/notifications — ADR 0086 unified preferences page.

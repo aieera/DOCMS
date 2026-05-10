@@ -18,7 +18,7 @@ import {
 } from '@/api/models'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 
 const STATUS_VARIANT: Record<ModelStatus, string> = {

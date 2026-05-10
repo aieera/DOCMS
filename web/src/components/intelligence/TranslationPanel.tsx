@@ -9,7 +9,7 @@ import {
   requestTranslation,
   type Translation,
 } from '@/api/translation'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { TranslationViewer } from './TranslationViewer'
 import { languageLabel } from './LanguageBadge'
 

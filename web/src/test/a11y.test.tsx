@@ -3,7 +3,7 @@ import { render } from '@testing-library/react'
 import axe from 'axe-core'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 // axe-core finds WCAG 2.2 AA violations in a rendered DOM subtree. We run
 // it against the handful of components we can render without a router /

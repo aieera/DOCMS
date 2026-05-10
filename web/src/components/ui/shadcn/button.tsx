@@ -1,14 +1,17 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
+import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
-// Canonical shadcn Button. CVA-typed variants, asChild for
-// composing with anchors/Links (`<Button asChild><Link to="…">`),
-// no built-in `loading` prop — the canonical pattern is to render
-// a spinner as a child and `disabled={isPending}`. Migrating from
-// the bespoke ./Button: drop the `loading` prop, render the
-// spinner inline, set `disabled` explicitly.
+// Canonical shadcn Button extended with a `loading` sugar prop.
+// CVA-typed variants, asChild for composing with anchors/Links
+// (`<Button asChild><Link to="…">`). When `loading` is true the
+// button renders a leading spinner and is disabled — saves every
+// mutation site from rendering Loader2 by hand. Pure canonical
+// shadcn pattern is `disabled + manual spinner child`; the sugar
+// here keeps the call sites identical to the bespoke ./Button so
+// the strangler import-swap is purely mechanical.
 
 const buttonVariants = cva(
   cn(
@@ -43,12 +46,36 @@ export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  loading?: boolean
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+    if (asChild) {
+      // Slot composition can't accept extra children injected here —
+      // forward as-is so the parent (Link, anchor) renders them.
+      return (
+        <Comp
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </Comp>
+      )
+    }
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        disabled={disabled || loading}
+        {...props}
+      >
+        {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+        {children}
+      </Comp>
+    )
   },
 )
 Button.displayName = 'Button'

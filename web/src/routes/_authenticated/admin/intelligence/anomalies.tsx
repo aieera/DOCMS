@@ -16,7 +16,7 @@ import {
 } from '@/api/anomaly'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 const SEVERITY_VARIANT: Record<Severity, string> = {
   high:   'disposed',   // red

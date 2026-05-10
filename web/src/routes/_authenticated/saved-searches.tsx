@@ -13,7 +13,7 @@ import {
   type SavedSearch,
 } from '@/api/savedSearches'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'

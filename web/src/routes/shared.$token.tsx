@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { FileIcon } from '@/components/ui/FileIcon'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Download, Lock } from 'lucide-react'
 import { useState } from 'react'
 import { Input } from '@/components/ui/Input'

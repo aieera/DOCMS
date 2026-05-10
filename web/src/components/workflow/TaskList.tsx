@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Avatar } from '@/components/ui/Avatar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CheckSquare, Clock, ThumbsUp, ThumbsDown } from 'lucide-react'
@@ -23,7 +23,7 @@ export function TaskList({ tasks = [] }: { tasks?: Task[] }) {
           )}
           <Badge variant={t.status}>{t.status}</Badge>
           <div className="flex gap-1">
-            <Button variant="primary" size="sm"><ThumbsUp className="h-3.5 w-3.5" /> Approve</Button>
+            <Button variant="default" size="sm"><ThumbsUp className="h-3.5 w-3.5" /> Approve</Button>
             <Button variant="outline" size="sm"><ThumbsDown className="h-3.5 w-3.5" /> Reject</Button>
           </div>
         </div>

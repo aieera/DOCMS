@@ -10,7 +10,7 @@ import { Copy, RotateCcw, AlertTriangle, ArrowLeft } from 'lucide-react'
 
 import { api } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 
 export const Route = createFileRoute('/_authenticated/settings/security/mfa/recovery')({
@@ -90,7 +90,7 @@ function RecoveryCodesPage() {
               ))}
             </ul>
             <div className="mt-4 flex gap-2">
-              <Button variant="primary" onClick={copyAll}>
+              <Button variant="default" onClick={copyAll}>
                 <Copy className="h-4 w-4" /> Copy all
               </Button>
               <Button variant="ghost" onClick={() => regen.mutate()}>

@@ -11,7 +11,7 @@ import {
 } from '@/api/ner'
 import { getOCR } from '@/api/ocr'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Select } from '@/components/ui/Select'
 import { HighlightedText } from './HighlightedText'
 

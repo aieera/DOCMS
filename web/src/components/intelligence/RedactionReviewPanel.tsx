@@ -21,7 +21,7 @@ import {
   type RedactionStatus,
 } from '@/api/redaction'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Select } from '@/components/ui/Select'
 import { ENTITY_COLOR } from './EntitiesPanel'
 

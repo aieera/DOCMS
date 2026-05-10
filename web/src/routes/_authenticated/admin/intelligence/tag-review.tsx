@@ -11,7 +11,7 @@ import {
 } from '@/api/intelligence'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 const PAGE_SIZE = 50

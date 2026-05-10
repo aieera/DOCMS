@@ -9,7 +9,7 @@ import {
   type QualityGrade,
 } from '@/api/ocr-quality'
 import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 interface Props {
   documentId: string

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download, X } from 'lucide-react'
 
 import { getTranslationText } from '@/api/translation'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { isRTL, languageLabel } from './LanguageBadge'
 
 interface Props {

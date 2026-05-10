@@ -22,7 +22,7 @@ import {
 } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
@@ -184,7 +184,7 @@ function SecuritySection() {
         open={adding}
         onOpenChange={(o) => { if (!o) { setAdding(false); setName('') } }}
         title="Add a passkey"
-        size="md"
+       
       >
         <div className="space-y-3" data-testid="add-passkey-dialog">
           <p className="text-sm text-muted-foreground">

@@ -8,7 +8,7 @@ import {
   type WorkspaceAISettings,
 } from '@/api/rag'
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'
@@ -76,7 +76,7 @@ export function WorkspaceAISettingsDialog({ open, onOpenChange, workspaceId }: P
       onOpenChange={onOpenChange}
       title="AI settings"
       description="Per-workspace controls for the Ask page (RAG)."
-      size="md"
+     
     >
       {isLoading || !draft ? (
         <div className="flex items-center justify-center py-8">

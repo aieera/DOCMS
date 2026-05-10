@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { Spinner } from '@/components/ui/Spinner'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { OCRPage } from '@/api/ocr'
 import type { Entity } from '@/api/ner'

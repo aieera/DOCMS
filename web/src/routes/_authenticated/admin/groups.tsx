@@ -15,7 +15,7 @@ import {
 } from '@/api/groups'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'

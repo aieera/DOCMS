@@ -7,7 +7,7 @@ import { Copy, Plus } from 'lucide-react'
 import { createUser, getUsers, inviteUser, type InviteUserResponse } from '@/api/admin'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { UserTable } from '@/components/admin/UserTable'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import {
   Dialog,
   DialogContent,

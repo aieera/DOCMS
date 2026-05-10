@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Trash2, FolderInput, Tag, Download, X } from 'lucide-react'
 
 interface Props { count: number; onMove?: () => void; onDelete?: () => void; onTag?: () => void; onDownload?: () => void; onClear: () => void }

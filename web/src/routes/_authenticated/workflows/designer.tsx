@@ -20,7 +20,7 @@ import '@xyflow/react/dist/style.css'
 import { Plus, Trash2, ArrowUp, ArrowDown, Save, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'

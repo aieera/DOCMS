@@ -5,7 +5,7 @@ import { Key, Copy, Trash2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Dialog } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
@@ -117,7 +117,7 @@ function ApiKeysPage() {
         onOpenChange={(o) => { setShowCreate(o); if (!o) setIssued(null) }}
         title={issued ? 'API key created' : 'Create API key'}
         description={issued ? 'Copy the secret below — it will not be shown again.' : 'Pick a memorable name and an expiration window.'}
-        size="md"
+       
       >
         {issued ? (
           <div className="space-y-4">

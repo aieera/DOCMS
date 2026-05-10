@@ -10,7 +10,7 @@ import {
   type ComplianceConfig,
 } from '@/api/compliance-pii'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 
 const RISK_LEVELS = ['critical', 'high', 'medium', 'low'] as const

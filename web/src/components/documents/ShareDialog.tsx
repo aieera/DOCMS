@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Copy, Link2 } from 'lucide-react'
@@ -56,7 +56,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={`Share "${documentTitle}"`} size="md">
+    <Dialog open={open} onOpenChange={onOpenChange} title={`Share "${documentTitle}"`}>
       <div className="space-y-4">
         <Select
           label="Permission"

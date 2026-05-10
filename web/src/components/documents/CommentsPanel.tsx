@@ -26,7 +26,7 @@ import {
 import { getUsers } from '@/api/admin'
 import { useAuthStore } from '@/store/authStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatRelativeTime } from '@/lib/formatters'
 

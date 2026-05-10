@@ -12,7 +12,7 @@ import {
   type QESProvider,
 } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 
 export const Route = createFileRoute('/_authenticated/sign/$requestId/$signerId')({

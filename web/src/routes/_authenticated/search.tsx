@@ -12,7 +12,7 @@ import {
 } from '@/hooks/useSavedSearches'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/Badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'

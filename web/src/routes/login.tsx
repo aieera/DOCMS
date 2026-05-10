@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, ArrowLeft, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { useAuthStore } from '@/store/authStore'

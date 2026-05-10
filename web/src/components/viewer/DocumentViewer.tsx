@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { PDFViewer } from './PDFViewer'
 import { ImageViewer } from './ImageViewer'
 import { TextViewer } from './TextViewer'

@@ -24,7 +24,7 @@ import { Pencil, ExternalLink, X, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { startCoauthSession, probeEditorReachable, type CoauthSession } from '@/api/coauth'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 
 interface CoauthorEditorProps {

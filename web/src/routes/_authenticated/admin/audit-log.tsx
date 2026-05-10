@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { getAuditLog, exportAuditCSV } from '@/api/admin'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { AuditLogTable } from '@/components/admin/AuditLogTable'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 
 function AuditLogPage() {
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'audit-log'], queryFn: () => getAuditLog() })

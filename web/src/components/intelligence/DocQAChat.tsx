@@ -10,7 +10,7 @@ import {
   type QAMessage,
   type QAStreamEvent,
 } from '@/api/doc-qa'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { CitationList } from './CitationHighlight'
 import { SuggestedQuestions } from './SuggestedQuestions'
 

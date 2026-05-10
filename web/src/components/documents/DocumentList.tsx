@@ -1,6 +1,6 @@
 import { useUIStore } from '@/store/uiStore'
 import { Grid, List, Upload } from 'lucide-react'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { DocumentCard } from './DocumentCard'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -45,7 +45,7 @@ export function DocumentList({ documents, isLoading, onUploadClick }: Props) {
           <button onClick={() => setViewMode('table')} className={`rounded-md p-1.5 ${viewMode === 'table' ? 'bg-slate-200 dark:bg-slate-700' : ''}`} aria-label="Table view">
             <List className="h-4 w-4" />
           </button>
-          {onUploadClick && <Button variant="primary" size="sm" onClick={onUploadClick}><Upload className="h-4 w-4" /> Upload</Button>}
+          {onUploadClick && <Button variant="default" size="sm" onClick={onUploadClick}><Upload className="h-4 w-4" /> Upload</Button>}
         </div>
       </div>
       <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-2'}>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { annotationsApi, type Annotation, type PDFMarkupData } from '@/api/annotations'

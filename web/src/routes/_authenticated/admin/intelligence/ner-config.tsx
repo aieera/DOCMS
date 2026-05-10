@@ -12,7 +12,7 @@ import {
   type NERConfig,
 } from '@/api/ner'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 

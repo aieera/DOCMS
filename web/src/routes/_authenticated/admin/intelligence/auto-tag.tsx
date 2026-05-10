@@ -10,7 +10,7 @@ import {
   type AutoTagConfig,
 } from '@/api/intelligence'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 
 const SOURCE_KEYS = ['ner', 'classification', 'llm', 'pattern'] as const

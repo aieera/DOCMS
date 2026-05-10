@@ -13,7 +13,7 @@ import {
 } from '@/api/llm-config'
 import { getLLMUsage } from '@/api/llm-usage'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'

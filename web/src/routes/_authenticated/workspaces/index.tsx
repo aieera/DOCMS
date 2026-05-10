@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Card } from '@/components/ui/card'
