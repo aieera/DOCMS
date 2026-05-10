@@ -6,7 +6,7 @@ import { Send, Trash2, Plus } from 'lucide-react'
 
 import {
   createRequest, sendViaESign,
-  type ESignProvider, type SignatureProvider,
+  type ESignProvider, type SignatureProvider, type SigningMode,
 } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
@@ -33,7 +33,7 @@ export const Route = createFileRoute('/_authenticated/signatures/send/$documentI
 interface RecipientForm {
   email: string
   name: string
-  role: 'signer' | 'approver' | 'cc'
+  role: 'signer' | 'witness' | 'approver' | 'cc'
   embedded: boolean
 }
 
@@ -41,6 +41,11 @@ function SendForSignaturePage() {
   const { documentId } = Route.useParams()
   const navigate = useNavigate()
   const [provider, setProvider] = useState<SignatureProvider>('docusign')
+  // ADR 0073 — signing mode picker. Defaults to 'remote' (the
+  // legacy magic-link-per-signer behavior). 'mobile' is the same
+  // backend path with a mobile-optimized UI hint; 'in_person' is
+  // the single-device tablet ceremony.
+  const [signingMode, setSigningMode] = useState<SigningMode>('remote')
   const [recipients, setRecipients] = useState<RecipientForm[]>([
     { email: '', name: '', role: 'signer', embedded: false },
   ])
@@ -54,6 +59,7 @@ function SendForSignaturePage() {
       const req = await createRequest({
         document_id: documentId, version_id: versionId,
         provider,
+        signing_mode: signingMode,
         signers: recipients.map((r, i) => ({
           email: r.email, name: r.name, role: r.role, order: i + 1,
         })),
@@ -79,8 +85,15 @@ function SendForSignaturePage() {
       })
       return req
     },
-    onSuccess: () => {
+    onSuccess: (req) => {
       toast.success('Sent for signature')
+      // For in_person ceremonies the operator stays on the device
+      // and walks through the signers via the tablet route, rather
+      // than emailing magic-links.
+      if (signingMode === 'in_person' && (provider === 'internal' || provider.startsWith('qes_'))) {
+        navigate({ to: '/sign/in-person/$requestId', params: { requestId: req.id } })
+        return
+      }
       navigate({ to: '/admin/integrations' })
     },
     onError: (e: Error) => toast.error(e.message || 'Send failed'),
@@ -103,6 +116,37 @@ function SendForSignaturePage() {
   return (
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader title="Send for signature" description={`Document ${documentId}`} />
+
+      <section className="mb-6 rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-lg font-semibold">Signing mode</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="signing-mode-selector">
+          {([
+            { id: 'remote', label: 'Remote', help: 'Per-signer email link, separate devices.' },
+            { id: 'mobile', label: 'Mobile', help: 'Same email link, mobile-optimized capture.' },
+            { id: 'in_person', label: 'In-person', help: 'Single tablet, sequential signer + witness.' },
+          ] as { id: SigningMode; label: string; help: string }[]).map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setSigningMode(m.id)}
+              className={`rounded-md border p-3 text-start transition-colors ${
+                signingMode === m.id
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:border-primary'
+              }`}
+              data-testid={`signing-mode-${m.id}`}
+              aria-pressed={signingMode === m.id}
+            >
+              <span className="block text-sm font-medium">{m.label}</span>
+              <span className="block text-xs text-muted-foreground">{m.help}</span>
+            </button>
+          ))}
+        </div>
+        {signingMode === 'in_person' && (
+          <p className="mt-3 text-xs text-muted-foreground" data-testid="in-person-help">
+            In-person mode launches the tablet ceremony immediately after sending. Add a <strong>witness</strong> recipient if your workflow requires one.
+          </p>
+        )}
+      </section>
 
       <section className="mb-6 rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-lg font-semibold">Provider</h2>
@@ -156,6 +200,7 @@ function SendForSignaturePage() {
                 data-testid={`recipient-role-${i}`}
               >
                 <option value="signer">Signer</option>
+                <option value="witness">Witness</option>
                 <option value="approver">Approver</option>
                 <option value="cc">CC</option>
               </select>

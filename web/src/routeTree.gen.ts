@@ -52,6 +52,7 @@ import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authent
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
 import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './routes/_authenticated/signatures.send.$documentId'
+import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
 import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes/_authenticated/sign.$requestId.$signerId'
 import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
@@ -312,6 +313,12 @@ const AuthenticatedSignaturesSendDocumentIdRoute =
     path: '/signatures/send/$documentId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedSignInPersonRequestIdRoute =
+  AuthenticatedSignInPersonRequestIdRouteImport.update({
+    id: '/sign/in-person/$requestId',
+    path: '/sign/in-person/$requestId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSignRequestIdSignerIdRoute =
   AuthenticatedSignRequestIdSignerIdRouteImport.update({
     id: '/sign/$requestId/$signerId',
@@ -476,6 +483,7 @@ export interface FileRoutesByFullPath {
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -538,6 +546,7 @@ export interface FileRoutesByTo {
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -602,6 +611,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/_authenticated/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
+  '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/_authenticated/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -666,6 +676,7 @@ export interface FileRouteTypes {
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
+    | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/'
@@ -728,6 +739,7 @@ export interface FileRouteTypes {
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
+    | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId'
@@ -791,6 +803,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/tenant/ai'
     | '/_authenticated/settings/security/mfa'
     | '/_authenticated/sign/$requestId/$signerId'
+    | '/_authenticated/sign/in-person/$requestId'
     | '/_authenticated/signatures/send/$documentId'
     | '/_authenticated/workflows/instances/$instanceId'
     | '/_authenticated/workspaces/$workspaceId/'
@@ -1111,6 +1124,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSignaturesSendDocumentIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sign/in-person/$requestId': {
+      id: '/_authenticated/sign/in-person/$requestId'
+      path: '/sign/in-person/$requestId'
+      fullPath: '/sign/in-person/$requestId'
+      preLoaderRoute: typeof AuthenticatedSignInPersonRequestIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/sign/$requestId/$signerId': {
       id: '/_authenticated/sign/$requestId/$signerId'
       path: '/sign/$requestId/$signerId'
@@ -1319,6 +1339,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
+  AuthenticatedSignInPersonRequestIdRoute: typeof AuthenticatedSignInPersonRequestIdRoute
   AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
   AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
@@ -1390,6 +1411,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
   AuthenticatedSignRequestIdSignerIdRoute:
     AuthenticatedSignRequestIdSignerIdRoute,
+  AuthenticatedSignInPersonRequestIdRoute:
+    AuthenticatedSignInPersonRequestIdRoute,
   AuthenticatedSignaturesSendDocumentIdRoute:
     AuthenticatedSignaturesSendDocumentIdRoute,
   AuthenticatedWorkflowsInstancesInstanceIdRoute:

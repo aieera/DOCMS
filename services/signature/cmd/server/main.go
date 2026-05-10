@@ -236,6 +236,9 @@ func main() {
 	// polls /qes/session/:id for the final status.
 	h.RegisterQES(mux, "/sign/done")
 	h.RegisterESign(mux)
+	// ADR 0073 — in-person tablet ceremony (single device, sequential
+	// signer + witness on the same session).
+	h.RegisterInPerson(mux)
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

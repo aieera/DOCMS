@@ -50,10 +50,11 @@ func (h *Handler) verifyBytes(w http.ResponseWriter, r *http.Request) {
 }
 
 type createBody struct {
-	DocumentID string         `json:"document_id"`
-	VersionID  string         `json:"version_id"`
-	Provider   string         `json:"provider"`
-	Signers    []model.Signer `json:"signers"`
+	DocumentID  string         `json:"document_id"`
+	VersionID   string         `json:"version_id"`
+	Provider    string         `json:"provider"`
+	SigningMode string         `json:"signing_mode,omitempty"`
+	Signers     []model.Signer `json:"signers"`
 }
 
 func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +68,7 @@ func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
 	if body.Provider == "" {
 		body.Provider = "internal"
 	}
-	req, err := h.svc.CreateRequest(r.Context(), tenantID, body.DocumentID, body.VersionID, userID, body.Provider, body.Signers)
+	req, err := h.svc.CreateRequest(r.Context(), tenantID, body.DocumentID, body.VersionID, userID, body.Provider, body.SigningMode, body.Signers)
 	if err != nil {
 		h.log.Error().Err(err).Msg("create signature request")
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -98,6 +99,16 @@ func (h *Handler) listByDocument(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, reqs)
 }
 
+// recordSignatureBody carries the optional ADR 0073 evidence fields.
+// All fields are optional; callers that pre-date ADR 0073 (the
+// click-to-sign + typed flows) send an empty body and the recorded
+// row keeps signature_svg_path / device_kind / signed_doc_hash NULL.
+type recordSignatureBody struct {
+	SVGPath    string `json:"svg_path,omitempty"`
+	DeviceKind string `json:"device_kind,omitempty"`
+	DocHashHex string `json:"doc_hash_sha256,omitempty"`
+}
+
 func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Auth-Tenant-ID")
 	reqID := r.PathValue("id")
@@ -106,7 +117,24 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		ip = strings.Split(fwd, ",")[0]
 	}
-	if err := h.svc.RecordSignature(r.Context(), tenantID, reqID, signerID, ip); err != nil {
+	var body recordSignatureBody
+	// Decode best-effort: an empty/absent body is valid for the
+	// click-to-sign and typed flows that don't capture biometrics.
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+	}
+	if err := h.svc.RecordSignature(r.Context(), service.RecordSignatureInput{
+		TenantID:   tenantID,
+		RequestID:  reqID,
+		SignerID:   signerID,
+		IPAddress:  ip,
+		SVGPath:    body.SVGPath,
+		DeviceKind: body.DeviceKind,
+		DocHashHex: body.DocHashHex,
+	}); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

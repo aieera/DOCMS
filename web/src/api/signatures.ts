@@ -20,13 +20,24 @@ export type SignatureType = 'simple' | 'advanced' | 'qualified'
 // when SignatureType = 'qualified'.
 export type QESProvider = 'swisscom' | 'intesi' | 'infocert' | 'mock'
 
+// SigningMode is the ADR 0073 ceremony shape:
+//   remote    — per-signer magic-link, separate devices (default)
+//   mobile    — same magic-link, mobile-optimized UI + finger-drawn capture
+//   in_person — single device, sequential signer + witness on one session
+export type SigningMode = 'remote' | 'mobile' | 'in_person'
+
 export interface Signer {
   id?: string
   email: string
   name: string
-  role?: 'signer' | 'approver' | 'cc'
+  role?: 'signer' | 'witness' | 'approver' | 'cc'
   order?: number
   status?: 'pending' | 'signed' | 'declined'
+  signing_url?: string
+  signed_at?: string | null
+  signature_svg_path?: string
+  signed_doc_hash_sha256?: string
+  device_kind?: 'phone' | 'tablet' | 'desktop'
 }
 
 export interface SignatureRequest {
@@ -35,6 +46,8 @@ export interface SignatureRequest {
   version_id: string
   status: string
   provider: SignatureProvider
+  signing_mode?: SigningMode
+  final_hash_sha256?: string
   signers: Signer[]
   created_at: string
   expires_at: string
@@ -46,6 +59,7 @@ export async function createRequest(input: {
   document_id: string
   version_id: string
   provider: SignatureProvider
+  signing_mode?: SigningMode
   signers: Signer[]
 }): Promise<SignatureRequest> {
   const { data } = await api.post<SignatureRequest>('/signatures/requests', input)
@@ -55,6 +69,63 @@ export async function createRequest(input: {
 export async function getRequest(id: string): Promise<SignatureRequest> {
   const { data } = await api.get<SignatureRequest>(`/signatures/requests/${id}`)
   return data
+}
+
+// ----- ADR 0073: per-signer signature recording -------------------
+
+export interface RecordSignatureInput {
+  request_id: string
+  signer_id: string
+  svg_path?: string
+  device_kind?: 'phone' | 'tablet' | 'desktop'
+  doc_hash_sha256?: string
+}
+
+// recordSignature posts the captured biometric path + tamper-detection
+// hash to the existing per-signer endpoint. Empty body still works for
+// click-to-sign / typed flows that don't capture biometrics.
+export async function recordSignature(input: RecordSignatureInput): Promise<void> {
+  await api.post(`/signatures/requests/${input.request_id}/sign/${input.signer_id}`, {
+    svg_path: input.svg_path,
+    device_kind: input.device_kind,
+    doc_hash_sha256: input.doc_hash_sha256,
+  })
+}
+
+// signInPerson hits the in-person ceremony endpoint (ADR 0073). The
+// backend enforces sequential signer→witness order on the same
+// session and returns 409 with { expected_signer_id } if the caller
+// is out of step so the UI can fast-forward to the right signer.
+export interface InPersonSignResult {
+  status: 'signed'
+}
+
+export interface InPersonOutOfOrderError {
+  expected_signer_id: string
+}
+
+export async function signInPerson(input: RecordSignatureInput): Promise<InPersonSignResult> {
+  const { data } = await api.post<InPersonSignResult>(
+    `/signatures/requests/${input.request_id}/in-person/sign`,
+    {
+      signer_id: input.signer_id,
+      svg_path: input.svg_path,
+      device_kind: input.device_kind,
+      doc_hash_sha256: input.doc_hash_sha256,
+    },
+  )
+  return data
+}
+
+// sha256Hex computes the hex SHA-256 of a Blob via the SubtleCrypto
+// API. Used to capture the document hash the signer saw at signing
+// time for the ADR 0073 tamper-detection column.
+export async function sha256Hex(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', buf)
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 // ----- QES ceremony -----------------------------------------------

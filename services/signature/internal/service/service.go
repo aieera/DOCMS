@@ -71,17 +71,27 @@ func New(cfg Config) *Service {
 // CreateRequest creates a signature request with signing URLs for each signer
 // and enqueues the "signature_requested" notification through the outbox so
 // delivery is durable across crashes.
-func (s *Service) CreateRequest(ctx context.Context, tenantID, documentID, versionID, createdBy, provider string, signers []model.Signer) (*model.SignatureRequest, error) {
+//
+// signingMode is one of remote / mobile / in_person (ADR 0073). Empty
+// defaults to "remote" for back-compat with callers minted before ADR 0073.
+// in_person ceremonies don't need per-signer magic-link tokens (the
+// device user is the workflow operator); we still mint them so the
+// schema's UNIQUE NOT NULL signing_url_token constraint holds.
+func (s *Service) CreateRequest(ctx context.Context, tenantID, documentID, versionID, createdBy, provider, signingMode string, signers []model.Signer) (*model.SignatureRequest, error) {
+	if signingMode == "" {
+		signingMode = "remote"
+	}
 	req := &model.SignatureRequest{
-		ID:         repository.NewID(),
-		TenantID:   tenantID,
-		DocumentID: documentID,
-		VersionID:  versionID,
-		CreatedBy:  createdBy,
-		Status:     "pending",
-		Provider:   provider,
-		CreatedAt:  time.Now().UTC(),
-		ExpiresAt:  time.Now().UTC().Add(14 * 24 * time.Hour),
+		ID:          repository.NewID(),
+		TenantID:    tenantID,
+		DocumentID:  documentID,
+		VersionID:   versionID,
+		CreatedBy:   createdBy,
+		Status:      "pending",
+		Provider:    provider,
+		SigningMode: signingMode,
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(14 * 24 * time.Hour),
 	}
 	for i := range signers {
 		signers[i].ID = repository.NewID()
@@ -143,45 +153,76 @@ func (s *Service) ListByDocument(ctx context.Context, tenantID, documentID strin
 	return s.repo.ListByDocument(ctx, tenantID, documentID)
 }
 
-// RecordSignature marks a signer as signed and, when every required signer is
-// done, completes the request and enqueues the "signature.completed" event
-// through the outbox in the same transaction.
-func (s *Service) RecordSignature(ctx context.Context, tenantID, requestID, signerID, ipAddress string) error {
-	req, err := s.repo.GetByID(ctx, tenantID, requestID)
+// RecordSignatureInput carries the per-signer evidence captured at
+// the moment of signing. SVGPath / DeviceKind / DocHashHex are the
+// ADR 0073 additions; older callers can leave them empty.
+type RecordSignatureInput struct {
+	TenantID    string
+	RequestID   string
+	SignerID    string
+	IPAddress   string
+	SVGPath     string
+	DeviceKind  string
+	DocHashHex  string
+}
+
+// RecordSignature marks a signer as signed and, when every required
+// signer (including witnesses) is done, completes the request and
+// enqueues the "signature.completed" event through the outbox in
+// the same transaction.
+//
+// On the last-signer commit, ADR 0073 also stamps
+// signature_requests.final_hash_sha256 from the caller-supplied
+// DocHashHex so Verify can detect post-sign blob swaps.
+func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) error {
+	req, err := s.repo.GetByID(ctx, in.TenantID, in.RequestID)
 	if err != nil || req == nil {
 		return fmt.Errorf("request not found")
 	}
 	now := time.Now().UTC()
 	allSigned := true
 	for i := range req.Signers {
-		if req.Signers[i].ID == signerID {
+		if req.Signers[i].ID == in.SignerID {
 			req.Signers[i].Status = "signed"
 			req.Signers[i].SignedAt = &now
-			req.Signers[i].IPAddress = ipAddress
+			req.Signers[i].IPAddress = in.IPAddress
+			req.Signers[i].SignatureSVGPath = in.SVGPath
+			req.Signers[i].DeviceKind = in.DeviceKind
+			req.Signers[i].SignedDocHashSHA256 = in.DocHashHex
 		}
-		if req.Signers[i].Status != "signed" && req.Signers[i].Role == "signer" {
-			allSigned = false
+		// Both signer + witness count as required for completion;
+		// approver/cc do not gate the request.
+		if req.Signers[i].Status != "signed" {
+			role := req.Signers[i].Role
+			if role == "signer" || role == "witness" {
+				allSigned = false
+			}
 		}
 	}
 
-	tenantUUID, err := uuid.Parse(tenantID)
+	tenantUUID, err := uuid.Parse(in.TenantID)
 	if err != nil {
 		return fmt.Errorf("tenant_id: %w", err)
 	}
-	reqUUID, err := uuid.Parse(requestID)
+	reqUUID, err := uuid.Parse(in.RequestID)
 	if err != nil {
 		return fmt.Errorf("request id: %w", err)
 	}
 
 	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		if err := s.repo.UpdateSignersTx(ctx, tx, tenantID, requestID, req.Signers); err != nil {
+		if err := s.repo.UpdateSignersTx(ctx, tx, in.TenantID, in.RequestID, req.Signers); err != nil {
 			return err
 		}
 		if !allSigned {
 			return nil
 		}
-		if err := s.repo.CompleteTx(ctx, tx, tenantID, requestID); err != nil {
+		if err := s.repo.CompleteTx(ctx, tx, in.TenantID, in.RequestID); err != nil {
 			return err
+		}
+		if in.DocHashHex != "" {
+			if err := s.repo.SetFinalHashTx(ctx, tx, in.TenantID, in.RequestID, in.DocHashHex); err != nil {
+				return err
+			}
 		}
 		payload, _ := json.Marshal(map[string]any{
 			"specversion": "1.0",
@@ -197,6 +238,24 @@ func (s *Service) RecordSignature(ctx context.Context, tenantID, requestID, sign
 		evt := database.NewOutboxEvent(tenantUUID, "dms.signature.completed.v1", "signature_request", reqUUID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// NextExpectedSigner returns the id of the next signer who should
+// sign the request given its sequential ordering. Returns "" if all
+// signers (signer + witness roles) are already signed. Used by the
+// in-person ceremony to enforce signer→witness order on a single
+// device and surface a 409 with the expected id when the UI gets
+// out of step.
+func (s *Service) NextExpectedSigner(req *model.SignatureRequest) string {
+	for _, sn := range req.Signers {
+		if sn.Role != "signer" && sn.Role != "witness" {
+			continue
+		}
+		if sn.Status != "signed" {
+			return sn.ID
+		}
+	}
+	return ""
 }
 
 // CancelRequest cancels a pending signature request.
