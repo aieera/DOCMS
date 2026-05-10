@@ -20,7 +20,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatRelativeTime } from '@/lib/formatters'
 
 const EMPTY: CreatePolicyInput = {

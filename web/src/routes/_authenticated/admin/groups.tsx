@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Avatar } from '@/components/ui/Avatar'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
