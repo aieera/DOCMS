@@ -51,19 +51,50 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// readErrorMessage extracts a human-readable message from an axios
+// error response. Tries the common shapes our backend services emit
+// — { error }, { message }, { detail }, FieldError envelopes — then
+// falls back to the raw status text. Surfaced in toasts so the user
+// (or QA) sees what the server actually rejected, not just "400".
+function readErrorMessage(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null
+  const data = (err as { response?: { data?: unknown } }).response?.data
+  if (typeof data === 'string') return data
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>
+    if (typeof d.error === 'string') return d.error
+    if (typeof d.message === 'string') return d.message
+    if (typeof d.detail === 'string') return d.detail
+    if (Array.isArray(d.field_errors) && d.field_errors.length > 0) {
+      const fe = d.field_errors[0] as { field?: string; message?: string }
+      if (fe.field && fe.message) return `${fe.field}: ${fe.message}`
+    }
+    if (d.code && typeof d.code === 'string' && d.message) {
+      return `${d.code}: ${d.message}`
+    }
+  }
+  return null
+}
+
 api.interceptors.response.use(
   (r) => r,
   (error) => {
     const status = error.response?.status
+    const detail = readErrorMessage(error)
     if (status === 401) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     } else if (status === 403) {
-      toast.error('Access denied')
+      toast.error(detail ? `Access denied — ${detail}` : 'Access denied')
     } else if (status === 429) {
       toast.error('Rate limited — try again in a moment')
     } else if (status && status >= 500) {
-      toast.error('Server error — please retry')
+      toast.error(detail ? `Server error: ${detail}` : 'Server error — please retry')
+    } else if (status === 400 && detail) {
+      // Validation errors weren't surfaced before — toast the first
+      // field error / message so the user sees what to fix instead
+      // of a silent failure.
+      toast.error(detail)
     }
     return Promise.reject(error)
   },

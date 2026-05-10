@@ -128,8 +128,16 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         toast.success(`${file.name} uploaded`)
         await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
       } catch (e) {
-        setStatus(id, 'failed', String(e))
-        toast.error(`${file.name} upload failed`)
+        // Detail comes from axios's response interceptor (toast already
+        // surfaced the field error). Persist the underlying message on
+        // the upload row so the user can see it after the toast fades.
+        const detail =
+          (e as { response?: { data?: { error?: string; message?: string } } }).response?.data?.error
+          ?? (e as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message
+          ?? (e as Error).message
+          ?? String(e)
+        setStatus(id, 'failed', detail)
+        toast.error(`${file.name} — ${detail}`)
       }
     }
   }, [workspaceId, folderId, addUpload, updateProgress, setStatus, qc])
