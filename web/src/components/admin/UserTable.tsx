@@ -17,7 +17,7 @@ const columns: ColumnDef<User, unknown>[] = [
         <Avatar name={row.original.display_name} size="sm" />
         <div>
           <p className="text-sm font-medium">{row.original.display_name}</p>
-          <p className="text-xs text-[var(--color-text-secondary)]">{row.original.email}</p>
+          <p className="text-xs text-muted-foreground">{row.original.email}</p>
         </div>
       </div>
     ),
@@ -31,7 +31,7 @@ const columns: ColumnDef<User, unknown>[] = [
   {
     accessorKey: 'last_login_at',
     header: 'Last Login',
-    cell: ({ row }) => <span className="text-sm text-[var(--color-text-secondary)]">{row.original.last_login_at ? formatRelativeTime(row.original.last_login_at) : 'Never'}</span>,
+    cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.last_login_at ? formatRelativeTime(row.original.last_login_at) : 'Never'}</span>,
   },
   {
     id: 'actions',
@@ -50,6 +50,13 @@ const columns: ColumnDef<User, unknown>[] = [
   },
 ]
 
-export function UserTable({ users }: { users: User[] }) {
-  return <DataTable columns={columns} data={users} />
+export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boolean }) {
+  return (
+    <DataTable
+      columns={columns}
+      data={users}
+      isLoading={isLoading}
+      emptyState="No users yet. Invite someone to get started."
+    />
+  )
 }

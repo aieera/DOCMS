@@ -3,19 +3,31 @@ import { Button } from './Button'
 
 interface EmptyStateProps {
   icon?: ReactNode
-  title: string
-  description?: string
+  title: ReactNode
+  description?: ReactNode
   actionLabel?: string
   onAction?: () => void
+  // Optional ReactNode action slot for callers that need anything
+  // beyond a single label+onClick (link buttons, multi-button rows).
+  // Takes precedence over actionLabel/onAction when provided.
+  action?: ReactNode
 }
 
-export function EmptyState({ icon, title, description, actionLabel, onAction }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, actionLabel, onAction, action }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      {icon && <div className="text-[var(--color-text-secondary)]">{icon}</div>}
-      <h3 className="text-lg font-semibold">{title}</h3>
-      {description && <p className="max-w-sm text-sm text-[var(--color-text-secondary)]">{description}</p>}
-      {actionLabel && onAction && <Button variant="primary" onClick={onAction}>{actionLabel}</Button>}
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+      {icon && (
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          {icon}
+        </div>
+      )}
+      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      {description && <p className="max-w-sm text-sm text-muted-foreground">{description}</p>}
+      {(action ?? (actionLabel && onAction)) && (
+        <div className="mt-1">
+          {action ?? <Button onClick={onAction}>{actionLabel}</Button>}
+        </div>
+      )}
     </div>
   )
 }
