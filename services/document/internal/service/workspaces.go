@@ -83,12 +83,38 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 		if err := s.repos.Workspaces.AddMember(ctx, tx, tenantID, w.ID, userID, userID, "admin"); err != nil {
 			return err
 		}
+		// Auto-create a root folder so uploads work immediately. The
+		// CreateDocument validator requires a non-nil folder_id, and
+		// the frontend's useUpload picks the workspace's root folder
+		// when no explicit folder is selected. Without this, every
+		// fresh workspace returns 400 from CreateDocument because
+		// `getFolders(workspaceId)` finds no rows. Same tx so the
+		// workspace + member + root folder land atomically.
+		rootID, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+		root := &model.Folder{
+			TenantID:    tenantID,
+			ID:          rootID,
+			WorkspaceID: w.ID,
+			Name:        "Root",
+			Path:        ltreeLabel("Root", rootID),
+			Depth:       0,
+			CreatedBy:   userID,
+			CreatedAt:   time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+		}
+		if err := s.repos.Folders.Create(ctx, tx, root); err != nil {
+			return err
+		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.workspace.created.v1", "workspace", w.ID,
 			map[string]any{
-				"workspace_id": w.ID.String(),
-				"name":         w.Name,
-				"region_pin":   w.RegionPin,
-				"created_by":   userID.String(),
+				"workspace_id":   w.ID.String(),
+				"name":           w.Name,
+				"region_pin":     w.RegionPin,
+				"created_by":     userID.String(),
+				"root_folder_id": rootID.String(),
 			})
 		if err != nil {
 			return err

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
 import { createDocument, createVersion } from '@/api/documents'
-import { getFolders } from '@/api/workspaces'
+import { getFolders, createFolder } from '@/api/workspaces'
 import { toast } from 'sonner'
 
 // Full upload flow:
@@ -28,21 +28,38 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       return
     }
     // Resolve target folder once for the batch. The CreateDocument
-    // endpoint requires a non-nil folder_id even at workspace root —
-    // every workspace has an auto-created root folder, find it via
-    // GET /workspaces/{id}/folders and use it when no explicit folder
-    // is selected. Caching at the batch level means we don't query
-    // for every file in the batch.
+    // endpoint requires a non-nil folder_id even at workspace root.
+    // Workspaces created post backend-fix auto-get a "Root" folder;
+    // legacy workspaces don't, so fall back to creating one if the
+    // workspace has none yet. Caching at the batch level means we
+    // don't query for every file in the batch.
     let resolvedFolderId = folderId
     if (!resolvedFolderId) {
       try {
         const folders = await getFolders(workspaceId)
-        const root = (folders as unknown as { id: string; parent_folder_id?: string | null; parent_id?: string | null }[])
-          .find((f) => !f.parent_folder_id && !f.parent_id)
-        if (root) resolvedFolderId = root.id
+        const folderList = folders as unknown as { id: string; parent_folder_id?: string | null; parent_id?: string | null }[]
+        const root = folderList.find((f) => !f.parent_folder_id && !f.parent_id)
+        if (root) {
+          resolvedFolderId = root.id
+        } else if (folderList.length === 0) {
+          // Legacy workspace with no folders — auto-create the root
+          // so the upload can proceed. Best-effort: if creation fails
+          // (permission, race), we surface the original error from
+          // createDocument below.
+          try {
+            const created = await createFolder(workspaceId, 'Root')
+            resolvedFolderId = (created as unknown as { id: string }).id
+          } catch {
+            // fall through; createDocument will surface a clearer error
+          }
+        }
       } catch {
         // fall through; createDocument will surface a clearer error
       }
+    }
+    if (!resolvedFolderId) {
+      toast.error('No folder available in this workspace — create one first or contact an admin.')
+      return
     }
     for (const file of files) {
       const id = crypto.randomUUID()
