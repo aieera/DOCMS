@@ -2,16 +2,16 @@
 //
 // One page, three sections:
 //   1. Connection — URL, transport, bind DN, bind password, search
-//      bases, filters. Includes the "Test connection" button that
+//      bases, filters. Includes the"Test connection" button that
 //      hits POST /admin/ldap/test-bind for a dry-run.
 //   2. Group mappings — AD group DN → DMS group selector, with
 //      add/remove. Pulls DMS groups from /admin/groups.
 //   3. Sync history — most recent ~50 runs from
-//      GET /admin/ldap/configs/{id}/history. "Sync now" button
+//      GET /admin/ldap/configs/{id}/history."Sync now" button
 //      runs SyncTenant synchronously.
 //
 // Bind passwords are write-only. Existing config rows show
-// "•••••••• (set)" instead of round-tripping the secret. To rotate,
+//"•••••••• (set)" instead of round-tripping the secret. To rotate,
 // the admin types a new password into the field — leaving it empty
 // on PATCH preserves the stored value.
 import { useEffect, useMemo, useState } from 'react'
@@ -113,7 +113,7 @@ function NoConfigYet({ onCreated }: { onCreated: () => void }) {
   })
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+    <div className="rounded-lg border border-border bg-card p-6">
       <EmptyState
         icon={<Network className="h-10 w-10" />}
         title="No LDAP integration yet"
@@ -190,13 +190,13 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
           {config.is_active ? 'Active' : 'Draft'}
         </Badge>
         {config.has_bind_password && (
-          <span className="text-[var(--color-text-secondary)]">
+          <span className="text-muted-foreground">
             <KeyRound className="mr-1 inline h-3 w-3" />
             Bind password: <code>•••••••• (set)</code>
           </span>
         )}
         {config.last_sync_at && (
-          <span className="text-[var(--color-text-secondary)]">
+          <span className="text-muted-foreground">
             Last sync: {new Date(config.last_sync_at).toLocaleString()}{' '}
             {config.last_sync_status && <Badge variant={syncBadge(config.last_sync_status)}>{config.last_sync_status}</Badge>}
           </span>
@@ -204,7 +204,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
       </div>
 
       {config.allow_insecure && !config.use_starttls && (
-        <div className="mb-4 flex items-start gap-2 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div className="mb-4 flex items-start gap-2 rounded border border-red-300 bg-destructive/10 p-3 text-sm text-red-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <strong>Plain ldap:// without StartTLS is in use.</strong> All bind
@@ -297,7 +297,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
               onChange={(e) => setBody({ ...body, use_starttls: e.target.checked })} />
             Use StartTLS for ldap://
           </label>
-          <label className="flex items-center gap-2 text-red-700">
+          <label className="flex items-center gap-2 text-destructive">
             <input type="checkbox" checked={!!body.allow_insecure}
               onChange={(e) => setBody({ ...body, allow_insecure: e.target.checked })} />
             Allow plain ldap:// (cleartext) — testing only
@@ -364,7 +364,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
         {secondaryAction}
         {testResult && (
           <span className="ml-auto flex items-center gap-2 text-sm">
-            {testResult.ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-red-600" />}
+            {testResult.ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}
             {testResult.ok
               ? `bind ok · user_found=${testResult.user_found} · groups=${testResult.groups_found}`
               : (testResult.error ?? 'failed')}
@@ -412,9 +412,9 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
   return (
     <Section icon={<Network className="h-5 w-5" />} title="Group mappings"
       hint="Map AD/LDAP group DNs to DMS groups. Unmapped LDAP groups are ignored.">
-      <div className="overflow-hidden rounded border border-[var(--color-border)]">
+      <div className="overflow-hidden rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-[var(--color-bg-tertiary)]">
+          <thead className="bg-muted">
             <tr>
               <th className="px-3 py-2 text-left">LDAP group DN</th>
               <th className="px-3 py-2 text-left">DMS group</th>
@@ -425,11 +425,11 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
             {(mappings ?? []).map((m) => {
               const dms = dmsGroups?.find((g) => g.id === m.dms_group_id)
               return (
-                <tr key={`${m.ldap_group_dn}|${m.dms_group_id}`} className="border-t border-[var(--color-border)]">
+                <tr key={`${m.ldap_group_dn}|${m.dms_group_id}`} className="border-t border-border">
                   <td className="px-3 py-2 font-mono text-xs">{m.ldap_group_dn}</td>
                   <td className="px-3 py-2">{dms?.name ?? <code className="text-xs">{m.dms_group_id}</code>}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => del.mutate(m)} title="Remove mapping" className="text-[var(--color-text-secondary)] hover:text-red-600">
+                    <button onClick={() => del.mutate(m)} title="Remove mapping" className="text-muted-foreground hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -437,7 +437,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
               )
             })}
             {!mappings?.length && (
-              <tr><td colSpan={3} className="px-3 py-8 text-center text-[var(--color-text-secondary)]">No mappings yet.</td></tr>
+              <tr><td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">No mappings yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -495,9 +495,9 @@ function HistorySection({ config }: { config: LDAPConfig }) {
           Sync now
         </Button>
       </div>
-      <div className="overflow-hidden rounded border border-[var(--color-border)]">
+      <div className="overflow-hidden rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-[var(--color-bg-tertiary)]">
+          <thead className="bg-muted">
             <tr>
               <th className="px-3 py-2 text-left">Started</th>
               <th className="px-3 py-2 text-left">Trigger</th>
@@ -509,7 +509,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
           </thead>
           <tbody>
             {(data ?? []).map((h) => (
-              <tr key={h.id} className="border-t border-[var(--color-border)]">
+              <tr key={h.id} className="border-t border-border">
                 <td className="px-3 py-2">{new Date(h.started_at).toLocaleString()}</td>
                 <td className="px-3 py-2"><code className="text-xs">{h.trigger}</code></td>
                 <td className="px-3 py-2"><Badge variant={syncBadge(h.status)}>{h.status}</Badge></td>
@@ -519,7 +519,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
               </tr>
             ))}
             {!data?.length && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-[var(--color-text-secondary)]">No sync runs yet.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No sync runs yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -532,11 +532,11 @@ function HistorySection({ config }: { config: LDAPConfig }) {
 
 function Section({ icon, title, hint, children }: { icon: React.ReactNode; title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+    <section className="rounded-lg border border-border bg-card p-6">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold">{icon}{title}</h2>
-          {hint && <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{hint}</p>}
+          {hint && <p className="mt-1 text-sm text-muted-foreground">{hint}</p>}
         </div>
       </div>
       {children}
@@ -549,7 +549,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     <label className="flex flex-col gap-1.5 text-sm">
       <span className="font-medium">{label}</span>
       {children}
-      {hint && <span className="text-xs text-[var(--color-text-secondary)]">{hint}</span>}
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </label>
   )
 }

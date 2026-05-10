@@ -101,7 +101,7 @@ function ModelsPage() {
         <Metric
           label="Production"
           value={production ? production.version_tag : '—'}
-          icon={<Brain className="h-4 w-4 text-emerald-500" />}
+          icon={<Brain className="h-4 w-4 text-success" />}
         />
         <Metric label="Examples" value={(stats.data?.total ?? 0).toLocaleString()} />
         <Metric label="Unused" value={(stats.data?.unused ?? 0).toLocaleString()} />
@@ -113,7 +113,7 @@ function ModelsPage() {
 
       {/* Filter pill bar */}
       <div className="mt-6 flex items-center gap-2 text-sm">
-        <span className="text-zinc-500">Filter:</span>
+        <span className="text-muted-foreground">Filter:</span>
         {(['', 'production', 'candidate', 'training', 'evaluating', 'retired', 'failed'] as const).map(
           (s) => (
             <button
@@ -121,8 +121,8 @@ function ModelsPage() {
               onClick={() => setFilterStatus(s)}
               className={`rounded px-2 py-1 text-xs ${
                 filterStatus === s
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300'
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-foreground hover:bg-muted  '
               }`}
             >
               {s === '' ? 'All' : s}
@@ -131,12 +131,12 @@ function ModelsPage() {
         )}
       </div>
 
-      <div className="mt-4 rounded border border-zinc-200 dark:border-zinc-800">
-        <div className="border-b border-zinc-100 px-4 py-2 text-sm font-medium dark:border-zinc-900">
+      <div className="mt-4 rounded border border-border">
+        <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Model versions
         </div>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-zinc-500">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Version</th>
               <th className="px-4 py-2">Type</th>
@@ -149,30 +149,30 @@ function ModelsPage() {
           </thead>
           <tbody>
             {versions.isLoading && (
-              <tr><td colSpan={7} className="px-4 py-4 text-center text-zinc-500">Loading…</td></tr>
+              <tr><td colSpan={7} className="px-4 py-4 text-center text-muted-foreground">Loading…</td></tr>
             )}
             {!versions.isLoading && rows.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-4 text-center text-zinc-500">
+              <tr><td colSpan={7} className="px-4 py-4 text-center text-muted-foreground">
                 No model versions yet. Trigger a retrain once you have training examples.
               </td></tr>
             )}
             {rows.map((v) => {
               const acc = readAccuracy(v.eval_metrics) ?? readAccuracy(v.training_metrics)
               return (
-                <tr key={v.id} className="border-t border-zinc-100 dark:border-zinc-900">
+                <tr key={v.id} className="border-t border-border">
                   <td className="px-4 py-2 font-mono">{v.version_tag}</td>
-                  <td className="px-4 py-2 text-zinc-500">{v.model_type}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{v.model_type}</td>
                   <td className="px-4 py-2">
                     <Badge variant={STATUS_VARIANT[v.status]}>{v.status}</Badge>
                     {v.error_message && (
-                      <div className="mt-1 text-xs text-red-500">{v.error_message}</div>
+                      <div className="mt-1 text-xs text-destructive">{v.error_message}</div>
                     )}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums">{v.training_examples_count}</td>
                   <td className="px-4 py-2 text-right tabular-nums">
                     {acc !== null ? `${(acc * 100).toFixed(1)}%` : '—'}
                   </td>
-                  <td className="px-4 py-2 text-zinc-500">{new Date(v.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{new Date(v.created_at).toLocaleString()}</td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex justify-end gap-1">
                       {v.status === 'candidate' && (
@@ -207,15 +207,15 @@ function ModelsPage() {
       </div>
 
       {stats.data && stats.data.per_label.length > 0 && (
-        <div className="mt-8 rounded border border-zinc-200 dark:border-zinc-800">
-          <div className="border-b border-zinc-100 px-4 py-2 text-sm font-medium dark:border-zinc-900">
+        <div className="mt-8 rounded border border-border">
+          <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Training examples by label
           </div>
           <ul className="divide-y divide-zinc-100 text-sm dark:divide-zinc-900">
             {stats.data.per_label.map((l) => (
               <li key={l.label} className="flex items-center justify-between px-4 py-2">
                 <span>{l.label}</span>
-                <span className="tabular-nums text-zinc-500">{l.count}</span>
+                <span className="tabular-nums text-muted-foreground">{l.count}</span>
               </li>
             ))}
           </ul>
@@ -248,8 +248,8 @@ function ConfigPanel({ initial }: { initial: ActiveLearningConfig }) {
   })
 
   return (
-    <div className="mt-8 rounded border border-zinc-200 dark:border-zinc-800">
-      <div className="border-b border-zinc-100 px-4 py-2 text-sm font-medium dark:border-zinc-900">
+    <div className="mt-8 rounded border border-border">
+      <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Active-learning configuration
       </div>
       <div className="grid grid-cols-2 gap-4 p-4 text-sm">
@@ -298,7 +298,7 @@ function ConfigPanel({ initial }: { initial: ActiveLearningConfig }) {
           onChange={(train_test_split) => setDraft({ ...draft, train_test_split })}
         />
       </div>
-      <div className="flex justify-end border-t border-zinc-100 px-4 py-2 dark:border-zinc-900">
+      <div className="flex justify-end border-t border-border px-4 py-3">
         <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
           Save
         </Button>
@@ -328,7 +328,7 @@ function Toggle({
       />
       <div>
         <div className="font-medium">{label}</div>
-        {help && <div className="text-xs text-zinc-500">{help}</div>}
+        {help && <div className="text-xs text-muted-foreground">{help}</div>}
       </div>
     </label>
   )
@@ -347,7 +347,7 @@ function NumField({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wide text-zinc-500">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       <Input
         type="number"
         step={step}
@@ -371,8 +371,8 @@ function Metric({
   icon?: React.ReactNode
 }) {
   return (
-    <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+    <div className="rounded border border-border p-4">
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
         {icon}
         {label}
       </div>

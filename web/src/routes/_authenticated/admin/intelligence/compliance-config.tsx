@@ -45,7 +45,7 @@ function ComplianceConfigPage() {
     onError: () => toast.error('Save failed'),
   })
 
-  if (isLoading || !draft) return <div className="p-6 text-sm text-zinc-500">Loading…</div>
+  if (isLoading || !draft) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
   const onSave = () => {
     let overrides: Record<string, string>
@@ -93,7 +93,7 @@ function ComplianceConfigPage() {
         description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns (ADR 0054)."
       />
 
-      <div className="mt-6 space-y-6 rounded border border-zinc-200 p-5 dark:border-zinc-800">
+      <div className="mt-6 space-y-6 rounded border border-border p-5">
         <Toggle
           label="Enable compliance scanning"
           checked={draft.enabled}
@@ -119,7 +119,7 @@ function ComplianceConfigPage() {
 
         <div>
           <label className="block text-sm font-medium">Notification roles</label>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Comma-separated. Receivers of `dms.notification.send.v1` events.
           </p>
           <Input
@@ -132,28 +132,28 @@ function ComplianceConfigPage() {
 
         <div>
           <label className="block text-sm font-medium">Risk-level overrides</label>
-          <p className="mt-1 text-xs text-zinc-500">
-            JSON object: {`{ "EMAIL": "high", "SSN": "critical" }`}.
+          <p className="mt-1 text-xs text-muted-foreground">
+            JSON object: {`{"EMAIL":"high","SSN":"critical" }`}.
             Each value must be critical/high/medium/low.
           </p>
           <textarea
             value={overridesText}
             onChange={(e) => setOverridesText(e.target.value)}
             rows={5}
-            className="mt-2 w-full rounded border border-zinc-200 bg-zinc-50 p-2 font-mono text-xs dark:border-zinc-800 dark:bg-zinc-900"
+            className="mt-2 w-full rounded border border-border bg-muted/40 p-2 font-mono text-xs"
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium">Custom regex patterns</label>
-          <p className="mt-1 text-xs text-zinc-500">
-            JSON array, max 32. Each entry: {`{ "type": "TICKET_ID", "regex": "TICK-\\d+" }`}.
+          <p className="mt-1 text-xs text-muted-foreground">
+            JSON array, max 32. Each entry: {`{"type":"TICKET_ID","regex":"TICK-\\d+" }`}.
           </p>
           <textarea
             value={patternsText}
             onChange={(e) => setPatternsText(e.target.value)}
             rows={6}
-            className="mt-2 w-full rounded border border-zinc-200 bg-zinc-50 p-2 font-mono text-xs dark:border-zinc-800 dark:bg-zinc-900"
+            className="mt-2 w-full rounded border border-border bg-muted/40 p-2 font-mono text-xs"
           />
         </div>
 
@@ -183,7 +183,7 @@ function Toggle({
     <div className="flex items-start justify-between gap-4 text-sm">
       <div>
         <div>{label}</div>
-        {help && <p className="mt-1 text-xs text-zinc-500">{help}</p>}
+        {help && <p className="mt-1 text-xs text-muted-foreground">{help}</p>}
       </div>
       <input
         type="checkbox"

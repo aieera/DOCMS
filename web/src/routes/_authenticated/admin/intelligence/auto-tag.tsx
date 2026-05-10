@@ -42,7 +42,7 @@ function AutoTagAdminPage() {
   })
 
   if (isLoading || !draft) {
-    return <div className="p-6 text-sm text-zinc-500">Loading…</div>
+    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
   const onSubmit = () => {
@@ -64,7 +64,7 @@ function AutoTagAdminPage() {
         description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline (ADR 0052)."
       />
 
-      <div className="mt-6 space-y-6 rounded border border-zinc-200 p-5 dark:border-zinc-800">
+      <div className="mt-6 space-y-6 rounded border border-border p-5">
         <Toggle
           label="Enable auto-tagging"
           checked={draft.enabled}
@@ -94,7 +94,7 @@ function AutoTagAdminPage() {
 
         <div>
           <label className="block text-sm font-medium">Blocked tags</label>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Comma-separated. Tags listed here are filtered out before persistence.
           </p>
           <Input
@@ -107,7 +107,7 @@ function AutoTagAdminPage() {
 
         <div>
           <div className="text-sm font-medium">Source weights</div>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             Multipliers applied to the model's raw confidence before threshold comparison.
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3">
@@ -178,9 +178,9 @@ function ThresholdRow({
     <div>
       <label className="flex items-center justify-between text-sm">
         <span className="capitalize">{label}</span>
-        <span className="tabular-nums text-zinc-500">{value.toFixed(2)}</span>
+        <span className="tabular-nums text-muted-foreground">{value.toFixed(2)}</span>
       </label>
-      {help && <p className="mt-1 text-xs text-zinc-500">{help}</p>}
+      {help && <p className="mt-1 text-xs text-muted-foreground">{help}</p>}
       <input
         type="range"
         min={0}

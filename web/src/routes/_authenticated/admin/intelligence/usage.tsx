@@ -4,6 +4,8 @@ import { Activity, Coins, Cpu } from 'lucide-react'
 
 import { getLLMUsage, type LLMUsageRow } from '@/api/llm-usage'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 function fmtCost(n: number): string {
   if (!n) return '—'
@@ -20,71 +22,56 @@ function LLMUsagePage() {
   })
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="space-y-6">
       <PageHeader
         title="LLM usage"
         description="Per-tenant token + cost tally aggregated across models. Each Q&A and NER LLM call increments these counters; entries TTL out after 30 days of inactivity."
       />
 
-      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
-        <Metric
-          label="Calls"
-          value={(data?.totals.calls ?? 0).toLocaleString()}
-          icon={<Activity className="h-4 w-4 text-emerald-500" />}
-        />
-        <Metric
-          label="Input tokens"
-          value={(data?.totals.input_tokens ?? 0).toLocaleString()}
-          icon={<Cpu className="h-4 w-4 text-sky-500" />}
-        />
-        <Metric
-          label="Output tokens"
-          value={(data?.totals.output_tokens ?? 0).toLocaleString()}
-          icon={<Cpu className="h-4 w-4 text-violet-500" />}
-        />
-        <Metric
-          label="Cost"
-          value={fmtCost(data?.totals.cost_usd ?? 0)}
-          icon={<Coins className="h-4 w-4 text-amber-500" />}
-        />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label="Calls" value={(data?.totals.calls ?? 0).toLocaleString()} icon={<Activity className="h-4 w-4 text-success" />} />
+        <Metric label="Input tokens" value={(data?.totals.input_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
+        <Metric label="Output tokens" value={(data?.totals.output_tokens ?? 0).toLocaleString()} icon={<Cpu className="h-4 w-4 text-info" />} />
+        <Metric label="Cost" value={fmtCost(data?.totals.cost_usd ?? 0)} icon={<Coins className="h-4 w-4 text-warning" />} />
       </div>
 
-      <section className="mt-8 rounded border border-[var(--color-border)]">
-        <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm font-medium">
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           By model
-        </header>
+        </div>
         {isLoading ? (
-          <div className="p-6 text-sm text-[var(--color-text-secondary)]">
-            Loading…
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-1/2" />
           </div>
         ) : !data || data.by_model.length === 0 ? (
-          <div className="p-6 text-sm text-[var(--color-text-secondary)]">
-            No LLM activity yet. Ask a question in any document's Q&amp;A panel to start populating these counters.
-          </div>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No LLM activity yet. Ask a question in any document's Q&A panel to start populating these counters.
+          </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-[var(--color-text-secondary)]">
-              <tr>
-                <th className="px-4 py-2">Model</th>
-                <th className="px-4 py-2 text-right">Calls</th>
-                <th className="px-4 py-2 text-right">Input tokens</th>
-                <th className="px-4 py-2 text-right">Output tokens</th>
-                <th className="px-4 py-2 text-right">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.by_model.map((row) => (
-                <Row key={row.model} row={row} />
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/20">
+                <tr className="text-left">
+                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Model</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Calls</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Input tokens</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Output tokens</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.by_model.map((row) => <Row key={row.model} row={row} />)}
+              </tbody>
+            </table>
+          </div>
         )}
-      </section>
+      </Card>
 
-      <p className="mt-6 text-xs text-[var(--color-text-secondary)]">
-        Counters are stored in Redis and reset 30 days after the last call to that model.
-        For long-term billing reports, wire <code>llm_gateway._meter_usage</code> to write into a
-        <code> tenant_usage_events </code> table — Redis is fine for the rolling-window dashboard above.
+      <p className="text-xs text-muted-foreground">
+        Counters are stored in Redis and reset 30 days after the last call to that model. For long-term billing reports, wire{' '}
+        <code className="rounded bg-muted px-1 font-mono">llm_gateway._meter_usage</code> to write into a{' '}
+        <code className="rounded bg-muted px-1 font-mono">tenant_usage_events</code> table — Redis is fine for the rolling-window dashboard above.
       </p>
     </div>
   )
@@ -92,33 +79,25 @@ function LLMUsagePage() {
 
 function Row({ row }: { row: LLMUsageRow }) {
   return (
-    <tr className="border-t border-[var(--color-border)]">
-      <td className="px-4 py-2 font-mono text-xs">{row.model}</td>
-      <td className="px-4 py-2 text-right tabular-nums">{row.calls.toLocaleString()}</td>
-      <td className="px-4 py-2 text-right tabular-nums">{row.input_tokens.toLocaleString()}</td>
-      <td className="px-4 py-2 text-right tabular-nums">{row.output_tokens.toLocaleString()}</td>
-      <td className="px-4 py-2 text-right tabular-nums">{fmtCost(row.cost_usd)}</td>
+    <tr className="border-t border-border">
+      <td className="px-4 py-3 font-mono text-xs">{row.model}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{row.calls.toLocaleString()}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{row.input_tokens.toLocaleString()}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{row.output_tokens.toLocaleString()}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{fmtCost(row.cost_usd)}</td>
     </tr>
   )
 }
 
-function Metric({
-  label,
-  value,
-  icon,
-}: {
-  label: string
-  value: string
-  icon?: React.ReactNode
-}) {
+function Metric({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded border border-[var(--color-border)] p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
+    <Card className="p-4">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {icon}
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-    </div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
+    </Card>
   )
 }
 

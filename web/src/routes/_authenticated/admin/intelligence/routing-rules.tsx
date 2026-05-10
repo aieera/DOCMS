@@ -89,7 +89,7 @@ function RoutingRulesPage() {
       />
 
       {creating && (
-        <div className="mt-4 rounded border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="mt-4 rounded border border-border p-4">
           <div className="grid grid-cols-2 gap-3">
             <LabeledInput label="Name">
               <Input
@@ -133,9 +133,9 @@ function RoutingRulesPage() {
         </div>
       )}
 
-      <div className="mt-6 rounded border border-zinc-200 dark:border-zinc-800">
+      <div className="mt-6 rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900">
+          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Category</th>
@@ -148,20 +148,20 @@ function RoutingRulesPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-zinc-500">
+                <td colSpan={6} className="p-4 text-center text-muted-foreground">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && (rules ?? []).length === 0 && (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-zinc-500">
+                <td colSpan={6} className="p-4 text-center text-muted-foreground">
                   No routing rules yet.
                 </td>
               </tr>
             )}
             {(rules ?? []).map((r) => (
-              <tr key={r.id} className="border-t border-zinc-100 dark:border-zinc-900">
+              <tr key={r.id} className="border-t border-border">
                 <td className="px-4 py-2 font-medium">{r.name}</td>
                 <td className="px-4 py-2">
                   <Badge variant="outline">{r.category_key}</Badge>
@@ -186,10 +186,10 @@ function RoutingRulesPage() {
                     aria-label="Delete"
                     disabled={remove.isPending}
                     onClick={() => {
-                      if (window.confirm(`Delete rule "${r.name}"?`)) remove.mutate(r.id)
+                      if (window.confirm(`Delete rule"${r.name}"?`)) remove.mutate(r.id)
                     }}
                   >
-                    <Trash2 className="h-4 w-4 text-red-500" />
+                    <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </td>
               </tr>
@@ -204,7 +204,7 @@ function RoutingRulesPage() {
 function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="text-sm">
-      <span className="mb-1 block text-zinc-600">{label}</span>
+      <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>
   )

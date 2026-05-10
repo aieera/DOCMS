@@ -13,11 +13,11 @@ import { Badge } from '@/components/ui/Badge'
 const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 
 const RISK_COLOR: Record<string, string> = {
-  critical: 'bg-red-500',
+  critical: 'bg-destructive',
   high:     'bg-orange-500',
-  medium:   'bg-amber-500',
-  low:      'bg-emerald-500',
-  none:     'bg-zinc-300',
+  medium:   'bg-warning/100',
+  low:      'bg-success',
+  none:     'bg-muted-foreground/40',
 }
 
 function ComplianceAdminDashboard() {
@@ -35,7 +35,7 @@ function ComplianceAdminDashboard() {
     refetchInterval: 30_000,
   })
 
-  if (dashLoading || !dash) return <div className="p-6 text-sm text-zinc-500">Loading…</div>
+  if (dashLoading || !dash) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
   const totalRisk = Object.values(dash.risk_distribution).reduce((a, b) => a + b, 0) || 1
 
@@ -57,15 +57,15 @@ function ComplianceAdminDashboard() {
         <div className="space-y-2">
           {Object.entries(dash.risk_distribution).map(([risk, count]) => (
             <div key={risk} className="flex items-center gap-3 text-sm">
-              <span className={`h-2 w-2 rounded-full ${RISK_COLOR[risk] ?? 'bg-zinc-300'}`} />
+              <span className={`h-2 w-2 rounded-full ${RISK_COLOR[risk] ?? 'bg-muted-foreground/40'}`} />
               <span className="w-24 capitalize">{risk}</span>
-              <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800">
+              <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
                 <div
-                  className={RISK_COLOR[risk] ?? 'bg-zinc-300'}
+                  className={RISK_COLOR[risk] ?? 'bg-muted-foreground/40'}
                   style={{ height: '100%', width: `${(count / totalRisk) * 100}%` }}
                 />
               </div>
-              <span className="w-12 text-right tabular-nums text-zinc-500">{count}</span>
+              <span className="w-12 text-right tabular-nums text-muted-foreground">{count}</span>
             </div>
           ))}
         </div>
@@ -73,13 +73,13 @@ function ComplianceAdminDashboard() {
 
       <Section title="Top entity types">
         {(dash.top_entity_types ?? []).length === 0 ? (
-          <div className="text-sm text-zinc-500">No findings yet.</div>
+          <div className="text-sm text-muted-foreground">No findings yet.</div>
         ) : (
           <ul className="space-y-2">
             {dash.top_entity_types.map((e) => (
               <li key={e.entity_type} className="flex items-center gap-3 text-sm">
                 <span className="w-32 truncate font-mono">{e.entity_type}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800">
+                <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
                   <div
                     className="h-full bg-violet-500"
                     style={{
@@ -89,7 +89,7 @@ function ComplianceAdminDashboard() {
                     }}
                   />
                 </div>
-                <span className="w-16 text-right tabular-nums text-zinc-500">{e.count}</span>
+                <span className="w-16 text-right tabular-nums text-muted-foreground">{e.count}</span>
               </li>
             ))}
           </ul>
@@ -98,7 +98,7 @@ function ComplianceAdminDashboard() {
 
       <Section title="Open findings">
         <div className="mb-3 flex items-center gap-2 text-sm">
-          <span className="text-zinc-500">Filter:</span>
+          <span className="text-muted-foreground">Filter:</span>
           <FilterPill active={riskFilter === ''} onClick={() => setRiskFilter('')}>
             All
           </FilterPill>
@@ -109,12 +109,12 @@ function ComplianceAdminDashboard() {
           ))}
         </div>
         {findingsLoading ? (
-          <div className="text-sm text-zinc-500">Loading…</div>
+          <div className="text-sm text-muted-foreground">Loading…</div>
         ) : (findings?.findings ?? []).length === 0 ? (
-          <div className="text-sm text-zinc-500">No matching findings.</div>
+          <div className="text-sm text-muted-foreground">No matching findings.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-zinc-500">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-2">Type</th>
                 <th className="py-2">Risk</th>
@@ -126,7 +126,7 @@ function ComplianceAdminDashboard() {
             </thead>
             <tbody>
               {(findings?.findings ?? []).map((f) => (
-                <tr key={f.id} className="border-t border-zinc-100 dark:border-zinc-900">
+                <tr key={f.id} className="border-t border-border">
                   <td className="py-2 font-mono">{f.entity_type}</td>
                   <td className="py-2">
                     <Badge variant={f.risk_level === 'critical' ? 'disposed' : 'in_review'}>
@@ -138,9 +138,9 @@ function ComplianceAdminDashboard() {
                       {f.detection_source}
                     </Badge>
                   </td>
-                  <td className="py-2 font-mono text-xs text-zinc-500">{f.document_id.slice(0, 8)}…</td>
+                  <td className="py-2 font-mono text-xs text-muted-foreground">{f.document_id.slice(0, 8)}…</td>
                   <td className="py-2 text-right tabular-nums">{f.occurrence_count}</td>
-                  <td className="py-2 text-zinc-500">{new Date(f.created_at).toLocaleString()}</td>
+                  <td className="py-2 text-muted-foreground">{new Date(f.created_at).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -153,8 +153,8 @@ function ComplianceAdminDashboard() {
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="rounded border border-border p-4">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value.toLocaleString()}</div>
     </div>
   )
@@ -164,7 +164,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="mt-8">
       <h2 className="mb-3 text-sm font-medium">{title}</h2>
-      <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">{children}</div>
+      <div className="rounded border border-border p-4">{children}</div>
     </div>
   )
 }
@@ -183,7 +183,7 @@ function FilterPill({
       onClick={onClick}
       className={[
         'rounded-full px-3 py-1 text-xs capitalize',
-        active ? 'bg-violet-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800',
+        active ? 'bg-violet-500 text-white' : 'bg-muted',
       ].join(' ')}
     >
       {children}

@@ -25,9 +25,9 @@ const SEVERITY_VARIANT: Record<Severity, string> = {
 }
 
 const SEVERITY_DOT: Record<Severity, string> = {
-  high:   'bg-red-500',
-  medium: 'bg-amber-500',
-  low:    'bg-zinc-400',
+  high:   'bg-destructive',
+  medium: 'bg-warning/100',
+  low:    'bg-muted-foreground/60',
 }
 
 const STATUS_VARIANT: Record<FindingStatus, string> = {
@@ -95,12 +95,12 @@ function AnomalyDashboardPage() {
         />
       </div>
 
-      <div className="mt-8 rounded border border-zinc-200 dark:border-zinc-800">
-        <div className="border-b border-zinc-100 px-4 py-2 text-sm font-medium dark:border-zinc-900">
+      <div className="mt-8 rounded border border-border">
+        <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Recent reports
         </div>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-zinc-500">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Created</th>
               <th className="px-4 py-2">Type</th>
@@ -112,16 +112,16 @@ function AnomalyDashboardPage() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} className="px-4 py-4 text-center text-zinc-500">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-4 text-center text-muted-foreground">Loading…</td></tr>
             )}
             {!isLoading && (reports?.reports ?? []).length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-4 text-center text-zinc-500">
+              <tr><td colSpan={6} className="px-4 py-4 text-center text-muted-foreground">
                 No reports yet. Click <strong>Run analysis</strong> to start one.
               </td></tr>
             )}
             {(reports?.reports ?? []).map((r) => (
-              <tr key={r.id} className="border-t border-zinc-100 dark:border-zinc-900">
-                <td className="px-4 py-2 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
+              <tr key={r.id} className="border-t border-border">
+                <td className="px-4 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
                 <td className="px-4 py-2 capitalize">{r.analysis_type}</td>
                 <td className="px-4 py-2">
                   <Badge variant={r.status === 'completed' ? 'active' : r.status === 'failed' ? 'disposed' : 'in_review'}>
@@ -132,7 +132,7 @@ function AnomalyDashboardPage() {
                 <td className="px-4 py-2 text-right tabular-nums">
                   {r.anomalies_found}
                   {r.anomalies_found > 0 && (
-                    <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-500" />
+                    <AlertTriangle className="ml-1 inline h-3 w-3 text-warning" />
                   )}
                 </td>
                 <td className="px-4 py-2 text-right">
@@ -180,12 +180,12 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="flex h-[85vh] w-[min(1100px,95vw)] flex-col rounded-lg bg-white shadow-xl dark:bg-zinc-900"
+        className="flex h-[85vh] w-[min(1100px,95vw)] flex-col rounded-lg bg-card shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTriangle className="h-4 w-4 text-warning" />
             Report {reportId.slice(0, 8)}…
             {data?.report && (
               <Badge variant={data.report.status === 'completed' ? 'active' : 'in_review'}>
@@ -199,23 +199,23 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {isLoading && <div className="text-sm text-zinc-500">Loading…</div>}
+          {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
           {data && (
             <>
-              <div className="mb-3 text-xs text-zinc-500">
+              <div className="mb-3 text-xs text-muted-foreground">
                 {data.report.analysis_type} · {data.report.total_documents} docs scanned ·{' '}
                 {data.report.anomalies_found} anomalies
                 {data.report.error_message && (
-                  <span className="ml-2 text-red-500">· {data.report.error_message}</span>
+                  <span className="ml-2 text-destructive">· {data.report.error_message}</span>
                 )}
               </div>
               {data.report.summary && Object.keys(data.report.summary).length > 0 && (
-                <pre className="mb-4 rounded bg-zinc-50 p-3 text-xs dark:bg-zinc-950">
+                <pre className="mb-4 rounded bg-muted/40 p-3 text-xs">
                   {JSON.stringify(data.report.summary, null, 2)}
                 </pre>
               )}
               {(data.findings ?? []).length === 0 ? (
-                <div className="text-sm text-zinc-500">No findings.</div>
+                <div className="text-sm text-muted-foreground">No findings.</div>
               ) : (
                 <ul className="space-y-2">
                   {data.findings.map((f) => (
@@ -247,7 +247,7 @@ function FindingCard({
 }) {
   const f = finding
   return (
-    <li className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-800">
+    <li className="rounded border border-border p-3 text-sm">
       <div className="flex items-center gap-2">
         <span aria-hidden className={`h-2 w-2 rounded-full ${SEVERITY_DOT[f.severity]}`} />
         <span className="font-mono text-xs uppercase">{f.anomaly_type}</span>
@@ -257,16 +257,16 @@ function FindingCard({
         <span className="flex-1" />
         <Badge variant={STATUS_VARIANT[f.status]}>{STATUS_LABEL[f.status]}</Badge>
       </div>
-      <div className="mt-2 text-zinc-700 dark:text-zinc-200">{f.description}</div>
-      <div className="mt-2 text-xs text-zinc-500">
+      <div className="mt-2 text-foreground">{f.description}</div>
+      <div className="mt-2 text-xs text-muted-foreground">
         Document: <span className="font-mono">{f.document_id.slice(0, 8)}…</span>
       </div>
       {f.evidence && Object.keys(f.evidence).length > 0 && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-700">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
             Evidence
           </summary>
-          <pre className="mt-1 rounded bg-zinc-50 p-2 text-[11px] dark:bg-zinc-950">
+          <pre className="mt-1 rounded bg-muted/40 p-2 text-[11px]">
             {JSON.stringify(f.evidence, null, 2)}
           </pre>
         </details>
@@ -297,8 +297,8 @@ function FindingCard({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="rounded border border-border p-4">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   )

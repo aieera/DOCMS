@@ -95,9 +95,9 @@ function NERConfigPage() {
         }
       />
 
-      <section className="mt-6 rounded border border-[var(--color-border)]">
-        <header className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm font-medium">
-          <Brain className="h-4 w-4 text-emerald-500" />
+      <section className="mt-6 rounded border border-border">
+        <header className="flex items-center gap-2 border-b border-border bg-card px-4 py-2 text-sm font-medium">
+          <Brain className="h-4 w-4 text-success" />
           LLM tier
         </header>
         <div className="grid grid-cols-1 gap-4 p-4 text-sm md:grid-cols-2">
@@ -132,8 +132,8 @@ function NERConfigPage() {
         </div>
       </section>
 
-      <section className="mt-6 rounded border border-[var(--color-border)]">
-        <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm font-medium">
+      <section className="mt-6 rounded border border-border">
+        <header className="border-b border-border bg-card px-4 py-2 text-sm font-medium">
           Entity types sent to the LLM
         </header>
         <div className="grid grid-cols-2 gap-3 p-4 text-sm md:grid-cols-3">
@@ -148,7 +148,7 @@ function NERConfigPage() {
             </label>
           ))}
         </div>
-        <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+        <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
           Types not listed (email, phone, SSN, DOB, credit_card, ICD-10, CPT) are handled deterministically by regex/SpaCy and never sent to the LLM.
         </p>
       </section>
@@ -199,16 +199,16 @@ function APIKeySection({
   const ollama = modelHint.startsWith('ollama/')
 
   return (
-    <section className="mt-6 rounded border border-[var(--color-border)]">
-      <header className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2 text-sm font-medium">
-        <KeyRound className="h-4 w-4 text-amber-500" />
+    <section className="mt-6 rounded border border-border">
+      <header className="flex items-center gap-2 border-b border-border bg-card px-4 py-2 text-sm font-medium">
+        <KeyRound className="h-4 w-4 text-warning" />
         Provider API key
       </header>
 
       <div className="space-y-4 p-4 text-sm">
         {hasKey ? (
-          <div className="flex items-center justify-between gap-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs dark:border-emerald-900 dark:bg-emerald-950">
-            <span className="flex items-center gap-2 text-emerald-900 dark:text-emerald-200">
+          <div className="flex items-center justify-between gap-3 rounded border border-success/40 bg-success/10 px-3 py-2 text-xs">
+            <span className="flex items-center gap-2 text-success">
               <CheckCircle2 className="h-4 w-4" />
               Configured{setAt ? ` · set ${new Date(setAt).toLocaleString()}` : ''}
             </span>
@@ -227,13 +227,13 @@ function APIKeySection({
             </Button>
           </div>
         ) : (
-          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning dark:">
             No key configured. The LLM tier silently skips when enabled without a key — only regex + SpaCy results land in the database.
           </div>
         )}
 
         {ollama ? (
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-muted-foreground">
             Ollama runs against your own server — no API key needed. Make sure
             <code> OLLAMA_BASE_URL </code> is reachable from the intelligence
             worker container.
@@ -247,7 +247,7 @@ function APIKeySection({
             }}
           >
             <label className="flex flex-col gap-1">
-              <span className="text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">
                 {hasKey ? 'Replace key' : 'Paste new key'}
               </span>
               <Input
@@ -270,7 +270,7 @@ function APIKeySection({
           </form>
         )}
 
-        <p className="text-xs text-[var(--color-text-secondary)]">
+        <p className="text-xs text-muted-foreground">
           Stored encrypted (AES-256-GCM) under the deployment KEK. Never returned
           to the UI in plaintext after save. The intelligence worker decrypts
           per-request when calling the LLM provider.
@@ -301,7 +301,7 @@ function Toggle({
       />
       <div>
         <div className="font-medium">{label}</div>
-        {help && <div className="text-xs text-[var(--color-text-secondary)]">{help}</div>}
+        {help && <div className="text-xs text-muted-foreground">{help}</div>}
       </div>
     </label>
   )
@@ -318,7 +318,7 @@ function ModelField({
   const [custom, setCustom] = useState(!isPreset)
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">
         Model (litellm provider/model)
       </span>
       {custom ? (
@@ -336,7 +336,7 @@ function ModelField({
       )}
       <button
         type="button"
-        className="self-start text-xs text-[var(--color-primary)] hover:underline"
+        className="self-start text-xs text-primary hover:underline"
         onClick={() => setCustom((c) => !c)}
       >
         {custom ? 'Use preset' : 'Custom model id'}
@@ -364,7 +364,7 @@ function NumField({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wide text-[var(--color-text-secondary)]">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <Input
@@ -378,7 +378,7 @@ function NumField({
           if (!Number.isNaN(n)) onChange(n)
         }}
       />
-      {help && <span className="text-xs text-[var(--color-text-secondary)]">{help}</span>}
+      {help && <span className="text-xs text-muted-foreground">{help}</span>}
     </label>
   )
 }

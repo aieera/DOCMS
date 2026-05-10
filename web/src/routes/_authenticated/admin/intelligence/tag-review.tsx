@@ -70,7 +70,7 @@ function TagReviewQueuePage() {
       />
 
       <div className="mt-4 flex items-center gap-3 text-sm">
-        <label className="text-zinc-600">Min confidence</label>
+        <label className="text-muted-foreground">Min confidence</label>
         <input
           type="range"
           min={0}
@@ -83,12 +83,12 @@ function TagReviewQueuePage() {
           }}
           className="w-48"
         />
-        <span className="tabular-nums text-zinc-500">{minConf.toFixed(2)}</span>
+        <span className="tabular-nums text-muted-foreground">{minConf.toFixed(2)}</span>
       </div>
 
       <div className="mt-6 space-y-4">
         {isLoading ? (
-          <div className="text-sm text-zinc-500">Loading…</div>
+          <div className="text-sm text-muted-foreground">Loading…</div>
         ) : grouped.length === 0 ? (
           <EmptyState title="Inbox zero" description="No pending tag suggestions in this range." />
         ) : (
@@ -106,7 +106,7 @@ function TagReviewQueuePage() {
 
       {(page > 0 || hasMore) && (
         <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-zinc-500">
+          <span className="text-muted-foreground">
             Showing {showing} of {total}
           </span>
           <div className="flex gap-2">
@@ -143,8 +143,8 @@ function DocumentGroup({
   const rejectAll = () => onReview(items.map((s) => ({ suggestion_id: s.id, action: 'reject' })))
 
   return (
-    <div className="rounded border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2 dark:border-zinc-900">
+    <div className="rounded border border-border">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="text-sm">
           <span className="font-medium">Document </span>
           <a
@@ -153,7 +153,7 @@ function DocumentGroup({
           >
             {documentId.slice(0, 8)}…
           </a>
-          <span className="ml-2 text-zinc-500">{items.length} pending</span>
+          <span className="ml-2 text-muted-foreground">{items.length} pending</span>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={acceptAll}>
@@ -175,7 +175,7 @@ function DocumentGroup({
               <Badge variant="outline" className="text-[10px] uppercase">
                 {s.source}
               </Badge>
-              <span className="w-12 text-right tabular-nums text-zinc-500">{pct}%</span>
+              <span className="w-12 text-right tabular-nums text-muted-foreground">{pct}%</span>
               <Button
                 size="sm"
                 variant="ghost"
@@ -183,7 +183,7 @@ function DocumentGroup({
                 onClick={() => onReview([{ suggestion_id: s.id, action: 'accept' }])}
                 aria-label={`Accept ${s.tag_name}`}
               >
-                <Check className="h-4 w-4 text-emerald-600" />
+                <Check className="h-4 w-4 text-success" />
               </Button>
               <Button
                 size="sm"
@@ -192,7 +192,7 @@ function DocumentGroup({
                 onClick={() => onReview([{ suggestion_id: s.id, action: 'reject' }])}
                 aria-label={`Reject ${s.tag_name}`}
               >
-                <X className="h-4 w-4 text-zinc-500" />
+                <X className="h-4 w-4 text-muted-foreground" />
               </Button>
             </li>
           )
