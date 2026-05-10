@@ -8,7 +8,14 @@ import { createUser, getUsers, inviteUser, type InviteUserResponse } from '@/api
 import { PageHeader } from '@/components/shared/PageHeader'
 import { UserTable } from '@/components/admin/UserTable'
 import { Button } from '@/components/ui/Button'
-import { Dialog } from '@/components/ui/Dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/shadcn/dialog'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Card } from '@/components/ui/card'
@@ -100,62 +107,63 @@ function UsersPage() {
           here just gives it a single shadowed surface. */}
       <UserTable users={users} isLoading={isLoading} />
 
-      <Dialog
-        open={open}
-        onOpenChange={(v) => { setOpen(v); if (!v) reset() }}
-        title={issued ? 'Invitation ready' : 'Add a new user'}
-        description={
-          issued
-            ? 'Share the activation link below — the invitee uses it to set their password (valid 72h).'
-            : mode === 'invite'
-              ? 'They receive a one-time link to set their own password.'
-              : 'You set their initial password directly. They can sign in immediately.'
-        }
-      >
-        {issued ? (
-          <ActivationLinkPanel issued={issued} onClose={() => { setOpen(false); reset() }} />
-        ) : (
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <ModeTabs mode={mode} onChange={setMode} disabled={busy} />
-            <Input
-              label="Email"
-              type="email"
-              placeholder="colleague@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-              autoComplete="email"
-            />
-            <Input
-              label="Display name (optional)"
-              placeholder="Jane Doe"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              autoComplete="name"
-            />
-            <Select label="Role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
-            {mode === 'direct' && (
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{issued ? 'Invitation ready' : 'Add a new user'}</DialogTitle>
+            <DialogDescription>
+              {issued
+                ? 'Share the activation link below — the invitee uses it to set their password (valid 72h).'
+                : mode === 'invite'
+                  ? 'They receive a one-time link to set their own password.'
+                  : 'You set their initial password directly. They can sign in immediately.'}
+            </DialogDescription>
+          </DialogHeader>
+          {issued ? (
+            <ActivationLinkPanel issued={issued} onClose={() => { setOpen(false); reset() }} />
+          ) : (
+            <form className="space-y-4" onSubmit={onSubmit}>
+              <ModeTabs mode={mode} onChange={setMode} disabled={busy} />
               <Input
-                label="Initial password"
-                type="password"
-                placeholder="≥12 chars, mix of upper/lower/digit/special"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                label="Email"
+                type="email"
+                placeholder="colleague@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                autoComplete="new-password"
+                autoFocus
+                autoComplete="email"
               />
-            )}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!canSubmit} loading={busy}>
-                {mode === 'invite' ? 'Send invitation' : 'Create user'}
-              </Button>
-            </div>
-          </form>
-        )}
+              <Input
+                label="Display name (optional)"
+                placeholder="Jane Doe"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                autoComplete="name"
+              />
+              <Select label="Role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
+              {mode === 'direct' && (
+                <Input
+                  label="Initial password"
+                  type="password"
+                  placeholder="≥12 chars, mix of upper/lower/digit/special"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                />
+              )}
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!canSubmit} loading={busy}>
+                  {mode === 'invite' ? 'Send invitation' : 'Create user'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
       </Dialog>
     </div>
   )
