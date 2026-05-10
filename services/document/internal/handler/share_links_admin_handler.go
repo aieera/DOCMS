@@ -152,30 +152,42 @@ func (h *ShareLinksAdminHandler) revokeAll(w http.ResponseWriter, r *http.Reques
 	h.writeJSON(w, http.StatusOK, map[string]any{"revoked": n})
 }
 
-// enrich reads tenant / user headers and returns a new context with
-// them attached. Returns a nil context + false and writes 401 on
-// missing or malformed headers.
+// enrich extracts the authenticated caller from context. SessionAuth
+// (chained upstream in main.go) has already validated the session
+// cookie and populated auth.UserInfo, so the handler just reads it.
+//
+// Two paths historically reached this handler: Kong-fronted requests
+// where headers are pre-stamped, and host-mode requests where the
+// session cookie travels straight to the service. Reading from
+// auth.User(ctx) covers both — SessionAuth populates the same
+// UserInfo regardless of the upstream.
 func (h *ShareLinksAdminHandler) enrich(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
-	tid, err := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
-	if err != nil || tid == uuid.Nil {
-		h.writeErr(w, r, vdmserr.ErrUnauthorized)
-		return nil, false
+	u, err := auth.User(r.Context())
+	if err != nil || u.TenantID == uuid.Nil || u.ID == uuid.Nil {
+		// Header-based fallback for legacy Kong path that doesn't run
+		// SessionAuth in front of this service. Pulls only what the
+		// gateway actually injects — role can't come from a header,
+		// so the policy check will deny if the gateway forgot to
+		// inject identity here.
+		tid, terr := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
+		if terr != nil || tid == uuid.Nil {
+			h.writeErr(w, r, vdmserr.ErrUnauthorized)
+			return nil, false
+		}
+		uid, uerr := uuid.Parse(r.Header.Get("X-User-ID"))
+		if uerr != nil || uid == uuid.Nil {
+			h.writeErr(w, r, vdmserr.ErrUnauthorized)
+			return nil, false
+		}
+		ctx := auth.WithUser(r.Context(), auth.UserInfo{
+			TenantID: tid,
+			ID:       uid,
+			Role:     r.Header.Get("X-User-Role"),
+		})
+		return ctx, true
 	}
-	uid, err := uuid.Parse(r.Header.Get("X-User-ID"))
-	if err != nil || uid == uuid.Nil {
-		h.writeErr(w, r, vdmserr.ErrUnauthorized)
-		return nil, false
-	}
-	// Forward X-User-Role so the OPA Rule 6 (org owner/admin allow)
-	// fires. Without this, owner/admin callers get 403 because the
-	// service-layer requirePermission asks for "admin" on the
-	// tenant-scope workspace and only the role-based rule grants it.
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{
-		TenantID: tid,
-		ID:       uid,
-		Role:     r.Header.Get("X-User-Role"),
-	})
-	return ctx, true
+	// Already populated by SessionAuth — pass through.
+	return r.Context(), true
 }
 
 func (h *ShareLinksAdminHandler) writeJSON(w http.ResponseWriter, code int, v any) {

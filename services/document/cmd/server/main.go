@@ -322,11 +322,19 @@ func main() {
 	// Share-link admin — Wave 10. Shares the /api/v1/admin/ prefix
 	// with the auth service's /api/v1/admin/users + /api/v1/admin/groups,
 	// but the document service owns share-links so it routes here.
+	//
+	// SessionAuth runs first so the handler's enrich() can read the
+	// caller's role from auth.User(ctx). Without it, host-mode (no
+	// Kong in front) admins hit a 403 because the policy check sees
+	// an empty user_role and Rule 6 (owner allow) doesn't fire.
 	shareLinksAdminMux := http.NewServeMux()
 	shareLinksAdminHandler.Register(shareLinksAdminMux)
-	rootMux.Handle("/api/v1/admin/share-links", middleware.CorrelationHTTP(shareLinksAdminMux))
-	rootMux.Handle("/api/v1/admin/share-links/", middleware.CorrelationHTTP(shareLinksAdminMux))
-	rootMux.Handle("/api/v1/admin/documents/", middleware.CorrelationHTTP(shareLinksAdminMux))
+	shareLinksAdminWrapped := middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(shareLinksAdminMux),
+	)
+	rootMux.Handle("/api/v1/admin/share-links", shareLinksAdminWrapped)
+	rootMux.Handle("/api/v1/admin/share-links/", shareLinksAdminWrapped)
+	rootMux.Handle("/api/v1/admin/documents/", shareLinksAdminWrapped)
 
 	// Retention policies admin — Wave 10.
 	retentionPolicyMux := http.NewServeMux()

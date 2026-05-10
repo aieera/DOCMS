@@ -69,6 +69,16 @@ export default defineConfig({
             '/api/v1/admin/active-learning':    withSig('http://localhost:8182'),
             '/api/v1/admin/ner-config':         withSig('http://localhost:8182'),
             '/api/v1/admin/llm-usage':          withSig('http://localhost:8194'),
+            // ADR 0081 — tenant LLM config (provider keys, defaults).
+            // Intelligence service owns it. MUST come before the
+            // /api/v1/admin catch-all below: http-proxy-middleware
+            // uses object-key insertion order, not longest-match.
+            '/api/v1/admin/tenant':             withSig('http://localhost:8194'),
+            // Search-service admin endpoints (ADR 0083 + ADR 0062).
+            // Same insertion-order reason — these have to land
+            // before the auth catch-all to avoid 404s.
+            '/api/v1/admin/permission-propagation-stats': withSig('http://localhost:8184'),
+            '/api/v1/admin/ldap':               withSig('http://localhost:8180'),
             // Intelligence service hosts the on-demand REST surfaces
             // for Doc Q&A, Translation, and Language detection. The
             // catch-all '/api' below routes to auth (:8180), so this
@@ -90,11 +100,10 @@ export default defineConfig({
             '/api/v1/tenants/metadata-schema':  withSig('http://localhost:8182'),
             '/api/v1/search':                   withSig('http://localhost:8184'),
             '/api/v1/saved-searches':           withSig('http://localhost:8184'),
-            // Search-service-owned admin endpoints. Without these,
-            // /api/v1/admin/* falls through to auth (8180) and 404s.
-            '/api/v1/admin/permission-propagation-stats': withSig('http://localhost:8184'), // ADR 0083
-            '/api/v1/platform/search':          withSig('http://localhost:8184'),           // ADR 0069 federated
-            '/api/v1/admin/ldap':               withSig('http://localhost:8180'),            // ADR 0062 LDAP/AD admin
+            // Search-service federated admin endpoint. (The other
+            // search admin entries moved above the /api/v1/admin
+            // catch-all to defeat insertion-order misrouting.)
+            '/api/v1/platform/search':          withSig('http://localhost:8184'), // ADR 0069 federated
             '/api/v1/audit':                    withSig('http://localhost:8185'),
             '/api/v1/workflows':                withSig('http://localhost:8186'),
             '/api/v1/notifications':            withSig('http://localhost:8187'),

@@ -41,14 +41,46 @@ func (r *Repository) runTenant(ctx context.Context, tenantID string, fn func(tx 
 
 // ---- Definitions ----------------------------------------------------------
 
+// definitionEnvelope is what we store inside the workflow_definitions
+// `definition` JSONB column. The column holds the whole workflow
+// spec — today that's just a steps array, tomorrow it's likely
+// branches / variables / SLA defaults — so we wrap rather than store
+// a bare list. unmarshalDefinition tolerates a bare `[...]` array
+// for back-compat with rows written before this PR (none exist yet
+// in dev, but cheap to support).
+type definitionEnvelope struct {
+	Steps []model.Step `json:"steps"`
+}
+
+func marshalDefinition(steps []model.Step) ([]byte, error) {
+	return json.Marshal(definitionEnvelope{Steps: steps})
+}
+
+func unmarshalDefinition(raw []byte) []model.Step {
+	if len(raw) == 0 {
+		return nil
+	}
+	var env definitionEnvelope
+	if err := json.Unmarshal(raw, &env); err == nil && len(env.Steps) > 0 {
+		return env.Steps
+	}
+	// Back-compat: row was written as a bare array.
+	var bare []model.Step
+	_ = json.Unmarshal(raw, &bare)
+	return bare
+}
+
 // CreateDefinition persists a workflow definition.
 func (r *Repository) CreateDefinition(ctx context.Context, d *model.WorkflowDefinition) error {
-	stepsJSON, _ := json.Marshal(d.Steps)
+	defJSON, err := marshalDefinition(d.Steps)
+	if err != nil {
+		return err
+	}
 	return r.runTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO workflow_definitions (id, tenant_id, name, description, steps, created_by, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		`, d.ID, d.TenantID, d.Name, d.Description, stepsJSON, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
+			INSERT INTO workflow_definitions (id, tenant_id, name, description, definition, created_by, created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+		`, d.ID, d.TenantID, d.Name, d.Description, defJSON, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
 		return err
 	})
 }
@@ -58,7 +90,7 @@ func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*m
 	var out []*model.WorkflowDefinition
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, tenant_id, name, description, steps, created_by, created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''), created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 ORDER BY created_at DESC`, tenantID)
 		if err != nil {
 			return err
@@ -66,11 +98,11 @@ func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*m
 		defer rows.Close()
 		for rows.Next() {
 			d := &model.WorkflowDefinition{}
-			var stepsJSON []byte
-			if err := rows.Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &stepsJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			var defJSON []byte
+			if err := rows.Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
 				return err
 			}
-			_ = json.Unmarshal(stepsJSON, &d.Steps)
+			d.Steps = unmarshalDefinition(defJSON)
 			out = append(out, d)
 		}
 		return rows.Err()
@@ -81,13 +113,13 @@ func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*m
 // GetDefinition returns one definition.
 func (r *Repository) GetDefinition(ctx context.Context, tenantID, id string) (*model.WorkflowDefinition, error) {
 	d := &model.WorkflowDefinition{}
-	var stepsJSON []byte
+	var defJSON []byte
 	var found bool
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
-			SELECT id, tenant_id, name, description, steps, created_by, created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''), created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 AND id = $2`, tenantID, id).
-			Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &stepsJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+			Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
 		if err == pgx.ErrNoRows {
 			return nil
 		}
@@ -100,7 +132,7 @@ func (r *Repository) GetDefinition(ctx context.Context, tenantID, id string) (*m
 	if err != nil || !found {
 		return nil, err
 	}
-	_ = json.Unmarshal(stepsJSON, &d.Steps)
+	d.Steps = unmarshalDefinition(defJSON)
 	return d, nil
 }
 
