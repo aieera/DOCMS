@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getWorkspaces } from '@/api/workspaces'
 import { useUIStore } from '@/store/uiStore'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 
 export function WorkspaceSelector() {
   const { data: workspaces } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })

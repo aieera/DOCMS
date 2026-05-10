@@ -10,7 +10,7 @@ import {
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
 
 // Curated allow-list of LLMs the AI surface supports. Anything outside

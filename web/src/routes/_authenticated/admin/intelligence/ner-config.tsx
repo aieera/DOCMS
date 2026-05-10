@@ -14,7 +14,7 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 
 // Mirrors the LLM-eligible types in services/document/internal/service/
 // ner_service.go::allowedEntityTypes, minus the deterministic ones

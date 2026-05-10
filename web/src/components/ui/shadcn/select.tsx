@@ -152,3 +152,67 @@ export {
   SelectScrollUpButton,
   SelectScrollDownButton,
 }
+
+import { useId, type ReactNode } from 'react'
+import { Label } from '@/components/ui/label'
+
+interface LabeledSelectOption {
+  value: string
+  label: ReactNode
+}
+
+interface LabeledSelectProps {
+  value?: string
+  onValueChange: (v: string) => void
+  options: LabeledSelectOption[]
+  placeholder?: string
+  label?: ReactNode
+  // Optional id passthrough so callers wiring their own
+  // <Label htmlFor> can target the trigger.
+  id?: string
+  // Optional class slot for the outer wrapper (the
+  // label + trigger pair). Forwards to the wrapper div.
+  className?: string
+  // Optional class slot for the trigger itself.
+  triggerClassName?: string
+  disabled?: boolean
+}
+
+// Convenience wrapper around the canonical Select primitives that
+// preserves the bespoke ./Select API (options array + label sugar)
+// for migrating call sites mechanically. Use the raw canonical
+// composition when you need item icons, separators, multi-group
+// surfaces, or custom rendered items.
+function LabeledSelect({
+  value,
+  onValueChange,
+  options,
+  placeholder = 'Select…',
+  label,
+  id,
+  className,
+  triggerClassName,
+  disabled,
+}: LabeledSelectProps) {
+  const generatedId = useId()
+  const triggerId = id ?? generatedId
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      {label && <Label htmlFor={triggerId}>{label}</Label>}
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+        <SelectTrigger id={triggerId} className={triggerClassName}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+export { LabeledSelect }

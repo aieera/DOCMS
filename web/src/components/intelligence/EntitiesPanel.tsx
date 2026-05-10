@@ -12,7 +12,7 @@ import {
 import { getOCR } from '@/api/ocr'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/shadcn/button'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { HighlightedText } from './HighlightedText'
 
 // Per ADR 0078. Keep in sync with allowedEntityTypes in ner_service.go.

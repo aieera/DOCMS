@@ -22,7 +22,7 @@ import {
 } from '@/api/redaction'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/shadcn/button'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { ENTITY_COLOR } from './EntitiesPanel'
 
 const BULK_APPLY_THRESHOLD = 50

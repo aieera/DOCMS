@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/shadcn/dialog'
 import { Input } from '@/components/ui/shadcn/input'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/cn'
 

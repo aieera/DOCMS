@@ -26,7 +26,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Input } from '@/components/ui/shadcn/input'
-import { Select } from '@/components/ui/Select'
+import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 
 type Tab = 'my' | 'approvals'
 type View = 'table' | 'kanban'
