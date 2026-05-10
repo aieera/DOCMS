@@ -4,7 +4,13 @@ import { Badge } from '@/components/ui/Badge'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/shadcn/button'
 import { MoreHorizontal, Shield, Ban, KeyRound } from 'lucide-react'
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/DropdownMenu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/shadcn/dropdown-menu'
 import type { User } from '@/types/api'
 import { formatRelativeTime } from '@/lib/formatters'
 
@@ -38,12 +44,25 @@ const columns: ColumnDef<User, unknown>[] = [
     header: '',
     cell: () => (
       <DropdownMenu>
-        <DropdownMenuTrigger asChild><Button variant="ghost" size="sm"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem icon={<Shield className="h-4 w-4" />}>Edit Role</DropdownMenuItem>
-          <DropdownMenuItem icon={<KeyRound className="h-4 w-4" />}>Reset MFA</DropdownMenuItem>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="User actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem>
+            <Shield className="h-4 w-4" />
+            Edit role
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <KeyRound className="h-4 w-4" />
+            Reset MFA
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem icon={<Ban className="h-4 w-4" />} destructive>Suspend</DropdownMenuItem>
+          <DropdownMenuItem className="text-destructive focus:text-destructive">
+            <Ban className="h-4 w-4" />
+            Suspend
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     ),
