@@ -79,6 +79,15 @@ type Config struct {
 	// ceremony completes (ADR 0070). Default: "document:9090".
 	DocumentServiceAddr string `mapstructure:"document_service_addr"`
 
+	// WorkflowServiceAddr / CollaborationServiceAddr / AuditServiceAddr
+	// are the gRPC addresses the GraphQL gateway (ADR 0074) calls
+	// from its read resolvers. Each may be empty at boot — the
+	// resolver returns the field as null + logs once. Defaults
+	// follow the docker-compose service-name convention.
+	WorkflowServiceAddr      string `mapstructure:"workflow_service_addr"`
+	CollaborationServiceAddr string `mapstructure:"collaboration_service_addr"`
+	AuditServiceAddr         string `mapstructure:"audit_service_addr"`
+
 	// S3PublicBase optionally overrides the S3 endpoint host in
 	// presigned URLs when the service is behind a reverse proxy.
 	// Env: VAULTDMS_S3_PUBLIC_BASE.
@@ -181,6 +190,9 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("policy_service_addr", "POLICY_SERVICE_ADDR")
 	_ = v.BindEnv("storage_service_addr", "STORAGE_SERVICE_ADDR")
 	_ = v.BindEnv("document_service_addr", "DOCUMENT_SERVICE_ADDR")
+	_ = v.BindEnv("workflow_service_addr", "WORKFLOW_SERVICE_ADDR")
+	_ = v.BindEnv("collaboration_service_addr", "COLLABORATION_SERVICE_ADDR")
+	_ = v.BindEnv("audit_service_addr", "AUDIT_SERVICE_ADDR")
 	_ = v.BindEnv("stripe_webhook_secret", "STRIPE_WEBHOOK_SECRET")
 	_ = v.BindEnv("clamav_addr", "CLAMAV_ADDR")
 	_ = v.BindEnv("temporal_addr", "TEMPORAL_ADDR")
@@ -297,6 +309,9 @@ func setDefaults(v *viper.Viper, serviceName string) {
 	v.SetDefault("policy_service_addr", "policy:9090")
 	v.SetDefault("storage_service_addr", "storage:9090")
 	v.SetDefault("document_service_addr", "document:9090")
+	v.SetDefault("workflow_service_addr", "workflow:9090")
+	v.SetDefault("collaboration_service_addr", "collaboration:9090")
+	v.SetDefault("audit_service_addr", "audit:9090")
 	v.SetDefault("clamav_addr", "clamav:3310")
 	v.SetDefault("temporal_addr", "temporal:7233")
 	v.SetDefault("opensearch_url", "http://opensearch:9200")

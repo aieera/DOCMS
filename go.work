@@ -12,6 +12,7 @@ use (
 	./services/billing
 	./services/connector
 	./services/document
+	./services/graphql-gateway
 	./services/notification
 	./services/policy
 	./services/search

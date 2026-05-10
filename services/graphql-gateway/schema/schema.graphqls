@@ -1,0 +1,198 @@
+# ADR 0074 — VaultDMS GraphQL Read API.
+#
+# Read-only by design (mutations stay on REST). Covers the
+# multi-join surface for the document-detail and activity-timeline
+# pages: document + version + comment + permission + workflow + task.
+#
+# Conventions:
+#   - Every entity carries an opaque `id` (UUID string) and an
+#     `auditMeta` block where the upstream proto exposes one. Field
+#     names mirror the proto so the schema reads naturally to anyone
+#     who knows the REST API.
+#   - Lists support `limit` (default 50, max 200) and `cursor`
+#     (opaque page token). No offset-based pagination — keyset only,
+#     backed by the upstream gRPC ListXxx page tokens.
+#   - Permission-gated fields return `null` rather than failing the
+#     whole query when the caller can't see them, except for the
+#     root entry points (document(id), workflow(id)) which return
+#     null for the whole entity if the policy check denies.
+
+scalar DateTime
+
+type Query {
+  document(id: ID!): Document
+  documentsByWorkspace(workspaceId: ID!, limit: Int, cursor: String): DocumentConnection!
+
+  workflowInstance(id: ID!): WorkflowInstance
+  workflowInstancesByDocument(documentId: ID!, limit: Int, cursor: String): WorkflowInstanceConnection!
+
+  taskById(id: ID!): Task
+  myTasks(includeCompleted: Boolean, limit: Int, cursor: String): TaskConnection!
+
+  activityForDocument(documentId: ID!, limit: Int, cursor: String): ActivityConnection!
+}
+
+# ---- Document --------------------------------------------------------------
+
+type Document {
+  id: ID!
+  tenantId: ID!
+  workspaceId: ID!
+  folderId: ID
+  title: String!
+  description: String
+  lifecycleState: String!
+  regionPin: String!
+  documentClass: String
+  classificationConfidence: Float
+  tags: [String!]!
+  mimeType: String
+  totalSizeBytes: Int
+  sha256Hash: String
+  createdBy: ID
+  createdAt: DateTime
+  updatedAt: DateTime
+
+  # Resolved fields — DataLoader-batched per request.
+  currentVersion: Version
+  versions(limit: Int, cursor: String): VersionConnection!
+  comments(includeResolved: Boolean, limit: Int, cursor: String): CommentConnection!
+  annotations(limit: Int, cursor: String): AnnotationConnection!
+  workflowInstances(limit: Int): [WorkflowInstance!]!
+  permissions: DocumentPermissions!
+}
+
+type DocumentPermissions {
+  canView: Boolean!
+  canEdit: Boolean!
+  canDelete: Boolean!
+  canShare: Boolean!
+  canAdmin: Boolean!
+}
+
+type DocumentConnection {
+  nodes: [Document!]!
+  nextCursor: String
+  totalCount: Int
+}
+
+# ---- Version ---------------------------------------------------------------
+
+type Version {
+  id: ID!
+  documentId: ID!
+  versionNumber: Int!
+  contentBlobId: ID!
+  sizeBytes: Int!
+  mimeType: String
+  sha256Hash: String
+  createdBy: ID
+  createdByName: String
+  createdAt: DateTime
+  changeSummary: String
+}
+
+type VersionConnection {
+  nodes: [Version!]!
+  nextCursor: String
+}
+
+# ---- Comment + Annotation --------------------------------------------------
+
+type Comment {
+  id: ID!
+  documentId: ID!
+  parentCommentId: ID
+  authorId: ID!
+  authorName: String
+  body: String!
+  resolved: Boolean!
+  resolvedBy: ID
+  resolvedAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime
+  replies: [Comment!]!
+}
+
+type CommentConnection {
+  nodes: [Comment!]!
+  nextCursor: String
+}
+
+type Annotation {
+  id: ID!
+  documentId: ID!
+  versionId: ID
+  authorId: ID!
+  page: Int
+  kind: String!
+  payload: String
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+
+type AnnotationConnection {
+  nodes: [Annotation!]!
+  nextCursor: String
+}
+
+# ---- Workflow + Task -------------------------------------------------------
+
+type WorkflowInstance {
+  id: ID!
+  definitionId: ID!
+  definitionName: String
+  documentId: ID
+  status: String!
+  startedAt: DateTime!
+  completedAt: DateTime
+  startedBy: ID
+  tasks: [Task!]!
+  document: Document
+}
+
+type WorkflowInstanceConnection {
+  nodes: [WorkflowInstance!]!
+  nextCursor: String
+}
+
+type Task {
+  id: ID!
+  workflowInstanceId: ID!
+  assigneeId: ID
+  assigneeName: String
+  title: String!
+  status: String!
+  dueAt: DateTime
+  completedAt: DateTime
+  createdAt: DateTime!
+  workflowInstance: WorkflowInstance
+}
+
+type TaskConnection {
+  nodes: [Task!]!
+  nextCursor: String
+}
+
+# ---- Activity timeline -----------------------------------------------------
+# A union of every event kind that touches a document. The frontend
+# renders each `kind` differently — version uploaded, comment posted,
+# workflow transitioned, signature completed, etc. The backend merges
+# these from the audit + workflow + collaboration + signature streams
+# into a single chronological feed so the client doesn't have to.
+
+type ActivityEvent {
+  id: ID!
+  documentId: ID!
+  kind: String!         # "version.created" | "comment.posted" | "workflow.transitioned" | "signature.completed" | ...
+  actorId: ID
+  actorName: String
+  occurredAt: DateTime!
+  summary: String!      # human-readable one-liner
+  payload: String       # JSON envelope for kind-specific fields
+}
+
+type ActivityConnection {
+  nodes: [ActivityEvent!]!
+  nextCursor: String
+}

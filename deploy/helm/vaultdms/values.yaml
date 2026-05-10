@@ -307,6 +307,29 @@ connector:
   httpPort: 8080
   healthPort: 8081
 
+# ADR 0074 — GraphQL read gateway. HTTP-only public surface; calls
+# document/workflow/collaboration/policy/audit over gRPC.
+graphql-gateway:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/graphql-gateway"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPU: 70
+  env:
+    WORKFLOW_SERVICE_ADDR: "workflow:9090"
+    COLLABORATION_SERVICE_ADDR: "collaboration:9090"
+    AUDIT_SERVICE_ADDR: "audit:9090"
+  httpPort: 8080
+  healthPort: 8081
+
 intelligence:
   enabled: true
   replicas: 2

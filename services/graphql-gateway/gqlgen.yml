@@ -1,0 +1,37 @@
+# gqlgen configuration for the VaultDMS GraphQL gateway.
+#
+# The v1 runtime in this service is a hand-rolled gqlparser-based
+# executor (see internal/exec) that the resolvers bind into. Running
+# `go generate ./...` regenerates the model + resolver scaffolding
+# under internal/gqlgen/ for the eventual migration to fully
+# gqlgen-generated code. The hand-rolled executor + the generated
+# scaffolding will coexist during that transition; today only the
+# hand-rolled path is wired into main.go.
+
+schema:
+  - schema/schema.graphqls
+
+exec:
+  filename: internal/gqlgen/generated.go
+  package: gqlgen
+
+model:
+  filename: internal/gqlgen/models_gen.go
+  package: gqlgen
+
+resolver:
+  layout: follow-schema
+  dir: internal/gqlgen/resolver
+  package: resolver
+  filename_template: "{name}.resolvers.go"
+
+autobind:
+  - "github.com/vaultdms/vaultdms/services/graphql-gateway/internal/model"
+
+models:
+  ID:
+    model:
+      - github.com/99designs/gqlgen/graphql.ID
+  DateTime:
+    model:
+      - github.com/99designs/gqlgen/graphql.Time

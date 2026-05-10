@@ -1,0 +1,11 @@
+{
+  "_comment": "ADR 0074 — persisted-query allow-list. The frontend's `npm run build` regenerates this manifest from the .graphql source files; production binaries embed it via go:embed and reject any inbound query whose SHA-256 hash isn't a key here. The two seed entries below ship with the backend so curl-based smoke tests can run before the frontend manifest exists.",
+  "8c4d9f1bb3a8c2e0fefb4d11f1c0ffee1234567890abcdef1234567890abcdef": {
+    "name": "DocumentDetail",
+    "doc": "query DocumentDetail($id: ID!) { document(id: $id) { id title lifecycleState regionPin tags currentVersion { id versionNumber sizeBytes createdAt createdByName } versions(limit: 20) { nodes { id versionNumber createdAt changeSummary } } comments { nodes { id body authorName createdAt resolved replies { id body authorName createdAt } } } annotations { nodes { id kind page createdAt } } workflowInstances { id status definitionName startedAt tasks { id title status assigneeName dueAt } } permissions { canView canEdit canDelete canShare canAdmin } } }"
+  },
+  "1f3a8b2cd4e5f6071829304a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8": {
+    "name": "ActivityForDocument",
+    "doc": "query ActivityForDocument($id: ID!, $cursor: String) { activityForDocument(documentId: $id, cursor: $cursor, limit: 50) { nodes { id kind actorName summary occurredAt payload } nextCursor } }"
+  }
+}

@@ -656,6 +656,23 @@ services:
     healthcheck: *go-healthcheck
     restart: unless-stopped
 
+  # ADR 0074 — GraphQL read gateway. HTTP-only public surface; talks
+  # gRPC to document/workflow/collaboration/policy/audit upstream.
+  graphql-gateway:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: graphql-gateway }
+    container_name: vaultdms-graphql-gateway
+    environment: *go-env
+    # 8093 = health, 8191 = http /graphql; no gRPC port (read-only HTTP).
+    ports: ["8093:8081", "8191:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
