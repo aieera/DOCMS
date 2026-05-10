@@ -44,7 +44,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 export const Route = createFileRoute('/_authenticated/admin/tenant/identity/ldap')({

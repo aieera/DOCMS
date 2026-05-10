@@ -10,7 +10,7 @@ import {
   type EntitySource,
 } from '@/api/ner'
 import { getOCR } from '@/api/ocr'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { HighlightedText } from './HighlightedText'

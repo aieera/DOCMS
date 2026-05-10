@@ -1,7 +1,7 @@
 import { type ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/ui/DataTable'
-import { Badge } from '@/components/ui/Badge'
-import { Avatar } from '@/components/ui/Avatar'
+import { Badge } from '@/components/ui/shadcn/badge'
+import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Button } from '@/components/ui/shadcn/button'
 import { MoreHorizontal, Shield, Ban, KeyRound } from 'lucide-react'
 import {

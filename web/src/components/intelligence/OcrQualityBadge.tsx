@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Gauge } from 'lucide-react'
 
 import { getDocumentOcrQuality, type QualityGrade } from '@/api/ocr-quality'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 interface Props {
   documentId: string

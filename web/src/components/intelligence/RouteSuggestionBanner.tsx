@@ -9,7 +9,7 @@ import {
   listRouteSuggestions,
   type RouteSuggestion,
 } from '@/api/smart-routing'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 
 interface Props {

@@ -8,7 +8,7 @@ import {
   type OcrPageScore,
   type QualityGrade,
 } from '@/api/ocr-quality'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 
 interface Props {

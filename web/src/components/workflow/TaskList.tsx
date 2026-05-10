@@ -1,6 +1,6 @@
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
-import { Avatar } from '@/components/ui/Avatar'
+import { Avatar } from '@/components/ui/shadcn/avatar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CheckSquare, Clock, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/formatters'

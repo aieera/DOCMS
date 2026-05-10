@@ -8,7 +8,7 @@ import {
   type RiskLevel,
 } from '@/api/compliance-pii'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 

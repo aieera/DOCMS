@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Globe } from 'lucide-react'
 
 import { getDocumentLanguage } from '@/api/translation'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 interface Props {
   documentId: string

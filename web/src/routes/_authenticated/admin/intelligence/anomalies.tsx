@@ -15,7 +15,7 @@ import {
   type Severity,
 } from '@/api/anomaly'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 
 const SEVERITY_VARIANT: Record<Severity, string> = {

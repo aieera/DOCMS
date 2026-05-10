@@ -14,7 +14,7 @@ import {
 } from '@/api/retention'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/shadcn/input'

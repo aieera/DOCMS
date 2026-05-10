@@ -17,7 +17,7 @@ import {
   type ModelVersion,
 } from '@/api/models'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 

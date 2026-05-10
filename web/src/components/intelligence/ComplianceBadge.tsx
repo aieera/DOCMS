@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ShieldAlert } from 'lucide-react'
 
 import { getDocumentCompliance, type RiskLevel } from '@/api/compliance-pii'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 interface Props {
   documentId: string

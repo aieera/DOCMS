@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Textarea } from '@/components/ui/shadcn/textarea'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 // ADR 0069 — platform-admin federated search.
 //

@@ -5,7 +5,7 @@ import { ShieldCheck, Check } from 'lucide-react'
 import { getPermissionMatrix, type PermissionCell } from '@/api/permissionsMatrix'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 
 // Capability ordering mirrors the rego hierarchy:
 //   admin > delete > edit > share > view

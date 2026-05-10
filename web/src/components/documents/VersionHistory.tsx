@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getVersions } from '@/api/documents'
-import { Avatar } from '@/components/ui/Avatar'
+import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatFileSize, formatRelativeTime } from '@/lib/formatters'
 import { Button } from '@/components/ui/shadcn/button'

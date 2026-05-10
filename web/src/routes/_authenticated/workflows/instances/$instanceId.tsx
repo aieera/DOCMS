@@ -15,7 +15,7 @@ import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { formatRelativeTime } from '@/lib/formatters'
 
 export const Route = createFileRoute('/_authenticated/workflows/instances/$instanceId')({

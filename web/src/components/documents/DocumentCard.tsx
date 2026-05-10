@@ -1,5 +1,5 @@
 import type { Document } from '@/types/api'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { formatFileSize, formatRelativeTime } from '@/lib/formatters'
 import { Link } from '@tanstack/react-router'

@@ -20,7 +20,7 @@ import {
   type RedactionCandidate,
   type RedactionStatus,
 } from '@/api/redaction'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { ENTITY_COLOR } from './EntitiesPanel'

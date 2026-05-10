@@ -1,5 +1,5 @@
 import { DataTable } from '@/components/ui/DataTable'
-import { Badge } from '@/components/ui/Badge'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { type ColumnDef } from '@tanstack/react-table'
 import { formatDateTime } from '@/lib/formatters'
 
