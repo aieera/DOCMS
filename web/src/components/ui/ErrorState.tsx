@@ -1,5 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
-import { Button } from './Button'
+import { Button } from './shadcn/button'
 
 interface ErrorStateProps { message?: string; onRetry?: () => void }
 

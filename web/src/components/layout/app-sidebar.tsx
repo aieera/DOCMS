@@ -16,9 +16,9 @@ import {
   ChevronsUpDown,
   type LucideIcon,
 } from 'lucide-react'
-import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 
@@ -197,23 +197,21 @@ export function AppSidebar() {
   )
 }
 
-// Mobile drawer: triggered by the topbar's menu button. Always full
-// width when open. Uses Radix Dialog directly to land the panel on
-// the leading edge instead of trailing (the existing Sheet
-// component is right-side-only).
+// Mobile drawer: triggered by the topbar's menu button. Uses the
+// canonical Sheet (side="left") so it gets the focus-trap, swipe-
+// dismiss, and slide-in animations from the canonical Radix
+// surface — and so the strangler can finally retire the inline
+// Radix Dialog wiring this component used to do.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in data-[state=closed]:fade-out lg:hidden" />
-        <DialogPrimitive.Content
-          className="fixed inset-y-0 start-0 z-50 w-[280px] border-e border-sidebar-border bg-sidebar shadow-xl transition-transform duration-200 data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full lg:hidden"
-          aria-label="Navigation"
-        >
-          <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
-          <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="left"
+        className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 lg:hidden"
+      >
+        <SheetTitle className="sr-only">Navigation</SheetTitle>
+        <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
+      </SheetContent>
+    </Sheet>
   )
 }
