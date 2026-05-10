@@ -33,6 +33,7 @@ import (
 
 	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 	"github.com/vaultdms/vaultdms/services/document/internal/compliance"
+	"github.com/vaultdms/vaultdms/services/document/internal/bulk"
 	"github.com/vaultdms/vaultdms/services/document/internal/handler"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -195,6 +196,21 @@ func main() {
 	))
 	vaultdmsv1.RegisterDocumentServiceServer(grpcSrv, docHandler)
 
+	// ADR 0075 — bulk import + export. Lives in the document service
+	// because workspaces, folders, and documents are document-owned.
+	// User + group bulk dispatches outbound to auth via the auth gRPC
+	// client (nil-safe — when authConn is nil those rows return
+	// "auth service not configured" without aborting the batch).
+	var authClient vaultdmsv1.AuthServiceClient
+	if authConn := dialAuthOpt(ctx, log, cfg.AuthServiceAddr); authConn != nil {
+		authClient = vaultdmsv1.NewAuthServiceClient(authConn)
+		defer func() { _ = authConn.Close() }()
+	}
+	bulkRepo := bulk.NewRepo(pool)
+	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
+	vaultdmsv1.RegisterBulkServiceServer(grpcSrv, bulk.NewGRPCServer(bulkSvc))
+	bulkHTTP := bulk.NewHTTPHandler(bulkSvc, *log.Z())
+
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
 		log.Fatal(ctx).Err(err).Msg("grpc listen")
@@ -334,6 +350,16 @@ func main() {
 	)
 	rootMux.Handle("/api/v1/admin/share-links", shareLinksAdminWrapped)
 	rootMux.Handle("/api/v1/admin/share-links/", shareLinksAdminWrapped)
+
+	// ADR 0075 — bulk import + export HTTP facade. Same SessionAuth
+	// chain as the other admin handlers so the calling user's role
+	// reaches OPA via auth.User(ctx).
+	bulkAdminMux := http.NewServeMux()
+	bulkHTTP.Register(bulkAdminMux)
+	bulkAdminWrapped := middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(bulkAdminMux),
+	)
+	rootMux.Handle("/api/v1/admin/bulk/", bulkAdminWrapped)
 	rootMux.Handle("/api/v1/admin/documents/", shareLinksAdminWrapped)
 
 	// Retention policies admin — Wave 10.
@@ -694,4 +720,27 @@ func (denyAllPolicyClient) BatchCheckPermission(ctx context.Context, in *vaultdm
 		out.Results = append(out.Results, &vaultdmsv1.CheckPermissionResponse{Allowed: false, Reason: "policy service unavailable"})
 	}
 	return out, nil
+}
+
+// dialAuthOpt opens a 5s-deadlined gRPC connection to the auth
+// service. Returns nil + warns on failure so the bulk import path
+// can degrade gracefully — user / group items return "auth service
+// not configured" rather than tripping the whole batch.
+func dialAuthOpt(ctx context.Context, log *logger.Logger, addr string) *grpc.ClientConn {
+	if addr == "" {
+		log.Warn(ctx).Msg("AUTH_SERVICE_ADDR empty; bulk user / group items will be skipped")
+		return nil
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(dialCtx, addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		log.Warn(ctx).Err(err).Str("addr", addr).
+			Msg("auth gRPC dial failed; bulk user / group items will be skipped")
+		return nil
+	}
+	return conn
 }

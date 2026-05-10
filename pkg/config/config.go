@@ -87,6 +87,12 @@ type Config struct {
 	WorkflowServiceAddr      string `mapstructure:"workflow_service_addr"`
 	CollaborationServiceAddr string `mapstructure:"collaboration_service_addr"`
 	AuditServiceAddr         string `mapstructure:"audit_service_addr"`
+	// AuthServiceAddr is the gRPC address of the auth service. Used by
+	// the document service's bulk-import dispatcher (ADR 0075) when an
+	// imported BulkUser / BulkGroup needs to be created in auth's DB.
+	// Empty → user/group bulk items return "auth service not configured"
+	// without aborting the rest of the batch.
+	AuthServiceAddr string `mapstructure:"auth_service_addr"`
 
 	// S3PublicBase optionally overrides the S3 endpoint host in
 	// presigned URLs when the service is behind a reverse proxy.
@@ -193,6 +199,7 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("workflow_service_addr", "WORKFLOW_SERVICE_ADDR")
 	_ = v.BindEnv("collaboration_service_addr", "COLLABORATION_SERVICE_ADDR")
 	_ = v.BindEnv("audit_service_addr", "AUDIT_SERVICE_ADDR")
+	_ = v.BindEnv("auth_service_addr", "AUTH_SERVICE_ADDR")
 	_ = v.BindEnv("stripe_webhook_secret", "STRIPE_WEBHOOK_SECRET")
 	_ = v.BindEnv("clamav_addr", "CLAMAV_ADDR")
 	_ = v.BindEnv("temporal_addr", "TEMPORAL_ADDR")
@@ -312,6 +319,7 @@ func setDefaults(v *viper.Viper, serviceName string) {
 	v.SetDefault("workflow_service_addr", "workflow:9090")
 	v.SetDefault("collaboration_service_addr", "collaboration:9090")
 	v.SetDefault("audit_service_addr", "audit:9090")
+	v.SetDefault("auth_service_addr", "auth:9090")
 	v.SetDefault("clamav_addr", "clamav:3310")
 	v.SetDefault("temporal_addr", "temporal:7233")
 	v.SetDefault("opensearch_url", "http://opensearch:9200")

@@ -15,6 +15,9 @@
       "name": "BillingService"
     },
     {
+      "name": "BulkService"
+    },
+    {
       "name": "CollaborationService"
     },
     {
@@ -1497,6 +1500,209 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1BulkDocument": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "workspaceExternalId": {
+          "type": "string",
+          "title": "required"
+        },
+        "folderExternalId": {
+          "type": "string",
+          "title": "empty = workspace root"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regionPin": {
+          "type": "string"
+        },
+        "contentBlobId": {
+          "type": "string",
+          "description": "Optional: if the bytes have already been uploaded via the regular\nstorage upload flow, supply the resulting content_blob_id and the\nbulk import will create a Version pointing at it. If omitted the\ndocument is created in DRAFT state with no content."
+        }
+      }
+    },
+    "v1BulkExportResponse": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BulkItem"
+          }
+        },
+        "hasMore": {
+          "type": "boolean",
+          "title": "false on the final batch"
+        },
+        "pageIndex": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1BulkFolder": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "workspaceExternalId": {
+          "type": "string",
+          "title": "required"
+        },
+        "parentExternalId": {
+          "type": "string",
+          "title": "empty = root"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BulkGroup": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "required"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BulkImportResponse": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BulkItemResult"
+          }
+        }
+      }
+    },
+    "v1BulkItem": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/definitions/v1BulkWorkspace"
+        },
+        "folder": {
+          "$ref": "#/definitions/v1BulkFolder"
+        },
+        "document": {
+          "$ref": "#/definitions/v1BulkDocument"
+        },
+        "user": {
+          "$ref": "#/definitions/v1BulkUser"
+        },
+        "group": {
+          "$ref": "#/definitions/v1BulkGroup"
+        }
+      }
+    },
+    "v1BulkItemResult": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string",
+          "title": "echoes the input"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "internalId": {
+          "type": "string",
+          "title": "UUID assigned (same as map lookup on retry)"
+        },
+        "error": {
+          "type": "string",
+          "title": "empty when success"
+        },
+        "skipped": {
+          "type": "boolean",
+          "title": "true on retry / no-op"
+        }
+      }
+    },
+    "v1BulkResourceKind": {
+      "type": "string",
+      "enum": [
+        "BULK_RESOURCE_KIND_UNSPECIFIED",
+        "BULK_RESOURCE_KIND_WORKSPACE",
+        "BULK_RESOURCE_KIND_FOLDER",
+        "BULK_RESOURCE_KIND_DOCUMENT",
+        "BULK_RESOURCE_KIND_USER",
+        "BULK_RESOURCE_KIND_GROUP"
+      ],
+      "default": "BULK_RESOURCE_KIND_UNSPECIFIED"
+    },
+    "v1BulkUser": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "title": "required"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "owner | admin | member | viewer | etc"
+        },
+        "groupExternalIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1BulkWorkspace": {
+      "type": "object",
+      "properties": {
+        "externalId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "regionPin": {
+          "type": "string",
+          "title": "empty = tenant default"
         }
       }
     },

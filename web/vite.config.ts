@@ -69,6 +69,10 @@ export default defineConfig({
             '/api/v1/admin/active-learning':    withSig('http://localhost:8182'),
             '/api/v1/admin/ner-config':         withSig('http://localhost:8182'),
             '/api/v1/admin/llm-usage':          withSig('http://localhost:8194'),
+            // ADR 0075 — bulk import / export NDJSON facade. Lives
+            // in the document service; above the catch-all so the
+            // streaming endpoints don't get intercepted by auth.
+            '/api/v1/admin/bulk':               withSig('http://localhost:8182'),
             // ADR 0081 — tenant LLM config (provider keys, defaults).
             // Intelligence service owns it. MUST come before the
             // /api/v1/admin catch-all below: http-proxy-middleware

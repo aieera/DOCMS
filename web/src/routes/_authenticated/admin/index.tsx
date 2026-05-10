@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, Archive, Brain, ChevronRight, CreditCard, FileJson, FileSearch,
   Globe, Key, KeyRound, Languages, Link2, MapPinned, Network, PenTool, Plug, Scale,
   ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
-  UserCog, Users, Webhook, Workflow,
+  Upload, UserCog, Users, Webhook, Workflow,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -50,6 +50,7 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
     { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
     { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
+    { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents (ADR 0075)' },
     { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI (ADR 0083)' },
   ],
 }

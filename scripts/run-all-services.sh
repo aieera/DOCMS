@@ -64,6 +64,9 @@ export WORKFLOW_SERVICE_ADDR="localhost:9096"
 export AUDIT_SERVICE_ADDR="localhost:9095"
 # collaboration runs as part of the document service in this env.
 export COLLABORATION_SERVICE_ADDR="localhost:9092"
+# ADR 0075 — bulk import dispatches BulkUser / BulkGroup outbound
+# to the auth service over gRPC. auth runs on 9090 in host mode.
+export AUTH_SERVICE_ADDR="localhost:9090"
 
 # §3.1 / B2.3 — gateway-signature shared secret; pkg/middleware
 # RequireGatewaySignature refuses to start without it. Matches the

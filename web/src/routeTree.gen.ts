@@ -46,6 +46,7 @@ import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_au
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
+import { Route as AuthenticatedAdminBulkRouteImport } from './routes/_authenticated/admin/bulk'
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
@@ -277,6 +278,11 @@ const AuthenticatedAdminComplianceRoute =
     path: '/admin/compliance',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminBulkRoute = AuthenticatedAdminBulkRouteImport.update({
+  id: '/admin/bulk',
+  path: '/admin/bulk',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminBillingRoute =
   AuthenticatedAdminBillingRouteImport.update({
     id: '/admin/billing',
@@ -444,6 +450,7 @@ export interface FileRoutesByFullPath {
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
+  '/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
@@ -507,6 +514,7 @@ export interface FileRoutesByTo {
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
+  '/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
@@ -572,6 +580,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
+  '/_authenticated/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
@@ -637,6 +646,7 @@ export interface FileRouteTypes {
     | '/admin/api-keys'
     | '/admin/audit-log'
     | '/admin/billing'
+    | '/admin/bulk'
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/groups'
@@ -700,6 +710,7 @@ export interface FileRouteTypes {
     | '/admin/api-keys'
     | '/admin/audit-log'
     | '/admin/billing'
+    | '/admin/bulk'
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/groups'
@@ -764,6 +775,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/api-keys'
     | '/_authenticated/admin/audit-log'
     | '/_authenticated/admin/billing'
+    | '/_authenticated/admin/bulk'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
     | '/_authenticated/admin/groups'
@@ -1082,6 +1094,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminComplianceRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/bulk': {
+      id: '/_authenticated/admin/bulk'
+      path: '/admin/bulk'
+      fullPath: '/admin/bulk'
+      preLoaderRoute: typeof AuthenticatedAdminBulkRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/billing': {
       id: '/_authenticated/admin/billing'
       path: '/admin/billing'
@@ -1301,6 +1320,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
+  AuthenticatedAdminBulkRoute: typeof AuthenticatedAdminBulkRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
@@ -1358,6 +1378,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
+  AuthenticatedAdminBulkRoute: AuthenticatedAdminBulkRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
