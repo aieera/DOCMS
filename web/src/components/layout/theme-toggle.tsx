@@ -1,11 +1,12 @@
-import { Monitor, Moon, Sun, Check } from 'lucide-react'
+import { Check, Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme, type ThemeMode } from './theme-provider'
+import { Button } from '@/components/ui/shadcn/button'
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from '@/components/ui/DropdownMenu'
+  DropdownMenuTrigger,
+} from '@/components/ui/shadcn/dropdown-menu'
 
 const items: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -19,21 +20,16 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Toggle theme"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        <Button variant="ghost" size="icon" aria-label="Toggle theme">
           <ActiveIcon className="h-[1.1rem] w-[1.1rem]" />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[160px]">
         {items.map(({ value, label, icon: Icon }) => (
-          <DropdownMenuItem key={value} icon={<Icon className="h-4 w-4" />} onSelect={() => setMode(value)}>
-            <span className="flex w-full items-center justify-between">
-              <span>{label}</span>
-              {mode === value && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
-            </span>
+          <DropdownMenuItem key={value} onSelect={() => setMode(value)}>
+            <Icon className="h-4 w-4" />
+            <span className="flex-1">{label}</span>
+            {mode === value && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

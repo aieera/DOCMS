@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { cn } from '@/lib/cn'
+import { Button } from '@/components/ui/shadcn/button'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 
@@ -112,13 +113,15 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
           <span className="text-sm font-semibold tracking-tight">VaultDMS</span>
         </Link>
       )}
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={onToggle}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-8 w-8 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
       >
         {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-      </button>
+      </Button>
     </div>
   )
 }
