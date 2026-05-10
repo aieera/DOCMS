@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/Input'
 //      newly-minted request_id → backend talks to the vendor and
 //      stamps provider_envelope_id on the request.
 //
-// "Internal" routing is the pre-existing in-app signature flow and
+//"Internal" routing is the pre-existing in-app signature flow and
 // shows up alongside DocuSign / Adobe Sign so the user has one
 // place to dispatch any kind of envelope.
 
@@ -104,7 +104,7 @@ function SendForSignaturePage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader title="Send for signature" description={`Document ${documentId}`} />
 
-      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <section className="mb-6 rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-lg font-semibold">Provider</h2>
         <div className="grid gap-3 md:grid-cols-3" data-testid="esign-provider-selector">
           {PROVIDER_OPTIONS.map((p) => (
@@ -113,8 +113,8 @@ function SendForSignaturePage() {
               onClick={() => setProvider(p.id)}
               className={`rounded-md border p-3 text-start transition-colors ${
                 provider === p.id
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
-                  : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:border-primary'
               }`}
               data-testid={`esign-provider-${p.id}`}
               aria-pressed={provider === p.id}
@@ -125,7 +125,7 @@ function SendForSignaturePage() {
         </div>
       </section>
 
-      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <section className="mb-6 rounded-lg border border-border bg-card p-4">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Recipients</h2>
           <Button size="sm" variant="outline" onClick={addRecipient} data-testid="add-recipient">
@@ -152,7 +152,7 @@ function SendForSignaturePage() {
               <select
                 value={r.role}
                 onChange={(e) => updateRecipient(i, { role: e.target.value as RecipientForm['role'] })}
-                className="h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-sm"
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                 data-testid={`recipient-role-${i}`}
               >
                 <option value="signer">Signer</option>
@@ -167,7 +167,7 @@ function SendForSignaturePage() {
         </ul>
       </section>
 
-      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <section className="mb-6 rounded-lg border border-border bg-card p-4">
         <Input
           placeholder="Subject"
           value={subject} onChange={(e) => setSubject(e.target.value)}
@@ -176,7 +176,7 @@ function SendForSignaturePage() {
         <textarea
           placeholder="Message to recipients (optional)"
           value={message} onChange={(e) => setMessage(e.target.value)}
-          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-sm"
+          className="w-full rounded-md border border-border bg-background p-2 text-sm"
           rows={3}
           data-testid="esign-message"
         />

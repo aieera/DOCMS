@@ -25,7 +25,7 @@ function NotificationsPage() {
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
     },
   })
-  // ADR 0086 — per-notification "snooze this type for 1h" link.
+  // ADR 0086 — per-notification"snooze this type for 1h" link.
   const snooze = useMutation({
     mutationFn: (eventType: string) => createSnooze({ event_type: eventType, duration_minutes: 60 }),
     onSuccess: () => toast.success('Snoozed for 1 hour'),
@@ -40,7 +40,7 @@ function NotificationsPage() {
         title="Notifications"
         actions={
           <div className="flex items-center gap-2">
-            <Link to="/settings/notifications" className="text-sm text-[var(--color-primary)] hover:underline" data-testid="notif-preferences-link">
+            <Link to="/settings/notifications" className="text-sm text-primary hover:underline" data-testid="notif-preferences-link">
               Preferences
             </Link>
             {items.length > 0 && (
@@ -54,16 +54,16 @@ function NotificationsPage() {
       {list.isLoading ? <Spinner /> : items.length === 0 ? (
         <EmptyState icon={<Bell className="h-12 w-12" />} title="No notifications" description="You're all caught up" />
       ) : (
-        <ul className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]" data-testid="notif-list">
+        <ul className="divide-y divide-border rounded-lg border border-border bg-card" data-testid="notif-list">
           {items.map((n) => (
             <li key={n.id} className={`flex items-start gap-3 p-3 ${n.read ? 'opacity-60' : ''}`} data-testid={`notif-row-${n.id}`}>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-medium">{n.title}</h3>
-                  <span className="text-[10px] text-[var(--color-text-secondary)]">{n.type}</span>
+                  <span className="text-[10px] text-muted-foreground">{n.type}</span>
                 </div>
-                {n.body && <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{n.body}</p>}
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">{new Date(n.created_at).toLocaleString()}</div>
+                {n.body && <p className="mt-1 text-sm text-muted-foreground">{n.body}</p>}
+                <div className="mt-1 text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</div>
               </div>
               <div className="flex items-center gap-1">
                 {!n.read && (
@@ -76,7 +76,7 @@ function NotificationsPage() {
                   variant="ghost"
                   onClick={() => snooze.mutate(n.type)}
                   loading={snooze.isPending && snooze.variables === n.type}
-                  title={`Mute "${n.type}" for 1 hour`}
+                  title={`Mute"${n.type}" for 1 hour`}
                   aria-label={`Snooze ${n.type} for 1 hour`}
                   data-testid={`notif-snooze-${n.id}`}
                 >

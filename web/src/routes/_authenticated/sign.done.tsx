@@ -54,35 +54,35 @@ function SignDonePage() {
     <div className="mx-auto max-w-2xl p-6">
       <PageHeader title="Signing result" />
 
-      {!sessionID && <p className="text-sm text-red-500">Missing session id in URL.</p>}
+      {!sessionID && <p className="text-sm text-destructive">Missing session id in URL.</p>}
 
       {status === 'pending' || status === 'authorized' ? (
-        <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="qes-status-pending">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-card p-4" data-testid="qes-status-pending">
           <Loader2 className="h-5 w-5 animate-spin" /> Finalizing your signature…
         </div>
       ) : status === 'completed' ? (
         <div className="space-y-4" data-testid="qes-status-completed">
-          <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-4 text-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-success/10 p-4 text-success dark:bg-emerald-900/20 dark:text-emerald-200">
             <CheckCircle2 className="h-5 w-5" /> Document signed via {sessionQ.data?.provider}.
           </div>
           {certsQ.data && certsQ.data.length > 0 && (
-            <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="qes-cert-block">
+            <section className="rounded-lg border border-border bg-card p-4" data-testid="qes-cert-block">
               <h2 className="mb-2 text-lg font-semibold">Qualified certificate</h2>
               {certsQ.data.map((c) => (
                 <dl key={c.id} className="grid grid-cols-[140px_1fr] gap-y-1 text-sm" data-testid={`qes-cert-${c.id}`}>
-                  <dt className="text-[var(--color-text-secondary)]">Subject</dt><dd className="font-mono">{c.subject_dn}</dd>
-                  <dt className="text-[var(--color-text-secondary)]">Issuer</dt><dd className="font-mono">{c.issuer_dn}</dd>
-                  <dt className="text-[var(--color-text-secondary)]">Serial</dt><dd className="font-mono">{c.serial_hex}</dd>
-                  <dt className="text-[var(--color-text-secondary)]">Valid</dt>
+                  <dt className="text-muted-foreground">Subject</dt><dd className="font-mono">{c.subject_dn}</dd>
+                  <dt className="text-muted-foreground">Issuer</dt><dd className="font-mono">{c.issuer_dn}</dd>
+                  <dt className="text-muted-foreground">Serial</dt><dd className="font-mono">{c.serial_hex}</dd>
+                  <dt className="text-muted-foreground">Valid</dt>
                   <dd>{new Date(c.not_before).toLocaleDateString()} — {new Date(c.not_after).toLocaleDateString()}</dd>
-                  <dt className="text-[var(--color-text-secondary)]">Provider</dt><dd>{c.provider}</dd>
+                  <dt className="text-muted-foreground">Provider</dt><dd>{c.provider}</dd>
                 </dl>
               ))}
             </section>
           )}
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-4 text-red-900 dark:bg-red-900/20 dark:text-red-200" data-testid="qes-status-failed">
+        <div className="flex items-start gap-2 rounded-md border border-red-300 bg-destructive/10 p-4 text-red-900 dark:bg-red-900/20 dark:text-red-200" data-testid="qes-status-failed">
           <XCircle className="mt-0.5 h-5 w-5" />
           <div>
             <div className="font-medium">Signing did not complete.</div>

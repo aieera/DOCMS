@@ -203,7 +203,7 @@ function SearchPage() {
             <button
               type="button"
               onClick={clearAllFilters}
-              className="text-xs text-[var(--color-text-secondary)] underline-offset-2 hover:underline"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
               data-testid="clear-filters"
             >
               Clear ({activeFilterCount})
@@ -220,7 +220,7 @@ function SearchPage() {
           return (
             <div
               key={facet}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
+              className="rounded-md border border-border bg-card"
               data-testid={`facet-group-${facet}`}
             >
               <button
@@ -248,7 +248,7 @@ function SearchPage() {
                             />
                             <span className="truncate">{b.value}</span>
                           </span>
-                          <span className="text-[var(--color-text-secondary)]">{b.count}</span>
+                          <span className="text-muted-foreground">{b.count}</span>
                         </label>
                       </li>
                     )
@@ -290,7 +290,7 @@ function SearchPage() {
             {savedSearches.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1 text-xs"
+                className="flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs"
               >
                 <button
                   type="button"
@@ -304,7 +304,7 @@ function SearchPage() {
                   type="button"
                   onClick={() => deleteSavedMut.mutate(s.id)}
                   aria-label={`Delete saved search ${s.name}`}
-                  className="ml-1 text-[var(--color-text-secondary)] hover:text-[var(--color-danger)]"
+                  className="ml-1 text-muted-foreground hover:text-destructive"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -325,14 +325,14 @@ function SearchPage() {
             description={
               activeFilterCount > 0
                 ? 'Try clearing some filters or broadening your query.'
-                : `No documents match "${query}"`
+                : `No documents match"${query}"`
             }
           />
         )}
 
         {data && (data.results?.length ?? 0) > 0 && (
           <div className="space-y-2" data-testid="search-results">
-            <p className="mb-3 text-sm text-[var(--color-text-secondary)]">
+            <p className="mb-3 text-sm text-muted-foreground">
               {data.total_count} results in {data.latency_ms}ms
             </p>
             {(data.results ?? []).map((hit) => (
@@ -344,7 +344,7 @@ function SearchPage() {
                 key={hit.document_id}
                 to="/workspaces/$workspaceId/documents/$documentId"
                 params={{ workspaceId: hit.workspace_id, documentId: hit.document_id }}
-                className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-tertiary)]"
+                className="flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary hover:bg-muted"
                 data-testid={`search-hit-${hit.document_id}`}
               >
                 <FileIcon mime={hit.mime_type} className="mt-0.5" />
@@ -366,14 +366,14 @@ function SearchPage() {
                   )}
                   {hit.highlights?.content?.[0] && (
                     <p
-                      className="mt-1 text-sm text-[var(--color-text-secondary)]"
+                      className="mt-1 text-sm text-muted-foreground"
                       dangerouslySetInnerHTML={{ __html: hit.highlights.content[0] }}
                     />
                   )}
                   <div className="mt-2 flex items-center gap-2">
                     <Badge variant={hit.lifecycle_state}>{hit.lifecycle_state}</Badge>
-                    <span className="text-xs text-[var(--color-text-secondary)]">{formatFileSize(hit.size_bytes)}</span>
-                    <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(hit.created_at)}</span>
+                    <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
+                    <span className="text-xs text-muted-foreground">{formatRelativeTime(hit.created_at)}</span>
                   </div>
                 </div>
               </Link>

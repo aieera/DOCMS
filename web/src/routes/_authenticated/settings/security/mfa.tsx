@@ -79,7 +79,7 @@ function MFAPage() {
       <Section icon={<ShieldCheck className="h-5 w-5" />} title="Enrolled methods">
         {isLoading && <Spinner />}
         {!isLoading && (methods?.length ?? 0) === 0 && (
-          <p className="text-sm text-[var(--color-text-secondary)]">
+          <p className="text-sm text-muted-foreground">
             No methods enrolled yet. Add one below.
           </p>
         )}
@@ -89,10 +89,10 @@ function MFAPage() {
           ))}
         </div>
 
-        <p className="mt-4 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-4 text-xs text-muted-foreground">
           Need a passkey? <Link to="/settings/security" className="underline">Manage passkeys here</Link>.
         </p>
-        <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-2 text-xs text-muted-foreground">
           <Link to="/settings/security/mfa/recovery" className="underline">Generate / view recovery codes</Link>{' '}
           — keep them somewhere safe in case you lose your device.
         </p>
@@ -107,8 +107,8 @@ function MFAPage() {
 
 function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
-      <div className="text-[var(--color-text-secondary)]">{ICONS[m.method]}</div>
+    <div className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
+      <div className="text-muted-foreground">{ICONS[m.method]}</div>
       <div className="flex-1">
         <div className="flex items-center gap-2 text-sm font-medium capitalize">
           {m.method}
@@ -117,7 +117,7 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
           </Badge>
         </div>
         {m.destination && (
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-muted-foreground">
             <code>{m.destination}</code>
           </p>
         )}
@@ -176,7 +176,7 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
   return (
     <Section icon={<MessageSquare className="h-5 w-5" />} title="SMS one-time codes"
       hint="Discouraged — SMS is the weakest factor. Provided for compatibility with enterprise policies that require it.">
-      <div className="mb-3 flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+      <div className="mb-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
           SMS is vulnerable to SIM-swap and SS7 attacks. Prefer a passkey, TOTP app, or push instead.
@@ -203,7 +203,7 @@ function PushSection() {
   return (
     <Section icon={<Bell className="h-5 w-5" />} title="Push notifications"
       hint="Approve sign-in from the VaultDMS mobile app. The mobile app ships in Phase 11.3.">
-      <p className="text-sm text-[var(--color-text-secondary)]">
+      <p className="text-sm text-muted-foreground">
         Once the mobile app is installed and you've signed in there, the device
         will register itself automatically and appear here.
       </p>
@@ -213,10 +213,10 @@ function PushSection() {
 
 function Section({ icon, title, hint, children }: { icon: React.ReactNode; title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+    <section className="rounded-lg border border-border bg-card p-6">
       <div className="mb-4">
         <h2 className="flex items-center gap-2 text-lg font-semibold">{icon}{title}</h2>
-        {hint && <p className="mt-1 text-sm text-[var(--color-text-secondary)]">{hint}</p>}
+        {hint && <p className="mt-1 text-sm text-muted-foreground">{hint}</p>}
       </div>
       {children}
     </section>

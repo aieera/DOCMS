@@ -7,7 +7,7 @@
 //   - Linear flow only — drag a node onto the canvas and it gets
 //     appended to the steps array. Re-ordering is via the panel
 //     on the right (move up / down). True branched layout (the
-//     conditional pattern) is rendered as a "→ on_true / on_false
+//     conditional pattern) is rendered as a"→ on_true / on_false
 //     subgraph" line beneath the node rather than as separate
 //     edges. Future work: full graph editor.
 //   - Per-node validation is presentational; the canonical check
@@ -81,15 +81,15 @@ function WorkflowDesigner() {
 
       <div className="grid flex-1 grid-cols-[16rem_1fr_22rem] gap-3 overflow-hidden">
         {/* ---- Left: palette + meta ---- */}
-        <aside className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+        <aside className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-card p-3">
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <h3 className="mt-2 text-xs font-semibold uppercase text-[var(--color-text-secondary)]">Add step</h3>
+          <h3 className="mt-2 text-xs font-semibold uppercase text-muted-foreground">Add step</h3>
           {STEP_PRESETS.map((p) => (
             <Button key={p.type} variant="outline" size="sm" onClick={() => addStep(p)} className="justify-start">
               <Plus className="h-4 w-4" /> {p.label}
             </Button>
           ))}
-          <div className="mt-3 text-xs text-[var(--color-text-secondary)]">
+          <div className="mt-3 text-xs text-muted-foreground">
             <ValidationSummary issues={issues} />
           </div>
           <Button
@@ -102,7 +102,7 @@ function WorkflowDesigner() {
         </aside>
 
         {/* ---- Center: canvas ---- */}
-        <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -117,8 +117,8 @@ function WorkflowDesigner() {
         </div>
 
         {/* ---- Right: step config ---- */}
-        <aside className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
-          {!selected && <p className="text-sm text-[var(--color-text-secondary)]">Select a step to configure.</p>}
+        <aside className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-card p-3">
+          {!selected && <p className="text-sm text-muted-foreground">Select a step to configure.</p>}
           {selected && (
             <StepConfig
               step={selected}
@@ -255,7 +255,7 @@ function StepConfig({ step, onChange, onRemove, onMoveUp, onMoveDown, issues }: 
       )}
 
       {issues.length > 0 && (
-        <ul className="space-y-1 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+        <ul className="space-y-1 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
           {issues.map((i, k) => (
             <li key={k} className="flex items-start gap-1"><AlertTriangle className="mt-0.5 h-3 w-3" /> {i.message}</li>
           ))}
@@ -271,7 +271,7 @@ function validate(steps: ADR0073Step[]): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const ids = new Set<string>()
   for (const s of steps) {
-    if (ids.has(s.id)) issues.push({ stepId: s.id, message: `duplicate id "${s.id}"` })
+    if (ids.has(s.id)) issues.push({ stepId: s.id, message: `duplicate id"${s.id}"` })
     ids.add(s.id)
     if (s.type === 'approval' && !s.assignee?.value) {
       issues.push({ stepId: s.id, message: 'approval needs an assignee' })
@@ -293,7 +293,7 @@ function validate(steps: ADR0073Step[]): ValidationIssue[] {
   for (const s of steps) {
     if (s.type !== 'conditional') continue
     for (const ref of [...(s.on_true ?? []), ...(s.on_false ?? [])]) {
-      if (!ids.has(ref)) issues.push({ stepId: s.id, message: `unknown step id "${ref}" in branch` })
+      if (!ids.has(ref)) issues.push({ stepId: s.id, message: `unknown step id"${ref}" in branch` })
     }
   }
   return issues
@@ -302,13 +302,13 @@ function validate(steps: ADR0073Step[]): ValidationIssue[] {
 function ValidationSummary({ issues }: { issues: ValidationIssue[] }) {
   if (issues.length === 0) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
+      <span className="inline-flex items-center gap-1 text-xs text-success dark:text-emerald-300">
         <CheckCircle2 className="h-3 w-3" /> Definition valid
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300">
+    <span className="inline-flex items-center gap-1 text-xs text-warning">
       <AlertTriangle className="h-3 w-3" /> {issues.length} issue{issues.length > 1 ? 's' : ''}
     </span>
   )

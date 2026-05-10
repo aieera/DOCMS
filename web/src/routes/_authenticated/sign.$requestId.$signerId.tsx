@@ -27,7 +27,7 @@ export const Route = createFileRoute('/_authenticated/sign/$requestId/$signerId'
 //   2. Lets the signer pick a signature TYPE (Simple / Advanced /
 //      Qualified). The type choice was missing from the AdES-only
 //      first cut; ADR 0070 makes it user-visible.
-//   3. For Qualified: shows a TSP picker + a "Sign with <provider>"
+//   3. For Qualified: shows a TSP picker + a"Sign with <provider>"
 //      button. Click → POST /qes/start, then window.location =
 //      redirect_url. The QTSP calls our /qes/return on completion,
 //      which 302s the browser to /sign/done.
@@ -72,10 +72,10 @@ function SignPage() {
   })
 
   if (reqQ.isLoading) return <Spinner />
-  if (!reqQ.data) return <p className="p-6 text-sm text-red-500">Request not found</p>
+  if (!reqQ.data) return <p className="p-6 text-sm text-destructive">Request not found</p>
 
   const signer = reqQ.data.signers.find((s) => s.id === signerId)
-  if (!signer) return <p className="p-6 text-sm text-red-500">Signer not found</p>
+  if (!signer) return <p className="p-6 text-sm text-destructive">Signer not found</p>
   if (signer.status === 'signed') {
     return <p className="p-6 text-sm">You have already signed this document.</p>
   }
@@ -84,7 +84,7 @@ function SignPage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader title="Sign document" description={`Document ${reqQ.data.document_id}`} />
 
-      <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <section className="mb-6 rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-lg font-semibold">Signature type</h2>
         <div className="grid gap-3 md:grid-cols-3" data-testid="sig-type-selector">
           {(['simple', 'advanced', 'qualified'] as SignatureType[]).map((t) => {
@@ -96,15 +96,15 @@ function SignPage() {
                 onClick={() => setType(t)}
                 className={`flex flex-col items-start gap-1 rounded-md border p-3 text-start transition-colors ${
                   type === t
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-primary)]'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary'
                 }`}
                 data-testid={`sig-type-${t}`}
                 aria-pressed={type === t}
               >
                 <Icon className="h-5 w-5" />
                 <span className="font-medium">{meta.label}</span>
-                <span className="text-xs text-[var(--color-text-secondary)]">{meta.help}</span>
+                <span className="text-xs text-muted-foreground">{meta.help}</span>
               </button>
             )
           })}
@@ -112,15 +112,15 @@ function SignPage() {
       </section>
 
       {type === 'qualified' && (
-        <section className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="qes-block">
+        <section className="mb-6 rounded-lg border border-border bg-card p-4" data-testid="qes-block">
           <h2 className="mb-3 text-lg font-semibold">Qualified Trust Service Provider</h2>
-          <p className="mb-3 text-xs text-[var(--color-text-secondary)]">
+          <p className="mb-3 text-xs text-muted-foreground">
             You'll be redirected to the TSP to verify your identity. After authentication you'll return here automatically.
           </p>
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value as QESProvider)}
-            className="mb-3 h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-sm"
+            className="mb-3 h-9 rounded-md border border-border bg-background px-2 text-sm"
             data-testid="qes-provider-select"
           >
             <option value="swisscom">Swisscom (Switzerland)</option>
@@ -139,8 +139,8 @@ function SignPage() {
       )}
 
       {type !== 'qualified' && (
-        <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-          <p className="text-sm text-[var(--color-text-secondary)]">
+        <section className="rounded-lg border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
             {type === 'simple'
               ? 'Click below to apply a simple signature image to the document.'
               : 'Click below to sign with the server-managed certificate.'}

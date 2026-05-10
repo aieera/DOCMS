@@ -98,13 +98,13 @@ function AskPage() {
             Ask
           </Button>
         </div>
-        <p className="text-xs text-[var(--color-text-secondary)]">
+        <p className="text-xs text-muted-foreground">
           ⌘/Ctrl + Enter to submit. Answers come from your readable documents only.
         </p>
       </div>
 
       {askMut.isPending && (
-        <div className="mt-6 flex items-center gap-2 text-[var(--color-text-secondary)]">
+        <div className="mt-6 flex items-center gap-2 text-muted-foreground">
           <Spinner className="h-4 w-4" /> Searching your documents…
         </div>
       )}
@@ -141,15 +141,15 @@ function AnswerCard(props: {
   feedbackPending: boolean
 }) {
   const { answer, feedback, onFeedback, feedbackPending } = props
-  const isUnknown = answer.answer.trim() === "I don't know."
+  const isUnknown = answer.answer.trim() ==="I don't know."
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-      <div className="prose prose-sm max-w-none whitespace-pre-wrap text-[var(--color-text-primary)]">
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="prose prose-sm max-w-none whitespace-pre-wrap text-foreground">
         {renderAnswerWithInlineCitations(answer.answer, answer.citations)}
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-text-secondary)]">
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
         <span>
           {answer.model || 'unknown model'} · {answer.elapsed_ms}ms · {answer.input_tokens + answer.output_tokens} tokens
         </span>
@@ -204,8 +204,8 @@ function FeedbackButton(props: {
       title={props.label}
       className={`flex h-7 items-center gap-1 rounded px-2 transition-colors ${
         props.active
-          ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-          : 'hover:bg-[var(--color-bg-tertiary)]'
+          ? 'bg-primary/10 text-primary'
+          : 'hover:bg-muted'
       } disabled:opacity-50`}
     >
       {props.icon}
@@ -243,7 +243,7 @@ function renderAnswerWithInlineCitations(text: string, citations: RAGCitation[])
           key={`cite-${key++}`}
           to="/workspaces/$workspaceId/documents/$documentId"
           params={{ workspaceId: cite.workspace_id, documentId: cite.doc_id }}
-          className="text-[var(--color-primary)] underline-offset-2 hover:underline"
+          className="text-primary underline-offset-2 hover:underline"
           data-testid="ask-inline-citation"
           title={cite.snippet}
         >
@@ -269,7 +269,7 @@ function shortId(id: string) {
 function CitationsList({ citations }: { citations: RAGCitation[] }) {
   if (!citations.length) return null
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-3 text-sm font-medium">Sources</h3>
       <ul className="space-y-3" data-testid="ask-citations-list">
         {citations.map((c, i) => (
@@ -278,12 +278,12 @@ function CitationsList({ citations }: { citations: RAGCitation[] }) {
               <Link
                 to="/workspaces/$workspaceId/documents/$documentId"
                 params={{ workspaceId: c.workspace_id, documentId: c.doc_id }}
-                className="font-medium text-[var(--color-primary)] hover:underline"
+                className="font-medium text-primary hover:underline"
               >
                 {shortId(c.doc_id)}
                 {c.page != null && <span> · page {c.page}</span>}
                 {c.section_path && (
-                  <span className="ml-1 text-xs font-normal text-[var(--color-text-secondary)]">
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
                     · {c.section_path}
                   </span>
                 )}
@@ -294,7 +294,7 @@ function CitationsList({ citations }: { citations: RAGCitation[] }) {
                 {c.page != null && <span> · page {c.page}</span>}
               </span>
             )}
-            <p className="text-xs text-[var(--color-text-secondary)]">{c.snippet}</p>
+            <p className="text-xs text-muted-foreground">{c.snippet}</p>
           </li>
         ))}
       </ul>

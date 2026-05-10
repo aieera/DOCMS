@@ -108,7 +108,7 @@ function SavedSearchesPage() {
       />
 
       {(rows ?? []).length === 0 && (
-        <div className="rounded-lg border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+        <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           You haven&apos;t saved any searches yet. Click <strong>Save</strong> on the search page to get started.
         </div>
       )}
@@ -117,7 +117,7 @@ function SavedSearchesPage() {
         {(rows ?? []).map((s) => (
           <div
             key={s.id}
-            className="flex items-start justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
+            className="flex items-start justify-between rounded-lg border border-border bg-card p-4"
             data-testid={`saved-search-row-${s.id}`}
           >
             <div className="min-w-0 flex-1">
@@ -129,16 +129,16 @@ function SavedSearchesPage() {
                   </Badge>
                 ) : null}
                 {(s.subscriber_count ?? 0) > 0 && (
-                  <span className="text-xs text-[var(--color-text-secondary)]">
+                  <span className="text-xs text-muted-foreground">
                     {s.subscriber_count} subscriber{s.subscriber_count === 1 ? '' : 's'}
                   </span>
                 )}
               </div>
-              <p className="mt-1 truncate text-sm text-[var(--color-text-secondary)]">
+              <p className="mt-1 truncate text-sm text-muted-foreground">
                 {s.query || <em>(no query — filters only)</em>}
               </p>
               {s.last_run_at && (
-                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Last run {new Date(s.last_run_at).toLocaleString()}
                 </p>
               )}
@@ -172,12 +172,12 @@ function SavedSearchesPage() {
               <Button
                 variant="ghost"
                 onClick={() => {
-                  if (confirm(`Delete "${s.name}"?`)) deleteMut.mutate(s.id)
+                  if (confirm(`Delete"${s.name}"?`)) deleteMut.mutate(s.id)
                 }}
                 disabled={deleteMut.isPending}
                 data-testid={`delete-${s.id}`}
               >
-                <Trash2 className="h-4 w-4 text-red-500" />
+                <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
           </div>
@@ -290,10 +290,10 @@ function SubscribeDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()} title={`Subscribers — ${ss.name}`} size="lg">
       <div className="space-y-3">
-        <div className="rounded-md border border-[var(--color-border)] p-3">
+        <div className="rounded-md border border-border p-3">
           <p className="mb-2 text-xs font-medium">Current subscribers</p>
           {(ss.subscribers ?? []).length === 0 ? (
-            <p className="text-sm text-[var(--color-text-secondary)]">
+            <p className="text-sm text-muted-foreground">
               Only the owner is subscribed (implicit).
             </p>
           ) : (
@@ -302,7 +302,7 @@ function SubscribeDialog({
                 <li key={sub.user_id} className="flex items-center justify-between text-sm">
                   <span>
                     {sub.user_id}
-                    <span className="ml-2 text-xs text-[var(--color-text-secondary)]">
+                    <span className="ml-2 text-xs text-muted-foreground">
                       ({sub.channels.join(', ')})
                     </span>
                   </span>

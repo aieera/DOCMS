@@ -40,7 +40,7 @@ function TasksPage() {
     <div className="space-y-4">
       <PageHeader title="Tasks" description="Your inbox of work — lightweight tasks and approval steps." />
 
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)]">
+      <div className="flex items-center gap-1 border-b border-border">
         <TabButton active={tab === 'my'}        onClick={() => setTab('my')}        label="My tasks" testid="tab-my-tasks" />
         <TabButton active={tab === 'approvals'} onClick={() => setTab('approvals')} label="Approvals" testid="tab-approvals" />
       </div>
@@ -56,7 +56,7 @@ function TabButton({ active, onClick, label, testid }: { active: boolean; onClic
       onClick={onClick}
       data-testid={testid}
       className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition ${
-        active ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+        active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-[var(--color-text-primary)]'
       }`}
     >
       {label}
@@ -136,17 +136,17 @@ function MyTasksSection() {
           <input type="checkbox" checked={includeCompleted} onChange={(e) => setIncludeCompleted(e.target.checked)} />
           Show completed
         </label>
-        <div className="ms-auto flex items-center gap-1 rounded-md border border-[var(--color-border)] p-1">
+        <div className="ms-auto flex items-center gap-1 rounded-md border border-border p-1">
           <button
             onClick={() => setView('table')}
             data-testid="view-table"
-            className={`rounded p-1 ${view === 'table' ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
+            className={`rounded p-1 ${view === 'table' ? 'bg-muted' : ''}`}
             aria-label="Table view"
           ><List className="h-4 w-4" /></button>
           <button
             onClick={() => setView('kanban')}
             data-testid="view-kanban"
-            className={`rounded p-1 ${view === 'kanban' ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
+            className={`rounded p-1 ${view === 'kanban' ? 'bg-muted' : ''}`}
             aria-label="Kanban view"
           ><LayoutGrid className="h-4 w-4" /></button>
         </div>
@@ -162,7 +162,7 @@ function MyTasksSection() {
         <EmptyState
           icon={<CheckSquare className="h-10 w-10" />}
           title="No tasks"
-          description={includeCompleted ? "You're all caught up." : "No open tasks. Click 'Show completed' to review past work."}
+          description={includeCompleted ?"You're all caught up." :"No open tasks. Click 'Show completed' to review past work."}
         />
       )}
 
@@ -178,7 +178,7 @@ function MyTasksSection() {
 
 function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void }) {
   return (
-    <div className="overflow-hidden rounded border border-[var(--color-border)]" data-testid="task-table">
+    <div className="overflow-hidden rounded border border-border" data-testid="task-table">
       <table className="w-full text-sm">
         <thead className="bg-[var(--color-bg-tertiary)] text-left text-xs uppercase">
           <tr>
@@ -208,19 +208,19 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
 
   const isDone = task.status === 'done' || task.status === 'cancelled'
   return (
-    <tr className="border-t border-[var(--color-border)]" data-testid={`task-row-${task.id}`}>
+    <tr className="border-t border-border" data-testid={`task-row-${task.id}`}>
       <td className="px-3 py-2">
         {task.linked_document_id ? (
           <Link to="/workspaces/$workspaceId/documents/$documentId"
             params={{ workspaceId: 'unused', documentId: task.linked_document_id }}
             className="font-medium hover:underline">{task.title}</Link>
         ) : (
-          <span className={`font-medium ${isDone ? 'line-through text-[var(--color-text-secondary)]' : ''}`}>{task.title}</span>
+          <span className={`font-medium ${isDone ? 'line-through text-muted-foreground' : ''}`}>{task.title}</span>
         )}
-        {task.description && <p className="mt-0.5 text-xs text-[var(--color-text-secondary)] truncate max-w-md">{task.description}</p>}
+        {task.description && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">{task.description}</p>}
       </td>
       <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge></td>
-      <td className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+      <td className="px-3 py-2 text-xs text-muted-foreground">
         {task.due_at ? formatRelativeTime(task.due_at) : '—'}
       </td>
       <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
@@ -267,8 +267,8 @@ function TaskKanban({ tasks, onChange }: { tasks: Task[]; onChange: () => void }
 
 function KanbanColumn({ title, tasks, onChange, testid }: { title: string; tasks: Task[]; onChange: () => void; testid: string }) {
   return (
-    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-2" data-testid={testid}>
-      <h3 className="mb-2 px-1 text-xs font-semibold uppercase text-[var(--color-text-secondary)]">{title} ({tasks.length})</h3>
+    <div className="rounded-md border border-border bg-card p-2" data-testid={testid}>
+      <h3 className="mb-2 px-1 text-xs font-semibold uppercase text-muted-foreground">{title} ({tasks.length})</h3>
       <ul className="space-y-2">
         {tasks.map((t) => <KanbanCard key={t.id} task={t} onChange={onChange} />)}
       </ul>
@@ -279,13 +279,13 @@ function KanbanColumn({ title, tasks, onChange, testid }: { title: string; tasks
 function KanbanCard({ task, onChange }: { task: Task; onChange: () => void }) {
   const complete = useMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange })
   return (
-    <li className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-sm" data-testid={`kanban-card-${task.id}`}>
+    <li className="rounded border border-border bg-background p-2 text-sm" data-testid={`kanban-card-${task.id}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium">{task.title}</span>
         <Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge>
       </div>
       {task.due_at && (
-        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">Due {formatRelativeTime(task.due_at)}</p>
+        <p className="mt-1 text-xs text-muted-foreground">Due {formatRelativeTime(task.due_at)}</p>
       )}
       {task.status !== 'done' && task.status !== 'cancelled' && (
         <Button size="sm" variant="ghost" onClick={() => complete.mutate()} className="mt-1">
@@ -353,7 +353,7 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="create-task-dialog">
-      <div className="w-full max-w-md space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="w-full max-w-md space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-sm font-semibold">New task</h3>
         <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus data-testid="task-title" />
         <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -380,7 +380,7 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
             type="datetime-local"
             value={dueAt}
             onChange={(e) => setDueAt(e.target.value)}
-            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-1.5 text-sm"
+            className="rounded border border-border bg-background p-1.5 text-sm"
           />
         </label>
         <div className="flex justify-end gap-2 pt-2">
@@ -425,7 +425,7 @@ function ApprovalsSection() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`rounded px-2 py-1 text-xs ${filter === f ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
+            className={`rounded px-2 py-1 text-xs ${filter === f ? 'bg-muted' : ''}`}
           >
             {f}
           </button>
@@ -438,11 +438,11 @@ function ApprovalsSection() {
       {!isLoading && (data ?? []).length > 0 && (
         <ul className="space-y-2">
           {(data ?? []).map((task) => (
-            <li key={task.id} className="flex items-start gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3">
+            <li key={task.id} className="flex items-start gap-3 rounded-md border border-border bg-card p-3">
               <div className="flex-1">
                 <h3 className="font-medium">{task.step_name}</h3>
-                {task.document_title && <p className="text-xs text-[var(--color-text-secondary)]">on {task.document_title}</p>}
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                {task.document_title && <p className="text-xs text-muted-foreground">on {task.document_title}</p>}
+                <div className="mt-1 text-xs text-muted-foreground">
                   Assigned {formatRelativeTime(task.created_at)}
                   {task.due_at && <> · due {formatRelativeTime(task.due_at)}</>}
                   &nbsp;·&nbsp;<Badge variant={statusBadge(task.status)}>{task.status}</Badge>
@@ -471,7 +471,7 @@ function ApprovalsSection() {
                   >
                     <UserPlus className="h-4 w-4" /> Delegate
                   </Button>
-                  <Link to="/workflows/instances/$instanceId" params={{ instanceId: task.instance_id }} className="text-xs text-[var(--color-text-secondary)] hover:underline">
+                  <Link to="/workflows/instances/$instanceId" params={{ instanceId: task.instance_id }} className="text-xs text-muted-foreground hover:underline">
                     View flow →
                   </Link>
                 </div>

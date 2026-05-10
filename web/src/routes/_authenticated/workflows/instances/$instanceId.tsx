@@ -93,20 +93,20 @@ function InstanceDetail() {
 
   return (
     <div className="space-y-4">
-      <Link to="/tasks" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-secondary)] hover:underline">
+      <Link to="/tasks" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
         <ArrowLeft className="h-3 w-3" /> Back to tasks
       </Link>
       <PageHeader title="Workflow instance" description={instanceId} />
 
       {inst.isLoading && <Spinner />}
       {inst.data && (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+        <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <Badge variant={inst.data.status === 'running' ? 'in_review' : inst.data.status === 'completed' ? 'active' : 'default'}>
               {inst.data.status}
             </Badge>
             <span>Step <strong>{inst.data.current_step + 1}</strong></span>
-            <span className="text-[var(--color-text-secondary)]">
+            <span className="text-muted-foreground">
               Started {formatRelativeTime(inst.data.created_at)}
             </span>
             {canRecall && (
@@ -127,23 +127,23 @@ function InstanceDetail() {
         </div>
       )}
 
-      <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold">Timeline</h2>
         {timeline.isLoading && <Spinner />}
         {timeline.data && timeline.data.length === 0 && (
-          <p className="text-xs text-[var(--color-text-secondary)]">No transitions recorded yet.</p>
+          <p className="text-xs text-muted-foreground">No transitions recorded yet.</p>
         )}
         {timeline.data && timeline.data.length > 0 && (
           <ul data-testid="timeline" className="space-y-2">
             {timeline.data.map((t, i) => (
-              <li key={i} className="flex items-start gap-3 rounded border border-[var(--color-border)] p-2 text-sm">
+              <li key={i} className="flex items-start gap-3 rounded border border-border p-2 text-sm">
                 <TimelineIcon outcome={t.outcome} />
                 <div className="flex-1">
                   <div className="flex flex-wrap items-baseline gap-2">
                     <strong className="capitalize">{t.outcome}</strong>
-                    <span className="text-xs text-[var(--color-text-secondary)]">{t.step_id}</span>
+                    <span className="text-xs text-muted-foreground">{t.step_id}</span>
                   </div>
-                  <p className="text-xs text-[var(--color-text-secondary)]">
+                  <p className="text-xs text-muted-foreground">
                     by <code>{shortID(t.actor_id)}</code>
                     {t.delegator_id && (
                       <> &nbsp;·&nbsp; on behalf of <code>{shortID(t.delegator_id)}</code> ({t.delegation_kind})</>

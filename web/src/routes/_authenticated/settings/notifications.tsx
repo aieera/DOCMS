@@ -20,7 +20,7 @@ import { Spinner } from '@/components/ui/Spinner'
 // Three blocks: matrix grid (events × channels with enable +
 // digest), DND window, active snoozes. The page lazy-renders
 // defaults — the backend stores `is_enabled=false` rows only when
-// the user actually saves; until then every cell is "off" except
+// the user actually saves; until then every cell is"off" except
 // in_app, which is the documented default.
 
 export const Route = createFileRoute('/_authenticated/settings/notifications')({
@@ -37,7 +37,7 @@ function NotificationsSettings() {
   const dnd = useQuery({ queryKey: ['notif-dnd'], queryFn: getDND })
 
   // Local edits to the grid; we save the whole thing on click so
-  // the user has a clear "are my changes persisted?" affordance.
+  // the user has a clear"are my changes persisted?" affordance.
   // Initialized once from the server payload.
   const [grid, setGrid] = useState<Record<string, { is_enabled: boolean; digest_enabled: boolean }>>({})
   const [dirty, setDirty] = useState(false)
@@ -66,7 +66,7 @@ function NotificationsSettings() {
           const cell = grid[keyOf(ev.id, ch)]
           if (!cell) continue
           // Skip pure-default rows so we don't bloat the table —
-          // matches the ADR's "first edit upserts a concrete row".
+          // matches the ADR's"first edit upserts a concrete row".
           if (!cell.is_enabled && !cell.digest_enabled && ch !== 'in_app') continue
           cells.push({ event_type: ev.id, channel: ch, is_enabled: cell.is_enabled, digest_enabled: cell.digest_enabled })
         }
@@ -88,7 +88,7 @@ function NotificationsSettings() {
         description="Choose which events ping you and on which channels. Set quiet hours and active snoozes below."
       />
 
-      <section className="mb-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="prefs-matrix-section">
+      <section className="mb-8 rounded-lg border border-border bg-card p-4" data-testid="prefs-matrix-section">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Event matrix</h2>
           <Button
@@ -107,7 +107,7 @@ function NotificationsSettings() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)]">
+                <tr className="border-b border-border">
                   <th className="py-2 text-start font-medium">Event</th>
                   {CHANNELS.map((ch) => (
                     <th key={ch} className="px-2 py-2 text-center font-medium capitalize">
@@ -118,7 +118,7 @@ function NotificationsSettings() {
               </thead>
               <tbody>
                 {EVENT_TYPES.map((ev) => (
-                  <tr key={ev.id} className="border-b border-[var(--color-border)]" data-testid={`prefs-row-${ev.id}`}>
+                  <tr key={ev.id} className="border-b border-border" data-testid={`prefs-row-${ev.id}`}>
                     <td className="py-2 pe-4">{ev.label}</td>
                     {CHANNELS.map((ch) => {
                       const cell = grid[keyOf(ev.id, ch)] ?? { is_enabled: false, digest_enabled: false }
@@ -141,7 +141,7 @@ function NotificationsSettings() {
                                 setGrid((g) => ({ ...g, [keyOf(ev.id, ch)]: { ...cell, digest_enabled: !cell.digest_enabled } }))
                                 setDirty(true)
                               }}
-                              className={`rounded px-1 text-[10px] ${cell.digest_enabled ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}
+                              className={`rounded px-1 text-[10px] ${cell.digest_enabled ? 'bg-blue-500 text-white' : 'bg-slate-200 text-muted-foreground dark:text-slate-300'}`}
                               title="Bundle into 5-minute digest"
                               aria-label={`Toggle digest for ${ev.label} on ${ch}`}
                               data-testid={`prefs-digest-${ev.id}-${ch}`}
@@ -156,7 +156,7 @@ function NotificationsSettings() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+            <p className="mt-2 text-xs text-muted-foreground">
               The <strong>D</strong> badge bundles bursts of the same event into a single digest, sent up to 5 minutes after the first one.
             </p>
           </div>
@@ -205,26 +205,26 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
   })
 
   return (
-    <section className="mb-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="prefs-dnd-section">
+    <section className="mb-8 rounded-lg border border-border bg-card p-4" data-testid="prefs-dnd-section">
       <header className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Do not disturb</h2>
       </header>
       {loading ? <Spinner /> : (
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-xs text-[var(--color-text-secondary)]">Start</label>
+            <label className="block text-xs text-muted-foreground">Start</label>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)} data-testid="dnd-start"
-              className="mt-1 h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-sm" />
+              className="mt-1 h-9 rounded-md border border-border bg-background px-2 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-text-secondary)]">End</label>
+            <label className="block text-xs text-muted-foreground">End</label>
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="dnd-end"
-              className="mt-1 h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-sm" />
+              className="mt-1 h-9 rounded-md border border-border bg-background px-2 text-sm" />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-text-secondary)]">Timezone</label>
+            <label className="block text-xs text-muted-foreground">Timezone</label>
             <input type="text" value={tz} onChange={(e) => setTz(e.target.value)} data-testid="dnd-tz"
-              className="mt-1 h-9 w-56 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 text-sm" />
+              className="mt-1 h-9 w-56 rounded-md border border-border bg-background px-2 text-sm" />
           </div>
           <Button
             size="sm"
@@ -258,21 +258,21 @@ function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type:
     },
   })
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid="prefs-snoozes-section">
+    <section className="rounded-lg border border-border bg-card p-4" data-testid="prefs-snoozes-section">
       <header className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Active snoozes</h2>
       </header>
       {loading ? <Spinner /> : snoozes.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-secondary)]">
+        <p className="text-sm text-muted-foreground">
           No active snoozes. Tap <BellOff className="inline h-3 w-3" /> on any notification to mute its event type for 1 hour.
         </p>
       ) : (
-        <ul className="divide-y divide-[var(--color-border)]" data-testid="snooze-list">
+        <ul className="divide-y divide-border" data-testid="snooze-list">
           {snoozes.map((s) => (
             <li key={s.id} className="flex items-center justify-between py-2 text-sm" data-testid={`snooze-row-${s.id}`}>
               <div>
                 <div className="font-medium">{s.event_type === '*' ? 'All events' : s.event_type}</div>
-                <div className="text-xs text-[var(--color-text-secondary)]">
+                <div className="text-xs text-muted-foreground">
                   Until {new Date(s.until_at).toLocaleString()}
                 </div>
               </div>

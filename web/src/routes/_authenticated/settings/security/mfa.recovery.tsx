@@ -47,7 +47,7 @@ function RecoveryCodesPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <Link to="/settings/security/mfa" className="inline-flex items-center gap-1 text-xs text-[var(--color-text-secondary)] hover:underline">
+      <Link to="/settings/security/mfa" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
         <ArrowLeft className="h-3 w-3" /> Back to MFA settings
       </Link>
       <PageHeader
@@ -55,7 +55,7 @@ function RecoveryCodesPage() {
         description="Single-use codes that let you sign in if you lose every other factor. Store them in a password manager."
       />
 
-      <div className="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+      <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           Generating new codes <strong>invalidates every previous code</strong>.
@@ -63,7 +63,7 @@ function RecoveryCodesPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-6">
+      <div className="rounded-lg border border-border bg-card p-6">
         {!codes && !regen.isPending && (
           <Button onClick={() => regen.mutate()}>
             <RotateCcw className="h-4 w-4" /> Generate new recovery codes
@@ -83,7 +83,7 @@ function RecoveryCodesPage() {
             </p>
             <ul
               data-testid="recovery-codes-list"
-              className="grid grid-cols-2 gap-2 rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] p-3 font-mono text-sm"
+              className="grid grid-cols-2 gap-2 rounded border border-border bg-muted p-3 font-mono text-sm"
             >
               {codes.map((c) => (
                 <li key={c} className="select-all">{c}</li>

@@ -34,7 +34,7 @@ import { Spinner } from '@/components/ui/Spinner'
 //   1. Profile      — read-only summary (display name, email,
 //                     role, tenant). Self-edit endpoints don't
 //                     exist server-side yet; surfaced as a
-//                     "coming soon" hint rather than hidden so
+//"coming soon" hint rather than hidden so
 //                     the section is still useful.
 //   2. Security     — passkeys (ADR 0061). Add / remove with
 //                     friendly names; prominent CTA on empty state.
@@ -67,7 +67,7 @@ function ProfileSection() {
         <Field label="Role"         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
         <Field label="Tenant"       icon={<Building2 className="h-3 w-3" />} value={user?.tenant_id ? user.tenant_id.slice(0, 8) + '…' : '—'} />
       </dl>
-      <p className="mt-3 text-xs text-[var(--color-text-secondary)]">
+      <p className="mt-3 text-xs text-muted-foreground">
         Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
       </p>
     </Section>
@@ -77,10 +77,10 @@ function ProfileSection() {
 function Field({ label, value, icon }: { label: string; value?: string; icon?: React.ReactNode }) {
   return (
     <div className="flex flex-col">
-      <dt className="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
+      <dt className="flex items-center gap-1 text-xs text-muted-foreground">
         {icon}{label}
       </dt>
-      <dd className="mt-0.5 break-words font-medium">{value || <em className="text-[var(--color-text-secondary)]">not set</em>}</dd>
+      <dd className="mt-0.5 break-words font-medium">{value || <em className="text-muted-foreground">not set</em>}</dd>
     </div>
   )
 }
@@ -127,7 +127,7 @@ function SecuritySection() {
 
   const handleAdd = () => {
     if (!name.trim()) {
-      toast.error('Give this passkey a name (e.g. "Work laptop")')
+      toast.error('Give this passkey a name (e.g."Work laptop")')
       return
     }
     addMut.mutate()
@@ -146,7 +146,7 @@ function SecuritySection() {
       }
     >
       {!supported && (
-        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+        <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox.</div>
@@ -157,10 +157,10 @@ function SecuritySection() {
       {isLoading ? (
         <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
       ) : (passkeys ?? []).length === 0 ? (
-        <div className="rounded-md border border-dashed border-[var(--color-border)] p-8 text-center">
-          <Fingerprint className="mx-auto mb-3 h-10 w-10 text-[var(--color-primary)] opacity-70" />
+        <div className="rounded-md border border-dashed border-border p-8 text-center">
+          <Fingerprint className="mx-auto mb-3 h-10 w-10 text-primary opacity-70" />
           <p className="mb-1 font-medium">You don&apos;t have any passkeys yet</p>
-          <p className="mb-4 text-sm text-[var(--color-text-secondary)]">
+          <p className="mb-4 text-sm text-muted-foreground">
             Passkeys let you sign in without a password — they&apos;re also phishing-resistant.
             Use your laptop&apos;s fingerprint reader, your phone, or a Yubikey.
           </p>
@@ -187,7 +187,7 @@ function SecuritySection() {
         size="md"
       >
         <div className="space-y-3" data-testid="add-passkey-dialog">
-          <p className="text-sm text-[var(--color-text-secondary)]">
+          <p className="text-sm text-muted-foreground">
             Give this passkey a name so you recognize it in the list. The name is local to your account; the authenticator (Yubikey, Touch ID, etc.) doesn&apos;t see it.
           </p>
           <Input
@@ -222,12 +222,12 @@ function PasskeyRow({ p, onRemove, removing }: {
 }) {
   return (
     <li
-      className="flex items-center justify-between rounded-md border border-[var(--color-border)] p-3"
+      className="flex items-center justify-between rounded-md border border-border p-3"
       data-testid={`passkey-row-${p.credential_id}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <Fingerprint className="h-4 w-4 text-[var(--color-primary)]" />
+          <Fingerprint className="h-4 w-4 text-primary" />
           <span className="font-medium">{p.name}</span>
           {p.backup_state && (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
@@ -235,7 +235,7 @@ function PasskeyRow({ p, onRemove, removing }: {
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-1 text-xs text-muted-foreground">
           {p.transports.length > 0 ? p.transports.join(' · ') : 'unknown transport'}
           {' · added '}{relativeTime(p.created_at)}
           {p.last_used_at ? ` · last used ${relativeTime(p.last_used_at)}` : ' · never used'}
@@ -244,12 +244,12 @@ function PasskeyRow({ p, onRemove, removing }: {
       <Button
         variant="ghost"
         onClick={() => {
-          if (confirm(`Remove passkey "${p.name}"?`)) onRemove(p.credential_id)
+          if (confirm(`Remove passkey"${p.name}"?`)) onRemove(p.credential_id)
         }}
         disabled={removing}
         data-testid={`remove-passkey-${p.credential_id}`}
       >
-        <Trash2 className="h-4 w-4 text-red-500" />
+        <Trash2 className="h-4 w-4 text-destructive" />
       </Button>
     </li>
   )
@@ -303,7 +303,7 @@ function SessionsSection() {
       {isLoading ? (
         <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
       ) : (sessions ?? []).length === 0 ? (
-        <p className="text-sm text-[var(--color-text-secondary)]">No active sessions found.</p>
+        <p className="text-sm text-muted-foreground">No active sessions found.</p>
       ) : (
         <ul className="space-y-2" data-testid="session-list">
           {(sessions ?? []).map((s) => (
@@ -328,12 +328,12 @@ function SessionRowView({ s, onRevoke, revoking }: {
   const ua = parseUA(s.user_agent ?? '')
   return (
     <li
-      className="flex items-center justify-between rounded-md border border-[var(--color-border)] p-3"
+      className="flex items-center justify-between rounded-md border border-border p-3"
       data-testid={`session-row-${s.id}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <Monitor className="h-4 w-4 text-[var(--color-primary)]" />
+          <Monitor className="h-4 w-4 text-primary" />
           <span className="font-medium">{ua}</span>
           {s.current && (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
@@ -341,14 +341,14 @@ function SessionRowView({ s, onRevoke, revoking }: {
             </span>
           )}
         </div>
-        <p className="mt-1 flex items-center gap-3 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
           {s.ip_address && <span className="flex items-center gap-1"><Globe className="h-3 w-3" />{s.ip_address}</span>}
           <span className="flex items-center gap-1"><Clock className="h-3 w-3" />last active {relativeTime(s.last_activity_at)}</span>
         </p>
       </div>
       {!s.current && (
         <Button variant="ghost" onClick={onRevoke} disabled={revoking}>
-          <Trash2 className="h-4 w-4 text-red-500" />
+          <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       )}
     </li>
@@ -364,7 +364,7 @@ function Section({ title, icon, action, children }: {
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+    <section className="rounded-lg border border-border bg-card p-4">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           {icon}{title}
@@ -384,7 +384,7 @@ function relativeTime(iso: string): string {
   return `${Math.floor(ms / 86_400_000)} d ago`
 }
 
-// parseUA produces a friendly "Chrome on Windows" / "Safari on iPhone"
+// parseUA produces a friendly"Chrome on Windows" /"Safari on iPhone"
 // label from a User-Agent string. Best-effort; falls back to the raw
 // UA when the heuristics don't match.
 function parseUA(ua: string): string {
