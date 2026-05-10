@@ -1,20 +1,31 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { Upload, Sparkles, FolderOpen, FileText, Users } from 'lucide-react'
+
 import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
+import { getWorkspace } from '@/api/workspaces'
 import { DocumentList } from '@/components/documents/DocumentList'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/Button'
-import { Upload, Sparkles } from 'lucide-react'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { WorkspaceAISettingsDialog } from '@/components/intelligence/WorkspaceAISettings'
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
+  const ws = useQuery({
+    queryKey: ['workspace', workspaceId],
+    queryFn: () => getWorkspace(workspaceId),
+    staleTime: 60_000,
+  })
   const { data, isLoading } = useDocuments(workspaceId)
   const { uploadFiles } = useUpload(workspaceId)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
   const role = useAuthStore((s) => s.user?.role)
   // Workspace AI settings are admin-curated; matches the policy
   // service's owner|admin gate on PUT. Hide for non-admins so they
@@ -26,43 +37,65 @@ function WorkspacePage() {
     const files = e.target.files
     if (!files || files.length === 0) return
     uploadFiles(Array.from(files))
-    // Reset so picking the same file twice in a row still fires.
     e.target.value = ''
   }
 
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = Array.from(e.dataTransfer.files ?? [])
+    if (files.length) uploadFiles(files)
+  }
+
   return (
-    <div>
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false) }}
+      onDrop={onDrop}
+      className="relative space-y-6"
+    >
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onChange} />
+
       <PageHeader
-        title="Workspace"
+        title={
+          ws.isLoading ? (
+            <Skeleton className="h-7 w-48" />
+          ) : (
+            <span className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-muted-foreground" />
+              {ws.data?.name ?? 'Workspace'}
+            </span>
+          )
+        }
+        description={
+          ws.data ? (
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {ws.data.description && <span>{ws.data.description}</span>}
+              <span className="flex items-center gap-1 text-xs">
+                <FileText className="h-3.5 w-3.5" />
+                {ws.data.document_count.toLocaleString()} {ws.data.document_count === 1 ? 'document' : 'documents'}
+              </span>
+              <span className="flex items-center gap-1 text-xs">
+                <Users className="h-3.5 w-3.5" />
+                {ws.data.member_count ?? 0} {(ws.data.member_count ?? 0) === 1 ? 'member' : 'members'}
+              </span>
+            </span>
+          ) : ws.isLoading ? <Skeleton className="h-4 w-72" /> : undefined
+        }
         actions={
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={onChange}
-            />
             {isAdmin && (
-              <Button
-                variant="ghost"
-                onClick={() => setAiOpen(true)}
-                data-testid="open-ai-settings"
-              >
+              <Button variant="ghost" onClick={() => setAiOpen(true)} data-testid="open-ai-settings">
                 <Sparkles className="h-4 w-4" /> AI settings
               </Button>
             )}
-            <Button onClick={onPick}>
+            <Button onClick={onPick} data-testid="open-upload">
               <Upload className="h-4 w-4" /> Upload
             </Button>
           </>
         }
       />
-      <WorkspaceAISettingsDialog
-        open={aiOpen}
-        onOpenChange={setAiOpen}
-        workspaceId={workspaceId}
-      />
+
       {/* Backend ListDocumentsResponse uses `documents`, not `items` —
           the PaginatedResponse<T> type's `items` field is wrong for
           this endpoint. Read both for resilience. */}
@@ -72,6 +105,28 @@ function WorkspacePage() {
           ?? []}
         isLoading={isLoading}
       />
+
+      <WorkspaceAISettingsDialog open={aiOpen} onOpenChange={setAiOpen} workspaceId={workspaceId} />
+
+      {/* Full-page drop overlay shown only while a drag is active.
+          The visual matches the upload button so users connect the
+          dots: dropping anywhere → same flow as clicking Upload. */}
+      {dragOver && (
+        <div
+          className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          aria-hidden
+        >
+          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-foreground bg-card px-10 py-8 text-center shadow-xl">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background">
+              <Upload className="h-6 w-6" />
+            </span>
+            <p className="text-base font-semibold">Drop to upload</p>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              Files will be added to <strong className="text-foreground">{ws.data?.name ?? 'this workspace'}</strong>.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
