@@ -26,8 +26,14 @@ export interface WorkflowDefinition {
 }
 
 export async function getWorkflowDefinitions(): Promise<WorkflowDefinition[]> {
-  const { data } = await api.get<WorkflowDefinition[]>('/workflows/definitions')
-  return data ?? []
+  // Tolerate two response shapes: bare array OR { definitions: [...] }
+  // envelope. The grpc-gateway emission depends on which version is
+  // deployed; clients shouldn't have to care.
+  const { data } = await api.get<WorkflowDefinition[] | { definitions?: WorkflowDefinition[] }>(
+    '/workflows/definitions',
+  )
+  if (Array.isArray(data)) return data
+  return data?.definitions ?? []
 }
 
 export interface WorkflowTask {

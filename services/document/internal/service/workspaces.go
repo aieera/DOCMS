@@ -74,6 +74,15 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 		if err := s.repos.Workspaces.Create(ctx, tx, w); err != nil {
 			return err
 		}
+		// Auto-enroll the creator as a workspace admin so the workspace
+		// has at least one member from the moment of creation. Without
+		// this, every fresh workspace shows "0 members" in the UI and
+		// the creator can't even view it through the workspace ACL —
+		// only the tenant-role rules let them in. Use the same tx so a
+		// downstream failure rolls both inserts back.
+		if err := s.repos.Workspaces.AddMember(ctx, tx, tenantID, w.ID, userID, userID, "admin"); err != nil {
+			return err
+		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.workspace.created.v1", "workspace", w.ID,
 			map[string]any{
 				"workspace_id": w.ID.String(),

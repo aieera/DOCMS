@@ -15,7 +15,7 @@
 //     docs/api/workflow-definition-schema.json).
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { ReactFlow, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react'
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Node, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Plus, Trash2, ArrowUp, ArrowDown, Save, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
@@ -26,9 +26,44 @@ import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Badge } from '@/components/ui/shadcn/badge'
 import type { ADR0073Step } from '@/api/workflows'
 
+// errorComponent renders inside the AppLayout when the route function
+// throws — without it, an exception in this designer (e.g. ReactFlow
+// css-not-loaded edge case during HMR) renders nothing and looks like
+// a blank page. pendingComponent shows the same layout chrome while
+// the route is suspending so the topbar+sidebar don't pop in.
 export const Route = createFileRoute('/_authenticated/workflows/designer')({
   component: WorkflowDesigner,
+  errorComponent: WorkflowDesignerError,
+  pendingComponent: WorkflowDesignerPending,
 })
+
+function WorkflowDesignerError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Workflow designer" description="Drag step types onto the canvas." />
+      <div
+        className="flex flex-col items-center justify-center rounded-lg border border-destructive/40 bg-destructive/5 p-12 text-center"
+        data-testid="designer-error"
+      >
+        <AlertTriangle className="h-10 w-10 text-destructive" />
+        <h3 className="mt-4 text-lg font-medium">Designer failed to load</h3>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">
+          {error?.message || 'Unknown render error. Please reload the page.'}
+        </p>
+        <Button className="mt-4" onClick={reset} data-testid="designer-reset">Try again</Button>
+      </div>
+    </div>
+  )
+}
+
+function WorkflowDesignerPending() {
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Workflow designer" description="Drag step types onto the canvas." />
+      <div className="h-[60vh] animate-pulse rounded-lg border border-border bg-muted/40" />
+    </div>
+  )
+}
 
 const STEP_PRESETS: { type: ADR0073Step['type']; label: string; defaults: Partial<ADR0073Step> }[] = [
   { type: 'approval',     label: 'Approval',      defaults: { sla_hours: 48, on_expire: 'escalate', allow_delegate: true } },
@@ -73,13 +108,17 @@ function WorkflowDesigner() {
   const { nodes, edges } = useMemo(() => buildGraph(steps, issues), [steps, issues])
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col gap-3">
+    // min-h instead of fixed h: the AppLayout already provides
+    // viewport-aware sizing; a hard h-[calc(100vh-4rem)] fights with
+    // it when the topbar height changes (mobile, dense mode) and can
+    // collapse the canvas to 0px on certain viewports.
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-3" data-testid="workflow-designer">
       <PageHeader
         title="Workflow designer"
         description="Drag step types onto the canvas. Configure routing in the panel on the right."
       />
 
-      <div className="grid flex-1 grid-cols-[16rem_1fr_22rem] gap-3 overflow-hidden">
+      <div className="grid flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[16rem_1fr_22rem]">
         {/* ---- Left: palette + meta ---- */}
         <aside className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-card p-3">
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -102,18 +141,24 @@ function WorkflowDesigner() {
         </aside>
 
         {/* ---- Center: canvas ---- */}
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodeClick={(_, n) => setSelectedID(String(n.id))}
-            fitView
-            proOptions={{ hideAttribution: true }}
-          >
-            <MiniMap />
-            <Controls />
-            <Background />
-          </ReactFlow>
+        {/* Explicit min-height — ReactFlow needs a sized parent or
+            it computes 0×0 and renders nothing. The wrapping
+            ReactFlowProvider lets MiniMap/Controls share state if a
+            future iteration adds multiple instances. */}
+        <div className="min-h-[480px] overflow-hidden rounded-lg border border-border bg-card">
+          <ReactFlowProvider>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodeClick={(_, n) => setSelectedID(String(n.id))}
+              fitView
+              proOptions={{ hideAttribution: true }}
+            >
+              <MiniMap />
+              <Controls />
+              <Background />
+            </ReactFlow>
+          </ReactFlowProvider>
         </div>
 
         {/* ---- Right: step config ---- */}

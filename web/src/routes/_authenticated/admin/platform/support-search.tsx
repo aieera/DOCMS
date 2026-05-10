@@ -11,6 +11,7 @@ import {
   type FederatedAuditRecord,
 } from '@/api/federated-search'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { lifecycleStateLabel } from '@/lib/formatters'
 import { Input } from '@/components/ui/shadcn/input'
 import { Textarea } from '@/components/ui/shadcn/textarea'
 import { Button } from '@/components/ui/shadcn/button'
@@ -199,7 +200,7 @@ function ResultPanel({ result }: { result: FederatedSearchResult }) {
               <li key={hit.document_id} className="flex items-center justify-between text-sm">
                 <span className="truncate">{hit.title || hit.document_id}</span>
                 <span className="ml-2 shrink-0 text-xs text-muted-foreground">
-                  {hit.mime_type} · {hit.lifecycle_state}
+                  {hit.mime_type} · {lifecycleStateLabel(hit.lifecycle_state)}
                 </span>
               </li>
             ))}

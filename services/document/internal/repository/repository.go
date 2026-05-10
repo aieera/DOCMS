@@ -34,6 +34,9 @@ type WorkspaceRepository interface {
 	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.Workspace, error)
 	Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description string) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// AddMember enrolls a user as a workspace member with the given
+	// role (admin / member / viewer). Idempotent — re-runs are no-ops.
+	AddMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID, addedBy uuid.UUID, role string) error
 }
 
 type FolderRepository interface {

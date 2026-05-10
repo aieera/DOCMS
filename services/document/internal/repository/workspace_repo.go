@@ -30,6 +30,26 @@ func (r *workspaceRepo) Create(ctx context.Context, tx pgx.Tx, w *model.Workspac
 	return mapPgError(err)
 }
 
+// AddMember inserts a workspace_members row. Idempotent via
+// ON CONFLICT DO NOTHING so the auto-add on creation is safe to
+// re-run during a transaction retry. role must be one of
+// admin/member/viewer (CHECK constraint enforces it).
+func (r *workspaceRepo) AddMember(
+	ctx context.Context, tx pgx.Tx,
+	tenantID, workspaceID, userID, addedBy uuid.UUID,
+	role string,
+) error {
+	if role == "" {
+		role = "admin"
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO workspace_members (tenant_id, workspace_id, user_id, role, added_by, added_at)
+		VALUES ($1, $2, $3, $4, $5, now())
+		ON CONFLICT (tenant_id, workspace_id, user_id) DO NOTHING
+	`, tenantID, workspaceID, userID, role, addedBy)
+	return mapPgError(err)
+}
+
 func (r *workspaceRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Workspace, error) {
 	row := tx.QueryRow(ctx, `
 		SELECT w.tenant_id, w.id, w.name, COALESCE(w.description, ''),

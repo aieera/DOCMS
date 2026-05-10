@@ -98,7 +98,7 @@ function RetentionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Retention policies"
-        description="Automate document lifecycle. Matching documents get retention_until set at upload time; the daily retention cron archives them or flags them for disposition."
+        description="Automate document lifecycle. Matching documents are stamped with a retention expiry date at upload; a nightly job archives them or flags them for disposition once that date passes."
         actions={
           <Button onClick={() => setShowForm((s) => !s)}>
             <Plus className="h-4 w-4" />
@@ -179,7 +179,7 @@ function RetentionPage() {
         <EmptyState
           icon={<Clock className="h-6 w-6" />}
           title="No retention policies"
-          description="Create a policy to start applying lifecycle rules. Matching documents get retention_until set automatically once the rules engine sees them."
+          description="Create a policy to start applying lifecycle rules. Matching documents are stamped with a retention expiry date automatically once the rules engine sees them."
           actionLabel="Create your first policy"
           onAction={() => setShowForm(true)}
         />
@@ -237,7 +237,7 @@ function RetentionPage() {
         open={!!pendingDelete}
         onOpenChange={(o) => !o && setPendingDelete(null)}
         title={pendingDelete ? `Delete "${pendingDelete.name}"?` : 'Delete policy'}
-        description="The policy is removed immediately. Documents already affected keep their existing retention_until — only future matches are unscoped."
+        description="The policy is removed immediately. Documents already affected keep their existing retention expiry date — only future matches are unscoped."
         confirmLabel="Delete policy"
         destructive
         loading={remove.isPending}

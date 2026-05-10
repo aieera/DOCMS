@@ -94,7 +94,7 @@ function MetadataSchemaPage() {
     <div className="space-y-6">
       <PageHeader
         title="Metadata schema"
-        description="Tenant-wide JSON Schema for document custom fields. Documents validate their custom_metadata against this schema on every write."
+        description="Tenant-wide JSON Schema for document custom fields. Documents validate their custom fields against this schema on every save."
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={loadExample}>Load example</Button>
@@ -155,7 +155,7 @@ function MetadataSchemaPage() {
                 <li><code className="rounded bg-muted px-1 font-mono">required</code>: array at the root</li>
               </ul>
               <p className="pt-1">
-                Documents whose <code className="rounded bg-muted px-1 font-mono">custom_metadata</code> fails this schema are rejected at create/update time with a <code className="rounded bg-muted px-1 font-mono">VALIDATION</code> error.
+                Documents whose custom fields fail this schema are rejected at create or update time with a validation error.
               </p>
             </Card>
           </aside>

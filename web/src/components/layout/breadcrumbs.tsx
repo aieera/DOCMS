@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { ChevronRight, Home } from 'lucide-react'
 import { Fragment, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 // Maps URL segments to a human label. Anything not in the map gets a
 // title-cased version of the segment as a fallback ("audit-log" →
@@ -78,17 +79,48 @@ function humanize(segment: string): string {
     .join(' ')
 }
 
+// isUUIDish matches v4/v7-style UUIDs and the 8-char shortened form
+// the legacy fallback emits.
+const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+
+// resolveIDLabel reads the React Query cache for a known entity
+// label keyed by id. Returns null when there's no cached entity for
+// the segment context, in which case the caller falls back to the
+// truncated-uuid humanize. Cache keys here mirror what the data
+// hooks use (web/src/hooks/useWorkspaces, useDocuments, etc).
+function resolveIDLabel(qc: ReturnType<typeof useQueryClient>, segments: string[], idx: number): string | null {
+  const segment = segments[idx]
+  if (!UUID_RE.test(segment)) return null
+  const prevSegment = segments[idx - 1]
+
+  if (prevSegment === 'workspaces') {
+    const ws = qc.getQueryData<{ name?: string }>(['workspace', segment])
+    if (ws?.name) return ws.name
+  }
+  if (prevSegment === 'documents') {
+    const doc = qc.getQueryData<{ title?: string }>(['document', segment])
+    if (doc?.title) return doc.title
+  }
+  if (prevSegment === 'instances') {
+    const wf = qc.getQueryData<{ definition_name?: string }>(['workflow-instance', segment])
+    if (wf?.definition_name) return wf.definition_name
+  }
+  return null
+}
+
 export function Breadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const qc = useQueryClient()
 
   const crumbs = useMemo(() => {
     const segments = pathname.split('/').filter(Boolean)
     let href = ''
-    return segments.map((segment) => {
+    return segments.map((segment, idx) => {
       href += '/' + segment
-      return { segment, href, label: humanize(segment) }
+      const cached = resolveIDLabel(qc, segments, idx)
+      return { segment, href, label: cached ?? humanize(segment) }
     })
-  }, [pathname])
+  }, [pathname, qc])
 
   return (
     <nav aria-label="Breadcrumb" className="flex items-center text-sm">

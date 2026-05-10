@@ -27,7 +27,11 @@ export function PageHeader({ title, description, actions, className, noMargin }:
       <div className="min-w-0">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
         {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+          // <div> not <p>: the description slot accepts arbitrary
+          // ReactNode and several call sites pass <Skeleton/> (a
+          // <div>) or composed flex rows. <p> caused validateDOMNesting
+          // warnings and broke React rendering on those routes.
+          <div className="mt-1 text-sm text-muted-foreground">{description}</div>
         )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

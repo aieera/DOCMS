@@ -166,7 +166,15 @@ func (h *ShareLinksAdminHandler) enrich(w http.ResponseWriter, r *http.Request) 
 		h.writeErr(w, r, vdmserr.ErrUnauthorized)
 		return nil, false
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tid, ID: uid})
+	// Forward X-User-Role so the OPA Rule 6 (org owner/admin allow)
+	// fires. Without this, owner/admin callers get 403 because the
+	// service-layer requirePermission asks for "admin" on the
+	// tenant-scope workspace and only the role-based rule grants it.
+	ctx := auth.WithUser(r.Context(), auth.UserInfo{
+		TenantID: tid,
+		ID:       uid,
+		Role:     r.Header.Get("X-User-Role"),
+	})
 	return ctx, true
 }
 

@@ -1,0 +1,149 @@
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, FileText } from 'lucide-react'
+
+import { getDownloadURL } from '@/api/documents'
+import { FileIcon } from '@/components/ui/FileIcon'
+import { Spinner } from '@/components/ui/Spinner'
+import { Card } from '@/components/ui/card'
+
+interface Props {
+  documentId: string
+  versionId?: string
+  mimeType?: string
+  title?: string
+}
+
+// DocumentPreview renders the document body inline using a presigned
+// URL fetched from /storage/downloads/{doc}/{version}. Per ADR 0074
+// blueprint §17, the inline viewer is the default tab on the doc
+// detail page; we picked native browser viewers (iframe / <img> /
+// <video>) over a heavier PDF library to keep the bundle small.
+//
+//   - PDF                → <iframe src=…#toolbar=0> — Chrome/Firefox/
+//                           Safari all ship a PDF renderer.
+//   - image/*           → <img>
+//   - video/*           → <video controls>
+//   - audio/*           → <audio controls>
+//   - everything else   → fall-through card with a Download CTA so the
+//                          user can open the file in a native app.
+//
+// The signed URL has a short expiry (~10 min server-side); React
+// Query refetches when the tab is reactivated so we don't show a
+// stale URL.
+export function DocumentPreview({ documentId, versionId, mimeType, title }: Props) {
+  const dl = useQuery({
+    queryKey: ['download-url', documentId, versionId],
+    queryFn: () => getDownloadURL(documentId, versionId ?? ''),
+    enabled: !!versionId,
+    // The signed URL expires in ~10 min; refetch on focus so a tab
+    // that's been parked for a while still works.
+    refetchOnWindowFocus: true,
+    staleTime: 5 * 60_000,
+  })
+
+  if (!versionId) {
+    return (
+      <Card className="flex flex-col items-center justify-center gap-2 p-12 text-center text-sm text-muted-foreground">
+        <FileIcon mime={mimeType} className="h-12 w-12" />
+        <p className="text-base font-medium text-foreground">{title ?? 'Document'}</p>
+        <p>No file uploaded yet — preview will appear once content is added.</p>
+      </Card>
+    )
+  }
+
+  if (dl.isLoading) {
+    return (
+      <Card className="flex h-[60vh] items-center justify-center" data-testid="preview-loading">
+        <Spinner />
+      </Card>
+    )
+  }
+
+  if (dl.isError || !dl.data?.url) {
+    return (
+      <Card className="flex flex-col items-center justify-center gap-2 p-12 text-center text-sm" data-testid="preview-error">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="text-base font-medium text-foreground">Could not load preview</p>
+        <p className="text-muted-foreground">
+          {dl.error instanceof Error ? dl.error.message : 'The signed download URL could not be fetched.'}
+        </p>
+      </Card>
+    )
+  }
+
+  const url = dl.data.url
+  const mime = (mimeType ?? '').toLowerCase()
+
+  if (mime === 'application/pdf' || mime.endsWith('/pdf')) {
+    return (
+      <Card className="overflow-hidden p-0" data-testid="preview-pdf">
+        <iframe
+          // #toolbar=0 hides Chrome's toolbar; not all browsers honor
+          // it but those that don't just show their own controls,
+          // which is fine.
+          src={`${url}#toolbar=0&navpanes=0`}
+          title={title ?? 'PDF preview'}
+          className="h-[80vh] w-full border-0"
+        />
+      </Card>
+    )
+  }
+
+  if (mime.startsWith('image/')) {
+    return (
+      <Card className="flex items-center justify-center bg-muted/40 p-2" data-testid="preview-image">
+        <img
+          src={url}
+          alt={title ?? 'Document preview'}
+          className="max-h-[80vh] w-auto rounded object-contain"
+        />
+      </Card>
+    )
+  }
+
+  if (mime.startsWith('video/')) {
+    return (
+      <Card className="overflow-hidden p-0" data-testid="preview-video">
+        <video
+          src={url}
+          controls
+          preload="metadata"
+          className="max-h-[80vh] w-full"
+          aria-label={title}
+        />
+      </Card>
+    )
+  }
+
+  if (mime.startsWith('audio/')) {
+    return (
+      <Card className="flex flex-col items-center justify-center gap-3 p-12" data-testid="preview-audio">
+        <FileIcon mime={mime} className="h-12 w-12" />
+        <p className="text-base font-medium text-foreground">{title ?? 'Audio'}</p>
+        <audio src={url} controls className="w-full max-w-md" />
+      </Card>
+    )
+  }
+
+  // Fallback: anything else (Office docs, archives, custom MIME types)
+  // can't be inlined safely; surface a Download CTA instead of a
+  // blank box.
+  return (
+    <Card className="flex flex-col items-center justify-center gap-3 p-12 text-center text-sm" data-testid="preview-fallback">
+      <FileText className="h-10 w-10 text-muted-foreground" />
+      <p className="text-base font-medium text-foreground">{title ?? 'Document'}</p>
+      <p className="text-muted-foreground">
+        Inline preview isn't available for <code className="rounded bg-muted px-1">{mime || 'this type'}</code>.
+      </p>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex h-9 items-center rounded-md bg-foreground px-3 text-sm font-medium text-background hover:opacity-90"
+        download
+      >
+        Download to open
+      </a>
+    </Card>
+  )
+}

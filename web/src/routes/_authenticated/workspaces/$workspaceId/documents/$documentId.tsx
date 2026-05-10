@@ -23,6 +23,7 @@ import { getOCR, rerunOCR, type OCRStatus } from '@/api/ocr'
 import { getDownloadURL } from '@/api/documents'
 import { listEntities, type Entity } from '@/api/ner'
 import { PDFLayoutViewer } from '@/components/viewer/PDFLayoutViewer'
+import { DocumentPreview } from '@/components/viewer/DocumentPreview'
 import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
 import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
@@ -35,7 +36,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { formatFileSize, formatDateTime } from '@/lib/formatters'
+import { formatFileSize, formatDateTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 import { CreateTaskDialog } from '@/routes/_authenticated/tasks'
 import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
@@ -93,6 +94,44 @@ function DocumentDetailPage() {
     <div className="space-y-6">
       <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} />
 
+      {/* No-content prompt: when the document row exists but no file
+          has been uploaded yet, surface an upload CTA at the top so
+          the user can act immediately rather than discovering the
+          gap from the empty preview tab. */}
+      {!versionId && (
+        <Card
+          className="flex flex-wrap items-center justify-between gap-3 border-warning/40 bg-warning/5 p-4"
+          data-testid="no-content-banner"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">No file uploaded</p>
+              <p className="text-muted-foreground">
+                This document record has no content yet. Upload a file to enable preview, OCR, and search.
+              </p>
+            </div>
+          </div>
+          <Button asChild>
+            <Link
+              to="/workspaces/$workspaceId"
+              params={{ workspaceId }}
+              data-testid="no-content-upload-cta"
+            >
+              <FileText className="me-1 h-4 w-4" /> Go to workspace to upload
+            </Link>
+          </Button>
+        </Card>
+      )}
+
+      {/* OCR failure banner: surface failed status from the doc
+          header so users don't have to open the Raw text tab to
+          discover the failure. The Re-run button is the same
+          mutation the OCRPanel exposes deeper in the page. */}
+      {versionId && (
+        <OCRFailureBanner documentId={documentId} versionId={versionId} />
+      )}
+
       {/* ADR 0053 — banner appears only when smart_route produced
           pending suggestions for this doc. Self-hides otherwise. */}
       <RouteSuggestionBanner documentId={documentId} />
@@ -102,11 +141,12 @@ function DocumentDetailPage() {
           <DocumentTabs tab={tab} onChange={setTab} />
 
           <TabPanel current={tab} value="preview">
-            <Card className="flex flex-col items-center justify-center gap-2 p-12 text-center text-sm text-muted-foreground">
-              <FileIcon mime={doc.mime_type} className="h-12 w-12" />
-              <p className="text-base font-medium text-foreground">{doc.title}</p>
-              <p>Document viewer renders here for PDF, image, and video previews.</p>
-            </Card>
+            <DocumentPreview
+              documentId={documentId}
+              versionId={versionId}
+              mimeType={doc.mime_type}
+              title={doc.title}
+            />
           </TabPanel>
 
           <TabPanel current={tab} value="text">
@@ -182,7 +222,10 @@ function DocumentHeader({
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-semibold tracking-tight">{doc.title}</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            {doc.created_by_name ?? 'Unknown'} · uploaded {formatDateTime(doc.created_at)}
+            {/* Fallback chain: display name → email → "Deleted user".
+                "Unknown" was misleading — the user record either exists
+                (use it) or has been removed (say so explicitly). */}
+            {uploaderLabel(doc)} · uploaded {formatDateTime(doc.created_at)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -342,7 +385,7 @@ function DocumentSidebar({
         </h3>
         <dl className="mt-3 space-y-2 text-sm">
           <Row label="Status">
-            <Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge>
+            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
           </Row>
           <Row label="Type">
             <span className="flex items-center justify-between gap-2">
@@ -425,6 +468,58 @@ function DocumentSkeleton() {
 }
 
 // ---- OCR + Layout panels (kept from the original; only chrome touched) --
+
+// OCRFailureBanner is a header-level banner that surfaces an OCR
+// failure as soon as the doc detail loads, with a one-click Re-run
+// button. Self-hides in every other status (pending/running/
+// completed/unknown) so it doesn't clutter the page during the
+// happy path. Subscribes to the same query the OCRPanel uses so
+// React Query dedupes the fetch — only one network call, two
+// readers.
+function OCRFailureBanner({ documentId, versionId }: { documentId: string; versionId: string }) {
+  const qc = useQueryClient()
+  const role = useAuthStore((s) => s.user?.role)
+  const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  const { data } = useQuery({
+    queryKey: ['ocr', documentId, versionId],
+    queryFn: () => getOCR(documentId, versionId),
+  })
+  const rerun = useMutation({
+    mutationFn: () => rerunOCR(documentId, versionId),
+    onSuccess: () => {
+      toast.success('OCR re-queued')
+      qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
+    },
+    onError: () => toast.error('Re-run failed'),
+  })
+  if ((data?.status ?? 'unknown') !== 'failed') return null
+  return (
+    <Card
+      className="flex flex-wrap items-center justify-between gap-3 border-destructive/40 bg-destructive/5 p-4"
+      data-testid="ocr-failure-banner"
+    >
+      <div className="flex items-start gap-2">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="text-sm">
+          <p className="font-medium text-foreground">OCR failed</p>
+          <p className="text-muted-foreground">
+            Text extraction did not complete. Re-run to try again with the default engine.
+          </p>
+        </div>
+      </div>
+      {canRerun && (
+        <Button
+          variant="outline"
+          onClick={() => rerun.mutate()}
+          loading={rerun.isPending}
+          data-testid="ocr-failure-rerun"
+        >
+          <RefreshCw className="me-1 h-4 w-4" /> Re-run OCR
+        </Button>
+      )}
+    </Card>
+  )
+}
 
 function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: string }) {
   const qc = useQueryClient()
@@ -651,6 +746,20 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
       </Card>
     </div>
   )
+}
+
+// uploaderLabel produces the human-readable name for the document
+// uploader. The Document type carries created_by_name (display name)
+// + created_by (uuid). When the user has been deleted the join in
+// the API response leaves both empty; older API versions emitted
+// "Unknown" which is unhelpful — be explicit.
+function uploaderLabel(doc: { created_by_name?: string; created_by_email?: string; created_by?: string }): string {
+  const name = doc.created_by_name?.trim()
+  if (name) return name
+  const email = doc.created_by_email?.trim()
+  if (email) return email
+  if (doc.created_by) return 'Deleted user'
+  return 'Unknown user'
 }
 
 function StatusBadge({ status }: { status: OCRStatus }) {

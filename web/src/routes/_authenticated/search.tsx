@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/shadcn/badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { formatFileSize, formatRelativeTime } from '@/lib/formatters'
+import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 
 // ADR 0082 — facet sidebar state lives entirely in the URL so any
 // search-with-filters is bookmarkable. The route's validateSearch
@@ -371,7 +371,7 @@ function SearchPage() {
                     />
                   )}
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={hit.lifecycle_state}>{hit.lifecycle_state}</Badge>
+                    <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
                     <span className="text-xs text-muted-foreground">{formatRelativeTime(hit.created_at)}</span>
                   </div>

@@ -22,6 +22,42 @@ export function formatRelativeTime(date: string | Date): string {
   return dayjs(date).fromNow()
 }
 
+// Map proto-style lifecycle state enums (LIFECYCLE_STATE_DRAFT) to
+// human-friendly labels. Falls back to a Title-Cased version of the
+// raw value when an unknown state arrives so the UI never shows a
+// SHOUTY_SNAKE string. Lower-case canonical values (draft, active,
+// …) come from REST endpoints that pre-strip the prefix; both shapes
+// land in the same spot.
+const LIFECYCLE_LABELS: Record<string, string> = {
+  LIFECYCLE_STATE_UNSPECIFIED: 'Unknown',
+  LIFECYCLE_STATE_DRAFT: 'Draft',
+  LIFECYCLE_STATE_IN_REVIEW: 'In review',
+  LIFECYCLE_STATE_ACTIVE: 'Active',
+  LIFECYCLE_STATE_PUBLISHED: 'Published',
+  LIFECYCLE_STATE_SUPERSEDED: 'Superseded',
+  LIFECYCLE_STATE_RETAINED: 'Retained',
+  LIFECYCLE_STATE_ARCHIVED: 'Archived',
+  LIFECYCLE_STATE_DISPOSED: 'Disposed',
+  LIFECYCLE_STATE_LEGAL_HOLD: 'Legal hold',
+  draft: 'Draft',
+  in_review: 'In review',
+  active: 'Active',
+  published: 'Published',
+  superseded: 'Superseded',
+  retained: 'Retained',
+  archived: 'Archived',
+  disposed: 'Disposed',
+  legal_hold: 'Legal hold',
+}
+
+export function lifecycleStateLabel(state: string | null | undefined): string {
+  if (!state) return '—'
+  if (LIFECYCLE_LABELS[state]) return LIFECYCLE_LABELS[state]
+  // Strip a LIFECYCLE_STATE_ prefix if present, then Title Case.
+  const base = state.replace(/^LIFECYCLE_STATE_/i, '').replace(/_/g, ' ').toLowerCase()
+  return base.charAt(0).toUpperCase() + base.slice(1)
+}
+
 export function getMimeTypeLabel(mime: string): string {
   const map: Record<string, string> = {
     'application/pdf': 'PDF',

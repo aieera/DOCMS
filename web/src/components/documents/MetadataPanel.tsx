@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
-import { formatFileSize, formatDateTime } from '@/lib/formatters'
+import { formatFileSize, formatDateTime, lifecycleStateLabel } from '@/lib/formatters'
 import { VersionHistory } from './VersionHistory'
 import { TagEditor } from './TagEditor'
 
@@ -25,7 +25,7 @@ export function MetadataPanel({ doc, open, onClose }: Props) {
           <TabsContent value="info">
             <div className="space-y-4">
               <div className="space-y-2 text-sm">
-                <Row label="Status"><Badge variant={doc.lifecycle_state}>{doc.lifecycle_state}</Badge></Row>
+                <Row label="Status"><Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge></Row>
                 <Row label="Class">{doc.document_class || '—'}</Row>
                 <Row label="Size">{formatFileSize(doc.size_bytes)}</Row>
                 <Row label="MIME">{doc.mime_type}</Row>
