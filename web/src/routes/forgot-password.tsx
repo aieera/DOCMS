@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Mail } from 'lucide-react'
+import { Loader2, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/shadcn/button'
+import { Input } from '@/components/ui/shadcn/input'
+import { Label } from '@/components/ui/label'
 import { AuthShell } from '@/components/layout/auth-shell'
 
 function ForgotPasswordPage() {
@@ -64,16 +65,22 @@ function ForgotPasswordPage() {
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoFocus
-          autoComplete="email"
-        />
-        <Button type="submit" className="w-full" loading={loading}>Send reset link</Button>
+        <div className="space-y-1.5">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoFocus
+            autoComplete="email"
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          Send reset link
+        </Button>
       </form>
     </AuthShell>
   )
