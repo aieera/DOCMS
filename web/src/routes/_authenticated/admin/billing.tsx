@@ -1,16 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { CreditCard } from 'lucide-react'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function BillingPage() {
   return (
-    <div>
-      <PageHeader title="Billing" description="Usage and billing overview" />
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-        <CreditCard className="h-10 w-10 text-muted-foreground" />
-        <h3 className="mt-4 text-lg font-medium">No billing information</h3>
-        <p className="mt-1 text-sm text-muted-foreground">View your usage metrics and manage billing details.</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Billing" description="Plan, usage, and invoices for this tenant." />
+      <EmptyState
+        icon={<CreditCard className="h-6 w-6" />}
+        title="Billing not yet configured"
+        description="Hook up a billing provider in tenant settings to surface usage metrics, invoices, and plan changes here."
+      />
     </div>
   )
 }

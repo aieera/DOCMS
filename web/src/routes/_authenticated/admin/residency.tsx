@@ -49,11 +49,11 @@ function ResidencyPage() {
       {stats.isLoading ? (
         <Skeleton className="h-16" />
       ) : !stats.data || stats.data.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-secondary)]">No documents yet.</p>
+        <p className="text-sm text-muted-foreground">No documents yet.</p>
       ) : (
-        <div className="mb-6 overflow-hidden rounded-lg border border-[var(--color-border)]">
+        <div className="mb-6 overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/50">
+            <thead className="bg-muted/40">
               <tr className="text-left">
                 <th className="px-4 py-2">Region</th>
                 <th className="px-4 py-2">Documents</th>
@@ -62,7 +62,7 @@ function ResidencyPage() {
             </thead>
             <tbody>
               {stats.data.map((row) => (
-                <tr key={row.region} className="border-t border-[var(--color-border)]">
+                <tr key={row.region} className="border-t border-border">
                   <td className="px-4 py-2 font-medium">{row.region}</td>
                   <td className="px-4 py-2">{row.doc_count.toLocaleString()}</td>
                   <td className="px-4 py-2">{formatFileSize(row.blob_bytes)}</td>
@@ -73,20 +73,20 @@ function ResidencyPage() {
         </div>
       )}
 
-      <div className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="mb-6 rounded-lg border border-border bg-card p-4">
         <h3 className="mb-3 flex items-center gap-2 font-medium">
           <ArrowRight className="h-4 w-4" /> Migrate documents
         </h3>
         <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
           <input
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             placeholder="source region (e.g. us-east-1)"
             value={src}
             onChange={(e) => setSrc(e.target.value)}
           />
-          <ArrowRight className="h-4 w-4 text-[var(--color-text-secondary)]" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground" />
           <input
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             placeholder="target region (e.g. eu-west-1)"
             value={tgt}
             onChange={(e) => setTgt(e.target.value)}
@@ -98,7 +98,7 @@ function ResidencyPage() {
             Migrate
           </Button>
         </div>
-        <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-2 text-xs text-muted-foreground">
           Queues a resumable Temporal workflow. Blob ciphertext is rekeyed under the region-local KEK
           in the storage service's copy step (Wave 12 — today the workflow flips `region_pin` and
           emits `dms.residency.migrated.v1` per document).
@@ -119,21 +119,21 @@ function ResidencyPage() {
           {migrations.data.map((m) => (
             <li
               key={m.id}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
+              className="rounded-lg border border-border bg-card p-3"
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium">
                   {m.source_region} → {m.target_region}
                 </span>
                 <Badge variant={migStatus(m.status)}>{m.status}</Badge>
-                <span className="ml-auto text-xs text-[var(--color-text-secondary)]">
+                <span className="ml-auto text-xs text-muted-foreground">
                   {formatRelativeTime(m.created_at)}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              <div className="mt-1 text-xs text-muted-foreground">
                 {m.moved_docs} / {m.total_docs} moved · {m.failed_docs} failed
               </div>
-              {m.error_summary && <p className="mt-1 text-xs text-red-500">{m.error_summary}</p>}
+              {m.error_summary && <p className="mt-1 text-xs text-destructive">{m.error_summary}</p>}
             </li>
           ))}
         </ul>

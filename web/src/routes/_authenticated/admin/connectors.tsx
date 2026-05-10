@@ -1,16 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { Plug } from 'lucide-react'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function ConnectorsPage() {
   return (
-    <div>
-      <PageHeader title="Connectors" description="Third-party integrations" />
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-        <Plug className="h-10 w-10 text-muted-foreground" />
-        <h3 className="mt-4 text-lg font-medium">No connectors installed</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Connect third-party services to extend your document management capabilities.</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Connectors"
+        description="Sync documents to and from M365, Salesforce, Google Drive, and other source systems."
+      />
+      <EmptyState
+        icon={<Plug className="h-6 w-6" />}
+        title="No connectors installed"
+        description="Install a connector to push or pull documents between VaultDMS and an external system. Each connector is tenant-scoped and audited."
+      />
     </div>
   )
 }

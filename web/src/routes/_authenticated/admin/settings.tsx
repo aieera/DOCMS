@@ -70,12 +70,12 @@ function MFACard() {
   }
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] p-6">
+    <section className="rounded-lg border border-border p-6">
       <div className="flex items-start gap-4">
-        <ShieldCheck className="mt-0.5 h-6 w-6 text-[var(--color-primary)]" />
+        <ShieldCheck className="mt-0.5 h-6 w-6 text-primary" />
         <div className="flex-1">
           <h2 className="text-lg font-semibold">Multi-factor authentication</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+          <p className="mt-1 text-sm text-muted-foreground">
             {enabled
               ? 'MFA is enabled. You are prompted for a TOTP code on each login.'
               : 'Add a second factor (TOTP authenticator app) to your login.'}
@@ -101,7 +101,7 @@ function MFACard() {
         {setupData && (
           <div className="space-y-3">
             <p className="text-sm">Scan this URI with your authenticator app (Google Authenticator, 1Password, etc.):</p>
-            <div className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2 ">
               <code className="flex-1 truncate font-mono text-xs">{setupData.qr_code_uri}</code>
               <Button
                 variant="ghost"
@@ -111,8 +111,8 @@ function MFACard() {
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-[var(--color-text-secondary)]">Manual secret: <code className="font-mono">{setupData.secret}</code></p>
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:bg-amber-950/30">
+            <p className="text-xs text-muted-foreground">Manual secret: <code className="font-mono">{setupData.secret}</code></p>
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs ">
               <p className="mb-1 font-medium">Save these recovery codes — shown once:</p>
               <div className="grid grid-cols-2 gap-1 font-mono">
                 {setupData.recovery_codes.map((c) => <code key={c}>{c}</code>)}
@@ -166,14 +166,14 @@ function SessionsCard() {
   }
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] p-6">
+    <section className="rounded-lg border border-border p-6">
       <div className="flex items-start gap-4">
-        <Smartphone className="mt-0.5 h-6 w-6 text-[var(--color-primary)]" />
+        <Smartphone className="mt-0.5 h-6 w-6 text-primary" />
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold">Active sessions</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Devices where you are signed in.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Devices where you are signed in.</p>
             </div>
             <Button variant="ghost" onClick={handleRevokeAll} disabled={revokeAllMut.isPending}>
               Sign out other devices
@@ -183,16 +183,16 @@ function SessionsCard() {
             {isLoading ? (
               <Skeleton className="h-24" />
             ) : !sessions || sessions.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-secondary)]">No active sessions.</p>
+              <p className="text-sm text-muted-foreground">No active sessions.</p>
             ) : (
-              <ul className="divide-y divide-[var(--color-border)]">
+              <ul className="divide-y divide-border">
                 {sessions.map((s) => (
                   <li key={s.id} className="flex items-center justify-between py-3">
                     <div>
                       <p className="text-sm font-medium">
                         {s.user_agent || 'Unknown device'} {s.is_current && <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800 dark:bg-green-900/50 dark:text-green-200">This device</span>}
                       </p>
-                      <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {s.ip_address} · last active {formatRelativeTime(s.last_activity_at)}
                       </p>
                     </div>

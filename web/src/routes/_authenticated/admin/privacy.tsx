@@ -56,14 +56,14 @@ function PrivacyPage() {
         description="GDPR export / erase / anonymize — tracked per subject"
       />
 
-      <div className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="mb-6 rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
           <Shield className="h-4 w-4" />
           <h3 className="font-medium">New request</h3>
         </div>
         <div className="grid grid-cols-[auto_1fr_1fr_auto] items-center gap-3">
           <select
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             value={type}
             onChange={(e) => setType(e.target.value as 'export' | 'erase' | 'anonymize')}
           >
@@ -72,13 +72,13 @@ function PrivacyPage() {
             <option value="anonymize">Anonymize</option>
           </select>
           <input
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             placeholder="subject@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <input
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             placeholder={type === 'erase' ? 'verification token (required)' : 'verification token (optional)'}
             value={token}
             onChange={(e) => setToken(e.target.value)}
@@ -98,13 +98,13 @@ function PrivacyPage() {
             >
               Request verification token
             </Button>
-            <span className="text-xs text-[var(--color-text-secondary)]">
+            <span className="text-xs text-muted-foreground">
               Subject receives a 24h token via notifications (SMTP in Wave 12). Paste the received
               token into the field above.
             </span>
           </div>
         )}
-        <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
+        <p className="mt-2 text-xs text-muted-foreground">
           Erase and anonymize short-circuit on any document under an active legal hold. 30-day SLA.
         </p>
       </div>
@@ -124,22 +124,22 @@ function PrivacyPage() {
           {data.map((r) => (
             <li
               key={r.id}
-              className="flex items-start justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
+              className="flex items-start justify-between rounded-lg border border-border bg-card p-3"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{r.subject_email}</span>
                   <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
-                  <span className="text-xs text-[var(--color-text-secondary)]">
+                  <span className="text-xs text-muted-foreground">
                     {r.request_type}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                <div className="mt-1 text-xs text-muted-foreground">
                   Submitted {formatRelativeTime(r.created_at)} on {formatDate(r.created_at)}
                   {r.completed_at && <> · finished {formatRelativeTime(r.completed_at)}</>}
                 </div>
                 {r.blocked_reason && (
-                  <p className="mt-1 text-xs text-red-500">{r.blocked_reason}</p>
+                  <p className="mt-1 text-xs text-destructive">{r.blocked_reason}</p>
                 )}
               </div>
               {r.export_url && (
@@ -147,7 +147,7 @@ function PrivacyPage() {
                   href={r.export_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="shrink-0 text-sm text-[var(--color-primary)]"
+                  className="shrink-0 text-sm text-primary"
                 >
                   <Download className="mr-1 inline h-4 w-4" />
                   Download

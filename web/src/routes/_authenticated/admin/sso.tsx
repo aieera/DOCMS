@@ -87,7 +87,7 @@ function SsoPage() {
           {data.map((c) => (
             <li
               key={c.id}
-              className="flex items-start justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
+              className="flex items-start justify-between rounded-lg border border-border bg-card p-3"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -98,10 +98,10 @@ function SsoPage() {
                     {c.is_active ? 'Active' : 'Paused'}
                   </Badge>
                 </div>
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                <div className="mt-1 text-xs text-muted-foreground">
                   Updated {formatRelativeTime(c.updated_at)}
                 </div>
-                <pre className="mt-2 max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 text-xs">
+                <pre className="mt-2 max-h-32 overflow-auto rounded bg-background p-2 text-xs">
 {JSON.stringify(c.config, null, 2)}
                 </pre>
               </div>
@@ -111,7 +111,7 @@ function SsoPage() {
                 </Button>
                 <Button
                   onClick={() => {
-                    if (window.confirm(`Delete SSO connection "${c.display_name}"?`)) remove.mutate(c.id)
+                    if (window.confirm(`Delete SSO connection"${c.display_name}"?`)) remove.mutate(c.id)
                   }}
                   disabled={remove.isPending}
                 >
@@ -214,18 +214,18 @@ function Wizard({ onDone }: { onDone: () => void }) {
   ]
 
   return (
-    <div className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+    <div className="mb-6 rounded-lg border border-border bg-card p-4">
       <div className="mb-4 flex items-center gap-2 text-xs">
         {steps.map((s, i) => (
           <span key={s.id} className="flex items-center gap-2">
             <span
               className={`rounded-full px-2 py-0.5 ${
-                step === s.id ? 'bg-[var(--color-primary)] text-white' : 'bg-[var(--color-bg)]'
+                step === s.id ? 'bg-primary text-white' : 'bg-background'
               }`}
             >
               {s.label}
             </span>
-            {i < steps.length - 1 && <ArrowRight className="h-3 w-3 text-[var(--color-text-secondary)]" />}
+            {i < steps.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
           </span>
         ))}
       </div>
@@ -234,7 +234,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label="Connection name">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
               placeholder="Corporate Okta"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -248,8 +248,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
                   onClick={() => setProvider(p)}
                   className={`rounded-md border px-3 py-1 text-sm ${
                     provider === p
-                      ? 'border-[var(--color-primary)] bg-[var(--color-accent)]'
-                      : 'border-[var(--color-border)]'
+                      ? 'border-primary bg-accent'
+                      : 'border-border'
                   }`}
                 >
                   {p.toUpperCase()}
@@ -273,8 +273,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
                   onClick={() => setMetaSource(s)}
                   className={`rounded-md border px-3 py-1 text-sm ${
                     metaSource === s
-                      ? 'border-[var(--color-primary)] bg-[var(--color-accent)]'
-                      : 'border-[var(--color-border)]'
+                      ? 'border-primary bg-accent'
+                      : 'border-border'
                   }`}
                 >
                   {s === 'url' ? 'Metadata URL' : 'Paste XML'}
@@ -285,7 +285,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           {metaSource === 'url' ? (
             <Field label="IdP metadata URL (https://…)">
               <input
-                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
                 placeholder="https://idp.example.com/metadata.xml"
                 value={metaURL}
                 onChange={(e) => setMetaURL(e.target.value)}
@@ -294,7 +294,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           ) : (
             <Field label="IdP metadata XML">
               <textarea
-                className="h-40 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 font-mono text-xs"
+                className="h-40 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
                 placeholder="<EntityDescriptor …>"
                 value={metaXML}
                 onChange={(e) => setMetaXML(e.target.value)}
@@ -309,7 +309,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label="Issuer URL (https://…)">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
               placeholder="https://id.example.com"
               value={issuerURL}
               onChange={(e) => setIssuerURL(e.target.value)}
@@ -318,7 +318,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Client ID">
               <input
-                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
                 value={clientID}
                 onChange={(e) => setClientID(e.target.value)}
               />
@@ -326,7 +326,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
             <Field label="Client Secret">
               <input
                 type="password"
-                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
               />
@@ -334,7 +334,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </div>
           <Field label="Redirect URL (registered with the IdP)">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
               placeholder="https://vaultdms.example.com/api/v1/auth/oidc/<slug>/callback"
               value={redirectURL}
               onChange={(e) => setRedirectURL(e.target.value)}
@@ -342,7 +342,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Scopes (space-separated)">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
               value={scopesText}
               onChange={(e) => setScopesText(e.target.value)}
             />
@@ -353,13 +353,13 @@ function Wizard({ onDone }: { onDone: () => void }) {
 
       {step === 'attrs' && provider === 'saml' && (
         <div className="space-y-3">
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-muted-foreground">
             Map SAML assertion attributes (URIs or friendly names) to user fields. Leave blank to
             fall back to the provider's defaults.
           </p>
           <Field label="Email attribute">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
               value={attrEmail}
               onChange={(e) => setAttrEmail(e.target.value)}
@@ -367,7 +367,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Display name attribute">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.microsoft.com/ws/2008/06/identity/claims/displayname"
               value={attrName}
               onChange={(e) => setAttrName(e.target.value)}
@@ -375,7 +375,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Groups attribute">
             <input
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/claims/Group"
               value={attrGroups}
               onChange={(e) => setAttrGroups(e.target.value)}
@@ -393,7 +393,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
 
       {step === 'attrs' && provider === 'oidc' && (
         <div className="space-y-3">
-          <p className="text-xs text-[var(--color-text-secondary)]">
+          <p className="text-xs text-muted-foreground">
             OIDC uses standard claims (<code>email</code>, <code>name</code>, <code>groups</code>).
             No attribute mapping is required — click Validate to check the issuer's discovery doc.
           </p>
@@ -420,7 +420,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       )}
 
       {step === 'done' && (
-        <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400">
+        <div className="flex items-center gap-2 text-sm text-success dark:text-emerald-400">
           <CheckCircle2 className="h-5 w-5" />
           Connection created. You can pause/delete it from the list below.
         </div>
@@ -455,15 +455,15 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
     <div
       className={`rounded-md border p-3 text-sm ${
         result.ok
-          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30'
-          : 'border-red-500 bg-red-50 dark:bg-red-950/30'
+          ? 'border-emerald-500 bg-success/10/30'
+          : 'border-red-500 bg-destructive/10 dark:bg-red-950/30'
       }`}
     >
       <div className="flex items-center gap-2 font-medium">
         {result.ok ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <CheckCircle2 className="h-4 w-4 text-success" />
         ) : (
-          <XCircle className="h-4 w-4 text-red-600" />
+          <XCircle className="h-4 w-4 text-destructive" />
         )}
         {result.ok ? 'Validation passed' : 'Validation failed'}
       </div>
@@ -471,7 +471,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
       {result.warnings && result.warnings.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs">
           {result.warnings.map((w, i) => (
-            <li key={i} className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
+            <li key={i} className="flex items-center gap-1 text-warning dark:text-warning">
               <AlertTriangle className="h-3 w-3" />
               {w}
             </li>
@@ -479,7 +479,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
         </ul>
       )}
       {result.details && Object.keys(result.details).length > 0 && (
-        <pre className="mt-2 overflow-auto rounded bg-[var(--color-bg)] p-2 text-xs">
+        <pre className="mt-2 overflow-auto rounded bg-background p-2 text-xs">
 {JSON.stringify(result.details, null, 2)}
         </pre>
       )}
@@ -490,7 +490,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block text-xs">
-      <span className="mb-1 block text-[var(--color-text-secondary)]">{label}</span>
+      <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>
   )

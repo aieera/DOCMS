@@ -62,17 +62,17 @@ function IntegrationsPage() {
         description="Connect third-party e-signature providers per blueprint §11.2 (ADR 0071)."
       />
 
-      <div className="mb-4 flex gap-2 border-b border-[var(--color-border)]">
+      <div className="mb-4 flex gap-2 border-b border-border">
         <button
           onClick={() => setTab('connections')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'}`}
+          className={`px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connections"
         >
           Connections
         </button>
         <button
           onClick={() => setTab('envelopes')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-[var(--color-primary)]' : 'text-[var(--color-text-secondary)]'}`}
+          className={`px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-envelopes"
         >
           In-progress envelopes
@@ -86,7 +86,7 @@ function IntegrationsPage() {
               {PROVIDERS.map((p) => {
                 const conn = connectionFor(p.id)
                 return (
-                  <li key={p.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4" data-testid={`provider-row-${p.id}`}>
+                  <li key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4" data-testid={`provider-row-${p.id}`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
@@ -95,24 +95,24 @@ function IntegrationsPage() {
                             <CheckCircle2 className="h-3 w-3" /> Connected
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200" data-testid={`status-${p.id}`}>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200" data-testid={`status-${p.id}`}>
                             Not connected
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{p.help}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{p.help}</p>
                       {conn?.account_id && (
                         <p className="mt-1 text-xs">Account: <span className="font-mono">{conn.account_id}</span></p>
                       )}
                       {conn && (
-                        <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
+                        <p className="mt-0.5 text-xs text-muted-foreground">
                           Token expires {new Date(conn.expires_at).toLocaleString()}
                         </p>
                       )}
                       {conn && (
                         <p className="mt-2 text-xs">
-                          <span className="text-[var(--color-text-secondary)]">Webhook URL: </span>
-                          <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800" data-testid={`webhook-url-${p.id}`}>
+                          <span className="text-muted-foreground">Webhook URL: </span>
+                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] " data-testid={`webhook-url-${p.id}`}>
                             {webhookURL(p.id)}
                           </code>
                         </p>
@@ -148,11 +148,11 @@ function IntegrationsPage() {
       {tab === 'envelopes' && (
         <section data-testid="envelopes-section">
           {envsQ.isLoading ? <Spinner /> : (envsQ.data ?? []).length === 0 ? (
-            <p className="text-sm text-[var(--color-text-secondary)]">No envelopes in progress.</p>
+            <p className="text-sm text-muted-foreground">No envelopes in progress.</p>
           ) : (
             <table className="w-full text-sm" data-testid="envelopes-table">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-start">
+                <tr className="border-b border-border text-start">
                   <th className="py-2 text-start font-medium">Request</th>
                   <th className="py-2 text-start font-medium">Envelope</th>
                   <th className="py-2 text-start font-medium">Provider</th>
@@ -161,7 +161,7 @@ function IntegrationsPage() {
               </thead>
               <tbody>
                 {(envsQ.data ?? []).map((e) => (
-                  <tr key={e.envelope_id} className="border-b border-[var(--color-border)]" data-testid={`envelope-row-${e.envelope_id}`}>
+                  <tr key={e.envelope_id} className="border-b border-border" data-testid={`envelope-row-${e.envelope_id}`}>
                     <td className="py-2 font-mono text-xs">{e.request_id.slice(0, 8)}…</td>
                     <td className="py-2 font-mono text-xs">{e.envelope_id}</td>
                     <td className="py-2">{e.provider}</td>

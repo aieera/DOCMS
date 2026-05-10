@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 
 // Capability ordering mirrors the rego hierarchy:
 //   admin > delete > edit > share > view
-// Cells render an "included" tick for every capability at or below
+// Cells render an"included" tick for every capability at or below
 // the cell's max_capability so admins see the full inherited set,
 // not just the single highest tier.
 const CAP_ORDER = ['admin', 'delete', 'edit', 'share', 'view'] as const
@@ -52,9 +52,9 @@ function PermissionsPage() {
         description="Read-only projection of services/policy/internal/opa/policy.rego — what each role can do on each resource type."
       />
 
-      <div className="overflow-auto rounded-lg border border-[var(--color-border)]">
+      <div className="overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800/50">
+          <thead className="bg-muted/40">
             <tr>
               <th className="px-4 py-2 text-left">Role</th>
               {(data.resource_types ?? []).map((r) => (
@@ -66,7 +66,7 @@ function PermissionsPage() {
           </thead>
           <tbody>
             {(data.roles ?? []).map((role) => (
-              <tr key={role} className="border-t border-[var(--color-border)]">
+              <tr key={role} className="border-t border-border">
                 <td className="px-4 py-2 font-medium">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4" />
@@ -79,7 +79,7 @@ function PermissionsPage() {
                   return (
                     <td key={rt} className="px-4 py-2 align-top">
                       {caps.length === 0 ? (
-                        <span className="text-xs text-[var(--color-text-secondary)]">
+                        <span className="text-xs text-muted-foreground">
                           — {c?.source ?? 'no baseline'}
                         </span>
                       ) : (
@@ -91,7 +91,7 @@ function PermissionsPage() {
                                 className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs ${
                                   caps.includes(cap)
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-                                    : 'bg-slate-100 text-slate-400 line-through dark:bg-slate-800 dark:text-slate-600'
+                                    : 'bg-muted text-muted-foreground line-through '
                                 }`}
                               >
                                 {caps.includes(cap) && <Check className="h-3 w-3" />}
@@ -100,7 +100,7 @@ function PermissionsPage() {
                             ))}
                           </div>
                           {c?.source && (
-                            <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                            <div className="mt-1 text-xs text-muted-foreground">
                               {c.source}
                             </div>
                           )}
@@ -115,19 +115,19 @@ function PermissionsPage() {
         </table>
       </div>
 
-      <div className="mt-6 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 text-sm">
+      <div className="mt-6 space-y-2 rounded-lg border border-border bg-card p-4 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <ShieldCheck className="h-4 w-4" />
           Notes
         </div>
-        <ul className="list-disc pl-6 text-xs text-[var(--color-text-secondary)]">
+        <ul className="list-disc pl-6 text-xs text-muted-foreground">
           {(data.notes ?? []).map((n, i) => (
             <li key={i}>{n}</li>
           ))}
         </ul>
         <div className="pt-2">
           <Badge variant="in_review">Read-only</Badge>
-          <span className="ml-2 text-xs text-[var(--color-text-secondary)]">
+          <span className="ml-2 text-xs text-muted-foreground">
             Changes to the matrix ship via a new policy.rego release + matching matrix update in the
             policy service.
           </span>
