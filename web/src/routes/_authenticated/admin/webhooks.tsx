@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Webhook, Copy, Trash2, RefreshCw, Send, ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle } from 'lucide-react'
 
 import {
   createWebhook,
@@ -17,8 +17,12 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
+import { cn } from '@/lib/cn'
 
 const EVENT_PRESETS = [
   'dms.document.created.v1',
@@ -40,13 +44,13 @@ function WebhooksPage() {
   const [events, setEvents] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [newSecret, setNewSecret] = useState<{ id: string; secret: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<WebhookT | null>(null)
 
   const create = useMutation({
     mutationFn: () => createWebhook({ url, events }),
     onSuccess: (wh) => {
       toast.success('Webhook created')
-      setUrl('')
-      setEvents([])
+      setUrl(''); setEvents([])
       if (wh.secret) setNewSecret({ id: wh.id, secret: wh.secret })
       qc.invalidateQueries({ queryKey: ['webhooks'] })
     },
@@ -57,6 +61,7 @@ function WebhooksPage() {
     mutationFn: (id: string) => deleteWebhook(id),
     onSuccess: () => {
       toast.success('Webhook deleted')
+      setPendingDelete(null)
       qc.invalidateQueries({ queryKey: ['webhooks'] })
     },
   })
@@ -73,66 +78,82 @@ function WebhooksPage() {
   const toggleEvent = (e: string) =>
     setEvents((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]))
 
-  const copy = (txt: string) => {
-    navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
-  }
+  const copy = (txt: string) => navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
 
   return (
-    <div>
-      <PageHeader title="Webhooks" description="Subscribe external systems to domain events." />
+    <div className="space-y-6">
+      <PageHeader
+        title="Webhooks"
+        description="Subscribe external systems to domain events. Each delivery is signed with HMAC-SHA256 using the per-webhook secret; failed deliveries retry with exponential backoff and dead-letter after 5 attempts."
+      />
 
       {newSecret && (
-        <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 p-3 dark:bg-amber-950/30">
-          <div className="mb-1 text-sm font-medium">New secret — shown once. Store it now.</div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded bg-[var(--color-bg)] px-2 py-1 font-mono text-xs">
-              {newSecret.secret}
-            </code>
-            <Button onClick={() => copy(newSecret.secret)}>
-              <Copy className="h-4 w-4" /> Copy
-            </Button>
-            <Button onClick={() => setNewSecret(null)}>Dismiss</Button>
+        <Card className="border-warning/40 bg-warning/5 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm font-medium text-foreground">New secret — copy it now, it won't be shown again.</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-xs">{newSecret.secret}</code>
+                <Button variant="outline" size="sm" onClick={() => copy(newSecret.secret)}>
+                  <Copy className="h-4 w-4" /> Copy
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setNewSecret(null)}>Dismiss</Button>
+              </div>
+            </div>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="mb-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-        <h3 className="mb-3 flex items-center gap-2 font-medium">
-          <Webhook className="h-4 w-4" /> New webhook
+      <Card className="space-y-3 p-5">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Webhook className="h-4 w-4" /> Subscribe a new endpoint
         </h3>
-        <input
-          className="mb-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+        <Input
+          label="Endpoint URL"
           placeholder="https://your-service.example.com/hooks/vaultdms"
+          type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <div className="mb-2 flex flex-wrap gap-2">
-          {EVENT_PRESETS.map((e) => (
-            <label key={e} className="flex items-center gap-1 text-xs">
-              <input
-                type="checkbox"
-                checked={events.includes(e)}
-                onChange={() => toggleEvent(e)}
-              />
-              <span>{e}</span>
-            </label>
-          ))}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">Events</label>
+          <div className="flex flex-wrap gap-2">
+            {EVENT_PRESETS.map((e) => {
+              const on = events.includes(e)
+              return (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => toggleEvent(e)}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    on
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border bg-background text-muted-foreground hover:border-foreground/50 hover:text-foreground',
+                  )}
+                >
+                  {e}
+                </button>
+              )
+            })}
+          </div>
         </div>
-        <Button
-          onClick={() => create.mutate()}
-          disabled={!url || events.length === 0 || create.isPending}
-        >
-          Create
-        </Button>
-      </div>
+        <div className="flex justify-end">
+          <Button onClick={() => create.mutate()} disabled={!url || events.length === 0} loading={create.isPending}>
+            Create webhook
+          </Button>
+        </div>
+      </Card>
 
       {isLoading ? (
-        <Skeleton className="h-24" />
+        <Skeleton className="h-32" />
       ) : !data || data.length === 0 ? (
         <EmptyState
-          icon={<Webhook className="h-12 w-12" />}
+          icon={<Webhook className="h-6 w-6" />}
           title="No webhooks configured"
-          description="Subscribe to events to receive real-time HTTP callbacks."
+          description="Subscribe an endpoint above to start receiving HTTP callbacks for the events you choose."
         />
       ) : (
         <ul className="space-y-2">
@@ -143,27 +164,29 @@ function WebhooksPage() {
               expanded={expanded === wh.id}
               onToggle={() => setExpanded(expanded === wh.id ? null : wh.id)}
               onRotate={() => rotate.mutate(wh.id)}
-              onDelete={() => {
-                if (window.confirm(`Delete webhook ${wh.url}?`)) remove.mutate(wh.id)
-              }}
+              onDelete={() => setPendingDelete(wh)}
               rotating={rotate.isPending}
-              deleting={remove.isPending}
             />
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+        title="Delete webhook?"
+        description={pendingDelete ? `${pendingDelete.url} will stop receiving deliveries immediately.` : ''}
+        confirmLabel="Delete webhook"
+        destructive
+        loading={remove.isPending}
+        onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
+      />
     </div>
   )
 }
 
 function WebhookRow({
-  wh,
-  expanded,
-  onToggle,
-  onRotate,
-  onDelete,
-  rotating,
-  deleting,
+  wh, expanded, onToggle, onRotate, onDelete, rotating,
 }: {
   wh: WebhookT
   expanded: boolean
@@ -171,42 +194,39 @@ function WebhookRow({
   onRotate: () => void
   onDelete: () => void
   rotating: boolean
-  deleting: boolean
 }) {
   return (
-    <li className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-      <div className="flex items-start justify-between p-3">
-        <button onClick={onToggle} className="flex min-w-0 flex-1 items-start gap-2 text-left">
-          {expanded ? <ChevronDown className="mt-1 h-4 w-4" /> : <ChevronRight className="mt-1 h-4 w-4" />}
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium">{wh.url}</span>
-              <Badge variant={wh.active ? 'active' : 'archived'}>
-                {wh.active ? 'Active' : 'Inactive'}
-              </Badge>
+    <li>
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-start justify-between gap-3 p-3">
+          <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-start gap-2 text-left">
+            {expanded ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate text-sm font-medium">{wh.url}</span>
+                <Badge variant={wh.active ? 'active' : 'archived'}>{wh.active ? 'Active' : 'Inactive'}</Badge>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {wh.events.map((e) => (
+                  <code key={e} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{e}</code>
+                ))}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Created {formatRelativeTime(wh.created_at)} ({formatDate(wh.created_at)})
+              </div>
             </div>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {wh.events.map((e) => (
-                <code key={e} className="rounded bg-[var(--color-bg)] px-1.5 py-0.5 text-xs">
-                  {e}
-                </code>
-              ))}
-            </div>
-            <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              Created {formatRelativeTime(wh.created_at)} on {formatDate(wh.created_at)}
-            </div>
+          </button>
+          <div className="flex shrink-0 gap-1">
+            <Button variant="outline" size="sm" onClick={onRotate} disabled={rotating}>
+              <RefreshCw className={cn('h-4 w-4', rotating && 'animate-spin')} /> Rotate
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onDelete} aria-label="Delete">
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
           </div>
-        </button>
-        <div className="flex shrink-0 gap-2">
-          <Button onClick={onRotate} disabled={rotating}>
-            <RefreshCw className="h-4 w-4" /> Rotate
-          </Button>
-          <Button onClick={onDelete} disabled={deleting}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
         </div>
-      </div>
-      {expanded && <DeliveryLog webhookId={wh.id} />}
+        {expanded && <DeliveryLog webhookId={wh.id} />}
+      </Card>
     </li>
   )
 }
@@ -226,40 +246,40 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
     onError: () => toast.error('Redelivery failed'),
   })
 
-  if (isLoading) return <div className="border-t border-[var(--color-border)] p-3"><Skeleton className="h-12" /></div>
+  if (isLoading) return <div className="border-t border-border p-3"><Skeleton className="h-12" /></div>
   if (!data || data.length === 0) {
     return (
-      <div className="border-t border-[var(--color-border)] p-3 text-sm text-[var(--color-text-secondary)]">
+      <div className="border-t border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
         No deliveries yet.
       </div>
     )
   }
 
   return (
-    <div className="border-t border-[var(--color-border)]">
+    <div className="overflow-x-auto border-t border-border">
       <table className="w-full text-xs">
-        <thead className="bg-slate-50 dark:bg-slate-800/50">
+        <thead className="bg-muted/40">
           <tr className="text-left">
-            <th className="px-3 py-1.5">Event</th>
-            <th className="px-3 py-1.5">Status</th>
-            <th className="px-3 py-1.5">Attempts</th>
-            <th className="px-3 py-1.5">When</th>
-            <th className="px-3 py-1.5"></th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Event</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Attempts</th>
+            <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">When</th>
+            <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {data.map((d) => (
-            <tr key={d.id} className="border-t border-[var(--color-border)]">
-              <td className="px-3 py-1.5 font-mono">{d.event_type}</td>
-              <td className="px-3 py-1.5">
+            <tr key={d.id} className="border-t border-border">
+              <td className="px-3 py-2 font-mono">{d.event_type}</td>
+              <td className="px-3 py-2">
                 <Badge variant={deliveryVariant(d.status_code, d.dead_lettered)}>
                   {d.dead_lettered ? 'DLQ' : d.delivered_at ? d.status_code || 200 : d.status_code || 'pending'}
                 </Badge>
               </td>
-              <td className="px-3 py-1.5">{d.attempts}</td>
-              <td className="px-3 py-1.5">{formatRelativeTime(d.created_at)}</td>
-              <td className="px-3 py-1.5 text-right">
-                <Button onClick={() => redeliver.mutate(d.id)} disabled={redeliver.isPending}>
+              <td className="px-3 py-2">{d.attempts}</td>
+              <td className="px-3 py-2 text-muted-foreground">{formatRelativeTime(d.created_at)}</td>
+              <td className="px-3 py-2 text-right">
+                <Button variant="ghost" size="sm" onClick={() => redeliver.mutate(d.id)} disabled={redeliver.isPending}>
                   <Send className="h-3 w-3" /> Redeliver
                 </Button>
               </td>

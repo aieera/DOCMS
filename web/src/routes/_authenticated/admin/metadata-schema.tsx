@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FileJson, Save, RotateCcw, CheckCircle2, XCircle } from 'lucide-react'
+import { CheckCircle2, FileJson, RotateCcw, Save, XCircle } from 'lucide-react'
 
 import { getMetadataSchema, updateMetadataSchema } from '@/api/metadataSchema'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { cn } from '@/lib/cn'
 
 const EXAMPLE_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -32,7 +34,6 @@ function MetadataSchemaPage() {
   const [text, setText] = useState('')
   const [dirty, setDirty] = useState(false)
 
-  // Seed the editor when the server response arrives.
   useEffect(() => {
     if (data !== undefined && !dirty) {
       setText(JSON.stringify(data && Object.keys(data).length > 0 ? data : EXAMPLE_SCHEMA, null, 2))
@@ -40,8 +41,6 @@ function MetadataSchemaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
-  // Live parse. Null = empty buffer; otherwise parsed object or error
-  // message. The save button is enabled only on a green parse.
   const parsed = useMemo<
     { ok: true; value: Record<string, unknown> } | { ok: false; error: string } | null
   >(() => {
@@ -72,19 +71,16 @@ function MetadataSchemaPage() {
       qc.setQueryData(['admin', 'metadata-schema'], saved)
     },
     onError: (err: unknown) => {
-      const m =
-        typeof err === 'object' && err && 'message' in err
-          ? String((err as { message?: string }).message)
-          : 'Save failed'
+      const m = typeof err === 'object' && err && 'message' in err
+        ? String((err as { message?: string }).message)
+        : 'Save failed'
       toast.error(m)
     },
   })
 
   const reset = () => {
     if (dirty && !window.confirm('Discard unsaved changes?')) return
-    setText(
-      JSON.stringify(data && Object.keys(data).length > 0 ? data : EXAMPLE_SCHEMA, null, 2),
-    )
+    setText(JSON.stringify(data && Object.keys(data).length > 0 ? data : EXAMPLE_SCHEMA, null, 2))
     setDirty(false)
   }
 
@@ -95,22 +91,18 @@ function MetadataSchemaPage() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Metadata Schema"
+        title="Metadata schema"
         description="Tenant-wide JSON Schema for document custom fields. Documents validate their custom_metadata against this schema on every write."
         actions={
           <div className="flex gap-2">
-            <Button onClick={loadExample}>Load example</Button>
-            <Button onClick={reset} disabled={!dirty}>
+            <Button variant="outline" onClick={loadExample}>Load example</Button>
+            <Button variant="outline" onClick={reset} disabled={!dirty}>
               <RotateCcw className="h-4 w-4" /> Reset
             </Button>
-            <Button
-              onClick={() => save.mutate()}
-              disabled={!parsed || !parsed.ok || save.isPending}
-            >
-              <Save className="h-4 w-4" />
-              {save.isPending ? 'Saving…' : 'Save'}
+            <Button onClick={() => save.mutate()} disabled={!parsed || !parsed.ok} loading={save.isPending}>
+              <Save className="h-4 w-4" /> Save
             </Button>
           </div>
         }
@@ -119,70 +111,53 @@ function MetadataSchemaPage() {
       {isLoading ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="grid grid-cols-[1fr_320px] gap-4">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <FileJson className="h-4 w-4" />
-              <span className="text-sm font-medium">Schema (JSON)</span>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs">
+              <div className="flex items-center gap-2">
+                <FileJson className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium">Schema (JSON)</span>
+              </div>
               {parsed === null ? (
-                <span className="text-xs text-[var(--color-text-secondary)]">empty</span>
+                <span className="text-muted-foreground">empty</span>
               ) : parsed.ok ? (
-                <span className="flex items-center gap-1 text-xs text-emerald-600">
-                  <CheckCircle2 className="h-3 w-3" />
-                  valid JSON
-                </span>
+                <span className="flex items-center gap-1 text-success"><CheckCircle2 className="h-3 w-3" /> valid JSON</span>
               ) : (
-                <span className="flex items-center gap-1 text-xs text-red-600">
-                  <XCircle className="h-3 w-3" />
-                  {parsed.error}
-                </span>
+                <span className="flex items-center gap-1 text-destructive"><XCircle className="h-3 w-3" /> {parsed.error}</span>
               )}
             </div>
             <textarea
               spellCheck={false}
-              className={`h-[520px] w-full resize-none rounded-md border bg-[var(--color-bg)] p-3 font-mono text-xs leading-relaxed ${
-                parsed && !parsed.ok
-                  ? 'border-red-500 focus:border-red-500'
-                  : 'border-[var(--color-border)]'
-              }`}
+              className={cn(
+                'h-[520px] w-full resize-none border-0 bg-background p-3 font-mono text-xs leading-relaxed',
+                'focus:outline-none focus:ring-1 focus:ring-ring',
+                parsed && !parsed.ok && 'text-destructive',
+              )}
               value={text}
-              onChange={(e) => {
-                setText(e.target.value)
-                setDirty(true)
-              }}
+              onChange={(e) => { setText(e.target.value); setDirty(true) }}
             />
-          </div>
+          </Card>
 
           <aside className="space-y-3">
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm">
-              <div className="mb-2 font-medium">Preview</div>
+            <Card className="p-4">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Preview</h3>
               <SchemaPreview schema={parsed?.ok ? parsed.value : null} />
-            </div>
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-xs text-[var(--color-text-secondary)] space-y-2">
+            </Card>
+            <Card className="space-y-2 p-4 text-xs text-muted-foreground">
               <p>
-                <strong>Draft 2020-12</strong> JSON Schema. Keep root <code>type: "object"</code>.
+                <strong className="text-foreground">Draft 2020-12</strong> JSON Schema. Keep root <code className="rounded bg-muted px-1 font-mono">type: "object"</code>.
               </p>
-              <p>Supported validators on each property:</p>
-              <ul className="list-disc pl-5">
-                <li>
-                  <code>type</code>: string, number, integer, boolean, array
-                </li>
-                <li>
-                  <code>enum</code>, <code>format</code>, <code>pattern</code>
-                </li>
-                <li>
-                  <code>minimum</code>, <code>maximum</code>, <code>minLength</code>,{' '}
-                  <code>maxLength</code>
-                </li>
-                <li>
-                  <code>required</code>: array at the root of property names
-                </li>
+              <p className="text-foreground">Supported per-property:</p>
+              <ul className="list-disc space-y-0.5 pl-5">
+                <li><code className="rounded bg-muted px-1 font-mono">type</code>: string, number, integer, boolean, array</li>
+                <li><code className="rounded bg-muted px-1 font-mono">enum</code>, <code className="rounded bg-muted px-1 font-mono">format</code>, <code className="rounded bg-muted px-1 font-mono">pattern</code></li>
+                <li><code className="rounded bg-muted px-1 font-mono">minimum</code>/<code className="rounded bg-muted px-1 font-mono">maximum</code>, <code className="rounded bg-muted px-1 font-mono">minLength</code>/<code className="rounded bg-muted px-1 font-mono">maxLength</code></li>
+                <li><code className="rounded bg-muted px-1 font-mono">required</code>: array at the root</li>
               </ul>
-              <p>
-                Documents whose <code>custom_metadata</code> fails this schema are rejected at
-                create/update time with a <code>VALIDATION</code> error.
+              <p className="pt-1">
+                Documents whose <code className="rounded bg-muted px-1 font-mono">custom_metadata</code> fails this schema are rejected at create/update time with a <code className="rounded bg-muted px-1 font-mono">VALIDATION</code> error.
               </p>
-            </div>
+            </Card>
           </aside>
         </div>
       )}
@@ -190,42 +165,35 @@ function MetadataSchemaPage() {
   )
 }
 
-// SchemaPreview renders the properties list as a label-and-type
-// summary so admins can scan the tenant's metadata contract without
-// reading the raw JSON every time.
 function SchemaPreview({ schema }: { schema: Record<string, unknown> | null }) {
   if (!schema) {
-    return (
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        Fix the JSON to see a field preview.
-      </p>
-    )
+    return <p className="text-xs text-muted-foreground">Fix the JSON to see a field preview.</p>
   }
   const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>
   const required = new Set((schema.required as string[] | undefined) ?? [])
   const entries = Object.entries(properties)
   if (entries.length === 0) {
     return (
-      <p className="text-xs text-[var(--color-text-secondary)]">
-        No <code>properties</code> defined. Add them at the root of the schema.
+      <p className="text-xs text-muted-foreground">
+        No <code className="rounded bg-muted px-1 font-mono">properties</code> defined. Add them at the root of the schema.
       </p>
     )
   }
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-1.5">
       {entries.map(([name, spec]) => (
         <li key={name} className="flex items-start justify-between gap-2 text-xs">
           <div className="min-w-0">
             <div className="font-mono font-medium">
               {name}
-              {required.has(name) && <span className="text-red-500"> *</span>}
+              {required.has(name) && <span className="text-destructive"> *</span>}
             </div>
             {typeof spec.description === 'string' && (
-              <div className="text-[var(--color-text-secondary)]">{spec.description}</div>
+              <div className="text-muted-foreground">{spec.description}</div>
             )}
           </div>
-          <div className="shrink-0 text-right text-[var(--color-text-secondary)]">
-            <div className="font-mono">{describe(spec)}</div>
+          <div className="shrink-0 text-right">
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{describe(spec)}</code>
           </div>
         </li>
       ))}

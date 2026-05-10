@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Link2, Trash2, Lock, Eye, ShieldOff } from 'lucide-react'
+import { Eye, Link2, Lock, ShieldOff, Trash2 } from 'lucide-react'
 
 import {
   listAdminShareLinks,
@@ -14,8 +14,11 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatRelativeTime } from '@/lib/formatters'
+import { cn } from '@/lib/cn'
 
 type Filter = 'active' | 'all'
 
@@ -28,6 +31,7 @@ interface Grouped {
 function ShareLinksPage() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState<Filter>('active')
+  const [pendingRevokeAll, setPendingRevokeAll] = useState<Grouped | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'share-links', filter],
@@ -63,136 +67,145 @@ function ShareLinksPage() {
     onSuccess: (r) => {
       toast.success(`Revoked ${r.revoked} link${r.revoked === 1 ? '' : 's'}`)
       qc.invalidateQueries({ queryKey: ['admin', 'share-links'] })
+      setPendingRevokeAll(null)
     },
     onError: () => toast.error('Revoke-all failed'),
   })
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Share Links"
-        description="Active share links across every document in this tenant."
+        title="Share links"
+        description="Every active and recent share link in the tenant. Group by document; revoke individually or in bulk if a doc is over-shared."
       />
 
-      <div className="mb-4 flex gap-2">
-        {(['active', 'all'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-md px-3 py-1 text-sm ${
-              filter === f
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]'
-            }`}
-          >
-            {f === 'active' ? 'Active only' : 'All (including expired/revoked)'}
-          </button>
-        ))}
-      </div>
+      <SegmentedFilter value={filter} onChange={setFilter} />
 
       {isLoading ? (
         <Skeleton className="h-32" />
       ) : grouped.length === 0 ? (
         <EmptyState
-          icon={<Link2 className="h-12 w-12" />}
+          icon={<Link2 className="h-6 w-6" />}
           title={filter === 'active' ? 'No active share links' : 'No share links'}
           description="Share links created from document detail pages will appear here."
         />
       ) : (
         <ul className="space-y-3">
           {grouped.map((g) => (
-            <li
-              key={g.documentId}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
-            >
-              <div className="flex items-start justify-between border-b border-[var(--color-border)] p-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Link2 className="h-4 w-4 shrink-0" />
-                    <span className="truncate font-medium">{g.title}</span>
-                    <Badge variant="default">
-                      {g.links.length} link{g.links.length === 1 ? '' : 's'}
-                    </Badge>
+            <li key={g.documentId}>
+              <Card className="overflow-hidden p-0">
+                <div className="flex items-start justify-between gap-3 border-b border-border p-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm font-medium">{g.title}</span>
+                      <Badge>{g.links.length} link{g.links.length === 1 ? '' : 's'}</Badge>
+                    </div>
+                    <code className="mt-1 block truncate font-mono text-xs text-muted-foreground">{g.documentId}</code>
                   </div>
-                  <div className="mt-1 text-xs font-mono text-[var(--color-text-secondary)]">
-                    {g.documentId}
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingRevokeAll(g)}
+                    disabled={revokeAll.isPending}
+                  >
+                    <ShieldOff className="h-4 w-4" /> Revoke all
+                  </Button>
                 </div>
-                <Button
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Revoke all ${g.links.filter((l) => l.is_active).length} active links on "${g.title}"?`,
-                      )
-                    )
-                      revokeAll.mutate(g.documentId)
-                  }}
-                  disabled={revokeAll.isPending}
-                >
-                  <ShieldOff className="h-4 w-4" /> Revoke all
-                </Button>
-              </div>
-
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/50">
-                  <tr className="text-left">
-                    <th className="px-3 py-1.5">Status</th>
-                    <th className="px-3 py-1.5">Perms</th>
-                    <th className="px-3 py-1.5">Views</th>
-                    <th className="px-3 py-1.5">Expires</th>
-                    <th className="px-3 py-1.5">Last accessed</th>
-                    <th className="px-3 py-1.5">Created</th>
-                    <th className="px-3 py-1.5"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.links.map((l) => (
-                    <tr key={l.id} className="border-t border-[var(--color-border)]">
-                      <td className="px-3 py-1.5">
-                        <div className="flex items-center gap-1">
-                          <Badge variant={l.is_active ? 'active' : 'archived'}>
-                            {l.is_active ? 'Active' : 'Revoked'}
-                          </Badge>
-                          {l.password_protected && (
-                            <Lock className="h-3 w-3 text-[var(--color-text-secondary)]" />
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <span className="font-mono">{l.permissions.join('+') || '—'}</span>
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <span className="inline-flex items-center gap-1">
-                          <Eye className="h-3 w-3" />
-                          {l.view_count}
-                          {l.max_views > 0 && ` / ${l.max_views}`}
-                        </span>
-                      </td>
-                      <td className="px-3 py-1.5">
-                        {l.expires_at ? formatRelativeTime(l.expires_at) : 'never'}
-                      </td>
-                      <td className="px-3 py-1.5">
-                        {l.accessed_at ? formatRelativeTime(l.accessed_at) : 'never'}
-                      </td>
-                      <td className="px-3 py-1.5">{formatRelativeTime(l.created_at)}</td>
-                      <td className="px-3 py-1.5 text-right">
-                        {l.is_active && (
-                          <Button
-                            onClick={() => revoke.mutate(l.id)}
-                            disabled={revoke.isPending}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/40 text-left">
+                      <tr>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Perms</th>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Views</th>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Expires</th>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Last accessed</th>
+                        <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Created</th>
+                        <th className="px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.links.map((l) => (
+                        <tr key={l.id} className="border-t border-border">
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant={l.is_active ? 'active' : 'archived'}>{l.is_active ? 'Active' : 'Revoked'}</Badge>
+                              {l.password_protected && <Lock className="h-3 w-3 text-muted-foreground" aria-label="Password protected" />}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2"><code className="font-mono text-muted-foreground">{l.permissions.join('+') || '—'}</code></td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <Eye className="h-3 w-3" />
+                              {l.view_count}{l.max_views > 0 && ` / ${l.max_views}`}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">{l.expires_at ? formatRelativeTime(l.expires_at) : 'never'}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{l.accessed_at ? formatRelativeTime(l.accessed_at) : 'never'}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{formatRelativeTime(l.created_at)}</td>
+                          <td className="px-3 py-2 text-right">
+                            {l.is_active && (
+                              <Button variant="ghost" size="sm" onClick={() => revoke.mutate(l.id)} disabled={revoke.isPending} aria-label="Revoke">
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </li>
           ))}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={!!pendingRevokeAll}
+        onOpenChange={(o) => !o && setPendingRevokeAll(null)}
+        title={pendingRevokeAll ? `Revoke all links on "${pendingRevokeAll.title}"?` : 'Revoke all'}
+        description={
+          pendingRevokeAll
+            ? `${pendingRevokeAll.links.filter((l) => l.is_active).length} active link${pendingRevokeAll.links.filter((l) => l.is_active).length === 1 ? '' : 's'} will be revoked. This cannot be undone — recipients will get 410 Gone immediately.`
+            : ''
+        }
+        confirmLabel="Revoke all"
+        destructive
+        loading={revokeAll.isPending}
+        onConfirm={() => pendingRevokeAll && revokeAll.mutate(pendingRevokeAll.documentId)}
+      />
+    </div>
+  )
+}
+
+function SegmentedFilter({ value, onChange }: { value: Filter; onChange: (v: Filter) => void }) {
+  const opts: { value: Filter; label: string }[] = [
+    { value: 'active', label: 'Active only' },
+    { value: 'all', label: 'All (incl. expired/revoked)' },
+  ]
+  return (
+    <div className="inline-flex gap-1 rounded-md bg-muted/60 p-1 text-xs" role="tablist">
+      {opts.map((o) => {
+        const active = value === o.value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              'rounded-sm px-3 py-1.5 transition-all',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              active ? 'bg-background text-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

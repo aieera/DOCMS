@@ -4,7 +4,9 @@ import { Activity, AlertTriangle, CheckCircle2, Clock, Shield } from 'lucide-rea
 
 import { getPermissionPropagationStats } from '@/api/permission-stats'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Card } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/Spinner'
+import { cn } from '@/lib/cn'
 
 // ADR 0083 §"SLI" — admin dashboard for permission-propagation lag.
 // Polls the search service's in-process Prometheus stats every 10s
@@ -34,109 +36,80 @@ function PermissionLagPage() {
   const failureRate = totalCalls > 0 ? data.total_failure / totalCalls : 0
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="space-y-6">
       <PageHeader
         title="Permission propagation lag"
         description="Time from a permission change event to the search index update committing. ADR 0083. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
       />
 
-      {/* SLI breach banner */}
       {p95Breached && (
         <div
-          className="mb-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-200"
+          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
           data-testid="sli-breach-banner"
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">SLI breach</p>
-            <p>
+            <p className="text-xs">
               p95 propagation lag is {data.p95_seconds.toFixed(2)}s — over the {SLI_THRESHOLD_SECONDS}s threshold.
-              Check the search service logs for `debounced propagation failed` or stuck OpenSearch updates.
+              Check the search service logs for <code className="rounded bg-destructive/20 px-1 font-mono">debounced propagation failed</code> or stuck OpenSearch updates.
             </p>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Card
-          icon={<Clock className="h-4 w-4 text-emerald-500" />}
-          label="p50"
-          value={`${data.p50_seconds.toFixed(2)}s`}
-          testId="lag-p50"
-        />
-        <Card
-          icon={<Clock className={`h-4 w-4 ${p95Breached ? 'text-red-500' : 'text-amber-500'}`} />}
-          label={`p95 (alert > ${SLI_THRESHOLD_SECONDS}s)`}
-          value={`${data.p95_seconds.toFixed(2)}s`}
-          testId="lag-p95"
-        />
-        <Card
-          icon={<Clock className="h-4 w-4 text-rose-500" />}
-          label="p99"
-          value={`${data.p99_seconds.toFixed(2)}s`}
-          testId="lag-p99"
-        />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat icon={Clock} tone="success" label="p50" value={`${data.p50_seconds.toFixed(2)}s`} testId="lag-p50" />
+        <Stat icon={Clock} tone={p95Breached ? 'destructive' : 'warning'} label={`p95 (alert > ${SLI_THRESHOLD_SECONDS}s)`} value={`${data.p95_seconds.toFixed(2)}s`} testId="lag-p95" />
+        <Stat icon={Clock} tone="destructive" label="p99" value={`${data.p99_seconds.toFixed(2)}s`} testId="lag-p99" />
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Card
-          icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-          label="Success"
-          value={data.total_success.toLocaleString()}
-          testId="lag-success"
-        />
-        <Card
-          icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
-          label={`Failure (${(failureRate * 100).toFixed(1)}%)`}
-          value={data.total_failure.toLocaleString()}
-          testId="lag-failure"
-        />
-        <Card
-          icon={<Activity className="h-4 w-4 text-sky-500" />}
-          label="Pending in debouncer"
-          value={data.pending_count.toLocaleString()}
-          testId="lag-pending"
-        />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat icon={CheckCircle2} tone="success" label="Success" value={data.total_success.toLocaleString()} testId="lag-success" />
+        <Stat icon={AlertTriangle} tone="destructive" label={`Failure (${(failureRate * 100).toFixed(1)}%)`} value={data.total_failure.toLocaleString()} testId="lag-failure" />
+        <Stat icon={Activity} tone="info" label="Pending in debouncer" value={data.pending_count.toLocaleString()} testId="lag-pending" />
       </div>
 
-      {/* Bar visualizes p50/p95/p99 against the SLI threshold. CSS
-          widths use `min(100%, ratio * 100%)` so a runaway lag value
-          doesn't break the layout. */}
-      <div className="mt-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
-          <Shield className="h-4 w-4" />
-          Latency distribution vs. SLI
+      <Card className="space-y-3 p-5">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Shield className="h-4 w-4" /> Latency distribution vs. SLI
         </h3>
         <Bar label="p50" seconds={data.p50_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p50" />
         <Bar label="p95" seconds={data.p95_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p95" />
         <Bar label="p99" seconds={data.p99_seconds} threshold={SLI_THRESHOLD_SECONDS} testId="bar-p99" />
-        <p className="mt-2 text-xs text-[var(--color-text-secondary)]">
-          Red zone marks the {SLI_THRESHOLD_SECONDS}s alert threshold.
-          The 5s baseline is also the debouncer's coalescing window — propagation latency below it is structural,
-          not a sign of trouble.
+        <p className="text-xs text-muted-foreground">
+          Vertical line marks the {SLI_THRESHOLD_SECONDS}s alert threshold. The 5s baseline is also the debouncer's coalescing window — propagation latency below it is structural, not a sign of trouble.
         </p>
-      </div>
+      </Card>
     </div>
   )
 }
 
-function Card({ icon, label, value, testId }: {
-  icon: React.ReactNode
+const TONE_CLASS: Record<string, string> = {
+  success: 'text-success',
+  warning: 'text-warning',
+  destructive: 'text-destructive',
+  info: 'text-info',
+  muted: 'text-muted-foreground',
+}
+
+function Stat({
+  icon: Icon, tone, label, value, testId,
+}: {
+  icon: typeof Clock
+  tone: 'success' | 'warning' | 'destructive' | 'info' | 'muted'
   label: string
   value: string
   testId?: string
 }) {
   return (
-    <div
-      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3"
-      data-testid={testId}
-    >
-      <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+    <Card className="p-4" data-testid={testId}>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{label}</span>
-        {icon}
+        <Icon className={cn('h-4 w-4', TONE_CLASS[tone])} />
       </div>
-      <div className="mt-1 text-xl font-semibold">{value}</div>
-    </div>
+      <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
+    </Card>
   )
 }
 
@@ -146,27 +119,25 @@ function Bar({ label, seconds, threshold, testId }: {
   threshold: number
   testId?: string
 }) {
-  // Scale: max display is 2x the threshold so the bar always lands
-  // inside its container even on a major incident.
   const max = threshold * 2
   const pct = Math.min((seconds / max) * 100, 100)
   const breached = seconds > threshold
   return (
-    <div className="mb-2" data-testid={testId}>
-      <div className="mb-1 flex justify-between text-xs">
-        <span className="font-mono">{label}</span>
-        <span className={breached ? 'font-mono font-medium text-red-600' : 'font-mono text-[var(--color-text-secondary)]'}>
+    <div className="space-y-1" data-testid={testId}>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-mono text-muted-foreground">{label}</span>
+        <span className={cn('font-mono', breached ? 'font-medium text-destructive' : 'text-muted-foreground')}>
           {seconds.toFixed(2)}s
         </span>
       </div>
-      <div className="relative h-2 w-full rounded-full bg-[var(--color-bg-tertiary)]">
-        {/* SLI threshold marker */}
+      <div className="relative h-2 w-full rounded-full bg-muted">
         <div
-          className="absolute top-0 bottom-0 w-px bg-red-500/70"
+          className="absolute inset-y-0 w-px bg-destructive/70"
           style={{ left: `${(threshold / max) * 100}%` }}
+          aria-hidden
         />
         <div
-          className={`h-2 rounded-full ${breached ? 'bg-red-500' : 'bg-emerald-500'}`}
+          className={cn('h-2 rounded-full transition-all', breached ? 'bg-destructive' : 'bg-success')}
           style={{ width: `${pct}%` }}
         />
       </div>

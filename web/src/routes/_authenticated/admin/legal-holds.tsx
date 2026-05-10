@@ -9,13 +9,19 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/Input'
+import { Textarea } from '@/components/ui/Textarea'
+import { Dialog } from '@/components/ui/Dialog'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
+import { cn } from '@/lib/cn'
 
 type StatusFilter = 'active' | 'released' | 'all'
 
 function LegalHoldsPage() {
   const [filter, setFilter] = useState<StatusFilter>('active')
+  const [pendingRelease, setPendingRelease] = useState<LegalHold | null>(null)
   const qc = useQueryClient()
 
   const statusParam = filter === 'all' ? undefined : filter
@@ -30,40 +36,19 @@ function LegalHoldsPage() {
     onSuccess: () => {
       toast.success('Hold released')
       qc.invalidateQueries({ queryKey: ['legal-holds'] })
+      setPendingRelease(null)
     },
     onError: (err: unknown) => toast.error(extractMessage(err)),
   })
 
-  const onRelease = (hold: LegalHold) => {
-    const reason = window.prompt(`Release hold "${hold.name}"? Enter reason:`)
-    if (!reason) return
-    const approver = window.prompt('Approver user UUID (for audit trail):')
-    if (!approver) return
-    release.mutate({ id: hold.id, reason, approver })
-  }
-
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Legal Holds"
-        description="Manage holds that block deletion, disposition, and redaction"
+        title="Legal holds"
+        description="Holds block deletion, disposition, and redaction of attached documents until they're released. Releases are audited."
       />
 
-      <div className="mb-4 flex gap-2">
-        {(['active', 'released', 'all'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-md px-3 py-1 text-sm ${
-              filter === f
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]'
-            }`}
-          >
-            {f[0].toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-      </div>
+      <SegmentedFilter value={filter} onChange={setFilter} />
 
       {isLoading ? (
         <div className="space-y-2">
@@ -71,48 +56,133 @@ function LegalHoldsPage() {
         </div>
       ) : !data || data.length === 0 ? (
         <EmptyState
-          icon={<Scale className="h-12 w-12" />}
+          icon={<Scale className="h-6 w-6" />}
           title={filter === 'active' ? 'No active legal holds' : 'No holds'}
-          description="Holds block deletion, disposition, and redaction of attached documents."
+          description="Holds applied from document detail pages or via the compliance API will land here."
         />
       ) : (
         <ul className="space-y-2">
           {data.map((hold) => (
-            <li
-              key={hold.id}
-              className="flex items-start justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{hold.name}</span>
-                  <Badge variant={hold.is_active ? 'in_review' : 'archived'}>
-                    {hold.is_active ? 'Active' : 'Released'}
-                  </Badge>
-                  {hold.matter_reference && (
-                    <span className="text-xs text-[var(--color-text-secondary)]">
-                      Matter: {hold.matter_reference}
-                    </span>
+            <li key={hold.id}>
+              <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{hold.name}</span>
+                    <Badge variant={hold.is_active ? 'in_review' : 'archived'}>
+                      {hold.is_active ? 'Active' : 'Released'}
+                    </Badge>
+                    {hold.matter_reference && (
+                      <span className="text-xs text-muted-foreground">Matter: <code className="rounded bg-muted px-1 py-0.5 font-mono">{hold.matter_reference}</code></span>
+                    )}
+                  </div>
+                  {hold.description && (
+                    <p className="mt-1 text-sm text-muted-foreground">{hold.description}</p>
                   )}
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Applied {formatRelativeTime(hold.applied_at)} ({formatDate(hold.applied_at)})
+                    {hold.released_at && <> · released {formatRelativeTime(hold.released_at)}</>}
+                  </div>
                 </div>
-                {hold.description && (
-                  <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
-                    {hold.description}
-                  </p>
+                {hold.is_active && (
+                  <Button variant="outline" size="sm" onClick={() => setPendingRelease(hold)} disabled={release.isPending}>
+                    <ShieldOff className="h-4 w-4" /> Release
+                  </Button>
                 )}
-                <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                  Applied {formatRelativeTime(hold.applied_at)} on {formatDate(hold.applied_at)}
-                  {hold.released_at && <> · released {formatRelativeTime(hold.released_at)}</>}
-                </div>
-              </div>
-              {hold.is_active && (
-                <Button onClick={() => onRelease(hold)} disabled={release.isPending}>
-                  <ShieldOff className="h-4 w-4" /> Release
-                </Button>
-              )}
+              </Card>
             </li>
           ))}
         </ul>
       )}
+
+      <ReleaseHoldDialog
+        hold={pendingRelease}
+        onClose={() => setPendingRelease(null)}
+        onConfirm={(reason, approver) =>
+          pendingRelease && release.mutate({ id: pendingRelease.id, reason, approver })
+        }
+        loading={release.isPending}
+      />
+    </div>
+  )
+}
+
+function ReleaseHoldDialog({
+  hold,
+  onClose,
+  onConfirm,
+  loading,
+}: {
+  hold: LegalHold | null
+  onClose: () => void
+  onConfirm: (reason: string, approver: string) => void
+  loading: boolean
+}) {
+  const [reason, setReason] = useState('')
+  const [approver, setApprover] = useState('')
+  return (
+    <Dialog
+      open={!!hold}
+      onOpenChange={(o) => { if (!o) { onClose(); setReason(''); setApprover('') } }}
+      title={hold ? `Release "${hold.name}"?` : 'Release hold'}
+      description="Releasing a hold lifts the deletion / disposition / redaction block on every attached document. The reason and approver are recorded in the audit log."
+    >
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (reason.trim() && approver.trim()) onConfirm(reason.trim(), approver.trim()) }}
+        className="space-y-4"
+      >
+        <Textarea
+          label="Release reason"
+          placeholder="Why is the hold being released?"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          required
+          rows={3}
+        />
+        <Input
+          label="Approver user UUID"
+          placeholder="00000000-0000-0000-0000-…"
+          value={approver}
+          onChange={(e) => setApprover(e.target.value)}
+          required
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button type="submit" variant="destructive" loading={loading} disabled={!reason.trim() || !approver.trim()}>
+            Release hold
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  )
+}
+
+function SegmentedFilter({ value, onChange }: { value: StatusFilter; onChange: (v: StatusFilter) => void }) {
+  const opts: { value: StatusFilter; label: string }[] = [
+    { value: 'active', label: 'Active' },
+    { value: 'released', label: 'Released' },
+    { value: 'all', label: 'All' },
+  ]
+  return (
+    <div className="inline-flex gap-1 rounded-md bg-muted/60 p-1 text-xs" role="tablist">
+      {opts.map((o) => {
+        const active = value === o.value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              'rounded-sm px-3 py-1.5 transition-all',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              active ? 'bg-background text-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

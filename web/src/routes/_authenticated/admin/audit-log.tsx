@@ -6,7 +6,6 @@ import { getAuditLog, exportAuditCSV } from '@/api/admin'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { AuditLogTable } from '@/components/admin/AuditLogTable'
 import { Button } from '@/components/ui/Button'
-import { Skeleton } from '@/components/ui/Skeleton'
 
 function AuditLogPage() {
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'audit-log'], queryFn: () => getAuditLog() })
@@ -21,17 +20,17 @@ function AuditLogPage() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Audit Log"
-        description="Activity history across the tenant"
+        title="Audit log"
+        description="Every action across the tenant — sign-ins, document edits, permission changes, admin operations. Tenant-isolated and tamper-evident."
         actions={
-          <Button variant="ghost" onClick={handleExport} data-testid="audit-export">
-            <Download className="mr-1 h-4 w-4" /> Export CSV
+          <Button variant="outline" onClick={handleExport} data-testid="audit-export">
+            <Download className="h-4 w-4" /> Export CSV
           </Button>
         }
       />
-      {isLoading ? <Skeleton className="h-64" /> : <AuditLogTable entries={data?.items || []} />}
+      <AuditLogTable entries={data?.items || []} isLoading={isLoading} />
     </div>
   )
 }
