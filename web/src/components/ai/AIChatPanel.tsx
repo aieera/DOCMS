@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sheet } from '@/components/ui/Sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
@@ -32,7 +32,11 @@ export function AIChatPanel({ open, onClose, scope, scopeId }: Props) {
   }
 
   return (
-    <Sheet open={open} onOpenChange={onClose} title="Ask AI">
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent className="flex flex-col">
+        <SheetHeader>
+          <SheetTitle>Ask AI</SheetTitle>
+        </SheetHeader>
       <div className="flex h-full flex-col">
         <div className="flex-1 space-y-3 overflow-y-auto pb-4">
           {messages.length === 0 && <p className="text-center text-sm text-[var(--color-text-secondary)] py-8">Ask a question about your documents</p>}
@@ -57,6 +61,7 @@ export function AIChatPanel({ open, onClose, scope, scopeId }: Props) {
           <Button onClick={send} disabled={loading || !input.trim()}><Send className="h-4 w-4" /></Button>
         </div>
       </div>
+      </SheetContent>
     </Sheet>
   )
 }
