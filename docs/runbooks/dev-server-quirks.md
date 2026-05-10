@@ -4,6 +4,29 @@ A short list of things that *only* bite the local Vite dev server.
 Production builds aren't affected. If something looks weird after a
 file rename or a fresh `git pull`, check here before debugging code.
 
+## 504 "Outdated Optimize Dep" after `npm install`
+
+**Symptom**: browser console shows `GET /node_modules/.vite/deps/<pkg>.js
+net::ERR_ABORTED 504 (Outdated Optimize Dep)` for the package you just
+added (e.g. `urql`, `@urql/exchange-persisted`).
+
+**Cause**: Vite's dep pre-bundler scans `node_modules` once at boot
+and writes `node_modules/.vite/deps/*.js`. A package added to
+`package.json` while `npm run dev` is running isn't in that snapshot,
+so the next import lands as a cache miss with an outdated hash.
+
+**Fix**:
+
+```powershell
+Remove-Item -Recurse -Force node_modules\.vite ; npm run dev
+```
+
+Or one-shot: `npm run dev -- --force`.
+
+**Prevention**: list the new package in `vite.config.ts` →
+`optimizeDeps.include` so the pre-bundler always picks it up at
+boot, even if a previous developer didn't restart cleanly.
+
 ## Tailwind sees stale utility set after a new file is added
 
 **Symptom**: you add a new component file that uses a Tailwind utility

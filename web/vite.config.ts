@@ -29,6 +29,13 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  // ADR 0074 — pre-bundle the GraphQL deps so adding them to a
+  // running dev session doesn't trigger Vite's "Outdated Optimize
+  // Dep" 504. Without this, the optimizer only re-scans on boot and
+  // late-arriving deps land as cache-misses on the next request.
+  optimizeDeps: {
+    include: ['urql', '@urql/exchange-persisted', 'graphql'],
+  },
   server: {
     port: 3000,
     // Two modes:
@@ -96,6 +103,12 @@ export default defineConfig({
             // through to the auth catch-all (8180) and 404s.
             '/api/v1/tasks':                    withSig('http://localhost:8182'),
             '/api/v1/signatures':               withSig('http://localhost:8188'),
+            // ADR 0074 — GraphQL read gateway. Host-mode port 8191
+            // matches scripts/run-all-services.sh's graphql-gateway
+            // entry and docker-compose's port mapping. Without this
+            // the doc-detail GraphQL fetch falls through to auth
+            // (8180) and 404s.
+            '/api/v1/graphql':                  withSig('http://localhost:8191'),
             '/api/v1/webhooks':                 withSig('http://localhost:8190'),
             '/api/v1/connectors':               withSig('http://localhost:8190'),
             '/api/v1/mcp':                      withSig('http://localhost:8190'),
