@@ -135,11 +135,14 @@ export function EntitiesPanel({
           />
           PII only
         </label>
+        {/* Radix Select reserves "" for "no selection" — use a
+            sentinel for the All-types option and translate at the
+            query boundary. */}
         <Select
-          value={filter}
-          onValueChange={setFilter}
+          value={filter || '__all__'}
+          onValueChange={(v) => setFilter(v === '__all__' ? '' : v)}
           options={[
-            { value: '', label: 'All types' },
+            { value: '__all__', label: 'All types' },
             ...ENTITY_TYPES.map((t) => ({ value: t, label: t })),
           ]}
         />

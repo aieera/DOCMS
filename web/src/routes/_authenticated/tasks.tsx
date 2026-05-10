@@ -319,10 +319,14 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
     staleTime: 5 * 60_000,
   })
 
+  // Radix Select reserves value="" for "no selection / show
+  // placeholder", so the Unassigned option uses a sentinel string
+  // instead. Translated back to undefined on submit.
+  const UNASSIGNED = '__unassigned__'
   const assigneeOptions = useMemo(() => {
     const items = usersQ.data?.items ?? []
     const opts = [
-      { value: '', label: '— Unassigned —' },
+      { value: UNASSIGNED, label: '— Unassigned —' },
       ...items.map((u) => ({
         value: u.id,
         label: `${u.display_name ?? u.email}${u.id === me?.id ? ' (me)' : ''}`,
@@ -341,7 +345,7 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
       title, description, priority,
       due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
       linked_document_id: linkedDocumentId,
-      assignee_id: assigneeId || undefined,
+      assignee_id: assigneeId && assigneeId !== UNASSIGNED ? assigneeId : undefined,
     }),
     onSuccess: () => {
       toast.success(assigneeId === me?.id ? 'Task created' : 'Task created and assigned')
@@ -359,7 +363,7 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
         <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
         <Select
           label="Assignee"
-          value={assigneeId || ''}
+          value={assigneeId || UNASSIGNED}
           onValueChange={setAssigneeId}
           options={assigneeOptions}
         />

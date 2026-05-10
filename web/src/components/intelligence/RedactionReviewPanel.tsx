@@ -35,12 +35,17 @@ interface Props {
   isAdminCaller: boolean
 }
 
-const STATUS_FILTERS: { value: '' | RedactionStatus; label: string }[] = [
-  { value: '',         label: 'All statuses' },
-  { value: 'pending',  label: 'Pending review' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'applied',  label: 'Applied' },
+// Sentinel for the "all statuses" option. Radix Select reserves the
+// empty string for "no selection / show placeholder" and throws if
+// any SelectItem uses it as a value, so we map the no-filter case to
+// __all__ at the UI layer and translate back on the query boundary.
+const ALL_STATUSES = '__all__' as const
+const STATUS_FILTERS: { value: typeof ALL_STATUSES | RedactionStatus; label: string }[] = [
+  { value: ALL_STATUSES, label: 'All statuses' },
+  { value: 'pending',    label: 'Pending review' },
+  { value: 'approved',   label: 'Approved' },
+  { value: 'rejected',   label: 'Rejected' },
+  { value: 'applied',    label: 'Applied' },
 ]
 
 const STATUS_BADGE: Record<RedactionStatus, string> = {
@@ -52,7 +57,7 @@ const STATUS_BADGE: Record<RedactionStatus, string> = {
 
 export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: Props) {
   const qc = useQueryClient()
-  const [statusFilter, setStatusFilter] = useState<'' | RedactionStatus>('pending')
+  const [statusFilter, setStatusFilter] = useState<typeof ALL_STATUSES | RedactionStatus>('pending')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [confirmingApply, setConfirmingApply] = useState(false)
 
@@ -61,7 +66,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
     queryFn: () =>
       listRedactionCandidates(documentId, {
         version_id: versionId,
-        status: statusFilter || undefined,
+        status: statusFilter === ALL_STATUSES ? undefined : statusFilter,
         type: typeFilter || undefined,
         limit: 500,
       }),
@@ -126,14 +131,14 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
         <Filter className="h-3 w-3 text-[var(--color-text-secondary)]" />
         <Select
           value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as '' | RedactionStatus)}
+          onValueChange={(v) => setStatusFilter(v as typeof ALL_STATUSES | RedactionStatus)}
           options={STATUS_FILTERS}
         />
         <Select
-          value={typeFilter}
-          onValueChange={setTypeFilter}
+          value={typeFilter || '__all__'}
+          onValueChange={(v) => setTypeFilter(v === '__all__' ? '' : v)}
           options={[
-            { value: '', label: 'All types' },
+            { value: '__all__', label: 'All types' },
             ...types.map((t) => ({ value: t, label: t })),
           ]}
         />
@@ -202,12 +207,12 @@ function countByStatus(rows: RedactionCandidate[]): Partial<Record<RedactionStat
   return out
 }
 
-function EmptyCandidates({ statusFilter }: { statusFilter: '' | RedactionStatus }) {
+function EmptyCandidates({ statusFilter }: { statusFilter: typeof ALL_STATUSES | RedactionStatus }) {
   return (
     <div className="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
       {statusFilter === 'pending'
         ? 'No pending PII candidates. The NER pipeline runs automatically after upload — wait a minute or check the document logs if you expected results.'
-        : `No candidates with status="${statusFilter || 'any'}".`}
+        : `No candidates with status="${statusFilter === ALL_STATUSES ? 'any' : statusFilter}".`}
     </div>
   )
 }
