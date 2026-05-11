@@ -89,7 +89,11 @@ export interface BodySegment {
 
 const MENTION_RE = /@\[([^\]]+)\]\(([0-9a-fA-F-]{36})\)/g
 
-export function parseBodyForRender(body: string): BodySegment[] {
+export function parseBodyForRender(body: string | null | undefined): BodySegment[] {
+  // Defensive: a missing body can crash the entire comment tree
+  // with "Cannot read properties of undefined". Return an empty
+  // segment list so the comment still renders (just with no text).
+  if (!body) return []
   const out: BodySegment[] = []
   let last = 0
   for (const m of body.matchAll(MENTION_RE)) {

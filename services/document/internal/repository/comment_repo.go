@@ -20,30 +20,35 @@ import (
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 )
 
-// Comment is the row shape used by the service layer.
+// Comment is the row shape used by the service layer and serialized
+// to the client. The json tags are LOAD-BEARING — without them
+// Go's default marshaller emits `"Body"` etc. (Pascal case from the
+// field names), and the frontend reads `body` (snake_case from the
+// TypeScript interface). The mismatch silently made every field
+// undefined on the client and crashed parseBodyForRender(undefined).
 type Comment struct {
-	TenantID        uuid.UUID
-	ID              uuid.UUID
-	DocumentID      uuid.UUID
-	VersionID       *uuid.UUID
-	ParentCommentID *uuid.UUID
-	AuthorID        uuid.UUID
-	Body            string
-	IsResolved      bool
-	ResolvedBy      *uuid.UUID
-	ResolvedAt      *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	DeletedAt       *time.Time
+	TenantID        uuid.UUID  `json:"tenant_id"`
+	ID              uuid.UUID  `json:"id"`
+	DocumentID      uuid.UUID  `json:"document_id"`
+	VersionID       *uuid.UUID `json:"version_id,omitempty"`
+	ParentCommentID *uuid.UUID `json:"parent_comment_id,omitempty"`
+	AuthorID        uuid.UUID  `json:"author_id"`
+	Body            string     `json:"body"`
+	IsResolved      bool       `json:"is_resolved"`
+	ResolvedBy      *uuid.UUID `json:"resolved_by,omitempty"`
+	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 }
 
 // CommentReaction is one (user, emoji) tag on a comment.
 type CommentReaction struct {
-	TenantID  uuid.UUID
-	CommentID uuid.UUID
-	UserID    uuid.UUID
-	Emoji     string
-	CreatedAt time.Time
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CommentID uuid.UUID `json:"comment_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Emoji     string    `json:"emoji"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // CommentRepository is the comment + reaction persistence interface.
