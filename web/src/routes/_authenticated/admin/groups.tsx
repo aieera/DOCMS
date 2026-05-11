@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ChevronRight, Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react'
+import { getUsers } from '@/api/admin'
+import type { User } from '@/types/api'
 
 import {
   addGroupMember,
@@ -33,8 +35,6 @@ function GroupsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
-  const [memberInput, setMemberInput] = useState('')
-
   const detail = useQuery({
     queryKey: ['admin', 'groups', selectedId],
     queryFn: () => (selectedId ? getGroup(selectedId) : Promise.resolve(null)),
@@ -74,7 +74,6 @@ function GroupsPage() {
     mutationFn: ({ id, userId }: { id: string; userId: string }) => addGroupMember(id, userId),
     onSuccess: (_d, v) => {
       toast.success('Member added')
-      setMemberInput('')
       qc.invalidateQueries({ queryKey: ['admin', 'groups', v.id] })
       qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
     },
@@ -176,20 +175,12 @@ function GroupsPage() {
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Members
                 </h4>
-                <div className="mb-3 flex gap-2">
-                  <Input
-                    className="flex-1"
-                    placeholder="User UUID to add…"
-                    value={memberInput}
-                    onChange={(e) => setMemberInput(e.target.value)}
+                <div className="mb-3">
+                  <UserPicker
+                    onPick={(u) => addMember.mutate({ id: selectedId, userId: u.id })}
+                    isPending={addMember.isPending}
+                    excludeIds={new Set((detail.data.members ?? []).map((m) => m.user_id))}
                   />
-                  <Button
-                    onClick={() => addMember.mutate({ id: selectedId, userId: memberInput.trim() })}
-                    disabled={!memberInput.trim() || addMember.isPending}
-                    loading={addMember.isPending}
-                  >
-                    <UserPlus className="h-4 w-4" /> Add
-                  </Button>
                 </div>
 
                 {(detail.data.members?.length ?? 0) === 0 ? (
@@ -299,6 +290,74 @@ function CreateGroupForm({
         </div>
       </form>
     </Card>
+  )
+}
+
+// UserPicker — search-and-pick replacement for the raw-UUID input
+// that used to live in the "Add member" row (BUG-18). Debounces the
+// query, filters out users who are already in the group, and
+// commits the pick straight through to the parent's onPick callback.
+function UserPicker({
+  onPick,
+  isPending,
+  excludeIds,
+}: {
+  onPick: (u: User) => void
+  isPending: boolean
+  excludeIds: Set<string>
+}) {
+  const [q, setQ] = useState('')
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(q.trim()), 200)
+    return () => clearTimeout(id)
+  }, [q])
+  const usersQ = useQuery({
+    queryKey: ['admin', 'user-picker', debounced],
+    queryFn: () => getUsers(debounced ? { query: debounced, limit: '10' } : { limit: '10' }),
+    enabled: q.length > 0,
+    staleTime: 30_000,
+  })
+  const candidates = (usersQ.data?.items ?? []).filter((u) => !excludeIds.has(u.id)).slice(0, 8)
+  return (
+    <div className="space-y-1">
+      <Input
+        placeholder="Search by name or email…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        autoComplete="off"
+        data-testid="member-picker-search"
+      />
+      {q.length > 0 && (
+        <ul className="max-h-56 overflow-y-auto rounded-md border border-border bg-card text-sm" data-testid="member-picker-results">
+          {candidates.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-muted-foreground">
+              {usersQ.isLoading ? 'Searching…' : 'No matching users.'}
+            </li>
+          ) : (
+            candidates.map((u) => (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  onClick={() => onPick(u)}
+                  disabled={isPending}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted disabled:opacity-50"
+                  data-testid={`member-pick-${u.id}`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">{u.display_name || u.email}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{u.email}</span>
+                    </span>
+                  </span>
+                  <UserPlus className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
   )
 }
 

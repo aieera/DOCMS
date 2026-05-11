@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -11,6 +11,8 @@ import {
   updateRoutingRule,
   type RoutingRule,
 } from '@/api/smart-routing'
+import { getWorkspaces, getFolders } from '@/api/workspaces'
+import type { Folder, Workspace } from '@/types/api'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
@@ -105,11 +107,10 @@ function RoutingRulesPage() {
                 placeholder="invoice"
               />
             </LabeledInput>
-            <LabeledInput label="Target folder ID">
-              <Input
+            <LabeledInput label="Target folder">
+              <FolderPicker
                 value={creating.target_folder_id}
-                onChange={(e) => setCreating({ ...creating, target_folder_id: e.target.value })}
-                placeholder="UUID — folder picker comes later"
+                onChange={(id) => setCreating({ ...creating, target_folder_id: id })}
               />
             </LabeledInput>
             <LabeledInput label="Priority">
@@ -207,6 +208,62 @@ function LabeledInput({ label, children }: { label: string; children: React.Reac
       <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>
+  )
+}
+
+// FolderPicker — two-step picker replacing the raw-UUID input
+// (BUG-19). Step 1: pick a workspace. Step 2: pick a folder inside
+// it. The value flowing into the form is still the folder UUID
+// the backend expects.
+function FolderPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const [workspaceId, setWorkspaceId] = useState<string>('')
+
+  const wsQ = useQuery({
+    queryKey: ['admin', 'folder-picker', 'workspaces'],
+    queryFn: getWorkspaces,
+    staleTime: 60_000,
+  })
+  const foldersQ = useQuery({
+    queryKey: ['admin', 'folder-picker', 'folders', workspaceId],
+    queryFn: () => getFolders(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  })
+
+  // If the caller already has a folder id, work backwards to set the
+  // workspace selector so the dropdown reads sensibly on edit.
+  useEffect(() => {
+    if (!value || workspaceId) return
+    const f = (foldersQ.data ?? []).find((x) => x.id === value)
+    if (f) setWorkspaceId(f.workspace_id)
+  }, [value, workspaceId, foldersQ.data])
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <select
+        value={workspaceId}
+        onChange={(e) => { setWorkspaceId(e.target.value); onChange('') }}
+        className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+        data-testid="folder-picker-workspace"
+      >
+        <option value="">— pick workspace —</option>
+        {(wsQ.data ?? []).map((w: Workspace) => (
+          <option key={w.id} value={w.id}>{w.name}</option>
+        ))}
+      </select>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={!workspaceId || foldersQ.isLoading}
+        className="h-9 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+        data-testid="folder-picker-folder"
+      >
+        <option value="">{workspaceId ? '— pick folder —' : 'Pick a workspace first'}</option>
+        {(foldersQ.data ?? []).map((f: Folder) => (
+          <option key={f.id} value={f.id}>{f.path || f.name}</option>
+        ))}
+      </select>
+    </div>
   )
 }
 
