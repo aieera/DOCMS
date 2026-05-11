@@ -17,7 +17,25 @@
 import { Client, fetchExchange, cacheExchange } from 'urql'
 import { persistedExchange } from '@urql/exchange-persisted'
 
+import { useAuthStore } from '@/store/authStore'
 import type { PersistedOperation } from './graphql-operations'
+
+// authHeaders mirrors the X-Auth-* headers the axios api client
+// stamps in src/api/client.ts. The graphql-gateway requires them
+// for the per-request tenant + identity context — without them
+// every call returns 401 "tenant + user identity required".
+function authHeaders(): Record<string, string> {
+  const { tenantId, user } = useAuthStore.getState()
+  const h: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (tenantId) {
+    h['X-Auth-Tenant-ID'] = tenantId
+    h['X-Tenant-ID'] = tenantId
+  }
+  if (user?.id) h['X-Auth-User-ID'] = user.id
+  if (user?.id) h['X-User-ID'] = user.id
+  if (user?.role) h['X-User-Role'] = user.role
+  return h
+}
 
 // generateHash is the function urql calls to derive the SHA-256 of a
 // query document. We *don't* actually let it derive — every operation
@@ -54,8 +72,12 @@ export const graphqlClient = new Client({
     }),
     fetchExchange,
   ],
-  // Send cookies so the gateway-trust middleware sees the session.
-  fetchOptions: () => ({ credentials: 'include' }),
+  // Send cookies + the X-Auth-* identity headers the gateway requires
+  // (mirrors the axios api client's interceptor in api/client.ts).
+  fetchOptions: () => ({
+    credentials: 'include',
+    headers: authHeaders(),
+  }),
 })
 
 // runPersistedQuery is the manual fetch helper for code paths that
@@ -69,7 +91,7 @@ export async function runPersistedQuery<TVars, TData>(
   const res = await fetch(httpEndpoint, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({
       operationName: op.name,
       variables,

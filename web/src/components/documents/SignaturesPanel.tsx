@@ -57,13 +57,15 @@ export function SignaturesPanel({ documentId }: Props) {
         </Link>
       </header>
 
-      <div className="mb-3">
-        {/* Tier-1 validator runs on demand (Re-validate button).
-            We pass null as the cached report — the server doesn't
-            attach one to the document API today, so the badge
-            renders "Unsigned" until the user clicks Re-validate. */}
-        <SignatureValidityBadge documentId={documentId} tier1={null} />
-      </div>
+      {/* Hide the validity badge + Re-validate action until at least
+          one signature request has been created — re-validating a
+          document with no signature requests just produces the same
+          "Unsigned" result and confuses users (per QA feedback). */}
+      {(reqsQ.data ?? []).length > 0 && (
+        <div className="mb-3">
+          <SignatureValidityBadge documentId={documentId} tier1={null} />
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div data-testid="pending-signature-requests">

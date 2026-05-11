@@ -261,7 +261,13 @@ function DocumentHeader({
             {/* Fallback chain: display name → email → "Deleted user".
                 "Unknown" was misleading — the user record either exists
                 (use it) or has been removed (say so explicitly). */}
-            {uploaderLabel(doc)} · uploaded {formatDateTime(doc.created_at)}
+            <span
+              title={uploaderTooltip(doc)}
+              className={uploaderLabel(doc) === 'Deleted user' ? 'underline decoration-dotted underline-offset-2' : undefined}
+            >
+              {uploaderLabel(doc)}
+            </span>
+            {' · uploaded '}{formatDateTime(doc.created_at)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -768,9 +774,17 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
     <div className="space-y-3">
       {totalBoxes === 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
-          <span>This PDF was processed via the text-extraction fast path (pymupdf) — no bounding boxes were captured.</span>
+          <span>
+            Layout analysis was skipped — this PDF already had a clean text layer, so we used the fast path instead. Click <strong>Force Surya</strong> to run full layout analysis (~1&nbsp;min).
+          </span>
           {canRerun && (
-            <Button variant="outline" size="sm" onClick={() => forceSurya.mutate()} disabled={forceSurya.isPending}>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => forceSurya.mutate()}
+              disabled={forceSurya.isPending}
+              title="Re-run with the Surya engine to detect headers, tables, and bounding boxes."
+            >
               {forceSurya.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
               Force Surya
             </Button>
@@ -796,6 +810,19 @@ function uploaderLabel(doc: { created_by_name?: string; created_by_email?: strin
   if (email) return email
   if (doc.created_by) return 'Deleted user'
   return 'Unknown user'
+}
+
+// uploaderTooltip explains the "Deleted user" label so it doesn't
+// read as a bug. Other labels get a quieter tooltip with the raw
+// user id for support purposes.
+function uploaderTooltip(doc: { created_by_name?: string; created_by_email?: string; created_by?: string }): string {
+  if (uploaderLabel(doc) === 'Deleted user' && doc.created_by) {
+    return `The account that uploaded this document has been removed from this tenant. The audit log retains the original id (${doc.created_by}).`
+  }
+  if (uploaderLabel(doc) === 'Unknown user') {
+    return 'Uploader metadata is missing — the document may have been imported before user tracking was enabled.'
+  }
+  return doc.created_by ? `User id: ${doc.created_by}` : ''
 }
 
 // ActivityFeed renders the chronological event stream (versions,

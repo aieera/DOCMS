@@ -58,9 +58,17 @@ export function CompliancePanel({ documentId }: Props) {
   if (isLoading) return <div className="p-4 text-sm text-zinc-500">Loading compliance scan…</div>
   if (!data?.summary) {
     return (
-      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
-        No compliance scan yet for this document.
-        <Button size="sm" variant="ghost" className="ml-2" onClick={() => rescan.mutate()}>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+        <p className="text-zinc-600 dark:text-zinc-400">
+          No compliance scan yet for this document.
+        </p>
+        <Button
+          size="sm"
+          variant="default"
+          onClick={() => rescan.mutate()}
+          loading={rescan.isPending}
+          data-testid="compliance-run-scan"
+        >
           Run scan
         </Button>
       </div>
