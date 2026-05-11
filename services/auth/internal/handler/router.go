@@ -127,6 +127,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/invite", h.InviteUserAdmin)
 		r.Post("/{id}/suspend", h.SuspendUserAdmin)
 		r.Post("/{id}/reset-mfa", h.ResetUserMFAAdmin)
+		r.Patch("/{id}/role", h.ChangeUserRoleAdmin)
 	})
 
 	// ---- Admin groups (Wave 10) ------------------------------------------

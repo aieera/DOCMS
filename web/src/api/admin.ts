@@ -59,6 +59,10 @@ export async function resetMFA(id: string) {
   await api.post(`/admin/users/${id}/reset-mfa`)
 }
 
+export async function changeUserRole(id: string, role: string) {
+  await api.patch(`/admin/users/${id}/role`, { role })
+}
+
 export async function getAuditLog(params?: Record<string, string>) {
   // Backend path is /api/v1/audit/events (see services/audit handler).
   // The axios client already prefixes /api/v1.

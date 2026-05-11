@@ -389,6 +389,57 @@ func (s *Service) OrgSlugByID(ctx context.Context, id uuid.UUID) (string, error)
 	return org.Slug, nil
 }
 
+// ChangeUserRole sets a user's role (owner / admin / member / viewer).
+// Enforces three invariants:
+//   - role must be one of the allowed values (CHECK constraint catches
+//     stray values too, but we surface a friendlier 400 here).
+//   - actor can't change their own role (prevents an owner accidentally
+//     demoting themselves out of admin access).
+//   - the last owner can't be demoted (locks tenant out otherwise).
+// Emits dms.user.role_changed.v1 with the before/after pair.
+func (s *Service) ChangeUserRole(ctx context.Context, tenantID, actorID, userID uuid.UUID, role string) error {
+	switch role {
+	case "owner", "admin", "member", "viewer", "compliance_officer":
+	default:
+		return vdmserr.Validation("role", "must be owner / admin / member / viewer / compliance_officer")
+	}
+	if userID == actorID {
+		return vdmserr.Validation("user_id", "cannot change your own role")
+	}
+	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		u, err := s.users.GetByID(ctx, tx, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		// Refuse to demote the last owner — otherwise tenant locks out.
+		if string(u.Role) == "owner" && role != "owner" {
+			n, err := s.users.CountOwners(ctx, tx, tenantID)
+			if err != nil {
+				return err
+			}
+			if n <= 1 {
+				return vdmserr.Validation("role", "cannot demote the last remaining owner")
+			}
+		}
+		if string(u.Role) == role {
+			return nil // no-op
+		}
+		if err := s.users.SetRole(ctx, tx, tenantID, userID, role); err != nil {
+			return err
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":    userID.String(),
+			"tenant_id":  tenantID.String(),
+			"email":      u.Email,
+			"old_role":   u.Role,
+			"new_role":   role,
+			"changed_by": actorID.String(),
+		})
+		evt := database.NewOutboxEvent(tenantID, "dms.user.role_changed.v1", "user", userID, payload)
+		return s.outbox.Insert(ctx, tx, evt)
+	})
+}
+
 // SuspendUser flips the user's status to "suspended", revokes every active
 // session, and emits dms.user.suspended.v1.
 func (s *Service) SuspendUser(ctx context.Context, tenantID, actorID, userID uuid.UUID) error {

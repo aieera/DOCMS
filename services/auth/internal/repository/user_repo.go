@@ -35,6 +35,12 @@ type UserRepository interface {
 	ClearMFA(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	ConsumeRecoveryHash(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, hashToRemove string) error
 	SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.Status) error
+	// SetRole updates the user's role. The service layer enforces the
+	// "can't demote last owner" rule before calling this.
+	SetRole(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, role string) error
+	// CountOwners returns how many users still hold the owner role.
+	// Used by the change-role flow to refuse demoting the last owner.
+	CountOwners(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error)
 }
 
 type userRepo struct{}
@@ -195,6 +201,27 @@ func (r *userRepo) SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.U
 	_, err := tx.Exec(ctx, `UPDATE users SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id, string(s))
 	return mapPgError(err)
+}
+
+// SetRole updates the user's role. CHECK constraint on the users
+// table enforces the valid role enum; service layer enforces the
+// "can't demote last owner" rule.
+func (r *userRepo) SetRole(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, role string) error {
+	_, err := tx.Exec(ctx, `UPDATE users SET role = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id, role)
+	return mapPgError(err)
+}
+
+// CountOwners returns the number of active (non-deleted) users
+// holding the owner role for a tenant. Used to refuse demoting
+// the last owner.
+func (r *userRepo) CountOwners(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		WHERE tenant_id = $1 AND role = 'owner' AND deleted_at IS NULL
+	`, tenantID).Scan(&n)
+	return n, mapPgError(err)
 }
 
 const selectUserSQL = `

@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -152,6 +153,37 @@ func (h *Handler) CreateUserAdmin(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusCreated, createUserResponse{
 		User: toAdminUserDTO(u.ToPublic()),
 	})
+}
+
+// ---- PATCH /api/v1/admin/users/:id/role -----------------------------------
+
+type changeRoleBody struct {
+	Role string `json:"role"`
+}
+
+// ChangeUserRoleAdmin handles PATCH /api/v1/admin/users/{id}/role.
+// Body: { "role": "owner" | "admin" | "member" | "viewer" | "compliance_officer" }.
+func (h *Handler) ChangeUserRoleAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	userID, err := parseUserID(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	var body changeRoleBody
+	if jerr := json.NewDecoder(r.Body).Decode(&body); jerr != nil {
+		h.writeError(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	if err := h.svc.ChangeUserRole(r.Context(), tenantID, actorID, userID, body.Role); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- POST /api/v1/admin/users/:id/suspend ---------------------------------
