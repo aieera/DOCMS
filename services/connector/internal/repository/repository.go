@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -88,15 +89,31 @@ func (r *Repository) RotateSecret(ctx context.Context, tenantID, id, newSecret s
 }
 
 // GetDelivery returns a single delivery row for re-delivery.
+//
+// Schema column-name mapping (the model fields kept their original
+// Go names for back-compat with handlers, but the table uses the
+// per-000037-migration names):
+//   model.StatusCode    ← http_status
+//   model.ResponseBody  ← error_message  (closest semantic match)
+//   model.DeadLettered  ← (status = 'dead_letter')
+//   model.DeliveredAt   ← (status = 'delivered' ? last_attempt_at : NULL)
 func (r *Repository) GetDelivery(ctx context.Context, tenantID, deliveryID string) (*model.WebhookDelivery, error) {
 	d := &model.WebhookDelivery{}
+	var status string
+	var lastAttempt *time.Time
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, subscription_id, tenant_id, event_type, payload, status_code,
-		       response_body, attempts, next_retry_at, dead_lettered, created_at, delivered_at
+		SELECT id, subscription_id, tenant_id, event_type, payload,
+		       COALESCE(http_status, 0), COALESCE(error_message, ''),
+		       attempts, next_retry_at, status, created_at, last_attempt_at
 		  FROM webhook_deliveries
 		 WHERE tenant_id = $1 AND id = $2`, tenantID, deliveryID,
-	).Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload, &d.StatusCode,
-		&d.ResponseBody, &d.Attempts, &d.NextRetryAt, &d.DeadLettered, &d.CreatedAt, &d.DeliveredAt)
+	).Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload,
+		&d.StatusCode, &d.ResponseBody, &d.Attempts, &d.NextRetryAt,
+		&status, &d.CreatedAt, &lastAttempt)
+	d.DeadLettered = status == "dead_letter"
+	if status == "delivered" {
+		d.DeliveredAt = lastAttempt
+	}
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -127,31 +144,62 @@ func (r *Repository) GetActiveWebhooksForEvent(ctx context.Context, tenantID, ev
 
 // ---- Webhook Deliveries ---------------------------------------------------
 
+// statusFromModel projects the model's two bools onto the actual
+// status column. Order matters: dead-letter is terminal, delivered
+// next, then pending vs failed (failed if there's an http_status).
+func statusFromModel(d *model.WebhookDelivery) string {
+	if d.DeadLettered {
+		return "dead_letter"
+	}
+	if d.DeliveredAt != nil {
+		return "delivered"
+	}
+	if d.Attempts > 0 {
+		return "failed"
+	}
+	return "pending"
+}
+
 func (r *Repository) InsertDelivery(ctx context.Context, d *model.WebhookDelivery) error {
+	// event_id is NOT NULL in the schema. The model carries the
+	// delivery's own ID at insert time; the source event id flows
+	// through the EventType / Payload pair, so reuse the delivery
+	// id as the event id when no separate one is supplied.
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO webhook_deliveries (id, subscription_id, tenant_id, event_type, payload, status_code,
-			response_body, attempts, next_retry_at, dead_lettered, created_at, delivered_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-	`, d.ID, d.SubscriptionID, d.TenantID, d.EventType, d.Payload, d.StatusCode,
-		d.ResponseBody, d.Attempts, d.NextRetryAt, d.DeadLettered, d.CreatedAt, d.DeliveredAt)
+		INSERT INTO webhook_deliveries (
+			id, subscription_id, tenant_id, event_type, event_id, payload,
+			status, http_status, error_message, attempts, next_retry_at,
+			last_attempt_at, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,0),NULLIF($9,''),$10,$11,$12,$13)
+	`, d.ID, d.SubscriptionID, d.TenantID, d.EventType, d.ID, d.Payload,
+		statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
+		d.NextRetryAt, d.DeliveredAt, d.CreatedAt)
 	return err
 }
 
 func (r *Repository) UpdateDelivery(ctx context.Context, d *model.WebhookDelivery) error {
 	_, err := r.pool.Exec(ctx, `
-		UPDATE webhook_deliveries SET status_code=$1, response_body=$2, attempts=$3,
-			next_retry_at=$4, dead_lettered=$5, delivered_at=$6
+		UPDATE webhook_deliveries SET
+			status = $1,
+			http_status = NULLIF($2, 0),
+			error_message = NULLIF($3, ''),
+			attempts = $4,
+			next_retry_at = $5,
+			last_attempt_at = $6
 		WHERE id = $7`,
-		d.StatusCode, d.ResponseBody, d.Attempts, d.NextRetryAt, d.DeadLettered, d.DeliveredAt, d.ID)
+		statusFromModel(d), d.StatusCode, d.ResponseBody, d.Attempts,
+		d.NextRetryAt, d.DeliveredAt, d.ID)
 	return err
 }
 
 func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*model.WebhookDelivery, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, subscription_id, tenant_id, event_type, payload, status_code,
-			response_body, attempts, next_retry_at, dead_lettered, created_at, delivered_at
+		SELECT id, subscription_id, tenant_id, event_type, payload,
+		       COALESCE(http_status, 0), COALESCE(error_message, ''),
+		       attempts, next_retry_at, status, created_at, last_attempt_at
 		FROM webhook_deliveries
-		WHERE delivered_at IS NULL AND dead_lettered = false AND (next_retry_at IS NULL OR next_retry_at <= now())
+		WHERE status IN ('pending', 'failed')
+		  AND (next_retry_at IS NULL OR next_retry_at <= now())
 		ORDER BY created_at ASC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -160,9 +208,16 @@ func (r *Repository) ListPendingDeliveries(ctx context.Context, limit int) ([]*m
 	var out []*model.WebhookDelivery
 	for rows.Next() {
 		d := &model.WebhookDelivery{}
-		if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload, &d.StatusCode,
-			&d.ResponseBody, &d.Attempts, &d.NextRetryAt, &d.DeadLettered, &d.CreatedAt, &d.DeliveredAt); err != nil {
+		var status string
+		var lastAttempt *time.Time
+		if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload,
+			&d.StatusCode, &d.ResponseBody, &d.Attempts, &d.NextRetryAt,
+			&status, &d.CreatedAt, &lastAttempt); err != nil {
 			return nil, err
+		}
+		d.DeadLettered = status == "dead_letter"
+		if status == "delivered" {
+			d.DeliveredAt = lastAttempt
 		}
 		out = append(out, d)
 	}
@@ -174,8 +229,9 @@ func (r *Repository) ListDeliveries(ctx context.Context, tenantID, subID string,
 		limit = 50
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, subscription_id, tenant_id, event_type, payload, status_code,
-			response_body, attempts, next_retry_at, dead_lettered, created_at, delivered_at
+		SELECT id, subscription_id, tenant_id, event_type, payload,
+		       COALESCE(http_status, 0), COALESCE(error_message, ''),
+		       attempts, next_retry_at, status, created_at, last_attempt_at
 		FROM webhook_deliveries
 		WHERE tenant_id = $1 AND subscription_id = $2
 		ORDER BY created_at DESC LIMIT $3`, tenantID, subID, limit)
@@ -186,9 +242,16 @@ func (r *Repository) ListDeliveries(ctx context.Context, tenantID, subID string,
 	var out []*model.WebhookDelivery
 	for rows.Next() {
 		d := &model.WebhookDelivery{}
-		if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload, &d.StatusCode,
-			&d.ResponseBody, &d.Attempts, &d.NextRetryAt, &d.DeadLettered, &d.CreatedAt, &d.DeliveredAt); err != nil {
+		var status string
+		var lastAttempt *time.Time
+		if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.TenantID, &d.EventType, &d.Payload,
+			&d.StatusCode, &d.ResponseBody, &d.Attempts, &d.NextRetryAt,
+			&status, &d.CreatedAt, &lastAttempt); err != nil {
 			return nil, err
+		}
+		d.DeadLettered = status == "dead_letter"
+		if status == "delivered" {
+			d.DeliveredAt = lastAttempt
 		}
 		out = append(out, d)
 	}

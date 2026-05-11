@@ -54,10 +54,14 @@ function GroupsPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => deleteGroup(id),
-    onSuccess: () => {
+    onSuccess: (_d, id) => {
       toast.success('Group deleted')
       setSelectedId(null); setConfirmDelete(false)
-      qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
+      // Drop the deleted group's detail entry first — otherwise
+      // invalidating the parent key triggers a refetch of the now-gone
+      // group, which would 404 (used to 500 before pkg/errors fix).
+      qc.removeQueries({ queryKey: ['admin', 'groups', id] })
+      qc.invalidateQueries({ queryKey: ['admin', 'groups'], exact: true })
     },
   })
 

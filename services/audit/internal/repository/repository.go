@@ -22,15 +22,42 @@ type Repository struct{ pool *pgxpool.Pool }
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 // Insert appends one event. Caller is responsible for computing event_hash.
+//
+// The schema's resource_id column is uuid + nullable, so events that
+// don't carry a resource (login_success, mfa_reset) must pass NULL
+// rather than the empty string the event envelope serializes as.
+// Same for actor_id (uuid, nullable) once we start populating it.
+// Without this guard every event from auth fails with "invalid input
+// syntax for type uuid: \"\"" and the audit log stays empty — the
+// exact symptom QA reported as BUG-20.
+//
+// actor_type is also NOT NULL with no default; the original event
+// envelope doesn't carry it, so we derive: an actor_id present
+// implies 'user', otherwise 'system'.
 func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
+	var resourceID any
+	if e.ResourceID != "" {
+		resourceID = e.ResourceID
+	}
+	actorType := "system"
+	if e.Actor != "" {
+		actorType = "user"
+	}
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO audit_events (
-			id, tenant_id, event_hash, previous_hash, actor, actor_name,
+			id, tenant_id, event_hash, previous_hash,
+			actor, actor_id, actor_name, actor_type,
 			action, resource_type, resource_id, resource_title,
 			details, ip_address, user_agent, source_event, created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-	`, e.ID, e.TenantID, e.EventHash, e.PreviousHash, e.Actor, e.ActorName,
-		e.Action, e.ResourceType, e.ResourceID, e.ResourceTitle,
+		) VALUES (
+			$1, $2, $3, $4,
+			$5, NULLIF($5, '')::uuid, $6, $7,
+			$8, NULLIF($9, ''), $10, NULLIF($11, ''),
+			$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
+		)
+	`, e.ID, e.TenantID, e.EventHash, e.PreviousHash,
+		e.Actor, e.ActorName, actorType,
+		e.Action, e.ResourceType, resourceID, e.ResourceTitle,
 		e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
 	return err
 }

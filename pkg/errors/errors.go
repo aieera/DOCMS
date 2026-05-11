@@ -133,9 +133,18 @@ func KindOf(err error) Kind {
 // FromPgError maps a pgx / pgconn error to a domain error. Unique violation
 // becomes ErrAlreadyExists; no-rows becomes ErrNotFound; foreign-key
 // violation becomes Conflict. Other errors are wrapped as Internal.
+//
+// If err is already a domain *Error (e.g. a handler inside a tx closure
+// returned vdmserr.NotFound), it is passed through unchanged — otherwise
+// every typed not-found / validation returned from inside WithTenantTx
+// would be flattened to a 500.
 func FromPgError(err error) error {
 	if err == nil {
 		return nil
+	}
+	var domain *Error
+	if errors.As(err, &domain) {
+		return err
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Wrap(ErrNotFound, err)

@@ -105,11 +105,16 @@ function TenantAIPage() {
   const showExportControlWarning = !US_PROVIDERS.has(draft.provider) && draft.provider !== 'custom'
 
   const handleSave = () => {
+    // base_url contract: empty string clears (overwrites DB); undefined
+    // preserves. The earlier `|| undefined` made clearing impossible —
+    // a blank field was sent as undefined and the backend kept the old
+    // value, which is how a stale email-shaped paste (BUG-01) stayed
+    // pinned even after the user wiped the input.
     const patch: TenantLLMConfigPatch = {
       provider: draft.provider,
       model: draft.model,
       fallback_model: draft.fallback_model,
-      base_url: draft.base_url || undefined,
+      base_url: draft.base_url ?? '',
       rate_limit_rpm: Number(draft.rate_limit_rpm),
       daily_budget_usd: Number(draft.daily_budget_usd),
       air_gapped: draft.air_gapped,
