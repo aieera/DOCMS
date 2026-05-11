@@ -1,7 +1,7 @@
 // Package handler exposes the public GraphQL endpoint.
 //
 // Two surfaces:
-//   POST /graphql           — main entry. Body is one of:
+//   POST /api/v1/graphql    — main entry. Body is one of:
 //       { "id": "<sha256>", "variables": {...}, "operationName": "..." }
 //       { "query": "...", "variables": {...}, "operationName": "..." }   (dev only)
 //   GET  /healthz           — liveness; returns 200 and the loaded
@@ -32,7 +32,9 @@ type Config struct {
 	NewLoaders func() *loader.Loaders
 }
 
-// New returns an http.Handler for GET /healthz + POST /graphql.
+// New returns an http.Handler for GET /healthz + POST /api/v1/graphql.
+// The /api/v1 prefix matches every other backend service in the repo
+// so the Vite proxy + Kong gateway forward unchanged paths.
 func New(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -41,7 +43,7 @@ func New(cfg Config) http.Handler {
 			"persisted_count": cfg.Persisted.Size(),
 		})
 	})
-	mux.HandleFunc("POST /graphql", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/v1/graphql", func(w http.ResponseWriter, r *http.Request) {
 		// Recover from any resolver / executor panic so the client
 		// receives a structured 500 + the message instead of the
 		// stdlib's stack-trace-as-text default. Logs the recovered
