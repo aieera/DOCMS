@@ -192,6 +192,14 @@ function TenantAIPage() {
             value={draft.base_url ?? ''}
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value || null })}
             placeholder="https://your-vllm.local/v1"
+            type="url"
+            error={
+              draft.base_url && !/^https?:\/\//.test(draft.base_url)
+                ? 'Must start with http:// or https://'
+                : draft.base_url && /^[^/\s]+@[^/\s]+$/.test(draft.base_url)
+                  ? 'Looks like an email — expected a URL'
+                  : undefined
+            }
             className="mt-3"
           />
         </Section>

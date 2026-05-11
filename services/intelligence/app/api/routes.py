@@ -839,6 +839,18 @@ async def put_tenant_llm_config_endpoint(
         raise HTTPException(400, "rate_limit_rpm must be >= 0")
     if body.daily_budget_usd is not None and body.daily_budget_usd < 0:
         raise HTTPException(400, "daily_budget_usd must be >= 0")
+    # base_url must look like a URL — without this guard a typo (an
+    # email, an API key paste in the wrong field, free text) lands in
+    # the DB and surfaces on the next page load as corrupted config.
+    # Empty string clears the field; None preserves the existing value.
+    if body.base_url not in (None, ""):
+        bu = body.base_url.strip()
+        if not (bu.startswith("http://") or bu.startswith("https://")):
+            raise HTTPException(400, "base_url must start with http:// or https://")
+        # Reject obvious non-URL strings (containing '@' but no path
+        # — looks like an email address).
+        if "@" in bu and "/" not in bu.split("://", 1)[1]:
+            raise HTTPException(400, "base_url looks like an email; expected an http(s) URL")
 
     from app import tenant_llm_config_repo
     try:

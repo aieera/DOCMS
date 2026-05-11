@@ -94,6 +94,13 @@ var DefaultStreams = []StreamSpec{
 	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},
 	// §17.3 / D10 — annotation CRUD fan-out to collaboration WS.
 	{Name: "ANNOTATION_EVENTS", Subjects: []string{"dms.annotation.>"}},
+	// ADR 0066 — threaded comments + reactions. Without binding, every
+	// commented-on document blocked its tenant's outbox publisher in an
+	// infinite "no response from stream" retry loop — and because the
+	// publisher halts the batch on first failure, downstream events
+	// (login, audit, notification) silently failed to land. Surfaced as
+	// "BUG-20 audit log empty" in QA.
+	{Name: "COLLAB_EVENTS", Subjects: []string{"dms.comment.>", "dms.thread.>"}},
 	// Retained alongside the new topology for back-compat with events
 	// that still use these prefixes (e.g. dms.sharelink.*, dms.folder.*,
 	// dms.intelligence.*). Remove once every emitter is migrated.
