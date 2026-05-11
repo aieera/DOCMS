@@ -92,8 +92,13 @@ function ResidencyPage() {
             onChange={(e) => setTgt(e.target.value)}
           />
           <Button
-            onClick={() => submit.mutate()}
-            disabled={!src || !tgt || src === tgt || submit.isPending}
+            onClick={() => {
+              if (!src.trim()) { toast.error('Source region is required'); return }
+              if (!tgt.trim()) { toast.error('Target region is required'); return }
+              if (src.trim() === tgt.trim()) { toast.error('Source and target regions must differ'); return }
+              submit.mutate()
+            }}
+            disabled={submit.isPending}
           >
             Migrate
           </Button>

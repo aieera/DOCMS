@@ -127,7 +127,16 @@ function ReleaseHoldDialog({
       description="Releasing a hold lifts the deletion / disposition / redaction block on every attached document. The reason and approver are recorded in the audit log."
     >
       <form
-        onSubmit={(e) => { e.preventDefault(); if (reason.trim() && approver.trim()) onConfirm(reason.trim(), approver.trim()) }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!reason.trim()) { toast.error('Release reason is required'); return }
+          if (!approver.trim()) { toast.error('Approver UUID is required'); return }
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(approver.trim())) {
+            toast.error('Approver UUID must be a valid UUID')
+            return
+          }
+          onConfirm(reason.trim(), approver.trim())
+        }}
         className="space-y-4"
       >
         <Textarea
@@ -147,7 +156,7 @@ function ReleaseHoldDialog({
         />
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
-          <Button type="submit" variant="destructive" loading={loading} disabled={!reason.trim() || !approver.trim()}>
+          <Button type="submit" variant="destructive" loading={loading} disabled={loading}>
             Release hold
           </Button>
         </div>

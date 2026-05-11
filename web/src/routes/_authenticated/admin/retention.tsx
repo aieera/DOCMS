@@ -166,7 +166,15 @@ function RetentionPage() {
             <Button variant="ghost" onClick={() => { setShowForm(false); setForm(EMPTY); setTagInput('') }} disabled={create.isPending}>
               Cancel
             </Button>
-            <Button onClick={() => create.mutate()} disabled={!form.name || form.retain_days <= 0} loading={create.isPending}>
+            <Button
+              onClick={() => {
+                if (!form.name?.trim()) { toast.error('Policy name is required'); return }
+                if (form.retain_days <= 0) { toast.error('Retain days must be 1 or more'); return }
+                create.mutate()
+              }}
+              disabled={create.isPending}
+              loading={create.isPending}
+            >
               Create policy
             </Button>
           </div>

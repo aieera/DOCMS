@@ -92,7 +92,14 @@ function TagsPage() {
               ))}
             </div>
           </div>
-          <Button onClick={() => create.mutate()} disabled={!name.trim()} loading={create.isPending}>
+          <Button
+            onClick={() => {
+              if (!name.trim()) { toast.error('Tag name is required'); return }
+              create.mutate()
+            }}
+            disabled={create.isPending}
+            loading={create.isPending}
+          >
             Create tag
           </Button>
         </div>

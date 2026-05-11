@@ -78,11 +78,24 @@ function UsersPage() {
   const emailOk = EMAIL_RE.test(email.trim())
   const passwordOk = password.length >= 12 && password.length <= 128
   const busy = invite.isPending || create.isPending
-  const canSubmit = !busy && emailOk && (mode === 'invite' || passwordOk)
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canSubmit) return
+    if (busy) return
+    // Surface why submission is blocked instead of silently failing
+    // — empty + invalid email both used to render as a no-op click.
+    if (email.trim() === '') {
+      toast.error('Email is required')
+      return
+    }
+    if (!emailOk) {
+      toast.error('Enter a valid email address')
+      return
+    }
+    if (mode === 'direct' && !passwordOk) {
+      toast.error('Password must be 12–128 characters')
+      return
+    }
     if (mode === 'invite') invite.mutate()
     else create.mutate()
   }
@@ -133,6 +146,13 @@ function UsersPage() {
                 required
                 autoFocus
                 autoComplete="email"
+                error={
+                  email.trim() === ''
+                    ? undefined
+                    : !emailOk
+                      ? 'Enter a valid email address'
+                      : undefined
+                }
               />
               <Input
                 label="Display name (optional)"
@@ -151,13 +171,22 @@ function UsersPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="new-password"
+                  error={
+                    password === ''
+                      ? undefined
+                      : password.length < 12
+                        ? 'Must be at least 12 characters'
+                        : password.length > 128
+                          ? 'Must be 128 characters or fewer'
+                          : undefined
+                  }
                 />
               )}
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={!canSubmit} loading={busy}>
+                <Button type="submit" disabled={busy} loading={busy}>
                   {mode === 'invite' ? 'Send invitation' : 'Create user'}
                 </Button>
               </DialogFooter>

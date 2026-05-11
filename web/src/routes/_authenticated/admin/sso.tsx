@@ -257,7 +257,12 @@ function Wizard({ onDone }: { onDone: () => void }) {
               ))}
             </div>
           </Field>
-          <Button onClick={() => setStep('configure')} disabled={!displayName}>
+          <Button
+            onClick={() => {
+              if (!displayName.trim()) { toast.error('Connection name is required'); return }
+              setStep('configure')
+            }}
+          >
             Continue
           </Button>
         </div>

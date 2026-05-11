@@ -141,7 +141,16 @@ function WebhooksPage() {
           </div>
         </div>
         <div className="flex justify-end">
-          <Button onClick={() => create.mutate()} disabled={!url || events.length === 0} loading={create.isPending}>
+          <Button
+            onClick={() => {
+              if (!url?.trim()) { toast.error('URL is required'); return }
+              if (!/^https?:\/\//.test(url.trim())) { toast.error('URL must start with http:// or https://'); return }
+              if (events.length === 0) { toast.error('Select at least one event'); return }
+              create.mutate()
+            }}
+            disabled={create.isPending}
+            loading={create.isPending}
+          >
             Create webhook
           </Button>
         </div>

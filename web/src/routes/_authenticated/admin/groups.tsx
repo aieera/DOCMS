@@ -284,14 +284,18 @@ function CreateGroupForm({
         <Plus className="h-4 w-4" /> New group
       </h3>
       <form
-        onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSubmit() }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!name.trim()) { toast.error('Group name is required'); return }
+          onSubmit()
+        }}
         className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]"
       >
         <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
         <Input placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancel</Button>
-          <Button type="submit" loading={isPending} disabled={!name.trim()}>Create</Button>
+          <Button type="submit" loading={isPending} disabled={isPending}>Create</Button>
         </div>
       </form>
     </Card>

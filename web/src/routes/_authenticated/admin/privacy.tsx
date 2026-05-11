@@ -84,8 +84,13 @@ function PrivacyPage() {
             onChange={(e) => setToken(e.target.value)}
           />
           <Button
-            onClick={() => submit.mutate()}
-            disabled={!email || submit.isPending || (type === 'erase' && !token)}
+            onClick={() => {
+              if (!email.trim()) { toast.error('Subject email is required'); return }
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.error('Enter a valid email address'); return }
+              if (type === 'erase' && !token.trim()) { toast.error('Verification token is required for erase requests'); return }
+              submit.mutate()
+            }}
+            disabled={submit.isPending}
           >
             Submit
           </Button>
