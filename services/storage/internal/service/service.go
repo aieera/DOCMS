@@ -525,14 +525,32 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			blob.DEKNonce = envResult.Nonce
 			blob.KEKID = envResult.KEKID
 		}
-		if err := s.repos.ContentBlobs.Insert(ctx, tx, blob); err != nil {
+		// Insert inside a SAVEPOINT (pgx tx.Begin creates a nested
+		// pseudo-tx) so a duplicate-key violation doesn't abort the
+		// outer transaction. Without the savepoint, the failing INSERT
+		// leaves the outer tx in state 25P02 and every follow-up
+		// query (GetByHash, IncrementRefCount, emit, …) errors out —
+		// which is exactly the upload-complete-500 we hit in dev when
+		// re-uploading a previously-seen file.
+		insertErr := func() error {
+			inner, err := tx.Begin(ctx)
+			if err != nil {
+				return err
+			}
+			if err := s.repos.ContentBlobs.Insert(ctx, inner, blob); err != nil {
+				_ = inner.Rollback(ctx)
+				return err
+			}
+			return inner.Commit(ctx)
+		}()
+		if insertErr != nil {
 			// Late-detected dedup: same content already exists. Happens
 			// when the client didn't compute SHA-256 up front (so the
 			// initiate-time dedup check missed) and uploaded a file
 			// with bytes that match an existing blob. Treat as a dedup
 			// hit instead of failing — bump ref count, reuse the
 			// existing blob, surface its ID via the same return path.
-			if isIdempotentDupe(err) {
+			if isIdempotentDupe(insertErr) {
 				existing, lookupErr := s.repos.ContentBlobs.GetByHash(ctx, tx, session.TenantID, session.StorageRegion, actualSHA)
 				if lookupErr != nil {
 					return lookupErr
@@ -547,7 +565,7 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 				blob = existing
 				blobID = existing.ID
 			} else {
-				return err
+				return insertErr
 			}
 		}
 		if err := s.repos.Uploads.Complete(ctx, tx, session.TenantID, session.ID, s.now().UTC()); err != nil {
