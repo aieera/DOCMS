@@ -22,6 +22,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/health"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
 	"github.com/vaultdms/vaultdms/services/connector/internal/handler"
 	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
 	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
@@ -68,10 +69,32 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("event fanout")
 	}
 
-	// Start webhook delivery worker.
+	// Start webhook delivery worker. The kicker hookup is what lets
+	// test-send / redeliver hit the wire within sub-second instead
+	// of waiting for the next 5 s poll tick.
 	deliveryWorker := webhook.NewDeliveryWorker(repo, *log.Z())
+	svc.SetWorkerKicker(deliveryWorker.Kick)
 	go deliveryWorker.Start(ctx)
 	defer deliveryWorker.Stop()
+
+	// ADR 0077 — per-tenant event streaming. The operator seed signs
+	// the per-tenant account JWTs handed back at token-issuance time;
+	// empty means dev mode (ephemeral operator, JWTs minted but the
+	// dev NATS server doesn't verify them — same shape as the
+	// VAULTDMS_LOCAL_KEK convention).
+	esSvc, err := eventstream.New(eventstream.Config{
+		Pool:         pool,
+		JS:           js,
+		Logger:       *log.Z(),
+		OperatorSeed: os.Getenv("VAULTDMS_NATS_OPERATOR_SEED"),
+	})
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("eventstream init")
+	}
+	if err := esSvc.StartMirror(ctx); err != nil {
+		log.Fatal(ctx).Err(err).Msg("eventstream mirror")
+	}
+	esHandler := handler.NewEventStreamHandler(esSvc)
 
 	// MCP server.
 	mcpSrv := mcp.NewServer(*log.Z())
@@ -107,6 +130,7 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, mcpSrv, *log.Z())
 	h.Register(mux)
+	esHandler.Register(mux)
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
