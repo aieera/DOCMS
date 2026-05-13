@@ -663,6 +663,12 @@ services:
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
+    # ADR 0088 — watched-folder intake. Admin configures per-tenant
+    # subdirs under /data/intake; in prod this would be an SMB / NFS
+    # PVC mounted in. In dev we use a named volume so files persist
+    # across container rebuilds.
+    volumes:
+      - intake_data:/data/intake
 
   # ADR 0074 — GraphQL read gateway. HTTP-only public surface; talks
   # gRPC to document/workflow/collaboration/policy/audit upstream.
@@ -690,3 +696,4 @@ volumes:
   qdrantdata:
   clamdata:
   slapddata:
+  intake_data:

@@ -25,6 +25,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/connector/internal/email"
 	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
 	"github.com/vaultdms/vaultdms/services/connector/internal/handler"
+	"github.com/vaultdms/vaultdms/services/connector/internal/intake"
 	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
 	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
@@ -111,6 +112,15 @@ func main() {
 	go emailSvc.Start(ctx)
 	emailHandler := handler.NewEmailHandler(emailSvc)
 
+	// ADR 0088 — watched-folder intake. Reuses the email module's
+	// DocumentClient (same connector→document REST hook). The
+	// supervisor reconciles every 60s; per-folder fsnotify watcher
+	// runs in a goroutine, with a 30s poll fallback when fsnotify
+	// is unavailable (rare; mostly tmpfs / NFS edge cases).
+	intakeSvc := intake.New(pool, emailDocs, *log.Z())
+	go intakeSvc.Start(ctx)
+	intakeHandler := handler.NewIntakeHandler(intakeSvc)
+
 	// MCP server.
 	mcpSrv := mcp.NewServer(*log.Z())
 
@@ -147,6 +157,7 @@ func main() {
 	h.Register(mux)
 	esHandler.Register(mux)
 	emailHandler.Register(mux)
+	intakeHandler.Register(mux)
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

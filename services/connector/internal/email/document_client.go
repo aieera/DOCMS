@@ -65,6 +65,47 @@ type CreateDocumentResp struct {
 	DocumentID string `json:"id"`
 }
 
+// MaterialiseFile is the generic single-file create path: caller hands
+// us a workspace+folder, a filename, content-type, bytes, and arbitrary
+// custom metadata; we create one document row (no version-blob upload
+// yet — same §12.5c-deferred caveat as MaterialiseEmail). Used by the
+// §12.4 intake worker for watched-folder ingestion.
+func (c *DocumentClient) MaterialiseFile(
+	ctx context.Context,
+	tenantID, actorID string,
+	workspaceID, folderID string,
+	filename, contentType string,
+	bytes []byte,
+	customMetadata map[string]any,
+) (string, []string, error) {
+	if workspaceID == "" || folderID == "" {
+		return "", nil, fmt.Errorf("target workspace + folder required")
+	}
+	if customMetadata == nil {
+		customMetadata = map[string]any{}
+	}
+	customMetadata["intake.filename"] = filename
+	customMetadata["intake.content_type"] = contentType
+	customMetadata["intake.size_bytes"] = len(bytes)
+	resp, err := c.createDocument(ctx, tenantID, actorID, CreateDocumentInput{
+		WorkspaceID:    workspaceID,
+		FolderID:       folderID,
+		Title:          filename,
+		CustomMetadata: customMetadata,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	// NOTE on version-blob upload: see the comment in MaterialiseEmail.
+	// Wave 12.5c lands the storage presigned-PUT + commit path so the
+	// version row fires dms.version.uploaded.v1, which is what triggers
+	// the OCR + classify pipelines. Today the document row exists but
+	// has no version, so OCR doesn't run. The intake ADR acknowledges
+	// this is the same gap.
+	_ = bytes
+	return resp.DocumentID, nil, nil
+}
+
 // MaterialiseEmail turns one envelope into a parent document (body) plus
 // one child document per attachment. Caller passes tenant + actor IDs
 // + the target folder. Returns the body's document_id and the list of
