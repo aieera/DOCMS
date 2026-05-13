@@ -28,8 +28,17 @@ func TestState_RoundTrip(t *testing.T) {
 func TestState_TamperDetected(t *testing.T) {
 	secret, _ := tsp.NewStateSecret()
 	state := tsp.SignState("sess-1", secret)
-	// flip one byte after the dot
-	tampered := state[:len(state)-1] + "0"
+	// Tamper the last hex char with one we KNOW differs. Blindly
+	// substituting "0" was a 1-in-16 flake — if the HMAC happened
+	// to end in "0", the tamper was a no-op and the test failed
+	// spuriously. Pick "0" unless the original is already "0",
+	// then pick "1".
+	last := state[len(state)-1]
+	repl := byte('0')
+	if last == '0' {
+		repl = '1'
+	}
+	tampered := state[:len(state)-1] + string(repl)
 	if _, ok := tsp.VerifyState(tampered, secret); ok {
 		t.Fatal("expected tampered state to fail HMAC")
 	}

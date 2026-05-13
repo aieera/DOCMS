@@ -250,7 +250,7 @@ func (h *WOPIHandler) checkFileInfo(w http.ResponseWriter, r *http.Request) {
 		SupportsExtendedLockLength: true,
 		BreadcrumbDocName:          doc.BaseFileName,
 	}
-	h.maybeStartSession(c)
+	h.maybeStartSession(r.Context(), c)
 	writeJSONStatus(w, http.StatusOK, out)
 }
 
@@ -340,7 +340,7 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 		http.Error(w, "locked", http.StatusConflict)
 		return
 	}
-	h.maybeStartSession(c)
+	h.maybeStartSession(r.Context(), c)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -369,7 +369,7 @@ func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClai
 		http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.endSession(c)
+	h.endSession(r.Context(), c)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -577,11 +577,11 @@ func wopiSessionKey(c *WOPIClaims) string {
 // time we see a (user, file) pair within the 1h sliding window. The
 // window key carries the start timestamp; endSession reads it back
 // to compute duration.
-func (h *WOPIHandler) maybeStartSession(c *WOPIClaims) {
+func (h *WOPIHandler) maybeStartSession(parent context.Context, c *WOPIClaims) {
 	if h.rdb == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	startedAt := strconv.FormatInt(time.Now().Unix(), 10)
 	ok, _ := h.rdb.SetNX(ctx, wopiSessionKey(c), startedAt, time.Hour).Result()
@@ -590,11 +590,11 @@ func (h *WOPIHandler) maybeStartSession(c *WOPIClaims) {
 	}
 }
 
-func (h *WOPIHandler) endSession(c *WOPIClaims) {
+func (h *WOPIHandler) endSession(parent context.Context, c *WOPIClaims) {
 	if h.rdb == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	startStr, err := h.rdb.Get(ctx, wopiSessionKey(c)).Result()
 	if err != nil {

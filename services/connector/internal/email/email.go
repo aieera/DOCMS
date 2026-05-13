@@ -293,12 +293,13 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 						cfg.TenantID, msgID, bodyDocID, attachIDs)
 				}
 			}
-			// Also fan out a NATS event for any other interested
-			// consumer (Wave 12.5b will add an alternative async path).
-			if s.nc != nil {
-				payload := emailIngestedPayload(cfg, env, msgID)
-				_ = s.nc.Publish("dms.email.ingested.v1", payload)
-			}
+			// Async fan-out for any other interested consumer is staged
+			// for §12.5c via the existing outbox (insert
+			// dms.email.ingested.v1 into the outbox table inside this
+			// same tx so the standard publisher picks it up). Removing
+			// the direct s.nc.Publish call here — it bypassed the
+			// outbox-only invariant (§4.7) and dropped events on a
+			// crash between INSERT commit and Publish.
 			ingested++
 		}
 		return nil

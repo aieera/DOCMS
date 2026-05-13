@@ -155,6 +155,10 @@ services:
           - name: rate-limiting
             config: { minute: 100, hour: 5000, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: saved-searches, paths: [/api/v1/saved-searches], strip_path: false }
+      # ADR 0083 — admin permission-propagation SLI dashboard.
+      - { name: admin-permission-propagation-stats, paths: [/api/v1/admin/permission-propagation-stats], methods: [GET], strip_path: false }
+      # ADR 0069 — platform-admin federated (cross-tenant) search.
+      - { name: platform-search, paths: [/api/v1/platform/search], strip_path: false }
 
   - name: audit
     url: http://audit:8081

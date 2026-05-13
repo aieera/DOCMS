@@ -113,6 +113,15 @@ func TestPhaseC5_NoDirectNATSPublish(t *testing.T) {
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "*") {
 			return false
 		}
+		// ADR 0077 — the per-tenant eventstream mirror forwards
+		// JetStream→JetStream (`dms.*` → `tenant.{id}.events.*`). There
+		// is no DB commit in between, so the outbox isn't applicable;
+		// upstream Nak on publish-failure gives the same at-least-once
+		// guarantee. Whitelist the package the same way pkg/database
+		// is whitelisted upstream by living outside services/.
+		if strings.Contains(filepath.ToSlash(path), "/internal/eventstream/") {
+			return false
+		}
 		return true
 	})
 	if len(hits) > 0 {
