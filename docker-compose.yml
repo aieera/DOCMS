@@ -46,6 +46,14 @@ x-go-env: &go-env
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
   VAULTDMS_LOCAL_KEK:    "${VAULTDMS_LOCAL_KEK:-}"
+  # ADR 0071 — without a real DocuSign / Adobe Sign client_id wired
+  # in dev, the signature service refuses every esign/oauth/start
+  # call with "esign not configured." Default to mock mode so the
+  # FE can demo the flow end-to-end against the in-memory
+  # ProviderMock. Prod deploys override this to false and provide
+  # the real VAULTDMS_ESIGN_DOCUSIGN_* / VAULTDMS_ESIGN_ADOBE_SIGN_*
+  # env vars via Helm.
+  VAULTDMS_ESIGN_MOCK_OK: "${VAULTDMS_ESIGN_MOCK_OK:-true}"
 
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }

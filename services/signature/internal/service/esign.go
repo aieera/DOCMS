@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,16 +65,35 @@ func (s *Service) AddESign(cfg ESignConfig) {
 
 // StartOAuth returns the URL to redirect the admin's browser to.
 // The state binds the redirect to the requesting tenant.
+//
+// Mock-mode fallback: when MockOK is on and the requested provider has
+// no real OAuth config (dev / CI / Playwright), route through the mock
+// adapter so the FE can demo the connect-flow against the in-memory
+// ProviderMock without DocuSign / Adobe Sign credentials. Production
+// deploys always supply the real OAuth config and never hit this path.
 func (s *Service) StartOAuth(_ context.Context, tenantID string, provider esign.Provider) (string, error) {
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
 	}
-	cfg, ok := s.esign.OAuthByProvider[provider]
-	if !ok {
-		return "", fmt.Errorf("esign: unsupported provider %q", provider)
+	if cfg, ok := s.esign.OAuthByProvider[provider]; ok {
+		url, _, err := cfg.AuthorizeURLBuilder(tenantID)
+		return url, err
 	}
-	url, _, err := cfg.AuthorizeURLBuilder(tenantID)
-	return url, err
+	if s.esign.MockOK {
+		// Mock returns a self-callback URL the FE can follow; the
+		// callback handler recognises the mock state + completes
+		// without a real token exchange.
+		return mockAuthorizeURL(tenantID, provider), nil
+	}
+	return "", fmt.Errorf("esign: unsupported provider %q", provider)
+}
+
+// mockAuthorizeURL builds a URL into our own /oauth/callback so the
+// browser round-trips through our service and we can fake out the
+// token-exchange step. Only used in mock mode.
+func mockAuthorizeURL(tenantID string, provider esign.Provider) string {
+	return fmt.Sprintf("/api/v1/signatures/esign/oauth/callback?provider=%s&code=mock-code&state=mock.%s",
+		provider, tenantID)
 }
 
 // HandleOAuthCallback exchanges the auth code for tokens, persists
@@ -82,6 +102,14 @@ func (s *Service) StartOAuth(_ context.Context, tenantID string, provider esign.
 func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provider, code, state, userID string) (string, error) {
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
+	}
+	// Mock-mode shortcut: a state of "mock.<tenant_uuid>" coming back
+	// from mockAuthorizeURL is recognised and short-circuits the
+	// vendor round-trip. Persist a placeholder ESignToken so the
+	// admin's Connections list shows "connected to docusign (mock)".
+	if s.esign.MockOK && strings.HasPrefix(state, "mock.") {
+		tenantID := strings.TrimPrefix(state, "mock.")
+		return s.recordMockConnection(ctx, tenantID, provider, userID)
 	}
 	cfg, ok := s.esign.OAuthByProvider[provider]
 	if !ok {
@@ -115,6 +143,39 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 		return "", err
 	}
 	return "/admin/integrations?connected=" + string(provider), nil
+}
+
+// recordMockConnection persists a placeholder ESignToken row so the
+// admin Connections list looks "connected" in dev. Tokens are sealed
+// with the real SealingKey so a future code path that tries to
+// decrypt them doesn't crash; the underlying values are just the
+// literal strings "mock-access" / "mock-refresh".
+func (s *Service) recordMockConnection(ctx context.Context, tenantID string, provider esign.Provider, userID string) (string, error) {
+	access, err := esign.SealString([]byte("mock-access"), s.esign.SealingKey)
+	if err != nil {
+		return "", err
+	}
+	refresh, err := esign.SealString([]byte("mock-refresh"), s.esign.SealingKey)
+	if err != nil {
+		return "", err
+	}
+	row := &repository.ESignToken{
+		TenantID:    tenantID,
+		Provider:    string(provider),
+		AccessToken: access,
+		RefreshToken: refresh,
+		ExpiresAt:   time.Now().Add(24 * time.Hour).UTC(),
+		AccountID:   "mock-account",
+		BaseURI:     "https://mock." + string(provider) + ".invalid",
+		Scope:       "mock",
+		ConnectedBy: userID,
+		ConnectedAt: time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := s.repo.UpsertESignToken(ctx, row); err != nil {
+		return "", err
+	}
+	return "/admin/integrations?connected=" + string(provider) + "&mock=1", nil
 }
 
 // ListConnections returns sanitized status (no tokens) for the

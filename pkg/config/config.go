@@ -229,6 +229,25 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("internal_api_key", "VAULTDMS_INTERNAL_API_KEY")
 	_ = v.BindEnv("s3_public_base", "VAULTDMS_S3_PUBLIC_BASE")
 
+	// ADR 0071 — eSign connector envs. AutomaticEnv() only reads keys
+	// viper already knows about; without these explicit binds the
+	// signature service can't see VAULTDMS_ESIGN_MOCK_OK and refuses
+	// every esign/oauth/start request with "esign not configured."
+	// Real-provider creds get the same treatment so a Helm-supplied
+	// VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID lands too.
+	_ = v.BindEnv("esign_mock_ok", "VAULTDMS_ESIGN_MOCK_OK")
+	_ = v.BindEnv("esign_state_hmac", "VAULTDMS_ESIGN_STATE_HMAC")
+	_ = v.BindEnv("esign_docusign_client_id", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID")
+	_ = v.BindEnv("esign_docusign_client_secret", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET")
+	_ = v.BindEnv("esign_docusign_authorize_url", "VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL")
+	_ = v.BindEnv("esign_docusign_token_url", "VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL")
+	_ = v.BindEnv("esign_docusign_redirect_uri", "VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI")
+	_ = v.BindEnv("esign_adobe_sign_client_id", "VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID")
+	_ = v.BindEnv("esign_adobe_sign_client_secret", "VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET")
+	_ = v.BindEnv("esign_adobe_sign_authorize_url", "VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL")
+	_ = v.BindEnv("esign_adobe_sign_token_url", "VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL")
+	_ = v.BindEnv("esign_adobe_sign_redirect_uri", "VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI")
+
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config file: %w", err)
