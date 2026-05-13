@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import {
   Activity, AlertTriangle, Antenna, Archive, Brain, ChevronRight, CreditCard, FileJson, FileSearch,
-  Globe, Key, KeyRound, Languages, Link2, MapPinned, Network, PenTool, Plug, Scale,
+  Globe, Key, KeyRound, Languages, Link2, Mail, MapPinned, Network, PenTool, Plug, Scale,
   ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
   Upload, UserCog, Users, Webhook, Workflow,
   type LucideIcon,
@@ -40,6 +40,7 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/audit-log', icon: ScrollText, label: 'Audit log', desc: 'Activity history' },
     { to: '/admin/webhooks', icon: Webhook, label: 'Webhooks', desc: 'Event subscriptions' },
     { to: '/admin/integrations/events', icon: Antenna, label: 'Event streaming', desc: 'NATS + polling stream of tenant events (ADR 0077)' },
+    { to: '/admin/integrations/email', icon: Mail, label: 'Email ingestion', desc: 'Microsoft / Gmail / IMAP → documents (ADR 0087)' },
     { to: '/admin/tags', icon: Tag, label: 'Tags', desc: 'Tenant tag catalog' },
     { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
     { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },

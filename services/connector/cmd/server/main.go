@@ -22,6 +22,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/health"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/vaultdms/vaultdms/services/connector/internal/email"
 	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
 	"github.com/vaultdms/vaultdms/services/connector/internal/handler"
 	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
@@ -96,6 +97,19 @@ func main() {
 	}
 	esHandler := handler.NewEventStreamHandler(esSvc)
 
+	// ADR 0087 — email ingestion. Pollers run with nil backends in the
+	// default config (no real Graph/Gmail/IMAP credentials wired into
+	// the worker yet); the worker still records runs + makes the admin
+	// UI work end-to-end. Backends are injected when the connector
+	// service grows real credential plumbing (Wave 12.5b).
+	emailSvc := email.New(pool, nc, []email.Poller{
+		&email.MicrosoftPoller{},
+		&email.GmailPoller{},
+		&email.IMAPPoller{},
+	}, *log.Z())
+	go emailSvc.Start(ctx)
+	emailHandler := handler.NewEmailHandler(emailSvc)
+
 	// MCP server.
 	mcpSrv := mcp.NewServer(*log.Z())
 
@@ -131,6 +145,7 @@ func main() {
 	h := handler.New(svc, mcpSrv, *log.Z())
 	h.Register(mux)
 	esHandler.Register(mux)
+	emailHandler.Register(mux)
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

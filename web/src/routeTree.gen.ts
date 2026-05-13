@@ -69,6 +69,8 @@ import { Route as AuthenticatedAdminIntelligenceComplianceConfigRouteImport } fr
 import { Route as AuthenticatedAdminIntelligenceComplianceRouteImport } from './routes/_authenticated/admin/intelligence/compliance'
 import { Route as AuthenticatedAdminIntelligenceAutoTagRouteImport } from './routes/_authenticated/admin/intelligence/auto-tag'
 import { Route as AuthenticatedAdminIntelligenceAnomaliesRouteImport } from './routes/_authenticated/admin/intelligence/anomalies'
+import { Route as AuthenticatedAdminIntegrationsEventsRouteImport } from './routes/_authenticated/admin/integrations/events'
+import { Route as AuthenticatedAdminIntegrationsEmailRouteImport } from './routes/_authenticated/admin/integrations/email'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 import { Route as AuthenticatedSettingsSecurityMfaRecoveryRouteImport } from './routes/_authenticated/settings/security/mfa.recovery'
 import { Route as AuthenticatedAdminTenantIdentityLdapRouteImport } from './routes/_authenticated/admin/tenant/identity/ldap'
@@ -415,6 +417,18 @@ const AuthenticatedAdminIntelligenceAnomaliesRoute =
     path: '/admin/intelligence/anomalies',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntegrationsEventsRoute =
+  AuthenticatedAdminIntegrationsEventsRouteImport.update({
+    id: '/events',
+    path: '/events',
+    getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
+  } as any)
+const AuthenticatedAdminIntegrationsEmailRoute =
+  AuthenticatedAdminIntegrationsEmailRouteImport.update({
+    id: '/email',
+    path: '/email',
+    getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -454,7 +468,7 @@ export interface FileRoutesByFullPath {
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -475,6 +489,8 @@ export interface FileRoutesByFullPath {
   '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
+  '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -518,7 +534,7 @@ export interface FileRoutesByTo {
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -539,6 +555,8 @@ export interface FileRoutesByTo {
   '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
+  '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
+  '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -584,7 +602,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
-  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
+  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/_authenticated/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -605,6 +623,8 @@ export interface FileRoutesById {
   '/_authenticated/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
+  '/_authenticated/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
+  '/_authenticated/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
   '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/_authenticated/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/_authenticated/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -671,6 +691,8 @@ export interface FileRouteTypes {
     | '/workflows/designer'
     | '/admin/'
     | '/workspaces/'
+    | '/admin/integrations/email'
+    | '/admin/integrations/events'
     | '/admin/intelligence/anomalies'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
@@ -735,6 +757,8 @@ export interface FileRouteTypes {
     | '/workflows/designer'
     | '/admin'
     | '/workspaces'
+    | '/admin/integrations/email'
+    | '/admin/integrations/events'
     | '/admin/intelligence/anomalies'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
@@ -800,6 +824,8 @@ export interface FileRouteTypes {
     | '/_authenticated/workflows/designer'
     | '/_authenticated/admin/'
     | '/_authenticated/workspaces/'
+    | '/_authenticated/admin/integrations/email'
+    | '/_authenticated/admin/integrations/events'
     | '/_authenticated/admin/intelligence/anomalies'
     | '/_authenticated/admin/intelligence/auto-tag'
     | '/_authenticated/admin/intelligence/compliance'
@@ -1255,6 +1281,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/integrations/events': {
+      id: '/_authenticated/admin/integrations/events'
+      path: '/events'
+      fullPath: '/admin/integrations/events'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsEventsRouteImport
+      parentRoute: typeof AuthenticatedAdminIntegrationsRoute
+    }
+    '/_authenticated/admin/integrations/email': {
+      id: '/_authenticated/admin/integrations/email'
+      path: '/email'
+      fullPath: '/admin/integrations/email'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsEmailRouteImport
+      parentRoute: typeof AuthenticatedAdminIntegrationsRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -1278,6 +1318,24 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AuthenticatedAdminIntegrationsRouteChildren {
+  AuthenticatedAdminIntegrationsEmailRoute: typeof AuthenticatedAdminIntegrationsEmailRoute
+  AuthenticatedAdminIntegrationsEventsRoute: typeof AuthenticatedAdminIntegrationsEventsRoute
+}
+
+const AuthenticatedAdminIntegrationsRouteChildren: AuthenticatedAdminIntegrationsRouteChildren =
+  {
+    AuthenticatedAdminIntegrationsEmailRoute:
+      AuthenticatedAdminIntegrationsEmailRoute,
+    AuthenticatedAdminIntegrationsEventsRoute:
+      AuthenticatedAdminIntegrationsEventsRoute,
+  }
+
+const AuthenticatedAdminIntegrationsRouteWithChildren =
+  AuthenticatedAdminIntegrationsRoute._addFileChildren(
+    AuthenticatedAdminIntegrationsRouteChildren,
+  )
 
 interface AuthenticatedSettingsSecurityMfaRouteChildren {
   AuthenticatedSettingsSecurityMfaRecoveryRoute: typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
@@ -1324,7 +1382,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
-  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
+  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRouteWithChildren
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
   AuthenticatedAdminPermissionLagRoute: typeof AuthenticatedAdminPermissionLagRoute
@@ -1382,7 +1440,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
-  AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
+  AuthenticatedAdminIntegrationsRoute:
+    AuthenticatedAdminIntegrationsRouteWithChildren,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
   AuthenticatedAdminPermissionLagRoute: AuthenticatedAdminPermissionLagRoute,
