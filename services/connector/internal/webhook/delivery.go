@@ -24,17 +24,20 @@ import (
 
 // DeliveryWorker polls for pending deliveries and sends them.
 type DeliveryWorker struct {
-	repo *repository.Repository
-	log  zerolog.Logger
-	hc   *http.Client
-	stop chan struct{}
+	repo  *repository.Repository
+	log   zerolog.Logger
+	hc    *http.Client
+	stop  chan struct{}
+	nudge chan struct{}
 }
 
 // NewDeliveryWorker creates a worker.
 func NewDeliveryWorker(repo *repository.Repository, log zerolog.Logger) *DeliveryWorker {
 	return &DeliveryWorker{
-		repo: repo, log: log, stop: make(chan struct{}),
-		hc: &http.Client{Timeout: 10 * time.Second},
+		repo: repo, log: log,
+		stop:  make(chan struct{}),
+		nudge: make(chan struct{}, 1),
+		hc:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -50,7 +53,24 @@ func (w *DeliveryWorker) Start(ctx context.Context) {
 			return
 		case <-ticker.C:
 			w.processBatch(ctx)
+		case <-w.nudge:
+			// Wake-up triggered by an external caller (test-send,
+			// redeliver) that just inserted a pending row and wants
+			// it on the wire within sub-second. The poll interval
+			// still guards crash-recovery; this is just for latency.
+			w.processBatch(ctx)
 		}
+	}
+}
+
+// Kick signals the worker to drain pending deliveries on the next
+// goroutine scheduling tick. Non-blocking — if a nudge is already
+// queued (channel buffered at 1) the call is a no-op, because one
+// pending wake-up will pick up everything that's pending.
+func (w *DeliveryWorker) Kick() {
+	select {
+	case w.nudge <- struct{}{}:
+	default:
 	}
 }
 

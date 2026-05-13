@@ -22,8 +22,21 @@ import (
 
 // Service is the connector facade.
 type Service struct {
-	repo *repository.Repository
-	log  zerolog.Logger
+	repo   *repository.Repository
+	log    zerolog.Logger
+	kicker func()
+}
+
+// SetWorkerKicker wires the delivery worker's Kick so test-send /
+// redeliver can wake the worker immediately instead of waiting up
+// to 5 s for the next poll tick. Optional — nil kicker is fine, the
+// poll loop still drains pending rows.
+func (s *Service) SetWorkerKicker(kick func()) { s.kicker = kick }
+
+func (s *Service) kick() {
+	if s.kicker != nil {
+		s.kicker()
+	}
 }
 
 // Config is DI.
@@ -123,6 +136,7 @@ func (s *Service) SendTestEvent(ctx context.Context, tenantID, subID string) (*m
 	if err := s.repo.InsertDelivery(ctx, d); err != nil {
 		return nil, err
 	}
+	s.kick()
 	return d, nil
 }
 
@@ -146,6 +160,7 @@ func (s *Service) RedeliverDelivery(ctx context.Context, tenantID, deliveryID st
 	if err := s.repo.InsertDelivery(ctx, clone); err != nil {
 		return nil, err
 	}
+	s.kick()
 	return clone, nil
 }
 
