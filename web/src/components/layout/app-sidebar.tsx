@@ -28,6 +28,11 @@ interface NavItem {
   label: string
   // exact = false means "/admin" matches /admin/users too
   exact?: boolean
+  // Restrict the link to a set of roles. Omitted = visible to all.
+  // The backend already 403s admin endpoints for non-admin roles, so
+  // this is purely a UX guard — but without it a Member sees an
+  // empty Admin shell that looks broken (BUG-B).
+  roles?: string[]
 }
 
 interface NavGroup {
@@ -58,7 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Settings',
     items: [
       { to: '/settings/security', icon: UserCog, label: 'My settings' },
-      { to: '/admin', icon: Settings, label: 'Admin' },
+      { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin', 'owner'] },
     ],
   },
 ]
@@ -168,12 +173,22 @@ function NavGroupBlock({ group, collapsed, pathname }: { group: NavGroup; collap
 
 export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const role = useAuthStore((s) => s.user?.role ?? '')
+  const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
+  const visibleGroups = NAV_GROUPS
+    .map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (i) => !i.roles || i.roles.includes(role) || isPlatformAdmin,
+      ),
+    }))
+    .filter((g) => g.items.length > 0)
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <BrandRow collapsed={collapsed} onToggle={onToggle} />
       <WorkspaceCard collapsed={collapsed} />
       <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4', collapsed && 'px-1.5')}>
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <NavGroupBlock key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
         ))}
       </nav>

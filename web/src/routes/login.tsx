@@ -51,8 +51,23 @@ function LoginPage() {
         return
       }
       finalizeLogin(data.user)
-    } catch {
-      toast.error('Invalid credentials')
+    } catch (err: unknown) {
+      // Surface specific failure modes instead of always saying
+      // "Invalid credentials" — particularly 429, which previously
+      // left the spinner stuck since the client interceptor toasts
+      // the rate-limit message but the page kept loading=true on
+      // any non-axios-handled error path (BUG-D).
+      const e = err as { response?: { status?: number; data?: { error?: string } } }
+      const status = e?.response?.status
+      if (status === 429) {
+        // Interceptor already toasted; nothing to add.
+      } else if (status === 401) {
+        toast.error('Invalid credentials')
+      } else if (e?.response?.data?.error) {
+        toast.error(e.response.data.error)
+      } else {
+        toast.error('Sign in failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -235,7 +250,12 @@ function LoginPage() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Tenant" type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required autoComplete="organization" />
-        <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus autoComplete="email" />
+        {/* autoComplete="username" (not "email") — this is the
+            credential-form pattern. With "email", Chrome aggressively
+            offers any address ever typed in any email field (BUG-C);
+            "username" scopes suggestions to saved credentials for
+            this site only and stays compatible with password managers. */}
+        <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus autoComplete="username" name="login-email" />
 
         {/* ADR 0061 — passkey-as-primary. Above the password so a user
             with a registered passkey can skip the password entirely. */}
