@@ -56,6 +56,7 @@ type Config struct {
 	LastSuccessAt         *time.Time `json:"last_success_at,omitempty"`
 	LastError             string    `json:"last_error,omitempty"`
 	MessagesIngested      int64     `json:"messages_ingested"`
+	CreatedBy             string    `json:"created_by,omitempty"`
 	CreatedAt             time.Time `json:"created_at"`
 }
 
@@ -129,6 +130,7 @@ type Poller interface {
 type Service struct {
 	pool    *pgxpool.Pool
 	nc      *nats.Conn
+	docs    *DocumentClient
 	log     zerolog.Logger
 	pollers map[Source]Poller
 	mu      sync.Mutex
@@ -136,13 +138,17 @@ type Service struct {
 
 // New constructs a Service. Pollers map keyed by Source so adding a
 // new modality (Exchange on-prem, ProtonMail Bridge) is a no-touch
-// change to this file.
-func New(pool *pgxpool.Pool, nc *nats.Conn, pollers []Poller, log zerolog.Logger) *Service {
+// change to this file. The DocumentClient is the synchronous path
+// that materialises ingested envelopes into documents — when nil,
+// the worker still records ingestion in email_messages but skips
+// the document side (useful for environments where the document
+// service isn't reachable, e.g. CI).
+func New(pool *pgxpool.Pool, nc *nats.Conn, docs *DocumentClient, pollers []Poller, log zerolog.Logger) *Service {
 	m := map[Source]Poller{}
 	for _, p := range pollers {
 		m[p.Source()] = p
 	}
-	return &Service{pool: pool, nc: nc, log: log, pollers: m}
+	return &Service{pool: pool, nc: nc, docs: docs, log: log, pollers: m}
 }
 
 // ---- Worker --------------------------------------------------------------
@@ -187,7 +193,8 @@ func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
 		       COALESCE(target_workspace_id::text, ''),
 		       COALESCE(target_folder_id::text, ''),
 		       poll_interval_seconds, last_run_at, last_success_at,
-		       COALESCE(last_error, ''), messages_ingested, created_at
+		       COALESCE(last_error, ''), messages_ingested,
+		       COALESCE(created_by::text, ''), created_at
 		  FROM email_ingestion_configs
 		 WHERE active = TRUE
 		   AND (last_run_at IS NULL
@@ -203,7 +210,7 @@ func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
 			&c.OAuthProvider, &c.IMAPHost, &c.IMAPPort, &c.IMAPUseTLS,
 			&c.IMAPUsername, &c.TargetWorkspaceID, &c.TargetFolderID,
 			&c.PollIntervalSeconds, &c.LastRunAt, &c.LastSuccessAt,
-			&c.LastError, &c.MessagesIngested, &c.CreatedAt); err != nil {
+			&c.LastError, &c.MessagesIngested, &c.CreatedBy, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -263,10 +270,31 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 			if tag.RowsAffected() == 0 {
 				continue
 			}
-			// Emit so the document service materialises the body +
-			// attachments. The dispatch is best-effort: a publish
-			// failure leaves the row in 'pending' and the next tick's
-			// retry-pending sweep (Wave 12.5b) will pick it up.
+			// Materialise into documents (body + attachments) via the
+			// document service's REST API. The hook is best-effort:
+			// the email_messages row stays in 'pending' status if the
+			// hook fails so a future retry sweep can re-try.
+			if s.docs != nil {
+				if bodyDocID, attachIDs, herr := s.docs.MaterialiseEmail(
+					ctx, cfg.TenantID, cfg.CreatedBy, cfg, msgID, env,
+				); herr != nil {
+					s.log.Warn().Err(herr).Str("config_id", cfg.ID).Msg("email: materialise failed")
+					_, _ = tx.Exec(ctx,
+						`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
+						  WHERE tenant_id = $1 AND id = $2`,
+						cfg.TenantID, msgID, herr.Error())
+				} else {
+					_, _ = tx.Exec(ctx,
+						`UPDATE email_messages
+						    SET ingest_status = 'materialised',
+						        document_id = $3,
+						        attachment_document_ids = $4
+						  WHERE tenant_id = $1 AND id = $2`,
+						cfg.TenantID, msgID, bodyDocID, attachIDs)
+				}
+			}
+			// Also fan out a NATS event for any other interested
+			// consumer (Wave 12.5b will add an alternative async path).
 			if s.nc != nil {
 				payload := emailIngestedPayload(cfg, env, msgID)
 				_ = s.nc.Publish("dms.email.ingested.v1", payload)
@@ -342,12 +370,12 @@ func (s *Service) CreateConfig(ctx context.Context, tenantID, actorID string, in
 	}
 
 	var encryptedPwd []byte
-	if in.Source == SourceIMAP {
-		// TODO: hook into the tenant KEK helper once it lands in the
-		// connector service. v1 stores the password "encrypted" with
-		// the deploy-wide secret so the column is never plaintext;
-		// upgrade path: re-encrypt under KEK on next config update.
-		encryptedPwd = []byte(in.IMAPPassword) // placeholder — see note
+	if in.Source == SourceIMAP && in.IMAPPassword != "" {
+		b, err := encryptPassword(in.IMAPPassword)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt imap password: %w", err)
+		}
+		encryptedPwd = b
 	}
 
 	id := newUUID()
@@ -407,7 +435,8 @@ func (s *Service) ListConfigs(ctx context.Context, tenantID string) ([]*Config, 
 			       COALESCE(target_workspace_id::text, ''),
 			       COALESCE(target_folder_id::text, ''),
 			       poll_interval_seconds, last_run_at, last_success_at,
-			       COALESCE(last_error, ''), messages_ingested, created_at
+			       COALESCE(last_error, ''), messages_ingested,
+			       COALESCE(created_by::text, ''), created_at
 			  FROM email_ingestion_configs
 			 WHERE tenant_id = $1
 			 ORDER BY created_at DESC`, tenantID)
@@ -489,14 +518,15 @@ func (s *Service) getConfig(ctx context.Context, tenantID, id string) (*Config, 
 			       COALESCE(target_workspace_id::text, ''),
 			       COALESCE(target_folder_id::text, ''),
 			       poll_interval_seconds, last_run_at, last_success_at,
-			       COALESCE(last_error, ''), messages_ingested, created_at
+			       COALESCE(last_error, ''), messages_ingested,
+			       COALESCE(created_by::text, ''), created_at
 			  FROM email_ingestion_configs
 			 WHERE tenant_id = $1 AND id = $2`, tenantID, id,
 		).Scan(&c.ID, &c.Source, &c.Label, &c.Active,
 			&c.OAuthProvider, &c.IMAPHost, &c.IMAPPort, &c.IMAPUseTLS,
 			&c.IMAPUsername, &c.TargetWorkspaceID, &c.TargetFolderID,
 			&c.PollIntervalSeconds, &c.LastRunAt, &c.LastSuccessAt,
-			&c.LastError, &c.MessagesIngested, &c.CreatedAt)
+			&c.LastError, &c.MessagesIngested, &c.CreatedBy, &c.CreatedAt)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

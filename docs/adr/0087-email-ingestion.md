@@ -178,6 +178,22 @@ GET    /api/v1/admin/email-configs/{id}/stats — counts + last_run_at + last_er
   publicly-reachable HTTPS with cert validation that doesn't
   exist in self-hosted deploys. The polling design works
   everywhere; push is a §12.5c performance optimisation.
+
+## Wave breakdown
+
+§12.5 ships in three waves so each piece can be reviewed +
+rolled back independently:
+
+| Wave  | Scope                                                                                 | Status (2026-05-13) |
+|-------|---------------------------------------------------------------------------------------|---------------------|
+| 12.5a | Schema + worker + REST + UI + ADR + nil-backend pollers                               | ✅ shipped (109c427) |
+| 12.5b | Real IMAP backend with `emersion/go-imap` + AES-256-GCM password encryption + document-creation hook (body + attachment doc rows). Verified live against `greenmail` in the compose network. | ✅ shipped (this commit) |
+| 12.5c | Real Microsoft Graph + Gmail backends (HTTP impl is straightforward; verification needs real OAuth creds), `storage` blob-upload step so versions land and the OCR + classify pipelines fire on attachments, and rule-based folder mapping (regex on subject / sender). | ⏳ next wave |
+
+The current commit moves three of the four functional criteria
+("IMAP fallback works", "attachments processed via full pipeline",
+"M365/Gmail ingest") meaningfully forward without claiming green
+on the criteria that require real OAuth + storage blob handling.
 - **Bidirectional sync** (delete a doc → delete the email) —
   explicitly not in scope. Mail is the source of truth; VaultDMS
   is the archive.

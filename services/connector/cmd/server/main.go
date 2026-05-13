@@ -102,10 +102,11 @@ func main() {
 	// the worker yet); the worker still records runs + makes the admin
 	// UI work end-to-end. Backends are injected when the connector
 	// service grows real credential plumbing (Wave 12.5b).
-	emailSvc := email.New(pool, nc, []email.Poller{
+	emailDocs := email.NewDocumentClient()
+	emailSvc := email.New(pool, nc, emailDocs, []email.Poller{
 		&email.MicrosoftPoller{},
 		&email.GmailPoller{},
-		&email.IMAPPoller{},
+		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z()}},
 	}, *log.Z())
 	go emailSvc.Start(ctx)
 	emailHandler := handler.NewEmailHandler(emailSvc)

@@ -3,6 +3,7 @@ module github.com/vaultdms/vaultdms/services/connector
 go 1.25.0
 
 require (
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/nats-io/jwt/v2 v2.8.1
@@ -19,6 +20,8 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/emersion/go-message v0.18.2 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
