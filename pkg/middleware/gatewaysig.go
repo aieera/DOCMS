@@ -4,7 +4,23 @@ import (
 	"crypto/hmac"
 	"net/http"
 	"os"
+	"strings"
 )
+
+// publicExternalCallbackPrefixes are paths that vendors (DocuSign,
+// Adobe Sign, …) hit directly without going through the gateway, so
+// they cannot carry X-Gateway-Signature. Each path authenticates
+// itself via vendor-specific HMAC of the body (webhooks) or our own
+// HMAC-signed `state` parameter (OAuth callbacks). The handler is
+// responsible for that check; the gateway-signature middleware just
+// lets the request through.
+//
+// Match is path-prefix so per-provider sub-paths
+// (e.g. /webhook/docusign/{tenant}) are covered by one entry.
+var publicExternalCallbackPrefixes = []string{
+	"/api/v1/signatures/esign/oauth/callback",
+	"/api/v1/signatures/esign/webhook/",
+}
 
 // GatewaySignatureHeader is the header Kong sets via request-transformer
 // on every request it forwards. Backends reject requests that arrive
@@ -66,6 +82,26 @@ func RequireGatewaySignatureWithSecrets(secrets []string) func(http.Handler) htt
 			case "/healthz", "/readyz", "/metrics":
 				next.ServeHTTP(w, r)
 				return
+			}
+
+			// Public external-callback paths — these are hit DIRECTLY
+			// by third-party vendors (DocuSign, Adobe Sign) without
+			// going through our gateway, so they have no chance to
+			// carry X-Gateway-Signature. They each authenticate
+			// themselves through a different mechanism:
+			//   * OAuth callbacks → HMAC-signed `state` parameter
+			//     (see esign.OAuthConfig.VerifyState)
+			//   * Webhooks → vendor-specific body HMAC (DocuSign HMAC
+			//     header, Adobe webhook signature) verified inside
+			//     the handler before any side effect.
+			// Whitelisted by path-prefix so per-provider sub-paths
+			// (e.g. /webhook/docusign/{tenant}) match.
+			path := r.URL.Path
+			for _, pfx := range publicExternalCallbackPrefixes {
+				if strings.HasPrefix(path, pfx) {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 
 			got := []byte(r.Header.Get(GatewaySignatureHeader))
