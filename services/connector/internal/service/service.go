@@ -91,6 +91,41 @@ func (s *Service) RotateSecret(ctx context.Context, tenantID, id string) (*model
 	return wh, nil
 }
 
+// SendTestEvent queues a synthetic `dms.webhook.test.v1` delivery
+// against an existing subscription so the operator can verify their
+// receiver wiring (signature math, network reachability, response
+// handling) without waiting for a real domain event. Reuses the
+// regular delivery worker so the test payload goes through the same
+// HMAC + retry + DLQ pipeline as production traffic.
+func (s *Service) SendTestEvent(ctx context.Context, tenantID, subID string) (*model.WebhookDelivery, error) {
+	sub, err := s.repo.GetWebhook(ctx, tenantID, subID)
+	if err != nil || sub == nil {
+		return nil, err
+	}
+	envelope := map[string]any{
+		"type":           "dms.webhook.test.v1",
+		"subscription":   subID,
+		"tenant_id":      tenantID,
+		"data":           map[string]any{"message": "VaultDMS test delivery"},
+		"correlation_id": newID(),
+		"occurred_at":    time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	payload, _ := json.Marshal(envelope)
+	d := &model.WebhookDelivery{
+		ID:             newID(),
+		SubscriptionID: subID,
+		TenantID:       tenantID,
+		EventType:      "dms.webhook.test.v1",
+		Payload:        payload,
+		Attempts:       0,
+		CreatedAt:      time.Now().UTC(),
+	}
+	if err := s.repo.InsertDelivery(ctx, d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
 // RedeliverDelivery clones a past delivery into a fresh pending row
 // so the outbox dispatcher picks it up on its next tick. The original
 // row is preserved for audit.

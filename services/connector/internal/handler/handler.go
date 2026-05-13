@@ -34,6 +34,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/webhooks/{id}", h.deleteWebhook)
 	mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", h.getDeliveryLog)
 	mux.HandleFunc("POST /api/v1/webhooks/{id}/rotate-secret", h.rotateSecret)
+	mux.HandleFunc("POST /api/v1/webhooks/{id}/test", h.testWebhook)
 	mux.HandleFunc("POST /api/v1/webhooks/{id}/deliveries/{deliveryId}/redeliver", h.redeliverDelivery)
 	// Connectors
 	mux.HandleFunc("GET /api/v1/connectors", h.listConnectors)
@@ -158,6 +159,25 @@ func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, wh)
+}
+
+func (h *Handler) testWebhook(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	d, err := h.svc.SendTestEvent(r.Context(), tenantID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if d == nil {
+		writeError(w, http.StatusNotFound, "webhook not found")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, d)
 }
 
 func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {

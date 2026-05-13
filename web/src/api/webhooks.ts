@@ -48,6 +48,11 @@ export async function listDeliveries(id: string): Promise<WebhookDelivery[]> {
   return data ?? []
 }
 
+export async function sendTestWebhook(id: string): Promise<WebhookDelivery> {
+  const { data } = await api.post<WebhookDelivery>(`/webhooks/${id}/test`)
+  return data
+}
+
 export async function redeliverDelivery(webhookId: string, deliveryId: string): Promise<WebhookDelivery> {
   const { data } = await api.post<WebhookDelivery>(
     `/webhooks/${webhookId}/deliveries/${deliveryId}/redeliver`,

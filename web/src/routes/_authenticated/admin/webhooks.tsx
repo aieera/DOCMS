@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle } from 'lucide-react'
+import { ChevronDown, ChevronRight, Code2, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle, Beaker } from 'lucide-react'
 
 import {
   createWebhook,
@@ -11,6 +11,7 @@ import {
   listWebhooks,
   redeliverDelivery,
   rotateWebhookSecret,
+  sendTestWebhook,
   type Webhook as WebhookT,
 } from '@/api/webhooks'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -75,6 +76,15 @@ function WebhooksPage() {
     },
   })
 
+  const test = useMutation({
+    mutationFn: (id: string) => sendTestWebhook(id),
+    onSuccess: (_d, id) => {
+      toast.success('Test delivery queued — check the delivery log')
+      qc.invalidateQueries({ queryKey: ['webhook-deliveries', id] })
+    },
+    onError: () => toast.error('Test send failed'),
+  })
+
   const toggleEvent = (e: string) =>
     setEvents((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]))
 
@@ -84,7 +94,7 @@ function WebhooksPage() {
     <div className="space-y-6">
       <PageHeader
         title="Webhooks"
-        description="Subscribe external systems to domain events. Each delivery is signed with HMAC-SHA256 using the per-webhook secret; failed deliveries retry with exponential backoff and dead-letter after 5 attempts."
+        description="Subscribe external systems to domain events. Each delivery is signed HMAC-SHA256 (X-DMS-Signature + X-DMS-Timestamp); failed deliveries retry 5s / 30s / 2m / 15m / 1h / 6h then dead-letter."
       />
 
       {newSecret && (
@@ -173,8 +183,10 @@ function WebhooksPage() {
               expanded={expanded === wh.id}
               onToggle={() => setExpanded(expanded === wh.id ? null : wh.id)}
               onRotate={() => rotate.mutate(wh.id)}
+              onTest={() => test.mutate(wh.id)}
               onDelete={() => setPendingDelete(wh)}
               rotating={rotate.isPending}
+              testing={test.isPending && test.variables === wh.id}
             />
           ))}
         </ul>
@@ -195,15 +207,18 @@ function WebhooksPage() {
 }
 
 function WebhookRow({
-  wh, expanded, onToggle, onRotate, onDelete, rotating,
+  wh, expanded, onToggle, onRotate, onTest, onDelete, rotating, testing,
 }: {
   wh: WebhookT
   expanded: boolean
   onToggle: () => void
   onRotate: () => void
+  onTest: () => void
   onDelete: () => void
   rotating: boolean
+  testing: boolean
 }) {
+  const [showSnippet, setShowSnippet] = useState(false)
   return (
     <li>
       <Card className="overflow-hidden p-0">
@@ -226,6 +241,12 @@ function WebhookRow({
             </div>
           </button>
           <div className="flex shrink-0 gap-1">
+            <Button variant="outline" size="sm" onClick={onTest} disabled={testing} data-testid={`webhook-test-${wh.id}`}>
+              <Beaker className={cn('h-4 w-4', testing && 'animate-pulse')} /> Test send
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowSnippet((s) => !s)} data-testid={`webhook-verify-${wh.id}`}>
+              <Code2 className="h-4 w-4" /> Verify
+            </Button>
             <Button variant="outline" size="sm" onClick={onRotate} disabled={rotating}>
               <RefreshCw className={cn('h-4 w-4', rotating && 'animate-spin')} /> Rotate
             </Button>
@@ -234,11 +255,150 @@ function WebhookRow({
             </Button>
           </div>
         </div>
+        {showSnippet && <SignatureSamples />}
         {expanded && <DeliveryLog webhookId={wh.id} />}
       </Card>
     </li>
   )
 }
+
+// SignatureSamples renders the HMAC verification snippet across the
+// languages our customers are most likely to land on. The signing
+// input is `<timestamp>.<raw-body>` — same shape Stripe popularized.
+// Keep the snippets in sync with services/connector/internal/webhook
+// delivery.go::signPayload.
+function SignatureSamples() {
+  const [lang, setLang] = useState<keyof typeof SAMPLES>('node')
+  const copy = (txt: string) => navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
+  return (
+    <div className="border-t border-border bg-muted/30 p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Verify <code className="font-mono">X-DMS-Signature</code> against{' '}
+          <code className="font-mono">{'<timestamp>.<raw-body>'}</code>. Reject the request if the
+          timestamp is more than 5 minutes old (replay protection).
+        </p>
+        <div className="flex shrink-0 gap-1">
+          {(Object.keys(SAMPLES) as Array<keyof typeof SAMPLES>).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setLang(k)}
+              className={cn(
+                'rounded px-2 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors',
+                lang === k
+                  ? 'bg-foreground text-background'
+                  : 'bg-background text-muted-foreground hover:text-foreground',
+              )}
+              data-testid={`verify-lang-${k}`}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="relative">
+        <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-relaxed">
+{SAMPLES[lang]}
+        </pre>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => copy(SAMPLES[lang])}
+          className="absolute right-2 top-2"
+        >
+          <Copy className="h-3 w-3" /> Copy
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+const SAMPLES = {
+  node: `// Node.js (Express)
+import crypto from 'node:crypto'
+
+app.post('/webhooks/vaultdms', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.header('X-DMS-Signature') || ''
+  const ts  = req.header('X-DMS-Timestamp') || ''
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(401).end()
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', process.env.VAULTDMS_WEBHOOK_SECRET)
+    .update(ts + '.' + req.body.toString('utf8'))
+    .digest('hex')
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return res.status(401).end()
+  res.status(204).end()
+})`,
+  python: `# Python (FastAPI)
+import hmac, hashlib, time
+from fastapi import FastAPI, Header, HTTPException, Request
+
+SECRET = os.environ['VAULTDMS_WEBHOOK_SECRET'].encode()
+
+@app.post('/webhooks/vaultdms')
+async def hook(req: Request,
+               x_dms_signature: str = Header(...),
+               x_dms_timestamp: str = Header(...)):
+    if abs(time.time() - int(x_dms_timestamp)) > 300:
+        raise HTTPException(401, 'stale')
+    body = await req.body()
+    expected = 'sha256=' + hmac.new(SECRET, x_dms_timestamp.encode() + b'.' + body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, x_dms_signature):
+        raise HTTPException(401, 'bad signature')
+    return {'ok': True}`,
+  go: `// Go (net/http)
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "io"
+    "net/http"
+    "strconv"
+    "time"
+)
+
+func handle(w http.ResponseWriter, r *http.Request) {
+    sig := r.Header.Get("X-DMS-Signature")
+    ts, _ := strconv.ParseInt(r.Header.Get("X-DMS-Timestamp"), 10, 64)
+    if d := time.Now().Unix() - ts; d > 300 || d < -300 {
+        http.Error(w, "stale", 401); return
+    }
+    body, _ := io.ReadAll(r.Body)
+    mac := hmac.New(sha256.New, []byte(os.Getenv("VAULTDMS_WEBHOOK_SECRET")))
+    mac.Write([]byte(strconv.FormatInt(ts, 10) + "."))
+    mac.Write(body)
+    expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    if !hmac.Equal([]byte(expected), []byte(sig)) {
+        http.Error(w, "bad signature", 401); return
+    }
+    w.WriteHeader(204)
+}`,
+  ruby: `# Ruby (Rails)
+require 'openssl'
+require 'rack/utils'
+
+def verify
+  ts  = request.headers['X-DMS-Timestamp']
+  sig = request.headers['X-DMS-Signature']
+  return head :unauthorized if (Time.now.to_i - ts.to_i).abs > 300
+  body = request.raw_post
+  expected = 'sha256=' + OpenSSL::HMAC.hexdigest('SHA256', ENV['VAULTDMS_WEBHOOK_SECRET'], "#{ts}.#{body}")
+  return head :unauthorized unless Rack::Utils.secure_compare(expected, sig)
+  head :no_content
+end`,
+  curl: `# Manual verification with curl + openssl
+# (replay this with a captured X-DMS-Timestamp + body)
+TS="$X_DMS_TIMESTAMP"
+SECRET="$VAULTDMS_WEBHOOK_SECRET"
+BODY="$(cat payload.json)"
+
+EXPECTED="sha256=$(printf '%s.%s' "$TS" "$BODY" \\
+    | openssl dgst -sha256 -hmac "$SECRET" -hex \\
+    | awk '{print $2}')"
+
+echo "got:      $X_DMS_SIGNATURE"
+echo "expected: $EXPECTED"`,
+} as const
 
 function DeliveryLog({ webhookId }: { webhookId: string }) {
   const qc = useQueryClient()
