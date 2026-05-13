@@ -55,3 +55,6 @@ snapshots/
 .playwright-mcp/
 web/.audit/
 .claude/scheduled_tasks.lock
+
+# Runtime artifacts from scripts/dev-up.sh
+.run/
