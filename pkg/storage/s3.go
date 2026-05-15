@@ -204,10 +204,50 @@ func (s *S3Client) GeneratePresignedPutURL(
 
 // GeneratePresignedGetURL returns a URL the client can GET from directly.
 // Uses the presign client — see GeneratePresignedPutURL.
+//
+// `filename` is the human-readable name surfaced to the user (used in
+// the Content-Disposition header). Empty string falls back to the
+// last segment of the object key.
+//
+// `disposition` is "inline" or "attachment":
+//   * inline     — the browser renders the response in place (PDF in an
+//                  iframe, image in <img>, etc.). Default for previews.
+//   * attachment — the browser triggers a Save-As dialog. Use for the
+//                  explicit "Download" button.
+//
+// MinIO and S3 both honor the
+// `response-content-disposition=...` query parameter; without it the
+// browser falls back to its own MIME sniffing, which on some
+// Windows/Chrome combos defaults to download for PDFs — exactly the
+// "why is it auto-downloading" report we hit in dev.
 func (s *S3Client) GeneratePresignedGetURL(
 	ctx context.Context, bucket, key string, expiry time.Duration,
 ) (string, error) {
-	u, err := s.presign.PresignedGetObject(ctx, bucket, key, expiry, url.Values{})
+	return s.GeneratePresignedGetURLWith(ctx, bucket, key, expiry, "inline", "")
+}
+
+// GeneratePresignedGetURLWith is the variant that lets callers control
+// the content-disposition + filename. The non-`With` form preserves
+// the existing call sites and defaults to inline preview.
+func (s *S3Client) GeneratePresignedGetURLWith(
+	ctx context.Context, bucket, key string, expiry time.Duration,
+	disposition, filename string,
+) (string, error) {
+	if disposition == "" {
+		disposition = "inline"
+	}
+	if filename == "" {
+		// Fall back to the last segment of the key. Already safe for
+		// header use because content-addressable keys are URL-safe.
+		filename = key
+		if i := strings.LastIndex(filename, "/"); i >= 0 {
+			filename = filename[i+1:]
+		}
+	}
+	q := url.Values{}
+	q.Set("response-content-disposition",
+		fmt.Sprintf(`%s; filename="%s"`, disposition, filename))
+	u, err := s.presign.PresignedGetObject(ctx, bucket, key, expiry, q)
 	return urlString(u), err
 }
 
