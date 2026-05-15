@@ -205,33 +205,36 @@ func (s *S3Client) GeneratePresignedPutURL(
 // GeneratePresignedGetURL returns a URL the client can GET from directly.
 // Uses the presign client — see GeneratePresignedPutURL.
 //
-// `filename` is the human-readable name surfaced to the user (used in
-// the Content-Disposition header). Empty string falls back to the
-// last segment of the object key.
-//
-// `disposition` is "inline" or "attachment":
-//   * inline     — the browser renders the response in place (PDF in an
-//                  iframe, image in <img>, etc.). Default for previews.
-//   * attachment — the browser triggers a Save-As dialog. Use for the
-//                  explicit "Download" button.
-//
-// MinIO and S3 both honor the
-// `response-content-disposition=...` query parameter; without it the
-// browser falls back to its own MIME sniffing, which on some
-// Windows/Chrome combos defaults to download for PDFs — exactly the
-// "why is it auto-downloading" report we hit in dev.
+// Defaults disposition to "inline" and lets MinIO derive the
+// content-type. Most callers want the inline-PDF behavior; the
+// `With` variant is for explicit download buttons + MIME overrides.
 func (s *S3Client) GeneratePresignedGetURL(
 	ctx context.Context, bucket, key string, expiry time.Duration,
 ) (string, error) {
-	return s.GeneratePresignedGetURLWith(ctx, bucket, key, expiry, "inline", "")
+	return s.GeneratePresignedGetURLWith(ctx, bucket, key, expiry, "inline", "", "")
 }
 
 // GeneratePresignedGetURLWith is the variant that lets callers control
-// the content-disposition + filename. The non-`With` form preserves
-// the existing call sites and defaults to inline preview.
+// the content-disposition + filename + content-type. The non-`With`
+// form preserves the existing call sites and defaults to inline.
+//
+// Three S3 query overrides we now set:
+//
+//   * response-content-disposition  inline|attachment + filename
+//   * response-content-type         e.g. application/pdf — necessary
+//                                    when objects were stored as
+//                                    application/octet-stream and we
+//                                    want the browser to actually treat
+//                                    them as their real type. Without
+//                                    this, some Windows/Chrome combos
+//                                    auto-download PDFs in iframes.
+//
+// The empty-string defaults mean "let MinIO derive from the stored
+// metadata" — works fine when the upload set the correct
+// Content-Type at PUT time.
 func (s *S3Client) GeneratePresignedGetURLWith(
 	ctx context.Context, bucket, key string, expiry time.Duration,
-	disposition, filename string,
+	disposition, filename, contentType string,
 ) (string, error) {
 	if disposition == "" {
 		disposition = "inline"
@@ -247,6 +250,9 @@ func (s *S3Client) GeneratePresignedGetURLWith(
 	q := url.Values{}
 	q.Set("response-content-disposition",
 		fmt.Sprintf(`%s; filename="%s"`, disposition, filename))
+	if contentType != "" {
+		q.Set("response-content-type", contentType)
+	}
 	u, err := s.presign.PresignedGetObject(ctx, bucket, key, expiry, q)
 	return urlString(u), err
 }

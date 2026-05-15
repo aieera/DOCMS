@@ -639,7 +639,15 @@ func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UU
 	}
 	bucket := bucketName(session.StorageRegion, "hot")
 	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
-	url, err := s.s3.GeneratePresignedGetURL(ctx, bucket, key, ttl)
+	// Force inline + the actual mime-type from the upload session so
+	// Chrome doesn't fall back to its "what is this?" heuristic and
+	// auto-download. The session row already carries the validated
+	// MIME type from the upload-complete path.
+	mime := session.MimeType
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	url, err := s.s3.GeneratePresignedGetURLWith(ctx, bucket, key, ttl, "inline", session.Filename, mime)
 	if err != nil {
 		return "", time.Time{}, err
 	}
