@@ -100,6 +100,12 @@ export default defineConfig({
             '/api/v1/privacy':                  withSig('http://localhost:8182'),
             '/api/v1/residency':                withSig('http://localhost:8182'),
             '/api/v1/annotations':              withSig('http://localhost:8182'),
+            // ADR 0066 — threaded comments + reactions. Without this
+            // rule /api/v1/comments/*/reactions falls through to the
+            // /api auth catch-all (8180) which doesn't know about it
+            // and 404s. Document service owns the route.
+            '/api/v1/comments':                 withSig('http://localhost:8182'),
+            '/api/v1/threads':                  withSig('http://localhost:8182'),
             '/api/v1/tags':                     withSig('http://localhost:8182'),
             '/api/v1/tenants/metadata-schema':  withSig('http://localhost:8182'),
             '/api/v1/search':                   withSig('http://localhost:8184'),
