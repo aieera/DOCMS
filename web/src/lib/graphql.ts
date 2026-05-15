@@ -101,8 +101,25 @@ export async function runPersistedQuery<TVars, TData>(
     }),
   })
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`graphql ${res.status}: ${text}`)
+    // Some upstream errors return an empty body — display "(no body)"
+    // rather than the previous "graphql 500: " which left users
+    // staring at a colon with nothing after it. Trim and JSON-pretty
+    // any structured error so the message is actually readable.
+    const raw = (await res.text()).trim()
+    let body = raw
+    if (raw === '') {
+      body = '(empty body)'
+    } else if (raw.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw) as { error?: string; message?: string; errors?: Array<{ message: string }> }
+        body = parsed.error || parsed.message ||
+          (parsed.errors && parsed.errors.map((e) => e.message).join('; ')) ||
+          raw
+      } catch {
+        // not valid JSON; fall through with raw
+      }
+    }
+    throw new Error(`graphql ${res.status}: ${body}`)
   }
   return res.json()
 }

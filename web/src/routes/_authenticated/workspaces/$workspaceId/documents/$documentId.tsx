@@ -816,11 +816,16 @@ function uploaderLabel(doc: { created_by_name?: string; created_by_email?: strin
 // read as a bug. Other labels get a quieter tooltip with the raw
 // user id for support purposes.
 function uploaderTooltip(doc: { created_by_name?: string; created_by_email?: string; created_by?: string }): string {
+  // Native browser tooltips truncate long single-line strings on most
+  // platforms. Keep each variant short + on a single line; drop the
+  // raw UUID into a newline so the first sentence always renders in
+  // full. Operators looking up by id can still copy from the second
+  // line.
   if (uploaderLabel(doc) === 'Deleted user' && doc.created_by) {
-    return `The account that uploaded this document has been removed from this tenant. The audit log retains the original id (${doc.created_by}).`
+    return `User account removed. Original id retained in audit log:\n${doc.created_by}`
   }
   if (uploaderLabel(doc) === 'Unknown user') {
-    return 'Uploader metadata is missing — the document may have been imported before user tracking was enabled.'
+    return 'Uploader metadata missing — predates user tracking.'
   }
   return doc.created_by ? `User id: ${doc.created_by}` : ''
 }
