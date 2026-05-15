@@ -83,6 +83,14 @@ export default defineConfig({
             // before the auth catch-all to avoid 404s.
             '/api/v1/admin/permission-propagation-stats': withSig('http://localhost:8184'),
             '/api/v1/admin/ldap':               withSig('http://localhost:8180'),
+            // ADR 0087 + 0077 + 0088 — connector service owns
+            // email ingestion, per-tenant event streaming, and
+            // watched-folder intake. Without these the FE
+            // /admin/integrations/{email,events,drop-folder} pages
+            // 404 against the auth catch-all.
+            '/api/v1/admin/email-configs':      withSig('http://localhost:8190'),
+            '/api/v1/admin/event-stream':       withSig('http://localhost:8190'),
+            '/api/v1/admin/intake':             withSig('http://localhost:8190'),
             // Intelligence service hosts the on-demand REST surfaces
             // for Doc Q&A, Translation, and Language detection. The
             // catch-all '/api' below routes to auth (:8180), so this
