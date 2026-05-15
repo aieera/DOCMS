@@ -124,7 +124,14 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
         file={url}
         onLoadSuccess={({ numPages: n }) => setNumPages(n)}
         loading={<Spinner />}
-        error={<p className="text-sm text-red-500">Failed to load PDF</p>}
+        error={
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+            <p className="font-medium text-destructive">Unable to load document.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The PDF bytes couldn't be fetched. The storage service may be unavailable or this version may have been deleted.
+            </p>
+          </div>
+        }
       >
         <div
           ref={pageRef}

@@ -108,7 +108,14 @@ export function PDFLayoutViewer({ url, pages, entities, onSelectLine, onSelectEn
         file={url}
         onLoadSuccess={({ numPages: n }) => setNumPages(n)}
         loading={<Spinner />}
-        error={<p className="text-sm text-red-500">Failed to load PDF</p>}
+        error={
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+            <p className="font-medium text-destructive">PDF unavailable — cannot render layout.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The document bytes couldn't be fetched from storage. Check that the storage service is healthy and the version exists.
+            </p>
+          </div>
+        }
       >
         <div className="relative inline-block">
           <Page

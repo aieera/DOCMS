@@ -22,6 +22,7 @@ import { useDocumentDetailGQL, useActivityForDocument } from '@/hooks/useDocumen
 import { useAuthStore } from '@/store/authStore'
 import { getOCR, rerunOCR, type OCRStatus } from '@/api/ocr'
 import { getDownloadURL } from '@/api/documents'
+import { getWorkspace } from '@/api/workspaces'
 import { listEntities, type Entity } from '@/api/ner'
 import { PDFLayoutViewer } from '@/components/viewer/PDFLayoutViewer'
 import { DocumentPreview } from '@/components/viewer/DocumentPreview'
@@ -30,6 +31,9 @@ import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
 import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
+import { ShareDialog } from '@/components/documents/ShareDialog'
+import { VersionHistory } from '@/components/documents/VersionHistory'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
@@ -70,6 +74,17 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
 function DocumentDetailPage() {
   const { documentId, workspaceId } = Route.useParams()
   const { data: doc, isLoading } = useDocument(documentId)
+  // Prime the workspace cache so the breadcrumb resolves the workspace
+  // UUID to its name. The breadcrumb component reads
+  // `['workspace', uuid]` from the query cache; without this query the
+  // doc-detail route shows a truncated UUID for the workspace crumb.
+  // 5-minute staleTime — workspace names change rarely.
+  useQuery({
+    queryKey: ['workspace', workspaceId],
+    queryFn: () => getWorkspace(workspaceId),
+    enabled: !!workspaceId,
+    staleTime: 5 * 60_000,
+  })
   // ADR 0074 — single GraphQL call for the multi-join surface
   // (versions + comments + annotations + workflow instances +
   // permissions). Replaces the 5+ REST calls the deep components
@@ -349,6 +364,8 @@ function DocumentSidebar({
   versionId?: string
 }) {
   const [taskOpen, setTaskOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [versionsOpen, setVersionsOpen] = useState(false)
   return (
     <aside className="space-y-4">
       {/* Primary actions — most-used commands surfaced as full-width
@@ -358,7 +375,13 @@ function DocumentSidebar({
         <Button variant="outline" size="sm" className="w-full justify-start">
           <Download className="h-4 w-4" /> Download
         </Button>
-        <Button variant="outline" size="sm" className="w-full justify-start">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => setShareOpen(true)}
+          data-testid="open-share-dialog"
+        >
           <Share className="h-4 w-4" /> Share
         </Button>
         <Button
@@ -378,6 +401,22 @@ function DocumentSidebar({
           onCreated={() => { /* topbar tasks badge polls every 30s */ }}
         />
       )}
+      <ShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        documentId={documentId}
+        documentTitle={doc.title}
+      />
+      <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
+        <SheetContent side="right" className="w-[440px] sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Version history</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 max-h-[calc(100vh-120px)] overflow-y-auto">
+            <VersionHistory documentId={documentId} />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ADR 0065 — co-authoring entrypoint. Renders only for
           Office mime types and only when the configured editor is
@@ -451,7 +490,13 @@ function DocumentSidebar({
           </div>
         )}
         <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
-          <Button variant="ghost" size="sm" className="w-full justify-start">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onClick={() => setVersionsOpen(true)}
+            data-testid="open-version-history"
+          >
             <History className="h-4 w-4" /> Version history
           </Button>
           <Button variant="ghost" size="sm" className="w-full justify-start">
@@ -816,18 +861,17 @@ function uploaderLabel(doc: { created_by_name?: string; created_by_email?: strin
 // read as a bug. Other labels get a quieter tooltip with the raw
 // user id for support purposes.
 function uploaderTooltip(doc: { created_by_name?: string; created_by_email?: string; created_by?: string }): string {
-  // Native browser tooltips truncate long single-line strings on most
-  // platforms. Keep each variant short + on a single line; drop the
-  // raw UUID into a newline so the first sentence always renders in
-  // full. Operators looking up by id can still copy from the second
-  // line.
-  if (uploaderLabel(doc) === 'Deleted user' && doc.created_by) {
-    return `User account removed. Original id retained in audit log:\n${doc.created_by}`
+  // End-user copy only — raw UUIDs are internal and don't belong in
+  // a tooltip. Support tools can look the id up from the audit log
+  // if they ever need it. Short single-line strings so native
+  // tooltips render cleanly across platforms.
+  if (uploaderLabel(doc) === 'Deleted user') {
+    return 'Uploaded by a user whose account has been removed from this tenant.'
   }
   if (uploaderLabel(doc) === 'Unknown user') {
     return 'Uploader metadata missing — predates user tracking.'
   }
-  return doc.created_by ? `User id: ${doc.created_by}` : ''
+  return ''
 }
 
 // ActivityFeed renders the chronological event stream (versions,

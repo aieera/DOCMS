@@ -36,7 +36,16 @@ export function TagSuggestionsPanel({ documentId }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ['tag-suggestions', documentId],
     queryFn: () => listTagSuggestions(documentId),
-    refetchInterval: 10_000,
+    // Poll only while suggestions are still being generated — once the
+    // pipeline has produced any rows, stop polling. The mutation that
+    // accepts/rejects already invalidates on success, so the panel
+    // refreshes on user action without needing the background tick.
+    refetchInterval: (q) => {
+      const arr = q.state.data as unknown[] | undefined
+      return arr === undefined || arr.length === 0 ? 15_000 : false
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   })
 
   const review = useMutation({

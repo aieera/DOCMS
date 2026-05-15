@@ -29,7 +29,15 @@ export function RouteSuggestionBanner({ documentId }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ['route-suggestions', documentId],
     queryFn: () => listRouteSuggestions(documentId),
-    refetchInterval: 15_000,
+    // Stop polling once suggestions arrive (same shape as
+    // TagSuggestionsPanel — accept/dismiss mutations invalidate on
+    // user action so the banner stays fresh without the 15s tick).
+    refetchInterval: (q) => {
+      const arr = q.state.data as unknown[] | undefined
+      return arr === undefined || arr.length === 0 ? 20_000 : false
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   })
 
   const accept = useMutation({
