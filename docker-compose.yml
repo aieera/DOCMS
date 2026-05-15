@@ -46,6 +46,15 @@ x-go-env: &go-env
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
   VAULTDMS_LOCAL_KEK:    "${VAULTDMS_LOCAL_KEK:-}"
+  # ADR 0022 envelope encryption-at-rest. Storage auto-enables it
+  # whenever a KMS is wired, but the OCR / preview / intelligence
+  # workers download raw S3 bytes via boto3 and have no decrypt
+  # path — encrypted PDFs surface as "OCR failed: cannot find
+  # document handler." Disable for dev until the storage service
+  # grows a GetObjectBytes RPC that decrypts before streaming
+  # (queued for the next storage wave). Prod sets this true via
+  # Helm.
+  VAULTDMS_STORAGE_ENCRYPT_AT_REST: "${VAULTDMS_STORAGE_ENCRYPT_AT_REST:-false}"
   # ADR 0071 — without a real DocuSign / Adobe Sign client_id wired
   # in dev, the signature service refuses every esign/oauth/start
   # call with "esign not configured." Default to mock mode so the

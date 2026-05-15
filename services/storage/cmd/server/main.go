@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -135,6 +136,16 @@ func main() {
 		DefaultRegion:    cfg.Region,
 		QuarantineBucket: "dms-quarantine",
 		PublicUploadBase: cfg.S3PublicBase,
+		// Encryption-at-rest is gated by VAULTDMS_STORAGE_ENCRYPT_AT_REST.
+		// Defaults to true when KMS is wired (per ADR 0022), but dev
+		// compose explicitly sets it false because the OCR/preview/
+		// intelligence pipelines fetch raw S3 bytes (boto3) and don't
+		// run them through the storage service's decryptAll path.
+		// Without a GetObjectBytes RPC that decrypts (queued for the
+		// next storage wave), every download from those workers
+		// returns encrypted bytes that fitz/pdfminer can't parse —
+		// surfacing as "OCR failed: cannot find document handler."
+		EncryptAtRest:    parseEncryptAtRest(km != nil),
 		// TODO(per-tenant-kek): Single KEK across all tenants. Finding k in
 		// docs/audit/04-antipatterns.md; target design + migration plan in
 		// docs/tech-debt/per-tenant-kek.md.
@@ -197,4 +208,20 @@ func main() {
 	outbox.Stop()
 	reaper.Stop()
 	_ = http.ListenAndServe // retained for future /metrics wiring
+}
+
+// parseEncryptAtRest reads VAULTDMS_STORAGE_ENCRYPT_AT_REST. Returns
+// the explicit value when set, otherwise the historical default
+// ("true when KMS is wired"). Three accepted truth values are
+// 1 / true / yes (case-insensitive); anything else counts as false.
+func parseEncryptAtRest(kmsWired bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("VAULTDMS_STORAGE_ENCRYPT_AT_REST")))
+	if raw == "" {
+		return kmsWired
+	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
