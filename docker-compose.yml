@@ -55,6 +55,10 @@ x-go-env: &go-env
   # (queued for the next storage wave). Prod sets this true via
   # Helm.
   VAULTDMS_STORAGE_ENCRYPT_AT_REST: "${VAULTDMS_STORAGE_ENCRYPT_AT_REST:-false}"
+  # ClamAV INSTREAM scans in dev compose take 5–7s per upload —
+  # enough that the FE looks hung. Skip in dev. Prod sets this
+  # false (or unset) via Helm so every upload is scanned.
+  VAULTDMS_STORAGE_SKIP_VIRUS_SCAN: "${VAULTDMS_STORAGE_SKIP_VIRUS_SCAN:-true}"
   # ADR 0071 — without a real DocuSign / Adobe Sign client_id wired
   # in dev, the signature service refuses every esign/oauth/start
   # call with "esign not configured." Default to mock mode so the

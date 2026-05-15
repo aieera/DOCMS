@@ -79,7 +79,17 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("s3 connect")
 	}
 
-	scannerClient := scanner.New(cfg.ClamAVAddr, 2*time.Minute)
+	// VAULTDMS_STORAGE_SKIP_VIRUS_SCAN=true bypasses the ClamAV scan
+	// on the upload-complete path. ClamAV in dev compose takes 5–7s
+	// per scan even for tiny PDFs — long enough that the FE looks
+	// hung. Skipping in dev is safe because the bytes never leave
+	// the local stack; prod always leaves this false.
+	var scannerClient *scanner.Client
+	if parseSkipVirusScan() {
+		log.Info(ctx).Msg("virus scan disabled (VAULTDMS_STORAGE_SKIP_VIRUS_SCAN=true)")
+	} else {
+		scannerClient = scanner.New(cfg.ClamAVAddr, 2*time.Minute)
+	}
 
 	// ---- Policy gRPC client ------------------------------------------------
 	// Dev dials insecure; prod swaps for mTLS. Failure at startup logs a
@@ -219,6 +229,18 @@ func parseEncryptAtRest(kmsWired bool) bool {
 	if raw == "" {
 		return kmsWired
 	}
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// parseSkipVirusScan reads VAULTDMS_STORAGE_SKIP_VIRUS_SCAN. Defaults
+// to false (scan stays on). Truthy values bypass the ClamAV step on
+// CompleteUpload — meant for dev where the scan adds 5–7s per upload.
+func parseSkipVirusScan() bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("VAULTDMS_STORAGE_SKIP_VIRUS_SCAN")))
 	switch raw {
 	case "1", "true", "yes", "on":
 		return true
