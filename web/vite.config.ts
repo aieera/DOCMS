@@ -138,7 +138,15 @@ export default defineConfig({
             '/api/v1/graphql':                  withSig('http://localhost:8191'),
             '/api/v1/webhooks':                 withSig('http://localhost:8190'),
             '/api/v1/connectors':               withSig('http://localhost:8190'),
-            '/api/v1/mcp':                      withSig('http://localhost:8190'),
+            // ADR 0091 — MCP server lives in its own service now.
+            '/api/v1/mcp':                      withSig('http://localhost:8192'),
+            // ADR 0090 — iPaaS triggers route per-resource because
+            // each lives in the service that owns the underlying
+            // table. Object-key insertion order matters here: these
+            // MUST sit above the /api catch-all that lands on auth.
+            '/api/v1/integrations/triggers/documents':            withSig('http://localhost:8182'),
+            '/api/v1/integrations/triggers/signatures/completed': withSig('http://localhost:8188'),
+            '/api/v1/integrations/triggers/workflows/completed':  withSig('http://localhost:8186'),
             '/api':                             withSig('http://localhost:8180'),
           },
   },

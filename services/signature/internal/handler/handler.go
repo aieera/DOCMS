@@ -3,10 +3,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog"
 
 	"github.com/vaultdms/vaultdms/services/signature/internal/model"
@@ -68,8 +70,31 @@ func (h *Handler) createRequest(w http.ResponseWriter, r *http.Request) {
 	if body.Provider == "" {
 		body.Provider = "internal"
 	}
+	if strings.TrimSpace(body.DocumentID) == "" {
+		writeError(w, http.StatusBadRequest, "document_id is required")
+		return
+	}
+	if strings.TrimSpace(body.VersionID) == "" {
+		writeError(w, http.StatusBadRequest, "version_id is required")
+		return
+	}
+	if len(body.Signers) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one signer is required")
+		return
+	}
 	req, err := h.svc.CreateRequest(r.Context(), tenantID, body.DocumentID, body.VersionID, userID, body.Provider, body.SigningMode, body.Signers)
 	if err != nil {
+		// 23503 = foreign_key_violation. The signature_requests table
+		// FKs onto (tenant_id, version_id) and (tenant_id, document_id);
+		// either pointing at a row that doesn't exist is a client error,
+		// not an internal one. Surface it as 400 so the user sees what
+		// they sent that was wrong instead of a generic 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.log.Warn().Err(err).Msg("create signature request: fk violation")
+			writeError(w, http.StatusBadRequest, "document_id or version_id does not exist for this tenant")
+			return
+		}
 		h.log.Error().Err(err).Msg("create signature request")
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

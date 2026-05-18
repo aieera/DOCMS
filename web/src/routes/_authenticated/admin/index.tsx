@@ -3,7 +3,10 @@ import {
   Activity, AlertTriangle, Antenna, Archive, Brain, ChevronRight, CreditCard, FileJson, FileSearch,
   Globe, Key, KeyRound, Languages, Link2, Mail, MapPinned, Network, PenTool, Plug, Scale,
   ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
-  Upload, UserCog, Users, Webhook, Workflow,
+  Upload, UserCog, Users, Webhook, Workflow, Bot,
+  // Zap kept available for when ADR 0090 iPaaS tile is re-enabled.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  Zap as _Zap,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -47,6 +50,11 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
     { to: '/admin/connectors', icon: Plug, label: 'Connectors', desc: 'M365 / Salesforce sync' },
     { to: '/admin/integrations', icon: PenTool, label: 'eSignature integrations', desc: 'DocuSign + Adobe Sign (ADR 0071)' },
+    { to: '/admin/integrations/mcp', icon: Bot, label: 'MCP (LLM agents)', desc: 'Claude / Cursor / Copilot tool access (ADR 0091)' },
+    // iPaaS surface (ADR 0090) hidden from the tile grid until external
+    // Zapier/Make/n8n apps are actually published. Code + route remain
+    // wired so re-enabling is just uncommenting this line.
+    // { to: '/admin/integrations/ipaas', icon: Zap, label: 'iPaaS (Zapier / Make / n8n)', desc: 'Issue API keys + see trigger URLs (ADR 0090)' },
     { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
     { to: '/admin/residency', icon: Globe, label: 'Residency', desc: 'Regions + migrate docs' },
     { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },

@@ -51,6 +51,7 @@ import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
 import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './routes/_authenticated/signatures.send.$documentId'
 import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
@@ -69,6 +70,8 @@ import { Route as AuthenticatedAdminIntelligenceComplianceConfigRouteImport } fr
 import { Route as AuthenticatedAdminIntelligenceComplianceRouteImport } from './routes/_authenticated/admin/intelligence/compliance'
 import { Route as AuthenticatedAdminIntelligenceAutoTagRouteImport } from './routes/_authenticated/admin/intelligence/auto-tag'
 import { Route as AuthenticatedAdminIntelligenceAnomaliesRouteImport } from './routes/_authenticated/admin/intelligence/anomalies'
+import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/_authenticated/admin/integrations/mcp'
+import { Route as AuthenticatedAdminIntegrationsIpaasRouteImport } from './routes/_authenticated/admin/integrations/ipaas'
 import { Route as AuthenticatedAdminIntegrationsEventsRouteImport } from './routes/_authenticated/admin/integrations/events'
 import { Route as AuthenticatedAdminIntegrationsEmailRouteImport } from './routes/_authenticated/admin/integrations/email'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
@@ -309,6 +312,12 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntegrationsIndexRoute =
+  AuthenticatedAdminIntegrationsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
+  } as any)
 const AuthenticatedWorkflowsInstancesInstanceIdRoute =
   AuthenticatedWorkflowsInstancesInstanceIdRouteImport.update({
     id: '/workflows/instances/$instanceId',
@@ -417,6 +426,18 @@ const AuthenticatedAdminIntelligenceAnomaliesRoute =
     path: '/admin/intelligence/anomalies',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntegrationsMcpRoute =
+  AuthenticatedAdminIntegrationsMcpRouteImport.update({
+    id: '/mcp',
+    path: '/mcp',
+    getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
+  } as any)
+const AuthenticatedAdminIntegrationsIpaasRoute =
+  AuthenticatedAdminIntegrationsIpaasRouteImport.update({
+    id: '/ipaas',
+    path: '/ipaas',
+    getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
+  } as any)
 const AuthenticatedAdminIntegrationsEventsRoute =
   AuthenticatedAdminIntegrationsEventsRouteImport.update({
     id: '/events',
@@ -491,6 +512,8 @@ export interface FileRoutesByFullPath {
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
+  '/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
+  '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -509,6 +532,7 @@ export interface FileRoutesByFullPath {
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
@@ -534,7 +558,6 @@ export interface FileRoutesByTo {
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
@@ -557,6 +580,8 @@ export interface FileRoutesByTo {
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
+  '/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
+  '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -575,6 +600,7 @@ export interface FileRoutesByTo {
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
@@ -625,6 +651,8 @@ export interface FileRoutesById {
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/_authenticated/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
+  '/_authenticated/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
+  '/_authenticated/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   '/_authenticated/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/_authenticated/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
@@ -643,6 +671,7 @@ export interface FileRoutesById {
   '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/_authenticated/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/_authenticated/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
@@ -693,6 +722,8 @@ export interface FileRouteTypes {
     | '/workspaces/'
     | '/admin/integrations/email'
     | '/admin/integrations/events'
+    | '/admin/integrations/ipaas'
+    | '/admin/integrations/mcp'
     | '/admin/intelligence/anomalies'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
@@ -711,6 +742,7 @@ export interface FileRouteTypes {
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
+    | '/admin/integrations/'
     | '/workspaces/$workspaceId/'
     | '/admin/tenant/identity/ldap'
     | '/settings/security/mfa/recovery'
@@ -736,7 +768,6 @@ export interface FileRouteTypes {
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/groups'
-    | '/admin/integrations'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
     | '/admin/permission-lag'
@@ -759,6 +790,8 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/admin/integrations/email'
     | '/admin/integrations/events'
+    | '/admin/integrations/ipaas'
+    | '/admin/integrations/mcp'
     | '/admin/intelligence/anomalies'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
@@ -777,6 +810,7 @@ export interface FileRouteTypes {
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
+    | '/admin/integrations'
     | '/workspaces/$workspaceId'
     | '/admin/tenant/identity/ldap'
     | '/settings/security/mfa/recovery'
@@ -826,6 +860,8 @@ export interface FileRouteTypes {
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/integrations/email'
     | '/_authenticated/admin/integrations/events'
+    | '/_authenticated/admin/integrations/ipaas'
+    | '/_authenticated/admin/integrations/mcp'
     | '/_authenticated/admin/intelligence/anomalies'
     | '/_authenticated/admin/intelligence/auto-tag'
     | '/_authenticated/admin/intelligence/compliance'
@@ -844,6 +880,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sign/in-person/$requestId'
     | '/_authenticated/signatures/send/$documentId'
     | '/_authenticated/workflows/instances/$instanceId'
+    | '/_authenticated/admin/integrations/'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/admin/tenant/identity/ldap'
     | '/_authenticated/settings/security/mfa/recovery'
@@ -1155,6 +1192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/integrations/': {
+      id: '/_authenticated/admin/integrations/'
+      path: '/'
+      fullPath: '/admin/integrations/'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminIntegrationsRoute
+    }
     '/_authenticated/workflows/instances/$instanceId': {
       id: '/_authenticated/workflows/instances/$instanceId'
       path: '/workflows/instances/$instanceId'
@@ -1281,6 +1325,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/integrations/mcp': {
+      id: '/_authenticated/admin/integrations/mcp'
+      path: '/mcp'
+      fullPath: '/admin/integrations/mcp'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsMcpRouteImport
+      parentRoute: typeof AuthenticatedAdminIntegrationsRoute
+    }
+    '/_authenticated/admin/integrations/ipaas': {
+      id: '/_authenticated/admin/integrations/ipaas'
+      path: '/ipaas'
+      fullPath: '/admin/integrations/ipaas'
+      preLoaderRoute: typeof AuthenticatedAdminIntegrationsIpaasRouteImport
+      parentRoute: typeof AuthenticatedAdminIntegrationsRoute
+    }
     '/_authenticated/admin/integrations/events': {
       id: '/_authenticated/admin/integrations/events'
       path: '/events'
@@ -1322,6 +1380,9 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminIntegrationsRouteChildren {
   AuthenticatedAdminIntegrationsEmailRoute: typeof AuthenticatedAdminIntegrationsEmailRoute
   AuthenticatedAdminIntegrationsEventsRoute: typeof AuthenticatedAdminIntegrationsEventsRoute
+  AuthenticatedAdminIntegrationsIpaasRoute: typeof AuthenticatedAdminIntegrationsIpaasRoute
+  AuthenticatedAdminIntegrationsMcpRoute: typeof AuthenticatedAdminIntegrationsMcpRoute
+  AuthenticatedAdminIntegrationsIndexRoute: typeof AuthenticatedAdminIntegrationsIndexRoute
 }
 
 const AuthenticatedAdminIntegrationsRouteChildren: AuthenticatedAdminIntegrationsRouteChildren =
@@ -1330,6 +1391,12 @@ const AuthenticatedAdminIntegrationsRouteChildren: AuthenticatedAdminIntegration
       AuthenticatedAdminIntegrationsEmailRoute,
     AuthenticatedAdminIntegrationsEventsRoute:
       AuthenticatedAdminIntegrationsEventsRoute,
+    AuthenticatedAdminIntegrationsIpaasRoute:
+      AuthenticatedAdminIntegrationsIpaasRoute,
+    AuthenticatedAdminIntegrationsMcpRoute:
+      AuthenticatedAdminIntegrationsMcpRoute,
+    AuthenticatedAdminIntegrationsIndexRoute:
+      AuthenticatedAdminIntegrationsIndexRoute,
   }
 
 const AuthenticatedAdminIntegrationsRouteWithChildren =
