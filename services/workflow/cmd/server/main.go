@@ -136,6 +136,16 @@ func main() {
 	h.Register(mux)
 	// ADR 0064 — tenant-wide delegations + recall.
 	h.RegisterRoutingPatterns(mux)
+	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). API-key
+	// authenticated; the /api/v1/integrations/triggers/ prefix is
+	// whitelisted by RequireGatewaySignature.
+	integrationsMux := http.NewServeMux()
+	handler.NewIntegrationTriggersHandler(pool).Register(integrationsMux)
+	mux.Handle("/api/v1/integrations/triggers/workflows/completed",
+		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
+			Pool:          pool,
+			RequiredScope: "integrations:read",
+		})(integrationsMux))
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

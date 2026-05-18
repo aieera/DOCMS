@@ -317,6 +317,18 @@ func main() {
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(storageMux),
 	))
 
+	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).
+	// Authenticated by API key (Bearer vdms_...) with scope
+	// integrations:read; tenant is stamped on ctx by APIKeyAuth.
+	integrationsMux := http.NewServeMux()
+	handler.NewIntegrationTriggersHandler(pool).Register(integrationsMux)
+	rootMux.Handle("/api/v1/integrations/triggers/documents", middleware.CorrelationHTTP(
+		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
+			Pool:          pool,
+			RequiredScope: "integrations:read",
+		})(integrationsMux),
+	))
+
 	// Compliance REST endpoints (legal holds — Wave 8.2). Uses its own
 	// mux so 423 Locked + validation errors flow through the handler's
 	// own writer rather than being rewrapped by the gateway.
