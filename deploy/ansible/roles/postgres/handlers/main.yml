@@ -1,0 +1,9 @@
+- name: Restart postgres
+  ansible.builtin.systemd:
+    name: "{{ 'postgresql-' ~ postgres_version if ansible_os_family == 'RedHat' else 'postgresql' }}"
+    state: restarted
+
+- name: Reload postgres
+  ansible.builtin.systemd:
+    name: "{{ 'postgresql-' ~ postgres_version if ansible_os_family == 'RedHat' else 'postgresql' }}"
+    state: reloaded

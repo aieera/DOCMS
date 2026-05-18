@@ -1,0 +1,60 @@
+# Defaults applied to every host. Per-group or per-host overrides go in
+# group_vars/<group>.yml or host_vars/<hostname>.yml.
+
+# ----- Versioning -----------------------------------------------------------
+# Which release of VaultDMS to install. The upgrade playbook bumps this.
+vaultdms_release: "v1.0.0"
+
+# Where the prebuilt Go service binaries come from. Override to point at a
+# private artifact store, or set to "local" and use ansible's `synchronize`
+# module to push binaries from the control node.
+vaultdms_binary_source: "https://github.com/aieera/DOCMS/releases/download/{{ vaultdms_release }}"
+
+# ----- Paths ----------------------------------------------------------------
+# Standard FHS layout. Each service gets its own subdir under bin + var,
+# but they all share /etc/vaultdms/ for config + /var/log/vaultdms/ for logs.
+vaultdms_user: vaultdms
+vaultdms_group: vaultdms
+vaultdms_install_dir: /opt/vaultdms
+vaultdms_bin_dir: "{{ vaultdms_install_dir }}/bin"
+vaultdms_config_dir: /etc/vaultdms
+vaultdms_state_dir: /var/lib/vaultdms
+vaultdms_log_dir: /var/log/vaultdms
+
+# ----- Network --------------------------------------------------------------
+# Service-to-service hostnames. Default assumes a single host has every tier
+# (small deploys). For multi-host setups, point each var at the actual host:
+#   vaultdms_db_host: db01.internal
+vaultdms_db_host: "{{ groups['db'][0] | default('localhost') }}"
+vaultdms_db_port: 5432
+vaultdms_db_name: vaultdms
+vaultdms_db_user: vaultdms
+
+vaultdms_cache_host: "{{ groups['cache'][0] | default('localhost') }}"
+vaultdms_cache_port: 6379
+
+vaultdms_search_url: "http://{{ groups['search'][0] | default('localhost') }}:9200"
+
+vaultdms_nats_url: "nats://{{ groups['messaging'][0] | default('localhost') }}:4222"
+
+vaultdms_s3_endpoint: "http://{{ groups['blob'][0] | default('localhost') }}:9000"
+
+vaultdms_temporal_addr: "{{ groups['workflow'][0] | default('localhost') }}:7233"
+
+# Externally-reachable base URL of the platform — used by auth SSO redirect
+# URLs, signature webhook URLs, and document share links. MUST be set in
+# production; the default is for `--check`-able dry runs only.
+vaultdms_public_url: "https://dms.example.com"
+
+# ----- Secrets -------------------------------------------------------------
+# Real values live in group_vars/all.vault.yml, encrypted with ansible-vault.
+# This block names the variables; do NOT put real secrets here.
+#
+#   vaultdms_db_password:        "{{ vault_db_password }}"
+#   vaultdms_local_kek:          "{{ vault_local_kek }}"
+#   vaultdms_gateway_secret:     "{{ vault_gateway_secret }}"
+#   vaultdms_internal_api_key:   "{{ vault_internal_api_key }}"
+#   vaultdms_esign_state_hmac:   "{{ vault_esign_state_hmac }}"
+#   vaultdms_stripe_webhook_sec: "{{ vault_stripe_webhook_secret }}"
+#
+# `ansible-vault create group_vars/all.vault.yml` to make it.

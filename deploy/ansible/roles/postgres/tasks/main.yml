@@ -1,0 +1,141 @@
+# PostgreSQL 16 role. Idempotent on RHEL 8/9 and Ubuntu 22.04/24.04.
+# Provisions the cluster, creates the vaultdms DB + role, and ALTERs
+# that role NOBYPASSRLS to keep the multi-tenant RLS invariant honest
+# (see CLAUDE.md and ADR 0022).
+
+# ----- RHEL 8/9 install -----------------------------------------------------
+
+- name: RHEL — install PGDG yum repo
+  ansible.builtin.dnf:
+    name: "https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ ansible_distribution_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+    state: present
+    disable_gpg_check: true
+  when: ansible_os_family == 'RedHat'
+
+- name: RHEL — disable distro postgres module
+  ansible.builtin.command: dnf -qy module disable postgresql
+  args:
+    creates: /etc/dnf/modules.d/postgresql.module
+  when: ansible_os_family == 'RedHat'
+
+- name: RHEL — install postgres packages
+  ansible.builtin.dnf:
+    name:
+      - "postgresql{{ postgres_version }}-server"
+      - "postgresql{{ postgres_version }}-contrib"
+      - python3-psycopg2
+    state: present
+  when: ansible_os_family == 'RedHat'
+
+- name: RHEL — initdb (only if data dir doesn't exist)
+  ansible.builtin.command: "/usr/pgsql-{{ postgres_version }}/bin/postgresql-{{ postgres_version }}-setup initdb"
+  args:
+    creates: "{{ postgres_data_dir_rhel }}/PG_VERSION"
+  when: ansible_os_family == 'RedHat'
+
+# ----- Ubuntu 22.04/24.04 install -------------------------------------------
+
+- name: Ubuntu — install PGDG apt repo
+  block:
+    - name: Ubuntu — install ca-certificates + curl
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, gnupg, python3-psycopg2]
+        update_cache: true
+
+    - name: Ubuntu — PGDG signing key
+      ansible.builtin.get_url:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        dest: /etc/apt/keyrings/postgresql.asc
+        mode: "0644"
+
+    - name: Ubuntu — PGDG apt source
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+        filename: pgdg
+        state: present
+
+    - name: Ubuntu — install postgres
+      ansible.builtin.apt:
+        name: "postgresql-{{ postgres_version }}"
+        state: present
+        update_cache: true
+  when: ansible_os_family == 'Debian'
+
+# ----- Common config --------------------------------------------------------
+
+- name: Resolve data dir for this OS
+  ansible.builtin.set_fact:
+    postgres_data_dir: "{{ postgres_data_dir_rhel if ansible_os_family == 'RedHat' else postgres_data_dir_ubuntu }}"
+    postgres_unit_name: "{{ 'postgresql-' ~ postgres_version if ansible_os_family == 'RedHat' else 'postgresql' }}"
+
+- name: Render postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "{{ postgres_data_dir }}/postgresql.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart postgres
+
+- name: Render pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgres_data_dir }}/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Reload postgres
+
+- name: Enable + start postgres
+  ansible.builtin.systemd:
+    name: "{{ postgres_unit_name }}"
+    state: started
+    enabled: true
+
+- name: Flush handlers (apply config changes before provisioning)
+  ansible.builtin.meta: flush_handlers
+
+# ----- Application DB + role provisioning -----------------------------------
+# The community.postgresql collection's modules are the right tool here.
+# They use the local socket as the postgres OS user, so no password needed
+# for the bootstrap connection.
+
+- name: Create application role
+  community.postgresql.postgresql_user:
+    name: "{{ postgres_db_user }}"
+    password: "{{ postgres_db_password }}"
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE,NOBYPASSRLS,LOGIN
+    state: present
+  become_user: postgres
+
+- name: Create application database
+  community.postgresql.postgresql_db:
+    name: "{{ postgres_db_name }}"
+    owner: "{{ postgres_db_user }}"
+    encoding: UTF8
+    lc_collate: en_US.UTF-8
+    lc_ctype: en_US.UTF-8
+    template: template0
+    state: present
+  become_user: postgres
+
+# Belt-and-braces in case the role pre-existed without the flag.
+- name: Enforce NOBYPASSRLS on the application role
+  community.postgresql.postgresql_query:
+    db: postgres
+    query: "ALTER ROLE {{ postgres_db_user }} NOBYPASSRLS;"
+  become_user: postgres
+
+# ----- Backup hook (placeholder) --------------------------------------------
+# Full backup role (pg_dump cron + S3 upload + retention) is deferred.
+# Until then, a minimal cron entry that dumps to local disk so operators
+# at least have a same-day recovery point.
+
+- name: Install daily pg_dump cron
+  ansible.builtin.cron:
+    name: "vaultdms pg_dump daily"
+    user: postgres
+    minute: "0"
+    hour: "2"
+    job: "pg_dump -Fc -d {{ postgres_db_name }} -f /var/backups/vaultdms-$(date +\\%Y\\%m\\%d).dump"
+    state: present

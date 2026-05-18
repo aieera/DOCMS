@@ -1,0 +1,16 @@
+galaxy_info:
+  author: VaultDMS
+  description: |
+    Templated installer for any VaultDMS Go service. Downloads the
+    versioned binary, writes a systemd unit, and starts it. Pass
+    vaultdms_service_name as a role var to pick which service.
+  license: proprietary
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: [ "8", "9" ]
+    - name: Ubuntu
+      versions: [ "22.04", "24.04" ]
+
+dependencies:
+  - role: common

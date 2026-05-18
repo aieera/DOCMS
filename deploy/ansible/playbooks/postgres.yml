@@ -1,0 +1,8 @@
+# Standalone postgres install playbook. Useful for rebuilding just the
+# DB tier without touching application services.
+- name: PostgreSQL data tier
+  hosts: db
+  become: true
+  roles:
+    - common
+    - postgres

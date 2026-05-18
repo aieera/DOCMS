@@ -1,0 +1,61 @@
+# vaultdms-{{ vaultdms_service_name }}.service — managed by ansible.
+# Restart-policy notes:
+#   - on-failure means systemd restarts after a non-zero exit (crash) but
+#     NOT after a clean exit. Use "always" if you want restart even on
+#     SIGTERM-with-zero (e.g. during upgrade — but the role's daemon-reload
+#     handler restarts explicitly anyway).
+#   - StartLimitInterval/Burst means after 5 crashes in 60s, systemd gives
+#     up and the unit lands in failed state. Override if your service has
+#     known slow-restart pathology.
+
+[Unit]
+Description=VaultDMS {{ vaultdms_service_name }}
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ vaultdms_user }}
+Group={{ vaultdms_group }}
+WorkingDirectory={{ vaultdms_state_dir }}
+EnvironmentFile={{ vaultdms_config_dir }}/{{ vaultdms_service_name }}.env
+ExecStart={{ vaultdms_bin_dir }}/{{ vaultdms_service_name }}
+Restart={{ vaultdms_service_restart }}
+RestartSec={{ vaultdms_service_restart_sec }}
+
+# Logging — stdout/stderr go to journald, journalctl -u vaultdms-<name>.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vaultdms-{{ vaultdms_service_name }}
+
+# Security hardening — same intent as the Helm chart's PSS-restricted
+# securityContext (see ADR 0092). Each line is a defense-in-depth knob
+# that's expensive to add later; cheap now.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+# /var/lib/vaultdms is the only writable path the service has.
+ReadWritePaths={{ vaultdms_state_dir }}
+
+# Resource ceilings — generous defaults; tune per service in
+# host_vars or via vaultdms_service_extra_env.
+LimitNOFILE=65536
+TasksMax=4096
+
+[Install]
+WantedBy=multi-user.target

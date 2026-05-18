@@ -1,0 +1,13 @@
+# Handlers are named with the service name interpolated so notifications
+# from `notify: Restart vaultdms-{{ vaultdms_service_name }}` resolve to
+# a per-service handler. Without this we'd have one global restart
+# handler that would restart EVERY service on any change.
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: "Restart vaultdms-{{ vaultdms_service_name }}"
+  ansible.builtin.systemd:
+    name: "vaultdms-{{ vaultdms_service_name }}"
+    state: restarted

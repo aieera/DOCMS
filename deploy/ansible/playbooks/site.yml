@@ -1,0 +1,75 @@
+# Umbrella playbook (ADR 0093). Brings the whole stack up against the
+# inventory's tier groups. For a partial install, target a specific
+# playbook (postgres.yml, document.yml, …) instead.
+#
+# Usage:
+#   ansible-playbook playbooks/site.yml
+#   ansible-playbook playbooks/site.yml --tags app
+#   ansible-playbook playbooks/site.yml --limit db01.internal
+
+- name: Baseline hardening on every host
+  hosts: vaultdms
+  become: true
+  tags: [common]
+  roles:
+    - common
+
+- name: PostgreSQL — primary data store
+  hosts: db
+  become: true
+  tags: [db, infra]
+  roles:
+    - postgres
+
+# ----- Infrastructure roles deferred to ADR 0093's follow-up -----------------
+# The roles below are listed for forward-compatibility but NOT yet shipped
+# in this commit. Uncomment as each role lands. Until then, install these
+# components by other means (compose, vendor packages, etc.) and point the
+# group_vars at the resulting hosts.
+#
+# - name: Redis
+#   hosts: cache
+#   become: true
+#   roles: [ redis ]
+#
+# - name: OpenSearch
+#   hosts: search
+#   become: true
+#   roles: [ opensearch ]
+#
+# - name: NATS + JetStream
+#   hosts: messaging
+#   become: true
+#   roles: [ nats ]
+#
+# - name: MinIO
+#   hosts: blob
+#   become: true
+#   roles: [ minio ]
+#
+# - name: Temporal
+#   hosts: workflow
+#   become: true
+#   roles: [ temporal ]
+#
+# - name: ClamAV
+#   hosts: antimalware
+#   become: true
+#   roles: [ clamav ]
+
+- name: Application services (document)
+  hosts: app
+  become: true
+  tags: [app, document]
+  roles:
+    - role: vaultdms-service
+      vars:
+        vaultdms_service_name: document
+        vaultdms_service_grpc_port: 9090
+        vaultdms_service_http_port: 8080
+        vaultdms_service_health_port: 8081
+
+# The other 13 Go services follow the same pattern — copy the block
+# above with the service name and ports. See ADR 0093 §"Adding a new
+# service" for the full list. Today's commit only installs `document`
+# as the worked example.

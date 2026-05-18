@@ -1,0 +1,91 @@
+# common — baseline hardening + vaultdms user + paths on every host.
+# Runs first via the umbrella playbook.
+
+- name: Detect OS family
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in ['RedHat', 'Debian']
+    fail_msg: |
+      Unsupported OS family: {{ ansible_os_family }}.
+      Supported: RHEL 8/9, Ubuntu 22.04/24.04.
+
+- name: Create vaultdms group
+  ansible.builtin.group:
+    name: "{{ vaultdms_group }}"
+    system: true
+    state: present
+
+- name: Create vaultdms user
+  ansible.builtin.user:
+    name: "{{ vaultdms_user }}"
+    group: "{{ vaultdms_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ vaultdms_state_dir }}"
+    create_home: false
+    state: present
+
+- name: Create platform directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ vaultdms_user }}"
+    group: "{{ vaultdms_group }}"
+    mode: "0750"
+  loop:
+    - "{{ vaultdms_install_dir }}"
+    - "{{ vaultdms_bin_dir }}"
+    - "{{ vaultdms_config_dir }}"
+    - "{{ vaultdms_state_dir }}"
+    - "{{ vaultdms_log_dir }}"
+
+- name: Open firewall for inter-service traffic (RHEL/firewalld)
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - 8080/tcp   # HTTP
+    - 8081/tcp   # health
+    - 9090/tcp   # gRPC
+  when: ansible_os_family == 'RedHat'
+  failed_when: false
+
+- name: Open firewall for inter-service traffic (Ubuntu/ufw)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "8080"
+    - "8081"
+    - "9090"
+  when: ansible_os_family == 'Debian'
+  failed_when: false
+
+# logrotate config covering /var/log/vaultdms/*.log. Each service writes
+# its stdout/stderr through systemd's journal, but Go services that log
+# to a file (via VAULTDMS_LOG_FILE) get rotated by this config.
+- name: Install logrotate config
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/vaultdms
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ vaultdms_log_dir }}/*.log {
+        daily
+        rotate 14
+        compress
+        delaycompress
+        missingok
+        notifempty
+        copytruncate
+        su {{ vaultdms_user }} {{ vaultdms_group }}
+      }
+
+# SELinux / AppArmor: leave enforcing. The vaultdms-service role installs
+# binaries under /opt/vaultdms which is unconfined by default policies;
+# if your environment has a custom policy, add the appropriate fcontext
+# rule there rather than disabling the MAC system here.

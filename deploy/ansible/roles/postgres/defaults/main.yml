@@ -1,0 +1,24 @@
+# Defaults for the postgres role. Override in group_vars/db.yml or
+# host_vars/<dbhost>.yml.
+postgres_version: 16
+postgres_listen_addresses: "*"
+postgres_port: 5432
+postgres_data_dir_rhel: /var/lib/pgsql/{{ postgres_version }}/data
+postgres_data_dir_ubuntu: /var/lib/postgresql/{{ postgres_version }}/main
+postgres_max_connections: 200
+postgres_shared_buffers: "512MB"
+postgres_log_min_duration_statement: 1000   # log slow queries (ms)
+
+# DB + role + password to provision for the VaultDMS application.
+# postgres_db_password is expected to be supplied via Ansible Vault.
+postgres_db_name: "{{ vaultdms_db_name }}"
+postgres_db_user: "{{ vaultdms_db_user }}"
+postgres_db_password: "{{ vault_db_password | default('CHANGEME-supply-via-vault') }}"
+
+# Where the app servers connect FROM (CIDR or IP list). Append more
+# blocks to pg_hba.conf via postgres_extra_hba below.
+postgres_app_cidr: "10.0.2.0/24"
+
+# Extra entries appended to pg_hba.conf (one per element). Useful for
+# replication, monitoring, etc.
+postgres_extra_hba: []

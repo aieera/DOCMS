@@ -1,0 +1,48 @@
+#
+# postgresql.conf — managed by ansible (deploy/ansible/roles/postgres).
+# Edits here are overwritten on the next playbook run.
+#
+
+# ----- Connections + auth ---------------------------------------------------
+listen_addresses = '{{ postgres_listen_addresses }}'
+port             = {{ postgres_port }}
+max_connections  = {{ postgres_max_connections }}
+
+# ----- Memory ---------------------------------------------------------------
+shared_buffers           = {{ postgres_shared_buffers }}
+effective_cache_size     = 1GB
+work_mem                 = 16MB
+maintenance_work_mem     = 128MB
+
+# ----- WAL + replication ----------------------------------------------------
+wal_level     = replica
+max_wal_size  = 2GB
+min_wal_size  = 80MB
+
+# ----- Logging --------------------------------------------------------------
+log_destination              = 'stderr'
+logging_collector            = on
+log_directory                = 'log'
+log_filename                 = 'postgresql-%a.log'
+log_rotation_age             = 1d
+log_rotation_size            = 0
+log_truncate_on_rotation     = on
+log_min_duration_statement   = {{ postgres_log_min_duration_statement }}
+log_checkpoints              = on
+log_lock_waits               = on
+log_temp_files               = 1024
+
+# ----- Statement timeout (defensive) ----------------------------------------
+# Individual sessions can raise this for long-running queries.
+statement_timeout = '60s'
+idle_in_transaction_session_timeout = '300s'
+
+# ----- Locale + timezone ----------------------------------------------------
+datestyle  = 'iso, mdy'
+timezone   = 'UTC'
+lc_messages = 'en_US.UTF-8'
+
+# ----- RLS-friendly settings ------------------------------------------------
+# The application role is NOBYPASSRLS (set in the role's
+# postgresql_user task). Nothing here weakens that.
+row_security = on

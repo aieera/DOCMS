@@ -1,0 +1,19 @@
+# Defaults for a single Go service install. The caller MUST set
+# vaultdms_service_name (one of: auth, document, storage, signature,
+# search, audit, policy, workflow, notification, billing, connector,
+# graphql-gateway, mcp-server, intelligence-shim).
+#
+# Ports default to the conventional VaultDMS layout but can be
+# overridden per service in the playbook.
+vaultdms_service_name: ""
+vaultdms_service_grpc_port: 9090
+vaultdms_service_http_port: 8080
+vaultdms_service_health_port: 8081
+
+# Extra env vars to inject into the systemd unit. Useful for
+# service-specific config (gateway address, mock toggles, etc.).
+vaultdms_service_extra_env: {}
+
+# Restart-on-failure window. systemd defaults are fine for most cases.
+vaultdms_service_restart: on-failure
+vaultdms_service_restart_sec: 5

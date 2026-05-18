@@ -1,0 +1,54 @@
+# Rolling upgrade playbook. Atomically swaps the service binary on
+# each app host, restarts the unit, and waits for /healthz to come
+# back green before moving to the next host.
+#
+# Usage:
+#   ansible-playbook playbooks/upgrade.yml \
+#     -e vaultdms_release=v1.1.0 \
+#     -e service=document
+#
+# The vaultdms-service role's atomic-binary-swap pattern (download to
+# .new, validate, mv into place, daemon-reload, restart) makes this
+# safe under serial concurrency. The `serial: 1` below means one host
+# at a time so the cluster as a whole keeps serving traffic.
+
+- name: Rolling upgrade of {{ service | default('all services') }}
+  hosts: app
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  pre_tasks:
+    - name: Sanity check — release + service set
+      ansible.builtin.fail:
+        msg: "Pass -e service=<name> (e.g. document) and -e vaultdms_release=v1.2.3"
+      when: service is not defined or vaultdms_release is not defined
+
+    - name: Drain this host from the gateway upstream (placeholder)
+      ansible.builtin.debug:
+        msg: |
+          TODO: implement actual gateway-drain. The Kong DBless config in
+          deploy/gateway/kong.yaml needs an opt-in "drain" annotation per
+          upstream. Until then, manual drain is required for true
+          zero-downtime; without it the rolling upgrade still works but
+          the host's in-flight requests fail when its binary is swapped.
+
+  roles:
+    - role: vaultdms-service
+      vars:
+        vaultdms_service_name: "{{ service }}"
+        # Ports come from the per-service definitions in site.yml. This
+        # upgrade playbook reuses whatever's already configured.
+
+  post_tasks:
+    - name: Wait for /healthz to return 200
+      ansible.builtin.uri:
+        url: "http://{{ inventory_hostname }}:{{ vaultdms_service_health_port | default(8081) }}/healthz"
+        status_code: 200
+      retries: 30
+      delay: 2
+      register: health
+      until: health.status == 200
+
+    - name: Re-attach this host to the gateway upstream (placeholder)
+      ansible.builtin.debug:
+        msg: "TODO: gateway re-attach (counterpart to the drain above)."

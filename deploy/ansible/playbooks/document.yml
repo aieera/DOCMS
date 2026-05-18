@@ -1,0 +1,13 @@
+# Standalone document-service install playbook. Lets you roll out the
+# document binary to a specific app host without touching the rest of
+# the stack.
+- name: Document service
+  hosts: app
+  become: true
+  roles:
+    - role: vaultdms-service
+      vars:
+        vaultdms_service_name: document
+        vaultdms_service_grpc_port: 9090
+        vaultdms_service_http_port: 8080
+        vaultdms_service_health_port: 8081

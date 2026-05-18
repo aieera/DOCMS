@@ -58,3 +58,10 @@ web/.audit/
 
 # Runtime artifacts from scripts/dev-up.sh
 .run/
+
+# Ansible secrets (ADR 0093) — vault password + encrypted vars + real inventory
+deploy/ansible/.vault-password
+deploy/ansible/group_vars/*.vault.yml
+deploy/ansible/inventories/*.ini
+!deploy/ansible/inventories/example.ini
+deploy/ansible/host_vars/

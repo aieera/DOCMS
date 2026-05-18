@@ -1,0 +1,23 @@
+#
+# pg_hba.conf — managed by ansible.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+# Local socket access for admin tasks (initdb, role creation).
+local   all             postgres                                peer
+local   all             all                                     peer
+
+# Application network: scram-sha-256 from the app CIDR only.
+host    {{ postgres_db_name }}    {{ postgres_db_user }}    {{ postgres_app_cidr }}    scram-sha-256
+
+# Replication slot (only meaningful when standby is configured).
+host    replication     replicator      {{ postgres_app_cidr }}    scram-sha-256
+
+# Extra entries from inventory.
+{% for entry in postgres_extra_hba %}
+{{ entry }}
+{% endfor %}
+
+# Reject everything else.
+host    all             all             0.0.0.0/0               reject
+host    all             all             ::/0                    reject
