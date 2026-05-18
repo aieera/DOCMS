@@ -1,0 +1,1 @@
+ALTER TABLE connector_configs DROP CONSTRAINT IF EXISTS connector_configs_tenant_type_unique;

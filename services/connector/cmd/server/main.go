@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,7 +28,6 @@ import (
 	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
 	"github.com/vaultdms/vaultdms/services/connector/internal/handler"
 	"github.com/vaultdms/vaultdms/services/connector/internal/intake"
-	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
 	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
 	"github.com/vaultdms/vaultdms/services/connector/internal/webhook"
@@ -65,6 +66,17 @@ func main() {
 
 	repo := repository.New(pool)
 	svc := service.New(service.Config{Repo: repo, Logger: *log.Z()})
+
+	// Native connector wiring (ADR 0089). Sealing key and state-HMAC
+	// secret are both derived from VAULTDMS_LOCAL_KEK with distinct
+	// domain prefixes so a dump can't substitute one for the other.
+	connSeal := deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK)
+	connHMAC := deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK)
+	defaultRedirect := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/connectors/oauth/callback"
+	if cfg.PublicURL == "" {
+		defaultRedirect = "http://localhost:3000/api/v1/connectors/oauth/callback"
+	}
+	svc.SetConnectorDeps(connSeal, connHMAC, defaultRedirect)
 
 	// Start NATS event fanout → webhook deliveries.
 	if err := svc.StartEventFanout(ctx, js); err != nil {
@@ -121,8 +133,7 @@ func main() {
 	go intakeSvc.Start(ctx)
 	intakeHandler := handler.NewIntakeHandler(intakeSvc)
 
-	// MCP server.
-	mcpSrv := mcp.NewServer(*log.Z())
+	// MCP server extracted to services/mcp-server (ADR 0091).
 
 	// ---- Health ----------------------------------------------------------
 	hs := health.NewServer(pool, rdb, nc, nil)
@@ -153,7 +164,7 @@ func main() {
 
 	// ---- HTTP REST -------------------------------------------------------
 	mux := http.NewServeMux()
-	h := handler.New(svc, mcpSrv, *log.Z())
+	h := handler.New(svc, *log.Z())
 	h.Register(mux)
 	esHandler.Register(mux)
 	emailHandler.Register(mux)
@@ -179,4 +190,12 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// deriveKey returns a 32-byte AES key from a domain-prefixed seed.
+// Same pattern as the signature service's deriveSealingKey — distinct
+// domain strings prevent cross-purpose key reuse if a dump leaks.
+func deriveKey(seed string) []byte {
+	h := sha256.Sum256([]byte(seed))
+	return h[:]
 }

@@ -8,20 +8,19 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/connector/internal/mcp"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
 )
 
 // Handler holds HTTP route handlers.
 type Handler struct {
-	svc    *service.Service
-	mcpSrv *mcp.Server
-	log    zerolog.Logger
+	svc *service.Service
+	log zerolog.Logger
 }
 
-// New constructs a Handler.
-func New(svc *service.Service, mcpSrv *mcp.Server, log zerolog.Logger) *Handler {
-	return &Handler{svc: svc, mcpSrv: mcpSrv, log: log}
+// New constructs a Handler. MCP server was extracted to its own
+// service (ADR 0091); the constructor no longer takes mcpSrv.
+func New(svc *service.Service, log zerolog.Logger) *Handler {
+	return &Handler{svc: svc, log: log}
 }
 
 // Register mounts all routes.
@@ -40,9 +39,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/connectors", h.listConnectors)
 	mux.HandleFunc("GET /api/v1/connectors/{provider}", h.getConnector)
 	mux.HandleFunc("GET /api/v1/connectors/{provider}/auth-url", h.getAuthURL)
-	mux.HandleFunc("POST /api/v1/connectors/{provider}/callback", h.oauthCallback)
+	// Vendors redirect to /oauth/callback (no path param) with state +
+	// code; the provider is recovered from the HMAC-signed state.
+	mux.HandleFunc("GET /api/v1/connectors/oauth/callback", h.connectorOAuthCallback)
+	// Per-tenant credentials for native connectors (ADR 0089).
+	// Google-specific for now; SaveGoogleConfig validates the body.
+	mux.HandleFunc("PUT /api/v1/connectors/google/config", h.putGoogleConfig)
+	mux.HandleFunc("POST /api/v1/connectors/google/disconnect", h.disconnectGoogle)
 	// MCP
-	mux.HandleFunc("POST /api/v1/mcp", h.mcpSrv.HandleSSE)
+	// MCP routes moved to services/mcp-server (ADR 0091).
 }
 
 // ---- Webhooks -------------------------------------------------------------
@@ -213,21 +218,56 @@ func (h *Handler) listConnectors(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getConnector(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusUnauthorized, "tenant required")
+		return
+	}
 	provider := r.PathValue("provider")
 	cc, err := h.svc.GetConnector(r.Context(), tenantID, provider)
-	if err != nil || cc == nil {
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if cc == nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, cc)
 }
 
+// getAuthURL returns the vendor consent URL the browser should be
+// redirected to. Tenant must have saved client credentials first.
 func (h *Handler) getAuthURL(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stub", "provider": r.PathValue("provider")})
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	provider := r.PathValue("provider")
+	var (
+		url string
+		err error
+	)
+	switch provider {
+	case "google":
+		url, err = h.svc.StartGoogleOAuth(r.Context(), tenantID)
+	default:
+		writeError(w, http.StatusBadRequest, "provider not yet supported: "+provider)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"auth_url": url})
 }
 
+// oauthCallback is the legacy per-provider callback shape preserved
+// for compatibility. New connectors should use the unified
+// /api/v1/connectors/oauth/callback endpoint above which derives the
+// provider from the HMAC-signed state.
 func (h *Handler) oauthCallback(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stub", "provider": r.PathValue("provider")})
+	h.connectorOAuthCallback(w, r)
 }
 
 // ---- helpers --------------------------------------------------------------

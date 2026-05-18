@@ -25,6 +25,11 @@ type Service struct {
 	repo   *repository.Repository
 	log    zerolog.Logger
 	kicker func()
+	// Per-tenant native-connector wiring (Google, Salesforce, M365, …).
+	// SetConnectorDeps populates these from main.go after construction.
+	connSealingKey []byte
+	connHMAC       []byte
+	connRedirect   string
 }
 
 // SetWorkerKicker wires the delivery worker's Kick so test-send /

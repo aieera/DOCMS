@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"time"
 
@@ -260,31 +261,90 @@ func (r *Repository) ListDeliveries(ctx context.Context, tenantID, subID string,
 
 // ---- Connector Configs ----------------------------------------------------
 
+// UpsertConnector inserts or updates a connector_configs row. Uniqueness
+// is keyed on (tenant_id, connector_type) — a tenant gets one config per
+// vendor. config_encrypted + oauth_tokens_encrypted are JSONB columns
+// wrapping sealed bytes; callers pass already-sealed values.
 func (r *Repository) UpsertConnector(ctx context.Context, cc *model.ConnectorConfig) error {
+	if cc.ID == "" {
+		cc.ID = newID()
+	}
+	// Wrap sealed bytes as {"sealed":"<base64>"} so the JSONB column
+	// stays valid JSON and we can update only the secret payload
+	// without touching the rest of the row's metadata.
+	cfgJSON := []byte(`{"sealed":""}`)
+	if len(cc.ConfigEncrypted) > 0 {
+		cfgJSON = wrapSealed(cc.ConfigEncrypted)
+	}
+	tokJSON := []byte(`{"sealed":""}`)
+	if len(cc.OAuthTokensEncrypted) > 0 {
+		tokJSON = wrapSealed(cc.OAuthTokensEncrypted)
+	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO connector_configs (id, tenant_id, provider, config, status, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (tenant_id, provider) DO UPDATE SET config=EXCLUDED.config, status=EXCLUDED.status`,
-		cc.ID, cc.TenantID, cc.Provider, cc.Config, cc.Status, cc.CreatedAt)
+		INSERT INTO connector_configs (
+			id, tenant_id, connector_type, display_name,
+			config_encrypted, oauth_tokens_encrypted, is_active,
+			created_by, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,now(),now())
+		ON CONFLICT (tenant_id, connector_type) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
+			config_encrypted = EXCLUDED.config_encrypted,
+			oauth_tokens_encrypted = EXCLUDED.oauth_tokens_encrypted,
+			is_active = EXCLUDED.is_active,
+			updated_at = now()`,
+		cc.ID, cc.TenantID, cc.ConnectorType, cc.DisplayName,
+		string(cfgJSON), string(tokJSON), cc.IsActive,
+		nullableUUIDConnector(cc.CreatedBy))
 	return err
 }
 
-func (r *Repository) GetConnector(ctx context.Context, tenantID, provider string) (*model.ConnectorConfig, error) {
+// UpdateConnectorTokens overwrites just the OAuth tokens — used post-callback
+// and on token-refresh. Skips touching the config + display_name.
+func (r *Repository) UpdateConnectorTokens(ctx context.Context, tenantID, connectorType string, sealedTokens []byte) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE connector_configs
+		   SET oauth_tokens_encrypted = $3::jsonb, sync_status = 'authorized', updated_at = now()
+		 WHERE tenant_id = $1 AND connector_type = $2`,
+		tenantID, connectorType, string(wrapSealed(sealedTokens)))
+	return err
+}
+
+func (r *Repository) GetConnector(ctx context.Context, tenantID, connectorType string) (*model.ConnectorConfig, error) {
 	cc := &model.ConnectorConfig{}
+	var cfgJSON, tokJSON []byte
+	var syncStatus, createdBy *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, provider, config, status, last_sync_at, error_message, created_at
-		FROM connector_configs WHERE tenant_id = $1 AND provider = $2`, tenantID, provider).
-		Scan(&cc.ID, &cc.TenantID, &cc.Provider, &cc.Config, &cc.Status, &cc.LastSyncAt, &cc.ErrorMessage, &cc.CreatedAt)
+		SELECT id, tenant_id, connector_type, display_name,
+			config_encrypted, oauth_tokens_encrypted, is_active,
+			last_sync_at, sync_status, created_by, created_at, updated_at
+		FROM connector_configs WHERE tenant_id = $1 AND connector_type = $2`,
+		tenantID, connectorType,
+	).Scan(&cc.ID, &cc.TenantID, &cc.ConnectorType, &cc.DisplayName,
+		&cfgJSON, &tokJSON, &cc.IsActive,
+		&cc.LastSyncAt, &syncStatus, &createdBy, &cc.CreatedAt, &cc.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
-	return cc, err
+	if err != nil {
+		return nil, err
+	}
+	if syncStatus != nil {
+		cc.SyncStatus = *syncStatus
+	}
+	if createdBy != nil {
+		cc.CreatedBy = *createdBy
+	}
+	cc.ConfigEncrypted = unwrapSealed(cfgJSON)
+	cc.OAuthTokensEncrypted = unwrapSealed(tokJSON)
+	return cc, nil
 }
 
 func (r *Repository) ListConnectors(ctx context.Context, tenantID string) ([]*model.ConnectorConfig, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, provider, status, last_sync_at, error_message, created_at
-		FROM connector_configs WHERE tenant_id = $1`, tenantID)
+		SELECT id, tenant_id, connector_type, display_name, is_active,
+			last_sync_at, sync_status, created_at, updated_at
+		FROM connector_configs WHERE tenant_id = $1
+		ORDER BY connector_type`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,10 +352,60 @@ func (r *Repository) ListConnectors(ctx context.Context, tenantID string) ([]*mo
 	var out []*model.ConnectorConfig
 	for rows.Next() {
 		cc := &model.ConnectorConfig{}
-		if err := rows.Scan(&cc.ID, &cc.TenantID, &cc.Provider, &cc.Status, &cc.LastSyncAt, &cc.ErrorMessage, &cc.CreatedAt); err != nil {
+		var syncStatus *string
+		if err := rows.Scan(&cc.ID, &cc.TenantID, &cc.ConnectorType, &cc.DisplayName,
+			&cc.IsActive, &cc.LastSyncAt, &syncStatus, &cc.CreatedAt, &cc.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if syncStatus != nil {
+			cc.SyncStatus = *syncStatus
 		}
 		out = append(out, cc)
 	}
 	return out, rows.Err()
+}
+
+// ---- helpers --------------------------------------------------------------
+
+// wrapSealed packs raw sealed bytes into {"sealed":"<base64>"} so the
+// JSONB column stores valid JSON. The service layer seals/unseals at
+// its boundary; this layer just transports opaque bytes.
+func wrapSealed(sealed []byte) []byte {
+	if len(sealed) == 0 {
+		return []byte(`{"sealed":""}`)
+	}
+	payload := map[string]string{"sealed": base64.StdEncoding.EncodeToString(sealed)}
+	out, _ := json.Marshal(payload)
+	return out
+}
+
+// unwrapSealed reverses wrapSealed. Empty / malformed JSON yields nil
+// so callers see "no value" rather than a decode error.
+func unwrapSealed(jsonb []byte) []byte {
+	if len(jsonb) == 0 {
+		return nil
+	}
+	var w struct {
+		Sealed string `json:"sealed"`
+	}
+	if err := json.Unmarshal(jsonb, &w); err != nil {
+		return nil
+	}
+	if w.Sealed == "" {
+		return nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(w.Sealed)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// nullableUUIDConnector returns nil for empty strings so an FK column
+// can be inserted as NULL when no caller is recorded.
+func nullableUUIDConnector(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

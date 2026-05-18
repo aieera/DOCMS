@@ -41,24 +41,44 @@ var RetryBackoff = []time.Duration{
 
 // ---- Connector Configs ----------------------------------------------------
 
-// ConnectorConfig stores encrypted OAuth tokens per tenant+provider.
+// ConnectorConfig mirrors the connector_configs table created in the
+// initial document-service migration. config_encrypted carries the
+// vendor client_id + client_secret; oauth_tokens_encrypted carries the
+// access/refresh pair. Both are sealed with the per-tenant KEK before
+// the repository writes them — fields below carry the sealed bytes.
 type ConnectorConfig struct {
-	ID            string    `json:"id"`
-	TenantID      string    `json:"tenant_id"`
-	Provider      string    `json:"provider"` // microsoft365 | salesforce | google_workspace
-	Config        []byte    `json:"config"`   // encrypted JSON: client_id, client_secret, tokens
-	Status        string    `json:"status"`   // active | error | disabled
-	LastSyncAt    *time.Time `json:"last_sync_at,omitempty"`
-	ErrorMessage  string    `json:"error_message,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                   string     `json:"id"`
+	TenantID             string     `json:"tenant_id"`
+	ConnectorType        string     `json:"connector_type"` // 'google', 'salesforce', 'm365', etc.
+	DisplayName          string     `json:"display_name"`
+	ConfigEncrypted      []byte     `json:"-"`
+	OAuthTokensEncrypted []byte     `json:"-"`
+	IsActive             bool       `json:"is_active"`
+	LastSyncAt           *time.Time `json:"last_sync_at,omitempty"`
+	SyncStatus           string     `json:"sync_status,omitempty"`
+	CreatedBy            string     `json:"-"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
-// OAuthTokens are stored encrypted inside ConnectorConfig.Config.
-type OAuthTokens struct {
+// ProviderConfig is the plaintext shape of config_encrypted. Vendor
+// client_id + client_secret + any vendor-specific knobs (instance URL
+// for Salesforce, region for ServiceNow, etc.).
+type ProviderConfig struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	// Provider-specific overrides land here:
+	InstanceURL string `json:"instance_url,omitempty"`
+	Region      string `json:"region,omitempty"`
+}
+
+// OAuthTokens is the plaintext shape of oauth_tokens_encrypted.
+// Each provider's adapter unseals this on every call.
+type OAuthTokens struct {
+	ClientID     string    `json:"client_id"`
+	ClientSecret string    `json:"client_secret"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
 	TokenExpiry  time.Time `json:"token_expiry"`
 	Scopes       []string  `json:"scopes"`
 }
