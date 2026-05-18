@@ -93,6 +93,52 @@ global:
     stripeWebhookSecretKey: webhook-secret
 
 # ============================================================================
+# External Secrets Operator (ADR 0092)
+# ============================================================================
+# When enabled, ExternalSecret resources sync sensitive values from an
+# upstream SecretStore (Vault, AWS Secrets Manager, GCP Secret Manager)
+# into K8s Secret objects the application pods mount. Disable this and
+# the chart still works against operator-provisioned Secret resources
+# with the same names — application pods don't know the difference.
+
+externalSecrets:
+  enabled: false
+  refreshInterval: "1h"
+  secretStoreRef:
+    kind: ClusterSecretStore       # or SecretStore
+    name: vaultdms-vault
+  secrets:
+    vaultdms-platform-secrets:
+      data:
+        - secretKey: VAULTDMS_LOCAL_KEK
+          remoteKey: secret/data/vaultdms/local-kek
+          property: value
+        - secretKey: VAULTDMS_GATEWAY_SECRET
+          remoteKey: secret/data/vaultdms/gateway-secret
+          property: value
+        - secretKey: VAULTDMS_INTERNAL_API_KEY
+          remoteKey: secret/data/vaultdms/internal-api-key
+          property: value
+    vaultdms-esign-secrets:
+      data:
+        - secretKey: VAULTDMS_ESIGN_STATE_HMAC
+          remoteKey: secret/data/vaultdms/esign-state-hmac
+          property: value
+        - secretKey: VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET
+          remoteKey: secret/data/vaultdms/esign-docusign-client-secret
+          property: value
+    vaultdms-twilio-secrets:
+      data:
+        - secretKey: VAULTDMS_TWILIO_AUTH_TOKEN
+          remoteKey: secret/data/vaultdms/twilio-auth-token
+          property: value
+    vaultdms-stripe-secrets:
+      data:
+        - secretKey: STRIPE_WEBHOOK_SECRET
+          remoteKey: secret/data/vaultdms/stripe-webhook-secret
+          property: value
+
+# ============================================================================
 # Services
 # ============================================================================
 
