@@ -330,6 +330,33 @@ graphql-gateway:
   httpPort: 8080
   healthPort: 8081
 
+# ADR 0091 — MCP server for LLM agents (Claude Desktop, Cursor,
+# GitHub Copilot). Exposes search/get/upload/start_workflow tools
+# behind API-key auth with mcp:read / mcp:write scopes. The service
+# is stateless; tools dispatch to search/document/workflow services
+# over HTTP. No grpcPort — the only contract is HTTP+SSE.
+mcpServer:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/mcp-server"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+  env:
+    SEARCH_BASE_URL:       "http://search:8080"
+    DOCUMENT_BASE_URL:     "http://document:8080"
+    WORKFLOW_BASE_URL:     "http://workflow:8080"
+    INTELLIGENCE_BASE_URL: "http://intelligence:8080"
+  httpPort: 8080
+  healthPort: 8081
+
 intelligence:
   enabled: true
   replicas: 2
