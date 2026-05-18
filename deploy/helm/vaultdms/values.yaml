@@ -10,6 +10,16 @@ global:
   storageClass: ""
   tenantIsolation: shared  # shared | schema | database
 
+  # PodSecurityStandards enforcement (ADR 0092). The chart's
+  # goServiceDeployment macro always sets a restricted-compatible
+  # securityContext; the labels here are what tell the K8s admission
+  # controller to enforce it. Default leaves namespace management to
+  # the operator (createNamespace=false) but documents the labels
+  # that MUST be applied externally.
+  podSecurity:
+    createNamespace: false
+    profile: restricted  # restricted | baseline | privileged
+
   domain: vaultdms.example.com
   tlsSecretName: vaultdms-tls
 

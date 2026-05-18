@@ -24,5 +24,14 @@ spec:
             httpGet: { path: /, port: http }
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000, readOnlyRootFilesystem: true }
+          # PSS restricted (ADR 0092). nginx-served static assets are
+          # read-only by design so readOnlyRootFilesystem stays on.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 {{- end }}

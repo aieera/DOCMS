@@ -32,7 +32,16 @@ spec:
             tcpSocket: { port: ws }
           resources:
             {{- toYaml .Values.collaboration.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+          # PSS restricted (ADR 0092). Node service can run with
+          # readOnlyRootFilesystem if /tmp + /app/.cache are emptyDir
+          # — not configured here yet; deferred.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 ---
 apiVersion: v1
 kind: Service

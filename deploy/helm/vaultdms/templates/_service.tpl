@@ -86,11 +86,22 @@ spec:
             periodSeconds: 1
           resources:
             {{- toYaml .svc.resources | nindent 12 }}
+          # PodSecurityStandards restricted profile (ADR 0092). The
+          # restricted profile requires capabilities.drop=[ALL] and a
+          # seccompProfile of RuntimeDefault or Localhost in addition
+          # to the runAsNonRoot / readOnlyRootFilesystem we already set.
+          # Removing these in dev needs an explicit
+          # global.podSecurity.profile=baseline override.
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
+            runAsGroup: 1000
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
 {{- end }}
 
 {{/*

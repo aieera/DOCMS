@@ -38,7 +38,15 @@ spec:
             httpGet: { path: /healthz, port: http }
           resources:
             {{- toYaml .Values.intelligence.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+          # PSS restricted (ADR 0092). readOnlyRootFilesystem omitted —
+          # Python needs /tmp writable for pip + HuggingFace caches.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 ---
 # Celery worker
 apiVersion: apps/v1
@@ -70,5 +78,13 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.intelligence.celery.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+          # PSS restricted (ADR 0092). readOnlyRootFilesystem omitted —
+          # Python needs /tmp writable for pip + HuggingFace caches.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 {{- end }}

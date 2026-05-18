@@ -1,0 +1,30 @@
+{{- /*
+PodSecurityStandards enforcement (ADR 0092). Helm doesn't manage the
+release namespace by default, but if global.podSecurity.createNamespace
+is true we create it here with the restricted-profile labels:
+
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit:   restricted
+    pod-security.kubernetes.io/warn:    restricted
+
+In environments where the namespace is provisioned by a platform team
+(`createNamespace: false`, the default), operators must apply the same
+three labels themselves — every Deployment in this chart sets a
+restricted-compatible securityContext via the goServiceDeployment
+macro, so admission will pass if the labels are present.
+
+The profile knob exists for tightly-coupled dev clusters where
+`baseline` is acceptable. Production deploys MUST keep `restricted`.
+*/ -}}
+{{- if .Values.global.podSecurity.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    pod-security.kubernetes.io/enforce: {{ .Values.global.podSecurity.profile | default "restricted" }}
+    pod-security.kubernetes.io/audit:   {{ .Values.global.podSecurity.profile | default "restricted" }}
+    pod-security.kubernetes.io/warn:    {{ .Values.global.podSecurity.profile | default "restricted" }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

@@ -32,7 +32,15 @@ spec:
             httpGet: { path: /healthz, port: http }
           resources:
             {{- toYaml .Values.preview.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+          # PSS restricted (ADR 0092). LibreOffice + Ghostscript need
+          # /tmp writable; readOnlyRootFilesystem stays off.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 ---
 # Celery workers — poppler + libreoffice + ffmpeg heavy. Separate
 # deployment so it can scale independently of the API tier.
@@ -66,5 +74,13 @@ spec:
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
           resources:
             {{- toYaml .Values.preview.celery.resources | nindent 12 }}
-          securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+          # PSS restricted (ADR 0092). LibreOffice + Ghostscript need
+          # /tmp writable; readOnlyRootFilesystem stays off.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 {{- end }}
