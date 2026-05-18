@@ -64,6 +64,15 @@ type Service struct {
 	// Nil-valued fields degrade gracefully — e.g. mfa.SMS=nil drops
 	// the SMS factor from the login picker.
 	mfa MFADeps
+	// notifRepo is the per-tenant Twilio/SMTP credential store. When
+	// a tenant has saved credentials via the admin UI, the MFA senders
+	// are built fresh per-call from these rows instead of reusing the
+	// env-mode senders. Nil disables the per-tenant path.
+	notifRepo *repository.Repository
+	// notifSealKey is derived from LocalKEK with a fixed domain prefix
+	// shared between auth and notification services so the same
+	// password_sealed column unseals from either side.
+	notifSealKey []byte
 	log      zerolog.Logger
 	now      func() time.Time
 }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -72,6 +73,13 @@ func main() {
 	})
 	svc := service.New(service.Config{Repo: repo, Redis: rdb, SMTP: smtpSender, Logger: *log.Z()})
 
+	// Per-tenant SMTP override (migration 000044). When a tenant has
+	// saved their own SMTP creds via the admin UI Notifications tab,
+	// outbound transactional mail uses those instead of the env-mode
+	// smtpSender above.
+	smtpSealKey := deriveSMTPSealKey(cfg.LocalKEK)
+	svc.SetTenantSMTPDeps(repo, smtpSealKey)
+
 	if err := svc.StartConsumer(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
 	}
@@ -118,6 +126,7 @@ func main() {
 
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
+	_ = smtpSealKey // referenced indirectly via svc.SetTenantSMTPDeps above
 
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
@@ -128,4 +137,13 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+}
+
+// deriveSMTPSealKey returns a 32-byte AES key derived from the
+// deployment KEK. Same SHA-256 + domain-separation pattern as the
+// signature service's deriveSealingKey. Domain string is unique so a
+// dump can't substitute keys across services.
+func deriveSMTPSealKey(kek string) []byte {
+	h := sha256.Sum256([]byte("vaultdms.notification.smtp.seal.v1:" + kek))
+	return h[:]
 }

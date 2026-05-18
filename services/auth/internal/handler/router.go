@@ -159,6 +159,25 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Put("/policy", h.MFAPutPolicy)
 	})
 
+	// Per-tenant notification provider credentials (Twilio, SMTP).
+	// Same shape as the eSign per-tenant configs; saved via the admin
+	// UI Notifications tab. SMTP write path lives in the notification
+	// service; the GET here is auth's read-only view of the same row
+	// so the modal can pre-fill.
+	r.Route("/api/v1/admin/notifications", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Use(h.RequireRole("admin", "owner"))
+		r.Get("/twilio", h.GetTwilioConfig)
+		r.Put("/twilio", h.PutTwilioConfig)
+		r.Delete("/twilio", h.DeleteTwilioConfig)
+		r.Post("/twilio/test", h.TestTwilioConfig)
+		r.Get("/smtp", h.GetSMTPConfig)
+		r.Put("/smtp", h.PutSMTPConfig)
+		r.Delete("/smtp", h.DeleteSMTPConfig)
+		r.Post("/smtp/test", h.TestSMTPConfig)
+	})
+
 	// ---- Admin LDAP / AD direct bind (ADR 0062) -------------------------
 	if ldapAdmin != nil {
 		r.Route("/api/v1/admin/ldap", func(r chi.Router) {

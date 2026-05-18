@@ -22,7 +22,12 @@ type Service struct {
 	repo *repository.Repository
 	rdb  *redis.Client
 	smtp SMTPSender
-	log  zerolog.Logger
+	// tenantSMTP + smtpSealKey are set via SetTenantSMTPDeps. When a
+	// payload's tenant has a saved tenant_smtp_configs row, smtpSenderForTenant
+	// builds a per-tenant sender on the fly instead of using s.smtp.
+	tenantSMTP  TenantSMTPReader
+	smtpSealKey []byte
+	log         zerolog.Logger
 }
 
 // Config is DI.
@@ -91,7 +96,8 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 		// logged at Error; we don't fail the whole Deliver loop
 		// because in-app notification has already landed.
 		if emailAllowed && pref != nil && pref.EmailEnabled {
-			if s.smtp != nil && s.smtp.Enabled() {
+			sender := s.smtpSenderForTenant(ctx, payload.TenantID)
+			if sender != nil && sender.Enabled() {
 				// payload.UserIDs carries user UUIDs today; the
 				// DSR-verify publisher (Wave 11.4) passes email
 				// addresses instead. Treat the string as an email
@@ -100,7 +106,7 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 				// Wave 12 follow-up; for now only DSR tokens
 				// reach the SMTP path (they already carry emails).
 				if containsAt(uid) {
-					if err := s.smtp.Send(uid, payload.Title, payload.Body); err != nil {
+					if err := sender.Send(uid, payload.Title, payload.Body); err != nil {
 						s.log.Error().Err(err).Str("to", uid).Str("type", payload.Type).Msg("smtp send failed")
 					} else {
 						s.log.Info().Str("to", uid).Str("type", payload.Type).Msg("email sent")

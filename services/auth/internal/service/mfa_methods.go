@@ -224,14 +224,14 @@ func (s *Service) EnrollEmail(ctx context.Context, tenantID, userID uuid.UUID, e
 // hash in Redis under the MFA-session-scoped key. Caller has already
 // validated the password and issued an mfa_session_token.
 func (s *Service) StartEmailOTP(ctx context.Context, mfaSessionToken string) error {
-	if s.mfa.Email == nil {
-		return ErrMethodUnavailable
-	}
 	tenantID, userID, _, err := s.resolveMFASession(ctx, mfaSessionToken)
 	if err != nil {
 		return err
 	}
-
+	sender, err := s.emailSenderForTenant(ctx, tenantID.String())
+	if err != nil {
+		return err
+	}
 	dest, err := s.lookupMethodDestination(ctx, tenantID, userID, MethodEmail)
 	if err != nil {
 		return err
@@ -243,7 +243,7 @@ func (s *Service) StartEmailOTP(ctx context.Context, mfaSessionToken string) err
 	if err := s.storeOTP(ctx, mfaSessionToken, MethodEmail, code); err != nil {
 		return err
 	}
-	return s.mfa.Email.SendCode(ctx, dest, code)
+	return sender.SendCode(ctx, dest, code)
 }
 
 // VerifyEmailOTP — submitted code, success → CreatedSession.
@@ -274,10 +274,11 @@ func (s *Service) EnrollSMS(ctx context.Context, tenantID, userID uuid.UUID, pho
 // StartSMSOTP asks Twilio Verify to send the code; nothing returns
 // to the caller except success/failure.
 func (s *Service) StartSMSOTP(ctx context.Context, mfaSessionToken string) error {
-	if s.mfa.SMS == nil {
-		return ErrMethodUnavailable
-	}
 	tenantID, userID, _, err := s.resolveMFASession(ctx, mfaSessionToken)
+	if err != nil {
+		return err
+	}
+	sender, err := s.smsSenderForTenant(ctx, tenantID.String())
 	if err != nil {
 		return err
 	}
@@ -285,16 +286,17 @@ func (s *Service) StartSMSOTP(ctx context.Context, mfaSessionToken string) error
 	if err != nil {
 		return err
 	}
-	return s.mfa.SMS.StartVerification(ctx, dest)
+	return sender.StartVerification(ctx, dest)
 }
 
 // VerifySMSOTP submits the user-entered code to Twilio Verify, then
 // completes the login when Twilio approves it.
 func (s *Service) VerifySMSOTP(ctx context.Context, mfaSessionToken, code, ip, ua string) (*CreatedSession, error) {
-	if s.mfa.SMS == nil {
-		return nil, ErrMethodUnavailable
-	}
 	tenantID, userID, _, err := s.resolveMFASession(ctx, mfaSessionToken)
+	if err != nil {
+		return nil, err
+	}
+	sender, err := s.smsSenderForTenant(ctx, tenantID.String())
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +304,7 @@ func (s *Service) VerifySMSOTP(ctx context.Context, mfaSessionToken, code, ip, u
 	if err != nil {
 		return nil, err
 	}
-	if err := s.mfa.SMS.CheckVerification(ctx, dest, code); err != nil {
+	if err := sender.CheckVerification(ctx, dest, code); err != nil {
 		s.handleMFAFailure(ctx, tenantID, sha256Hex(mfaSessionToken))
 		return nil, vdmserr.ErrUnauthorized
 	}

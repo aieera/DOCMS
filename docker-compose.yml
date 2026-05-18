@@ -59,14 +59,52 @@ x-go-env: &go-env
   # enough that the FE looks hung. Skip in dev. Prod sets this
   # false (or unset) via Helm so every upload is scanned.
   VAULTDMS_STORAGE_SKIP_VIRUS_SCAN: "${VAULTDMS_STORAGE_SKIP_VIRUS_SCAN:-true}"
-  # ADR 0071 — without a real DocuSign / Adobe Sign client_id wired
-  # in dev, the signature service refuses every esign/oauth/start
-  # call with "esign not configured." Default to mock mode so the
-  # FE can demo the flow end-to-end against the in-memory
-  # ProviderMock. Prod deploys override this to false and provide
-  # the real VAULTDMS_ESIGN_DOCUSIGN_* / VAULTDMS_ESIGN_ADOBE_SIGN_*
-  # env vars via Helm.
-  VAULTDMS_ESIGN_MOCK_OK: "${VAULTDMS_ESIGN_MOCK_OK:-true}"
+  # ADR 0071 — eSign provider credentials. The supported path is
+  # per-tenant configuration from /admin/integrations (saved sealed in
+  # esign_provider_configs). VAULTDMS_ESIGN_DOCUSIGN_* / *_ADOBE_SIGN_*
+  # envs remain as an optional deployment-wide fallback for shared
+  # tenant setups; leave unset for per-tenant-only mode.
+  #
+  # Compose only forwards env vars listed in this map (the .env file
+  # alone provides variable substitution, NOT auto-forwarding). Each
+  # entry defaults to "" so an unset .env stays a no-op.
+  VAULTDMS_ESIGN_STATE_HMAC:           "${VAULTDMS_ESIGN_STATE_HMAC:-}"
+  VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID:     "${VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID:-}"
+  VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET: "${VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET:-}"
+  VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL: "${VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL:-}"
+  VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL:     "${VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL:-}"
+  VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI:  "${VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI:-}"
+  VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID:     "${VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID:-}"
+  VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET: "${VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET:-}"
+  VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL: "${VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL:-}"
+  VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL:     "${VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL:-}"
+  VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI:  "${VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI:-}"
+
+  # Twilio (SMS MFA) — auth service. Env-mode is the deployment-wide
+  # fallback; per-tenant rows in tenant_twilio_configs win when present.
+  VAULTDMS_TWILIO_ACCOUNT_SID: "${VAULTDMS_TWILIO_ACCOUNT_SID:-}"
+  VAULTDMS_TWILIO_AUTH_TOKEN:  "${VAULTDMS_TWILIO_AUTH_TOKEN:-}"
+  VAULTDMS_TWILIO_VERIFY_SID:  "${VAULTDMS_TWILIO_VERIFY_SID:-}"
+
+  # SMTP (transactional + email OTP) — auth + notification services.
+  # Same per-tenant precedence as Twilio (tenant_smtp_configs wins).
+  # Both VAULTDMS_SMTP_USER (auth) and VAULTDMS_SMTP_USERNAME
+  # (notification) exist until pkg/config is unified.
+  VAULTDMS_SMTP_HOST:     "${VAULTDMS_SMTP_HOST:-}"
+  VAULTDMS_SMTP_PORT:     "${VAULTDMS_SMTP_PORT:-587}"
+  VAULTDMS_SMTP_USER:     "${VAULTDMS_SMTP_USER:-}"
+  VAULTDMS_SMTP_USERNAME: "${VAULTDMS_SMTP_USERNAME:-}"
+  VAULTDMS_SMTP_PASSWORD: "${VAULTDMS_SMTP_PASSWORD:-}"
+  VAULTDMS_SMTP_FROM:     "${VAULTDMS_SMTP_FROM:-noreply@vaultdms.local}"
+  VAULTDMS_SMTP_STARTTLS: "${VAULTDMS_SMTP_STARTTLS:-true}"
+
+  # WebAuthn / Passkeys — auth service. Service still returns 501
+  # until the go-webauthn wiring lands, but env propagation goes in
+  # now so deploys don't have to round-trip compose later.
+  VAULTDMS_WEBAUTHN_RPID:         "${VAULTDMS_WEBAUTHN_RPID:-}"
+  VAULTDMS_WEBAUTHN_ORIGINS:      "${VAULTDMS_WEBAUTHN_ORIGINS:-}"
+  VAULTDMS_WEBAUTHN_DISPLAY_NAME: "${VAULTDMS_WEBAUTHN_DISPLAY_NAME:-VaultDMS}"
+  VAULTDMS_WEBAUTHN_HMAC_SECRET:  "${VAULTDMS_WEBAUTHN_HMAC_SECRET:-}"
 
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }
@@ -682,6 +720,22 @@ services:
     # across container rebuilds.
     volumes:
       - intake_data:/data/intake
+
+  # ADR 0091 — MCP server (Model Context Protocol) for LLM agents.
+  # Exposes search_documents / get_document / upload_document /
+  # start_workflow tools to Claude Desktop, Cursor, GitHub Copilot.
+  # API-key authenticated with mcp:read / mcp:write scopes.
+  mcp-server:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: mcp-server }
+    container_name: vaultdms-mcp-server
+    environment: *go-env
+    ports: ["8094:8081", "8192:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
 
   # ADR 0074 — GraphQL read gateway. HTTP-only public surface; talks
   # gRPC to document/workflow/collaboration/policy/audit upstream.

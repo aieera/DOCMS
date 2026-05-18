@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -141,6 +142,15 @@ func main() {
 		Email: emailSender,
 		Push:  notifications.NoopSender{}, // mobile app + dispatcher land in Phase 11.3
 	})
+
+	// Per-tenant Twilio + SMTP credentials (migration 000044). When a
+	// tenant has saved their own creds via the admin UI, MFA senders
+	// are built fresh per-call from these rows; env-mode senders above
+	// remain the deployment-wide fallback. The SMTP-password seal key
+	// MUST match the notification service's derive function (same
+	// domain prefix) so password_sealed unseals from either side.
+	svc.SetNotifRepo(repository.New(pool))
+	svc.SetNotifSealKey(deriveSMTPSealKey(cfg.LocalKEK))
 
 	// ---- LDAP / AD direct bind (ADR 0062) --------------------------------
 	// Always wire the repo + pool; tenants without an active config
@@ -293,3 +303,12 @@ func loadLocalKEK(s string) ([]byte, error) {
 	}
 	return k, nil
 }
+
+// deriveSMTPSealKey MUST match services/notification/cmd/server/main.go's
+// function of the same name — both services seal/unseal the same
+// tenant_smtp_configs.password_sealed column.
+func deriveSMTPSealKey(kek string) []byte {
+	h := sha256.Sum256([]byte("vaultdms.notification.smtp.seal.v1:" + kek))
+	return h[:]
+}
+
