@@ -13,6 +13,7 @@ use (
 	./services/connector
 	./services/document
 	./services/graphql-gateway
+	./services/mcp-server
 	./services/notification
 	./services/policy
 	./services/search

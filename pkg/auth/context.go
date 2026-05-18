@@ -104,3 +104,26 @@ func GetUserGroups(ctx context.Context) []uuid.UUID {
 	}
 	return u.Groups
 }
+
+// scopesKey identifies the API-key scopes list on a request context.
+// Only set when authentication came through an API key (Bearer); empty
+// for session-cookie auth where scope is implicit in role.
+type scopesKey struct{}
+
+// WithScopes attaches an API key's scopes to ctx. Called by the
+// APIKeyAuth middleware after a successful key lookup.
+func WithScopes(ctx context.Context, scopes []string) context.Context {
+	return context.WithValue(ctx, scopesKey{}, scopes)
+}
+
+// GetScopes returns the API-key scopes on ctx, or nil if none.
+// MCP tool dispatch reads this to enforce per-tool scope (mcp:read,
+// mcp:write) on top of the route-level scope already checked by
+// APIKeyAuth.
+func GetScopes(ctx context.Context) []string {
+	v, ok := ctx.Value(scopesKey{}).([]string)
+	if !ok {
+		return nil
+	}
+	return v
+}
