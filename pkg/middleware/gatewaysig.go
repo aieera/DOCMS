@@ -20,6 +20,13 @@ import (
 var publicExternalCallbackPrefixes = []string{
 	"/api/v1/signatures/esign/oauth/callback",
 	"/api/v1/signatures/esign/webhook/",
+	// ADR 0089 — native-connector OAuth callbacks (Google etc.).
+	"/api/v1/connectors/oauth/callback",
+	// ADR 0090 — iPaaS trigger endpoints called by Zapier / Make / n8n.
+	// API-key middleware (Bearer vdms_...) authenticates these instead
+	// of the gateway. Path-prefix match covers documents / signatures /
+	// workflows under the same /triggers/ root.
+	"/api/v1/integrations/triggers/",
 }
 
 // GatewaySignatureHeader is the header Kong sets via request-transformer

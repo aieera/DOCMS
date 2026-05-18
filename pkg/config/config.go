@@ -168,9 +168,6 @@ type Config struct {
 	// ESignStateHMAC seeds the OAuth-state HMAC. Must be ≥ 32 bytes
 	// hex; service auto-generates one at boot if empty (logs once).
 	ESignStateHMAC string `mapstructure:"esign_state_hmac"`
-
-	// ESignMockOK enables the in-memory ProviderMock for CI + e2e.
-	ESignMockOK bool `mapstructure:"esign_mock_ok"`
 }
 
 // Load reads configuration from (in order): env vars (VAULTDMS_* prefix),
@@ -230,12 +227,10 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("s3_public_base", "VAULTDMS_S3_PUBLIC_BASE")
 
 	// ADR 0071 — eSign connector envs. AutomaticEnv() only reads keys
-	// viper already knows about; without these explicit binds the
-	// signature service can't see VAULTDMS_ESIGN_MOCK_OK and refuses
-	// every esign/oauth/start request with "esign not configured."
-	// Real-provider creds get the same treatment so a Helm-supplied
-	// VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID lands too.
-	_ = v.BindEnv("esign_mock_ok", "VAULTDMS_ESIGN_MOCK_OK")
+	// viper already knows about; without these explicit binds a
+	// Helm-supplied VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID never lands.
+	// Per-tenant DB credentials are the primary path; these envs are
+	// the optional deployment-wide fallback.
 	_ = v.BindEnv("esign_state_hmac", "VAULTDMS_ESIGN_STATE_HMAC")
 	_ = v.BindEnv("esign_docusign_client_id", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID")
 	_ = v.BindEnv("esign_docusign_client_secret", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET")

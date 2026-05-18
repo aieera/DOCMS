@@ -233,6 +233,44 @@ export async function disconnectESign(provider: ESignProvider): Promise<void> {
   await api.post('/signatures/esign/disconnect', { provider })
 }
 
+// ----- Per-tenant provider credentials (paste-from-UI flow) -------
+
+export interface ESignProviderConfig {
+  provider: ESignProvider
+  client_id: string
+  has_secret: boolean
+  environment: 'sandbox' | 'production'
+  region?: string
+  updated_at: string
+}
+
+export interface SaveESignProviderConfigInput {
+  client_id: string
+  client_secret: string
+  environment: 'sandbox' | 'production'
+  region?: string
+  authorize_url_override?: string
+  token_url_override?: string
+}
+
+export async function getESignProviderConfig(provider: ESignProvider): Promise<ESignProviderConfig | null> {
+  try {
+    const { data } = await api.get<ESignProviderConfig>(`/signatures/esign/provider-config/${provider}`)
+    return data
+  } catch (e) {
+    if ((e as { response?: { status?: number } }).response?.status === 404) return null
+    throw e
+  }
+}
+
+export async function saveESignProviderConfig(provider: ESignProvider, input: SaveESignProviderConfigInput): Promise<void> {
+  await api.put(`/signatures/esign/provider-config/${provider}`, input)
+}
+
+export async function deleteESignProviderConfig(provider: ESignProvider): Promise<void> {
+  await api.delete(`/signatures/esign/provider-config/${provider}`)
+}
+
 export async function listESignEnvelopes(): Promise<ESignEnvelope[]> {
   const { data } = await api.get<{ envelopes: ESignEnvelope[] }>('/signatures/esign/envelopes')
   return data?.envelopes ?? []

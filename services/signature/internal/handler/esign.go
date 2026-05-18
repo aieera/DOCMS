@@ -29,6 +29,13 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)
 	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", e.disconnect)
 	mux.HandleFunc("GET /api/v1/signatures/esign/envelopes", e.envelopes)
+	// Per-tenant OAuth client credentials (paste-from-UI flow). Admin
+	// fills the modal with Integration Key + Secret Key + environment
+	// before triggering OAuth start. Secret never travels back to the
+	// browser — GET returns has_secret as a presence flag only.
+	mux.HandleFunc("GET /api/v1/signatures/esign/provider-config/{provider}", e.getProviderConfig)
+	mux.HandleFunc("PUT /api/v1/signatures/esign/provider-config/{provider}", e.putProviderConfig)
+	mux.HandleFunc("DELETE /api/v1/signatures/esign/provider-config/{provider}", e.deleteProviderConfig)
 	// Webhook URL is tenant-scoped because vendors don't carry our
 	// session cookie. Admin pastes the per-tenant URL into the
 	// vendor portal at integration-setup time.
@@ -94,6 +101,14 @@ type connectionRow struct {
 
 func (e *esignRoutes) connections(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		// Reload-race protection: the FE's axios interceptor stages
+		// requests behind /auth/me hydration, but a stale 500 from
+		// before that lands is still better as a clean 401 so the
+		// retry semantics work and React Query reports correctly.
+		writeError(w, http.StatusUnauthorized, "tenant required")
+		return
+	}
 	rows, err := e.svc.ListConnections(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -131,13 +146,25 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
-	provider := esign.Provider(r.URL.Query().Get("provider"))
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 	userID := r.Header.Get("X-User-ID")
-	if provider == "" || code == "" || state == "" {
-		writeError(w, http.StatusBadRequest, "provider, code, state required")
+	if code == "" || state == "" {
+		writeError(w, http.StatusBadRequest, "code, state required")
 		return
+	}
+	// DocuSign / Adobe Sign return `state` and `code` only; the
+	// provider name has to be recovered from inside `state` (we
+	// encoded it there in AuthorizeURLBuilder). ?provider= remains
+	// supported as a fallback for older saved redirect URIs.
+	provider := esign.Provider(r.URL.Query().Get("provider"))
+	if provider == "" {
+		_, parsedProvider, ok := esign.ParseState(state)
+		if !ok || parsedProvider == "" {
+			writeError(w, http.StatusBadRequest, "state does not encode a provider — re-initiate connect")
+			return
+		}
+		provider = esign.Provider(parsedProvider)
 	}
 	target, err := e.svc.HandleOAuthCallback(r.Context(), provider, code, state, userID)
 	if err != nil {
@@ -169,6 +196,10 @@ func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
 
 func (e *esignRoutes) envelopes(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusUnauthorized, "tenant required")
+		return
+	}
 	reqs, err := e.svc.ListInProgressESign(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -208,4 +239,74 @@ func (e *esignRoutes) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// ----- Per-tenant provider credentials -----------------------------
+
+type putProviderConfigBody struct {
+	ClientID             string `json:"client_id"`
+	ClientSecret         string `json:"client_secret"`
+	Environment          string `json:"environment"` // sandbox | production
+	Region               string `json:"region,omitempty"`
+	AuthorizeURLOverride string `json:"authorize_url_override,omitempty"`
+	TokenURLOverride     string `json:"token_url_override,omitempty"`
+}
+
+func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	userID := r.Header.Get("X-User-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	provider := esign.Provider(r.PathValue("provider"))
+	if provider != esign.ProviderDocuSign && provider != esign.ProviderAdobeSign {
+		writeError(w, http.StatusBadRequest, "provider must be docusign or adobe_sign")
+		return
+	}
+	var b putProviderConfigBody
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := e.svc.SaveProviderConfig(r.Context(), tenantID, userID, provider,
+		b.ClientID, b.ClientSecret, b.Environment, b.Region,
+		b.AuthorizeURLOverride, b.TokenURLOverride); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (e *esignRoutes) getProviderConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	provider := esign.Provider(r.PathValue("provider"))
+	cfg, err := e.svc.GetProviderConfig(r.Context(), tenantID, provider)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if cfg == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (e *esignRoutes) deleteProviderConfig(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	provider := esign.Provider(r.PathValue("provider"))
+	if err := e.svc.DeleteProviderConfig(r.Context(), tenantID, provider); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

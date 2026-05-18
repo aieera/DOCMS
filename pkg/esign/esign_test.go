@@ -19,7 +19,7 @@ import (
 
 func TestOAuth_StateRoundTrip(t *testing.T) {
 	secret, _ := esign.NewHMACSecret()
-	cfg := esign.OAuthConfig{HMACSecret: secret, ClientID: "id", ClientSecret: "s",
+	cfg := esign.OAuthConfig{Provider: esign.ProviderDocuSign, HMACSecret: secret, ClientID: "id", ClientSecret: "s",
 		AuthorizeURL: "https://x", TokenURL: "https://x/t", RedirectURI: "https://us/cb"}
 	url, state, err := cfg.AuthorizeURLBuilder("tenant-1")
 	if err != nil {
@@ -32,11 +32,17 @@ func TestOAuth_StateRoundTrip(t *testing.T) {
 	if !ok || got != "tenant-1" {
 		t.Fatalf("verify failed: ok=%v got=%q", ok, got)
 	}
+	// Provider must round-trip via ParseState so the callback handler
+	// can recover it without a ?provider= query param.
+	_, gotProvider, ok := esign.ParseState(state)
+	if !ok || gotProvider != string(esign.ProviderDocuSign) {
+		t.Fatalf("ParseState provider=%q ok=%v", gotProvider, ok)
+	}
 }
 
 func TestOAuth_StateTamperDetected(t *testing.T) {
 	secret, _ := esign.NewHMACSecret()
-	cfg := esign.OAuthConfig{HMACSecret: secret}
+	cfg := esign.OAuthConfig{Provider: esign.ProviderDocuSign, HMACSecret: secret}
 	_, state, _ := cfg.AuthorizeURLBuilder("tenant-1")
 	// flip a character in the HMAC half
 	tampered := state[:len(state)-1] + "0"

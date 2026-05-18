@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,15 +37,38 @@ type ESignConfig struct {
 	// client creds + redirect_uri. The HMACSecret on each is the
 	// state-binding secret; can be the same value across providers.
 	OAuthByProvider map[esign.Provider]esign.OAuthConfig
+	// DefaultRedirectURI is the OAuth callback to use when a tenant
+	// has DB-saved credentials but no env-var entry to inherit the
+	// redirect from. Same shape as the env-mode redirect URIs.
+	DefaultRedirectURI string
+	// DefaultHMACSecret signs the state parameter on OAuth start when
+	// the tenant's DB config is used. Must be ≥32 bytes. Same value
+	// across providers — state is provider-scoped via the tenant id.
+	DefaultHMACSecret []byte
 	// HTTPClient is shared across adapter constructions.
 	HTTPClient *http.Client
-	// MockOK enables the in-memory adapter for CI + Playwright.
-	// Service refuses to construct the mock client when false.
-	MockOK bool
-	// MockClient is the resolved instance when MockOK is true.
-	MockClient *esign.MockClient
 	// PollInterval is the reconcile loop period. Default 5 min.
 	PollInterval time.Duration
+}
+
+// RedirectURIFor returns the OAuth callback URL for the given provider.
+// Prefers the env-mode per-provider value when present (so existing
+// deployments keep working unchanged); falls back to DefaultRedirectURI
+// for tenants connecting via the UI flow.
+func (c *ESignConfig) RedirectURIFor(provider esign.Provider) string {
+	if cfg, ok := c.OAuthByProvider[provider]; ok && cfg.RedirectURI != "" {
+		return cfg.RedirectURI
+	}
+	return c.DefaultRedirectURI
+}
+
+// HMACSecretFor returns the state-signing HMAC for the given provider.
+// Same precedence as RedirectURIFor.
+func (c *ESignConfig) HMACSecretFor(provider esign.Provider) []byte {
+	if cfg, ok := c.OAuthByProvider[provider]; ok && len(cfg.HMACSecret) > 0 {
+		return cfg.HMACSecret
+	}
+	return c.DefaultHMACSecret
 }
 
 // AddESign wires the configuration into an existing Service. Called
@@ -63,37 +85,178 @@ func (s *Service) AddESign(cfg ESignConfig) {
 
 // ----- OAuth ------------------------------------------------------
 
+// resolveOAuthConfig returns the effective OAuth config for (tenant,
+// provider). Priority order:
+//
+//  1. Per-tenant DB row in esign_provider_configs — paste-from-UI flow.
+//  2. Env-var-configured OAuthByProvider — deployment-wide fallback.
+//
+// Mock mode is NOT considered here; StartOAuth/HandleOAuthCallback
+// branch into mock-handling explicitly when the caller opts in.
+func (s *Service) resolveOAuthConfig(ctx context.Context, tenantID string, provider esign.Provider) (esign.OAuthConfig, error) {
+	if s.esign == nil {
+		return esign.OAuthConfig{}, errors.New("esign not configured")
+	}
+	if row, err := s.repo.GetESignProviderConfig(ctx, tenantID, string(provider)); err == nil && row != nil {
+		secret, err := esign.UnsealString(row.ClientSecretSealed, s.esign.SealingKey)
+		if err != nil {
+			return esign.OAuthConfig{}, fmt.Errorf("esign: unseal client_secret: %w", err)
+		}
+		authzURL, tokenURL := vendorEndpoints(provider, row.Environment, row.Region)
+		if row.AuthorizeURLOverride != "" {
+			authzURL = row.AuthorizeURLOverride
+		}
+		if row.TokenURLOverride != "" {
+			tokenURL = row.TokenURLOverride
+		}
+		cfg := esign.OAuthConfig{
+			Provider:     provider,
+			AuthorizeURL: authzURL,
+			TokenURL:     tokenURL,
+			ClientID:     row.ClientID,
+			ClientSecret: secret,
+			RedirectURI:  s.esign.RedirectURIFor(provider),
+			Scope:        defaultScope(provider),
+			HMACSecret:   s.esign.HMACSecretFor(provider),
+		}
+		return cfg, nil
+	}
+	if cfg, ok := s.esign.OAuthByProvider[provider]; ok {
+		return cfg, nil
+	}
+	return esign.OAuthConfig{}, fmt.Errorf("esign: no credentials configured for %q (save them via /admin/integrations)", provider)
+}
+
+// vendorEndpoints maps environment + region to vendor OAuth hosts so
+// the admin UI doesn't have to ship 4 URL fields per provider. The
+// sandbox/production radio in the modal selects one of the two pairs.
+func vendorEndpoints(provider esign.Provider, environment, region string) (authorize, token string) {
+	switch provider {
+	case esign.ProviderDocuSign:
+		if environment == "production" {
+			return "https://account.docusign.com/oauth/auth",
+				"https://account.docusign.com/oauth/token"
+		}
+		return "https://account-d.docusign.com/oauth/auth",
+			"https://account-d.docusign.com/oauth/token"
+	case esign.ProviderAdobeSign:
+		host := "secure.na1.adobesign.com"
+		if region != "" {
+			host = "secure." + region + ".adobesign.com"
+		}
+		return "https://" + host + "/public/oauth/v2",
+			"https://" + host + "/oauth/v2/token"
+	}
+	return "", ""
+}
+
+func defaultScope(provider esign.Provider) string {
+	switch provider {
+	case esign.ProviderDocuSign:
+		return "signature"
+	case esign.ProviderAdobeSign:
+		return "agreement_send agreement_read"
+	}
+	return ""
+}
+
+// SaveProviderConfig stores per-tenant OAuth client credentials. The
+// secret is sealed before persistence. Called from the admin Connect
+// modal before kicking off the OAuth handshake.
+func (s *Service) SaveProviderConfig(ctx context.Context, tenantID, userID string, provider esign.Provider, clientID, clientSecret, environment, region, authorizeOverride, tokenOverride string) error {
+	if s.esign == nil {
+		return errors.New("esign not configured")
+	}
+	if clientID == "" || clientSecret == "" {
+		return errors.New("client_id and client_secret are required")
+	}
+	if environment != "sandbox" && environment != "production" {
+		return errors.New("environment must be 'sandbox' or 'production'")
+	}
+	sealed, err := esign.SealString([]byte(clientSecret), s.esign.SealingKey)
+	if err != nil {
+		return fmt.Errorf("seal client_secret: %w", err)
+	}
+	row := &repository.ESignProviderConfig{
+		TenantID:             tenantID,
+		Provider:             string(provider),
+		ClientID:             clientID,
+		ClientSecretSealed:   sealed,
+		Environment:          environment,
+		Region:               region,
+		AuthorizeURLOverride: authorizeOverride,
+		TokenURLOverride:     tokenOverride,
+		ConfiguredBy:         userID,
+	}
+	if err := s.repo.UpsertESignProviderConfig(ctx, row); err != nil {
+		return fmt.Errorf("save provider config: %w", err)
+	}
+	// Clear any leftover mock-account token row so the Connections
+	// page no longer claims "connected (mock-account)" once real creds
+	// are saved. The next OAuth round-trip writes a real token row.
+	if existing, err := s.repo.GetESignToken(ctx, tenantID, string(provider)); err == nil && existing != nil && existing.AccountID == "mock-account" {
+		_ = s.repo.DeleteESignToken(ctx, tenantID, string(provider))
+	}
+	return nil
+}
+
+// GetProviderConfig returns the per-tenant config in a UI-safe shape:
+// secret is NEVER returned. Used by the admin modal to pre-fill the
+// Integration Key field when re-opening.
+func (s *Service) GetProviderConfig(ctx context.Context, tenantID string, provider esign.Provider) (*ProviderConfigPublic, error) {
+	row, err := s.repo.GetESignProviderConfig(ctx, tenantID, string(provider))
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, nil
+	}
+	return &ProviderConfigPublic{
+		Provider:    row.Provider,
+		ClientID:    row.ClientID,
+		HasSecret:   row.ClientSecretSealed != "",
+		Environment: row.Environment,
+		Region:      row.Region,
+		UpdatedAt:   row.UpdatedAt,
+	}, nil
+}
+
+// DeleteProviderConfig removes a tenant's saved OAuth client creds.
+// Also clears the matching esign_oauth_tokens row so the Connections
+// list doesn't keep showing "connected" with a token signed by creds
+// the tenant just deleted (the token couldn't be refreshed anyway).
+func (s *Service) DeleteProviderConfig(ctx context.Context, tenantID string, provider esign.Provider) error {
+	if err := s.repo.DeleteESignProviderConfig(ctx, tenantID, string(provider)); err != nil {
+		return err
+	}
+	_ = s.repo.DeleteESignToken(ctx, tenantID, string(provider))
+	return nil
+}
+
+// ProviderConfigPublic is the secret-stripped view of a saved config.
+// The secret is sealed in DB and never travels back to the browser —
+// re-entering it is required to change it.
+type ProviderConfigPublic struct {
+	Provider    string    `json:"provider"`
+	ClientID    string    `json:"client_id"`
+	HasSecret   bool      `json:"has_secret"`
+	Environment string    `json:"environment"`
+	Region      string    `json:"region,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // StartOAuth returns the URL to redirect the admin's browser to.
 // The state binds the redirect to the requesting tenant.
-//
-// Mock-mode fallback: when MockOK is on and the requested provider has
-// no real OAuth config (dev / CI / Playwright), route through the mock
-// adapter so the FE can demo the connect-flow against the in-memory
-// ProviderMock without DocuSign / Adobe Sign credentials. Production
-// deploys always supply the real OAuth config and never hit this path.
-func (s *Service) StartOAuth(_ context.Context, tenantID string, provider esign.Provider) (string, error) {
+func (s *Service) StartOAuth(ctx context.Context, tenantID string, provider esign.Provider) (string, error) {
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
 	}
-	if cfg, ok := s.esign.OAuthByProvider[provider]; ok {
-		url, _, err := cfg.AuthorizeURLBuilder(tenantID)
-		return url, err
+	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
+	if err != nil {
+		return "", err
 	}
-	if s.esign.MockOK {
-		// Mock returns a self-callback URL the FE can follow; the
-		// callback handler recognises the mock state + completes
-		// without a real token exchange.
-		return mockAuthorizeURL(tenantID, provider), nil
-	}
-	return "", fmt.Errorf("esign: unsupported provider %q", provider)
-}
-
-// mockAuthorizeURL builds a URL into our own /oauth/callback so the
-// browser round-trips through our service and we can fake out the
-// token-exchange step. Only used in mock mode.
-func mockAuthorizeURL(tenantID string, provider esign.Provider) string {
-	return fmt.Sprintf("/api/v1/signatures/esign/oauth/callback?provider=%s&code=mock-code&state=mock.%s",
-		provider, tenantID)
+	url, _, err := cfg.AuthorizeURLBuilder(tenantID)
+	return url, err
 }
 
 // HandleOAuthCallback exchanges the auth code for tokens, persists
@@ -103,17 +266,17 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 	if s.esign == nil {
 		return "", errors.New("esign not configured")
 	}
-	// Mock-mode shortcut: a state of "mock.<tenant_uuid>" coming back
-	// from mockAuthorizeURL is recognised and short-circuits the
-	// vendor round-trip. Persist a placeholder ESignToken so the
-	// admin's Connections list shows "connected to docusign (mock)".
-	if s.esign.MockOK && strings.HasPrefix(state, "mock.") {
-		tenantID := strings.TrimPrefix(state, "mock.")
-		return s.recordMockConnection(ctx, tenantID, provider, userID)
-	}
-	cfg, ok := s.esign.OAuthByProvider[provider]
+	// State is <tenantID>.<provider>.<hmac>; tenantID and provider are
+	// plaintext so we can use them to look up the tenant's effective
+	// config (DB row → env-mode fallback). VerifyState then checks
+	// the HMAC against the resolved config's secret.
+	tenantIDFromState, _, ok := esign.ParseState(state)
 	if !ok {
-		return "", fmt.Errorf("esign: unsupported provider %q", provider)
+		return "", errors.New("esign: malformed state")
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, tenantIDFromState, provider)
+	if err != nil {
+		return "", err
 	}
 	tenantID, ok := cfg.VerifyState(state)
 	if !ok {
@@ -131,11 +294,30 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 	if err != nil {
 		return "", err
 	}
+	// DocuSign's token-exchange response carries neither account_id
+	// nor base_uri — both live behind a separate /oauth/userinfo
+	// call. Without them every Send fails with "account_id required",
+	// so resolve them here before the row is written. Adobe Sign
+	// returns api_access_point in the token itself; FetchAccountInfo
+	// is a no-op for that provider.
+	accountID, baseURI := tok.AccountID, tok.BaseURI
+	if accountID == "" || baseURI == "" {
+		acc, base, err := cfg.FetchAccountInfo(ctx, s.esign.HTTPClient, tok.AccessToken)
+		if err != nil {
+			return "", fmt.Errorf("esign: fetch account info: %w", err)
+		}
+		if accountID == "" {
+			accountID = acc
+		}
+		if baseURI == "" {
+			baseURI = base
+		}
+	}
 	row := &repository.ESignToken{
 		TenantID: tenantID, Provider: string(provider),
 		AccessToken: access, RefreshToken: refresh,
-		ExpiresAt: tok.ExpiresAt, AccountID: tok.AccountID,
-		BaseURI: tok.BaseURI, Scope: tok.Scope,
+		ExpiresAt: tok.ExpiresAt, AccountID: accountID,
+		BaseURI: baseURI, Scope: tok.Scope,
 		ConnectedBy: userID,
 		ConnectedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
@@ -143,39 +325,6 @@ func (s *Service) HandleOAuthCallback(ctx context.Context, provider esign.Provid
 		return "", err
 	}
 	return "/admin/integrations?connected=" + string(provider), nil
-}
-
-// recordMockConnection persists a placeholder ESignToken row so the
-// admin Connections list looks "connected" in dev. Tokens are sealed
-// with the real SealingKey so a future code path that tries to
-// decrypt them doesn't crash; the underlying values are just the
-// literal strings "mock-access" / "mock-refresh".
-func (s *Service) recordMockConnection(ctx context.Context, tenantID string, provider esign.Provider, userID string) (string, error) {
-	access, err := esign.SealString([]byte("mock-access"), s.esign.SealingKey)
-	if err != nil {
-		return "", err
-	}
-	refresh, err := esign.SealString([]byte("mock-refresh"), s.esign.SealingKey)
-	if err != nil {
-		return "", err
-	}
-	row := &repository.ESignToken{
-		TenantID:    tenantID,
-		Provider:    string(provider),
-		AccessToken: access,
-		RefreshToken: refresh,
-		ExpiresAt:   time.Now().Add(24 * time.Hour).UTC(),
-		AccountID:   "mock-account",
-		BaseURI:     "https://mock." + string(provider) + ".invalid",
-		Scope:       "mock",
-		ConnectedBy: userID,
-		ConnectedAt: time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
-	}
-	if err := s.repo.UpsertESignToken(ctx, row); err != nil {
-		return "", err
-	}
-	return "/admin/integrations?connected=" + string(provider) + "&mock=1", nil
 }
 
 // ListConnections returns sanitized status (no tokens) for the
@@ -197,12 +346,6 @@ func (s *Service) Disconnect(ctx context.Context, tenantID string, provider esig
 func (s *Service) resolveClient(ctx context.Context, tenantID string, provider esign.Provider) (esign.ESignClient, error) {
 	if s.esign == nil {
 		return nil, errors.New("esign not configured")
-	}
-	if provider == esign.ProviderMock {
-		if !s.esign.MockOK || s.esign.MockClient == nil {
-			return nil, errors.New("esign mock not allowed")
-		}
-		return s.esign.MockClient, nil
 	}
 	row, err := s.repo.GetESignToken(ctx, tenantID, string(provider))
 	if err != nil {

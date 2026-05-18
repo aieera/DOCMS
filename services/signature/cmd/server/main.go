@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -214,20 +215,26 @@ func main() {
 			HMACSecret: hmacBytes,
 		}
 	}
-	if len(esignOAuth) > 0 || cfg.ESignMockOK {
-		esCfg := service.ESignConfig{
-			SealingKey: deriveSealingKey(cfg.LocalKEK),
-			OAuthByProvider: esignOAuth,
-			HTTPClient: &http.Client{Timeout: 30 * time.Second},
-			MockOK: cfg.ESignMockOK,
-		}
-		if cfg.ESignMockOK {
-			esCfg.MockClient = esign.NewMock()
-		}
-		svc.AddESign(esCfg)
-		go svc.StartReconciler(ctx)
-		log.Info(ctx).Int("providers", len(esignOAuth)).Bool("mock", cfg.ESignMockOK).Msg("esign connectors wired")
+	// Default redirect URI for tenants connecting via the admin UI
+	// (DB-saved client_id / client_secret). Falls back to a hard-coded
+	// localhost callback when nothing in the env points us at a public
+	// base URL — fine for dev. Prod overrides PUBLIC_URL.
+	defaultRedirect := strings.TrimRight(cfg.PublicURL, "/") + "/api/v1/signatures/esign/oauth/callback"
+	if cfg.PublicURL == "" {
+		defaultRedirect = "http://localhost:3000/api/v1/signatures/esign/oauth/callback"
 	}
+	// Always wire eSign service plumbing — per-tenant DB credentials
+	// are the supported path, so env-var providers are an OPTIONAL
+	// deployment-wide fallback rather than a hard requirement.
+	svc.AddESign(service.ESignConfig{
+		SealingKey:         deriveSealingKey(cfg.LocalKEK),
+		OAuthByProvider:    esignOAuth,
+		DefaultRedirectURI: defaultRedirect,
+		DefaultHMACSecret:  hmacBytes,
+		HTTPClient:         &http.Client{Timeout: 30 * time.Second},
+	})
+	go svc.StartReconciler(ctx)
+	log.Info(ctx).Int("env_providers", len(esignOAuth)).Msg("esign connectors wired")
 
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
@@ -239,6 +246,19 @@ func main() {
 	// ADR 0073 — in-person tablet ceremony (single device, sequential
 	// signer + witness on the same session).
 	h.RegisterInPerson(mux)
+
+	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). Lives
+	// on its own sub-mux wrapped with APIKeyAuth so the bearer-token
+	// path doesn't conflict with the gateway-sig'd handlers above.
+	// The /api/v1/integrations/triggers/ prefix is whitelisted by
+	// RequireGatewaySignature so the route reaches APIKeyAuth.
+	integrationsMux := http.NewServeMux()
+	handler.NewIntegrationTriggersHandler(pool).Register(integrationsMux)
+	mux.Handle("/api/v1/integrations/triggers/signatures/completed",
+		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
+			Pool:          pool,
+			RequiredScope: "integrations:read",
+		})(integrationsMux))
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
