@@ -509,6 +509,7 @@ ingress:
 # ============================================================================
 
 postgresql:
+  # Bitnami StatefulSet (default). Suitable for single-AZ deploys.
   enabled: true
   auth:
     database: vaultdms
@@ -520,6 +521,29 @@ postgresql:
     resources:
       requests: { cpu: 250m, memory: 512Mi }
       limits:   { cpu: "2", memory: "4Gi" }
+  # CloudNativePG operator path (ADR 0092, opt-in). When useOperator
+  # is true, the chart renders a postgresql.cnpg.io/v1 Cluster CRD
+  # (templates/postgres-cluster.yaml) instead of relying on Bitnami.
+  # The operator's own CRDs MUST be pre-installed:
+  #   helm install cnpg cloudnative-pg/cloudnative-pg \
+  #     --namespace cnpg-system --create-namespace
+  # Migrating from Bitnami requires a pg_dump → restore step before
+  # disabling the Bitnami subchart. See docs/runbooks/helm-install.md.
+  useOperator: false
+  operator:
+    instances: 3                 # primary + 2 hot replicas
+    image: ghcr.io/cloudnative-pg/postgresql:16.4
+    maxConnections: 200
+    sharedBuffers: 512MB
+    storageSize: 100Gi
+    credentialsSecret: vaultdms-postgres-credentials
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits:   { cpu: "2", memory: 4Gi }
+    backup:
+      destinationPath: "s3://vaultdms-postgres-backups/{{ .Release.Name }}"
+      credentialsSecret: vaultdms-postgres-backup-credentials
+      retentionPolicy: "30d"
 
 redis:
   enabled: true

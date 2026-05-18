@@ -9,10 +9,21 @@ maintainers:
     email: sulthansha@raabyt.com
 
 dependencies:
+  # Bitnami StatefulSet-backed Postgres (default). Suitable for
+  # single-AZ dev/staging.
   - name: postgresql
     version: "15.x.x"
     repository: https://charts.bitnami.com/bitnami
     condition: postgresql.enabled
+  # CloudNativePG operator path (ADR 0092, opt-in). Renders a Cluster
+  # CRD instead of a StatefulSet — streaming replication, automated
+  # failover, WAL archiving, PITR. The operator's CRDs MUST be
+  # pre-installed in the cluster; the chart only renders the
+  # Cluster custom resource.
+  - name: cloudnative-pg
+    version: "0.x.x"
+    repository: https://cloudnative-pg.github.io/charts
+    condition: postgresql.useOperator
   - name: redis
     version: "19.x.x"
     repository: https://charts.bitnami.com/bitnami
