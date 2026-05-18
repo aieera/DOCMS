@@ -408,6 +408,15 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/ediscovery/export",
 		middleware.CorrelationHTTP(ediscoveryMux))
 
+	// ADR 0094 — admin DB-info surface (driver + version + feature
+	// matrix). Read-only; future alt-driver work updates the matrix
+	// without UI changes.
+	dbInfoMux := http.NewServeMux()
+	handler.NewDBInfoHandler(pool).Register(dbInfoMux)
+	rootMux.Handle("/api/v1/admin/platform/db-info", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(dbInfoMux),
+	))
+
 	// §9.4 / G5 — internal retention-sweep endpoint for the
 	// vaultdms-retention CronJob.
 	retentionSweepMux := http.NewServeMux()
