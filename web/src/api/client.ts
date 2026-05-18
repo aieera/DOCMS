@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
+import type { User } from '@/types/api'
 
 // withCredentials: true lets the browser include the HttpOnly session
 // cookie on every request. The cookie is set by the auth service on login
@@ -21,7 +22,60 @@ function readCookie(name: string): string {
 
 const SAFE_METHODS = new Set(['get', 'head', 'options'])
 
-api.interceptors.request.use((config) => {
+// hasSessionCookie returns true when a dms_session cookie is set, so we
+// can tell "logged-out user firing a query" (let it 401 fast) apart from
+// "logged-in user mid-reload" (wait for /auth/me to populate the store).
+function hasSessionCookie(): boolean {
+  return document.cookie.split(';').some((c) => c.trim().startsWith('dms_session='))
+}
+
+// ensureHydrated blocks until the auth store knows who the caller is.
+// Called from the request interceptor for any non-/auth/me request.
+//
+// Why this exists: TanStack Router's beforeLoad gates rendering of
+// route children, but it does NOT block axios. Code paths that fire
+// queries from outside the routed tree — or that race the router's
+// async beforeLoad — used to go out with empty
+// X-Auth-Tenant-ID / X-User-ID headers, which several backend
+// handlers (callers() in compliance_handler.go and friends) treat as
+// 401 and which other handlers may surface as 500 on the downstream
+// nil-deref. Single-flight via authStore.hydrationPromise.
+async function ensureHydrated(): Promise<void> {
+  const state = useAuthStore.getState()
+  if (state.isAuthenticated && state.tenantId) return
+  if (!hasSessionCookie()) return // logged-out — let request 401 fast
+  if (state.hydrationPromise) {
+    await state.hydrationPromise
+    return
+  }
+  const p = (async () => {
+    try {
+      // Bare axios call — using `api` here would recurse into this
+      // interceptor. We still need withCredentials so the cookie ships.
+      const { data } = await axios.get<User>('/api/v1/auth/me', { withCredentials: true })
+      if (data.tenant_id) {
+        useAuthStore.getState().login(data, data.tenant_id)
+      }
+    } catch {
+      // Bootstrap failed — let the original request go and surface a
+      // 401 to the response interceptor, which logs the user out.
+    } finally {
+      useAuthStore.getState().setHydration(null)
+    }
+  })()
+  useAuthStore.getState().setHydration(p)
+  await p
+}
+
+api.interceptors.request.use(async (config) => {
+  // Skip self-bootstrap for /auth/me itself and for unauthenticated
+  // endpoints (login, register, accept-invite) — none of them require
+  // identity headers, and /auth/me IS the hydration.
+  const url = config.url ?? ''
+  const isAuthEndpoint = url.startsWith('/auth/')
+  if (!isAuthEndpoint) {
+    await ensureHydrated()
+  }
   const { tenantId, user } = useAuthStore.getState()
   // §3.1 / B2.3 sweep — backend handlers now read X-Auth-Tenant-ID
   // (the gateway-injected trusted header). In host dev mode the

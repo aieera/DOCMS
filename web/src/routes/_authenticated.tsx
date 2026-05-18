@@ -24,10 +24,24 @@ export const Route = createFileRoute('/_authenticated')({
     if (!state.isAuthenticated) {
       // Store is empty (page refresh or direct URL). The HttpOnly session
       // cookie may still be valid — rehydrate from /auth/me before
-      // deciding to redirect.
+      // deciding to redirect. If a hydration is already in flight (kicked
+      // off by the axios interceptor's ensureHydrated() during a parallel
+      // query), await that one instead of double-firing /auth/me.
       try {
-        user = await getCurrentUser()
-        state.login(user, user.tenant_id ?? '')
+        const pending = state.hydrationPromise
+        if (pending) {
+          await pending
+          user = useAuthStore.getState().user
+          if (!user) throw new Error('hydration produced no user')
+        } else {
+          user = await getCurrentUser()
+          // Empty tenant_id would leave X-Auth-Tenant-ID off every
+          // subsequent request and trip server-side identity checks
+          // (compliance_handler.callers and the same pattern in tasks,
+          // ocr_quality, signature, etc.). Treat it as auth failure.
+          if (!user.tenant_id) throw new Error('auth/me returned no tenant_id')
+          state.login(user, user.tenant_id)
+        }
       } catch {
         throw redirect({ to: '/login' })
       }

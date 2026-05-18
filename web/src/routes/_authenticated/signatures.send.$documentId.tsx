@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Send, Trash2, Plus } from 'lucide-react'
 
@@ -8,6 +8,7 @@ import {
   createRequest, sendViaESign,
   type ESignProvider, type SignatureProvider, type SigningMode,
 } from '@/api/signatures'
+import { getVersions } from '@/api/documents'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -51,10 +52,24 @@ function SendForSignaturePage() {
   ])
   const [subject, setSubject] = useState('Please sign')
   const [message, setMessage] = useState('')
-  const [versionId] = useState<string>(documentId) // version equals document for the simple case
+
+  // Pick the document's current (highest version_number) version. The
+  // signature_requests FK is on (tenant_id, version_id) against the
+  // versions table — sending document_id as version_id (the prior
+  // shortcut) fails as 23503 because it isn't a real versions.id.
+  const versionsQ = useQuery({
+    queryKey: ['document-versions', documentId],
+    queryFn: () => getVersions(documentId),
+  })
+  const versionId = versionsQ.data && versionsQ.data.length > 0
+    ? [...versionsQ.data].sort((a, b) => b.version_number - a.version_number)[0].id
+    : ''
 
   const sendMut = useMutation({
     mutationFn: async () => {
+      if (!versionId) {
+        throw new Error('This document has no versions yet — upload a file before sending for signature')
+      }
       // 1. Mint signature request.
       const req = await createRequest({
         document_id: documentId, version_id: versionId,
@@ -111,7 +126,10 @@ function SendForSignaturePage() {
     { id: 'adobe_sign',  label: 'Send via Adobe Sign' },
   ]
 
-  const canSend = recipients.length > 0 && recipients.every((r) => r.email && r.name)
+  const canSend = recipients.length > 0
+    && recipients.every((r) => r.email && r.name)
+    && !!versionId
+    && !versionsQ.isLoading
 
   return (
     <div className="mx-auto max-w-3xl p-6">
