@@ -59,6 +59,7 @@ import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes
 import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
 import { Route as AuthenticatedAdminPlatformSupportSearchRouteImport } from './routes/_authenticated/admin/platform/support-search'
+import { Route as AuthenticatedAdminPlatformDbInfoRouteImport } from './routes/_authenticated/admin/platform/db-info'
 import { Route as AuthenticatedAdminIntelligenceUsageRouteImport } from './routes/_authenticated/admin/intelligence/usage'
 import { Route as AuthenticatedAdminIntelligenceTagReviewRouteImport } from './routes/_authenticated/admin/intelligence/tag-review'
 import { Route as AuthenticatedAdminIntelligenceRoutingRulesRouteImport } from './routes/_authenticated/admin/intelligence/routing-rules'
@@ -360,6 +361,12 @@ const AuthenticatedAdminPlatformSupportSearchRoute =
     path: '/admin/platform/support-search',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPlatformDbInfoRoute =
+  AuthenticatedAdminPlatformDbInfoRouteImport.update({
+    id: '/admin/platform/db-info',
+    path: '/admin/platform/db-info',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntelligenceUsageRoute =
   AuthenticatedAdminIntelligenceUsageRouteImport.update({
     id: '/admin/intelligence/usage',
@@ -525,6 +532,7 @@ export interface FileRoutesByFullPath {
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/admin/platform/db-info': typeof AuthenticatedAdminPlatformDbInfoRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
@@ -593,6 +601,7 @@ export interface FileRoutesByTo {
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/admin/platform/db-info': typeof AuthenticatedAdminPlatformDbInfoRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
@@ -664,6 +673,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/_authenticated/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
   '/_authenticated/admin/intelligence/usage': typeof AuthenticatedAdminIntelligenceUsageRoute
+  '/_authenticated/admin/platform/db-info': typeof AuthenticatedAdminPlatformDbInfoRoute
   '/_authenticated/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
@@ -735,6 +745,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
     | '/admin/intelligence/usage'
+    | '/admin/platform/db-info'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
@@ -803,6 +814,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
     | '/admin/intelligence/usage'
+    | '/admin/platform/db-info'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/settings/security/mfa'
@@ -873,6 +885,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/intelligence/routing-rules'
     | '/_authenticated/admin/intelligence/tag-review'
     | '/_authenticated/admin/intelligence/usage'
+    | '/_authenticated/admin/platform/db-info'
     | '/_authenticated/admin/platform/support-search'
     | '/_authenticated/admin/tenant/ai'
     | '/_authenticated/settings/security/mfa'
@@ -1248,6 +1261,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminPlatformSupportSearchRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/platform/db-info': {
+      id: '/_authenticated/admin/platform/db-info'
+      path: '/admin/platform/db-info'
+      fullPath: '/admin/platform/db-info'
+      preLoaderRoute: typeof AuthenticatedAdminPlatformDbInfoRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/intelligence/usage': {
       id: '/_authenticated/admin/intelligence/usage'
       path: '/admin/intelligence/usage'
@@ -1481,6 +1501,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIntelligenceRoutingRulesRoute: typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   AuthenticatedAdminIntelligenceTagReviewRoute: typeof AuthenticatedAdminIntelligenceTagReviewRoute
   AuthenticatedAdminIntelligenceUsageRoute: typeof AuthenticatedAdminIntelligenceUsageRoute
+  AuthenticatedAdminPlatformDbInfoRoute: typeof AuthenticatedAdminPlatformDbInfoRoute
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
@@ -1553,6 +1574,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntelligenceTagReviewRoute,
   AuthenticatedAdminIntelligenceUsageRoute:
     AuthenticatedAdminIntelligenceUsageRoute,
+  AuthenticatedAdminPlatformDbInfoRoute: AuthenticatedAdminPlatformDbInfoRoute,
   AuthenticatedAdminPlatformSupportSearchRoute:
     AuthenticatedAdminPlatformSupportSearchRoute,
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,

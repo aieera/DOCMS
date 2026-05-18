@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, Antenna, Archive, Brain, ChevronRight, CreditCard, FileJson, FileSearch,
   Globe, Key, KeyRound, Languages, Link2, Mail, MapPinned, Network, PenTool, Plug, Scale,
   ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon,
-  Upload, UserCog, Users, Webhook, Workflow, Bot,
+  Upload, UserCog, Users, Webhook, Workflow, Bot, Database,
   // Zap kept available for when ADR 0090 iPaaS tile is re-enabled.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   Zap as _Zap,
@@ -94,6 +94,7 @@ const PLATFORM_GROUP: SectionGroup = {
   description: 'Cross-tenant tools — every action is audited.',
   sections: [
     { to: '/admin/platform/support-search', icon: ShieldAlert, label: 'Support search', desc: 'Cross-tenant document search — every query audited (ADR 0069)' },
+    { to: '/admin/platform/db-info', icon: Database, label: 'Database driver info', desc: 'Active driver + version + capability matrix (ADR 0094)' },
   ],
 }
 

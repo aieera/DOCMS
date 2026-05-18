@@ -52,6 +52,8 @@ export default defineConfig({
             '/api/v1/admin/share-links':        withSig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': withSig('http://localhost:8182'),
             '/api/v1/admin/documents':          withSig('http://localhost:8182'),
+            // ADR 0094 — DB driver+capability matrix (document svc owns it).
+            '/api/v1/admin/platform/db-info':   withSig('http://localhost:8182'),
             // Document-service intelligence-admin endpoints (must list
             // each explicitly because the catch-all `/api/v1/admin`
             // below sends anything else to the auth service).
