@@ -7,9 +7,9 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/shadcn/badge'
 
-// Capability ordering mirrors the rego hierarchy:
+// Capability ordering mirrors the underlying policy hierarchy:
 //   admin > delete > edit > share > view
-// Cells render an"included" tick for every capability at or below
+// Cells render an "included" tick for every capability at or below
 // the cell's max_capability so admins see the full inherited set,
 // not just the single highest tier.
 const CAP_ORDER = ['admin', 'delete', 'edit', 'share', 'view'] as const
@@ -25,6 +25,31 @@ function cellFor(cells: PermissionCell[], role: string, resource: string): Permi
   return cells.find((c) => c.role === role && c.resource_type === resource)
 }
 
+// The policy backend stamps `source` and `notes` with literal rego
+// rule numbers / file references that aren't useful to admins and
+// expose implementation details. Map known patterns to plain
+// language at render time; unknown sources pass through (best the
+// UI can do without losing information).
+function prettySource(source: string): string {
+  if (!source) return ''
+  if (/user_role=owner/i.test(source)) return 'Built-in: owner role'
+  if (/user_role=admin/i.test(source)) return 'Built-in: admin role'
+  if (/cascade/i.test(source))         return 'Inherited from workspace'
+  if (/^rego rule \d+$/i.test(source)) return 'Workspace-level grant'
+  if (/^rego/i.test(source))           return 'Policy grant'
+  return source
+}
+
+// Strip parenthetical rego references from notes
+// ("(policy.rego rules 3 + 4)", "(rego deny-rule #1)") without
+// losing the surrounding sentence.
+function prettyNote(note: string): string {
+  return note
+    .replace(/\s*\((?:policy\.)?rego[^)]*\)/gi, '')
+    .replace(/\s+\./g, '.')
+    .trim()
+}
+
 function PermissionsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'permissions-matrix'],
@@ -36,7 +61,7 @@ function PermissionsPage() {
       <div>
         <PageHeader
           title="Permission Matrix"
-          description="Read-only view of role → resource → capability from the OPA policy bundle."
+          description="View the permissions assigned to each role across all resource types. This matrix is read-only and reflects the current access policy."
         />
         <Skeleton className="h-64" />
       </div>
@@ -49,16 +74,16 @@ function PermissionsPage() {
     <div>
       <PageHeader
         title="Permission Matrix"
-        description="Read-only projection of services/policy/internal/opa/policy.rego — what each role can do on each resource type."
+        description="View the permissions assigned to each role across all resource types. This matrix is read-only and reflects the current access policy."
       />
 
       <div className="overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left">Role</th>
+              <th className="px-4 py-2 text-start">Role</th>
               {(data.resource_types ?? []).map((r) => (
-                <th key={r} className="px-4 py-2 text-left">
+                <th key={r} className="px-4 py-2 text-start">
                   {r}
                 </th>
               ))}
@@ -80,7 +105,7 @@ function PermissionsPage() {
                     <td key={rt} className="px-4 py-2 align-top">
                       {caps.length === 0 ? (
                         <span className="text-xs text-muted-foreground">
-                          — {c?.source ?? 'no baseline'}
+                          — {prettySource(c?.source ?? '') || 'no baseline'}
                         </span>
                       ) : (
                         <>
@@ -101,7 +126,7 @@ function PermissionsPage() {
                           </div>
                           {c?.source && (
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {c.source}
+                              {prettySource(c.source)}
                             </div>
                           )}
                         </>
@@ -120,16 +145,15 @@ function PermissionsPage() {
           <ShieldCheck className="h-4 w-4" />
           Notes
         </div>
-        <ul className="list-disc pl-6 text-xs text-muted-foreground">
+        <ul className="list-disc ps-6 text-xs text-muted-foreground">
           {(data.notes ?? []).map((n, i) => (
-            <li key={i}>{n}</li>
+            <li key={i}>{prettyNote(n)}</li>
           ))}
         </ul>
         <div className="pt-2">
           <Badge variant="in_review">Read-only</Badge>
-          <span className="ml-2 text-xs text-muted-foreground">
-            Changes to the matrix ship via a new policy.rego release + matching matrix update in the
-            policy service.
+          <span className="ms-2 text-xs text-muted-foreground">
+            Changes to the matrix ship with platform releases — they can't be edited from this page.
           </span>
         </div>
       </div>

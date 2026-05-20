@@ -32,6 +32,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/audit/verify-integrity", h.verifyIntegrity)
 	mux.HandleFunc("POST /api/v1/audit/data-subject/export", h.dataSubjectExport)
 	mux.HandleFunc("POST /api/v1/audit/data-subject/anonymize", h.dataSubjectAnonymize)
+	// ADR 0103 — audit-trail visualization aggregation.
+	mux.HandleFunc("GET /api/v1/audit/documents/{document_id}/viz", h.documentAuditViz)
 }
 
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {

@@ -123,9 +123,15 @@ func (r *Repository) List(ctx context.Context, f model.ListFilter) ([]*model.Aud
 		}
 	}
 	where := strings.Join(clauses, " AND ")
-	query := fmt.Sprintf(`SELECT id, tenant_id, event_hash, previous_hash, actor, actor_name,
-		action, resource_type, resource_id, resource_title, details, ip_address, user_agent,
-		source_event, created_at
+	// Nullable columns (previous_hash, resource_type, resource_id, resource_title,
+	// ip_address, user_agent, source_event) are coalesced to '' so we can scan
+	// into plain `string` fields. ip_address is inet — host() drops the CIDR mask.
+	query := fmt.Sprintf(`SELECT id, tenant_id, event_hash,
+		COALESCE(previous_hash, ''), actor, actor_name, action,
+		COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+		COALESCE(resource_title, ''), details,
+		COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+		COALESCE(source_event, ''), created_at
 		FROM audit_events WHERE %s ORDER BY created_at DESC, id DESC LIMIT %d`, where, pageSize+1)
 
 	rows, err := r.pool.Query(ctx, query, args...)
@@ -160,9 +166,12 @@ func (r *Repository) List(ctx context.Context, f model.ListFilter) ([]*model.Aud
 // ListAll streams all events for a tenant in order (for integrity verification).
 func (r *Repository) ListAll(ctx context.Context, tenantID string) ([]*model.AuditEvent, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, event_hash, previous_hash, actor, actor_name,
-			action, resource_type, resource_id, resource_title, details, ip_address, user_agent,
-			source_event, created_at
+		SELECT id, tenant_id, event_hash,
+			COALESCE(previous_hash, ''), actor, actor_name, action,
+			COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+			COALESCE(resource_title, ''), details,
+			COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+			COALESCE(source_event, ''), created_at
 		FROM audit_events WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`,
 		tenantID)
 	if err != nil {
@@ -185,9 +194,12 @@ func (r *Repository) ListAll(ctx context.Context, tenantID string) ([]*model.Aud
 // ListBySubject returns all events where actor matches (for GDPR export).
 func (r *Repository) ListBySubject(ctx context.Context, tenantID, subjectID string) ([]*model.AuditEvent, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, event_hash, previous_hash, actor, actor_name,
-			action, resource_type, resource_id, resource_title, details, ip_address, user_agent,
-			source_event, created_at
+		SELECT id, tenant_id, event_hash,
+			COALESCE(previous_hash, ''), actor, actor_name, action,
+			COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+			COALESCE(resource_title, ''), details,
+			COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+			COALESCE(source_event, ''), created_at
 		FROM audit_events WHERE tenant_id = $1 AND actor = $2 ORDER BY created_at ASC`,
 		tenantID, subjectID)
 	if err != nil {

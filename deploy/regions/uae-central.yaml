@@ -1,0 +1,190 @@
+# ============================================================================
+# VaultDMS — UAE residency overlay (ADR 0110)
+# ============================================================================
+#
+# Apply on TOP of deploy/helm/vaultdms/values.yaml:
+#
+#   helm upgrade --install vaultdms ./deploy/helm/vaultdms \
+#     --namespace vaultdms --create-namespace \
+#     --values ./deploy/helm/vaultdms/values.yaml \
+#     --values ./deploy/regions/uae-central.yaml \
+#     --wait --timeout 20m
+#
+# Hard guarantees this overlay enforces:
+#
+#   * All AWS-backed resources (S3, RDS, OpenSearch, KMS) are
+#     pinned to me-central-1.
+#   * Every Go service starts with VAULTDMS_REGION_ID=uae-central,
+#     which feeds pkg/middleware.EnforceRegion + the billing
+#     provisioner residency guard.
+#   * Egress NetworkPolicy denies outbound to any non-UAE AWS
+#     endpoint; the only allowed egresses are me-central-1 service
+#     hostnames + the in-cluster DNS resolver.
+#
+# What this overlay does NOT do (operator responsibility):
+#
+#   * Create the AWS account + region quotas + IAM roles. See
+#     docs/deploy/uae-residency.md §1.
+#   * Provision the KMS keys with no cross-region grants. The
+#     overlay references key ARNs; their creation is one-off.
+#   * Sign CBUAE compliance attestations. The overlay's encryption
+#     posture (AES-256-GCM at rest, TLS 1.3 in transit, envelope
+#     encryption per blob via per-tenant KEK) matches CBUAE
+#     guidance but isn't a substitute for the auditor sign-off.
+
+global:
+  # Stamped into every service's VAULTDMS_REGION_ID env. Matches the
+  # value the middleware compares against. MUST NOT contain the AWS
+  # region literally (we treat the residency boundary as a logical
+  # label so a future Bahrain failover doesn't break tenant rows).
+  region: uae-central
+
+  # The buyer-facing brand domain. UAE-resident deployments
+  # typically use a .ae TLD; replace this with whatever you point
+  # at the cluster's ingress.
+  domain: vaultdms.ae
+
+  # S3 — me-central-1 (AWS Middle East / UAE).
+  s3:
+    endpoint: "https://s3.me-central-1.amazonaws.com"
+    region: me-central-1
+    accessKeySecret: vaultdms-s3-credentials
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+    useSSL: true
+    buckets:
+      hot:        dms-me-central-1-hot
+      warm:       dms-me-central-1-warm
+      previews:   dms-me-central-1-previews
+      quarantine: dms-me-central-1-quarantine
+    # Hard-coded on the buckets themselves at creation time. Echoed
+    # here so the operator can confirm the property matches what
+    # bucket-creation Terraform sets. See docs/deploy/uae-residency.md.
+    blockPublicAccess: true
+    replicationDisabled: true   # NO cross-region replication.
+    objectLockEnabled: true     # Compliance mode for retention rows.
+
+  # RDS / Aurora — me-central-1 AZs only. The chart's `database`
+  # block points at the cluster's writer endpoint; the cluster
+  # itself must be created with az_mode = "multi-az" inside
+  # me-central-1, never with a cross-region replica.
+  database:
+    host: vaultdms-aurora.cluster-XXX.me-central-1.rds.amazonaws.com
+    port: 5432
+    name: vaultdms
+    username: vaultdms
+    existingSecret: vaultdms-db-credentials
+    passwordKey: password
+    # ADR 0110 — sslmode=verify-full so a misrouted DNS record can't
+    # quietly land us at a non-UAE Aurora cluster.
+    sslMode: verify-full
+
+  # OpenSearch — me-central-1 domain. No cross-cluster replication.
+  opensearch:
+    host: vpc-vaultdms-XXX.me-central-1.es.amazonaws.com
+    port: 443
+    useSSL: true
+    existingSecret: vaultdms-opensearch-credentials
+
+  # KMS — keys are CREATED in me-central-1 with NO cross-region
+  # grants. The aliases below are referenced by the storage service
+  # for per-tenant KEK wrapping. Key creation lives in Terraform;
+  # this overlay only consumes the aliases.
+  kms:
+    provider: aws
+    region: me-central-1
+    kekAlias: alias/vaultdms-uae-central-kek
+    cmkAlias: alias/vaultdms-uae-central-cmk
+    # No cross-region replica keys — crypto-shredding by dropping
+    # the KEK MUST be a single-region operation.
+    crossRegionReplicas: false
+
+  # NATS / Temporal / Redis — pinned to the same VPC + AZs. These
+  # are operator-managed but referenced by the chart.
+  nats:
+    url: nats://nats.vaultdms-uae.svc.cluster.local:4222
+
+  redis:
+    host: redis.vaultdms-uae.svc.cluster.local
+    port: 6379
+    existingSecret: vaultdms-redis-credentials
+
+  temporal:
+    host: temporal-frontend.vaultdms-uae.svc.cluster.local:7233
+    namespace: vaultdms-uae
+
+  # ADR 0110 — egress lockdown. Applied as a NetworkPolicy with the
+  # Calico/Cilium provider. Denies all egress except:
+  #   * In-cluster DNS (kube-dns)
+  #   * AWS me-central-1 service endpoints (*.me-central-1.amazonaws.com)
+  #   * Customer SMTP / SAML IdPs that the operator allow-lists per
+  #     tenant — handled via tenant-specific NetworkPolicies, not here.
+  networkPolicy:
+    enabled: true
+    egress:
+      denyDefault: true
+      allow:
+        - description: In-cluster DNS
+          to:          [{ namespaceSelector: { matchLabels: { name: kube-system } } }]
+          ports:       [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+        - description: AWS me-central-1 service endpoints (S3 / RDS / OpenSearch / KMS / Secrets Manager)
+          # Resolved via fqdnSelector on Cilium. Fall back to a CIDR
+          # block when running on a CNI without FQDN support — the
+          # AWS IP ranges for me-central-1 are published at
+          # https://ip-ranges.amazonaws.com/ip-ranges.json (region
+          # filter: "me-central-1").
+          fqdnSelector:
+            - "*.me-central-1.amazonaws.com"
+            - "*.me-central-1.es.amazonaws.com"
+            - "*.me-central-1.rds.amazonaws.com"
+        - description: Customer IdP / SMTP (tenant-allow-listed)
+          # Per-tenant rules land in NetworkPolicies created by the
+          # connector service's tenant-onboarding flow. This stanza
+          # documents the convention; no entries here.
+          fqdnSelector: []
+
+# ----------------------------------------------------------------------------
+# Per-service overrides — env var + resource-tagging.
+# ----------------------------------------------------------------------------
+#
+# Every Go service reads VAULTDMS_REGION_ID at boot (pkg/config.
+# Config.Region). The chart's `goServiceDeployment` macro stamps the
+# env from global.region, so we don't need a per-service `env:`
+# block here; this section is for service-specific tweaks the UAE
+# overlay needs.
+
+services:
+  document:
+    env:
+      # Belt + suspenders — region middleware reads cfg.Region but
+      # we also stamp the explicit name so a misconfigured Helm
+      # render is visible in kubectl describe.
+      - name:  VAULTDMS_REGION_ID
+        value: uae-central
+
+  storage:
+    env:
+      - name:  VAULTDMS_REGION_ID
+        value: uae-central
+      # S3 SDK reads this — defense in depth so a stale role-arn
+      # can't accidentally write to a non-UAE bucket.
+      - name:  AWS_REGION
+        value: me-central-1
+
+  billing:
+    env:
+      - name:  VAULTDMS_REGION_ID
+        value: uae-central
+      # ADR 0110 — billing-provisioner residency guard reads this
+      # to refuse cross-region Stripe webhooks. The clusterRegion
+      # field on NewWithRegion(cfg.Region, …) ultimately resolves
+      # here.
+      - name:  VAULTDMS_RESIDENCY_STRICT
+        value: "true"
+
+# Tenant defaults — every org provisioned by THIS cluster gets
+# primary_region=uae-central. The billing-provisioner check
+# refuses anything else.
+tenant:
+  defaultResidencyRegion: uae-central
+  allowedResidencyRegions: [uae-central]

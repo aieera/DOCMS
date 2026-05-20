@@ -78,6 +78,13 @@ type SearchFilters struct {
 }
 
 // SearchResult is returned by the search facade.
+//
+// ADR 0111 — `Degraded` is set when the caller asked for hybrid /
+// semantic but the dense-vector path was skipped (embedding
+// timeout, intelligence-service unreachable, Qdrant query error).
+// The HTTP handler reflects this into an X-Search-Mode-Degraded
+// response header so dashboards can surface the rate at which
+// semantic results are silently missing from the fusion.
 type SearchResult struct {
 	Results    []DocumentHit          `json:"results"`
 	Facets     map[string][]FacetBucket `json:"facets,omitempty"`
@@ -85,6 +92,11 @@ type SearchResult struct {
 	PageToken  string                 `json:"page_token,omitempty"`
 	LatencyMS  int64                  `json:"latency_ms"`
 	SearchMode string                 `json:"search_mode"`
+	// Degraded names the mode that actually ran. Empty string when
+	// the requested mode matched what executed; otherwise the value
+	// is the fallback mode the response was served with (typically
+	// "lexical"). Surfaces as X-Search-Mode-Degraded in HTTP.
+	Degraded   string                 `json:"degraded,omitempty"`
 }
 
 // DocumentHit is one search-result row.
@@ -192,6 +204,15 @@ type SavedSearch struct {
 	// fan out to a team.
 	Subscribers           []SavedSearchSubscriber `json:"subscribers,omitempty"`
 	SubscriberCount       int                     `json:"subscriber_count"`
+	// ADR 0100 — smart folder fields. Default values (is_smart_folder=
+	// false, tree_visibility="private") mean a vanilla saved search
+	// continues to behave exactly as before; smart-folder display is
+	// opt-in via /promote.
+	IsSmartFolder   bool       `json:"is_smart_folder"`
+	TreeVisibility  string     `json:"tree_visibility"`             // private | workspace | public
+	WorkspaceID     *string    `json:"workspace_id,omitempty"`      // required when tree_visibility = workspace
+	Icon            string     `json:"icon"`                        // lucide icon name; default 'sparkles'
+	SmartFolderAt   *time.Time `json:"smart_folder_at,omitempty"`
 }
 
 // SavedSearchSubscriber is one row in saved_search_subscribers.

@@ -2,17 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  ShieldCheck,
-  Trash2,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Power,
-  PowerOff,
-  ArrowRight,
-} from 'lucide-react'
-
+import { ShieldCheck, Trash2, CheckCircle2, AlertTriangle, XCircle, Power, PowerOff } from 'lucide-react'
 import {
   createSSOConfig,
   deleteSSOConfig,
@@ -31,6 +21,7 @@ import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatRelativeTime } from '@/lib/formatters'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 type Step = 'pick' | 'configure' | 'attrs' | 'validate' | 'done'
 
@@ -114,8 +105,10 @@ function SsoPage() {
                     if (window.confirm(`Delete SSO connection"${c.display_name}"?`)) remove.mutate(c.id)
                   }}
                   disabled={remove.isPending}
+                  aria-label={`Delete SSO connection: ${c.display_name}`}
+                  title={`Delete SSO connection: ${c.display_name}`}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
             </li>
@@ -225,7 +218,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
             >
               {s.label}
             </span>
-            {i < steps.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
+            {i < steps.length - 1 && <DirectionalIcon name="ArrowRight" className="h-3 w-3 text-muted-foreground" />}
           </span>
         ))}
       </div>

@@ -66,7 +66,7 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-[100]" data-testid="command-palette" onClick={() => setOpen(false)}>
       <div className="fixed inset-0 bg-black/50" />
-      <div className="fixed left-1/2 top-[20%] z-[101] w-full max-w-lg -translate-x-1/2" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed start-1/2 top-[20%] z-[101] w-full max-w-lg -translate-x-1/2" onClick={(e) => e.stopPropagation()}>
         <Command className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl"
           // shouldFilter=false: cmdk's built-in filter would re-rank
           // server-supplied groups by its own match algorithm. We

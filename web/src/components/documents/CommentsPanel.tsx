@@ -61,7 +61,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
   const threads = useMemo(() => groupThreads(comments ?? []), [comments])
 
   return (
-    <aside className="flex h-full w-96 flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+    <aside className="flex h-full w-96 flex-col border-s border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
       <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <MessageSquare className="h-4 w-4" /> Comments
@@ -132,7 +132,7 @@ function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: 
     >
       <CommentBubble c={thread.root} currentUserId={currentUserId} />
       {thread.replies.length > 0 && (
-        <div className="mt-2 space-y-2 border-l-2 border-[var(--color-border)] pl-3">
+        <div className="mt-2 space-y-2 border-s-2 border-[var(--color-border)] ps-3">
           {thread.replies.map((r) => (
             <CommentBubble key={r.id} c={r} currentUserId={currentUserId} />
           ))}
@@ -141,7 +141,7 @@ function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: 
 
       <div className="mt-2 flex items-center gap-2 text-xs">
         <button onClick={() => setReplying((v) => !v)} className="text-[var(--color-text-secondary)] hover:underline">
-          <Reply className="mr-1 inline h-3 w-3" /> Reply
+          <Reply className="me-1 inline h-3 w-3" /> Reply
         </button>
         <button
           onClick={() => toggleResolve.mutate()}
@@ -149,9 +149,9 @@ function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: 
           data-testid={`resolve-${thread.root.id}`}
         >
           {thread.root.is_resolved ? (
-            <><CheckCircle2 className="mr-1 inline h-3 w-3" /> Resolved — click to reopen</>
+            <><CheckCircle2 className="me-1 inline h-3 w-3" /> Resolved — click to reopen</>
           ) : (
-            <><Check className="mr-1 inline h-3 w-3" /> Mark resolved</>
+            <><Check className="me-1 inline h-3 w-3" /> Mark resolved</>
           )}
         </button>
       </div>
@@ -181,10 +181,11 @@ function CommentBubble({ c, currentUserId }: { c: Comment; currentUserId: string
         {c.author_id === currentUserId && (
           <button
             onClick={() => remove.mutate()}
-            aria-label="delete"
-            className="ml-auto text-[var(--color-text-secondary)] hover:text-red-600"
+            aria-label="Delete your comment"
+            title="Delete your comment"
+            className="ms-auto text-[var(--color-text-secondary)] hover:text-red-600"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
           </button>
         )}
       </div>
@@ -390,17 +391,17 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
       />
       {mentionQuery !== null && items.length > 0 && (
         <ul
-          className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow"
+          className="absolute bottom-full start-0 z-10 mb-1 max-h-40 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow"
           data-testid={`${testid}-mentions`}
         >
           {items.map((u) => (
             <li key={u.id}>
               <button
                 onClick={() => insertMention(u.display_name ?? u.email, u.id)}
-                className="block w-full px-2 py-1 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="block w-full px-2 py-1 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <strong>{u.display_name ?? u.email}</strong>
-                <span className="ml-2 text-xs text-[var(--color-text-secondary)]">{u.email}</span>
+                <span className="ms-2 text-xs text-[var(--color-text-secondary)]">{u.email}</span>
               </button>
             </li>
           ))}

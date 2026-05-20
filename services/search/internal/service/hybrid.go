@@ -2,11 +2,20 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/vaultdms/vaultdms/services/search/internal/fusion"
 	"github.com/vaultdms/vaultdms/services/search/internal/model"
 	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
 )
+
+// ADR 0111 — wall-clock budget for the dense-vector path. The
+// embedding-service call dominates this latency (typically 80-300ms
+// for a sentence-level transformer). If embed+ANN can't return in
+// 500ms we abandon the vector path entirely and serve lexical-only
+// with a Degraded marker. Search is latency-sensitive; a slow
+// Qdrant / intelligence pod must never block the response.
+const semanticBudget = 500 * time.Millisecond
 
 // semanticHit is the minimal shape returned by the dense-vector path.
 // Only document_id + score are required for fusion; the OpenSearch
@@ -31,8 +40,18 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	raw, err := s.vec.SemanticSearch(ctx, req.Query, req.TenantID, req.GroupIDs, limit)
+	// ADR 0111 — hard cap on the wall clock for embed + ANN. If the
+	// parent context already has a tighter deadline, that wins
+	// (e.g. a request-level timeout from the gateway).
+	semCtx, cancel := context.WithTimeout(ctx, semanticBudget)
+	defer cancel()
+	raw, err := s.vec.SemanticSearch(semCtx, req.Query, req.TenantID, req.GroupIDs, limit)
 	if err != nil {
+		// ctx.Deadline-exceeded surfaces as a deadline error; both
+		// that and unexpected vector errors get the same caller-
+		// visible treatment (fallback to lexical-only) — the caller
+		// in Service.Search differentiates by reading semCtx.Err()
+		// from the context, but at this layer they're equivalent.
 		return nil, err
 	}
 	out := make([]semanticHit, 0, len(raw))

@@ -4,6 +4,8 @@ import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
 import { createDocument, createVersion } from '@/api/documents'
 import { getFolders, createFolder } from '@/api/workspaces'
+import { sendFilingFeedback } from '@/api/predictiveFiling'
+import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
 
 // Full upload flow:
@@ -22,7 +24,16 @@ export function useUpload(workspaceId?: string, folderId?: string) {
   const { addUpload, updateProgress, setStatus } = useUploadStore()
   const qc = useQueryClient()
 
-  const uploadFiles = useCallback(async (files: File[]) => {
+  // ADR 0102 — optional per-file filing decisions from
+  // UploadReviewDialog. Same length & index as `files` when supplied;
+  // a null entry means "no prediction available for this file, use
+  // defaults". `useUpload` applies the decision to CreateDocument
+  // (folder_id + tags) and POSTs sendFilingFeedback after a
+  // successful upload so the training corpus grows on every batch.
+  const uploadFiles = useCallback(async (
+    files: File[],
+    decisions?: (FilingDecision | null)[],
+  ) => {
     if (!workspaceId) {
       toast.error('Pick a workspace before uploading')
       return
@@ -61,16 +72,31 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       toast.error('No folder available in this workspace — create one first or contact an admin.')
       return
     }
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
       const id = crypto.randomUUID()
       addUpload({ id, file, progress: 0, status: 'pending' })
+
+      // ADR 0102: pull the per-file decision (if any). The decision
+      // can override target folder (finalFolderId) and stamp initial
+      // tags (finalTags). Classification feeds the feedback row but
+      // doesn't currently set a column on documents — Phase 2 wires a
+      // `document_class` column once the intelligence service's
+      // post-OCR refinement also writes there.
+      const decision = decisions?.[i] ?? null
+      const targetFolderId =
+        decision?.folderAccepted && decision.finalFolderId
+          ? decision.finalFolderId
+          : resolvedFolderId
+      const initialTags = decision?.finalTags ?? []
+
       try {
         // Step 1: create the document row.
         const doc = await createDocument({
           workspace_id: workspaceId,
-          folder_id: resolvedFolderId,
+          folder_id: targetFolderId,
           title: file.name,
-          tags: [],
+          tags: initialTags,
         })
 
         // Step 2: get a presigned URL.
@@ -127,6 +153,34 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
         await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+
+        // ADR 0102 — record the filing decision for the training
+        // corpus. Best-effort: a feedback failure must not break the
+        // upload UX, so we swallow the error and only log it.
+        if (decision) {
+          try {
+            await sendFilingFeedback({
+              prediction_id:         decision.predictionId,
+              class_accepted:        decision.classAccepted,
+              folder_accepted:       decision.folderAccepted,
+              tags_accepted:         decision.tagsAccepted,
+              tags_rejected:         decision.tagsRejected,
+              final_class:           decision.finalClass,
+              final_folder_id:       decision.finalFolderId,
+              final_tags:            decision.finalTags,
+              predicted_class:       decision.predictedClass,
+              predicted_class_score: decision.predictedClassScore,
+              predicted_folder_id:   decision.predictedFolderId,
+              predicted_folder_score: decision.predictedFolderScore,
+              predicted_tags:        decision.predictedTags,
+              filename:              file.name,
+              mime_type:             file.type || 'application/octet-stream',
+              workspace_id:          workspaceId,
+            })
+          } catch (e) {
+            console.warn('filing feedback failed', e)
+          }
+        }
       } catch (e) {
         // Detail comes from axios's response interceptor (toast already
         // surfaced the field error). Persist the underlying message on

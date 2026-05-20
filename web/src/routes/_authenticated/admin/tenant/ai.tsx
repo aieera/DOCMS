@@ -133,7 +133,7 @@ function TenantAIPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="AI provider"
-        description="Per-tenant LLM routing — provider, model, fallback, encrypted API key, rate limit, daily budget. ADR 0081."
+        description="Per-tenant LLM routing — provider, model, fallback, encrypted API key, rate limit, daily budget."
       />
 
       <div className="mt-6 space-y-5">

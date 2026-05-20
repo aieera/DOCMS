@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { Button } from '@/components/ui/shadcn/button'
-import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { Spinner } from '@/components/ui/Spinner'
 import { annotationsApi, type Annotation, type PDFMarkupData } from '@/api/annotations'
 import { AnnotationToolbar, type PDFMode } from './AnnotationToolbar'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
@@ -164,11 +165,11 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
       {numPages > 1 && (
         <div className="mt-3 flex items-center gap-2">
           <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            <ChevronLeft className="h-4 w-4" />
+            <DirectionalIcon name="ChevronLeft" className="h-4 w-4" />
           </Button>
           <span className="text-sm">{page} / {numPages}</span>
           <Button variant="ghost" size="sm" disabled={page >= numPages} onClick={() => setPage((p) => p + 1)}>
-            <ChevronRight className="h-4 w-4" />
+            <DirectionalIcon name="ChevronRight" className="h-4 w-4" />
           </Button>
         </div>
       )}
@@ -252,7 +253,7 @@ function renderAnnotation(a: Annotation): JSX.Element | null {
           role="listitem"
           aria-label={`Note: ${body ?? ''}`}
           data-testid={`pdf-annotation-${a.id}`}
-          className="pointer-events-auto absolute -ml-3 -mt-3 h-6 w-6 rounded-full bg-blue-500 text-[10px] font-bold text-white shadow hover:bg-blue-600"
+          className="pointer-events-auto absolute -ms-3 -mt-3 h-6 w-6 rounded-full bg-blue-500 text-[10px] font-bold text-white shadow hover:bg-blue-600"
           style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%` }}
           title={body}
         >N</button>

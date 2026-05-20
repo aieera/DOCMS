@@ -71,3 +71,15 @@ export function getMimeTypeLabel(mime: string): string {
   }
   return map[mime] || mime.split('/').pop()?.toUpperCase() || 'File'
 }
+
+// formatShortId — render a UUID as a compact, copy-friendly identifier.
+// Stripe-style: a type prefix + the last 8 hex chars of the UUID (which
+// for v7 UUIDs are random, giving good visual distinction across tenants).
+// The full UUID stays around as the underlying identifier; this is for
+// display only.
+export function formatShortId(prefix: string, uuid: string | undefined | null): string {
+  if (!uuid) return '—'
+  const hex = uuid.replace(/-/g, '')
+  if (hex.length < 8) return uuid
+  return `${prefix}_${hex.slice(-8)}`
+}

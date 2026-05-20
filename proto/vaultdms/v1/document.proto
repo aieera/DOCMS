@@ -31,6 +31,13 @@ message Document {
   google.protobuf.Timestamp created_at               = 18;
   google.protobuf.Timestamp updated_at               = 19;
   DocumentPermissions       permissions              = 20;
+  // Denormalised uploader display name. Filled at read time by a
+  // LEFT JOIN against the users table in the document repository.
+  // Empty when the uploader row is missing; frontend uses that as
+  // the signal to render "Deleted user". Soft-deleted users still
+  // carry their display_name on the row so attribution survives
+  // account deletion.
+  string                    created_by_name          = 21;
 }
 
 message DocumentPermissions {

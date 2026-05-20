@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, ArrowLeft, Loader2 } from 'lucide-react'
+import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
@@ -15,6 +15,7 @@ import {
   startPushChallenge, verifyPushChallenge,
   type MFAMethod,
 } from '@/api/mfa'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 interface MethodOption { method: MFAMethod; strength: number; destination?: string }
 
@@ -177,7 +178,7 @@ function LoginPage() {
                 type="button"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
-                className="group flex w-full items-center gap-3 rounded-md border border-input bg-background px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex w-full items-center gap-3 rounded-md border border-input bg-background px-3 py-2.5 text-start transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
                   <MethodIcon m={m.method} />
@@ -197,7 +198,7 @@ function LoginPage() {
             className="w-full"
             onClick={() => { setMfaToken(null); setMethods([]); setPassword('') }}
           >
-            <ArrowLeft className="mr-1 h-4 w-4" /> Back
+            <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Back
           </Button>
         </div>
       </AuthShell>
@@ -230,7 +231,7 @@ function LoginPage() {
           )}
           <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
           <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
-            <ArrowLeft className="mr-1 h-4 w-4" /> Use a different method
+            <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Use a different method
           </Button>
         </form>
       </AuthShell>

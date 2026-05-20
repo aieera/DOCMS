@@ -63,7 +63,11 @@ func main() {
 	defer nc.Close()
 
 	repo := repository.New(pool)
-	prov := provisioner.New(repo, pool, rdb, *log.Z())
+	// ADR 0110 — pass the cluster region so cross-region provision
+	// attempts (e.g. a US Stripe webhook firing at the UAE cluster)
+	// fail fast with a clear error instead of writing the org row
+	// into the wrong region's Postgres.
+	prov := provisioner.NewWithRegion(cfg.Region, repo, pool, rdb, *log.Z())
 	flagChecker := flags.NewChecker(repo, rdb)
 	stripeWH := stripehandler.NewWebhookHandler(repo, rdb, *log.Z(), cfg.StripeWebhookSecret)
 

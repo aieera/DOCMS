@@ -15,6 +15,9 @@ export interface User {
   status?: 'active' | 'suspended' | 'deactivated'
   avatar_url?: string
   mfa_enabled: boolean
+  // ADR 0106 — UI-language preference. Always populated from /auth/me;
+  // defaults to 'en' on the server when a user has never set it.
+  locale?: 'en' | 'ar'
   created_at?: string
   last_login_at?: string | null
 }

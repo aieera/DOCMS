@@ -160,7 +160,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
             apply.mutate({ force: false })
           }}
         >
-          <Play className="mr-1 h-3 w-3" />
+          <Play className="me-1 h-3 w-3" />
           {apply.isPending ? 'Queuing…' : `Apply ${approvedCount} approved`}
         </Button>
         {needsAdminConfirm && (
@@ -173,6 +173,20 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
       {candidatesQ.isLoading ? (
         <div className="rounded border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-secondary)]">
           Loading candidates…
+        </div>
+      ) : candidatesQ.isError ? (
+        <div
+          className="flex flex-col items-start gap-2 rounded border border-warning/40 bg-warning/5 p-4 text-sm"
+          data-testid="redaction-candidates-error"
+        >
+          <span className="text-[var(--color-text-secondary)]">
+            Couldn&apos;t load redaction candidates.
+            {candidatesQ.error instanceof Error ? ` (${candidatesQ.error.message})` : ''}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => candidatesQ.refetch()} disabled={candidatesQ.isFetching}>
+            <RotateCcw className="me-1 h-3 w-3" />
+            {candidatesQ.isFetching ? 'Retrying…' : 'Retry'}
+          </Button>
         </div>
       ) : candidates.length === 0 ? (
         <EmptyCandidates statusFilter={statusFilter} />

@@ -79,11 +79,11 @@ function RoutingRulesPage() {
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
         title="Routing rules"
-        description="When a document is classified, matching rules emit folder suggestions (ADR 0053)."
+        description="When a document is classified, matching rules emit folder suggestions."
         actions={
           !creating && (
             <Button size="sm" onClick={() => setCreating({ ...EMPTY })}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="me-2 h-4 w-4" />
               New rule
             </Button>
           )
@@ -136,7 +136,7 @@ function RoutingRulesPage() {
 
       <div className="mt-6 rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/40 text-start text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Category</th>
@@ -180,7 +180,7 @@ function RoutingRulesPage() {
                     </Badge>
                   </button>
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-end">
                   <Button
                     size="sm"
                     variant="ghost"

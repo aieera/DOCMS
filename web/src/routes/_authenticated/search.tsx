@@ -2,8 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Search, Bookmark, X, ChevronDown, ChevronRight } from 'lucide-react'
-
+import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
 import {
   useSavedSearches,
@@ -18,6 +17,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 // ADR 0082 — facet sidebar state lives entirely in the URL so any
 // search-with-filters is bookmarkable. The route's validateSearch
@@ -229,7 +229,7 @@ function SearchPage() {
                 className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium"
               >
                 <span>{FACET_LABELS[facet] ?? facet}</span>
-                {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {isOpen ? <ChevronDown className="h-4 w-4" /> : <DirectionalIcon name="ChevronRight" className="h-4 w-4" />}
               </button>
               {isOpen && (
                 <ul className="space-y-1 px-3 pb-2">
@@ -281,7 +281,7 @@ function SearchPage() {
             disabled={(!query && activeFilterCount === 0) || createSavedMut.isPending}
             data-testid="save-search"
           >
-            <Bookmark className="mr-1 h-4 w-4" /> Save
+            <Bookmark className="me-1 h-4 w-4" /> Save
           </Button>
         </div>
 
@@ -304,7 +304,7 @@ function SearchPage() {
                   type="button"
                   onClick={() => deleteSavedMut.mutate(s.id)}
                   aria-label={`Delete saved search ${s.name}`}
-                  className="ml-1 text-muted-foreground hover:text-destructive"
+                  className="ms-1 text-muted-foreground hover:text-destructive"
                 >
                   <X className="h-3 w-3" />
                 </button>

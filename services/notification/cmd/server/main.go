@@ -88,7 +88,7 @@ func main() {
 	// Cancels with the service lifecycle ctx; no separate Stop().
 	go svc.StartDigestFlusher(ctx)
 
-	hs := health.NewServer(pool, rdb, nc, nil)
+	hs := health.NewServerWithMeta("notification", cfg.Region, pool, rdb, nc, nil)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")

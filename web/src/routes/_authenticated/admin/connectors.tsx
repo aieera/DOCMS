@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -9,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { M365ConnectorModal } from '@/components/admin/M365ConnectorModal'
 
 // /admin/connectors — list installable providers and surface which
 // ones are already authorized for the tenant. The page previously
@@ -37,6 +39,11 @@ interface InstalledConnector {
 
 function ConnectorsPage() {
   const qc = useQueryClient()
+  // ADR 0111 — M365 has a real flow (save credentials → modal → OAuth
+  // round-trip); the other tiles still hit the stub `/auth-url`
+  // endpoint until their providers get the same treatment.
+  const [m365Open, setM365Open] = useState(false)
+
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'connectors'],
     queryFn: async () => {
@@ -44,6 +51,15 @@ function ConnectorsPage() {
       return r.data ?? []
     },
   })
+
+  // Redirect URI mirrors the backend default at
+  // services/connector/cmd/server/main.go:75. Same value for every
+  // provider — the connector framework dispatches by the HMAC-signed
+  // state, not the redirect URI.
+  const redirectURI =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/v1/connectors/oauth/callback`
+      : '/api/v1/connectors/oauth/callback'
 
   const install = useMutation({
     mutationFn: async (provider: string) => {
@@ -66,6 +82,14 @@ function ConnectorsPage() {
     },
     onError: (e: Error) => toast.error(e.message || 'Install failed'),
   })
+
+  const handleInstallClick = (id: string) => {
+    if (id === 'm365') {
+      setM365Open(true)
+      return
+    }
+    install.mutate(id)
+  }
 
   const installed = new Map<string, InstalledConnector>(
     (data ?? []).map((c) => [c.provider, c] as const),
@@ -103,7 +127,7 @@ function ConnectorsPage() {
                     <Button
                       size="sm"
                       variant={isInstalled ? 'outline' : 'default'}
-                      onClick={() => install.mutate(p.id)}
+                      onClick={() => handleInstallClick(p.id)}
                       loading={install.isPending && install.variables === p.id}
                       data-testid={`install-${p.id}`}
                     >
@@ -122,10 +146,19 @@ function ConnectorsPage() {
       <Card className="flex items-start gap-2 border-info/40 bg-info/5 p-3 text-xs">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <p className="text-muted-foreground">
-          Install kicks off the vendor's OAuth consent flow. The backend OAuth callback is still a stub today —
-          installing will surface a notice rather than silently succeed.
+          Microsoft 365 has a real OAuth handshake (ADR 0111). The other tiles still hit a stub /auth-url
+          endpoint until their providers get the same treatment.
         </p>
       </Card>
+
+      <M365ConnectorModal
+        open={m365Open}
+        onOpenChange={setM365Open}
+        redirectURI={redirectURI}
+        onSaved={async () => {
+          await qc.invalidateQueries({ queryKey: ['admin', 'connectors'] })
+        }}
+      />
     </div>
   )
 }

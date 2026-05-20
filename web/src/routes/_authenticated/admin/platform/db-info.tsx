@@ -25,7 +25,7 @@ function DBInfoPage() {
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
         title="Database driver info"
-        description="Active driver + live version + capability matrix vs. the §13.3 alternative-database roadmap. Read-only. See ADR 0094 for the design plan."
+        description="Active driver + live version + capability matrix vs. the alternative-database roadmap. Read-only."
       />
 
       {isLoading && <Spinner />}
@@ -104,8 +104,8 @@ function DBInfoPage() {
 
           <section className="mt-6 rounded-lg border border-amber-500/30 bg-amber-50/60 p-4 text-sm dark:bg-amber-950/20">
             <strong>Honest status:</strong> only PostgreSQL is implemented today. The columns for
-            MySQL, Oracle, and SQL Server reflect the design plan in ADR 0094, not shipped code.
-            Each driver phase is multi-month work and ships its own subsequent ADR.
+            MySQL, Oracle, and SQL Server reflect the design plan, not shipped code.
+            Each driver phase is multi-month work.
           </section>
         </>
       )}

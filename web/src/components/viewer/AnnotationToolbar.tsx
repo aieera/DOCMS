@@ -8,12 +8,7 @@
 // the toolbar only owns mode selection + the visibility toggle.
 
 import type { ReactNode } from 'react'
-import {
-  Highlighter, Underline, Strikethrough, MessageSquarePlus, Pencil,
-  Square, Circle as CircleIcon, ArrowRight, Eye, EyeOff,
-  type LucideIcon,
-} from 'lucide-react'
-
+import { Highlighter, Underline, Strikethrough, MessageSquarePlus, Pencil, Square, Circle as CircleIcon, ArrowRight, Eye, EyeOff, type LucideIcon } from 'lucide-react'
 export type AnnotationKind = 'pdf' | 'image' | 'video'
 
 export type PDFMode      = 'highlight' | 'underline' | 'strikethrough' | 'note' | 'drawing'

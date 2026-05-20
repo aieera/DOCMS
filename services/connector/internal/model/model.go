@@ -70,6 +70,12 @@ type ProviderConfig struct {
 	// Provider-specific overrides land here:
 	InstanceURL string `json:"instance_url,omitempty"`
 	Region      string `json:"region,omitempty"`
+	// Extra is a free-form key/value bag for vendor-specific
+	// settings that don't deserve a typed column. Microsoft 365
+	// uses `entra_tenant` here (the directory GUID, or "common"
+	// for the multi-tenant Entra app). Adding a new key is a
+	// no-migration change; older rows just won't carry it.
+	Extra map[string]string `json:"extra,omitempty"`
 }
 
 // OAuthTokens is the plaintext shape of oauth_tokens_encrypted.

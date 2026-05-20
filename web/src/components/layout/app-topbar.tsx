@@ -1,11 +1,13 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Bell, CheckSquare, LogOut, Menu, Search, UserCog } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks } from '@/api/tasks'
 import { Breadcrumbs } from './breadcrumbs'
 import { ThemeToggle } from './theme-toggle'
+import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { Button } from '@/components/ui/shadcn/button'
 import { Separator } from '@/components/ui/shadcn/separator'
 import {
@@ -44,6 +46,7 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
         <MyTasksBadge />
         <NotificationsButton />
         <ThemeToggle />
+        <LanguageSelector />
         <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
         <UserMenu />
       </div>
@@ -53,15 +56,16 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
 function CommandTrigger() {
   const navigate = useNavigate()
+  const { t } = useTranslation('common')
   return (
     <Button
       variant="outline"
       onClick={() => navigate({ to: '/search' })}
       className="hidden h-9 justify-start gap-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground sm:inline-flex sm:w-64 md:w-80"
-      aria-label="Open search"
+      aria-label={t('sidebar.search')}
     >
       <Search className="h-4 w-4" />
-      <span className="flex-1 text-left">Search documents…</span>
+      <span className="flex-1 text-start">{t('search_placeholder')}</span>
       <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
         <span className="text-xs">⌘</span>K
       </kbd>
@@ -91,7 +95,7 @@ function MyTasksBadge() {
       <CheckSquare className="h-[1.1rem] w-[1.1rem]" />
       {count > 0 && (
         <span
-          className="pointer-events-none absolute right-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
           data-testid="my-tasks-count"
         >
           {count > 99 ? '99+' : count}
@@ -119,6 +123,7 @@ function UserMenu() {
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
   const logout = useLogout()
+  const { t } = useTranslation('common')
   const initial = user?.display_name?.charAt(0)?.toUpperCase() ?? '?'
   return (
     <DropdownMenu>
@@ -147,12 +152,12 @@ function UserMenu() {
         )}
         <DropdownMenuItem onSelect={() => navigate({ to: '/settings/security' })}>
           <UserCog className="h-4 w-4" />
-          Settings
+          {t('user_menu.settings')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => logout()} className="text-destructive focus:text-destructive">
           <LogOut className="h-4 w-4" />
-          Log out
+          {t('user_menu.log_out')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

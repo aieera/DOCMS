@@ -82,6 +82,20 @@ func TenantHTTP(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get(TenantHeader)
 			tid, err := uuid.Parse(raw)
+			// Fallback: a preceding middleware (SessionAuth /
+			// SessionAuthOptional) may have set the tenant on the
+			// context from a session cookie. Browser-native loaders
+			// (`<img src>`, `<video src>`, `<a download>`) can only
+			// send cookies — they can't attach the X-Tenant-ID
+			// header — so without this fallback every such request
+			// 401's even when the user is logged in. Mirrors the
+			// TenantInterceptor's gRPC-side fallback below.
+			if err != nil || tid == uuid.Nil {
+				if existing, e := auth.GetTenantID(r.Context()); e == nil && existing != uuid.Nil {
+					tid = existing
+					err = nil
+				}
+			}
 			if err != nil || tid == uuid.Nil {
 				writeUnauthorized(w, r, "missing or invalid tenant")
 				return

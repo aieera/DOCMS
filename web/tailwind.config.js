@@ -101,5 +101,13 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  // ADR 0107 — i18n RTL.
+  //   * tailwindcss-rtl adds `rtl:` / `ltr:` variants AND a `space-s-*`
+  //     direction-aware horizontal stack utility used where flex+gap
+  //     isn't a clean swap.
+  //   * Tailwind 3.4 already ships the bulk of the logical utilities
+  //     natively (`ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`,
+  //     `border-s/e`, `rounded-s/e`, `text-start/end`); the plugin
+  //     supplements rather than duplicates them.
+  plugins: [require('tailwindcss-animate'), require('tailwindcss-rtl')],
 }

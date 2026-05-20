@@ -145,10 +145,25 @@ def _pymupdf_word_boxes(page, page_text: str) -> list[dict]:
     return out
 
 
+# PDFs with CID-encoded Arabic/CJK fonts and no ToUnicode CMap make
+# pymupdf return raw glyph IDs (0x01, 0x02, ...) instead of Unicode.
+# `.strip()` alone treats that garbage as valid text and sends us down
+# the fast path, leaving the user with tofu boxes. Require that the
+# extracted bytes are mostly real characters before trusting them.
+_GARBAGE_CTRL_THRESHOLD = 0.30
+
+
 def _pdf_has_text(path: str) -> bool:
     doc = fitz.open(path)
     try:
-        return any(page.get_text().strip() for page in doc)
+        for page in doc:
+            txt = page.get_text().strip()
+            if not txt:
+                continue
+            ctrl = sum(1 for c in txt if ord(c) < 0x20 and c not in "\t\n\r")
+            if ctrl / len(txt) <= _GARBAGE_CTRL_THRESHOLD:
+                return True
+        return False
     finally:
         doc.close()
 
@@ -160,7 +175,7 @@ def _ocr_pdf_pages(path: str) -> list[dict]:
         pix = page.get_pixmap(dpi=150)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         t0 = time.perf_counter()
-        result = surya_ocr_page(img, ["en"])
+        result = surya_ocr_page(img, ["ar", "en"])
         dur = time.perf_counter() - t0
         method = "surya"
         if result["confidence"] < settings.ocr_confidence_threshold:
@@ -181,7 +196,7 @@ def _ocr_pdf_pages(path: str) -> list[dict]:
 def _ocr_image(path: str) -> list[dict]:
     img = Image.open(path).convert("RGB")
     t0 = time.perf_counter()
-    result = surya_ocr_page(img, ["en"])
+    result = surya_ocr_page(img, ["ar", "en"])
     dur = time.perf_counter() - t0
     ocr_processing_seconds.labels(engine="surya").observe(dur)
     return [{

@@ -276,8 +276,16 @@ function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type:
                   Until {new Date(s.until_at).toLocaleString()}
                 </div>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => cancel.mutate(s.id)} loading={cancel.isPending} data-testid={`snooze-cancel-${s.id}`}>
-                <Trash2 className="h-4 w-4" />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => cancel.mutate(s.id)}
+                loading={cancel.isPending}
+                data-testid={`snooze-cancel-${s.id}`}
+                aria-label={`Cancel snooze for ${s.event_type === '*' ? 'all events' : s.event_type}`}
+                title="Cancel snooze"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
               </Button>
             </li>
           ))}

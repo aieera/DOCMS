@@ -133,6 +133,15 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* ADR 0107 — i18n RTL. Apply a script-appropriate sans-serif when
+     the document direction is RTL. IBM Plex Sans Arabic is one of
+     the few open-licensed faces that matches Inter's metrics and
+     covers the full Arabic glyph set including Persian/Urdu joiners.
+     Loaded via Google Fonts in index.html. */
+  html[dir="rtl"] body {
+    font-family: 'IBM Plex Sans Arabic', var(--font-sans);
+  }
+
   *::-webkit-scrollbar {
     width: 10px;
     height: 10px;

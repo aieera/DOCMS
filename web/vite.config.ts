@@ -75,6 +75,11 @@ export default defineConfig({
             // in the document service; above the catch-all so the
             // streaming endpoints don't get intercepted by auth.
             '/api/v1/admin/bulk':               withSig('http://localhost:8182'),
+            // ADR 0095 — tenant license stub (document service). MUST
+            // come before the /api/v1/admin/tenant catch-all below
+            // (intelligence) because http-proxy-middleware routes by
+            // object-key insertion order, not longest-match.
+            '/api/v1/admin/tenant/license':     withSig('http://localhost:8182'),
             // ADR 0081 — tenant LLM config (provider keys, defaults).
             // Intelligence service owns it. MUST come before the
             // /api/v1/admin catch-all below: http-proxy-middleware
@@ -149,7 +154,28 @@ export default defineConfig({
             '/api/v1/integrations/triggers/documents':            withSig('http://localhost:8182'),
             '/api/v1/integrations/triggers/signatures/completed': withSig('http://localhost:8188'),
             '/api/v1/integrations/triggers/workflows/completed':  withSig('http://localhost:8186'),
+            // ADR 0098 — zero-trust share (admin + public routes both
+            // live on the document service). MUST come before /api so
+            // it isn't caught by the auth-service catch-all.
+            '/api/v1/zt':                       withSig('http://localhost:8182'),
+            '/api/v1/admin/share-links/zt':     withSig('http://localhost:8182'),
+            // ADR 0099 — contract intelligence graph (document service).
+            '/api/v1/contracts':                withSig('http://localhost:8182'),
+            // ADR 0101 — cross-format compare (document service).
+            '/api/v1/compare':                  withSig('http://localhost:8182'),
+            // ADR 0102 — predictive filing (document service).
+            '/api/v1/uploads/predict':          withSig('http://localhost:8182'),
+            // ADR 0104 — clause library (document service).
+            '/api/v1/clauses':                  withSig('http://localhost:8182'),
             '/api':                             withSig('http://localhost:8180'),
+            // ADR 0096 — Yjs CRDT WebSocket. Same-origin proxy lets
+            // the browser send the dms_session cookie on Upgrade, which
+            // the collab service validates against Postgres.
+            '/yjs': {
+              target: 'ws://localhost:8083',
+              ws: true,
+              changeOrigin: false,
+            },
           },
   },
   test: {

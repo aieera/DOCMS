@@ -1,0 +1,25 @@
+# Example campaign tfvars — copy to 2026-05.tfvars (or a new
+# YYYY-MM.tfvars) before `terraform plan`. Each campaign is a
+# point-in-time record of what infra produced the run's numbers.
+
+region             = "us-east-1"
+cluster_name       = "vaultdms-loadtest-2026-05"
+kubernetes_version = "1.30"
+
+# Network IDs come from the load-test VPC stack (see
+# deploy/load-test/terraform/network.tf.example).
+vpc_id             = "vpc-CHANGE_ME"
+private_subnet_ids = [
+  "subnet-CHANGE_ME-1a",
+  "subnet-CHANGE_ME-1b",
+  "subnet-CHANGE_ME-1c",
+]
+
+# §16 sizing:
+#   - Control: 4 nodes is enough; not the bottleneck.
+#   - Data:    8 nodes leaves ~70% headroom; chaos can kill one and
+#              the cluster still serves the burst stage.
+#   - Runner:  8 × c6i.2xlarge = 64 vCPUs, satisfies the ≥50 vCPU floor.
+control_node_count    = 4
+data_node_count       = 8
+loadrunner_node_count = 8

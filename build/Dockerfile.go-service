@@ -31,11 +31,12 @@ COPY go.work go.work.sum ./
 
 # Every go.work `use(...)` target. If a new top-level module is added,
 # add it here AND to go.work.
-COPY pkg/            ./pkg/
-COPY proto/gen/go/   ./proto/gen/go/
-COPY cmd/dms-admin/  ./cmd/dms-admin/
-COPY scripts/seed/   ./scripts/seed/
-COPY services/       ./services/
+COPY pkg/             ./pkg/
+COPY proto/gen/go/    ./proto/gen/go/
+COPY cmd/dms-admin/   ./cmd/dms-admin/
+COPY cmd/license-gen/ ./cmd/license-gen/
+COPY scripts/seed/    ./scripts/seed/
+COPY services/        ./services/
 
 ARG SERVICE
 ARG VERSION=dev

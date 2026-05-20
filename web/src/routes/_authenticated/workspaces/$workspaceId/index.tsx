@@ -12,7 +12,15 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { WorkspaceAISettingsDialog } from '@/components/intelligence/WorkspaceAISettings'
+import { UploadReviewDialog } from '@/components/documents/UploadReviewDialog'
 import type { Document as ApiDocument } from '@/types/api'
+
+// ADR 0102 — review threshold. At or below this size we open the
+// per-file FilingSuggestionPanel review dialog. Larger batches skip
+// the dialog entirely (auto-apply nothing, just upload) so the bulk
+// UX stays fast — Phase 2 will auto-apply only high-confidence
+// suggestions in that mode without showing the dialog.
+const REVIEW_BATCH_MAX = 5
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
@@ -33,11 +41,25 @@ function WorkspacePage() {
   // don't see a button that always 403s.
   const isAdmin = role === 'owner' || role === 'admin'
 
+  // ADR 0102 — pending batch awaiting filing review. null = dialog
+  // closed; an array = dialog open over those files.
+  const [reviewFiles, setReviewFiles] = useState<File[] | null>(null)
+
+  const startUpload = (files: File[]) => {
+    if (!files.length) return
+    if (files.length <= REVIEW_BATCH_MAX) {
+      setReviewFiles(files)
+      return
+    }
+    // Bulk path: skip the review dialog, just upload.
+    uploadFiles(files)
+  }
+
   const onPick = () => fileInputRef.current?.click()
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
-    uploadFiles(Array.from(files))
+    startUpload(Array.from(files))
     e.target.value = ''
   }
 
@@ -45,7 +67,7 @@ function WorkspacePage() {
     e.preventDefault()
     setDragOver(false)
     const files = Array.from(e.dataTransfer.files ?? [])
-    if (files.length) uploadFiles(files)
+    if (files.length) startUpload(files)
   }
 
   return (
@@ -108,6 +130,22 @@ function WorkspacePage() {
       />
 
       <WorkspaceAISettingsDialog open={aiOpen} onOpenChange={setAiOpen} workspaceId={workspaceId} />
+
+      {/* ADR 0102 — predictive filing review. Mounted only when a
+          batch is pending so each open call gets a fresh useState. */}
+      {reviewFiles && (
+        <UploadReviewDialog
+          open
+          files={reviewFiles}
+          workspaceId={workspaceId}
+          onCancel={() => setReviewFiles(null)}
+          onConfirm={(decisions) => {
+            const files = reviewFiles
+            setReviewFiles(null)
+            uploadFiles(files, decisions)
+          }}
+        />
+      )}
 
       {/* Full-page drop overlay shown only while a drag is active.
           The visual matches the upload button so users connect the

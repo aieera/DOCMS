@@ -57,21 +57,30 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 	// sha256_hash / mime_type) panic on NULL. Pre-Wave-16 rows + docs
 	// without a completed first version both have NULLs in these
 	// columns, so every GET on those rows would 500 without this.
+	// LEFT JOIN users so the response carries the uploader's
+	// display_name. The join is correlated on (tenant_id, created_by)
+	// so RLS on users keeps tenant isolation intact even when the
+	// document row is read by a tenant whose GUC matches both sides.
+	// Soft-deleted users (deleted_at IS NOT NULL) still return their
+	// display_name — preserving uploader attribution after deletion is
+	// the explicit product requirement.
 	row := tx.QueryRow(ctx, `
-		SELECT id, tenant_id, workspace_id, folder_id, title,
-		       COALESCE(description, '') AS description,
-		       lifecycle_state,
-		       COALESCE(region_pin, '') AS region_pin,
-		       custom_metadata, tags,
-		       current_version_id,
-		       COALESCE(document_class, '') AS document_class,
-		       classification_confidence,
-		       COALESCE(sha256_hash, '') AS sha256_hash,
-		       total_size_bytes,
-		       COALESCE(mime_type, '') AS mime_type,
-		       created_by, created_at, updated_by, updated_at, deleted_at
-		FROM documents
-		WHERE tenant_id = $1 AND id = $2
+		SELECT d.id, d.tenant_id, d.workspace_id, d.folder_id, d.title,
+		       COALESCE(d.description, '') AS description,
+		       d.lifecycle_state,
+		       COALESCE(d.region_pin, '') AS region_pin,
+		       d.custom_metadata, d.tags,
+		       d.current_version_id,
+		       COALESCE(d.document_class, '') AS document_class,
+		       d.classification_confidence,
+		       COALESCE(d.sha256_hash, '') AS sha256_hash,
+		       d.total_size_bytes,
+		       COALESCE(d.mime_type, '') AS mime_type,
+		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
+		       d.created_at, d.updated_by, d.updated_at, d.deleted_at
+		FROM documents d
+		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
+		WHERE d.tenant_id = $1 AND d.id = $2
 	`, tenantID, id)
 	return scanDocument(row)
 }
@@ -192,33 +201,36 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		return fmt.Sprintf("$%d", len(args))
 	}
 
-	where = append(where, "tenant_id = "+add(tenantID))
+	// All predicates qualified with `d.` — the LEFT JOIN with users
+	// below brings ambiguous columns (tenant_id, id, deleted_at) into
+	// scope and Postgres would error on unqualified references.
+	where = append(where, "d.tenant_id = "+add(tenantID))
 	if !f.IncludeDeleted {
-		where = append(where, "deleted_at IS NULL")
+		where = append(where, "d.deleted_at IS NULL")
 	}
 	if f.WorkspaceID != nil {
-		where = append(where, "workspace_id = "+add(*f.WorkspaceID))
+		where = append(where, "d.workspace_id = "+add(*f.WorkspaceID))
 	}
 	if f.FolderID != nil {
-		where = append(where, "folder_id = "+add(*f.FolderID))
+		where = append(where, "d.folder_id = "+add(*f.FolderID))
 	}
 	if f.LifecycleState != nil {
-		where = append(where, "lifecycle_state = "+add(string(*f.LifecycleState)))
+		where = append(where, "d.lifecycle_state = "+add(string(*f.LifecycleState)))
 	}
 	if f.DocumentClass != "" {
-		where = append(where, "document_class = "+add(f.DocumentClass))
+		where = append(where, "d.document_class = "+add(f.DocumentClass))
 	}
 	if len(f.Tags) > 0 {
-		where = append(where, "tags && "+add(f.Tags)) // ARRAY overlap
+		where = append(where, "d.tags && "+add(f.Tags)) // ARRAY overlap
 	}
 	if f.CreatedAfter != nil {
-		where = append(where, "created_at >= "+add(*f.CreatedAfter))
+		where = append(where, "d.created_at >= "+add(*f.CreatedAfter))
 	}
 	if f.CreatedBefore != nil {
-		where = append(where, "created_at <= "+add(*f.CreatedBefore))
+		where = append(where, "d.created_at <= "+add(*f.CreatedBefore))
 	}
 	if f.Query != "" {
-		where = append(where, "title ILIKE "+add("%"+f.Query+"%"))
+		where = append(where, "d.title ILIKE "+add("%"+f.Query+"%"))
 	}
 
 	// Cursor predicate
@@ -230,13 +242,13 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		switch col {
 		case "created_at", "updated_at":
 			where = append(where,
-				fmt.Sprintf("(%s, id) %s (%s, %s)", col, cmp, add(c.Time), add(c.ID)))
+				fmt.Sprintf("(d.%s, d.id) %s (%s, %s)", col, cmp, add(c.Time), add(c.ID)))
 		case "title":
 			where = append(where,
-				fmt.Sprintf("(title, id) %s (%s, %s)", cmp, add(c.Text), add(c.ID)))
+				fmt.Sprintf("(d.title, d.id) %s (%s, %s)", cmp, add(c.Text), add(c.ID)))
 		case "total_size_bytes":
 			where = append(where,
-				fmt.Sprintf("(total_size_bytes, id) %s (%s, %s)", cmp, add(c.Size), add(c.ID)))
+				fmt.Sprintf("(d.total_size_bytes, d.id) %s (%s, %s)", cmp, add(c.Size), add(c.ID)))
 		}
 	}
 
@@ -253,22 +265,31 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 	// document_class (set by intelligence service after OCR),
 	// sha256_hash + mime_type (set after the first upload completes,
 	// NULL on docs that have no version yet).
+	// LEFT JOIN users for created_by_name — see Get() for rationale.
+	// Column references are qualified with `d.` because the join
+	// brings ambiguous column names (tenant_id, id, deleted_at) into
+	// scope. The ORDER BY columns are listed without qualification
+	// in the format string but the only candidates (created_at,
+	// updated_at, title, total_size_bytes, id) all live on documents
+	// — no ambiguity for Postgres.
 	q := fmt.Sprintf(`
-		SELECT id, tenant_id, workspace_id, folder_id, title,
-		       COALESCE(description, '') AS description,
-		       lifecycle_state,
-		       COALESCE(region_pin, '') AS region_pin,
-		       custom_metadata, tags,
-		       current_version_id,
-		       COALESCE(document_class, '') AS document_class,
-		       classification_confidence,
-		       COALESCE(sha256_hash, '') AS sha256_hash,
-		       total_size_bytes,
-		       COALESCE(mime_type, '') AS mime_type,
-		       created_by, created_at, updated_by, updated_at, deleted_at
-		FROM documents
+		SELECT d.id, d.tenant_id, d.workspace_id, d.folder_id, d.title,
+		       COALESCE(d.description, '') AS description,
+		       d.lifecycle_state,
+		       COALESCE(d.region_pin, '') AS region_pin,
+		       d.custom_metadata, d.tags,
+		       d.current_version_id,
+		       COALESCE(d.document_class, '') AS document_class,
+		       d.classification_confidence,
+		       COALESCE(d.sha256_hash, '') AS sha256_hash,
+		       d.total_size_bytes,
+		       COALESCE(d.mime_type, '') AS mime_type,
+		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
+		       d.created_at, d.updated_by, d.updated_at, d.deleted_at
+		FROM documents d
+		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
 		WHERE %s
-		ORDER BY %s %s, id %s
+		ORDER BY d.%s %s, d.id %s
 		LIMIT %d`,
 		strings.Join(where, " AND "), col, order, order, pageSize+1)
 
@@ -330,7 +351,8 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 		&lifecycleRaw, &d.RegionPin, &metaBytes, &d.Tags,
 		&curVersion, &d.DocumentClass, &d.ClassificationConfidence,
 		&d.SHA256Hash, &d.TotalSizeBytes, &d.MimeType,
-		&d.CreatedBy, &d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted,
+		&d.CreatedBy, &d.CreatedByName,
+		&d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted,
 	); err != nil {
 		return nil, mapPgError(err)
 	}

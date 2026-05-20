@@ -6,7 +6,7 @@ interface Props { count: number; onMove?: () => void; onDelete?: () => void; onT
 export function BulkActionBar({ count, onMove, onDelete, onTag, onDownload, onClear }: Props) {
   if (count === 0) return null
   return (
-    <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2.5 shadow-lg">
+    <div className="fixed bottom-6 start-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-4 py-2.5 shadow-lg">
       <span className="text-sm font-medium">{count} selected</span>
       <div className="h-4 w-px bg-[var(--color-border)]" />
       {onMove && <Button variant="ghost" size="sm" onClick={onMove}><FolderInput className="h-4 w-4" /> Move</Button>}

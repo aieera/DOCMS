@@ -1,0 +1,44 @@
+# Monitoring stack values for the load-test cluster.
+#
+# Pointed at the LOADTEST cluster — not prod. Confirm the cluster
+# label below before applying; an Alertmanager misconfig that pages
+# the prod oncall during a load test is the worst-case outcome.
+prometheus:
+  prometheusSpec:
+    externalLabels:
+      cluster: vaultdms-loadtest
+    retention: 7d
+    # Generous so a 2-hour run doesn't drop the burst-stage samples.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 200Gi
+    # Don't route any alert to PagerDuty / Slack / wherever — load
+    # tests are EXPECTED to trip some thresholds. We page humans on
+    # prod, not on loadtest.
+    additionalAlertmanagerConfigs: []
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    externalUrl: ""
+  config:
+    route:
+      receiver: "null"  # swallow everything by default
+      routes: []
+    receivers:
+      - name: "null"
+
+grafana:
+  adminPassword: "loadtest-CHANGE_ME"
+  service:
+    type: LoadBalancer
+  defaultDashboardsEnabled: true
+  # Mount the same dashboard JSON the prod observability stack uses,
+  # but with the cluster label = "vaultdms-loadtest" so panels select
+  # this Prometheus instance, not prod's.
+  dashboardsConfigMaps:
+    default: vaultdms-dashboards

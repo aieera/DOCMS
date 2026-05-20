@@ -89,7 +89,7 @@ function Combobox({
                     }}
                   >
                     {opt.label}
-                    {value === opt.value && <Check className="ml-auto" />}
+                    {value === opt.value && <Check className="ms-auto" />}
                   </CommandItem>
                 ))}
               </CommandGroup>

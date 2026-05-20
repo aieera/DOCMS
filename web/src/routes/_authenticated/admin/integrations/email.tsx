@@ -9,10 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  AlertCircle, CheckCircle2, ChevronRight, Inbox, Mail, Play, Plus, Server, Settings, Trash2,
-} from 'lucide-react'
-
+import { AlertCircle, CheckCircle2, Inbox, Mail, Play, Plus, Server, Settings, Trash2 } from 'lucide-react'
 import {
   createEmailConfig,
   deleteEmailConfig,
@@ -34,6 +31,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 const SOURCE_OPTIONS: Array<{ value: EmailSource; label: string; desc: string }> = [
   { value: 'microsoft', label: 'Microsoft 365 (Graph)', desc: 'Exchange Online via the Graph API. OAuth required.' },
@@ -90,7 +88,7 @@ function EmailIngestionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Email ingestion"
-        description="Pull email into VaultDMS so every message + attachment is filed as a document. Polling cadence configurable per source; ADR 0087."
+        description="Pull email into VaultDMS so every message + attachment is filed as a document. Polling cadence configurable per source."
         actions={
           <Button onClick={() => setCreating(true)} data-testid="email-config-new">
             <Plus className="h-4 w-4" /> New config
@@ -269,8 +267,8 @@ function ConfigRow({
     <li>
       <Card className="overflow-hidden p-0">
         <div className="flex items-start justify-between gap-3 p-3">
-          <button type="button" onClick={() => setExpanded((e) => !e)} className="flex min-w-0 flex-1 items-start gap-2 text-left">
-            <ChevronRight className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
+          <button type="button" onClick={() => setExpanded((e) => !e)} className="flex min-w-0 flex-1 items-start gap-2 text-start">
+            <DirectionalIcon name="ChevronRight" className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')} />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={cfg.active ? 'active' : 'archived'}>{cfg.active ? 'Active' : 'Paused'}</Badge>

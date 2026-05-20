@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type VideoTimestampData } from '@/api/annotations'
+import { useAuthBlob } from '@/lib/useAuthBlob'
 import { AnnotationToolbar } from './AnnotationToolbar'
 
 interface Props {
@@ -26,6 +27,8 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [visible, setVisible] = useState(true)
   const [duration, setDuration] = useState(0)
+  // <video> can't attach X-Tenant-ID — fetch via axios into a blob URL.
+  const blobUrl = useAuthBlob(videoUrl)
 
   // Load on mount + on doc/version change. useEffect (not useMemo)
   // because this is a side effect, not a memoized value.
@@ -79,10 +82,10 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
         visible={visible} onToggleVisible={setVisible} canCreate={canCreate}
       />
       <div className="relative inline-block">
-        <video ref={videoRef} src={videoUrl} controls className="block max-w-full" data-testid="video-element" />
+        {blobUrl && <video ref={videoRef} src={blobUrl} controls className="block max-w-full" data-testid="video-element" />}
         {visible && duration > 0 && (
           <div
-            className="absolute bottom-12 left-0 right-0 h-1 bg-transparent"
+            className="absolute bottom-12 start-0 end-0 h-1 bg-transparent"
             data-testid="video-pin-track"
           >
             {pins.map((p) => (

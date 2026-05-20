@@ -7,8 +7,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowLeft, RotateCcw, CheckCircle2, XCircle, Clock, UserPlus, AlertTriangle } from 'lucide-react'
-
+import { RotateCcw, CheckCircle2, XCircle, Clock, UserPlus, AlertTriangle } from 'lucide-react'
 import { api } from '@/api/client'
 import { recallInstance } from '@/api/workflows'
 import { useAuthStore } from '@/store/authStore'
@@ -17,6 +16,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { formatRelativeTime } from '@/lib/formatters'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export const Route = createFileRoute('/_authenticated/workflows/instances/$instanceId')({
   component: InstanceDetail,
@@ -94,7 +94,7 @@ function InstanceDetail() {
   return (
     <div className="space-y-4">
       <Link to="/tasks" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
-        <ArrowLeft className="h-3 w-3" /> Back to tasks
+        <DirectionalIcon name="ArrowLeft" className="h-3 w-3" /> Back to tasks
       </Link>
       <PageHeader title="Workflow instance" description={instanceId} />
 
@@ -118,7 +118,7 @@ function InstanceDetail() {
                   }
                 }}
                 data-testid="recall-instance"
-                className="ml-auto"
+                className="ms-auto"
               >
                 <RotateCcw className="h-4 w-4" /> Recall
               </Button>

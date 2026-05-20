@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/shadcn/button'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { OCRPage } from '@/api/ocr'
 import type { Entity } from '@/api/ner'
 import { ENTITY_COLOR } from '@/components/intelligence/EntitiesPanel'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
@@ -145,11 +145,11 @@ export function PDFLayoutViewer({ url, pages, entities, onSelectLine, onSelectEn
         {numPages > 1 && (
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft className="h-4 w-4" />
+              <DirectionalIcon name="ChevronLeft" className="h-4 w-4" />
             </Button>
             <span>{page} / {numPages}</span>
             <Button variant="ghost" size="sm" disabled={page >= numPages} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="h-4 w-4" />
+              <DirectionalIcon name="ChevronRight" className="h-4 w-4" />
             </Button>
           </div>
         )}
@@ -158,7 +158,7 @@ export function PDFLayoutViewer({ url, pages, entities, onSelectLine, onSelectEn
         ) : (
           <span>No layout boxes on this page (text-PDF fast path or empty page)</span>
         )}
-        <span className="ml-2 inline-flex items-center gap-2">
+        <span className="ms-2 inline-flex items-center gap-2">
           <LegendSwatch className="bg-emerald-400/40" /> ≥95%
           <LegendSwatch className="bg-amber-400/40" /> 80–95%
           <LegendSwatch className="bg-red-400/40" /> &lt;80%

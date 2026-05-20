@@ -2091,6 +2091,10 @@
         },
         "permissions": {
           "$ref": "#/definitions/v1DocumentPermissions"
+        },
+        "createdByName": {
+          "type": "string",
+          "description": "Denormalised uploader display name. Filled at read time by a\nLEFT JOIN against the users table in the document repository.\nEmpty when the uploader row is missing; frontend uses that as\nthe signal to render \"Deleted user\". Soft-deleted users still\ncarry their display_name on the row so attribution survives\naccount deletion."
         }
       }
     },

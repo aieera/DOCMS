@@ -75,10 +75,10 @@ function AnomalyDashboardPage() {
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="Anomaly detection"
-        description="Workspace-level outlier scans across metadata, content embeddings, and upload behavior (ADR 0058)."
+        description="Workspace-level outlier scans across metadata, content embeddings, and upload behavior."
         actions={
           <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
-            <Play className="mr-2 h-4 w-4" />
+            <Play className="me-2 h-4 w-4" />
             Run analysis
           </Button>
         }
@@ -100,14 +100,14 @@ function AnomalyDashboardPage() {
           Recent reports
         </div>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-muted-foreground">
+          <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Created</th>
               <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2 text-right">Docs</th>
-              <th className="px-4 py-2 text-right">Anomalies</th>
-              <th className="px-4 py-2 text-right"></th>
+              <th className="px-4 py-2 text-end">Docs</th>
+              <th className="px-4 py-2 text-end">Anomalies</th>
+              <th className="px-4 py-2 text-end"></th>
             </tr>
           </thead>
           <tbody>
@@ -128,14 +128,14 @@ function AnomalyDashboardPage() {
                     {r.status}
                   </Badge>
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums">{r.total_documents}</td>
-                <td className="px-4 py-2 text-right tabular-nums">
+                <td className="px-4 py-2 text-end tabular-nums">{r.total_documents}</td>
+                <td className="px-4 py-2 text-end tabular-nums">
                   {r.anomalies_found}
                   {r.anomalies_found > 0 && (
-                    <AlertTriangle className="ml-1 inline h-3 w-3 text-warning" />
+                    <AlertTriangle className="ms-1 inline h-3 w-3 text-warning" />
                   )}
                 </td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-end">
                   <Button size="sm" variant="ghost" onClick={() => setOpenReport(r.id)}>
                     <Search className="h-4 w-4" />
                   </Button>
@@ -206,7 +206,7 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
                 {data.report.analysis_type} · {data.report.total_documents} docs scanned ·{' '}
                 {data.report.anomalies_found} anomalies
                 {data.report.error_message && (
-                  <span className="ml-2 text-destructive">· {data.report.error_message}</span>
+                  <span className="ms-2 text-destructive">· {data.report.error_message}</span>
                 )}
               </div>
               {data.report.summary && Object.keys(data.report.summary).length > 0 && (

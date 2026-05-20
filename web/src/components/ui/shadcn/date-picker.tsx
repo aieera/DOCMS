@@ -29,7 +29,7 @@ function DatePicker({ value, onChange, placeholder = 'Pick a date', disabled, cl
           variant="outline"
           disabled={disabled}
           className={cn(
-            'w-full justify-start text-left font-normal',
+            'w-full justify-start text-start font-normal',
             !value && 'text-muted-foreground',
             className,
           )}

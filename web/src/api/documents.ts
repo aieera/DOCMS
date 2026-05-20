@@ -68,9 +68,16 @@ export async function getDownloadURL(documentId: string, versionId: string) {
   return data
 }
 
-export async function getVersions(documentId: string) {
-  const { data } = await api.get<Version[]>(`/documents/${documentId}/versions`)
-  return data
+export async function getVersions(documentId: string): Promise<Version[]> {
+  // The grpc-gateway translates ListVersionsResponse.versions into a
+  // top-level `versions` key — NOT a bare array. Earlier callers
+  // assumed bare-array and broke .map() at runtime. Unwrap once here
+  // so every consumer can rely on Version[].
+  const { data } = await api.get<{ versions?: Version[] } | Version[]>(
+    `/documents/${documentId}/versions`,
+  )
+  if (Array.isArray(data)) return data
+  return data?.versions ?? []
 }
 
 export async function restoreVersion(documentId: string, versionId: string) {

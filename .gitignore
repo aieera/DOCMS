@@ -65,3 +65,4 @@ deploy/ansible/group_vars/*.vault.yml
 deploy/ansible/inventories/*.ini
 !deploy/ansible/inventories/example.ini
 deploy/ansible/host_vars/
+deploy/license/dev.priv.pem

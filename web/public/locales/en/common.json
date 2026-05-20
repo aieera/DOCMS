@@ -1,0 +1,40 @@
+{
+  "sidebar": {
+    "smart_folders": "Smart folders",
+    "search": "Search",
+    "dashboard": "Dashboard",
+    "workspaces": "Workspaces",
+    "ask": "Ask",
+    "saved_searches": "Saved searches",
+    "clauses": "Clauses",
+    "tasks": "Tasks",
+    "notifications": "Notifications",
+    "trash": "Trash",
+    "my_settings": "My settings",
+    "admin": "Admin",
+    "inbox": "Inbox",
+    "settings": "Settings",
+    "workspace": "Workspace"
+  },
+  "search_placeholder": "Search documents…",
+  "user_menu": {
+    "settings": "Settings",
+    "log_out": "Log out"
+  },
+  "language": {
+    "label": "Language",
+    "english": "English",
+    "arabic": "العربية"
+  },
+  "foo": {
+    "bar": ""
+  },
+  "definitely": {
+    "not": {
+      "translated": {
+        "yet": ""
+      }
+    }
+  },
+  "loading": "Loading…"
+}

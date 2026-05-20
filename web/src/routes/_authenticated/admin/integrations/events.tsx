@@ -32,7 +32,7 @@ import { cn } from '@/lib/cn'
 
 const EVENT_TYPE_REFERENCE = [
   { prefix: 'dms.document.*',  desc: 'Document lifecycle: created / updated / moved / deleted.' },
-  { prefix: 'dms.version.*',   desc: 'New version uploaded / promoted (ADR 0021).' },
+  { prefix: 'dms.version.*',   desc: 'New version uploaded / promoted.' },
   { prefix: 'dms.workspace.*', desc: 'Workspace and folder structural changes.' },
   { prefix: 'dms.signature.*', desc: 'Signature requests sent / completed / declined.' },
   { prefix: 'dms.hold.*',      desc: 'Legal holds applied / released.' },
@@ -226,7 +226,7 @@ function EventStreamPage() {
             variant="outline"
             size="sm"
             onClick={() => copy(SAMPLES[tab])}
-            className="absolute right-2 top-2"
+            className="absolute end-2 top-2"
           >
             <Copy className="h-3 w-3" /> Copy
           </Button>

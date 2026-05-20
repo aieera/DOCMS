@@ -1,0 +1,40 @@
+{
+  "sidebar": {
+    "smart_folders": "المجلدات الذكية",
+    "search": "بحث",
+    "dashboard": "لوحة التحكم",
+    "workspaces": "مساحات العمل",
+    "ask": "اسأل",
+    "saved_searches": "عمليات البحث المحفوظة",
+    "clauses": "البنود",
+    "tasks": "المهام",
+    "notifications": "الإشعارات",
+    "trash": "المهملات",
+    "my_settings": "إعداداتي",
+    "admin": "الإدارة",
+    "inbox": "صندوق الوارد",
+    "settings": "الإعدادات",
+    "workspace": "مساحة العمل"
+  },
+  "search_placeholder": "ابحث في المستندات…",
+  "user_menu": {
+    "settings": "الإعدادات",
+    "log_out": "تسجيل الخروج"
+  },
+  "language": {
+    "label": "اللغة",
+    "english": "English",
+    "arabic": "العربية"
+  },
+  "foo": {
+    "bar": ""
+  },
+  "definitely": {
+    "not": {
+      "translated": {
+        "yet": ""
+      }
+    }
+  },
+  "loading": "جارٍ التحميل…"
+}

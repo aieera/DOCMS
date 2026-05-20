@@ -218,13 +218,25 @@ function FeedbackButton(props: {
 // when the cite doesn't match any returned citation (rare; means the
 // LLM hallucinated a doc id, in which case we don't want a broken
 // link).
+// Citations are numbered 1..N in the order the backend returns them.
+// Each unique doc_id gets a stable index so the inline [N] markers in
+// the answer text match the [N] labels in the sources list below.
+function buildCitationIndex(citations: RAGCitation[]): Map<string, number> {
+  const idx = new Map<string, number>()
+  let next = 1
+  for (const c of citations) {
+    if (!idx.has(c.doc_id)) idx.set(c.doc_id, next++)
+  }
+  return idx
+}
+
 function renderAnswerWithInlineCitations(text: string, citations: RAGCitation[]) {
-  // Build {doc_id|doc_id:page_N -> citation} for fast match.
   const byKey = new Map<string, RAGCitation>()
   for (const c of citations) {
     byKey.set(c.doc_id, c)
     if (c.page != null) byKey.set(`${c.doc_id}:page_${c.page}`, c)
   }
+  const citationIndex = buildCitationIndex(citations)
   const parts: React.ReactNode[] = []
   const re = /\[([0-9a-f-]{8,}(?::page_\d+)?)\]/gi
   let lastIdx = 0
@@ -234,10 +246,9 @@ function renderAnswerWithInlineCitations(text: string, citations: RAGCitation[])
     if (m.index > lastIdx) parts.push(text.slice(lastIdx, m.index))
     const token = m[1]
     const cite = byKey.get(token)
-    if (cite && cite.workspace_id) {
-      const display = cite.page != null
-        ? `[${shortId(cite.doc_id)}:p${cite.page}]`
-        : `[${shortId(cite.doc_id)}]`
+    const n = cite ? citationIndex.get(cite.doc_id) : undefined
+    if (cite && cite.workspace_id && n != null) {
+      const display = cite.page != null ? `[${n}:p${cite.page}]` : `[${n}]`
       parts.push(
         <Link
           key={`cite-${key++}`}
@@ -251,9 +262,8 @@ function renderAnswerWithInlineCitations(text: string, citations: RAGCitation[])
         </Link>,
       )
     } else {
-      // Either an unmatched citation token or one whose chunk pre-dates
-      // the workspace_id-on-payload change — fall back to plain text
-      // rather than rendering a broken link.
+      // Unmatched citation token or pre-workspace_id payload — fall
+      // back to plain text rather than rendering a broken link.
       parts.push(m[0])
     }
     lastIdx = m.index + m[0].length
@@ -262,41 +272,42 @@ function renderAnswerWithInlineCitations(text: string, citations: RAGCitation[])
   return parts
 }
 
-function shortId(id: string) {
-  return id.length > 8 ? id.slice(0, 8) : id
-}
-
 function CitationsList({ citations }: { citations: RAGCitation[] }) {
   if (!citations.length) return null
+  const citationIndex = buildCitationIndex(citations)
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-3 text-sm font-medium">Sources</h3>
       <ul className="space-y-3" data-testid="ask-citations-list">
-        {citations.map((c, i) => (
-          <li key={`${c.doc_id}-${c.chunk_id}-${i}`} className="flex flex-col gap-1 text-sm">
-            {c.workspace_id ? (
-              <Link
-                to="/workspaces/$workspaceId/documents/$documentId"
-                params={{ workspaceId: c.workspace_id, documentId: c.doc_id }}
-                className="font-medium text-primary hover:underline"
-              >
-                {shortId(c.doc_id)}
-                {c.page != null && <span> · page {c.page}</span>}
-                {c.section_path && (
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    · {c.section_path}
-                  </span>
-                )}
-              </Link>
-            ) : (
-              <span className="font-medium">
-                {shortId(c.doc_id)}
-                {c.page != null && <span> · page {c.page}</span>}
-              </span>
-            )}
-            <p className="text-xs text-muted-foreground">{c.snippet}</p>
-          </li>
-        ))}
+        {citations.map((c, i) => {
+          const n = citationIndex.get(c.doc_id) ?? i + 1
+          const label = c.section_path ?? (c.page != null ? `Page ${c.page}` : `Source ${n}`)
+          return (
+            <li key={`${c.doc_id}-${c.chunk_id}-${i}`} className="flex flex-col gap-1 text-sm">
+              {c.workspace_id ? (
+                <Link
+                  to="/workspaces/$workspaceId/documents/$documentId"
+                  params={{ workspaceId: c.workspace_id, documentId: c.doc_id }}
+                  className="font-medium text-primary hover:underline"
+                >
+                  <span className="me-1 font-mono text-xs text-muted-foreground">[{n}]</span>
+                  {label}
+                  {c.page != null && c.section_path && (
+                    <span className="ms-1 text-xs font-normal text-muted-foreground">
+                      · page {c.page}
+                    </span>
+                  )}
+                </Link>
+              ) : (
+                <span className="font-medium">
+                  <span className="me-1 font-mono text-xs text-muted-foreground">[{n}]</span>
+                  {label}
+                </span>
+              )}
+              <p className="text-xs text-muted-foreground">{c.snippet}</p>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

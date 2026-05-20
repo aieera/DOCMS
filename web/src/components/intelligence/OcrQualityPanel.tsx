@@ -84,9 +84,9 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
         <div className="flex items-center gap-2 font-medium">
           <Gauge className="h-4 w-4 text-violet-500" />
           OCR quality
-          <span aria-hidden className={`ml-2 inline-block h-2 w-2 rounded-full ${GRADE_DOT[s.quality_grade]}`} />
+          <span aria-hidden className={`ms-2 inline-block h-2 w-2 rounded-full ${GRADE_DOT[s.quality_grade]}`} />
           <span className="uppercase tracking-wide">{s.quality_grade}</span>
-          <span className="ml-1 text-zinc-500 tabular-nums">({s.avg_score.toFixed(2)})</span>
+          <span className="ms-1 text-zinc-500 tabular-nums">({s.avg_score.toFixed(2)})</span>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-500">
           <span>
@@ -101,7 +101,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
       </div>
 
       <table className="w-full text-sm">
-        <thead className="text-left text-xs uppercase text-zinc-500">
+        <thead className="text-start text-xs uppercase text-zinc-500">
           <tr>
             <th className="px-4 py-2">Page</th>
             <th className="px-4 py-2">Score</th>
@@ -155,7 +155,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
                   <span className="text-xs text-zinc-500">OK</span>
                 )}
               </td>
-              <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+              <td className="px-4 py-2 text-end" onClick={(e) => e.stopPropagation()}>
                 {p.needs_review && !p.reviewed && (
                   <Button
                     size="sm"
@@ -200,7 +200,7 @@ function ScoreBar({ score }: { score: number }) {
       <div className="h-1.5 w-24 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-10 text-right text-xs tabular-nums text-zinc-500">{pct}%</span>
+      <span className="w-10 text-end text-xs tabular-nums text-zinc-500">{pct}%</span>
     </div>
   )
 }

@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>VaultDMS — authenticated</title></head>
+<body style="font-family:system-ui;padding:2rem;">
+<h1>Authenticated</h1>
+<p id="msg">Completing sign-in…</p>
+<script type="module">
+  // OAuth redirect lands here. Pull the code+state out of the URL,
+  // forward to the background worker for the token exchange, then
+  // close the tab. Errors stay on-screen for the user to read.
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('code')
+  const state = params.get('state')
+  const error = params.get('error')
+
+  const msg = document.getElementById('msg')
+
+  if (error) {
+    msg.textContent = `Sign-in failed: ${error}`
+  } else if (!code || !state) {
+    msg.textContent = 'Missing code or state in callback URL.'
+  } else {
+    const resp = await chrome.runtime.sendMessage({ type: 'oauth-callback', code, state })
+    if (resp?.ok) {
+      msg.textContent = 'Signed in. You can close this tab.'
+      setTimeout(() => window.close(), 800)
+    } else {
+      msg.textContent = `Sign-in failed: ${resp?.error || 'unknown'}`
+    }
+  }
+</script>
+</body>
+</html>

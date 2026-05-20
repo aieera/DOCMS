@@ -116,7 +116,7 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
           <div>
             <label className="mb-1 block text-sm font-medium">
               {provider === 'docusign' ? 'Secret Key' : 'Client Secret'}
-              {hasExistingSecret && <span className="ml-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
+              {hasExistingSecret && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
             <Input
               type="password"

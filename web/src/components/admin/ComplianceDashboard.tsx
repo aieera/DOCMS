@@ -1,6 +1,12 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 
 const COLORS = ['#1E40AF', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280']
+
+// Consistent storage label. Recharts inline pie labels can clip on
+// narrow slices, so this string is also rendered through the legend
+// below the chart — the legend never clips and is the authoritative
+// source for the per-region value.
+const formatStorage = (gb: number): string => `${gb} GB`
 
 interface Props {
   docsByState?: { name: string; count: number }[]
@@ -24,12 +30,28 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
         <h3 className="mb-3 text-sm font-semibold">Storage by Region</h3>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={260}>
           <PieChart>
-            <Pie data={storageByRegion} dataKey="gb" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, gb }) => `${name}: ${gb}GB`}>
+            <Pie
+              data={storageByRegion}
+              dataKey="gb"
+              nameKey="name"
+              cx="50%"
+              cy="45%"
+              outerRadius={70}
+              label={({ name, gb }) => `${name}: ${formatStorage(gb)}`}
+            >
               {storageByRegion.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Tooltip />
+            <Tooltip formatter={(value: number) => formatStorage(value)} />
+            <Legend
+              verticalAlign="bottom"
+              height={36}
+              formatter={(value: string, entry) => {
+                const gb = (entry?.payload as { gb?: number } | undefined)?.gb
+                return `${value} — ${gb != null ? formatStorage(gb) : '—'}`
+              }}
+            />
           </PieChart>
         </ResponsiveContainer>
       </div>

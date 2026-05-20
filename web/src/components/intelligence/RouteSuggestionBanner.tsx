@@ -71,10 +71,10 @@ export function RouteSuggestionBanner({ documentId }: Props) {
         <div className="flex-1">
           <span className="font-medium">Suggested location: </span>
           <span>{top.folder_path}</span>
-          <span className="ml-2 text-violet-600 tabular-nums">
+          <span className="ms-2 text-violet-600 tabular-nums">
             {Math.round(top.confidence * 100)}%
           </span>
-          <span className="ml-2 text-xs text-zinc-500">
+          <span className="ms-2 text-xs text-zinc-500">
             via {SOURCE_LABEL[top.match_source]}
           </span>
         </div>
@@ -94,7 +94,7 @@ export function RouteSuggestionBanner({ documentId }: Props) {
             aria-label={`See ${rest.length} more suggestion${rest.length === 1 ? '' : 's'}`}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            <span className="ml-1">+{rest.length}</span>
+            <span className="ms-1">+{rest.length}</span>
           </Button>
         )}
         <Button

@@ -191,7 +191,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
         </Badge>
         {config.has_bind_password && (
           <span className="text-muted-foreground">
-            <KeyRound className="mr-1 inline h-3 w-3" />
+            <KeyRound className="me-1 inline h-3 w-3" />
             Bind password: <code>•••••••• (set)</code>
           </span>
         )}
@@ -363,7 +363,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
         </Button>
         {secondaryAction}
         {testResult && (
-          <span className="ml-auto flex items-center gap-2 text-sm">
+          <span className="ms-auto flex items-center gap-2 text-sm">
             {testResult.ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}
             {testResult.ok
               ? `bind ok · user_found=${testResult.user_found} · groups=${testResult.groups_found}`
@@ -416,8 +416,8 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
-              <th className="px-3 py-2 text-left">LDAP group DN</th>
-              <th className="px-3 py-2 text-left">DMS group</th>
+              <th className="px-3 py-2 text-start">LDAP group DN</th>
+              <th className="px-3 py-2 text-start">DMS group</th>
               <th className="w-12" />
             </tr>
           </thead>
@@ -428,9 +428,14 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
                 <tr key={`${m.ldap_group_dn}|${m.dms_group_id}`} className="border-t border-border">
                   <td className="px-3 py-2 font-mono text-xs">{m.ldap_group_dn}</td>
                   <td className="px-3 py-2">{dms?.name ?? <code className="text-xs">{m.dms_group_id}</code>}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button onClick={() => del.mutate(m)} title="Remove mapping" className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
+                  <td className="px-3 py-2 text-end">
+                    <button
+                      onClick={() => del.mutate(m)}
+                      aria-label={`Remove mapping for ${m.ldap_group_dn}`}
+                      title="Remove mapping"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </td>
                 </tr>
@@ -499,12 +504,12 @@ function HistorySection({ config }: { config: LDAPConfig }) {
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
-              <th className="px-3 py-2 text-left">Started</th>
-              <th className="px-3 py-2 text-left">Trigger</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-right">Users</th>
-              <th className="px-3 py-2 text-right">Groups</th>
-              <th className="px-3 py-2 text-right">Errors</th>
+              <th className="px-3 py-2 text-start">Started</th>
+              <th className="px-3 py-2 text-start">Trigger</th>
+              <th className="px-3 py-2 text-start">Status</th>
+              <th className="px-3 py-2 text-end">Users</th>
+              <th className="px-3 py-2 text-end">Groups</th>
+              <th className="px-3 py-2 text-end">Errors</th>
             </tr>
           </thead>
           <tbody>
@@ -513,9 +518,9 @@ function HistorySection({ config }: { config: LDAPConfig }) {
                 <td className="px-3 py-2">{new Date(h.started_at).toLocaleString()}</td>
                 <td className="px-3 py-2"><code className="text-xs">{h.trigger}</code></td>
                 <td className="px-3 py-2"><Badge variant={syncBadge(h.status)}>{h.status}</Badge></td>
-                <td className="px-3 py-2 text-right">{h.users_synced}</td>
-                <td className="px-3 py-2 text-right">{h.groups_synced}</td>
-                <td className="px-3 py-2 text-right">{h.errors}</td>
+                <td className="px-3 py-2 text-end">{h.users_synced}</td>
+                <td className="px-3 py-2 text-end">{h.groups_synced}</td>
+                <td className="px-3 py-2 text-end">{h.errors}</td>
               </tr>
             ))}
             {!data?.length && (

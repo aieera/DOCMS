@@ -1,15 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import {
-  Plus,
-  FolderOpen,
-  Users,
-  FileText,
-  Search,
-  ChevronRight,
-  Calendar,
-} from 'lucide-react'
+import { Plus, FolderOpen, Users, FileText, Search, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
@@ -21,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import type { Workspace } from '@/types/api'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 function WorkspacesPage() {
   const { data, isLoading, isError } = useQuery({
@@ -119,7 +112,7 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
           <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-foreground">
             <FolderOpen className="h-5 w-5" />
           </span>
-          <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
         <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
         <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">

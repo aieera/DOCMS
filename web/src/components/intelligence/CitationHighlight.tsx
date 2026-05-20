@@ -19,7 +19,7 @@ export function CitationList({ citations, onJumpTo }: Props) {
             onClick={() => onJumpTo?.(c)}
             disabled={!onJumpTo}
             className={[
-              'text-left',
+              'text-start',
               onJumpTo ? 'text-violet-600 hover:underline' : 'cursor-default',
             ].join(' ')}
             title={c.text}

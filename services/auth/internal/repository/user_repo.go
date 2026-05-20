@@ -41,6 +41,10 @@ type UserRepository interface {
 	// CountOwners returns how many users still hold the owner role.
 	// Used by the change-role flow to refuse demoting the last owner.
 	CountOwners(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error)
+	// SetLocale persists the user's preferred UI language. Valid
+	// values are gated at the service layer (must match an
+	// installed i18next namespace bundle).
+	SetLocale(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, locale string) error
 }
 
 type userRepo struct{}
@@ -209,6 +213,17 @@ func (r *userRepo) SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.U
 func (r *userRepo) SetRole(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, role string) error {
 	_, err := tx.Exec(ctx, `UPDATE users SET role = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
 		tenantID, id, role)
+	return mapPgError(err)
+}
+
+// SetLocale persists the user's preferred UI language. The DB
+// CHECK constraint (000051_user_locale.up.sql) gates allowed values
+// — out-of-range locales come back as ErrInvalidArgument via
+// mapPgError on the constraint violation.
+func (r *userRepo) SetLocale(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, locale string) error {
+	_, err := tx.Exec(ctx,
+		`UPDATE users SET locale = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id, locale)
 	return mapPgError(err)
 }
 

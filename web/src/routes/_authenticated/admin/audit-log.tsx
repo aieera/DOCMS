@@ -30,7 +30,7 @@ function AuditLogPage() {
           </Button>
         }
       />
-      <AuditLogTable entries={data?.items || []} isLoading={isLoading} />
+      <AuditLogTable entries={data?.events || []} isLoading={isLoading} />
     </div>
   )
 }

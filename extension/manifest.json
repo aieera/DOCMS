@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "VaultDMS",
+  "version": "0.1.0",
+  "description": "Quick search, drag-drop upload, and web clipping to your VaultDMS workspace.",
+  "icons": {
+    "16":  "icons/icon-16.png",
+    "48":  "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "VaultDMS",
+    "default_icon": {
+      "16":  "icons/icon-16.png",
+      "48":  "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://*.vaultdms.example/*"
+  ],
+  "optional_host_permissions": [
+    "*://mail.google.com/*",
+    "*://outlook.office.com/*"
+  ],
+  "options_page": "options/options.html",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vaultdms@vaultdms.example",
+      "strict_min_version": "115.0"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["callback.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -67,7 +67,7 @@ export function StepUpDialog({ open, reason, onComplete, onCancel }: Props) {
      
     >
       <div className="space-y-4" data-testid="stepup-dialog">
-        <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950">
+        <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-start dark:border-amber-700 dark:bg-amber-950">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
           <div className="text-amber-900 dark:text-amber-200">
             <p className="font-medium">Sensitive action — fresh passkey check required.</p>
@@ -81,7 +81,7 @@ export function StepUpDialog({ open, reason, onComplete, onCancel }: Props) {
         </div>
 
         {!supported && (
-          <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-200">
+          <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-start text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-200">
             Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox to continue this operation.
           </div>
         )}

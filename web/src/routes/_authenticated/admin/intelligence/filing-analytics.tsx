@@ -58,7 +58,7 @@ function FilingAnalyticsPage() {
                     style={{ width: `${(c.count / maxCount) * 100}%` }}
                   />
                 </div>
-                <span className="w-16 text-right text-sm tabular-nums text-muted-foreground">{c.count}</span>
+                <span className="w-16 text-end text-sm tabular-nums text-muted-foreground">{c.count}</span>
               </li>
             ))}
           </ul>
@@ -71,11 +71,11 @@ function FilingAnalyticsPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left">
+              <thead className="text-start">
                 <tr>
                   <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Category</th>
                   <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Folder</th>
-                  <th className="pb-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Filings</th>
+                  <th className="pb-2 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Filings</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,7 +83,7 @@ function FilingAnalyticsPage() {
                   <tr key={`${row.category_key}-${row.folder_id}-${i}`} className="border-t border-border">
                     <td className="py-2.5">{row.category_key}</td>
                     <td className="py-2.5 font-mono text-xs text-muted-foreground">{row.folder_id}</td>
-                    <td className="py-2.5 text-right tabular-nums">{row.count}</td>
+                    <td className="py-2.5 text-end tabular-nums">{row.count}</td>
                   </tr>
                 ))}
               </tbody>

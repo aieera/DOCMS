@@ -131,7 +131,7 @@ func main() {
 	limited := middleware.RateLimitHTTP(rl, "graphql")(gqlHandler)
 	root := mw(limited)
 
-	hs := health.NewServer(nil, rdb, nil, nil)
+	hs := health.NewServerWithMeta("graphql-gateway", cfg.Region, nil, rdb, nil, nil)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")

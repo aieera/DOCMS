@@ -1,9 +1,12 @@
 import { useState, useRef } from 'react'
 
+import { useAuthBlob } from '@/lib/useAuthBlob'
+
 export function ImageViewer({ url }: { url: string; mimeType?: string }) {
   const [dragging, setDragging] = useState(false)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const start = useRef({ x: 0, y: 0 })
+  const blobUrl = useAuthBlob(url)
 
   return (
     <div
@@ -13,7 +16,9 @@ export function ImageViewer({ url }: { url: string; mimeType?: string }) {
       onMouseUp={() => setDragging(false)}
       onMouseLeave={() => setDragging(false)}
     >
-      <img src={url} alt="Preview" className="max-h-[80vh] max-w-full object-contain" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} draggable={false} />
+      {blobUrl && (
+        <img src={blobUrl} alt="Preview" className="max-h-[80vh] max-w-full object-contain" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} draggable={false} />
+      )}
     </div>
   )
 }

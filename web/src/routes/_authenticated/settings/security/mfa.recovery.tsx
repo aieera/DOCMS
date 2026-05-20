@@ -6,12 +6,12 @@ import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Copy, RotateCcw, AlertTriangle, ArrowLeft } from 'lucide-react'
-
+import { Copy, RotateCcw, AlertTriangle } from 'lucide-react'
 import { api } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export const Route = createFileRoute('/_authenticated/settings/security/mfa/recovery')({
   component: RecoveryCodesPage,
@@ -48,7 +48,7 @@ function RecoveryCodesPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Link to="/settings/security/mfa" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:underline">
-        <ArrowLeft className="h-3 w-3" /> Back to MFA settings
+        <DirectionalIcon name="ArrowLeft" className="h-3 w-3" /> Back to MFA settings
       </Link>
       <PageHeader
         title="Recovery codes"

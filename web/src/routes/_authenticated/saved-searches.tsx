@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Bell, BellOff, Edit, Play, Trash2, UserPlus } from 'lucide-react'
+import { Bell, BellOff, Edit, Globe, Lock, Play, Sparkles, Trash2, Users, UserPlus } from 'lucide-react'
 
 import {
   listSavedSearches,
@@ -10,7 +10,10 @@ import {
   deleteSavedSearch,
   subscribeSavedSearch,
   unsubscribeSavedSearch,
+  promoteSmartFolder,
+  demoteSmartFolder,
   type SavedSearch,
+  type TreeVisibility,
 } from '@/api/savedSearches'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
@@ -52,6 +55,20 @@ function SavedSearchesPage() {
 
   const [editing, setEditing] = useState<SavedSearch | null>(null)
   const [subscribing, setSubscribing] = useState<SavedSearch | null>(null)
+  const [promoting, setPromoting] = useState<SavedSearch | null>(null)
+
+  // ADR 0100 — promote/demote a saved search to a smart folder (pinned
+  // to the sidebar). Invalidates both queries because the sidebar reads
+  // `smart-folders` while this page reads `saved-searches`.
+  const demoteMut = useMutation({
+    mutationFn: demoteSmartFolder,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-searches'] })
+      qc.invalidateQueries({ queryKey: ['smart-folders'] })
+      toast.success('Removed from sidebar')
+    },
+    onError: () => toast.error('Could not unpin'),
+  })
 
   const patchMut = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateSavedSearch>[1] }) =>
@@ -125,7 +142,7 @@ function SavedSearchesPage() {
                 <span className="font-medium">{s.name}</span>
                 {s.notify ? (
                   <Badge variant="info" data-testid={`alert-badge-${s.id}`}>
-                    <Bell className="mr-1 h-3 w-3 inline" /> Alert
+                    <Bell className="me-1 h-3 w-3 inline" /> Alert
                   </Badge>
                 ) : null}
                 {(s.subscriber_count ?? 0) > 0 && (
@@ -144,13 +161,35 @@ function SavedSearchesPage() {
               )}
             </div>
 
-            <div className="ml-4 flex shrink-0 items-center gap-1">
+            <div className="ms-4 flex shrink-0 items-center gap-1">
               <Button variant="ghost" onClick={() => handleRun(s)} data-testid={`run-${s.id}`}>
                 <Play className="h-4 w-4" /> Run
               </Button>
               <Button variant="ghost" onClick={() => setEditing(s)} data-testid={`edit-${s.id}`}>
                 <Edit className="h-4 w-4" /> Edit
               </Button>
+              {s.is_smart_folder ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (confirm(`Remove "${s.name}" from the sidebar?`)) demoteMut.mutate(s.id)
+                  }}
+                  disabled={demoteMut.isPending}
+                  data-testid={`demote-${s.id}`}
+                  title="Remove from sidebar"
+                >
+                  <Sparkles className="h-4 w-4 text-violet-500" /> Unpin
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => setPromoting(s)}
+                  data-testid={`promote-${s.id}`}
+                  title="Pin to sidebar as a smart folder"
+                >
+                  <Sparkles className="h-4 w-4" /> Pin
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 onClick={() => handleConvert(s)}
@@ -176,8 +215,11 @@ function SavedSearchesPage() {
                 }}
                 disabled={deleteMut.isPending}
                 data-testid={`delete-${s.id}`}
+                aria-label={`Delete saved search: ${s.name}`}
+                title={`Delete saved search: ${s.name}`}
               >
-                <Trash2 className="h-4 w-4 text-destructive" />
+                <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
+                <span className="sr-only">Delete {s.name}</span>
               </Button>
             </div>
           </div>
@@ -201,7 +243,150 @@ function SavedSearchesPage() {
           }}
         />
       )}
+      {promoting && (
+        <PromoteSmartFolderDialog
+          ss={promoting}
+          onClose={() => setPromoting(null)}
+          onPromoted={() => {
+            qc.invalidateQueries({ queryKey: ['saved-searches'] })
+            qc.invalidateQueries({ queryKey: ['smart-folders'] })
+            setPromoting(null)
+          }}
+          isAdmin={isAdmin}
+        />
+      )}
     </div>
+  )
+}
+
+// PromoteSmartFolderDialog — ADR 0100. Promotes a saved search to a
+// sidebar-pinned smart folder. `tree_visibility` decides who else can
+// see it: 'private' (owner only), 'workspace' (everyone in this
+// workspace; admin-only), 'public' (everyone in the tenant; admin-only).
+// Workspace visibility requires a workspace_id; for Phase 1 we only
+// expose the saved search's existing workspace_id, which the backend
+// already validated when the search was created.
+function PromoteSmartFolderDialog({
+  ss,
+  onClose,
+  onPromoted,
+  isAdmin,
+}: {
+  ss: SavedSearch
+  onClose: () => void
+  onPromoted: () => void
+  isAdmin: boolean
+}) {
+  const [visibility, setVisibility] = useState<TreeVisibility>('private')
+  const [icon, setIcon] = useState('sparkles')
+
+  const mut = useMutation({
+    mutationFn: () => promoteSmartFolder(ss.id, {
+      tree_visibility: visibility,
+      workspace_id:    visibility === 'workspace' ? ss.workspace_id ?? null : null,
+      icon,
+    }),
+    onSuccess: () => {
+      toast.success(`Pinned "${ss.name}" to the sidebar`)
+      onPromoted()
+    },
+    onError: () => toast.error('Pin failed'),
+  })
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title={`Pin "${ss.name}" to the sidebar`}
+      description="Smart folders are saved searches that live in the sidebar. Anyone who can see the folder runs the underlying query when they click it."
+    >
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground">Visibility</p>
+          <VisibilityOption
+            current={visibility}
+            value="private"
+            label="Only me"
+            description="Just appears in your sidebar."
+            icon={Lock}
+            onSelect={setVisibility}
+          />
+          <VisibilityOption
+            current={visibility}
+            value="workspace"
+            label="Everyone in this workspace"
+            description={ss.workspace_id
+              ? 'Visible in the sidebar for every workspace member.'
+              : 'This saved search has no workspace — pick another visibility.'}
+            icon={Users}
+            disabled={!isAdmin || !ss.workspace_id}
+            onSelect={setVisibility}
+          />
+          <VisibilityOption
+            current={visibility}
+            value="public"
+            label="Everyone in the tenant"
+            description="Visible in the sidebar for every user in your organization."
+            icon={Globe}
+            disabled={!isAdmin}
+            onSelect={setVisibility}
+          />
+        </div>
+
+        <Input
+          label="Icon (lucide name)"
+          value={icon}
+          onChange={(e) => setIcon(e.target.value)}
+          placeholder="sparkles, folder, star…"
+        />
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>Cancel</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? <Spinner className="h-4 w-4" /> : <Sparkles className="me-1 h-4 w-4" />}
+            Pin to sidebar
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+function VisibilityOption({
+  current,
+  value,
+  label,
+  description,
+  icon: Icon,
+  disabled,
+  onSelect,
+}: {
+  current: TreeVisibility
+  value: TreeVisibility
+  label: string
+  description: string
+  icon: typeof Lock
+  disabled?: boolean
+  onSelect: (v: TreeVisibility) => void
+}) {
+  const active = current === value
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(value)}
+      disabled={disabled}
+      className={`flex w-full items-start gap-3 rounded-md border p-2 text-start text-sm transition-colors ${
+        active
+          ? 'border-violet-500/50 bg-violet-50/40 dark:bg-violet-950/15'
+          : 'border-border bg-card hover:bg-accent'
+      } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+    >
+      <Icon className={`mt-0.5 h-4 w-4 ${active ? 'text-violet-500' : 'text-muted-foreground'}`} />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">{label}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+    </button>
   )
 }
 
@@ -302,7 +487,7 @@ function SubscribeDialog({
                 <li key={sub.user_id} className="flex items-center justify-between text-sm">
                   <span>
                     {sub.user_id}
-                    <span className="ml-2 text-xs text-muted-foreground">
+                    <span className="ms-2 text-xs text-muted-foreground">
                       ({sub.channels.join(', ')})
                     </span>
                   </span>

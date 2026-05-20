@@ -137,18 +137,29 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 	// §7.1 / D6 — hybrid / semantic branches. The RRF fusion math
 	// lives in services/search/internal/fusion; this layer owns
 	// orchestration (parallel querying, score merge, pagination).
+	//
+	// ADR 0111 — when the vector path errors (timeout, intelligence
+	// down, Qdrant unreachable) we degrade to lexical-only and
+	// preserve the requested mode so the response.SearchMode tells
+	// the caller WHAT they asked for, while response.Degraded names
+	// WHAT actually ran. The HTTP handler stamps an
+	// X-Search-Mode-Degraded header from Degraded.
+	requestedMode := mode
+	degradedTo := ""
 	if mode == model.SearchModeHybrid || mode == model.SearchModeSemantic {
 		sem, err := s.semanticSearch(ctx, req)
 		if err != nil {
-			s.log.Warn().Err(err).Str("mode", mode).
+			s.log.Warn().Err(err).Str("mode", requestedMode).
 				Msg("semantic path failed; degrading to lexical-only")
-			mode = model.SearchModeLexical
+			degradedTo = model.SearchModeLexical
 		} else if len(sem) == 0 {
-			// Nothing to fuse. Leave mode unchanged so the response
-			// still reports what the client asked for, but the
-			// result set is identical to lexical.
-			s.log.Debug().Str("mode", mode).Msg("semantic path returned 0 hits")
-		} else if mode == model.SearchModeHybrid {
+			// Nothing to fuse. Hybrid still works (lexical-only
+			// fusion = lexical-only); semantic-only got nothing so
+			// the result set is empty either way. Mark as degraded
+			// so dashboards can count silent "zero semantic" runs.
+			s.log.Debug().Str("mode", requestedMode).Msg("semantic path returned 0 hits")
+			degradedTo = model.SearchModeLexical
+		} else if requestedMode == model.SearchModeHybrid {
 			raw = fuseHits(raw, sem)
 		} else {
 			raw = semToRaw(sem)
@@ -157,8 +168,9 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 
 	result := &model.SearchResult{
 		TotalCount: raw.TotalHits,
-		SearchMode: mode,
+		SearchMode: requestedMode,
 		LatencyMS:  time.Since(start).Milliseconds(),
+		Degraded:   degradedTo,
 	}
 
 	for _, h := range raw.Hits {

@@ -39,7 +39,7 @@ function PermissionLagPage() {
     <div className="space-y-6">
       <PageHeader
         title="Permission propagation lag"
-        description="Time from a permission change event to the search index update committing. ADR 0083. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
+        description="Time from a permission change event to the search index update committing. Polled every 10s; underlying metric is the search service's permission_propagation_lag_seconds histogram."
       />
 
       {p95Breached && (

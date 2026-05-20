@@ -72,7 +72,7 @@ export function TranslationViewer({ translationId, sourceText, onClose }: Props)
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={!data?.translated_text} onClick={download}>
-              <Download className="mr-1 h-4 w-4" />
+              <Download className="me-1 h-4 w-4" />
               Download
             </Button>
             <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close">
@@ -104,7 +104,7 @@ export function TranslationViewer({ translationId, sourceText, onClose }: Props)
 
 function Pane({ label, text, rtl }: { label: string; text: string; rtl: boolean }) {
   return (
-    <div className="flex flex-col overflow-hidden border-t border-zinc-200 first:border-t-0 dark:border-zinc-800 md:border-l md:border-t-0 md:first:border-l-0">
+    <div className="flex flex-col overflow-hidden border-t border-zinc-200 first:border-t-0 dark:border-zinc-800 md:border-s md:border-t-0 md:first:border-s-0">
       <div className="border-b border-zinc-100 px-4 py-2 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-900">
         {label}
       </div>

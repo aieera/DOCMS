@@ -147,7 +147,7 @@ function CoauthorIframeModal({ session, fileName, onClose }: { session: CoauthSe
       <header className="flex items-center justify-between gap-3 bg-[var(--color-bg-secondary)] px-4 py-2 text-sm">
         <div className="truncate">
           <strong>{fileName}</strong>
-          <span className="ml-2 text-xs text-[var(--color-text-secondary)]">
+          <span className="ms-2 text-xs text-[var(--color-text-secondary)]">
             via {session.provider} {session.mode === 'view' ? '(read-only)' : ''}
           </span>
         </div>

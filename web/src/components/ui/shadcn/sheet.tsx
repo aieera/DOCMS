@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn'
 
 // Canonical shadcn Sheet — full Radix Dialog under the hood
 // (same primitive). Variants pick the side the panel slides in
-// from. The bespoke ./Sheet was right-side-only with a
+// from. The bespoke ./Sheet was end-side-only with a
 // title-prop API; this is composition-based with `side`.
 
 const Sheet = SheetPrimitive.Root
@@ -43,8 +43,8 @@ const sheetVariants = cva(
       side: {
         top: 'inset-x-0 top-0 border-b border-border data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
         bottom: 'inset-x-0 bottom-0 border-t border-border data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-        left: 'inset-y-0 left-0 h-full w-3/4 border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
-        right: 'inset-y-0 right-0 h-full w-3/4 border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
+        left: 'inset-y-0 start-0 h-full w-3/4 border-e border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
+        right: 'inset-y-0 end-0 h-full w-3/4 border-s border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
       },
     },
     defaultVariants: { side: 'right' },
@@ -65,7 +65,7 @@ const SheetContent = forwardRef<
       {children}
       <SheetPrimitive.Close
         className={cn(
-          'absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity',
+          'absolute end-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity',
           'hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
           'disabled:pointer-events-none data-[state=open]:bg-secondary',
         )}
@@ -79,7 +79,7 @@ const SheetContent = forwardRef<
 SheetContent.displayName = SheetPrimitive.Content.displayName
 
 const SheetHeader = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-2 text-center sm:text-left', className)} {...props} />
+  <div className={cn('flex flex-col space-y-2 text-center sm:text-start', className)} {...props} />
 )
 SheetHeader.displayName = 'SheetHeader'
 

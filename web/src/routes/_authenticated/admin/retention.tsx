@@ -196,7 +196,7 @@ function RetentionPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
-                <tr className="text-left">
+                <tr className="text-start">
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Policy</th>
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Scope</th>
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Retain</th>
@@ -223,7 +223,7 @@ function RetentionPage() {
                       <Badge variant={p.is_active ? 'active' : 'archived'}>{p.is_active ? 'Active' : 'Paused'}</Badge>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{formatRelativeTime(p.updated_at)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-end">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => toggleActive.mutate(p)} disabled={toggleActive.isPending} aria-label={p.is_active ? 'Pause' : 'Activate'}>
                           {p.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}

@@ -174,11 +174,11 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={() => setShowHistory((v) => !v)}>
-            <History className="mr-1 h-4 w-4" />
+            <History className="me-1 h-4 w-4" />
             History
           </Button>
           <Button size="sm" variant="ghost" onClick={newConversation}>
-            <Sparkles className="mr-1 h-4 w-4" />
+            <Sparkles className="me-1 h-4 w-4" />
             New
           </Button>
         </div>
@@ -195,10 +195,10 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
                 <li key={c.id}>
                   <button
                     onClick={() => loadConversation(c)}
-                    className="block w-full truncate rounded px-2 py-1 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="block w-full truncate rounded px-2 py-1 text-start hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   >
                     <span className="text-zinc-700 dark:text-zinc-200">{c.title}</span>
-                    <span className="ml-2 text-zinc-400">
+                    <span className="ms-2 text-zinc-400">
                       {new Date(c.updated_at).toLocaleString()}
                     </span>
                   </button>

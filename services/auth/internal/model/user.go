@@ -61,12 +61,23 @@ type PublicView struct {
 	Role        Role       `json:"role"`
 	Status      Status     `json:"status"`
 	MFAEnabled  bool       `json:"mfa_enabled"`
+	// ADR 0106 — i18n. UI language preference (en|ar today). Always
+	// populated; defaults to 'en' at the DB layer.
+	Locale      string     `json:"locale"`
 	CreatedAt   time.Time  `json:"created_at"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 }
 
 // ToPublic returns a PublicView with secret fields stripped.
 func (u *User) ToPublic() PublicView {
+	locale := u.Locale
+	if locale == "" {
+		// Defensive: the DB DEFAULT 'en' covers fresh rows, but a
+		// brief window during 000051's backfill could leave a zero
+		// string in flight if the FE races the migration. Fall back
+		// to 'en' so the topbar never renders an empty Select.
+		locale = "en"
+	}
 	return PublicView{
 		ID:          u.ID,
 		TenantID:    u.TenantID,
@@ -75,6 +86,7 @@ func (u *User) ToPublic() PublicView {
 		Role:        u.Role,
 		Status:      u.Status,
 		MFAEnabled:  u.MFAEnabled,
+		Locale:      locale,
 		CreatedAt:   u.CreatedAt,
 		LastLoginAt: u.LastLoginAt,
 	}

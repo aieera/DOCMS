@@ -61,7 +61,7 @@ function AutoTagAdminPage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader
         title="Auto-tagging"
-        description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline (ADR 0052)."
+        description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline."
       />
 
       <div className="mt-6 space-y-6 rounded border border-border p-5">
@@ -132,7 +132,7 @@ function AutoTagAdminPage() {
 
         <div className="flex justify-end pt-2">
           <Button onClick={onSubmit} disabled={save.isPending}>
-            <Save className="mr-2 h-4 w-4" />
+            <Save className="me-2 h-4 w-4" />
             Save
           </Button>
         </div>

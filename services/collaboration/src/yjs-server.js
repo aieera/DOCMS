@@ -32,18 +32,35 @@ import * as syncProtocol from 'y-protocols/sync'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
 
+import { FLUSH_EVERY, loadSnapshot, saveSnapshot } from './yjs-persistence.js'
+
 const messageSync = 0
 const messageAwareness = 1
 
 // Room registry: map<roomId, { ydoc, awareness, clients: Set<WebSocket> }>
 const rooms = new Map()
 
-function getRoom(roomId) {
+function getRoom(roomId, tenantId, docId) {
   let room = rooms.get(roomId)
   if (room) return room
   const ydoc = new Y.Doc({ gc: true })
   const awareness = new awarenessProtocol.Awareness(ydoc)
-  room = { ydoc, awareness, clients: new Set() }
+  // ADR 0096 — pendingUpdates counts CRDT mutations since the last
+  // snapshot. When it hits FLUSH_EVERY we persist to Postgres so a
+  // worker restart / last-client-leaves doesn't lose state.
+  room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false }
+
+  // Hydrate from the latest snapshot (if any). Apply asynchronously so
+  // we don't block room creation; new clients arriving before hydration
+  // finishes will see an empty doc and get the snapshot's state once
+  // applyUpdate fires (and Yjs handles the merge correctly via CRDT
+  // properties — duplicates are idempotent).
+  loadSnapshot(tenantId, docId).then((state) => {
+    if (state && rooms.has(roomId)) {
+      Y.applyUpdate(ydoc, new Uint8Array(state))
+    }
+    room.hydrated = true
+  })
 
   // Broadcast awareness updates to every client in the room except
   // the one that produced the update.
@@ -67,6 +84,18 @@ function getRoom(roomId) {
     for (const c of room.clients) {
       if (c !== origin && c.readyState === 1) c.send(msg)
     }
+    // Snapshot loop — flush every FLUSH_EVERY updates. Don't snapshot
+    // pre-hydration updates (they include our own applyUpdate firing
+    // back), only client-driven mutations after the load completes.
+    if (!room.hydrated) return
+    room.pendingUpdates++
+    if (room.pendingUpdates >= FLUSH_EVERY) {
+      room.pendingUpdates = 0
+      // Fire-and-forget; saveSnapshot logs its own errors and never
+      // throws. Don't await — the update broadcast must not block on
+      // Postgres latency.
+      saveSnapshot(room.tenantId, room.docId, ydoc)
+    }
   })
 
   rooms.set(roomId, room)
@@ -84,23 +113,95 @@ function parseRoomId(url) {
  * Attach Yjs handling to an existing ws.WebSocketServer. We reuse
  * the main server's `upgrade` event to route /yjs/* paths to Yjs
  * and let every other path fall through to the existing /ws handler.
+ *
+ * ADR 0096 § WebSocket auth: each /yjs/* connection must present a
+ * dms_session cookie whose tenant_id matches the URL path's tenantId.
+ * We resolve the session by calling the auth service's /auth/me
+ * endpoint (signed with X-Gateway-Signature). Failure modes use custom
+ * close codes:
+ *   4401 — no cookie / invalid session
+ *   4403 — session valid but tenant doesn't match the URL room
+ *   4503 — auth service unreachable
+ * y-websocket on the client treats these as terminal and stops retrying.
+ *
  * @param {import('ws').WebSocketServer} wss
  */
 export function attachYjs(wss) {
   wss.on('connection', (conn, req) => {
     const parsed = parseRoomId(req.url)
     if (!parsed) return  // not a Yjs URL; let existing handler own it
-    // Guard rail: the existing /ws handler also runs on every
-    // connection. When the URL is /yjs/*, we steer THIS conn into
-    // Yjs and set a flag so the /ws handler ignores it.
     if (conn.__routed) return
     conn.__routed = 'yjs'
-    handleYjsConnection(conn, parsed)
+    // Auth check is async — gate the connection before joining the room.
+    // The socket is already accepted at this point, but we close with
+    // the right code below if auth fails. The client never sees the
+    // initial sync step because we don't send anything until after auth.
+    authorize(req, parsed.tenantId)
+      .then((authResult) => {
+        if (authResult.code) {
+          conn.close(authResult.code, authResult.message || '')
+          return
+        }
+        handleYjsConnection(conn, parsed)
+      })
+      .catch((err) => {
+        console.error('yjs: authorize threw', err)
+        conn.close(4503, 'auth service unreachable')
+      })
   })
 }
 
+const AUTH_BASE = process.env.AUTH_SERVICE_URL || 'http://auth:8080'
+const GATEWAY_SECRET = process.env.VAULTDMS_GATEWAY_SECRET || 'dev-only-gateway-secret-rotate-in-prod'
+
+/**
+ * Calls auth's /api/v1/auth/me with the dms_session cookie from the
+ * upgrade request. Returns:
+ *   { ok: true, tenantId, userId }   on success
+ *   { code: 4401 | 4403 | 4503, message }  on failure
+ */
+async function authorize(req, urlTenantId) {
+  const cookie = req.headers.cookie || ''
+  // Pass the *full* Cookie header through — auth's SessionAuth reads
+  // dms_session out of it. No need to parse on this side.
+  if (!cookie.includes('dms_session=')) {
+    return { code: 4401, message: 'auth required' }
+  }
+  let resp
+  try {
+    resp = await fetch(`${AUTH_BASE}/api/v1/auth/me`, {
+      headers: {
+        Cookie: cookie,
+        'X-Gateway-Signature': GATEWAY_SECRET,
+      },
+    })
+  } catch (err) {
+    return { code: 4503, message: 'auth service unreachable' }
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    return { code: 4401, message: 'auth required' }
+  }
+  if (!resp.ok) {
+    return { code: 4503, message: `auth service returned ${resp.status}` }
+  }
+  let body
+  try {
+    body = await resp.json()
+  } catch (err) {
+    return { code: 4503, message: 'auth response not JSON' }
+  }
+  const sessionTenant = body.tenant_id || body.tenantId
+  if (!sessionTenant) {
+    return { code: 4401, message: 'session has no tenant' }
+  }
+  if (sessionTenant !== urlTenantId) {
+    return { code: 4403, message: 'tenant mismatch' }
+  }
+  return { ok: true, tenantId: sessionTenant, userId: body.user_id || body.userId }
+}
+
 function handleYjsConnection(conn, { roomId, tenantId, docId }) {
-  const room = getRoom(roomId)
+  const room = getRoom(roomId, tenantId, docId)
   room.clients.add(conn)
 
   // Send initial sync step 1 so the newcomer catches up on state.
@@ -148,8 +249,11 @@ function handleYjsConnection(conn, { roomId, tenantId, docId }) {
     room.clients.delete(conn)
     awarenessProtocol.removeAwarenessStates(room.awareness, [conn.awarenessClientID].filter(Boolean), null)
     if (room.clients.size === 0) {
-      // Last user left: drop the room. A snapshot-to-Postgres hook
-      // goes here in the persistence slice.
+      // Last user left: flush any pending updates before dropping the
+      // room from memory. Fire-and-forget — caller doesn't await.
+      if (room.hydrated && room.pendingUpdates > 0) {
+        saveSnapshot(room.tenantId, room.docId, room.ydoc)
+      }
       rooms.delete(roomId)
     }
   })

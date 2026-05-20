@@ -17,19 +17,42 @@ import (
 )
 
 // Server bundles the dependency handles required by /readyz.
+//
+// ADR 0110 — `service` + `region` are echoed in /healthz so the
+// load-balancer health-check + the frontend residency banner can
+// confirm which cluster they're talking to. Both are populated from
+// the shared Config struct at boot; if the operator forgot to set
+// VAULTDMS_REGION_ID the value is empty and /healthz reports
+// `"region":"unknown"` — that's an actionable signal, not a silent
+// failure.
 type Server struct {
-	pg    *pgxpool.Pool
-	rdb   *redis.Client
-	nats  *nats.Conn
-	s3    *storage.S3Client
-	mu    sync.Mutex
-	http  *http.Server
+	pg      *pgxpool.Pool
+	rdb     *redis.Client
+	nats    *nats.Conn
+	s3      *storage.S3Client
+	mu      sync.Mutex
+	http    *http.Server
+	service string
+	region  string
 }
 
 // NewServer wires the server. Any dependency may be nil; readiness reports
 // "not configured" for nil deps and does not treat them as failures.
+//
+// Deprecated: prefer NewServerWithMeta so /healthz reports the
+// cluster region. Kept for ABI compatibility with services that
+// haven't migrated yet — they'll get a /healthz response with
+// `"region":"unknown"` until they switch constructors.
 func NewServer(pg *pgxpool.Pool, rdb *redis.Client, nc *nats.Conn, s3 *storage.S3Client) *Server {
 	return &Server{pg: pg, rdb: rdb, nats: nc, s3: s3}
+}
+
+// NewServerWithMeta is the canonical constructor since ADR 0110.
+// `service` is the short name ("document", "auth", …) and `region`
+// is the cluster region pulled from Config.Region (env
+// VAULTDMS_REGION_ID).
+func NewServerWithMeta(service, region string, pg *pgxpool.Pool, rdb *redis.Client, nc *nats.Conn, s3 *storage.S3Client) *Server {
+	return &Server{pg: pg, rdb: rdb, nats: nc, s3: s3, service: service, region: region}
 }
 
 // Start listens on addr (e.g. ":8081"). Blocks until the server stops.
@@ -65,7 +88,19 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) handleLive(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "alive"})
+	region := s.region
+	if region == "" {
+		region = "unknown"
+	}
+	service := s.service
+	if service == "" {
+		service = "unknown"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "alive",
+		"service": service,
+		"region":  region,
+	})
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {

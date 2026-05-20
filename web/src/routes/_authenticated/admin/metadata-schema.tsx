@@ -148,7 +148,7 @@ function MetadataSchemaPage() {
                 <strong className="text-foreground">Draft 2020-12</strong> JSON Schema. Keep root <code className="rounded bg-muted px-1 font-mono">type: "object"</code>.
               </p>
               <p className="text-foreground">Supported per-property:</p>
-              <ul className="list-disc space-y-0.5 pl-5">
+              <ul className="list-disc space-y-0.5 ps-5">
                 <li><code className="rounded bg-muted px-1 font-mono">type</code>: string, number, integer, boolean, array</li>
                 <li><code className="rounded bg-muted px-1 font-mono">enum</code>, <code className="rounded bg-muted px-1 font-mono">format</code>, <code className="rounded bg-muted px-1 font-mono">pattern</code></li>
                 <li><code className="rounded bg-muted px-1 font-mono">minimum</code>/<code className="rounded bg-muted px-1 font-mono">maximum</code>, <code className="rounded bg-muted px-1 font-mono">minLength</code>/<code className="rounded bg-muted px-1 font-mono">maxLength</code></li>
@@ -192,7 +192,7 @@ function SchemaPreview({ schema }: { schema: Record<string, unknown> | null }) {
               <div className="text-muted-foreground">{spec.description}</div>
             )}
           </div>
-          <div className="shrink-0 text-right">
+          <div className="shrink-0 text-end">
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{describe(spec)}</code>
           </div>
         </li>

@@ -81,7 +81,7 @@ export function TranslationPanel({ documentId, versionId, availableLanguages }: 
           <div>
             Detected: <span className="font-medium">{languageLabel(lang.detected_language)}</span>
             {lang.confidence !== undefined && (
-              <span className="ml-2 text-zinc-500">({Math.round(lang.confidence * 100)}%)</span>
+              <span className="ms-2 text-zinc-500">({Math.round(lang.confidence * 100)}%)</span>
             )}
           </div>
         ) : (

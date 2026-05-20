@@ -43,7 +43,7 @@ function ComplianceAdminDashboard() {
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="Compliance scanning"
-        description="Tenant-wide PII/PHI findings produced by the intelligence pipeline (ADR 0054)."
+        description="Tenant-wide PII/PHI findings produced by the intelligence pipeline."
       />
 
       <div className="mt-6 grid grid-cols-4 gap-4">
@@ -65,7 +65,7 @@ function ComplianceAdminDashboard() {
                   style={{ height: '100%', width: `${(count / totalRisk) * 100}%` }}
                 />
               </div>
-              <span className="w-12 text-right tabular-nums text-muted-foreground">{count}</span>
+              <span className="w-12 text-end tabular-nums text-muted-foreground">{count}</span>
             </div>
           ))}
         </div>
@@ -89,7 +89,7 @@ function ComplianceAdminDashboard() {
                     }}
                   />
                 </div>
-                <span className="w-16 text-right tabular-nums text-muted-foreground">{e.count}</span>
+                <span className="w-16 text-end tabular-nums text-muted-foreground">{e.count}</span>
               </li>
             ))}
           </ul>
@@ -114,13 +114,13 @@ function ComplianceAdminDashboard() {
           <div className="text-sm text-muted-foreground">No matching findings.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-muted-foreground">
+            <thead className="text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-2">Type</th>
                 <th className="py-2">Risk</th>
                 <th className="py-2">Source</th>
                 <th className="py-2">Document</th>
-                <th className="py-2 text-right">Count</th>
+                <th className="py-2 text-end">Count</th>
                 <th className="py-2">Created</th>
               </tr>
             </thead>
@@ -139,7 +139,7 @@ function ComplianceAdminDashboard() {
                     </Badge>
                   </td>
                   <td className="py-2 font-mono text-xs text-muted-foreground">{f.document_id.slice(0, 8)}…</td>
-                  <td className="py-2 text-right tabular-nums">{f.occurrence_count}</td>
+                  <td className="py-2 text-end tabular-nums">{f.occurrence_count}</td>
                   <td className="py-2 text-muted-foreground">{new Date(f.created_at).toLocaleString()}</td>
                 </tr>
               ))}

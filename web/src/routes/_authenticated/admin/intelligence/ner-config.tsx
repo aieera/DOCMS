@@ -83,7 +83,7 @@ function NERConfigPage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader
         title="NER configuration"
-        description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach (ADR 0078). Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
+        description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach. Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
         actions={
           <Button
             size="sm"
@@ -223,7 +223,7 @@ function APIKeySection({
               }}
               aria-label="Clear API key"
             >
-              <Trash2 className="mr-1 h-3 w-3" /> Clear
+              <Trash2 className="me-1 h-3 w-3" /> Clear
             </Button>
           </div>
         ) : (

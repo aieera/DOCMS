@@ -92,6 +92,67 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 	}
 }
 
+// SessionAuthOptional is the same as SessionAuth but doesn't reject requests
+// that lack a valid session cookie — it just passes them through unchanged.
+// Use this when you want to populate auth context for cookie-bearing
+// requests (so TenantHTTP can fall back to ctx) without forcing every
+// upstream caller to also send a cookie. Typical wiring:
+//
+//	rootMux.Handle("/", RequestLogHTTP(log)(CorrelationHTTP(
+//	    SessionAuthOptional(SessionAuthConfig{Pool: pool})(
+//	        TenantHTTP(pool)(next)))))
+//
+// Result: browser AJAX with X-Tenant-ID header keeps working (header is
+// consulted first); browser `<img>`/`<video>` requests with only a session
+// cookie also work (cookie → ctx → TenantHTTP fallback resolves it).
+func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler {
+	cookie := cfg.CookieName
+	if cookie == "" {
+		cookie = "dms_session"
+	}
+	pool := cfg.Pool
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, err := r.Cookie(cookie)
+			if err != nil || c.Value == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			hash := sha256HexSession(c.Value)
+			var (
+				tenantID uuid.UUID
+				userID   uuid.UUID
+				email    string
+				role     string
+				expires  time.Time
+			)
+			err = pool.QueryRow(r.Context(), `
+				SELECT s.tenant_id, s.user_id, u.email, u.role, s.expires_at
+				FROM sessions s
+				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id
+				WHERE s.token_hash = $1
+				  AND s.revoked_at IS NULL
+				  AND s.expires_at > now()
+				  AND u.deleted_at IS NULL
+			`, hash).Scan(&tenantID, &userID, &email, &role, &expires)
+			if err != nil {
+				// Bad cookie → don't block. The downstream
+				// middleware (e.g. TenantHTTP) will 401 if it
+				// can't resolve the tenant from anywhere else.
+				next.ServeHTTP(w, r)
+				return
+			}
+			ctx := auth.WithUser(r.Context(), auth.UserInfo{
+				ID:       userID,
+				TenantID: tenantID,
+				Email:    email,
+				Role:     role,
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // RequireRole rejects requests whose authenticated caller doesn't hold one
 // of the allowed roles with 403. Chain this AFTER SessionAuth.
 func RequireRole(roles ...string) func(http.Handler) http.Handler {

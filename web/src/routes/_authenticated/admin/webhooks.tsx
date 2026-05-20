@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronRight, Code2, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle, Beaker } from 'lucide-react'
-
+import { ChevronDown, Code2, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle, Beaker } from 'lucide-react'
 import {
   createWebhook,
   deleteWebhook,
@@ -24,6 +23,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 const EVENT_PRESETS = [
   'dms.document.created.v1',
@@ -223,8 +223,8 @@ function WebhookRow({
     <li>
       <Card className="overflow-hidden p-0">
         <div className="flex items-start justify-between gap-3 p-3">
-          <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-start gap-2 text-left">
-            {expanded ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+          <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-start gap-2 text-start">
+            {expanded ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <DirectionalIcon name="ChevronRight" className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="truncate text-sm font-medium">{wh.url}</span>
@@ -305,7 +305,7 @@ function SignatureSamples() {
           variant="outline"
           size="sm"
           onClick={() => copy(SAMPLES[lang])}
-          className="absolute right-2 top-2"
+          className="absolute end-2 top-2"
         >
           <Copy className="h-3 w-3" /> Copy
         </Button>
@@ -428,7 +428,7 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
     <div className="overflow-x-auto border-t border-border">
       <table className="w-full text-xs">
         <thead className="bg-muted/40">
-          <tr className="text-left">
+          <tr className="text-start">
             <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Event</th>
             <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Status</th>
             <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Attempts</th>
@@ -447,7 +447,7 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
               </td>
               <td className="px-3 py-2">{d.attempts}</td>
               <td className="px-3 py-2 text-muted-foreground">{formatRelativeTime(d.created_at)}</td>
-              <td className="px-3 py-2 text-right">
+              <td className="px-3 py-2 text-end">
                 <Button variant="ghost" size="sm" onClick={() => redeliver.mutate(d.id)} disabled={redeliver.isPending}>
                   <Send className="h-3 w-3" /> Redeliver
                 </Button>

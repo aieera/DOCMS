@@ -80,7 +80,7 @@ function SupportSearchPage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Cross-tenant support search"
-        description="Platform-admin only. Every query is audited with full payload + your identity. ADR 0069."
+        description="Platform-admin only. Every query is audited with full payload + your identity."
       />
 
       {/* Red framing — load-bearing. Different visually from every
@@ -199,7 +199,7 @@ function ResultPanel({ result }: { result: FederatedSearchResult }) {
             {hits.map((hit) => (
               <li key={hit.document_id} className="flex items-center justify-between text-sm">
                 <span className="truncate">{hit.title || hit.document_id}</span>
-                <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                <span className="ms-2 shrink-0 text-xs text-muted-foreground">
                   {hit.mime_type} · {lifecycleStateLabel(hit.lifecycle_state)}
                 </span>
               </li>

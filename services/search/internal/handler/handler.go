@@ -48,6 +48,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/saved-searches/{id}", h.patchSavedSearch)
 	mux.HandleFunc("POST /api/v1/saved-searches/{id}/subscribe", h.subscribeSavedSearch)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}/subscribe/{user_id}", h.unsubscribeSavedSearch)
+	// ADR 0100 — smart folders. Static path comes BEFORE the {id}
+	// variant so the mux doesn't try to parse "smart-folders" as a
+	// UUID. /promote is the toggle that flips a regular saved search
+	// into a tree-visible smart folder (or back).
+	mux.HandleFunc("GET /api/v1/saved-searches/smart-folders", h.listSmartFolders)
+	mux.HandleFunc("POST /api/v1/saved-searches/{id}/promote", h.promoteSmartFolder)
+	mux.HandleFunc("POST /api/v1/saved-searches/{id}/demote", h.demoteSmartFolder)
 	// ADR 0069 — platform-admin federated search.
 	mux.HandleFunc("POST /api/v1/platform/search/federated", h.federatedSearch)
 	mux.HandleFunc("GET /api/v1/platform/search/federated/audit", h.listFederatedAudit)
@@ -196,6 +203,13 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
+	// ADR 0111 — surface the dense-vector degradation as a response
+	// header so dashboards + load balancers can count it without
+	// parsing the JSON body. Value is the mode that ACTUALLY ran
+	// (typically "lexical") — empty header means "no degradation".
+	if result.Degraded != "" {
+		w.Header().Set("X-Search-Mode-Degraded", result.Degraded)
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -216,6 +230,9 @@ func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Msg("search GET failed")
 		writeError(w, http.StatusInternalServerError, "search failed")
 		return
+	}
+	if result.Degraded != "" {
+		w.Header().Set("X-Search-Mode-Degraded", result.Degraded)
 	}
 	writeJSON(w, http.StatusOK, result)
 }

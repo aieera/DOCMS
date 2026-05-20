@@ -61,6 +61,12 @@ type Document struct {
 	TotalSizeBytes           int64
 	MimeType                 string
 	CreatedBy                uuid.UUID
+	// CreatedByName is denormalised at read time via LEFT JOIN users.
+	// Empty when the uploader row is hard-deleted (rare — the schema
+	// uses soft-delete) or missing. The handler-layer mapper passes
+	// this through; the frontend renders "Deleted user" when empty +
+	// CreatedBy non-zero. Not persisted, not write-mapped.
+	CreatedByName            string
 	CreatedAt                time.Time
 	UpdatedBy                uuid.UUID
 	UpdatedAt                time.Time

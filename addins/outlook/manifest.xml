@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  VaultDMS — Outlook add-in manifest (ADR 0112).
+
+  Manifest format: legacy XML schema (xsi:type="MailApp").
+  Why XML and not the unified JSON manifest?
+    * Mobile + the macOS Outlook desktop client still require the
+      XML schema as of mid-2026; JSON is web + new-Outlook-only.
+    * The MessageReadCommandSurface extension point is well-supported
+      in XML and not yet 1:1 in JSON.
+  Migration to JSON happens when mobile + macOS catch up.
+
+  Placeholders the operator MUST replace before sideloading:
+    * <Id>                     — generate via `uuidgen` (one per
+                                  environment so dev/staging/prod
+                                  add-ins don't fight in the catalog).
+    * https://addin.vaultdms… — the HTTPS host serving the static
+                                  bundle (production: CDN; dev: HTTPS
+                                  loopback from `npm run dev`).
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.1"
+  xsi:type="MailApp">
+
+  <!-- A unique identifier per environment. Generate one for dev, one
+       for staging, one for prod. Reusing the same GUID across envs
+       makes Outlook refuse to install a second copy. -->
+  <Id>00000000-0000-0000-0000-000000000111</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>VaultDMS</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Save to VaultDMS" />
+  <Description DefaultValue="Save the open email and its attachments to a VaultDMS workspace." />
+  <IconUrl DefaultValue="https://addin.vaultdms.example.com/assets/icon-64.png" />
+  <HighResolutionIconUrl DefaultValue="https://addin.vaultdms.example.com/assets/icon-128.png" />
+  <SupportUrl DefaultValue="https://docs.vaultdms.example.com/outlook-addin" />
+
+  <!-- Read-mode only. Save during compose lands in Phase 2. -->
+  <Hosts>
+    <Host Name="Mailbox" />
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <Set Name="Mailbox" MinVersion="1.10" />
+    </Sets>
+  </Requirements>
+
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://addin.vaultdms.example.com/taskpane.html" />
+        <RequestedHeight>320</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+
+  <Permissions>ReadWriteMailbox</Permissions>
+
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read" />
+  </Rule>
+
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+
+  <!-- Version 1.1 overrides — ribbon button + SSO + run-time
+       permissions. The MessageReadCommandSurface is where the
+       "Save to VaultDMS" button lives. -->
+  <VersionOverrides
+    xmlns="http://schemas.microsoft.com/office/mailappversionoverrides"
+    xsi:type="VersionOverridesV1_0">
+    <VersionOverrides
+      xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1"
+      xsi:type="VersionOverridesV1_1">
+
+      <!-- SSO via Microsoft Entra ID. Resource = the VaultDMS API
+           app registration in Entra (Application (client) ID).
+           Scope = openid + profile + email (we exchange the token
+           server-side for a VaultDMS session, so the Graph scopes
+           don't need to live on this app registration). -->
+      <WebApplicationInfo>
+        <Id>00000000-0000-0000-0000-000000000222</Id>
+        <Resource>api://vaultdms.example.com/00000000-0000-0000-0000-000000000222</Resource>
+        <Scopes>
+          <Scope>openid</Scope>
+          <Scope>profile</Scope>
+          <Scope>email</Scope>
+          <Scope>User.Read</Scope>
+        </Scopes>
+      </WebApplicationInfo>
+
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.10">
+          <bt:Set Name="Mailbox" />
+        </bt:Sets>
+      </Requirements>
+
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <FunctionFile resid="commandsFile.url" />
+
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="vaultdmsGroup">
+                  <Label resid="groupLabel" />
+                  <Control xsi:type="Button" id="saveToVaultDMSButton">
+                    <Label resid="saveBtnLabel" />
+                    <Supertip>
+                      <Title resid="saveBtnTitle" />
+                      <Description resid="saveBtnDesc" />
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16" />
+                      <bt:Image size="32" resid="icon32" />
+                      <bt:Image size="80" resid="icon80" />
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneURL" />
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://addin.vaultdms.example.com/assets/icon-16.png" />
+          <bt:Image id="icon32" DefaultValue="https://addin.vaultdms.example.com/assets/icon-32.png" />
+          <bt:Image id="icon80" DefaultValue="https://addin.vaultdms.example.com/assets/icon-80.png" />
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="commandsFile.url" DefaultValue="https://addin.vaultdms.example.com/commands.html" />
+          <bt:Url id="taskpaneURL"      DefaultValue="https://addin.vaultdms.example.com/taskpane.html" />
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="groupLabel"   DefaultValue="VaultDMS" />
+          <bt:String id="saveBtnLabel" DefaultValue="Save to VaultDMS" />
+          <bt:String id="saveBtnTitle" DefaultValue="Save to VaultDMS" />
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="saveBtnDesc" DefaultValue="Save this email and its attachments to a VaultDMS workspace." />
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>

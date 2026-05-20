@@ -88,7 +88,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
           <div>
             <label className="mb-1 block text-sm font-medium">
               Auth Token
-              {hasExistingToken && <span className="ml-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
+              {hasExistingToken && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
             <Input
               type="password"

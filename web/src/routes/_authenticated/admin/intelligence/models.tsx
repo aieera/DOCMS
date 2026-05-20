@@ -88,10 +88,10 @@ function ModelsPage() {
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="Model registry"
-        description="Per-tenant fine-tuned classifiers (ADR 0060). New versions are trained from your manual corrections."
+        description="Per-tenant fine-tuned classifiers. New versions are trained from your manual corrections."
         actions={
           <Button size="sm" onClick={() => retrain.mutate()} disabled={retrain.isPending}>
-            <Play className="mr-2 h-4 w-4" />
+            <Play className="me-2 h-4 w-4" />
             Trigger retrain
           </Button>
         }
@@ -136,15 +136,15 @@ function ModelsPage() {
           Model versions
         </div>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-muted-foreground">
+          <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Version</th>
               <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2 text-right">Examples</th>
-              <th className="px-4 py-2 text-right">Accuracy</th>
+              <th className="px-4 py-2 text-end">Examples</th>
+              <th className="px-4 py-2 text-end">Accuracy</th>
               <th className="px-4 py-2">Trained</th>
-              <th className="px-4 py-2 text-right"></th>
+              <th className="px-4 py-2 text-end"></th>
             </tr>
           </thead>
           <tbody>
@@ -168,12 +168,12 @@ function ModelsPage() {
                       <div className="mt-1 text-xs text-destructive">{v.error_message}</div>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{v.training_examples_count}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  <td className="px-4 py-2 text-end tabular-nums">{v.training_examples_count}</td>
+                  <td className="px-4 py-2 text-end tabular-nums">
                     {acc !== null ? `${(acc * 100).toFixed(1)}%` : '—'}
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{new Date(v.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-4 py-2 text-end">
                     <div className="flex justify-end gap-1">
                       {v.status === 'candidate' && (
                         <Button
@@ -182,7 +182,7 @@ function ModelsPage() {
                           disabled={promote.isPending}
                           onClick={() => promote.mutate(v.id)}
                         >
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
+                          <CheckCircle2 className="me-1 h-3 w-3" />
                           Promote
                         </Button>
                       )}
@@ -193,7 +193,7 @@ function ModelsPage() {
                           disabled={retire.isPending}
                           onClick={() => retire.mutate(v.id)}
                         >
-                          <XCircle className="mr-1 h-3 w-3" />
+                          <XCircle className="me-1 h-3 w-3" />
                           Retire
                         </Button>
                       )}

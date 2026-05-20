@@ -128,7 +128,7 @@ function TagsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
-                <tr className="text-left">
+                <tr className="text-start">
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Tag</th>
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Documents</th>
                   <th className="px-4 py-2.5"></th>
@@ -147,7 +147,7 @@ function TagsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{t.document_count.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-end">
                       <Button variant="ghost" size="sm" onClick={() => setPendingDelete(t)} aria-label="Delete">
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>

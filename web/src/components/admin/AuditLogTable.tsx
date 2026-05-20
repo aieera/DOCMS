@@ -32,12 +32,13 @@ const columns: ColumnDef<AuditEntry, unknown>[] = [
   {
     accessorKey: 'resource_type',
     header: 'Resource',
-    cell: ({ row }) => (
-      <span className="text-sm">
-        {row.original.resource_type}
-        <span className="text-muted-foreground">/{row.original.resource_id.slice(0, 8)}</span>
-      </span>
-    ),
+    cell: ({ row }) => {
+      const { resource_type, resource_id } = row.original
+      if (!resource_type && !resource_id) {
+        return <span className="text-sm text-muted-foreground">—</span>
+      }
+      return <span className="text-sm">{resource_type || '—'}</span>
+    },
   },
   {
     accessorKey: 'ip_address',

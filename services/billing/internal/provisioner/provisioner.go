@@ -4,6 +4,7 @@ package provisioner
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,16 +17,41 @@ import (
 )
 
 // Provisioner orchestrates tenant creation.
+//
+// ADR 0110 — `clusterRegion` is the VAULTDMS_REGION_ID of the
+// billing service's cluster. Provision() refuses to create a tenant
+// whose requested data_residency_region doesn't match — a UAE
+// tenant must be provisioned by the UAE cluster's billing service,
+// not by the US one. This catches Stripe webhook routing bugs
+// before the org row lands in the wrong region's database.
 type Provisioner struct {
-	repo   *repository.Repository
-	pool   *pgxpool.Pool
-	router *tenant.Router
-	log    zerolog.Logger
+	repo          *repository.Repository
+	pool          *pgxpool.Pool
+	router        *tenant.Router
+	log           zerolog.Logger
+	clusterRegion string
 }
 
 // New creates a Provisioner.
+//
+// Deprecated: prefer NewWithRegion so residency mismatches fail
+// fast at Provision() time. Kept for the two existing callers
+// (billing test harness, dev seeder) that don't care about region.
 func New(repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) *Provisioner {
 	return &Provisioner{repo: repo, pool: pool, router: tenant.NewRouter(rdb), log: log}
+}
+
+// NewWithRegion is the production constructor since ADR 0110.
+// `clusterRegion` is the running cluster's VAULTDMS_REGION_ID;
+// `req.Region` is checked against it before the tenant is created.
+func NewWithRegion(clusterRegion string, repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) *Provisioner {
+	return &Provisioner{
+		repo:          repo,
+		pool:          pool,
+		router:        tenant.NewRouter(rdb),
+		log:           log,
+		clusterRegion: clusterRegion,
+	}
 }
 
 // Provision creates a new tenant end-to-end:
@@ -38,6 +64,25 @@ func New(repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log
 // on first use by their respective services.
 func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest) (*model.ProvisionResult, error) {
 	p.log.Info().Str("org", req.OrgName).Str("plan", req.Plan).Str("region", req.Region).Msg("provisioning tenant")
+
+	// ADR 0110 — refuse to provision a tenant whose residency
+	// doesn't match the cluster running this billing service. The
+	// clusterRegion is empty when the deprecated New() constructor
+	// is used (dev seeds, tests); we skip the check there so the
+	// test harness doesn't grow a residency mock.
+	if p.clusterRegion != "" {
+		want := strings.ToLower(strings.TrimSpace(p.clusterRegion))
+		got := strings.ToLower(strings.TrimSpace(req.Region))
+		if got == "" {
+			return nil, fmt.Errorf("provision: data_residency_region required (cluster=%s)", want)
+		}
+		if got != want {
+			return nil, fmt.Errorf(
+				"provision: residency mismatch — tenant requested %q but cluster serves %q. "+
+					"Route this checkout to the correct region's billing service.",
+				got, want)
+		}
+	}
 
 	// 1. Create organization.
 	tenantID, err := p.repo.CreateOrg(ctx, req.OrgName, req.Plan, req.Region)

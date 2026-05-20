@@ -53,10 +53,14 @@ func (h *Handler) disconnectGoogle(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// connectorOAuthCallback handles vendor-side redirects for ALL native
-// connectors. The provider name rides inside the HMAC-signed state
-// (same pattern as the eSign callback), so this one handler dispatches
-// to the right service method.
+// connectorOAuthCallback handles vendor-side redirects for ALL
+// native connectors. The provider name rides inside the HMAC-signed
+// state (same pattern as the eSign callback), so this one handler
+// dispatches to the right service method.
+//
+// Layout of `state`:  <tenant_id>.<provider>.<hmac-hex>
+// We split on '.' just enough to peek at the provider; the full
+// HMAC verification happens inside the service method.
 func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
@@ -64,12 +68,52 @@ func (h *Handler) connectorOAuthCallback(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "code and state required")
 		return
 	}
-	// Today only google; the dispatch will grow as Salesforce / M365
-	// / ServiceNow / Workday / NetSuite / QuickBooks / Xero land.
-	target, err := h.svc.HandleGoogleOAuthCallback(r.Context(), code, state)
+	// Peek the provider out of the state without trusting it — the
+	// service method re-validates the HMAC before doing anything
+	// stateful.
+	provider := peekProviderFromState(state)
+
+	var target string
+	var err error
+	switch provider {
+	case "google":
+		target, err = h.svc.HandleGoogleOAuthCallback(r.Context(), code, state)
+	case "m365":
+		target, err = h.svc.HandleM365OAuthCallback(r.Context(), code, state)
+	default:
+		writeError(w, http.StatusBadRequest, "unknown connector in state")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// peekProviderFromState extracts the middle segment of the connector
+// state without trusting it. Returns "" when the state is malformed —
+// the dispatcher then 400s, which is the right outcome for any state
+// that doesn't roundtrip through our signConnectorState() helper.
+func peekProviderFromState(state string) string {
+	first := indexByte(state, '.')
+	if first < 0 {
+		return ""
+	}
+	rest := state[first+1:]
+	second := indexByte(rest, '.')
+	if second < 0 {
+		return ""
+	}
+	return rest[:second]
+}
+
+// indexByte avoids importing "strings" for a one-byte search.
+func indexByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }

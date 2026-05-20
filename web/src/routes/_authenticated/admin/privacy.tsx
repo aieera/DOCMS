@@ -154,7 +154,7 @@ function PrivacyPage() {
                   rel="noreferrer"
                   className="shrink-0 text-sm text-primary"
                 >
-                  <Download className="mr-1 inline h-4 w-4" />
+                  <Download className="me-1 inline h-4 w-4" />
                   Download
                 </a>
               )}

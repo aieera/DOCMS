@@ -52,12 +52,12 @@ function LLMUsagePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/20">
-                <tr className="text-left">
+                <tr className="text-start">
                   <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Model</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Calls</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Input tokens</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Output tokens</th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Cost</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Calls</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Input tokens</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Output tokens</th>
+                  <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -81,10 +81,10 @@ function Row({ row }: { row: LLMUsageRow }) {
   return (
     <tr className="border-t border-border">
       <td className="px-4 py-3 font-mono text-xs">{row.model}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{row.calls.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{row.input_tokens.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{row.output_tokens.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{fmtCost(row.cost_usd)}</td>
+      <td className="px-4 py-3 text-end tabular-nums">{row.calls.toLocaleString()}</td>
+      <td className="px-4 py-3 text-end tabular-nums">{row.input_tokens.toLocaleString()}</td>
+      <td className="px-4 py-3 text-end tabular-nums">{row.output_tokens.toLocaleString()}</td>
+      <td className="px-4 py-3 text-end tabular-nums">{fmtCost(row.cost_usd)}</td>
     </tr>
   )
 }

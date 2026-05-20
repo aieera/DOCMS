@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ChevronRight, Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react'
+import { Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react'
 import { getUsers } from '@/api/admin'
 import type { User } from '@/types/api'
 
@@ -25,6 +25,7 @@ import { Avatar } from '@/components/ui/shadcn/avatar'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 function GroupsPage() {
   const qc = useQueryClient()
@@ -131,7 +132,7 @@ function GroupsPage() {
                       type="button"
                       onClick={() => setSelectedId(g.id)}
                       className={cn(
-                        'flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors',
+                        'flex w-full items-center gap-2 px-3 py-2.5 text-start transition-colors',
                         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
                       )}
@@ -145,7 +146,7 @@ function GroupsPage() {
                           {g.member_count} member{g.member_count === 1 ? '' : 's'} · {formatRelativeTime(g.created_at)}
                         </span>
                       </span>
-                      <ChevronRight className={cn('h-4 w-4 text-muted-foreground transition-opacity', active ? 'opacity-100' : 'opacity-30')} />
+                      <DirectionalIcon name="ChevronRight" className={cn('h-4 w-4 text-muted-foreground transition-opacity', active ? 'opacity-100' : 'opacity-30')} />
                     </button>
                   </li>
                 )
@@ -345,7 +346,7 @@ function UserPicker({
                   type="button"
                   onClick={() => onPick(u)}
                   disabled={isPending}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted disabled:opacity-50"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start hover:bg-muted disabled:opacity-50"
                   data-testid={`member-pick-${u.id}`}
                 >
                   <span className="flex min-w-0 items-center gap-2">

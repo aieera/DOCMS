@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type ImageShapeData } from '@/api/annotations'
+import { useAuthBlob } from '@/lib/useAuthBlob'
 import { AnnotationToolbar, type ImageMode } from './AnnotationToolbar'
 
 interface Props {
@@ -28,6 +29,9 @@ export function ImageAnnotationLayer({ documentId, versionId, imageUrl, canCreat
   const [mode, setMode] = useState<ImageMode | null>(null)
   const [visible, setVisible] = useState(true)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
+  // <img> can't send X-Tenant-ID — fetch via axios into a blob URL so
+  // the bytes load even before the backend's cookie-only fallback ships.
+  const blobUrl = useAuthBlob(imageUrl)
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
 
@@ -98,7 +102,7 @@ export function ImageAnnotationLayer({ documentId, versionId, imageUrl, canCreat
         className={`relative inline-block ${mode ? 'cursor-crosshair' : 'cursor-default'}`}
         data-testid="image-annotation-surface"
       >
-        <img src={imageUrl} alt="" className="block max-w-full select-none" />
+        {blobUrl && <img src={blobUrl} alt="" className="block max-w-full select-none" />}
         {visible && (
           <svg className="absolute inset-0 h-full w-full pointer-events-none" data-testid="image-annotation-overlay">
             {annotations.flatMap((a) =>

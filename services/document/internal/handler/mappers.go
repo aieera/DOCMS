@@ -194,6 +194,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdm
 		TotalSizeBytes:           d.TotalSizeBytes,
 		MimeType:                 d.MimeType,
 		CreatedBy:                d.CreatedBy.String(),
+		CreatedByName:            d.CreatedByName,
 		CreatedAt:                timestamppb.New(d.CreatedAt),
 		UpdatedAt:                timestamppb.New(d.UpdatedAt),
 	}

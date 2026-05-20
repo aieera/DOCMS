@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowRight, CheckCircle2, UserCheck } from 'lucide-react'
+import { CheckCircle2, UserCheck } from 'lucide-react'
 import { isAxiosError } from 'axios'
 
 import {
@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { SignaturePad, detectDeviceKind, type SignaturePadHandle } from '@/components/signatures/SignaturePad'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export const Route = createFileRoute('/_authenticated/sign/in-person/$requestId')({
   component: InPersonSignPage,
@@ -184,7 +185,7 @@ function InPersonSignPage() {
             onClick={() => setHandoff(false)}
             data-testid="in-person-handoff-continue"
           >
-            I'm ready <ArrowRight className="ms-1 h-4 w-4" />
+            I'm ready <DirectionalIcon name="ArrowRight" className="ms-1 h-4 w-4" />
           </Button>
         </section>
       ) : (

@@ -81,7 +81,7 @@ function WorkflowsPage() {
               <li key={def.id}>
                 <button
                   onClick={() => setSelectedId(def.id)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm ${
+                  className={`w-full rounded-md px-3 py-2 text-start text-sm ${
                     active
                       ? 'bg-[var(--color-accent)] text-[var(--color-primary)]'
                       : 'hover:bg-[var(--color-bg-secondary)]'

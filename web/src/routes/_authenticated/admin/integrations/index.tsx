@@ -329,7 +329,7 @@ function IntegrationsIndexPage() {
                   )}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Pull documents from Drive and Gmail attachments per tenant (ADR 0089). Drive/Gmail import lands in a follow-up; OAuth handshake works today.
+                  Pull documents from Drive and Gmail attachments per tenant. Drive/Gmail import lands in a follow-up; OAuth handshake works today.
                 </p>
                 {googleQ.data?.last_sync_at && (
                   <p className="mt-1 text-xs">

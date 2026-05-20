@@ -95,6 +95,16 @@ x-go-env: &go-env
   VAULTDMS_SMTP_USER:     "${VAULTDMS_SMTP_USER:-}"
   VAULTDMS_SMTP_USERNAME: "${VAULTDMS_SMTP_USERNAME:-}"
   VAULTDMS_SMTP_PASSWORD: "${VAULTDMS_SMTP_PASSWORD:-}"
+
+  # ADR 0095 — license JWT. Empty = unlicensed_dev_mode (every feature
+  # implicitly enabled, today's behavior). Set via .env or directly to
+  # an RS256-signed token minted by cmd/license-gen with the matching
+  # private key. Verified at startup + hourly against the public key
+  # embedded in pkg/license/dev_pubkey.go.
+  VAULTDMS_LICENSE_JWT:    "${VAULTDMS_LICENSE_JWT:-}"
+  # VAULTDMS_REQUIRE_LICENSE=true upgrades absent-license to a fatal
+  # startup error (prod posture). Leave unset in dev.
+  VAULTDMS_REQUIRE_LICENSE: "${VAULTDMS_REQUIRE_LICENSE:-}"
   VAULTDMS_SMTP_FROM:     "${VAULTDMS_SMTP_FROM:-noreply@vaultdms.local}"
   VAULTDMS_SMTP_STARTTLS: "${VAULTDMS_SMTP_STARTTLS:-true}"
 
@@ -425,9 +435,13 @@ services:
       AUTH_SERVICE_URL: "http://auth:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
       VAULTDMS_NATS_URL: "nats://nats:4222"
+      # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
+      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
     ports: ["8083:8083"]
     depends_on:
-      redis: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      postgres: { condition: service_healthy }
     # Pure WebSocket server — no HTTP /healthz route. TCP probe on the
     # WS listener is the only app-code-free option and is sufficient to
     # detect "process up and accepting connections".
@@ -533,6 +547,48 @@ services:
       timeout: 12s
       retries: 30
       start_period: 60s
+    restart: unless-stopped
+
+  # Companion to intelligence-worker. Same image, different queue subset:
+  # everything EXCEPT intelligence-ocr. Without this, a single 30-60min
+  # CPU Surya OCR job blocks ocr_quality scoring, lang_detect, classify,
+  # embed, etc. behind it on the solo-pool main worker, so the OCR
+  # review queue stays at 0 forever.
+  intelligence-worker-misc:
+    build:
+      context: services/intelligence
+      dockerfile: Dockerfile
+    container_name: vaultdms-intelligence-worker-misc
+    command:
+      - celery
+      - "-A"
+      - app.worker
+      - worker
+      - "--loglevel=info"
+      - "--pool=solo"
+      - "-Q"
+      - "intelligence,intelligence-embed,intelligence-rag"
+    environment:
+      VAULTDMS_CELERY_BROKER_URL: "redis://redis:6379/1"
+      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      VAULTDMS_NATS_URL: "nats://nats:4222"
+      VAULTDMS_QDRANT_URL: "http://qdrant:6333"
+      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      AWS_ACCESS_KEY_ID: "minioadmin"
+      AWS_SECRET_ACCESS_KEY: "minioadmin"
+      AWS_DEFAULT_REGION: "us-east-1"
+      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
+    depends_on:
+      redis:    { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker inspect ping -t 5 | grep -q pong"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   preview-worker:

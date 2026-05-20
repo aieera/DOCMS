@@ -1,31 +1,21 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import {
-  LayoutDashboard,
-  Search,
-  CheckSquare,
-  Trash2,
-  Settings,
-  PanelLeftClose,
-  PanelLeft,
-  FolderOpen,
-  Bell,
-  Sparkles,
-  Bookmark,
-  UserCog,
-  Database,
-  ChevronsUpDown,
-  type LucideIcon,
-} from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { useDirection } from '@/hooks/useDirection'
+import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Bell, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
+import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
 
 interface NavItem {
   to: string
   icon: LucideIcon
-  label: string
+  // i18n key under common.sidebar.*. The English copy in
+  // public/locales/en/common.json is the source of truth.
+  labelKey: string
   // exact = false means "/admin" matches /admin/users too
   exact?: boolean
   // Restrict the link to a set of roles. Omitted = visible to all.
@@ -36,34 +26,36 @@ interface NavItem {
 }
 
 interface NavGroup {
-  label: string
+  labelKey: string
   items: NavItem[]
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Workspace',
+    labelKey: 'sidebar.workspace',
     items: [
-      { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
-      { to: '/workspaces', icon: FolderOpen, label: 'Workspaces' },
-      { to: '/search', icon: Search, label: 'Search' },
-      { to: '/ask', icon: Sparkles, label: 'Ask' },
-      { to: '/saved-searches', icon: Bookmark, label: 'Saved searches' },
+      { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard', exact: true },
+      { to: '/workspaces', icon: FolderOpen, labelKey: 'sidebar.workspaces' },
+      { to: '/search', icon: Search, labelKey: 'sidebar.search' },
+      { to: '/ask', icon: Sparkles, labelKey: 'sidebar.ask' },
+      { to: '/saved-searches', icon: Bookmark, labelKey: 'sidebar.saved_searches' },
+      // ADR 0104 — clause library.
+      { to: '/clauses',        icon: BookOpen,  labelKey: 'sidebar.clauses' },
     ],
   },
   {
-    label: 'Inbox',
+    labelKey: 'sidebar.inbox',
     items: [
-      { to: '/tasks', icon: CheckSquare, label: 'Tasks' },
-      { to: '/notifications', icon: Bell, label: 'Notifications' },
-      { to: '/trash', icon: Trash2, label: 'Trash' },
+      { to: '/tasks', icon: CheckSquare, labelKey: 'sidebar.tasks' },
+      { to: '/notifications', icon: Bell, labelKey: 'sidebar.notifications' },
+      { to: '/trash', icon: Trash2, labelKey: 'sidebar.trash' },
     ],
   },
   {
-    label: 'Settings',
+    labelKey: 'sidebar.settings',
     items: [
-      { to: '/settings/security', icon: UserCog, label: 'My settings' },
-      { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin', 'owner'] },
+      { to: '/settings/security', icon: UserCog, labelKey: 'sidebar.my_settings' },
+      { to: '/admin', icon: Settings, labelKey: 'sidebar.admin', roles: ['admin', 'owner'] },
     ],
   },
 ]
@@ -75,13 +67,15 @@ function isActive(pathname: string, item: NavItem) {
 }
 
 function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: boolean; pathname: string }) {
+  const { t } = useTranslation('common')
   const active = isActive(pathname, item)
   const Icon = item.icon
+  const label = t(item.labelKey)
   return (
     <Link
       to={item.to}
-      title={collapsed ? item.label : undefined}
-      aria-label={item.label}
+      title={collapsed ? label : undefined}
+      aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
         'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -98,11 +92,11 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
       {active && (
         <span
           aria-hidden
-          className="absolute inset-y-1 start-0 w-0.5 rounded-r-full bg-foreground"
+          className="absolute inset-y-1 start-0 w-0.5 rounded-e-full bg-foreground"
         />
       )}
       <Icon className={cn('h-[18px] w-[18px] shrink-0', active && 'text-foreground')} />
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
 }
@@ -141,7 +135,7 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
     <div className="px-3 pb-2 pt-3">
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/50 px-2.5 py-2 text-left transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/50 px-2.5 py-2 text-start transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
           {user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
@@ -157,11 +151,12 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
 }
 
 function NavGroupBlock({ group, collapsed, pathname }: { group: NavGroup; collapsed: boolean; pathname: string }) {
+  const { t } = useTranslation('common')
   return (
     <div className="space-y-0.5">
       {!collapsed && (
         <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          {group.label}
+          {t(group.labelKey)}
         </div>
       )}
       {group.items.map((item) => (
@@ -169,6 +164,56 @@ function NavGroupBlock({ group, collapsed, pathname }: { group: NavGroup; collap
       ))}
     </div>
   )
+}
+
+// ADR 0100 — smart folders block in the main sidebar. Shows a small
+// section under the Workspace group with each smart folder linking to
+// /search with the saved query prefilled. Hidden entirely when the
+// caller has no smart folders or the sidebar is collapsed.
+function SmartFoldersBlock({ collapsed }: { collapsed: boolean }) {
+  const { t } = useTranslation('common')
+  const { data } = useQuery({
+    queryKey: ['smart-folders'],
+    queryFn: listSmartFolders,
+    staleTime: 30_000,
+    // Don't surface fetch errors here — empty list is the safe default,
+    // and a transient 4xx during the post-login race shouldn't crash
+    // the sidebar.
+    retry: false,
+  })
+  if (collapsed) return null
+  if (!data || data.length === 0) return null
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <Sparkles className="h-3 w-3" />
+        {t('sidebar.smart_folders')}
+      </div>
+      {data.map((sf) => <SmartFolderLink key={sf.id} sf={sf} />)}
+    </div>
+  )
+}
+
+function SmartFolderLink({ sf }: { sf: SavedSearch }) {
+  const Vis = visibilityIcon(sf.tree_visibility)
+  return (
+    <Link
+      to="/search"
+      search={{ q: sf.query, saved: sf.id } as any}
+      className="group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+      data-testid={`smart-folder-${sf.id}`}
+    >
+      <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-500" />
+      <span className="truncate">{sf.name}</span>
+      <Vis className="ms-auto h-3 w-3 opacity-60" aria-label={sf.tree_visibility ?? 'private'} />
+    </Link>
+  )
+}
+
+function visibilityIcon(v?: TreeVisibility) {
+  if (v === 'workspace') return Users
+  if (v === 'public') return Globe
+  return Lock
 }
 
 export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
@@ -189,8 +234,9 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
       <WorkspaceCard collapsed={collapsed} />
       <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4', collapsed && 'px-1.5')}>
         {visibleGroups.map((group) => (
-          <NavGroupBlock key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
+          <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} />
         ))}
+        <SmartFoldersBlock collapsed={collapsed} />
       </nav>
     </div>
   )
@@ -213,15 +259,18 @@ export function AppSidebar() {
 }
 
 // Mobile drawer: triggered by the topbar's menu button. Uses the
-// canonical Sheet (side="left") so it gets the focus-trap, swipe-
-// dismiss, and slide-in animations from the canonical Radix
-// surface — and so the strangler can finally retire the inline
-// Radix Dialog wiring this component used to do.
+// canonical Sheet which gets focus-trap, swipe-dismiss, and slide-in
+// animations from the canonical Radix surface. The drawer side is
+// derived from direction — in RTL the sidebar is the start (=right)
+// edge, so the drawer slides in from the right. The shadcn Sheet
+// `side` prop is physical; we flip it ourselves rather than vendoring
+// a logical-aware fork.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const dir = useDirection()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        side="left"
+        side={dir === 'rtl' ? 'right' : 'left'}
         className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 lg:hidden"
       >
         <SheetTitle className="sr-only">Navigation</SheetTitle>

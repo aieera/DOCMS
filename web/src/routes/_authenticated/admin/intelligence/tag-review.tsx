@@ -153,7 +153,7 @@ function DocumentGroup({
           >
             {documentId.slice(0, 8)}…
           </a>
-          <span className="ml-2 text-muted-foreground">{items.length} pending</span>
+          <span className="ms-2 text-muted-foreground">{items.length} pending</span>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={acceptAll}>
@@ -175,7 +175,7 @@ function DocumentGroup({
               <Badge variant="outline" className="text-[10px] uppercase">
                 {s.source}
               </Badge>
-              <span className="w-12 text-right tabular-nums text-muted-foreground">{pct}%</span>
+              <span className="w-12 text-end tabular-nums text-muted-foreground">{pct}%</span>
               <Button
                 size="sm"
                 variant="ghost"

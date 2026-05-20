@@ -34,6 +34,10 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Post("/login", h.Login)
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
+		// ADR 0112 — Outlook add-in SSO exchange. Public on purpose:
+		// this IS the entry point that establishes auth, and the body
+		// carries an Entra ID token we validate via Graph.
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/m365/exchange", h.ExchangeM365)
 
 		// ADR 0063 — multi-method MFA, public (post-password,
 		// gated by mfa_session_token).
@@ -78,6 +82,8 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Use(vdmsmw.CSRFDoubleSubmit())
 
 			r.Get("/me", h.Me)
+			// ADR 0106 — self-service locale picker (LanguageSelector).
+			r.Patch("/me/locale", h.UpdateMyLocale)
 			r.Post("/logout", h.Logout)
 
 			r.Route("/sessions", func(r chi.Router) {

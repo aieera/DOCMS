@@ -78,6 +78,25 @@ func (p *StorageProxy) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/storage/downloads/{document_id}/{version_id}", guard(p.download))
 }
 
+// RegisterDownloadAlias attaches a single route — the document-style
+// download URL the frontend viewers (ImageAnnotationLayer,
+// VideoAnnotationLayer, CoauthorEditor) plus onlyoffice_handler.go and
+// redaction_review_handler.go all generate. Same `download` handler,
+// different path shape, mounted on the caller-supplied mux so it can
+// live outside the /api/v1/storage/ prefix.
+func (p *StorageProxy) RegisterDownloadAlias(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/download", func(w http.ResponseWriter, r *http.Request) {
+		if p.client == nil {
+			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"type":    "Unavailable",
+				"message": "storage service unreachable",
+			})
+			return
+		}
+		p.download(w, r)
+	})
+}
+
 func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	// Accepts the frontend's historical field name sha256_hash as well
 	// as the proto-native checksum_sha256. workspace_id / folder_id are

@@ -94,13 +94,13 @@ export function CompliancePanel({ documentId }: Props) {
         <div className="flex items-center gap-2 text-sm font-medium">
           <ShieldAlert className="h-4 w-4 text-violet-500" />
           Compliance scan
-          <span aria-hidden className={`ml-2 inline-block h-2 w-2 rounded-full ${RISK_DOT[risk] ?? 'bg-zinc-300'}`} />
+          <span aria-hidden className={`ms-2 inline-block h-2 w-2 rounded-full ${RISK_DOT[risk] ?? 'bg-zinc-300'}`} />
           <span className="uppercase tracking-wide">{risk}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           <span>scanned {new Date(s.scanned_at).toLocaleString()}</span>
           <Button size="sm" variant="ghost" disabled={rescan.isPending} onClick={() => rescan.mutate()}>
-            <RefreshCw className="mr-1 h-3 w-3" />
+            <RefreshCw className="me-1 h-3 w-3" />
             Rescan
           </Button>
         </div>
@@ -152,7 +152,7 @@ function FindingRow({
       <div className="flex items-center gap-3">
         <span aria-hidden className={`h-2 w-2 rounded-full ${RISK_DOT[f.risk_level]}`} />
         <span className="w-32 truncate font-mono">{f.entity_type}</span>
-        <span className="w-12 text-right tabular-nums text-zinc-500">{f.occurrence_count}</span>
+        <span className="w-12 text-end tabular-nums text-zinc-500">{f.occurrence_count}</span>
         <span className="w-24 truncate text-zinc-500">
           {f.page_numbers.length > 0 ? `pp. ${f.page_numbers.join(', ')}` : '—'}
         </span>

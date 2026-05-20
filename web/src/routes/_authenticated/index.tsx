@@ -1,17 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Bell,
-  CheckSquare,
-  ChevronRight,
-  Clock,
-  FolderOpen,
-  Search,
-  Sparkles,
-  Upload,
-  Workflow,
-  type LucideIcon,
-} from 'lucide-react'
+import { Bell, CheckSquare, Clock, FolderOpen, Search, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
@@ -21,27 +10,15 @@ import { listMyTasks, type Task } from '@/api/tasks'
 import { getWorkspaces } from '@/api/workspaces'
 import { getUnreadCount, getNotifications } from '@/api/notifications'
 import { cn } from '@/lib/cn'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
-  const tenantId = useAuthStore((s) => s.tenantId)
   const greeting = greet(user?.display_name?.split(' ')[0])
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title={greeting}
-        description={
-          tenantId ? (
-            <>
-              Workspace overview ·{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{tenantId.slice(0, 8)}</code>
-            </>
-          ) : (
-            'Workspace overview'
-          )
-        }
-      />
+      <PageHeader title={greeting} description="Workspace overview" />
 
       <KpiRow />
       <QuickActions />
@@ -138,12 +115,17 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
           <Icon className="h-[1.1rem] w-[1.1rem]" />
         </span>
         {href && (
-          <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         )}
       </div>
       <p className="mt-4 text-sm font-medium text-muted-foreground">{label}</p>
-      <div className="mt-1 text-3xl font-semibold tracking-tight">
-        {value === undefined ? <Skeleton className="h-8 w-16" /> : value}
+      {/* min-h-9 matches the text-3xl line-box (line-height: 2.25rem)
+          so the value row reserves the same vertical space whether
+          we render the skeleton or the number. Without this the row
+          grows 4px when the query resolves, pushing the hint down
+          and causing measurable CLS on slow connections. */}
+      <div className="mt-1 min-h-9 text-3xl font-semibold tracking-tight">
+        {value === undefined ? <Skeleton className="h-9 w-16" /> : value}
       </div>
       {hint && (
         <p
@@ -231,7 +213,7 @@ function OpenTasksCard() {
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/tasks' })}>
           View all
-          <ChevronRight className="ml-1 h-3.5 w-3.5" />
+          <DirectionalIcon name="ChevronRight" className="ms-1 h-3.5 w-3.5" />
         </Button>
       </div>
       <div className="divide-y divide-border">
@@ -326,7 +308,7 @@ function RecentActivityCard() {
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/notifications' })}>
           View all
-          <ChevronRight className="ml-1 h-3.5 w-3.5" />
+          <DirectionalIcon name="ChevronRight" className="ms-1 h-3.5 w-3.5" />
         </Button>
       </div>
       <div className="divide-y divide-border">

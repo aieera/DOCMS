@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  VaultDMS — Word add-in manifest (ADR 0113).
+
+  Manifest format: legacy XML, xsi:type="TaskPaneApp" (the same
+  schema we use for the Outlook add-in). Word Online / desktop /
+  Mac / new-Outlook all accept this format; the unified JSON
+  manifest is Word-on-the-web only as of mid-2026, and we want a
+  single artifact across hosts.
+
+  Placeholders the operator MUST replace before sideloading:
+    * <Id>                     — generate via `uuidgen` (one per
+                                  environment so dev/staging/prod
+                                  add-ins don't collide in the
+                                  centralized deployment catalog).
+    * https://addin.vaultdms… — the HTTPS host serving the static
+                                  bundle (production: CDN; dev:
+                                  HTTPS loopback from npm run dev).
+    * The Entra Application ID in <WebApplicationInfo> — same
+                                  app the Outlook add-in uses for
+                                  SSO, OR a sibling app if you want
+                                  to rotate secrets independently.
+
+  Two ribbon actions per the prompt:
+    * "Open from VaultDMS" — opens the task pane.
+    * "Save back to VaultDMS" — also opens the task pane.
+  Both reuse the same task pane URL (different ?action= query
+  string) so the UI can branch on intent without us shipping two
+  separate bundles. A future Phase-2 split into a UI-less
+  "save with the current pane settings" command lives in
+  commands.ts.
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <!-- Per-environment GUID — see file header. -->
+  <Id>00000000-0000-0000-0000-000000000113</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>VaultDMS</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="VaultDMS for Word" />
+  <Description DefaultValue="Open VaultDMS documents in Word and save changes back as new versions." />
+  <IconUrl              DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-64.png" />
+  <HighResolutionIconUrl DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-128.png" />
+  <SupportUrl           DefaultValue="https://docs.vaultdms.example.com/word-addin" />
+
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+  <Requirements>
+    <Sets>
+      <!-- WordApi 1.4 is the minimum that gives us Word.run() +
+           getOoxml; getFileAsync needs nothing newer. Older clients
+           silently refuse to install rather than break at runtime. -->
+      <Set Name="WordApi" MinVersion="1.4" />
+    </Sets>
+  </Requirements>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html" />
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides
+    xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+    xsi:type="VersionOverridesV1_0">
+    <VersionOverrides
+      xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides/1.1"
+      xsi:type="VersionOverridesV1_1">
+
+      <WebApplicationInfo>
+        <Id>00000000-0000-0000-0000-000000000222</Id>
+        <Resource>api://vaultdms.example.com/00000000-0000-0000-0000-000000000222</Resource>
+        <Scopes>
+          <Scope>openid</Scope>
+          <Scope>profile</Scope>
+          <Scope>email</Scope>
+          <Scope>User.Read</Scope>
+        </Scopes>
+      </WebApplicationInfo>
+
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.4">
+          <bt:Set Name="WordApi" />
+        </bt:Sets>
+      </Requirements>
+
+      <Hosts>
+        <Host xsi:type="Document">
+          <DesktopFormFactor>
+            <FunctionFile resid="commandsFile.url" />
+
+            <!-- Custom ribbon group with two buttons. Both point at
+                 the same task pane URL but with a query-string action
+                 hint so the UI can land directly on the right view. -->
+            <ExtensionPoint xsi:type="PrimaryCommandSurface">
+              <CustomTab id="vaultdmsTab">
+                <Group id="vaultdmsGroup">
+                  <Label resid="groupLabel" />
+                  <Icon>
+                    <bt:Image size="16" resid="icon16" />
+                    <bt:Image size="32" resid="icon32" />
+                    <bt:Image size="80" resid="icon80" />
+                  </Icon>
+
+                  <Control xsi:type="Button" id="openFromVaultDMSButton">
+                    <Label resid="openBtnLabel" />
+                    <Supertip>
+                      <Title resid="openBtnLabel" />
+                      <Description resid="openBtnDesc" />
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16" />
+                      <bt:Image size="32" resid="icon32" />
+                      <bt:Image size="80" resid="icon80" />
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneOpenURL" />
+                    </Action>
+                  </Control>
+
+                  <Control xsi:type="Button" id="saveToVaultDMSButton">
+                    <Label resid="saveBtnLabel" />
+                    <Supertip>
+                      <Title resid="saveBtnLabel" />
+                      <Description resid="saveBtnDesc" />
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16" />
+                      <bt:Image size="32" resid="icon32" />
+                      <bt:Image size="80" resid="icon80" />
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneSaveURL" />
+                    </Action>
+                  </Control>
+                </Group>
+                <Label resid="customTabLabel" />
+              </CustomTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-16.png" />
+          <bt:Image id="icon32" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-32.png" />
+          <bt:Image id="icon80" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-80.png" />
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="commandsFile.url"  DefaultValue="https://addin.vaultdms.example.com/word/commands.html" />
+          <bt:Url id="taskpaneOpenURL"   DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html?action=open" />
+          <bt:Url id="taskpaneSaveURL"   DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html?action=save" />
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="customTabLabel" DefaultValue="VaultDMS" />
+          <bt:String id="groupLabel"     DefaultValue="VaultDMS" />
+          <bt:String id="openBtnLabel"   DefaultValue="Open from VaultDMS" />
+          <bt:String id="saveBtnLabel"   DefaultValue="Save back to VaultDMS" />
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="openBtnDesc" DefaultValue="Search and open a document from VaultDMS into Word." />
+          <bt:String id="saveBtnDesc" DefaultValue="Save the current document back to VaultDMS as a new version." />
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>

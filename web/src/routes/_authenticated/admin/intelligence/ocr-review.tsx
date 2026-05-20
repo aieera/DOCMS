@@ -46,7 +46,7 @@ function OcrReviewPage() {
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="OCR review queue"
-        description="Documents whose OCR pipeline flagged at least one page for human review (ADR 0057)."
+        description="Documents whose OCR pipeline flagged at least one page for human review."
       />
 
       {stats && (
@@ -70,7 +70,7 @@ function OcrReviewPage() {
                   setPage(0)
                 }}
                 className={[
-                  'rounded border px-3 py-2 text-left',
+                  'rounded border px-3 py-2 text-start',
                   grade === g
                     ? 'border-violet-500 bg-violet-50 dark:bg-violet-950'
                     : 'border-border',
@@ -96,12 +96,12 @@ function OcrReviewPage() {
           )}
         </div>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase text-muted-foreground">
+          <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-2">Document</th>
               <th className="px-4 py-2">Grade</th>
-              <th className="px-4 py-2 text-right">Avg score</th>
-              <th className="px-4 py-2 text-right">Pages flagged</th>
+              <th className="px-4 py-2 text-end">Avg score</th>
+              <th className="px-4 py-2 text-end">Pages flagged</th>
               <th className="px-4 py-2">Scored</th>
             </tr>
           </thead>
@@ -118,8 +118,8 @@ function OcrReviewPage() {
                 <td className="px-4 py-2">
                   <Badge variant={GRADE_VARIANT[it.quality_grade]}>{it.quality_grade}</Badge>
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums">{(it.avg_score * 100).toFixed(0)}%</td>
-                <td className="px-4 py-2 text-right tabular-nums">
+                <td className="px-4 py-2 text-end tabular-nums">{(it.avg_score * 100).toFixed(0)}%</td>
+                <td className="px-4 py-2 text-end tabular-nums">
                   {it.pages_needing_review}/{it.total_pages}
                 </td>
                 <td className="px-4 py-2 text-muted-foreground">{new Date(it.scored_at).toLocaleString()}</td>

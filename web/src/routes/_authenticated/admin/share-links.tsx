@@ -114,7 +114,7 @@ function ShareLinksPage() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead className="bg-muted/40 text-left">
+                    <thead className="bg-muted/40 text-start">
                       <tr>
                         <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Status</th>
                         <th className="px-3 py-2 font-medium uppercase tracking-wider text-muted-foreground">Perms</th>
@@ -144,7 +144,7 @@ function ShareLinksPage() {
                           <td className="px-3 py-2 text-muted-foreground">{l.expires_at ? formatRelativeTime(l.expires_at) : 'never'}</td>
                           <td className="px-3 py-2 text-muted-foreground">{l.accessed_at ? formatRelativeTime(l.accessed_at) : 'never'}</td>
                           <td className="px-3 py-2 text-muted-foreground">{formatRelativeTime(l.created_at)}</td>
-                          <td className="px-3 py-2 text-right">
+                          <td className="px-3 py-2 text-end">
                             {l.is_active && (
                               <Button variant="ghost" size="sm" onClick={() => revoke.mutate(l.id)} disabled={revoke.isPending} aria-label="Revoke">
                                 <Trash2 className="h-3 w-3 text-destructive" />

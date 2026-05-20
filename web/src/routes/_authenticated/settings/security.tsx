@@ -21,6 +21,7 @@ import {
   type SessionRow,
 } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
+import { formatShortId } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -65,7 +66,7 @@ function ProfileSection() {
         <Field label="Display name" icon={<UserIcon  className="h-3 w-3" />} value={user?.display_name} />
         <Field label="Email"        icon={<Mail      className="h-3 w-3" />} value={user?.email} />
         <Field label="Role"         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
-        <Field label="Tenant"       icon={<Building2 className="h-3 w-3" />} value={user?.tenant_id ? user.tenant_id.slice(0, 8) + '…' : '—'} />
+        <Field label="Tenant ID"    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
       </dl>
       <p className="mt-3 text-xs text-muted-foreground">
         Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
@@ -74,13 +75,26 @@ function ProfileSection() {
   )
 }
 
-function Field({ label, value, icon }: { label: string; value?: string; icon?: React.ReactNode }) {
+function Field({ label, value, icon, mono, title }: {
+  label: string
+  value?: string
+  icon?: React.ReactNode
+  mono?: boolean
+  /** Tooltip — useful when a mono short-ID is shown but the underlying
+   *  full UUID is still worth surfacing on hover for copy/support. */
+  title?: string
+}) {
   return (
     <div className="flex flex-col">
       <dt className="flex items-center gap-1 text-xs text-muted-foreground">
         {icon}{label}
       </dt>
-      <dd className="mt-0.5 break-words font-medium">{value || <em className="text-muted-foreground">not set</em>}</dd>
+      <dd
+        className={`mt-0.5 break-all ${mono ? 'font-mono text-xs' : 'break-words font-medium'}`}
+        title={title}
+      >
+        {value || <em className="text-muted-foreground">not set</em>}
+      </dd>
     </div>
   )
 }
@@ -248,8 +262,10 @@ function PasskeyRow({ p, onRemove, removing }: {
         }}
         disabled={removing}
         data-testid={`remove-passkey-${p.credential_id}`}
+        aria-label={`Remove passkey: ${p.name}`}
+        title={`Remove passkey: ${p.name}`}
       >
-        <Trash2 className="h-4 w-4 text-destructive" />
+        <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
       </Button>
     </li>
   )
@@ -347,8 +363,14 @@ function SessionRowView({ s, onRevoke, revoking }: {
         </p>
       </div>
       {!s.current && (
-        <Button variant="ghost" onClick={onRevoke} disabled={revoking}>
-          <Trash2 className="h-4 w-4 text-destructive" />
+        <Button
+          variant="ghost"
+          onClick={onRevoke}
+          disabled={revoking}
+          aria-label="Revoke session"
+          title="Revoke session"
+        >
+          <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
         </Button>
       )}
     </li>

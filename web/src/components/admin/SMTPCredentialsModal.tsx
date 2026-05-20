@@ -117,7 +117,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
           <div>
             <label className="mb-1 block text-sm font-medium">
               Password
-              {hasExistingPassword && <span className="ml-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
+              {hasExistingPassword && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
             <Input
               type="password"

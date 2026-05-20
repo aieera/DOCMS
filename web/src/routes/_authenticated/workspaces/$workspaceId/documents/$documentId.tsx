@@ -11,8 +11,10 @@ import {
   Eraser,
   FileText,
   History,
+  ArrowLeftRight,
   LayoutGrid,
   MessageSquare,
+  Network,
   RefreshCw,
   Share,
 } from 'lucide-react'
@@ -30,8 +32,12 @@ import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
 import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
+import { RealtimePresence } from '@/components/documents/RealtimePresence'
+import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
+import { AuditVisualization } from '@/components/documents/AuditVisualization'
 import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
 import { ShareDialog } from '@/components/documents/ShareDialog'
+import { CompareDialog } from '@/components/documents/CompareDialog'
 import { VersionHistory } from '@/components/documents/VersionHistory'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -41,7 +47,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { formatFileSize, formatDateTime, lifecycleStateLabel } from '@/lib/formatters'
+import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 import { CreateTaskDialog } from '@/routes/_authenticated/tasks'
 import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
@@ -58,7 +64,7 @@ import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 
-type TabKey = 'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'redaction' | 'activity'
+type TabKey = 'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'redaction' | 'activity'
 
 const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'preview', label: 'Preview', icon: FileText },
@@ -67,6 +73,8 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'qa', label: 'Q&A', icon: MessageSquare },
   { key: 'compliance', label: 'Compliance', icon: AlertCircle },
   { key: 'entities', label: 'Entities', icon: FileText },
+  // ADR 0099 — contract intelligence graph.
+  { key: 'relationships', label: 'Relationships', icon: Network },
   { key: 'activity', label: 'Activity', icon: History },
   { key: 'redaction', label: 'Redaction', icon: Eraser },
 ]
@@ -193,7 +201,11 @@ function DocumentDetailPage() {
           </TabPanel>
 
           <TabPanel current={tab} value="text">
-            <OCRPanel documentId={documentId} versionId={versionId} />
+            <OCRPanel
+              documentId={documentId}
+              versionId={versionId}
+              uploadedAt={doc.created_at}
+            />
           </TabPanel>
 
           <TabPanel current={tab} value="layout">
@@ -212,6 +224,12 @@ function DocumentDetailPage() {
             <EntitiesPanel documentId={documentId} versionId={versionId} />
           </TabPanel>
 
+          {/* ADR 0099 — contract intelligence graph. Self-empties for
+              non-contract docs (no edges → empty-state message). */}
+          <TabPanel current={tab} value="relationships">
+            <RelationshipsGraph documentId={documentId} workspaceId={workspaceId} />
+          </TabPanel>
+
           <TabPanel current={tab} value="redaction">
             <RedactionReviewPanel
               documentId={documentId}
@@ -221,11 +239,10 @@ function DocumentDetailPage() {
           </TabPanel>
 
           <TabPanel current={tab} value="activity">
-            {/* ADR 0074 — single GraphQL query merges audit + comment +
-                workflow + signature streams into one chronological
-                feed. Replaces the multi-fetch + client-side merge
-                shape this tab would otherwise need. */}
-            <ActivityFeed documentId={documentId} />
+            {/* ADR 0074 — chronological feed (existing). ADR 0103 —
+                Insights toggle adds the Sankey + heatmap + bars views
+                on top of the same audit_events data. */}
+            <ActivityTabContent documentId={documentId} />
           </TabPanel>
 
           {/* OCR quality lives below the layout/text content because it
@@ -365,6 +382,7 @@ function DocumentSidebar({
 }) {
   const [taskOpen, setTaskOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   return (
     <aside className="space-y-4">
@@ -393,6 +411,16 @@ function DocumentSidebar({
         >
           <CheckSquare className="h-4 w-4" /> Create task
         </Button>
+        {/* ADR 0101 — cross-format compare. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => setCompareOpen(true)}
+          data-testid="open-compare-dialog"
+        >
+          <ArrowLeftRight className="h-4 w-4" /> Compare with…
+        </Button>
       </Card>
       {taskOpen && (
         <CreateTaskDialog
@@ -406,6 +434,12 @@ function DocumentSidebar({
         onOpenChange={setShareOpen}
         documentId={documentId}
         documentTitle={doc.title}
+      />
+      <CompareDialog
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
+        baseDocumentId={documentId}
+        baseDocumentTitle={doc.title ?? 'document'}
       />
       <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
         <SheetContent side="right" className="w-[440px] sm:max-w-md">
@@ -451,6 +485,9 @@ function DocumentSidebar({
           canCreate={true}
         />
       )}
+
+      {/* ADR 0096 — live presence: who else is viewing this doc. */}
+      <RealtimePresence documentId={documentId} />
 
       {/* ADR 0066 — comments side panel. */}
       <CommentsPanel documentId={documentId} />
@@ -520,7 +557,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-center justify-between gap-3">
       <dt className="text-xs uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 flex-1 truncate text-right text-sm">{children}</dd>
+      <dd className="min-w-0 flex-1 truncate text-end text-sm">{children}</dd>
     </div>
   )
 }
@@ -608,7 +645,15 @@ function OCRFailureBanner({ documentId, versionId }: { documentId: string; versi
   )
 }
 
-function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: string }) {
+// STUCK_OCR_MINUTES — threshold above which a "running" OCR status
+// is considered stuck. Surya's slowest path is ~30s/page; even a
+// 200-page scan finishes inside 30 min. Anything still "running"
+// past that is either a worker drop or a poisoned event, and we
+// surface a prominent recovery affordance instead of the soft
+// "OCR is running…" message.
+const STUCK_OCR_MINUTES = 30
+
+function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; versionId?: string; uploadedAt?: string }) {
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
@@ -714,13 +759,59 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
       </Card>
 
       {pages.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-muted-foreground">
-          {status === 'pending' && 'OCR has not started yet.'}
-          {status === 'running' && 'OCR is running — text will appear here when complete.'}
-          {status === 'failed' && 'OCR failed. Check the runbook or re-run.'}
-          {status === 'completed' && 'OCR completed but no text was extracted.'}
-          {status === 'unknown' && 'No OCR results available.'}
-        </Card>
+        (() => {
+          // Stuck detection: running status + uploaded long enough ago
+          // that the worker should have either finished or failed.
+          // Falls back to the neutral copy if we don't know upload
+          // time, which keeps the legacy behavior intact.
+          const elapsedMin = uploadedAt
+            ? Math.floor((Date.now() - new Date(uploadedAt).getTime()) / 60_000)
+            : null
+          const isStuck = status === 'running' && elapsedMin != null && elapsedMin > STUCK_OCR_MINUTES
+          if (isStuck) {
+            return (
+              <Card
+                className="flex flex-col items-start gap-3 border-warning/40 bg-warning/5 p-4 text-sm"
+                data-testid="ocr-stuck"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  <div>
+                    <p className="font-medium">OCR appears to be stuck</p>
+                    <p className="text-muted-foreground">
+                      OCR started {formatRelativeTime(uploadedAt!)} and hasn&apos;t reported back.
+                      The worker may have dropped this job — click Re-run OCR to requeue.
+                    </p>
+                  </div>
+                </div>
+                {canRerun && (
+                  <Button size="sm" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
+                    {rerun.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+                    Re-run OCR
+                  </Button>
+                )}
+              </Card>
+            )
+          }
+          return (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              {status === 'pending' && 'OCR has not started yet.'}
+              {status === 'running' && (
+                <>
+                  OCR is running — text will appear here when complete.
+                  {elapsedMin != null && (
+                    <div className="mt-1 text-xs text-muted-foreground/70">
+                      Started {formatRelativeTime(uploadedAt!)}
+                    </div>
+                  )}
+                </>
+              )}
+              {status === 'failed' && 'OCR failed. Check the runbook or re-run.'}
+              {status === 'completed' && 'OCR completed but no text was extracted.'}
+              {status === 'unknown' && 'No OCR results available.'}
+            </Card>
+          )
+        })()
       ) : (
         <div className="space-y-2">
           {pages.map((p, idx) => {
@@ -735,12 +826,12 @@ function OCRPanel({ documentId, versionId }: { documentId: string; versionId?: s
               >
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
                   Page {p.page_number}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  <span className="ms-2 text-xs font-normal text-muted-foreground">
                     · {(p.confidence * 100).toFixed(1)}% conf
                     {p.processing_time_ms ? ` · ${p.processing_time_ms}ms` : ''}
                     {p.language ? ` · ${p.language}` : ''}
                     {highlight && pageEntities.length > 0 && (
-                      <span className="ml-2">· {pageEntities.length} entit{pageEntities.length === 1 ? 'y' : 'ies'}</span>
+                      <span className="ms-2">· {pageEntities.length} entit{pageEntities.length === 1 ? 'y' : 'ies'}</span>
                     )}
                   </span>
                 </summary>
@@ -798,10 +889,14 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
     staleTime: 60 * 1000,
     retry: 1,
   })
-  const forceSurya = useMutation({
+  // Engine choice ('surya') is an implementation detail kept inside
+  // the mutation; the user-facing surface ("Run full layout analysis")
+  // doesn't mention it. If the OCR pipeline swaps engines later this
+  // call site changes one string; no copy update needed.
+  const runFullLayout = useMutation({
     mutationFn: () => rerunOCR(documentId, versionId!, { forceEngine: 'surya' }),
-    onSuccess: () => { toast.success('Re-running OCR with Surya — boxes will appear when complete'); qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] }) },
-    onError: () => toast.error('Force-Surya rerun failed'),
+    onSuccess: () => { toast.success('Running full layout analysis — boxes will appear when complete'); qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] }) },
+    onError: () => toast.error('Layout analysis rerun failed'),
   })
 
   if (!isPdf) return <Card className="p-8 text-center text-sm text-muted-foreground">Layout view is only available for PDF documents.</Card>
@@ -820,18 +915,18 @@ function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; ve
       {totalBoxes === 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
           <span>
-            Layout analysis was skipped — this PDF already had a clean text layer, so we used the fast path instead. Click <strong>Force Surya</strong> to run full layout analysis (~1&nbsp;min).
+            Layout analysis was skipped — this PDF already had a clean text layer, so we used the fast path instead. Click <strong>Run full layout analysis</strong> to detect headers, tables, and bounding boxes (~1&nbsp;min).
           </span>
           {canRerun && (
             <Button
               variant="default"
               size="sm"
-              onClick={() => forceSurya.mutate()}
-              disabled={forceSurya.isPending}
-              title="Re-run with the Surya engine to detect headers, tables, and bounding boxes."
+              onClick={() => runFullLayout.mutate()}
+              disabled={runFullLayout.isPending}
+              title="Detect headers, tables, and bounding boxes for this PDF."
             >
-              {forceSurya.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-              Force Surya
+              {runFullLayout.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+              Run full layout analysis
             </Button>
           )}
         </div>
@@ -874,22 +969,51 @@ function uploaderTooltip(doc: { created_by_name?: string; created_by_email?: str
   return ''
 }
 
+// ActivityTabContent — ADR 0103 wrapper that lets the user switch
+// between the chronological feed (existing ADR 0074 view) and the
+// new "Insights" viz (Sankey + heatmap + bars).
+function ActivityTabContent({ documentId }: { documentId: string }) {
+  const [mode, setMode] = useState<'feed' | 'insights'>('feed')
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1 border-b border-border pb-2 text-xs">
+        <button
+          onClick={() => setMode('feed')}
+          className={`rounded-full border px-2 py-0.5 ${mode === 'feed' ? 'border-foreground' : 'border-border text-muted-foreground'}`}
+        >
+          Feed
+        </button>
+        <button
+          onClick={() => setMode('insights')}
+          className={`rounded-full border px-2 py-0.5 ${mode === 'insights' ? 'border-foreground' : 'border-border text-muted-foreground'}`}
+        >
+          Insights
+        </button>
+      </div>
+      {mode === 'feed' ? <ActivityFeed documentId={documentId} /> : <AuditVisualization documentId={documentId} />}
+    </div>
+  )
+}
+
 // ActivityFeed renders the chronological event stream (versions,
 // comments, workflow transitions, signatures, audit hits) for one
 // document. Backed by the ADR 0074 ActivityForDocument GraphQL
 // operation — the merge happens server-side so this component is a
 // thin renderer.
 function ActivityFeed({ documentId }: { documentId: string }) {
-  const { data, isLoading, isError, error } = useActivityForDocument(documentId)
+  const { data, isLoading, isError, error, refetch, isFetching } = useActivityForDocument(documentId)
   if (isLoading) return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
   if (isError) {
     return (
-      <Card className="flex items-start gap-2 p-4 text-sm" data-testid="activity-error">
-        <AlertCircle className="mt-0.5 h-4 w-4 text-destructive" />
-        <div>
+      <Card className="flex items-start gap-3 p-4 text-sm" data-testid="activity-error">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 flex-1">
           <p className="font-medium">Could not load activity</p>
           <p className="text-muted-foreground">{error instanceof Error ? error.message : String(error)}</p>
         </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+          {isFetching ? 'Retrying…' : 'Retry'}
+        </Button>
       </Card>
     )
   }

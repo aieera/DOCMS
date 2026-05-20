@@ -106,7 +106,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
         <Sparkles className="h-4 w-4 text-violet-500" />
         Suggested tags
         {pending.length > 0 && (
-          <span className="ml-1 text-xs text-zinc-500">({pending.length} pending)</span>
+          <span className="ms-1 text-xs text-zinc-500">({pending.length} pending)</span>
         )}
       </div>
 
@@ -118,7 +118,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
               <Badge key={s.id} variant="default" className="gap-1">
                 <Check className="h-3 w-3" />
                 {s.tag_name}
-                <span className="ml-1 text-[10px] opacity-70">
+                <span className="ms-1 text-[10px] opacity-70">
                   {Math.round(s.confidence * 100)}% · {sourceLabel(s.source)}
                 </span>
               </Badge>
@@ -143,7 +143,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                   <span className="flex-1 truncate text-sm" title={s.tag_name}>
                     {s.tag_name}
                   </span>
-                  <span className="w-12 text-right text-xs tabular-nums text-zinc-500">{pct}%</span>
+                  <span className="w-12 text-end text-xs tabular-nums text-zinc-500">{pct}%</span>
                   <Badge variant="outline" className="text-[10px]">
                     {sourceLabel(s.source)}
                   </Badge>

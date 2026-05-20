@@ -113,7 +113,7 @@ func main() {
 		}
 	}()
 
-	hs := health.NewServer(pool, nil, nc, nil)
+	hs := health.NewServerWithMeta("mcp-server", cfg.Region, pool, nil, nc, nil)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")

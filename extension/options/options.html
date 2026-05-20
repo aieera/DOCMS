@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VaultDMS — Options</title>
+  <style>
+    body { font-family: system-ui; padding: 1.5rem; max-width: 480px; }
+    label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
+    input[type=url] { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 8px 14px; }
+    #status { margin-top: 10px; color: #2a7; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <h1>VaultDMS settings</h1>
+  <label for="dms-base">DMS base URL</label>
+  <input id="dms-base" type="url" placeholder="https://dms.your-org.example">
+  <p style="color:#888;font-size:12px;">The extension will only call this origin. After changing this, sign out and sign back in.</p>
+  <button id="save">Save</button>
+  <div id="status"></div>
+  <script type="module">
+    const input = document.getElementById('dms-base')
+    const status = document.getElementById('status')
+    const { dms_base } = await chrome.storage.local.get('dms_base')
+    if (dms_base) input.value = dms_base
+    document.getElementById('save').addEventListener('click', async () => {
+      const url = input.value.trim()
+      try { new URL(url) } catch { status.textContent = 'Not a valid URL'; status.style.color='#a44'; return }
+      await chrome.storage.local.set({ dms_base: url })
+      status.style.color = '#2a7'
+      status.textContent = 'Saved.'
+    })
+  </script>
+</body>
+</html>

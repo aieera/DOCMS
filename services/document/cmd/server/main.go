@@ -27,6 +27,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
+	"github.com/vaultdms/vaultdms/pkg/license"
 	"github.com/vaultdms/vaultdms/pkg/logger"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	"github.com/vaultdms/vaultdms/pkg/storage"
@@ -54,6 +55,17 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// ADR 0095 — license validation. Init reads VAULTDMS_LICENSE_JWT (or
+	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
+	// public key bundled in pkg/license/dev_pubkey.go, and caches the
+	// parsed claims for license.Current() readers. Absent license is OK
+	// (unlicensed_dev_mode); only a *present but invalid* license is fatal,
+	// unless VAULTDMS_REQUIRE_LICENSE=true escalates absence to fatal too.
+	if err := license.Init(); err != nil {
+		log.Fatal(ctx).Err(err).Msg("license init")
+	}
+	license.StartReloader(ctx)
 
 	// ---- Dependencies ------------------------------------------------------
 
@@ -174,7 +186,7 @@ func main() {
 	storageProxy := handler.NewStorageProxy(storageClient, pool)
 
 	// ---- Health ------------------------------------------------------------
-	hs := health.NewServer(pool, rdb, nc, s3c)
+	hs := health.NewServerWithMeta("document", cfg.Region, pool, rdb, nc, s3c)
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.HealthPort)
 		if err := hs.Start(addr); err != nil {
@@ -307,6 +319,12 @@ func main() {
 	// gRPC metadata.
 	storageMux := http.NewServeMux()
 	storageProxy.Register(storageMux)
+	// The same handler is exposed at a second URL shape (see proxy.RegisterDownloadAlias
+	// godoc) so browser-native loaders like `<img src=".../versions/{vid}/download">`
+	// find the route they expect. Lives on its own mux because the path
+	// doesn't share the /api/v1/storage/ prefix.
+	downloadAliasMux := http.NewServeMux()
+	storageProxy.RegisterDownloadAlias(downloadAliasMux)
 	// SessionAuth populates auth.UserInfo on ctx from the dms_session
 	// cookie; the proxy's outbound() reads tenant + user from ctx and
 	// injects them into outbound gRPC metadata. Without this the
@@ -316,6 +334,15 @@ func main() {
 	rootMux.Handle("/api/v1/storage/", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(storageMux),
 	))
+	// Download alias — handled by storageProxy.download but addressed at
+	// /api/v1/documents/{id}/versions/{vid}/download for backward compat
+	// with viewers + OnlyOffice + redaction_review. Same SessionAuth chain
+	// so the cookie resolves the user/tenant; the proxy then injects them
+	// into outbound gRPC metadata.
+	rootMux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/download",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(downloadAliasMux),
+		))
 
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).
 	// Authenticated by API key (Bearer vdms_...) with scope
@@ -327,6 +354,16 @@ func main() {
 			Pool:          pool,
 			RequiredScope: "integrations:read",
 		})(integrationsMux),
+	))
+
+	// ADR 0112 — Outlook add-in ingest. Uses session auth (not API
+	// key) because the add-in establishes a VaultDMS session via
+	// the /auth/m365/exchange endpoint and then attaches it as a
+	// Bearer header on this route.
+	m365IngestMux := http.NewServeMux()
+	handler.NewM365IngestHandler(pool, svc).Register(m365IngestMux)
+	rootMux.Handle("/api/v1/integrations/m365/", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(m365IngestMux),
 	))
 
 	// Compliance REST endpoints (legal holds — Wave 8.2). Uses its own
@@ -415,6 +452,93 @@ func main() {
 	handler.NewDBInfoHandler(pool).Register(dbInfoMux)
 	rootMux.Handle("/api/v1/admin/platform/db-info", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(dbInfoMux),
+	))
+
+	// ADR 0095 — admin license-state surface (stub). Today returns
+	// `unlicensed_dev_mode`; future JWT validator wires through here
+	// without UI changes.
+	licenseMux := http.NewServeMux()
+	handler.NewLicenseHandler().Register(licenseMux)
+	rootMux.Handle("/api/v1/admin/tenant/license", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(licenseMux),
+	))
+
+	// ADR 0098 — zero-trust view-only share. Admin routes require
+	// SessionAuth; recipient routes (/api/v1/zt/{token}/*) are public
+	// — the token IS the auth. Pepper is part of cfg so it can rotate
+	// without rebuilding (env: VAULTDMS_ZT_TOKEN_PEPPER).
+	ztPepper := []byte(os.Getenv("VAULTDMS_ZT_TOKEN_PEPPER"))
+	if len(ztPepper) == 0 {
+		ztPepper = []byte("dev-only-zt-pepper-rotate-in-prod")
+	}
+	ztHandler := handler.NewZTShareHandler(pool, storageProxy, ztPepper)
+
+	ztAdminMux := http.NewServeMux()
+	ztHandler.RegisterAdmin(ztAdminMux)
+	rootMux.Handle("POST /api/v1/admin/share-links/zt", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ztAdminMux),
+	))
+	rootMux.Handle("POST /api/v1/admin/share-links/zt/{token_id}/revoke",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ztAdminMux),
+		))
+	rootMux.Handle("GET /api/v1/admin/share-links/zt/{token_id}/telemetry",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(ztAdminMux),
+		))
+
+	ztPublicMux := http.NewServeMux()
+	ztHandler.RegisterPublic(ztPublicMux)
+	rootMux.Handle("GET /api/v1/zt/{token_id}/manifest", middleware.CorrelationHTTP(ztPublicMux))
+	rootMux.Handle("GET /api/v1/zt/{token_id}/stream", middleware.CorrelationHTTP(ztPublicMux))
+	rootMux.Handle("POST /api/v1/zt/{token_id}/telemetry", middleware.CorrelationHTTP(ztPublicMux))
+
+	// ADR 0101 — cross-format compare. Single POST endpoint; no
+	// new state. Reads canonical text from ocr_results; SessionAuth
+	// sets tenant + user on ctx.
+	compareMux := http.NewServeMux()
+	handler.NewCompareHandler(pool).Register(compareMux)
+	rootMux.Handle("POST /api/v1/compare", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(compareMux),
+	))
+
+	// ADR 0102 — predictive filing suggestions. Pre-upload predict +
+	// post-decision feedback.
+	pfMux := http.NewServeMux()
+	handler.NewPredictiveFilingHandler(pool).Register(pfMux)
+	rootMux.Handle("POST /api/v1/uploads/predict", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(pfMux),
+	))
+	rootMux.Handle("POST /api/v1/uploads/predict/feedback", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(pfMux),
+	))
+
+	// ADR 0104 — clause library CRUD + search. Five routes share one
+	// SessionAuth chain; admin/owner role check is enforced inside
+	// the mutating handlers via tenantOwnerOrFail.
+	clMux := http.NewServeMux()
+	handler.NewClausesHandler(pool).Register(clMux)
+	clauseAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(clMux)
+	rootMux.Handle("GET /api/v1/clauses",            middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("GET /api/v1/clauses/{id}",       middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("POST /api/v1/clauses",           middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("PATCH /api/v1/clauses/{id}",     middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("DELETE /api/v1/clauses/{id}",    middleware.CorrelationHTTP(clauseAuth))
+
+	// ADR 0099 — contract intelligence graph. GET is read-only and
+	// uses SessionAuth (so the tenant + user context is set); the
+	// two mutating routes also require admin/owner role at the
+	// handler layer.
+	cgMux := http.NewServeMux()
+	handler.NewContractGraphHandler(pool).Register(cgMux)
+	rootMux.Handle("GET /api/v1/contracts/{document_id}/graph", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
+	))
+	rootMux.Handle("POST /api/v1/contracts/{document_id}/edges", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
+	))
+	rootMux.Handle("DELETE /api/v1/contracts/{document_id}/edges/{edge_id}", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cgMux),
 	))
 
 	// §9.4 / G5 — internal retention-sweep endpoint for the
@@ -681,12 +805,15 @@ func main() {
 	rootMux.Handle("PUT /api/v1/admin/active-learning/config",
 		middleware.CorrelationHTTP(activeLearningMux))
 
-	// All other routes (including gRPC-Gateway) go through default chain
-	// TenantHTTP sets auth.SetTenantID on the request context from
-	// X-Tenant-ID. TenantInterceptor now falls back to that when
-	// gRPC metadata is empty — covers host-dev mode where grpc-
-	// gateway's header forwarding is lossy.
-	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux)))))
+	// All other routes (including gRPC-Gateway) go through default chain.
+	// SessionAuthOptional populates ctx from the session cookie when
+	// present — that lets TenantHTTP serve browser-native loaders
+	// (`<img src>`, `<video src>`, `<a download>`) which can only send
+	// cookies and can't attach the X-Tenant-ID header. Standard axios
+	// callers continue to work via the header path (checked first).
+	rootMux.Handle("/", middleware.RequestLogHTTP(log)(middleware.CorrelationHTTP(
+		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+			middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux))))))
 
 	// ADR 0065 — WOPI bypass. Editors hit /wopi/* directly (no
 	// gateway in front), so we route /wopi/* to wopiMux without the

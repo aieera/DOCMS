@@ -88,7 +88,7 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+          <ol className="list-decimal space-y-1 ps-5 text-xs text-muted-foreground">
             {STEPS.map((s) => <li key={s}>{s}</li>)}
           </ol>
 

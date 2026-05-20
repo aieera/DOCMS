@@ -123,8 +123,14 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
         )}
       </div>
       {m.method !== 'passkey' && (
-        <Button variant="ghost" size="sm" onClick={onRemove} title="Disable this method">
-          <Trash2 className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          aria-label={`Disable ${m.method} as an MFA method`}
+          title="Disable this method"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       )}
     </div>

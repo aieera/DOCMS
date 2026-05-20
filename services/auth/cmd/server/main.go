@@ -235,7 +235,7 @@ func main() {
 	scimResolver := scim.NewTenantResolver(pool)
 
 	// ---- Health ------------------------------------------------------------
-	hs := health.NewServer(pool, rdb, nc, nil)
+	hs := health.NewServerWithMeta("auth", cfg.Region, pool, rdb, nc, nil)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")

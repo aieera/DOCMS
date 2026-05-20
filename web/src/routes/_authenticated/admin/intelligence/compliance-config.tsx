@@ -90,7 +90,7 @@ function ComplianceConfigPage() {
     <div className="mx-auto max-w-3xl p-6">
       <PageHeader
         title="Compliance config"
-        description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns (ADR 0054)."
+        description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns."
       />
 
       <div className="mt-6 space-y-6 rounded border border-border p-5">
@@ -101,7 +101,7 @@ function ComplianceConfigPage() {
         />
         <Toggle
           label="Auto-flag for legal hold on critical findings"
-          help="Marks the document for hold review only — actual hold is placed manually via the legal-hold UI (ADR 0054 §auto-hold)."
+          help="Marks the document for hold review only — actual hold is placed manually via the legal-hold UI."
           checked={draft.auto_hold_on_critical}
           onChange={(v) => setDraft({ ...draft, auto_hold_on_critical: v })}
         />
@@ -159,7 +159,7 @@ function ComplianceConfigPage() {
 
         <div className="flex justify-end">
           <Button onClick={onSave} disabled={save.isPending}>
-            <Save className="mr-2 h-4 w-4" />
+            <Save className="me-2 h-4 w-4" />
             Save
           </Button>
         </div>

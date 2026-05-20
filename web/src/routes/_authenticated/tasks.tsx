@@ -159,11 +159,13 @@ function MyTasksSection() {
 
       {isLoading && <Skeleton className="h-32" />}
       {!isLoading && tasks.length === 0 && (
-        <EmptyState
-          icon={<CheckSquare className="h-10 w-10" />}
-          title="No tasks"
-          description={includeCompleted ?"You're all caught up." :"No open tasks. Click 'Show completed' to review past work."}
-        />
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <EmptyState
+            icon={<CheckSquare className="h-10 w-10" />}
+            title="No tasks"
+            description={includeCompleted ?"You're all caught up." :"No open tasks. Click 'Show completed' to review past work."}
+          />
+        </div>
       )}
 
       {!isLoading && tasks.length > 0 && view === 'table' && (
@@ -180,13 +182,13 @@ function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void })
   return (
     <div className="overflow-hidden rounded border border-border" data-testid="task-table">
       <table className="w-full text-sm">
-        <thead className="bg-[var(--color-bg-tertiary)] text-left text-xs uppercase">
+        <thead className="bg-[var(--color-bg-tertiary)] text-start text-xs uppercase">
           <tr>
             <th className="px-3 py-2">Title</th>
             <th className="px-3 py-2">Priority</th>
             <th className="px-3 py-2">Due</th>
             <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2 text-right">Actions</th>
+            <th className="px-3 py-2 text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -224,7 +226,7 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
         {task.due_at ? formatRelativeTime(task.due_at) : '—'}
       </td>
       <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
-      <td className="px-3 py-2 text-right">
+      <td className="px-3 py-2 text-end">
         <div className="inline-flex gap-1">
           {!isDone && (
             <Button size="sm" onClick={() => complete.mutate()} disabled={complete.isPending} data-testid={`complete-${task.id}`}>
@@ -241,8 +243,14 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
               <X className="h-3 w-3" /> Cancel
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => remove.mutate()} aria-label="delete">
-            <Trash2 className="h-3 w-3" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => remove.mutate()}
+            aria-label={`Delete task: ${task.title}`}
+            title={`Delete task: ${task.title}`}
+          >
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
           </Button>
         </div>
       </td>
@@ -437,7 +445,17 @@ function ApprovalsSection() {
       </div>
       {isLoading && <Skeleton className="h-32" />}
       {!isLoading && (data ?? []).length === 0 && (
-        <EmptyState icon={<CheckSquare className="h-10 w-10" />} title="No approvals waiting" description="Approval steps assigned to you appear here." />
+        // Center the empty state in the available area below the
+        // page header + tab bar + filter chips. 60vh keeps the
+        // anchor visually balanced on 800-tall viewports and grows
+        // naturally on taller ones.
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <EmptyState
+            icon={<CheckSquare className="h-10 w-10" />}
+            title="No approvals waiting"
+            description="Approval steps assigned to you appear here."
+          />
+        </div>
       )}
       {!isLoading && (data ?? []).length > 0 && (
         <ul className="space-y-2">

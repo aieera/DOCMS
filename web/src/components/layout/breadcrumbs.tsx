@@ -1,7 +1,9 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { ChevronRight, Home } from 'lucide-react'
+import { Home } from 'lucide-react'
 import { Fragment, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import type { Workspace } from '@/types/api'
 
 // Maps URL segments to a human label. Anything not in the map gets a
 // title-cased version of the segment as a fallback ("audit-log" →
@@ -79,48 +81,88 @@ function humanize(segment: string): string {
     .join(' ')
 }
 
-// isUUIDish matches v4/v7-style UUIDs and the 8-char shortened form
-// the legacy fallback emits.
+// UUID_RE matches v4/v7-style UUIDs as they appear in route params.
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
-// resolveIDLabel reads the React Query cache for a known entity
-// label keyed by id. Returns null when there's no cached entity for
-// the segment context, in which case the caller falls back to the
-// truncated-uuid humanize. Cache keys here mirror what the data
-// hooks use (web/src/hooks/useWorkspaces, useDocuments, etc).
-function resolveIDLabel(qc: ReturnType<typeof useQueryClient>, segments: string[], idx: number): string | null {
-  const segment = segments[idx]
-  if (!UUID_RE.test(segment)) return null
-  const prevSegment = segments[idx - 1]
-
-  if (prevSegment === 'workspaces') {
-    const ws = qc.getQueryData<{ name?: string }>(['workspace', segment])
-    if (ws?.name) return ws.name
-  }
-  if (prevSegment === 'documents') {
-    const doc = qc.getQueryData<{ title?: string }>(['document', segment])
-    if (doc?.title) return doc.title
-  }
-  if (prevSegment === 'instances') {
-    const wf = qc.getQueryData<{ definition_name?: string }>(['workflow-instance', segment])
-    if (wf?.definition_name) return wf.definition_name
-  }
-  return null
+// findIdAfter — return segments[i+1] when segments[i] === marker AND
+// that following segment is a UUID. Lets us subscribe to a specific
+// entity's React Query cache key for the visible URL.
+function findIdAfter(segments: string[], marker: string): string | undefined {
+  const i = segments.indexOf(marker)
+  if (i < 0) return undefined
+  const next = segments[i + 1]
+  if (!next || !UUID_RE.test(next)) return undefined
+  return next
 }
 
 export function Breadcrumbs() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const qc = useQueryClient()
+  const segments = useMemo(() => pathname.split('/').filter(Boolean), [pathname])
+
+  // Extract the IDs the URL surfaces. Subscribing via useQuery with
+  // `enabled: false` gives us a reactive read of whatever the
+  // detail-page consumers / sidebar list have already populated;
+  // we never fire a fetch from the crumb itself. When the URL has
+  // no id of a given kind, we still call useQuery (hook-order rule)
+  // with a sentinel key so the hook doesn't read garbage.
+  const workspaceId = findIdAfter(segments, 'workspaces')
+  const documentId = findIdAfter(segments, 'documents')
+  const workflowId = findIdAfter(segments, 'instances')
+
+  // Subscribe-only: `enabled: false` keeps the breadcrumb from
+  // firing its own fetch — it reads whatever the page-level
+  // consumers have already cached. v5 still requires `queryFn` to
+  // be declared even on disabled queries, hence the stub.
+  const noopQuery = () => Promise.resolve(undefined as never)
+  const workspace = useQuery<{ name?: string }>({
+    queryKey: ['workspace', workspaceId ?? '__none__'],
+    queryFn: noopQuery,
+    enabled: false,
+  })
+  const workspacesList = useQuery<Workspace[]>({
+    queryKey: ['workspaces'],
+    queryFn: noopQuery,
+    enabled: false,
+  })
+  const documentQ = useQuery<{ title?: string }>({
+    queryKey: ['document', documentId ?? '__none__'],
+    queryFn: noopQuery,
+    enabled: false,
+  })
+  const workflow = useQuery<{ definition_name?: string }>({
+    queryKey: ['workflow-instance', workflowId ?? '__none__'],
+    queryFn: noopQuery,
+    enabled: false,
+  })
+
+  // Workspace name lookup: prefer the detail-page cache, then fall
+  // back to scanning the sidebar's ['workspaces'] list. The list is
+  // hydrated on every authenticated page via WorkspaceSelector +
+  // the dashboard KPI row, so it's nearly always available even
+  // when the workspace detail page was never visited.
+  const workspaceName =
+    workspace.data?.name ??
+    workspacesList.data?.find((w) => w.id === workspaceId)?.name
 
   const crumbs = useMemo(() => {
-    const segments = pathname.split('/').filter(Boolean)
     let href = ''
-    return segments.map((segment, idx) => {
+    return segments.map((segment) => {
       href += '/' + segment
-      const cached = resolveIDLabel(qc, segments, idx)
-      return { segment, href, label: cached ?? humanize(segment) }
+      let label: string | undefined
+      if (segment === workspaceId) label = workspaceName
+      else if (segment === documentId) label = documentQ.data?.title
+      else if (segment === workflowId) label = workflow.data?.definition_name
+      return { segment, href, label: label ?? humanize(segment) }
     })
-  }, [pathname, qc])
+  }, [
+    segments,
+    workspaceId,
+    workspaceName,
+    documentId,
+    documentQ.data?.title,
+    workflowId,
+    workflow.data?.definition_name,
+  ])
 
   return (
     <nav aria-label="Breadcrumb" className="flex items-center text-sm">
@@ -135,7 +177,7 @@ export function Breadcrumbs() {
         const isLast = idx === crumbs.length - 1
         return (
           <Fragment key={crumb.href}>
-            <ChevronRight className="mx-1 h-3.5 w-3.5 text-muted-foreground/50" aria-hidden />
+            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 text-muted-foreground/50" aria-hidden />
             {isLast ? (
               <span className="font-medium text-foreground">{crumb.label}</span>
             ) : (

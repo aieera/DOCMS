@@ -69,3 +69,10 @@ export async function revokeSession(id: string) {
 export async function revokeAllSessions() {
   await api.post('/auth/sessions/revoke-all')
 }
+
+// ADR 0106 — persist the user's UI-language preference. Server
+// validates against the SupportedLocales map; 400 means the FE shipped
+// a locale we don't have a bundle for. Caller handles the toast.
+export async function updateLocale(locale: 'en' | 'ar'): Promise<void> {
+  await api.patch('/auth/me/locale', { locale })
+}
