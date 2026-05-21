@@ -20,6 +20,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/validation"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
 
@@ -335,6 +336,14 @@ func (s *DocumentService) CreateTag(ctx context.Context, in *CreateTagInput) (*m
 	}
 	if err := validateTagName(in.Name); err != nil {
 		return nil, err
+	}
+	// Stops "uu"-class staging-leaked tag rows. Prod: hard reject.
+	// Dev/staging: allow + log, so seed scripts still load.
+	if err := validation.EntityName(s.env, in.Name); err != nil {
+		return nil, errInvalidInput("name", "must be at least 2 characters")
+	}
+	if validation.EntityNameTooShort(in.Name) {
+		s.log.Warn().Str("name", in.Name).Str("tenant", tenantID.String()).Msg("tag name shorter than 2 chars (allowed in non-prod)")
 	}
 	if err := validateColor(in.Color); err != nil {
 		return nil, err

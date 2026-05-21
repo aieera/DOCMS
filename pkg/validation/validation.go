@@ -22,6 +22,48 @@ const MaxJSONDepth = 10
 // MaxStringLength is the default max for untrimmed string fields.
 const MaxStringLength = 10000
 
+// MinEntityNameLength is the minimum rune-count we accept for the
+// `name` field on user-creatable entities (groups, tags, workspaces,
+// folders, etc.). Single-character names like "g" or "uu" are
+// almost always test data that leaks into staging when QA forgets
+// to clean up. The check is environment-aware: see EntityName.
+const MinEntityNameLength = 2
+
+// EntityNameViolation is returned by EntityName when the value is
+// too short. Handlers can errors.Is() it to map to a 400 response.
+var EntityNameViolation = errors.New("entity name is too short")
+
+// EntityName validates a user-supplied entity name against the
+// minimum-length rule. Behavior depends on environment:
+//
+//   - "prod"     → returns EntityNameViolation (caller should 400)
+//   - everything else → returns nil so dev/staging seed data still
+//     loads; the caller is expected to log a warning instead.
+//
+// The string is trimmed before measuring so " g " also trips the rule.
+// UTF-8 rune count is what we measure — "好" is one user-visible
+// character, so it would still be rejected even though it's 3 bytes.
+func EntityName(env, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if utf8.RuneCountInString(trimmed) >= MinEntityNameLength {
+		return nil
+	}
+	if env == "prod" {
+		return fmt.Errorf("%w: must be at least %d characters", EntityNameViolation, MinEntityNameLength)
+	}
+	// Non-prod: allow but signal the caller can log.
+	return nil
+}
+
+// EntityNameTooShort reports whether the name violates the
+// minimum-length rule, regardless of environment. Useful for
+// "warn but allow" log lines in dev/staging — the handler can call
+// this to decide whether to emit a warning without coupling that
+// decision to error returns.
+func EntityNameTooShort(value string) bool {
+	return utf8.RuneCountInString(strings.TrimSpace(value)) < MinEntityNameLength
+}
+
 var validate *validator.Validate
 
 func init() {

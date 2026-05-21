@@ -36,7 +36,15 @@ func (r *Repository) List(ctx context.Context, tenantID, userID string, readFilt
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	q := `SELECT id, tenant_id, user_id, type, title, body, resource_type, resource_id, channel, read, delivered_at, read_at, created_at
+	// Nullable text columns (type, body, resource_type, resource_id, channel)
+	// are COALESCE'd to '' so the plain-string scan destinations don't
+	// fail with "cannot scan NULL into *string". delivered_at + read_at
+	// stay nullable timestamps (scanned into *time.Time, NULL safe).
+	q := `SELECT id, tenant_id, user_id,
+		COALESCE(type, ''), title, COALESCE(body, ''),
+		COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+		COALESCE(channel, ''),
+		read, delivered_at, read_at, created_at
 		FROM notifications WHERE tenant_id = $1 AND user_id = $2`
 	args := []any{tenantID, userID}
 	if readFilter != nil {

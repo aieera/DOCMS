@@ -284,6 +284,7 @@ function TaskRow({ task }: { task: Task }) {
 
 interface NotificationLite {
   id: string
+  type?: string
   title?: string
   body?: string
   created_at?: string
@@ -341,7 +342,19 @@ function RecentActivityCard() {
               aria-hidden
             />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{n.title ?? 'Update'}</p>
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <span className="truncate">{n.title ?? 'Update'}</span>
+                {n.type?.startsWith('digest.') && (
+                  <span
+                    className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
+                    title="This is a digest notification combining multiple events."
+                    aria-label="Digest notification combining multiple events"
+                  >
+                    <span aria-hidden="true">D</span>
+                    <span className="sr-only">Digest</span>
+                  </span>
+                )}
+              </p>
               {n.body && <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
               {n.created_at && (
                 <p className="mt-1 text-[11px] text-muted-foreground">

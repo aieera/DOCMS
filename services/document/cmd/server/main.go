@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/vaultdms/vaultdms/pkg/config"
+	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/events"
 	"github.com/vaultdms/vaultdms/pkg/health"
@@ -136,6 +137,7 @@ func main() {
 	holdsService := compliance.NewHoldsService(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	svc.SetEnvironment(cfg.Environment)
 	// ADR 0078 — base64-decode VAULTDMS_LOCAL_KEK so the NER api-key
 	// Set/Clear endpoints can encrypt with AES-256-GCM. Same key the
 	// auth service uses for MFA secrets and the intelligence worker
@@ -146,6 +148,20 @@ func main() {
 			svc.SetLocalKEK(kek)
 		} else {
 			log.Warn(ctx).Err(err).Msg("VAULTDMS_LOCAL_KEK base64 decode failed; tenant secrets disabled")
+		}
+	}
+	// LocalKeyManager — same KEK used by storage's encrypt-at-rest path.
+	// The decrypt-stream handler unwraps per-blob DEKs through this so
+	// downloads of envelope-encrypted blobs return plaintext. Nil leaves
+	// decrypt-stream working only for unencrypted blobs.
+	var docKMS pkgcrypto.KeyManager
+	if kekB64 := os.Getenv("VAULTDMS_LOCAL_KEK"); kekB64 != "" {
+		if lkm, kerr := pkgcrypto.NewLocalKeyManager(kekB64, func(msg string) {
+			log.Warn(ctx).Msg(msg)
+		}); kerr != nil {
+			log.Warn(ctx).Err(kerr).Msg("local kek invalid; decrypt-stream falls back to passthrough only")
+		} else {
+			docKMS = lkm
 		}
 	}
 	docHandler := handler.New(svc, *log.Z(), cfg.PublicURL)
@@ -184,6 +200,7 @@ func main() {
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
 
 	storageProxy := handler.NewStorageProxy(storageClient, pool)
+	decryptStreamHandler := handler.NewDecryptStreamHandler(pool, s3c, docKMS, *log.Z())
 
 	// ---- Health ------------------------------------------------------------
 	hs := health.NewServerWithMeta("document", cfg.Region, pool, rdb, nc, s3c)
@@ -342,6 +359,18 @@ func main() {
 	rootMux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/download",
 		middleware.CorrelationHTTP(
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(downloadAliasMux),
+		))
+	// Decrypt-stream — for envelope-encrypted blobs, the existing
+	// presigned MinIO URL streams raw ciphertext that browser viewers
+	// can't parse. This route reads the encrypted_dek metadata, unwraps
+	// via the tenant KEK, AES-GCM decrypts, and streams plaintext.
+	// Unencrypted blobs pass through unchanged so callers can use one
+	// URL regardless of encryption state.
+	decryptStreamMux := http.NewServeMux()
+	decryptStreamHandler.Register(decryptStreamMux)
+	rootMux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/decrypt-stream",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(decryptStreamMux),
 		))
 
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).

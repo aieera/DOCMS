@@ -27,17 +27,22 @@ import (
 
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/validation"
 )
 
 // GroupsHandler wires /api/v1/admin/groups/* onto the auth service.
 type GroupsHandler struct {
 	pool *pgxpool.Pool
 	log  zerolog.Logger
+	// env is the runtime environment string from pkg/config ("dev",
+	// "staging", "prod"). The name-min-length validator changes
+	// behavior in prod (reject) vs. non-prod (warn-only).
+	env string
 }
 
 // NewGroupsHandler constructs the handler.
-func NewGroupsHandler(pool *pgxpool.Pool, log zerolog.Logger) *GroupsHandler {
-	return &GroupsHandler{pool: pool, log: log}
+func NewGroupsHandler(pool *pgxpool.Pool, log zerolog.Logger, env string) *GroupsHandler {
+	return &GroupsHandler{pool: pool, log: log, env: env}
 }
 
 // Mount attaches routes to the chi router. Caller wraps the group
@@ -184,6 +189,16 @@ func (g *GroupsHandler) create(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		g.writeErr(w, r, vdmserr.Validation("name", "required"))
 		return
+	}
+	// Min-length check. In prod it's a hard 400; in dev/staging it
+	// only logs a warning so seeded test data still loads. Stops the
+	// "g" / "uu" / "x" class of staging-leaked test rows.
+	if err := validation.EntityName(g.env, body.Name); err != nil {
+		g.writeErr(w, r, vdmserr.Validation("name", "must be at least 2 characters"))
+		return
+	}
+	if validation.EntityNameTooShort(body.Name) {
+		g.log.Warn().Str("name", body.Name).Str("tenant", tenantID.String()).Msg("group name shorter than 2 chars (allowed in non-prod)")
 	}
 	id := uuid.New()
 	err = database.WithTenantTx(r.Context(), g.pool, tenantID, func(tx pgx.Tx) error {

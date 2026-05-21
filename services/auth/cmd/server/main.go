@@ -253,7 +253,7 @@ func main() {
 				middleware.RateLimitHTTP(rl, "auth")(h.Router(samlHandler, oidcHandler, &handler.SCIMWiring{
 					Handler:  scimHandler,
 					Resolver: scimResolver,
-				}, handler.NewGroupsHandler(pool, *log.Z()),
+				}, handler.NewGroupsHandler(pool, *log.Z(), cfg.Environment),
 					handler.NewSSOAdminHandler(pool, *log.Z()),
 					handler.NewTenantAdminHandler(pool, *log.Z()),
 					handler.NewLDAPAdminHandler(pool, svc, ldapRepo, *log.Z()))),

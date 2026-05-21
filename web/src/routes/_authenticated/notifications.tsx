@@ -55,11 +55,30 @@ function NotificationsPage() {
         <EmptyState icon={<Bell className="h-12 w-12" />} title="No notifications" description="You're all caught up" />
       ) : (
         <ul className="divide-y divide-border rounded-lg border border-border bg-card" data-testid="notif-list">
-          {items.map((n) => (
+          {items.map((n) => {
+            // Digest-produced rows carry a `digest.*` type prefix
+            // (notification service's flushDigestsOnce in
+            // services/notification/internal/service/decide.go).
+            // Surface that as a "D" badge so users can recognize
+            // a bundled notification at a glance — matches the
+            // caption on /settings/notifications.
+            const isDigest = n.type?.startsWith('digest.') ?? false
+            return (
             <li key={n.id} className={`flex items-start gap-3 p-3 ${n.read ? 'opacity-60' : ''}`} data-testid={`notif-row-${n.id}`}>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-medium">{n.title}</h3>
+                  {isDigest && (
+                    <span
+                      className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
+                      title="This is a digest notification combining multiple events."
+                      aria-label="Digest notification combining multiple events"
+                      data-testid={`notif-digest-badge-${n.id}`}
+                    >
+                      <span aria-hidden="true">D</span>
+                      <span className="sr-only">Digest</span>
+                    </span>
+                  )}
                   <span className="text-[10px] text-muted-foreground">{n.type}</span>
                 </div>
                 {n.body && <p className="mt-1 text-sm text-muted-foreground">{n.body}</p>}
@@ -84,7 +103,8 @@ function NotificationsPage() {
                 </Button>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>

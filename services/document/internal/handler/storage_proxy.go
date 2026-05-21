@@ -11,6 +11,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -242,17 +243,33 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 		writeProxyJSON(w, http.StatusInternalServerError, map[string]any{"error": "proxy missing db pool"})
 		return
 	}
-	var storageKey string
+	var (
+		storageKey   string
+		encryptedDEK []byte
+	)
 	err = database.WithTenantTx(r.Context(), p.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
-			SELECT b.storage_key
+			SELECT b.storage_key, b.encrypted_dek
 			FROM document_versions v
 			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
 			WHERE v.tenant_id = $1 AND v.id = $2
-		`, tenantID, versionID).Scan(&storageKey)
+		`, tenantID, versionID).Scan(&storageKey, &encryptedDEK)
 	})
 	if err != nil {
 		writeProxyJSON(w, http.StatusNotFound, map[string]any{"error": "version or blob not found"})
+		return
+	}
+	// Envelope-encrypted blobs can't be served via a presigned MinIO
+	// URL (the browser would fetch ciphertext). Route the caller to
+	// the decrypt-stream endpoint instead. URL is a real route on
+	// this service — no expiry needed.
+	if len(encryptedDEK) > 0 {
+		writeProxyJSON(w, http.StatusOK, map[string]any{
+			"url": fmt.Sprintf(
+				"/api/v1/documents/%s/versions/%s/decrypt-stream",
+				r.PathValue("document_id"), r.PathValue("version_id"),
+			),
+		})
 		return
 	}
 	uploadID := extractUploadID(storageKey)

@@ -62,6 +62,10 @@ type DocumentService struct {
 	holds    HoldsChecker
 	log      zerolog.Logger
 	localKEK []byte // 32 bytes; nil disables tenant-secret encrypt/decrypt paths
+	// env mirrors pkg/config.Config.Environment ("dev" | "staging" | "prod").
+	// Read by entity-name validation to decide between warn (non-prod)
+	// and hard-reject (prod). Empty string = treat as non-prod (lenient).
+	env string
 }
 
 // SetLocalKEK installs the AES-256 key used to encrypt/decrypt small
@@ -70,6 +74,11 @@ type DocumentService struct {
 // or wrong size means encrypt-requiring endpoints fail with a clear
 // 500 instead of silently storing plaintext.
 func (s *DocumentService) SetLocalKEK(kek []byte) { s.localKEK = kek }
+
+// SetEnvironment plumbs cfg.Environment into the service so name
+// validators (workspaces, tags, folders) can decide whether to
+// reject too-short names (prod) or warn-only (dev/staging).
+func (s *DocumentService) SetEnvironment(env string) { s.env = env }
 
 // SetHoldsChecker wires a hold-binding checker into DocumentService.
 // Optional: when nil, delete/dispose paths fall back to the

@@ -180,3 +180,52 @@ func TestStruct_PassesValidPayload(t *testing.T) {
 		t.Errorf("valid payload rejected: %v", err)
 	}
 }
+
+func TestEntityName(t *testing.T) {
+	cases := []struct {
+		name   string
+		env    string
+		value  string
+		wantErr bool
+	}{
+		{"prod rejects single char", "prod", "g", true},
+		{"prod rejects two-char after trim", "prod", " a ", true},
+		{"prod accepts two chars", "prod", "Ok", false},
+		{"prod accepts long", "prod", "Engineering", false},
+		{"prod rejects empty", "prod", "", true},
+		{"dev allows single char", "dev", "g", false},
+		{"staging allows single char", "staging", "g", false},
+		{"empty env defaults to lenient", "", "g", false},
+		{"unicode rune counted, not bytes", "prod", "好", true},        // 3 bytes, 1 rune
+		{"two-rune utf8 accepted in prod", "prod", "你好", false},        // 6 bytes, 2 runes
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := EntityName(tc.env, tc.value)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("env=%q value=%q: got err=%v want err=%v", tc.env, tc.value, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestEntityNameTooShort(t *testing.T) {
+	cases := []struct {
+		value string
+		want  bool
+	}{
+		{"", true},
+		{" ", true},
+		{"a", true},
+		{" b ", true},
+		{"ab", false},
+		{"Engineering", false},
+		{"好", true},
+		{"你好", false},
+	}
+	for _, tc := range cases {
+		if got := EntityNameTooShort(tc.value); got != tc.want {
+			t.Errorf("value=%q: got %v want %v", tc.value, got, tc.want)
+		}
+	}
+}

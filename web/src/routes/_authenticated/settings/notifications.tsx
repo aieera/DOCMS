@@ -157,7 +157,7 @@ function NotificationsSettings() {
               </tbody>
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
-              The <strong>D</strong> badge bundles bursts of the same event into a single digest, sent up to 5 minutes after the first one.
+              When multiple notifications of the same type occur in quick succession, they are bundled into a single digest notification, delivered within 5 minutes of the first event. Look for the digest icon next to bundled notifications.
             </p>
           </div>
         )}

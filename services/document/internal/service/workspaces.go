@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/validation"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
 
@@ -46,6 +47,14 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 	name := strings.TrimSpace(in.Name)
 	if err := validateWorkspaceName(name); err != nil {
 		return nil, err
+	}
+	// Min-length validator. Prod rejects "g"/"tre"-class names;
+	// dev/staging logs a warning so seed scripts still load.
+	if err := validation.EntityName(s.env, name); err != nil {
+		return nil, errInvalidInput("name", "must be at least 2 characters")
+	}
+	if validation.EntityNameTooShort(name) {
+		s.log.Warn().Str("name", name).Str("tenant", tenantID.String()).Msg("workspace name shorter than 2 chars (allowed in non-prod)")
 	}
 	if len(in.Description) > maxWorkspaceDescriptionLen {
 		return nil, errInvalidInput("description", "too long")
