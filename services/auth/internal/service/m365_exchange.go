@@ -26,12 +26,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,14 +78,32 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 		return nil, errors.New("ms_access_token required")
 	}
 
-	graphUser, err := s.graphMe(ctx, msAccessToken)
-	if err != nil {
-		return nil, fmt.Errorf("graph /me: %w", err)
+	// SECURITY: validate the Entra ID JWT BEFORE doing anything else.
+	// The pre-audit flow trusted Graph /me's `mail` field to identify
+	// the caller, which let an attacker on any Entra tenant they
+	// control set `mail` to a victim's address and impersonate them.
+	// We now require:
+	//   * Signature verified against the issuing directory's JWKS
+	//   * `aud` == VAULTDMS_M365_AUDIENCE
+	//   * `tid` in VAULTDMS_M365_ALLOWED_TIDS allow-list
+	//   * `exp` / `nbf` within tolerance
+	// Graph /me is NO LONGER called. The verified email comes from
+	// the JWT's `email`/`preferred_username` claim, which Microsoft
+	// populates from the user's UPN (verified domain), not the free-
+	// form `mail` directory attribute. (tid, oid) is logged for the
+	// eventual link-table migration.
+	verified, verr := s.m365.verify(ctx, msAccessToken)
+	if verr != nil {
+		return nil, fmt.Errorf("m365: token verification failed: %w", verr)
 	}
-	email := strings.ToLower(strings.TrimSpace(firstNonEmpty(graphUser.Mail, graphUser.UPN)))
+	email := verified.Email
 	if email == "" {
-		return nil, errors.New("graph /me returned no email")
+		return nil, errors.New("m365: verified token has no email claim")
 	}
+	s.log.Info().
+		Str("entra_tid", verified.TID).
+		Str("entra_oid", verified.OID).
+		Msg("m365 token verified; mapping by email until link-table migration lands")
 
 	candidates, err := s.findUsersByEmailAcrossTenants(ctx, email, preferredTenantID)
 	if err != nil {
@@ -180,47 +194,14 @@ func (s *Service) findUsersByEmailAcrossTenants(ctx context.Context, email, pref
 	return out, rows.Err()
 }
 
-// graphMe — Microsoft Graph /me. Returns just the fields we use
-// (mail + userPrincipalName); the rest of the response we drop on
-// the floor so a future Graph change doesn't break us.
-type graphMeResp struct {
-	ID          string `json:"id"`
-	Mail        string `json:"mail"`
-	UPN         string `json:"userPrincipalName"`
-	DisplayName string `json:"displayName"`
-}
-
-func (s *Service) graphMe(ctx context.Context, token string) (*graphMeResp, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://graph.microsoft.com/v1.0/me", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	// 5-second budget — exchange is synchronous + user-facing; a
-	// hung Graph call must not pin the taskpane open.
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("graph /me 401: %s", snippet(body))
-	}
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("graph /me status %d: %s", resp.StatusCode, snippet(body))
-	}
-	var out graphMeResp
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
+// graphMe and firstNonEmpty were removed after the security audit
+// rewrote ExchangeM365Token to authenticate exclusively from the
+// JWT (see m365_jwt.go). Microsoft Graph /me's `mail` attribute is
+// not domain-verified cross-tenant, so trusting it allowed account
+// takeover. The verified `email` / `preferred_username` JWT claim
+// now drives the email-based VaultDMS user lookup, and a future
+// migration will replace email mapping with a (tid, oid) link
+// table per the recommendation in the audit report.
 
 func snippet(b []byte) string {
 	const max = 300

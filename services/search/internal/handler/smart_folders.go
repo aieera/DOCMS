@@ -62,6 +62,26 @@ func (h *Handler) promoteSmartFolder(w http.ResponseWriter, r *http.Request) {
 	if body.Icon == "" {
 		body.Icon = "sparkles"
 	}
+	// Workspace permission gate: if a workspace_id is supplied, it
+	// MUST be in the caller's X-Workspace-IDs list (populated by the
+	// gateway from workspace_members for the authenticated user).
+	// Without this, a member could pin a smart folder against any
+	// workspace UUID they guessed, surfacing in the sidebar of users
+	// who actually belong to that workspace.
+	if body.WorkspaceID != nil && *body.WorkspaceID != "" {
+		memberships := parseCSV(r.Header.Get("X-Workspace-IDs"))
+		found := false
+		for _, ws := range memberships {
+			if ws == *body.WorkspaceID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeError(w, http.StatusForbidden, "not a member of the target workspace")
+			return
+		}
+	}
 	ss, err := h.svc.PromoteSmartFolder(r.Context(),
 		tenantID, userID, id, body.TreeVisibility, body.Icon, body.WorkspaceID)
 	if err != nil {

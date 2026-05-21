@@ -173,29 +173,57 @@ func (h *ZTShareHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": "no tenant"})
 		return
 	}
+	callerID, uerr := auth.GetUserID(r.Context())
+	if uerr != nil {
+		writeJSON(w, 401, map[string]string{"error": "no user"})
+		return
+	}
+	callerRole := auth.GetUserRole(r.Context())
 	tokenID, err := uuid.Parse(r.PathValue("token_id"))
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": "token_id not a uuid"})
 		return
 	}
+	// Ownership check: only the share creator OR a tenant admin may
+	// revoke. SessionAuth already gated tenant scope; this guards
+	// against a member yanking the CEO's outbound link.
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		predicate := "tenant_id = $1 AND token_id = $2 AND revoked_at IS NULL"
+		args := []any{tid, tokenID}
+		if !isAdminLikeRole(callerRole) {
+			predicate += " AND created_by = $3"
+			args = append(args, callerID)
+		}
 		ct, e := tx.Exec(r.Context(),
-			`UPDATE zt_share_tokens SET revoked_at = NOW()
-			 WHERE tenant_id = $1 AND token_id = $2 AND revoked_at IS NULL`,
-			tid, tokenID)
+			"UPDATE zt_share_tokens SET revoked_at = NOW() WHERE "+predicate,
+			args...)
 		if e != nil {
 			return e
 		}
 		if ct.RowsAffected() == 0 {
+			// Could be: token not found, already revoked, OR caller
+			// doesn't own it. Return the same 404 in all three cases
+			// so we don't leak existence to non-owners.
 			return errors.New("not_found_or_already_revoked")
 		}
 		return nil
 	})
 	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		writeJSON(w, 404, map[string]string{"error": "not_found_or_already_revoked"})
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// isAdminLikeRole — owner/admin/compliance_officer may act on any
+// share in their tenant. Mirrors the canRerun pattern in
+// documents/$documentId.tsx and the storage-proxy role gate.
+func isAdminLikeRole(role string) bool {
+	switch role {
+	case "owner", "admin", "compliance_officer":
+		return true
+	}
+	return false
 }
 
 // ---- manifest (public) --------------------------------------------
@@ -439,6 +467,12 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": "no tenant"})
 		return
 	}
+	callerID, uerr := auth.GetUserID(r.Context())
+	if uerr != nil {
+		writeJSON(w, 401, map[string]string{"error": "no user"})
+		return
+	}
+	callerRole := auth.GetUserRole(r.Context())
 	tokenID, err := uuid.Parse(r.PathValue("token_id"))
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": "token_id not a uuid"})
@@ -447,6 +481,26 @@ func (h *ZTShareHandler) telemetryRead(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	// Ownership check: telemetry exposes view counts, IP fingerprints,
+	// and screenshot-attempt events. Only the share creator (or a
+	// tenant admin) gets to see them — a non-owner could otherwise
+	// monitor when the CEO's confidential share is being viewed.
+	if !isAdminLikeRole(callerRole) {
+		var createdBy uuid.UUID
+		err := h.pool.QueryRow(r.Context(),
+			`SELECT created_by FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
+			tid, tokenID).Scan(&createdBy)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "not_found"})
+			return
+		}
+		if createdBy != callerID {
+			// 404 (not 403) so we don't leak existence of someone
+			// else's share token to a non-owner.
+			writeJSON(w, 404, map[string]string{"error": "not_found"})
+			return
+		}
 	}
 
 	type evt struct {

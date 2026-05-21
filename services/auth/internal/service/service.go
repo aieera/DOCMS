@@ -75,6 +75,12 @@ type Service struct {
 	notifSealKey []byte
 	log      zerolog.Logger
 	now      func() time.Time
+	// m365 holds the verifier for the Outlook/Word add-in token
+	// exchange. Configured via env (VAULTDMS_M365_AUDIENCE +
+	// VAULTDMS_M365_ALLOWED_TIDS). When unset, ExchangeM365Token
+	// refuses to run rather than falling back to the pre-audit
+	// Graph-only flow that allowed cross-tenant takeover.
+	m365 *m365Verifier
 }
 
 // Config bundles all service dependencies; allows tests to swap them.
@@ -105,6 +111,7 @@ func New(cfg Config) *Service {
 		localKek: cfg.LocalKEK,
 		log:      cfg.Logger,
 		now:      time.Now,
+		m365:     newM365Verifier(),
 	}
 }
 

@@ -391,8 +391,13 @@ func main() {
 	// Bearer header on this route.
 	m365IngestMux := http.NewServeMux()
 	handler.NewM365IngestHandler(pool, svc).Register(m365IngestMux)
+	// Per-IP rate limit so a compromised Outlook session can't spam
+	// document creation and exhaust tenant storage quota. 60 req/min
+	// is plenty for an honest user (the add-in only POSTs on explicit
+	// "Save to VaultDMS" click).
+	m365IngestLimiter := middleware.NewIPRateLimiter(60, 60, time.Minute)
 	rootMux.Handle("/api/v1/integrations/m365/", middleware.CorrelationHTTP(
-		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(m365IngestMux),
+		m365IngestLimiter(middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(m365IngestMux)),
 	))
 
 	// Compliance REST endpoints (legal holds — Wave 8.2). Uses its own
@@ -518,9 +523,15 @@ func main() {
 
 	ztPublicMux := http.NewServeMux()
 	ztHandler.RegisterPublic(ztPublicMux)
-	rootMux.Handle("GET /api/v1/zt/{token_id}/manifest", middleware.CorrelationHTTP(ztPublicMux))
-	rootMux.Handle("GET /api/v1/zt/{token_id}/stream", middleware.CorrelationHTTP(ztPublicMux))
-	rootMux.Handle("POST /api/v1/zt/{token_id}/telemetry", middleware.CorrelationHTTP(ztPublicMux))
+	// Per-IP rate limit on the public token-auth routes. 30 req/min
+	// is comfortable for an honest viewer (page navigation + scroll
+	// telemetry on a 50-page PDF) but caps brute-force token guessing
+	// and telemetry spam from a single source. Matches the policy
+	// already in place for /api/v1/shared/.
+	ztPublicLimiter := middleware.NewIPRateLimiter(30, 30, time.Minute)
+	rootMux.Handle("GET /api/v1/zt/{token_id}/manifest", middleware.CorrelationHTTP(ztPublicLimiter(ztPublicMux)))
+	rootMux.Handle("GET /api/v1/zt/{token_id}/stream", middleware.CorrelationHTTP(ztPublicLimiter(ztPublicMux)))
+	rootMux.Handle("POST /api/v1/zt/{token_id}/telemetry", middleware.CorrelationHTTP(ztPublicLimiter(ztPublicMux)))
 
 	// ADR 0101 — cross-format compare. Single POST endpoint; no
 	// new state. Reads canonical text from ocr_results; SessionAuth
