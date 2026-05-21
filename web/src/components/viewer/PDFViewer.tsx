@@ -199,7 +199,7 @@ function AnnotationOverlay({ annotations }: { annotations: Annotation[] }) {
 
 function renderAnnotation(a: Annotation): JSX.Element | null {
   let kind: string = a.type
-  let rect: { x: number; y: number; w: number; h: number } | null = null
+  let rect: { x: number; y: number; w: number; h: number } | null
   let body: string | undefined
   if (a.type === 'pdf_markup') {
     const d = a.data as unknown as PDFMarkupData

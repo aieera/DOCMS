@@ -27,7 +27,12 @@ export function RedactionTool({ open, onOpenChange, documentId, versionId, text 
   }
 
   const toggle = (i: number) => {
-    setSelected((prev) => { const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next })
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
   }
 
   return (
