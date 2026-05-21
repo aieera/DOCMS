@@ -37,6 +37,7 @@ import (
 	"github.com/vaultdms/vaultdms/services/document/internal/compliance"
 	"github.com/vaultdms/vaultdms/services/document/internal/bulk"
 	"github.com/vaultdms/vaultdms/services/document/internal/handler"
+	"github.com/vaultdms/vaultdms/services/document/internal/janitor"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
 )
@@ -879,6 +880,12 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Orphan-document GC -----------------------------------------------
+	// Sweeps documents rows whose upload never produced a version (client
+	// crash between create-row and complete-upload). Hourly tick, 24h grace.
+	orphanGC := janitor.New(pool, *log.Z())
+	go orphanGC.Start(ctx)
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")
@@ -889,6 +896,7 @@ func main() {
 	_ = httpSrv.Shutdown(shutdownCtx)
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
+	orphanGC.Stop()
 }
 
 // ---- deny-all fallback when Policy Service is unreachable -----------------
