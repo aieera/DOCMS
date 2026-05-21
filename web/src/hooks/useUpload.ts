@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
-import { createDocument, createVersion } from '@/api/documents'
+import { createDocument, createVersion, deleteDocument } from '@/api/documents'
 import { getFolders, createFolder } from '@/api/workspaces'
 import { sendFilingFeedback } from '@/api/predictiveFiling'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
@@ -90,6 +90,14 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           : resolvedFolderId
       const initialTags = decision?.finalTags ?? []
 
+      // BUG-C2 rollback bookkeeping: track the document row we create
+      // in step 1 so we can delete it if any later step throws. Without
+      // this, a failed upload leaves an orphan row visible in the UI
+      // with no content. The cleanup is best-effort — if delete fails
+      // (network, race), we log but still surface the ORIGINAL upload
+      // error to the user, not the cleanup error.
+      let createdDocId: string | null = null
+
       try {
         // Step 1: create the document row.
         const doc = await createDocument({
@@ -98,14 +106,21 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           title: file.name,
           tags: initialTags,
         })
+        createdDocId = doc.id
 
-        // Step 2: get a presigned URL.
+        // Step 2: get a presigned URL. BUG-C3: pass the SAME resolved
+        // folder id that createDocument used (targetFolderId), not the
+        // raw `folderId` prop. Otherwise the documents row and the
+        // storage upload session can disagree on folder context when
+        // either (a) `folderId` was undefined and we resolved to the
+        // workspace root, or (b) a predictive-filing decision
+        // overrode the user's selection.
         const session = await initiateUpload({
           filename: file.name,
           mime_type: file.type || 'application/octet-stream',
           size_bytes: file.size,
           workspace_id: workspaceId,
-          folder_id: folderId,
+          folder_id: targetFolderId,
         })
         if (session.deduplicated) {
           // Deduplication still needs a version row pointing at the
@@ -190,6 +205,24 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           ?? (e as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message
           ?? (e as Error).message
           ?? String(e)
+        // BUG-C2: roll back the document row created in step 1 so the
+        // workspace doesn't accumulate orphan rows ("No content"
+        // badges) every time an upload fails partway. Best-effort:
+        // we swallow cleanup errors and log to console so the toast
+        // / status keeps surfacing the ORIGINAL upload failure — the
+        // user cares about why their upload didn't go through, not
+        // why our cleanup also didn't go through.
+        if (createdDocId) {
+          try {
+            await deleteDocument(createdDocId)
+          } catch (cleanupErr) {
+            console.warn('upload rollback: deleteDocument failed', {
+              documentId: createdDocId,
+              originalError: detail,
+              cleanupError: cleanupErr,
+            })
+          }
+        }
         setStatus(id, 'failed', detail)
         toast.error(`${file.name} — ${detail}`)
       }
