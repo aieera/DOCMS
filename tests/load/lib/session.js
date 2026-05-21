@@ -17,8 +17,13 @@ import { check } from 'k6';
 
 import { BASE_URL, TENANTS } from './config.js';
 
-const GATEWAY_SECRET = __ENV.VAULTDMS_GATEWAY_SECRET
-  || 'dev-only-gateway-secret-rotate-in-prod';
+// No hardcoded fallback — see services/collaboration/src/yjs-server.js
+// for the rationale. Load tests must export VAULTDMS_GATEWAY_SECRET to
+// match the env under test; failing here is loud and obvious.
+const GATEWAY_SECRET = __ENV.VAULTDMS_GATEWAY_SECRET;
+if (!GATEWAY_SECRET) {
+  throw new Error('VAULTDMS_GATEWAY_SECRET is required for load tests; export it before running k6');
+}
 
 const BYPASS = __ENV.LOAD_TEST_BYPASS_AUTH === '1';
 const BYPASS_TOKEN = __ENV.LOAD_TEST_BYPASS_TOKEN || '';

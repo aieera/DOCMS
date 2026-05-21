@@ -63,6 +63,39 @@ func TestRequireGatewaySignature_AcceptsAnyOfMultipleSecrets(t *testing.T) {
 	}
 }
 
+// Rotation flow: setting GatewaySignaturePrevEnv alongside the active
+// secret should accept BOTH headers via the env-driven constructor.
+// Empty / unequal handling: empty PREV is ignored, equal-to-current is
+// deduped (we don't double-register the same secret).
+func TestRequireGatewaySignature_HonorsPrevEnvForRotation(t *testing.T) {
+	t.Setenv(GatewaySignatureEnv, "new-secret")
+	t.Setenv(GatewaySignaturePrevEnv, "old-secret")
+	h := RequireGatewaySignature()(http.HandlerFunc(ok))
+	for _, s := range []string{"old-secret", "new-secret"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, newReq("/api/v1/documents", s))
+		if rr.Code != http.StatusOK {
+			t.Errorf("secret %q rejected with %d during rotation overlap", s, rr.Code)
+		}
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, newReq("/api/v1/documents", "neither"))
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("non-matching secret should still be rejected during rotation: got %d", rr.Code)
+	}
+}
+
+func TestRequireGatewaySignature_PrevEnvEmptyIsIgnored(t *testing.T) {
+	t.Setenv(GatewaySignatureEnv, "only-one")
+	t.Setenv(GatewaySignaturePrevEnv, "")
+	h := RequireGatewaySignature()(http.HandlerFunc(ok))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, newReq("/", "only-one"))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("active secret rejected: %d", rr.Code)
+	}
+}
+
 // Health endpoints must NOT require the header — k8s probes hit them
 // directly on a pod IP without going through the gateway.
 func TestRequireGatewaySignature_AllowsHealthEndpointsUnsigned(t *testing.T) {

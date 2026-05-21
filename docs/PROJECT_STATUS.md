@@ -694,7 +694,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 | Size limit on uploads | ✅ Enforced | `cfg.MaxUploadSize` per-service; storage's single-PUT ceiling (multipart pending) |
 | Rate limiting | 🟡 Partial | `pkg/middleware/ratelimit.go` (token-bucket, Redis-backed) applied to `/auth/*` routes; **NOT applied to iPaaS trigger endpoints** (gap) |
 | CORS config | 🟡 Visibility gap | No `cors` package import found in services; relies on Kong gateway config (`deploy/gateway/kong.yaml` — not inspected this audit) |
-| Secrets in env (not hardcoded) | ✅ Clean | No password/token literals in source. Acceptable dev defaults are clearly marked (`dev-only-gateway-secret-rotate-in-prod`) |
+| Secrets in env (not hardcoded) | ✅ Clean | No password/token literals in source. The previously-shipped fallback `dev-only-gateway-secret-rotate-in-prod` was removed across compose / scripts / Node services 2026-05-21; `VAULTDMS_GATEWAY_SECRET` must now be explicitly exported (Vite dev proxy, compose, run-all-services.sh, restart-dev.ps1, yjs-server.js, and k6 load tests all fail-fast if unset). |
 | SQL injection protection | ✅ Enforced | All repos use parameterized `$1, $2` queries via pgx. Zero string-concat in WHERE clauses spotted. |
 | XSS protection | ✅ Enforced | React's auto-escaping; no `dangerouslySetInnerHTML` usage outside of intentional PDF/preview content |
 | CSRF protection | ✅ Enforced | `pkg/middleware/csrf.go` double-submit cookie pattern on every mutating session-cookie route. API-key callers exempt by design. |

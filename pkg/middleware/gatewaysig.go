@@ -42,11 +42,31 @@ const GatewaySignatureHeader = "X-Gateway-Signature"
 // RequireGatewaySignatureWithSecrets.
 const GatewaySignatureEnv = "VAULTDMS_GATEWAY_SECRET"
 
+// GatewaySignaturePrevEnv is the optional previous-secret env var read
+// alongside GatewaySignatureEnv. When set, requests carrying EITHER value
+// are accepted — operationally this is the "overlap window" of a secret
+// rotation:
+//
+//  1. Set GatewaySignaturePrevEnv = current secret on every backend +
+//     restart. Backends now accept current OR current (no-op accept).
+//  2. Set GatewaySignatureEnv = NEW secret, leave GatewaySignaturePrevEnv
+//     at the old value, restart backends. Both old + new are accepted.
+//  3. Update the gateway to send the new secret.
+//  4. Once gateway traffic is fully on the new secret, unset
+//     GatewaySignaturePrevEnv and restart backends. Only the new secret
+//     is accepted from then on.
+//
+// Empty / unset means "no previous secret"; the middleware then only
+// accepts GatewaySignatureEnv.
+const GatewaySignaturePrevEnv = "VAULTDMS_GATEWAY_SECRET_PREV"
+
 // RequireGatewaySignature returns middleware that rejects any request
 // whose X-Gateway-Signature header does not match the configured shared
-// secret. The shared secret is read once at startup from
-// VAULTDMS_GATEWAY_SECRET. A missing secret panics at startup — we do
-// NOT allow a service to accept unsigned traffic by accident.
+// secret. The active secret is read at startup from
+// VAULTDMS_GATEWAY_SECRET; if VAULTDMS_GATEWAY_SECRET_PREV is also set,
+// that value is accepted in parallel so secret rotation can run with no
+// downtime. A missing active secret panics at startup — we do NOT allow
+// a service to accept unsigned traffic by accident.
 //
 // Trust model (§3.1 / B2.2):
 //   - Kong is the only caller expected to set this header.
@@ -59,7 +79,11 @@ func RequireGatewaySignature() func(http.Handler) http.Handler {
 	if secret == "" {
 		panic(GatewaySignatureEnv + " is required — refusing to start a backend that would accept unsigned traffic")
 	}
-	return RequireGatewaySignatureWithSecrets([]string{secret})
+	secrets := []string{secret}
+	if prev := os.Getenv(GatewaySignaturePrevEnv); prev != "" && prev != secret {
+		secrets = append(secrets, prev)
+	}
+	return RequireGatewaySignatureWithSecrets(secrets)
 }
 
 // RequireGatewaySignatureWithSecrets is RequireGatewaySignature with

@@ -152,7 +152,15 @@ export function attachYjs(wss) {
 }
 
 const AUTH_BASE = process.env.AUTH_SERVICE_URL || 'http://auth:8080'
-const GATEWAY_SECRET = process.env.VAULTDMS_GATEWAY_SECRET || 'dev-only-gateway-secret-rotate-in-prod'
+// No hardcoded fallback — the previous default became a globally-known
+// string in the source tree, so anyone with read access could forge
+// gateway-authenticated requests against any deployment that hadn't
+// rotated. Fail fast at startup if the env var is missing.
+const GATEWAY_SECRET = process.env.VAULTDMS_GATEWAY_SECRET
+if (!GATEWAY_SECRET) {
+  console.error('VAULTDMS_GATEWAY_SECRET is required; refusing to start (see web/.env.example)')
+  process.exit(1)
+}
 
 /**
  * Calls auth's /api/v1/auth/me with the dms_session cookie from the

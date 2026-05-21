@@ -69,10 +69,14 @@ export COLLABORATION_SERVICE_ADDR="localhost:9092"
 export AUTH_SERVICE_ADDR="localhost:9090"
 
 # §3.1 / B2.3 — gateway-signature shared secret; pkg/middleware
-# RequireGatewaySignature refuses to start without it. Matches the
-# default wired into docker-compose.yml so `make run-all` on the host
-# interoperates with a compose gateway.
-export VAULTDMS_GATEWAY_SECRET="${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
+# RequireGatewaySignature refuses to start without it. No default —
+# the previous fallback ("dev-only-gateway-secret-rotate-in-prod")
+# became a globally-known string in the source tree, so anyone with
+# read access could forge gateway-authenticated requests against any
+# deployment that hadn't rotated. Generate a fresh value with
+# `openssl rand -hex 32` and export it in your shell (or .env).
+: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+export VAULTDMS_GATEWAY_SECRET
 
 echo "Starting ${#service_specs[@]} services..."
 for spec in "${service_specs[@]}"; do

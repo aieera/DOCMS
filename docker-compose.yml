@@ -11,7 +11,7 @@ x-go-env: &go-env
   # §3.1 / B2.2 — shared secret; pkg/middleware.RequireGatewaySignature
   # rejects any request that doesn't carry a matching X-Gateway-Signature.
   # Must be identical to the gateway's VAULTDMS_GATEWAY_SECRET.
-  VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
+  VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
   VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
   VAULTDMS_REDIS_URL:    "redis:6379"
   VAULTDMS_NATS_URL:     "nats://nats:4222"
@@ -335,7 +335,7 @@ services:
       # §3.1 / B2.2 — shared secret injected into every forwarded
       # request as X-Gateway-Signature. kong.yaml references it as
       # `${VAULTDMS_GATEWAY_SECRET}`; Kong env-substitutes at boot.
-      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
+      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
     volumes:
       - ./deploy/gateway:/kong/declarative:ro
     ports:
@@ -437,7 +437,7 @@ services:
       VAULTDMS_NATS_URL: "nats://nats:4222"
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
       VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
-      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:-dev-only-gateway-secret-rotate-in-prod}"
+      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
     ports: ["8083:8083"]
     depends_on:
       redis:    { condition: service_healthy }
