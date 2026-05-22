@@ -9,6 +9,8 @@ import { AuthShell } from '@/components/layout/auth-shell'
 import { useAuthStore } from '@/store/authStore'
 import { login, verifyMFA } from '@/api/auth'
 import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
+import type { User } from '@/types/api'
+import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -36,9 +38,21 @@ function LoginPage() {
   const authLogin = useAuthStore((s) => s.login)
   const navigate = useNavigate()
 
-  const finalizeLogin = (user: any) => {
-    authLogin(user, user.tenant_id ?? '')
+  // Single chokepoint after a successful sign-in (password, MFA, OR
+  // passkey). H-1: an empty tenant_id used to be passed straight into
+  // the auth store, which then left X-Auth-Tenant-ID off every
+  // follow-up request — server-side identity checks fail open with a
+  // generic 401 and the user sees a broken session. The validation
+  // lives in ./login.finalize so it's unit-testable in isolation.
+  const finalizeLogin = (user: User | undefined): boolean => {
+    const res = finalizeLoginResult(user)
+    if (!res.ok) {
+      toast.error(FINALIZE_TENANT_MISSING_MESSAGE)
+      return false
+    }
+    authLogin(res.user, res.tenantId)
     navigate({ to: '/' })
+    return true
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -139,9 +153,10 @@ function LoginPage() {
     setLoading(true)
     try {
       const data = await loginWithPasskey({ tenant_slug: tenantSlug, email })
-      const u = data.user as { tenant_id?: string }
-      authLogin(data.user as Parameters<typeof authLogin>[0], u.tenant_id ?? '')
-      navigate({ to: '/' })
+      // Route through the same chokepoint as the password path so the
+      // empty-tenant_id guard can never be forgotten on one of the
+      // login flows again (H-1 invariant; see Wave 5 pattern 5).
+      finalizeLogin(data.user as User | undefined)
     } catch (err: unknown) {
       const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string }
       if (e.response?.status === 501) {
