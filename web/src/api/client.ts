@@ -110,7 +110,9 @@ api.interceptors.request.use(async (config) => {
 // — { error }, { message }, { detail }, FieldError envelopes — then
 // falls back to the raw status text. Surfaced in toasts so the user
 // (or QA) sees what the server actually rejected, not just "400".
-function readErrorMessage(err: unknown): string | null {
+// Exported so route/component error handlers can stop reaching into
+// `(e as any).response.data.error` chains (Wave 5 pattern 4).
+export function readErrorMessage(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null
   const data = (err as { response?: { data?: unknown } }).response?.data
   if (typeof data === 'string') return data

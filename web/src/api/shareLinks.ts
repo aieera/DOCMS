@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { Document } from '@/types/api'
 
 export interface ShareLink {
   id: string
@@ -17,6 +18,18 @@ export interface CreateShareLinkInput {
   expires_in_hours?: number
   max_views?: number
   permissions?: string[]
+}
+
+// ShareLinkAccessResult mirrors proto AccessShareLinkResponse:
+//   - password_required=true when the link is password-protected and the
+//     caller didn't supply the right password. `document` is then nil.
+//   - On success, `document` + `download_url` are populated. The download
+//     URL is the public /api/v1/shared/{token}/download alias and is the
+//     only credential needed to fetch the bytes (no session cookie).
+export interface ShareLinkAccessResult {
+  document: Document | null
+  download_url: string
+  password_required: boolean
 }
 
 export async function createShareLink(documentId: string, input: CreateShareLinkInput = {}) {
@@ -38,7 +51,19 @@ export async function deleteShareLink(linkId: string) {
   await api.delete(`/share-links/${linkId}`)
 }
 
-export async function accessShareLink(token: string, password?: string) {
-  const { data } = await api.post(`/shared/${token}`, { password })
+// accessShareLink hits the public POST /api/v1/shared/{token} endpoint.
+// Pass no password for the initial "peek" — the server returns
+// {password_required: true, document: null} if a password is set,
+// otherwise the full document + download URL. Pass a password to
+// verify; a wrong password still returns 200 with password_required=true
+// (server-side: backend does not leak existence-vs-wrong-password).
+export async function accessShareLink(
+  token: string,
+  password?: string,
+): Promise<ShareLinkAccessResult> {
+  const { data } = await api.post<ShareLinkAccessResult>(
+    `/shared/${token}`,
+    password ? { password } : {},
+  )
   return data
 }
