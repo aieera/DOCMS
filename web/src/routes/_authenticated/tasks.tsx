@@ -19,6 +19,7 @@ import {
 } from '@/api/tasks'
 import { useAuthStore } from '@/store/authStore'
 import { getUsers } from '@/api/admin'
+import { readErrorMessage } from '@/api/client'
 import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -200,12 +201,20 @@ function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void })
 }
 
 function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
-  const complete = useMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange })
-  const reopen   = useMutation({ mutationFn: () => reopenTask(task.id),   onSuccess: onChange })
-  const cancel   = useMutation({ mutationFn: () => cancelTask(task.id),   onSuccess: onChange })
+  // H-4: surface server errors for every transition button — without
+  // onError the buttons looked dead on 403 / 404 / 5xx, and the user
+  // had no signal anything happened. readErrorMessage parses the
+  // backend's standard error envelope so legal-hold / state-conflict
+  // reasons reach the toast verbatim.
+  const onTaskError = (e: unknown) =>
+    toast.error(readErrorMessage(e) ?? 'Could not update task')
+  const complete = useMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange, onError: onTaskError })
+  const reopen   = useMutation({ mutationFn: () => reopenTask(task.id),   onSuccess: onChange, onError: onTaskError })
+  const cancel   = useMutation({ mutationFn: () => cancelTask(task.id),   onSuccess: onChange, onError: onTaskError })
   const remove   = useMutation({
-    mutationFn: () => deleteTask(task.id), onSuccess: onChange,
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    mutationFn: () => deleteTask(task.id),
+    onSuccess: onChange,
+    onError: onTaskError,
   })
 
   const isDone = task.status === 'done' || task.status === 'cancelled'
@@ -285,7 +294,11 @@ function KanbanColumn({ title, tasks, onChange, testid }: { title: string; tasks
 }
 
 function KanbanCard({ task, onChange }: { task: Task; onChange: () => void }) {
-  const complete = useMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange })
+  const complete = useMutation({
+    mutationFn: () => completeTask(task.id),
+    onSuccess: onChange,
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not complete task'),
+  })
   return (
     <li className="rounded border border-border bg-background p-2 text-sm" data-testid={`kanban-card-${task.id}`}>
       <div className="flex items-start justify-between gap-2">

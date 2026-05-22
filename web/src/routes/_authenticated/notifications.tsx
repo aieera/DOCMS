@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { readErrorMessage } from '@/api/client'
 import { Bell, BellOff, CheckCheck } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -14,9 +15,15 @@ function NotificationsPage() {
   const qc = useQueryClient()
   const list = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
 
+  // H-5: without onError, a failed mark-as-read left the item visually
+  // unread with no feedback. readErrorMessage surfaces the server
+  // reason (e.g. 404 if the row was already purged) so the user knows
+  // their click did something.
   const readOne = useMutation({
     mutationFn: markAsRead,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications-inbox'] }),
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? "Couldn't mark as read"),
   })
   const readAll = useMutation({
     mutationFn: markAllRead,
@@ -24,6 +31,8 @@ function NotificationsPage() {
       toast.success('Marked all read')
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
     },
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? "Couldn't mark all as read"),
   })
   // ADR 0086 — per-notification"snooze this type for 1h" link.
   const snooze = useMutation({
