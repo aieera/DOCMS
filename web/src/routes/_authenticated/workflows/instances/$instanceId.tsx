@@ -8,7 +8,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { RotateCcw, CheckCircle2, XCircle, Clock, UserPlus, AlertTriangle } from 'lucide-react'
-import { api } from '@/api/client'
+import { api, readErrorMessage } from '@/api/client'
 import { recallInstance } from '@/api/workflows'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -75,14 +75,17 @@ function InstanceDetail() {
       qc.invalidateQueries({ queryKey: ['workflow-instance', instanceId] })
       qc.invalidateQueries({ queryKey: ['workflow-timeline', instanceId] })
     },
-    onError: (e: any) => {
-      const status = e?.response?.status
+    onError: (e: unknown) => {
+      // Preserve the 409/403-specific copy — both are more
+      // actionable than the generic backend message. readErrorMessage
+      // handles every other status.
+      const status = (e as { response?: { status?: number } } | null)?.response?.status
       if (status === 409) {
         toast.error('Cannot recall — at least one approver has already acted.')
       } else if (status === 403) {
         toast.error('Only the initiator can recall a workflow.')
       } else {
-        toast.error(e?.response?.data?.error ?? 'Recall failed')
+        toast.error(readErrorMessage(e) ?? 'Recall failed')
       }
     },
   })

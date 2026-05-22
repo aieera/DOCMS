@@ -26,6 +26,7 @@ import {
   type EnrolledMethod,
   type MFAMethod,
 } from '@/api/mfa'
+import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
@@ -66,7 +67,7 @@ function MFAPage() {
       toast.success('Method disabled')
       qc.invalidateQueries({ queryKey: ['mfa', 'methods'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed to disable'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not disable MFA'),
   })
 
   return (
@@ -146,7 +147,7 @@ function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
       toast.success('Email enrolled — verify by signing out and signing in.')
       onChanged()
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll email factor'),
   })
   return (
     <Section icon={<Mail className="h-5 w-5" />} title="Email one-time codes"
@@ -177,7 +178,7 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
       toast.success('SMS enrolled — verify by signing out and signing in.')
       onChanged()
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll SMS factor'),
   })
   return (
     <Section icon={<MessageSquare className="h-5 w-5" />} title="SMS one-time codes"

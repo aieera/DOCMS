@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type VideoTimestampData } from '@/api/annotations'
+import { readErrorMessage } from '@/api/client'
 import { useAuthBlob } from '@/lib/useAuthBlob'
 import { AnnotationToolbar } from './AnnotationToolbar'
 
@@ -60,8 +61,8 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
         page: 1, type: 'video_timestamp', data: data as unknown as Record<string, unknown>,
       })
       setAnnotations((a) => [...a, created])
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? 'Failed to save pin')
+    } catch (e: unknown) {
+      toast.error(readErrorMessage(e) ?? 'Failed to save pin')
     }
   }
 

@@ -39,6 +39,7 @@ import {
   type LDAPTestBindResult,
 } from '@/api/ldap'
 import { listGroups } from '@/api/groups'
+import { readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -109,7 +110,7 @@ function NoConfigYet({ onCreated }: { onCreated: () => void }) {
       toast.success('LDAP config saved as draft. Test the connection, then activate.')
       onCreated()
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed to create'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not create LDAP config'),
   })
 
   return (
@@ -164,7 +165,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
       toast.success('LDAP config saved')
       qc.invalidateQueries({ queryKey: ['admin', 'ldap'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'save failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not save LDAP config'),
   })
 
   const remove = useMutation({
@@ -266,7 +267,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
       if (res.ok) toast.success('Test bind succeeded')
       else toast.error(res.error || 'Test bind failed')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'test failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'LDAP test failed'),
   })
 
   return (
@@ -398,7 +399,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
       toast.success('Mapping added')
       qc.invalidateQueries({ queryKey: ['admin', 'ldap', 'mappings', config.id] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'add failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not add mapping'),
   })
 
   const del = useMutation({
@@ -482,7 +483,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
       toast.success('Sync run complete')
       qc.invalidateQueries({ queryKey: ['admin', 'ldap'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'sync failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'LDAP sync failed'),
   })
 
   // Refresh on mount + every 15 s while a 'running' row is in flight.

@@ -24,6 +24,7 @@ import { Pencil, ExternalLink, X, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { startCoauthSession, probeEditorReachable, type CoauthSession } from '@/api/coauth'
+import { readErrorMessage } from '@/api/client'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 
@@ -80,8 +81,8 @@ export function CoauthorEditor({
       }
       setSession(s)
       setOpen(true)
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? 'Failed to start editor session')
+    } catch (e: unknown) {
+      toast.error(readErrorMessage(e) ?? 'Failed to start editor session')
     } finally {
       setLoading(false)
     }

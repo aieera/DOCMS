@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { annotationsApi, type Annotation, type ImageShapeData } from '@/api/annotations'
+import { readErrorMessage } from '@/api/client'
 import { useAuthBlob } from '@/lib/useAuthBlob'
 import { AnnotationToolbar, type ImageMode } from './AnnotationToolbar'
 
@@ -57,8 +58,8 @@ export function ImageAnnotationLayer({ documentId, versionId, imageUrl, canCreat
         page: 1, type: 'image_shape', data: data as unknown as Record<string, unknown>,
       })
       setAnnotations((a) => [...a, created])
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? 'Failed to save annotation')
+    } catch (e: unknown) {
+      toast.error(readErrorMessage(e) ?? 'Failed to save annotation')
     }
   }
 

@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { createShareLink } from '@/api/shareLinks'
 import { createZTShare } from '@/api/ztShare'
 import { getVersions } from '@/api/documents'
+import { readErrorMessage } from '@/api/client'
 
 interface Props { open: boolean; onOpenChange: (o: boolean) => void; documentId: string; documentTitle: string }
 
@@ -77,8 +78,14 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
       }
       setShareUrl(`${window.location.origin}/shared/${link.token}`)
       toast.success('Share link created')
-    } catch {
-      toast.error('Failed to create share link')
+    } catch (err: unknown) {
+      // Turn-1 follow-up: getVersions now THROWS UnknownListShapeError
+      // on malformed list responses (Wave 5 pattern 3); creating a
+      // share link can also fail mid-flight. readErrorMessage parses
+      // the backend's envelope so the user sees the actual cause
+      // ("link limit reached", "no versions to share", etc.) rather
+      // than a generic 'Failed to create share link'.
+      toast.error(readErrorMessage(err) ?? 'Failed to create share link')
     } finally {
       setCreating(false)
     }

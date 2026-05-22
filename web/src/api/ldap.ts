@@ -79,8 +79,11 @@ export async function getActiveLDAPConfig(): Promise<LDAPConfig | null> {
   try {
     const { data } = await api.get<LDAPConfig>('/admin/ldap/config')
     return data
-  } catch (err: any) {
-    if (err?.response?.status === 404) return null
+  } catch (err: unknown) {
+    // 404 here means "no config saved yet" — silent null is the
+    // contract the caller expects. Anything else bubbles.
+    const status = (err as { response?: { status?: number } } | null)?.response?.status
+    if (status === 404) return null
     throw err
   }
 }

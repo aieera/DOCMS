@@ -24,6 +24,7 @@ import {
   type Comment, type ReactionAggregate,
 } from '@/api/comments'
 import { getUsers } from '@/api/admin'
+import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { Button } from '@/components/ui/shadcn/button'
@@ -171,7 +172,7 @@ function CommentBubble({ c, currentUserId }: { c: Comment; currentUserId: string
   const remove = useMutation({
     mutationFn: () => deleteComment(c.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comments', c.document_id] }),
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Comment action failed'),
   })
   return (
     <div className="text-sm">
@@ -291,7 +292,7 @@ function NewCommentForm({ documentId }: { documentId: string }) {
       setBody('')
       qc.invalidateQueries({ queryKey: ['comments', documentId] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Comment action failed'),
   })
 
   return (
@@ -315,7 +316,7 @@ function ReplyForm({ parentId, onSubmitted }: { parentId: string; onSubmitted: (
       onSubmitted()
       qc.invalidateQueries({ queryKey: ['comments'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Comment action failed'),
   })
   return (
     <CommentInput

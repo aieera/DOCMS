@@ -9,6 +9,7 @@ import {
   type ESignProvider, type SignatureProvider, type SigningMode,
 } from '@/api/signatures'
 import { getVersions } from '@/api/documents'
+import { readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -111,7 +112,19 @@ function SendForSignaturePage() {
       }
       navigate({ to: '/admin/integrations' })
     },
-    onError: (e: Error) => toast.error(e.message || 'Send failed'),
+    // Turn-1 follow-up: the old `e.message || 'Send failed'` only
+    // surfaced thrown JS-Error messages and missed axios envelopes
+    // entirely. readErrorMessage handles both — backend's
+    // `{ error: "..." }` envelope wins; the local thrown-Error
+    // fallback ('no versions yet — upload first…') still surfaces
+    // via the Error.message branch readErrorMessage doesn't touch
+    // (we keep e.message as the secondary fallback).
+    onError: (e: unknown) =>
+      toast.error(
+        readErrorMessage(e) ??
+        (e instanceof Error ? e.message : null) ??
+        'Send failed',
+      ),
   })
 
   const updateRecipient = (i: number, patch: Partial<RecipientForm>) => {

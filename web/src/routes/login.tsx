@@ -11,6 +11,7 @@ import { login, verifyMFA } from '@/api/auth'
 import { loginWithPasskey, isWebAuthnSupported } from '@/api/webauthn'
 import type { User } from '@/types/api'
 import { finalizeLoginResult, FINALIZE_TENANT_MISSING_MESSAGE } from '@/lib/finalizeLogin'
+import { readErrorMessage } from '@/api/client'
 import {
   startEmailOTP, verifyEmailOTP,
   startSMSOTP, verifySMSOTP,
@@ -109,10 +110,14 @@ function LoginPage() {
           // passkey is handled by the existing handlePasskey flow.
           break
       }
-    } catch (e: any) {
-      const status = e?.response?.status
+    } catch (e: unknown) {
+      // Preserve the 409-specific copy ("that method's not enabled
+      // on this deploy") since it's more actionable than the
+      // generic server message; readErrorMessage handles everything
+      // else.
+      const status = (e as { response?: { status?: number } } | null)?.response?.status
       if (status === 409) toast.error('That method is unavailable on this deploy.')
-      else toast.error(e?.response?.data?.error ?? 'Failed to start verification')
+      else toast.error(readErrorMessage(e) ?? 'Failed to start verification')
       setChosen(null)
     }
   }
@@ -122,7 +127,10 @@ function LoginPage() {
     if (!mfaToken || !chosen) return
     setLoading(true)
     try {
-      let data: any
+      // All four MFA verify endpoints return the same shape:
+      // { user, session_token, ... }. Type the local instead of
+      // `any` so the finalizeLogin call below is checked.
+      let data: { user: User }
       switch (chosen.method) {
         case 'totp':  data = await verifyMFA(mfaToken, code); break
         case 'email': data = await verifyEmailOTP(mfaToken, code); break
@@ -134,8 +142,8 @@ function LoginPage() {
         default: throw new Error('unsupported method')
       }
       finalizeLogin(data.user)
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? 'Code rejected')
+    } catch (e: unknown) {
+      toast.error(readErrorMessage(e) ?? 'Code rejected')
     } finally {
       setLoading(false)
     }

@@ -7,7 +7,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Copy, RotateCcw, AlertTriangle } from 'lucide-react'
-import { api } from '@/api/client'
+import { api, readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -36,7 +36,7 @@ function RecoveryCodesPage() {
       setCodes(cs)
       toast.success('New recovery codes generated. Old codes are now invalid.')
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed to regenerate'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not regenerate recovery codes'),
   })
 
   const copyAll = () => {
