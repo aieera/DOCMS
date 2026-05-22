@@ -2,11 +2,20 @@ import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 dayjs.extend(relativeTime)
 
+// Human-readable file size. Edge cases (C-2):
+//   - null / undefined / NaN  → em-dash placeholder
+//   - negative                 → em-dash (size can't be negative; the
+//                                old code returned "NaN undefined")
+//   - 0                        → "0 B"
+//   - >= 1 PB                  → "PB" / "EB" instead of running off the
+//                                end of the units array as "… undefined"
+//   - non-finite (±Infinity)   → em-dash
 export function formatFileSize(bytes: number | null | undefined): string {
-  if (bytes == null || Number.isNaN(bytes)) return '—'
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return '—'
   if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
+  const raw = Math.floor(Math.log(bytes) / Math.log(1024))
+  const i = Math.min(raw, units.length - 1) // clamp for ZB+ inputs
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
