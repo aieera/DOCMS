@@ -10,6 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
+# Same defensive upgrade applied in services/intelligence/Dockerfile.
+# python:3.12-slim's bundled pip / setuptools / wheel are old enough
+# to trip "metadata-generation-failed" on PEP 517 sdist builds (seen
+# in the intelligence image during the 2026-05-22 cycle). Upgrade
+# first so the build doesn't depend on whichever PyPI artefact is
+# served at the time.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/

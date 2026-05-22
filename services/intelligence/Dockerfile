@@ -6,6 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.txt .
+# Defensive: python:3.12-slim ships with a pip / setuptools / wheel
+# combo that's old enough to hit "metadata-generation-failed" on a
+# handful of sdist-only deps in requirements.txt (the OCR + NER
+# stack). Upgrading them first lets PEP 517 builds work reliably
+# rather than depending on whichever PyPI artefact happens to be
+# served at build time — saw a clean build today against the same
+# source that failed yesterday, so the build was passing by luck.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 # spacy en_core_web_trf is only used by services/intelligence/app/
 # models/ner_model.py. Build-time download was breaking image build
