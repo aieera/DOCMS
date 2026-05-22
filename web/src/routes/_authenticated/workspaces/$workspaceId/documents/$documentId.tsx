@@ -390,9 +390,41 @@ function DocumentSidebar({
           buttons so they're tap-friendly and never pushed below the
           fold by intelligence panels. */}
       <Card className="space-y-2 p-3">
-        <Button variant="outline" size="sm" className="w-full justify-start">
-          <Download className="h-4 w-4" /> Download
-        </Button>
+        {/* M-4: the sidebar Download button used to have no onClick
+            at all — clicking it did nothing for every mime type, not
+            just non-PDFs. Now it points at the cookie-authenticated
+            decrypt-stream alias the image / video / Office viewers
+            already use; the backend handles every blob type, the
+            browser ships the dms_session cookie on the top-frame
+            navigation, and the `download` attribute hints the
+            original filename. We deliberately reuse this single
+            URL across all mimes rather than presigning per type —
+            one path, one failure mode. The LayoutTab keeps its
+            separate `getDownloadURL` presigned-URL path for the
+            PDF viewer's `<Document file=…>` contract; that's an
+            internal viewer URL, not a user "save to disk" action,
+            so it's not part of this unification. */}
+        {versionId ? (
+          <Button asChild variant="outline" size="sm" className="w-full justify-start">
+            <a
+              href={`/api/v1/documents/${documentId}/versions/${versionId}/download`}
+              download={doc.title ?? 'document'}
+              data-testid="sidebar-download"
+            >
+              <Download className="h-4 w-4" /> Download
+            </a>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            disabled
+            title="No version uploaded yet"
+          >
+            <Download className="h-4 w-4" /> Download
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

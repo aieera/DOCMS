@@ -29,6 +29,16 @@ function hasSessionCookie(): boolean {
   return document.cookie.split(';').some((c) => c.trim().startsWith('dms_session='))
 }
 
+// M-1: cooldown window after a failed /auth/me. Without it, a
+// persistent 500 on the bootstrap call became a storm — every
+// queued AJAX request that hit ensureHydrated() retried /auth/me,
+// got another 500, and immediately let the next caller through to
+// fire another one. This module-level timestamp gates re-entry so
+// at most one /auth/me round-trip happens per HYDRATION_BACKOFF_MS.
+// On a successful hydration the timestamp is cleared.
+const HYDRATION_BACKOFF_MS = 5000
+let lastHydrationFailureAt: number | null = null
+
 // ensureHydrated blocks until the auth store knows who the caller is.
 // Called from the request interceptor for any non-/auth/me request.
 //
@@ -40,12 +50,35 @@ function hasSessionCookie(): boolean {
 // handlers (callers() in compliance_handler.go and friends) treat as
 // 401 and which other handlers may surface as 500 on the downstream
 // nil-deref. Single-flight via authStore.hydrationPromise.
+//
+// Failure paths:
+//   - No session cookie → return immediately (anonymous/public
+//     request). Original request goes out without identity headers
+//     and the store stays unauthenticated so nothing leaks.
+//   - Inside the back-off window after a recent failure → skip the
+//     /auth/me retry. The original request still goes out; if the
+//     backend is healthy enough for it, it will succeed (and any
+//     identity-required handler returns 401, which the response
+//     interceptor logs out on).
+//   - /auth/me itself fails → swallow the error, set the back-off
+//     timestamp, leave the store unauthenticated. We do NOT call
+//     login() with a partial payload, so anonymous-vs-authenticated
+//     branching downstream is always honest about state.
 async function ensureHydrated(): Promise<void> {
   const state = useAuthStore.getState()
   if (state.isAuthenticated && state.tenantId) return
   if (!hasSessionCookie()) return // logged-out — let request 401 fast
   if (state.hydrationPromise) {
     await state.hydrationPromise
+    return
+  }
+  if (
+    lastHydrationFailureAt !== null &&
+    Date.now() - lastHydrationFailureAt < HYDRATION_BACKOFF_MS
+  ) {
+    // Recent failure — don't pile another /auth/me on top of a
+    // backend that's already returning 5xx. The next ensureHydrated
+    // call after the window will try again.
     return
   }
   const p = (async () => {
@@ -55,16 +88,33 @@ async function ensureHydrated(): Promise<void> {
       const { data } = await axios.get<User>('/api/v1/auth/me', { withCredentials: true })
       if (data.tenant_id) {
         useAuthStore.getState().login(data, data.tenant_id)
+        lastHydrationFailureAt = null
+      } else {
+        // Server returned a user record with no tenant_id — same
+        // shape that the post-login finalizeLogin guard refuses (H-1).
+        // Treat as a failure rather than silently sticking a partial
+        // user in the store; back-off so we don't loop on it.
+        lastHydrationFailureAt = Date.now()
       }
     } catch {
-      // Bootstrap failed — let the original request go and surface a
-      // 401 to the response interceptor, which logs the user out.
+      // Bootstrap failed (401, 5xx, network). Set the back-off
+      // timestamp so the next queued request waits out the window
+      // instead of immediately re-attempting. The original request
+      // still proceeds; if it needs auth it'll get 401 → the response
+      // interceptor logs the user out.
+      lastHydrationFailureAt = Date.now()
     } finally {
       useAuthStore.getState().setHydration(null)
     }
   })()
   useAuthStore.getState().setHydration(p)
   await p
+}
+
+// Exposed for tests so they can reset the module-scoped back-off
+// timestamp between cases. Not part of the runtime surface.
+export function __resetHydrationBackoffForTests(): void {
+  lastHydrationFailureAt = null
 }
 
 api.interceptors.request.use(async (config) => {
