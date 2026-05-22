@@ -1,10 +1,17 @@
 import { api } from './client'
 import type { Workspace, Folder } from '@/types/api'
 
-export async function getWorkspaces() {
-  // Backend wraps in { workspaces: [...] } per ListWorkspacesResponse;
-  // legacy shape was a raw array. Handle both until every deploy runs
-  // the new backend.
+// M-2: return type is pinned to Workspace[] so callers can do
+// `data?.length` without a dual-shape cast. The helper still tolerates
+// both wire shapes (legacy bare array + current {workspaces:[]}); the
+// audit asked us to normalize at the source so the dashboard stops
+// reaching past the helper to deal with response variance.
+//
+// Long-term, Wave 5 pattern 3 (unwrapList<T>) will replace these
+// one-offs with a shared helper that ALSO throws on unrecognized
+// shapes instead of silently returning []. For now keep this local
+// so only the workspaces caller graph picks up the typed contract.
+export async function getWorkspaces(): Promise<Workspace[]> {
   const { data } = await api.get<{ workspaces: Workspace[] } | Workspace[]>('/workspaces')
   return Array.isArray(data) ? data : (data.workspaces ?? [])
 }

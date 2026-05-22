@@ -319,6 +319,19 @@ function SearchPage() {
           </div>
         )}
 
+        {/* M-5: explicit hint for the 1-char-query window. Previously
+            the input swallowed single keystrokes silently because
+            `enabled` only flips at length >= 2 — looked like search
+            was broken. Filter-only searches (`enabled === true` via
+            facets) still bypass the hint. */}
+        {!enabled && query.length > 0 && query.length < 2 && (
+          <EmptyState
+            icon={<Search className="h-6 w-6" />}
+            title="Type at least 2 characters to search"
+            description="Or pick a filter from the sidebar — searches with active filters don't need a query string."
+          />
+        )}
+
         {data && (data.results?.length ?? 0) === 0 && enabled && (
           <EmptyState
             title="No results"

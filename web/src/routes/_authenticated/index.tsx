@@ -65,8 +65,11 @@ function KpiRow() {
   const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({ queryKey: ['notif-count'], queryFn: getUnreadCount, staleTime: 30_000 })
 
-  const wsCount = (workspaces.data as { items?: unknown[] } | undefined)?.items?.length
-                ?? (Array.isArray(workspaces.data) ? workspaces.data.length : undefined)
+  // M-2: getWorkspaces() is typed as Promise<Workspace[]> at the
+  // source, so `workspaces.data` is Workspace[] | undefined. The old
+  // `{items:[]}` cast was dead code — the helper never returned that
+  // shape — and the redundant Array.isArray was paranoia. One read.
+  const wsCount = workspaces.data?.length
   const openTaskCount = (tasks.data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress').length
   const overdue = (tasks.data ?? []).filter((t) => t.due_at && new Date(t.due_at) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length
 

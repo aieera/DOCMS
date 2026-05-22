@@ -104,7 +104,15 @@ function MyTasksSection() {
         }
       }
     })
-  }, [data, sort, filterPriority])
+    // M-3: includeCompleted only affects the SERVER-side filter via
+    // listMyTasks(includeCompleted) and the useQuery key above, so
+    // strictly speaking this memo doesn't need it in deps — `data`
+    // changes after the refetch and that already re-runs the memo.
+    // Keep it in the array anyway as a defensive contract: any future
+    // edit that adds a closure reference to `includeCompleted` here
+    // (e.g. a local "hide completed even if server returned them"
+    // filter) gets correct staleness behavior for free.
+  }, [data, sort, filterPriority, includeCompleted])
 
   return (
     <section>
