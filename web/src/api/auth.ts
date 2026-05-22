@@ -1,4 +1,5 @@
 import { api } from './client'
+import { unwrapList } from '@/lib/unwrapList'
 import type { User } from '@/types/api'
 
 export async function login(email: string, password: string, tenantSlug: string) {
@@ -57,9 +58,13 @@ export interface SessionRow {
   current?: boolean
 }
 
-export async function listSessions() {
-  const { data } = await api.get<SessionRow[] | { sessions: SessionRow[] }>('/auth/sessions')
-  return Array.isArray(data) ? data : (data.sessions ?? [])
+export async function listSessions(): Promise<SessionRow[]> {
+  // L-3 / Wave 5 pattern 3: same dual-shape normalization as
+  // getVersions. Throws on unknown shapes so the consumer's react-
+  // query hook surfaces an error state instead of an empty list
+  // pretending the user has no other sessions.
+  const { data } = await api.get<unknown>('/auth/sessions')
+  return unwrapList<SessionRow>(data, 'sessions')
 }
 
 export async function revokeSession(id: string) {

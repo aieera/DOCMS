@@ -281,7 +281,13 @@ function PasskeyRow({ p, onRemove, removing }: {
 
 function SessionsSection() {
   const qc = useQueryClient()
-  const { data: sessions, isLoading } = useQuery({
+  // Wave 5 pattern 3: listSessions throws on unknown shapes. The
+  // `(sessions ?? []).length === 0` pattern below would silently
+  // collapse a thrown error into "no active sessions found" — same
+  // class of bug as the helper used to silently return []. Surface
+  // isError separately so a malformed response doesn't masquerade as
+  // a clean zero-row state.
+  const { data: sessions, isLoading, isError, refetch } = useQuery({
     queryKey: ['sessions'],
     queryFn: listSessions,
   })
@@ -329,6 +335,19 @@ function SessionsSection() {
     >
       {isLoading ? (
         <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
+      ) : isError ? (
+        <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
+          <div className="flex-1">
+            <p className="font-medium text-destructive">Could not load active sessions.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              The server returned an unexpected response. Refresh or try again.
+            </p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => void refetch()} data-testid="sessions-retry">
+              Retry
+            </Button>
+          </div>
+        </div>
       ) : (sessions ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">No active sessions found.</p>
       ) : (

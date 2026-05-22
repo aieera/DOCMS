@@ -1,19 +1,17 @@
 import { api } from './client'
+import { unwrapList } from '@/lib/unwrapList'
 import type { Workspace, Folder } from '@/types/api'
 
-// M-2: return type is pinned to Workspace[] so callers can do
-// `data?.length` without a dual-shape cast. The helper still tolerates
-// both wire shapes (legacy bare array + current {workspaces:[]}); the
-// audit asked us to normalize at the source so the dashboard stops
-// reaching past the helper to deal with response variance.
-//
-// Long-term, Wave 5 pattern 3 (unwrapList<T>) will replace these
-// one-offs with a shared helper that ALSO throws on unrecognized
-// shapes instead of silently returning []. For now keep this local
-// so only the workspaces caller graph picks up the typed contract.
+// M-2 + Wave 5 pattern 3: dashboard cast was removed when this
+// helper started returning Workspace[]; routing through unwrapList
+// now gives the additional throw-on-unknown-shape guarantee shared
+// with getVersions / listSessions / getFolders. Contract for
+// existing callers (Workspace[]) is unchanged for the two supported
+// shapes; malformed responses now reach react-query's isError
+// branch instead of pretending zero workspaces.
 export async function getWorkspaces(): Promise<Workspace[]> {
-  const { data } = await api.get<{ workspaces: Workspace[] } | Workspace[]>('/workspaces')
-  return Array.isArray(data) ? data : (data.workspaces ?? [])
+  const { data } = await api.get<unknown>('/workspaces')
+  return unwrapList<Workspace>(data, 'workspaces')
 }
 
 export async function getWorkspace(id: string) {
@@ -26,12 +24,16 @@ export async function createWorkspace(name: string, description?: string) {
   return data
 }
 
-export async function getFolders(workspaceId: string, parentId?: string) {
-  const { data } = await api.get<{ folders: Folder[] } | Folder[]>(
+export async function getFolders(workspaceId: string, parentId?: string): Promise<Folder[]> {
+  // Wave 5 pattern 3 consolidation: same dual-shape + bonus
+  // throw-on-unknown that getWorkspaces just adopted. Not named in
+  // the audit but identical bug class — folding it in here keeps
+  // the workspace caller graph internally consistent.
+  const { data } = await api.get<unknown>(
     `/workspaces/${workspaceId}/folders`,
     { params: parentId ? { parent_folder_id: parentId } : {} },
   )
-  return Array.isArray(data) ? data : (data.folders ?? [])
+  return unwrapList<Folder>(data, 'folders')
 }
 
 export async function createFolder(workspaceId: string, name: string, parentId?: string) {

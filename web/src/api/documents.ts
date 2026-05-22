@@ -1,4 +1,5 @@
 import { api } from './client'
+import { unwrapList } from '@/lib/unwrapList'
 import type { Document, Version, PaginatedResponse } from '@/types/api'
 
 export async function getDocuments(workspaceId: string, params: Record<string, string> = {}) {
@@ -69,15 +70,14 @@ export async function getDownloadURL(documentId: string, versionId: string) {
 }
 
 export async function getVersions(documentId: string): Promise<Version[]> {
-  // The grpc-gateway translates ListVersionsResponse.versions into a
-  // top-level `versions` key — NOT a bare array. Earlier callers
-  // assumed bare-array and broke .map() at runtime. Unwrap once here
-  // so every consumer can rely on Version[].
-  const { data } = await api.get<{ versions?: Version[] } | Version[]>(
-    `/documents/${documentId}/versions`,
-  )
-  if (Array.isArray(data)) return data
-  return data?.versions ?? []
+  // H-3 / Wave 5 pattern 3: grpc-gateway wraps ListVersionsResponse
+  // as { versions: [...] } but legacy deploys returned a bare array.
+  // unwrapList accepts both and throws UnknownListShapeError on any
+  // other shape (e.g. an error envelope), routing the failure to
+  // the consuming hook's isError branch instead of silently rendering
+  // "no versions" on a malformed response.
+  const { data } = await api.get<unknown>(`/documents/${documentId}/versions`)
+  return unwrapList<Version>(data, 'versions')
 }
 
 export async function restoreVersion(documentId: string, versionId: string) {
