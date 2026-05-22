@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { readErrorMessage } from '@/api/client'
 import { Bell, BellOff, CheckCheck } from 'lucide-react'
@@ -35,10 +36,14 @@ function NotificationsPage() {
       toast.error(readErrorMessage(e) ?? "Couldn't mark all as read"),
   })
   // ADR 0086 — per-notification"snooze this type for 1h" link.
-  const snooze = useMutation({
+  // Wave 5 pattern 1 — migrated. onSuccess toast is preserved; the
+  // generic 'Failed to snooze' bare-string error becomes the
+  // wrapper's defaultErrorMessage, which yields to the real backend
+  // message (e.g. "already snoozed") via readErrorMessage.
+  const snooze = useAppMutation({
     mutationFn: (eventType: string) => createSnooze({ event_type: eventType, duration_minutes: 60 }),
     onSuccess: () => toast.success('Snoozed for 1 hour'),
-    onError: () => toast.error('Failed to snooze'),
+    defaultErrorMessage: 'Could not snooze notification',
   })
 
   const items = list.data?.items ?? []

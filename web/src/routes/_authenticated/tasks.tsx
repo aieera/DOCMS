@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 'lucide-react'
 
@@ -369,7 +370,13 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
     return opts
   }, [usersQ.data, me])
 
-  const create = useMutation({
+  // Wave 5 pattern 1 — migrated from useMutation to useAppMutation.
+  // onSuccess (toast + onCreated + onClose) preserved verbatim;
+  // the old `(e: any) => toast.error(e?.response?.data?.error ?? 'failed')`
+  // is replaced by the wrapper's default (readErrorMessage + the
+  // defaultErrorMessage fallback) which surfaces the real backend
+  // reason instead of the opaque 'failed'.
+  const create = useAppMutation({
     mutationFn: () => createTask({
       title, description, priority,
       due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
@@ -381,7 +388,7 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
       onCreated()
       onClose()
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    defaultErrorMessage: 'Could not create task',
   })
 
   return (
@@ -441,14 +448,19 @@ function ApprovalsSection() {
     queryKey: ['workflow-tasks', filter],
     queryFn: () => getMyTasks({ status: statusParam }),
   })
-  const act = useMutation({
+  // Wave 5 pattern 1 — migrated. onSuccess (the success toast + the
+  // ['workflow-tasks'] invalidation that re-fetches the list) is
+  // preserved exactly. The opaque 'failed' fallback is now the
+  // wrapper's defaultErrorMessage; readErrorMessage still wins when
+  // the backend sends a real reason (e.g. step already completed).
+  const act = useAppMutation({
     mutationFn: ({ task, outcome }: { task: WorkflowTask; outcome: 'approve' | 'reject' }) =>
       signalStep(task.instance_id, 0, outcome),
     onSuccess: (_d, vars) => {
       toast.success(`Task ${vars.outcome}d`)
       qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error ?? 'failed'),
+    defaultErrorMessage: 'Could not record approval decision',
   })
 
   return (
