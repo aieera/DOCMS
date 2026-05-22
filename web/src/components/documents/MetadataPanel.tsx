@@ -1,9 +1,11 @@
 import type { Document } from '@/types/api'
+import { Activity } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { formatFileSize, formatDateTime, lifecycleStateLabel } from '@/lib/formatters'
+import { ComingSoon } from '@/components/shared/ComingSoon'
 import { VersionHistory } from './VersionHistory'
 import { TagEditor } from './TagEditor'
 
@@ -41,7 +43,20 @@ export function MetadataPanel({ doc, open, onClose }: Props) {
             </div>
           </TabsContent>
           <TabsContent value="versions"><VersionHistory documentId={doc.id} /></TabsContent>
-          <TabsContent value="activity"><p className="text-sm text-muted-foreground">Activity log coming soon</p></TabsContent>
+          <TabsContent value="activity">
+            {/* Wave 5 pattern 2: was a bare "Activity log coming soon"
+                <p>, now an honest ComingSoon panel. Copy stays
+                deliberately generic — no path, no endpoint name —
+                because document viewers may not have admin access
+                to wherever an admin-side activity surface ends up
+                living, and asserting a route here would either
+                404 for them or look like the feature ships today. */}
+            <ComingSoon
+              icon={<Activity className="h-6 w-6" />}
+              title="Activity timeline isn't ready yet"
+              description="A per-document activity timeline is coming to this tab."
+            />
+          </TabsContent>
         </Tabs>
       </SheetContent>
     </Sheet>
