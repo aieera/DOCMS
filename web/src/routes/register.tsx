@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { register } from '@/api/auth'
+import { readErrorMessage } from '@/api/client'
 
 function RegisterPage() {
   const [tenantSlug, setTenantSlug] = useState('acme')
@@ -22,8 +23,32 @@ function RegisterPage() {
       await register(email, password, name, tenantSlug)
       toast.success('Account created — please log in')
       setTimeout(() => navigate({ to: '/login' }), 800)
-    } catch {
-      toast.error('Registration failed')
+    } catch (err: unknown) {
+      // H-6: only surface what the response interceptor in api/client.ts
+      // doesn't already toast. Today the interceptor handles:
+      //   - 401 (logs out + redirects; no toast)
+      //   - 403 (toasts "Access denied — {detail}")
+      //   - 429 (toasts the rate-limit message)
+      //   - 5xx (toasts "Server error: {detail}")
+      //   - 400 with a parsable error body (toasts the field message)
+      // Gaps we cover here: 409 (email conflict), 400 with no detail,
+      // and the no-response / network case. Everything else falls
+      // through silently — the interceptor already showed a toast and
+      // a second one would just confuse users.
+      const status = (err as { response?: { status?: number } } | null)?.response?.status
+      const detail = readErrorMessage(err)
+      if (status === 409) {
+        toast.error(detail ?? 'That email is already registered. Try signing in instead.')
+      } else if (status === 400 && !detail) {
+        // Interceptor stays silent on 400 with no parsable body.
+        toast.error('Check the form for invalid fields and try again.')
+      } else if (status === undefined) {
+        // No HTTP response at all — network down, CORS rejection,
+        // proxy unreachable. Interceptor doesn't handle this either.
+        toast.error("Couldn't reach the auth service. Check your connection and try again.")
+      }
+      // 401 / 403 / 429 / 5xx / 400-with-detail: interceptor already
+      // toasted. Stay quiet here so the user sees one message, not two.
     } finally {
       setLoading(false)
     }
