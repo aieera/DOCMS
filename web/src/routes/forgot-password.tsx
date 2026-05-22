@@ -1,87 +1,40 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
-import { Loader2, Mail } from 'lucide-react'
-import { toast } from 'sonner'
+import { KeyRound } from 'lucide-react'
 
-import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/shadcn/input'
-import { Label } from '@/components/ui/label'
 import { AuthShell } from '@/components/layout/auth-shell'
+import { ComingSoon } from '@/components/shared/ComingSoon'
 
+// M-6: the previous handler was a setTimeout that flashed a toast and
+// pretended an email had been sent — no backend route exists for
+// password reset. Auth service router enumeration (recon in the
+// matching commit message) shows /forgot-password and /reset-password
+// have never been built. Rather than fake a feature, this route now
+// renders a ComingSoon panel that ALSO tells the locked-out user
+// what to do right now: contact their tenant admin, who can re-issue
+// access via /admin/users/invite (auth admin.go:119) which sets a
+// password directly during invite. That's an existing, working path.
 function ForgotPasswordPage() {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    // Backend wiring stays a no-op behind the scenes — the toast +
-    // ambiguous "if that email exists" copy is intentional so we
-    // don't leak whether an account exists. The 600ms artificial
-    // delay matches what a real round-trip feels like.
-    setTimeout(() => {
-      setSent(true)
-      setLoading(false)
-      toast.success('If that email exists, a reset link has been sent')
-    }, 600)
-  }
-
-  if (sent) {
-    return (
-      <AuthShell
-        title="Check your inbox"
-        description={`If an account is registered to ${email}, we've sent a link with instructions to reset your password.`}
-        footer={
-          <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Back to sign in</Link>
-        }
-      >
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-muted/40 p-6 text-center">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-background text-foreground">
-            <Mail className="h-5 w-5" />
-          </span>
-          <p className="text-sm text-muted-foreground">
-            The link expires in 30 minutes. Didn't get it? Check your spam folder, then{' '}
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              try again
-            </button>
-            .
-          </p>
-        </div>
-      </AuthShell>
-    )
-  }
-
   return (
     <AuthShell
       title="Reset your password"
-      description="Enter the email associated with your account and we'll send you a reset link."
+      description="A self-service password-reset flow is on the roadmap. Until then, your administrator can re-issue access for you."
       footer={
-        <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">Back to sign in</Link>
+        <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+          Back to sign in
+        </Link>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoFocus
-            autoComplete="email"
-          />
-        </div>
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          Send reset link
-        </Button>
-      </form>
+      <ComingSoon
+        icon={<KeyRound className="h-6 w-6" />}
+        title="Self-service password reset isn't ready yet"
+        description="In the meantime, contact your tenant administrator — they can re-issue your access through the admin invite flow."
+        eyebrow="Backend pending"
+        bullets={[
+          'Admins: /admin/users → Invite (set password during invite)',
+          'Email a reset link with single-use token — backend pending',
+          'New password must meet the same policy as registration',
+        ]}
+      />
     </AuthShell>
   )
 }
