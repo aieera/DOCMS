@@ -133,9 +133,52 @@ api.interceptors.request.use(async (config) => {
   // present the backend treats X-Auth-* as trusted.
   if (tenantId) {
     config.headers['X-Auth-Tenant-ID'] = tenantId
-    // Retain the legacy header for a release so any handler that
-    // hasn't finished the sweep still receives it. Remove after
-    // confirming nothing reads it.
+    // M-7 (Wave 3 audit, security): DO NOT REMOVE THIS DUAL-WRITE
+    // YET. The §3.1 / B2.3 migration to X-Auth-Tenant-ID is
+    // incomplete — confirmed readers of the LEGACY X-Tenant-ID
+    // header (as of 2026-05-22) without an X-Auth-Tenant-ID
+    // fallback:
+    //
+    //   1. pkg/middleware/tenant.go:83 — canonical TenantHTTP
+    //      middleware. Used by most Go services; only the ones
+    //      that also chain SessionAuth before TenantHTTP get a
+    //      cookie-derived fallback. Audit on a per-service basis
+    //      before declaring safe.
+    //   2. services/intelligence/app/api/routes.py — 21 FastAPI
+    //      routes declare `Header(None, alias="X-Tenant-ID")` with
+    //      no fallback. Removing the header would 400-bomb the
+    //      entire AI surface: /ask, /qa(+/sync,/history), /rag/query
+    //      (+/feedback), /summarize, /translate, /translations/*,
+    //      /language/*, /redact/{detect,apply}, /anomaly/run,
+    //      /llm/completions, /workspaces/{id}/ai-settings GET+PUT.
+    //   3. services/document/internal/handler/storage_proxy.go:316
+    //      — direct read via middleware.TenantHeader on the upload-
+    //      initiate gRPC-metadata-propagation path.
+    //   4. pkg/gateway/ratelimit.go:49 — token-bucket keying. Silent
+    //      degradation (all anonymous traffic in one bucket) rather
+    //      than outage if removed.
+    //   5. pkg/gateway/cors.go:33 — CORS allowlist check.
+    //   6. pkg/metrics/metrics.go:130 — Prometheus tenant label.
+    //
+    // The header is currently mitigated by RequireGatewaySignature
+    // (only Kong-or-Vite-proxy-signed traffic reaches backends), so
+    // it's "trusted via the signed gateway boundary" rather than
+    // "trusted unconditionally". Still architectural debt, but not
+    // a live unmitigated risk.
+    //
+    // Safe removal sequence (separate backend track, not in FE):
+    //   a. intelligence: extract one FastAPI dependency that reads
+    //      X-Auth-Tenant-ID first, then X-Tenant-ID, then 400. Swap
+    //      all 21 routes to use it.
+    //   b. pkg/middleware/tenant.go: TenantHTTP reads
+    //      X-Auth-Tenant-ID first, falls back to X-Tenant-ID, then
+    //      auth-context. One change covers every Go consumer of
+    //      the const.
+    //   c. services/document/storage_proxy.go: same dual-read.
+    //   d. pkg/gateway/{cors,ratelimit}.go + pkg/metrics/metrics.go:
+    //      same dual-read.
+    //   e. Deploy. Verify every prod replica is on the new code.
+    //   f. ONE release later, remove this line. Bump the comment.
     config.headers['X-Tenant-ID'] = tenantId
   }
   // Wave 11.2: role header for OPA-gated endpoints (e.g. legal holds
