@@ -21,6 +21,7 @@ import {
   type SessionRow,
 } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
+import { readErrorMessage } from '@/api/client'
 import { formatShortId } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
@@ -130,13 +131,18 @@ function SecuritySection() {
     },
   })
 
+  // L-6: surface the server's reason instead of a bare "Could not
+  // remove". The backend rejects last-passkey deletes (so MFA-only
+  // accounts can't lock themselves out) with a specific error message
+  // — useless if we swallow it.
   const removeMut = useMutation({
     mutationFn: (credentialID: string) => deletePasskey(credentialID),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['passkeys'] })
       toast.success('Passkey removed')
     },
-    onError: () => toast.error('Could not remove'),
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? "Couldn't remove passkey"),
   })
 
   const handleAdd = () => {
@@ -280,13 +286,17 @@ function SessionsSection() {
     queryFn: listSessions,
   })
 
+  // L-6: surface the server's reason for revoke failures (e.g. "cannot
+  // revoke your own current session" if the row id matches the
+  // caller). Bare-string toasts hid that.
   const revokeMut = useMutation({
     mutationFn: (id: string) => revokeSession(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] })
       toast.success('Session revoked')
     },
-    onError: () => toast.error('Could not revoke'),
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? "Couldn't revoke session"),
   })
   const revokeAllMut = useMutation({
     mutationFn: revokeAllSessions,
@@ -294,7 +304,8 @@ function SessionsSection() {
       qc.invalidateQueries({ queryKey: ['sessions'] })
       toast.success('All other sessions revoked')
     },
-    onError: () => toast.error('Could not revoke'),
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? "Couldn't revoke all sessions"),
   })
 
   return (

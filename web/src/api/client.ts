@@ -67,7 +67,13 @@ let lastHydrationFailureAt: number | null = null
 async function ensureHydrated(): Promise<void> {
   const state = useAuthStore.getState()
   if (state.isAuthenticated && state.tenantId) return
-  if (!hasSessionCookie()) return // logged-out — let request 401 fast
+  if (!hasSessionCookie()) {
+    // L-2: anonymous browser. Auth state is settled (definitively
+    // not-logged-in), so components gating on isHydrating can render
+    // their unauthenticated UI without flashing a placeholder.
+    state.markHydrated()
+    return
+  }
   if (state.hydrationPromise) {
     await state.hydrationPromise
     return
@@ -104,7 +110,15 @@ async function ensureHydrated(): Promise<void> {
       // interceptor logs the user out.
       lastHydrationFailureAt = Date.now()
     } finally {
-      useAuthStore.getState().setHydration(null)
+      // Settle the store regardless of success/failure — L-2: even on
+      // a failed hydration the state is "definitively not logged in",
+      // not "still checking". login() above already flips isHydrating
+      // when it fires; this catches every non-login path (no
+      // tenant_id, network failure, 5xx) so the flag never stays
+      // stuck at true.
+      const s = useAuthStore.getState()
+      s.markHydrated()
+      s.setHydration(null)
     }
   })()
   useAuthStore.getState().setHydration(p)

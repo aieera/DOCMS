@@ -27,28 +27,46 @@ function syncLocaleFromUser(user: User | null) {
 // reload. Without it, components that queue queries before the router's
 // beforeLoad resolves go out without X-Auth-Tenant-ID / X-User-ID and
 // hit backend handlers that read identity directly from request headers.
+// L-2: isHydrating distinguishes "we haven't checked yet" from
+// "we checked and the user is anonymous". Components outside the
+// routed tree (top-bar avatar, language selector) used to render
+// their unauthenticated fallback ("?" initial, default language) for
+// a flash before /auth/me resolved on a hard reload. They can now
+// gate on isHydrating to render a placeholder until the auth state
+// is definitively known.
+//
+// State transitions:
+//   - init                       → isHydrating: true
+//   - login()                    → isHydrating: false  (we know who they are)
+//   - logout()                   → isHydrating: false  (we know they're anonymous)
+//   - markHydrated()             → isHydrating: false  (explicit settle, used
+//                                  by ensureHydrated's no-cookie early-return
+//                                  and the .finally() of its network attempt)
 interface AuthState {
   user: User | null
   tenantId: string | null
   isAuthenticated: boolean
+  isHydrating: boolean
   hydrationPromise: Promise<void> | null
   login: (user: User, tenantId: string) => void
   logout: () => void
   updateUser: (user: Partial<User>) => void
   setHydration: (p: Promise<void> | null) => void
+  markHydrated: () => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   tenantId: null,
   isAuthenticated: false,
+  isHydrating: true,
   hydrationPromise: null,
   login: (user, tenantId) => {
     syncLocaleFromUser(user)
-    set({ user, tenantId, isAuthenticated: true, hydrationPromise: null })
+    set({ user, tenantId, isAuthenticated: true, isHydrating: false, hydrationPromise: null })
   },
   logout: () =>
-    set({ user: null, tenantId: null, isAuthenticated: false, hydrationPromise: null }),
+    set({ user: null, tenantId: null, isAuthenticated: false, isHydrating: false, hydrationPromise: null }),
   updateUser: (partial) =>
     set((s) => {
       const next = s.user ? { ...s.user, ...partial } : null
@@ -60,4 +78,5 @@ export const useAuthStore = create<AuthState>((set) => ({
       return { user: next }
     }),
   setHydration: (p) => set({ hydrationPromise: p }),
+  markHydrated: () => set({ isHydrating: false }),
 }))

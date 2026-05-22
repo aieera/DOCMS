@@ -121,6 +121,14 @@ function NotificationsButton() {
 
 function UserMenu() {
   const user = useAuthStore((s) => s.user)
+  // L-2: during the hard-reload window between mount and /auth/me
+  // resolving, `user` is null and the avatar previously rendered a
+  // "?" initial — a flash of "looks logged out" before the real
+  // initial appears. Gate on isHydrating so the initial slot stays
+  // blank until auth state is definitively known. The dropdown
+  // contents still gate on `user`, so opening the menu mid-hydration
+  // shows nothing rather than empty rows.
+  const isHydrating = useAuthStore((s) => s.isHydrating)
   const navigate = useNavigate()
   const logout = useLogout()
   const { t } = useTranslation('common')
@@ -131,11 +139,16 @@ function UserMenu() {
         <Button
           variant="default"
           size="icon"
-          aria-label="Account menu"
+          aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
           data-testid="user-avatar-button"
           className="rounded-full font-semibold"
+          disabled={isHydrating}
         >
-          {initial}
+          {isHydrating ? (
+            <span aria-hidden className="inline-block h-3 w-3 animate-pulse rounded-full bg-current/30" />
+          ) : (
+            initial
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[220px]">
