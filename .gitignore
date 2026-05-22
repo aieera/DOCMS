@@ -66,3 +66,10 @@ deploy/ansible/inventories/*.ini
 !deploy/ansible/inventories/example.ini
 deploy/ansible/host_vars/
 deploy/license/dev.priv.pem
+
+# Playwright failure artefacts — per-failure folders with error-context.md +
+# test-failed-N.png + video.webm + diff screenshots. Regenerated on every
+# failing test run; two folders previously slipped into the repo from a
+# 2026-04-19 RTL run and were removed alongside this gitignore entry.
+web/test-results/
+web/playwright-report/
