@@ -33,10 +33,17 @@ type WorkspaceRepository interface {
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Workspace, error)
 	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.Workspace, error)
 	Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description string) error
+	// UpdateCreatedBy reassigns the workspace's creator (single-owner
+	// model). Callers gate on tenant role / current creator before
+	// invoking.
+	UpdateCreatedBy(ctx context.Context, tx pgx.Tx, tenantID, id, newCreatedBy uuid.UUID) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	// AddMember enrolls a user as a workspace member with the given
 	// role (admin / member / viewer). Idempotent — re-runs are no-ops.
 	AddMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID, addedBy uuid.UUID, role string) error
+	// IsMember reports whether the user has any active membership row
+	// for the workspace.
+	IsMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID) (bool, error)
 }
 
 type FolderRepository interface {
@@ -49,6 +56,9 @@ type FolderRepository interface {
 	UpdateName(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name string) error
 	Move(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, oldPath, newParentPath string, newDepth int) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// SoftDeleteAllInWorkspace bulk-soft-deletes every folder in a
+	// workspace. Used by DeleteWorkspace to clean up the auto-Root.
+	SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) error
 	HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
 }
 
@@ -59,6 +69,7 @@ type VersionRepository interface {
 	GetLatestByDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (*model.Version, error)
 	CountByDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (int, error)
 	NextVersionNumber(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (int, error)
+	UpdateLabel(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, label string) error
 }
 
 type ShareLinkRepository interface {

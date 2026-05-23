@@ -114,6 +114,41 @@ func (r *workspaceRepo) Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 	return nil
 }
 
+// UpdateCreatedBy reassigns the workspace's creator (the "owner" in the
+// single-owner model). Used by TransferWorkspaceOwnership. Callers gate
+// on tenant role / current-creator BEFORE invoking this.
+func (r *workspaceRepo) UpdateCreatedBy(ctx context.Context, tx pgx.Tx, tenantID, id, newCreatedBy uuid.UUID) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE workspaces
+		   SET created_by = $3, updated_at = now()
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`, tenantID, id, newCreatedBy)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFoundErr()
+	}
+	return nil
+}
+
+// IsMember reports whether the given user has any active workspace_members
+// row for the workspace. Used by TransferWorkspaceOwnership to require the
+// new owner already be involved with the workspace.
+func (r *workspaceRepo) IsMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM workspace_members
+			WHERE tenant_id = $1 AND workspace_id = $2 AND user_id = $3
+		)
+	`, tenantID, workspaceID, userID).Scan(&ok)
+	if err != nil {
+		return false, mapPgError(err)
+	}
+	return ok, nil
+}
+
 func (r *workspaceRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	tag, err := tx.Exec(ctx, `
 		UPDATE workspaces SET deleted_at = now()

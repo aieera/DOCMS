@@ -84,3 +84,29 @@ export async function restoreVersion(documentId: string, versionId: string) {
   const { data } = await api.post(`/documents/${documentId}/versions/${versionId}/restore`)
   return data
 }
+
+// Phase 9 — named versions. Empty label clears any existing one.
+// Backend enforces "edit" capability on the document; surfaces 403
+// via the standard error envelope.
+export async function setVersionLabel(documentId: string, versionId: string, label: string) {
+  const { data } = await api.patch<{
+    id: string
+    document_id: string
+    version_number: number
+    label: string
+  }>(`/documents/${documentId}/versions/${versionId}/label`, { label })
+  return data
+}
+
+// Phase 5 — per-document retention exemption. Distinct from legal hold:
+// holds are litigation-driven and freeze ALL lifecycle changes;
+// exemption is a business waiver that just excludes the document from
+// the retention sweep. Reason is required when exempt=true so the
+// audit event (dms.document.retention_exempt_set.v1) carries the
+// business justification an FRCP reviewer would expect.
+export async function setRetentionExempt(documentId: string, exempt: boolean, reason?: string) {
+  await api.post(`/documents/${documentId}/retention-exempt`, {
+    exempt,
+    reason: reason ?? '',
+  })
+}

@@ -74,6 +74,8 @@ type Document struct {
 }
 
 // Version is an immutable record of a document content revision.
+// Label is an optional human-friendly name set after upload (e.g.
+// "Q1 final", "Approved for legal review"). Empty string = unlabelled.
 type Version struct {
 	TenantID      uuid.UUID
 	ID            uuid.UUID
@@ -87,6 +89,7 @@ type Version struct {
 	CreatedByName string
 	CreatedAt     time.Time
 	ChangeSummary string
+	Label         string
 }
 
 // Workspace is the top-level tenant-scoped container. Aggregates

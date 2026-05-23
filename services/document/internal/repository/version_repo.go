@@ -32,7 +32,7 @@ func (r *versionRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.
 	row := tx.QueryRow(ctx, `
 		SELECT id, tenant_id, document_id, version_number, content_blob_id,
 		       size_bytes, mime_type, sha256_hash, created_by, created_by_name,
-		       created_at, change_summary
+		       created_at, change_summary, COALESCE(label, '')
 		FROM document_versions WHERE tenant_id = $1 AND id = $2
 	`, tenantID, id)
 	return scanVersion(row)
@@ -42,7 +42,7 @@ func (r *versionRepo) GetLatestByDocument(ctx context.Context, tx pgx.Tx, tenant
 	row := tx.QueryRow(ctx, `
 		SELECT id, tenant_id, document_id, version_number, content_blob_id,
 		       size_bytes, mime_type, sha256_hash, created_by, created_by_name,
-		       created_at, change_summary
+		       created_at, change_summary, COALESCE(label, '')
 		FROM document_versions
 		WHERE tenant_id = $1 AND document_id = $2
 		ORDER BY version_number DESC LIMIT 1
@@ -91,7 +91,7 @@ func (r *versionRepo) ListByDocument(ctx context.Context, tx pgx.Tx, tenantID uu
 	q := `
 		SELECT id, tenant_id, document_id, version_number, content_blob_id,
 		       size_bytes, mime_type, sha256_hash, created_by, created_by_name,
-		       created_at, change_summary
+		       created_at, change_summary, COALESCE(label, '')
 		FROM document_versions
 		WHERE tenant_id = $1 AND document_id = $2` + cursorSQL + `
 		ORDER BY version_number DESC
@@ -133,11 +133,36 @@ func scanVersion(r rowScanner) (*model.Version, error) {
 	if err := r.Scan(
 		&v.ID, &v.TenantID, &v.DocumentID, &v.VersionNumber, &v.ContentBlobID,
 		&v.SizeBytes, &v.MimeType, &v.SHA256Hash, &v.CreatedBy, &v.CreatedByName,
-		&v.CreatedAt, &v.ChangeSummary,
+		&v.CreatedAt, &v.ChangeSummary, &v.Label,
 	); err != nil {
 		return nil, mapPgError(err)
 	}
 	return &v, nil
+}
+
+// UpdateLabel sets (or clears, when label == "") the human-friendly
+// name on a version. Returns ErrNotFound when the row doesn't exist
+// in the caller's tenant — the policy gate above this catches
+// cross-tenant access first, but the COUNT-check defends in depth.
+func (r *versionRepo) UpdateLabel(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, label string) error {
+	var labelArg any
+	if label == "" {
+		labelArg = nil
+	} else {
+		labelArg = label
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE document_versions
+		SET label = $3
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id, labelArg)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
 }
 
 // compile-time assertion: versionRepo satisfies the interface.

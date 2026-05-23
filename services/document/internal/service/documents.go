@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -670,6 +671,74 @@ func (s *DocumentService) ListVersions(ctx context.Context, documentID uuid.UUID
 		return err
 	})
 	return page, err
+}
+
+// SetVersionLabel updates the optional human-friendly label on a version.
+// Pass an empty string to clear an existing label. Requires the same "edit"
+// capability on the document as renaming the document title — both are
+// metadata writes that don't touch the binary content.
+//
+// Legal hold permits update_metadata (see IsLegalHoldBlocked), so labels can
+// be edited while the document is held. This matches the title-update rule.
+func (s *DocumentService) SetVersionLabel(ctx context.Context, documentID, versionID uuid.UUID, label string) (*model.Version, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Clamp the label so we don't get blob-sized metadata sneaking in.
+	// 200 chars is enough for a descriptive name.
+	const maxLabelLen = 200
+	label = strings.TrimSpace(label)
+	if len(label) > maxLabelLen {
+		return nil, vdmserr.Validation("label", "label must be 200 characters or fewer")
+	}
+
+	var out *model.Version
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Resolve document → permission check anchor + workspace.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, documentID)
+		if err != nil {
+			return err
+		}
+		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
+			"workspace_id": doc.WorkspaceID.String(),
+		}); err != nil {
+			return err
+		}
+		// Confirm the version belongs to this document — guards against
+		// a caller passing a stranger version-id under their document's
+		// path.
+		v, err := s.repos.Versions.GetByID(ctx, tx, tenantID, versionID)
+		if err != nil {
+			return err
+		}
+		if v.DocumentID != documentID {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.repos.Versions.UpdateLabel(ctx, tx, tenantID, versionID, label); err != nil {
+			return err
+		}
+		// Audit emit — labels are metadata writes worth surfacing in the
+		// activity log so compliance reviewers can see who anchored which
+		// version. Subject mirrors the retention_exempt pattern.
+		evt, err := model.NewOutboxEvent(tenantID, "dms.document.version_labeled.v1", "version", versionID, map[string]any{
+			"document_id":    documentID.String(),
+			"version_id":     versionID.String(),
+			"version_number": v.VersionNumber,
+			"label":          label,
+			"actor_id":       userID.String(),
+		})
+		if err != nil {
+			return err
+		}
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		v.Label = label
+		out = v
+		return nil
+	})
+	return out, err
 }
 
 // UpdateLifecycle runs the state machine: validate transition, apply action

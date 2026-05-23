@@ -157,6 +157,21 @@ func (r *folderRepo) Move(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID
 	return mapPgError(err)
 }
 
+// SoftDeleteAllInWorkspace bulk-soft-deletes every folder in a workspace.
+// Used during DeleteWorkspace when the workspace is "user-visibly empty"
+// (no documents and ≤1 folder — typically the auto-created Root) so the
+// workspace + its lone folder land in the same tx. No-op if zero rows.
+func (r *folderRepo) SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE folders SET deleted_at = now(), updated_at = now()
+		WHERE tenant_id = $1 AND workspace_id = $2 AND deleted_at IS NULL
+	`, tenantID, workspaceID)
+	if err != nil {
+		return mapPgError(err)
+	}
+	return nil
+}
+
 func (r *folderRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE folders SET deleted_at = now(), updated_at = now()

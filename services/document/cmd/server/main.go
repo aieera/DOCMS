@@ -198,7 +198,7 @@ func main() {
 	redactionHandler := handler.NewRedactionHandler(pool, holdsService, *log.Z())
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
-	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, *log.Z())
+	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, svc, *log.Z())
 
 	storageProxy := handler.NewStorageProxy(storageClient, pool)
 	decryptStreamHandler := handler.NewDecryptStreamHandler(pool, s3c, docKMS, *log.Z())
@@ -446,11 +446,30 @@ func main() {
 	rootMux.Handle("/api/v1/admin/bulk/", bulkAdminWrapped)
 	rootMux.Handle("/api/v1/admin/documents/", shareLinksAdminWrapped)
 
-	// Retention policies admin — Wave 10.
+	// Retention policies admin — Wave 10 + Phase 5 preview/exempt.
 	retentionPolicyMux := http.NewServeMux()
 	retentionPolicyHandler.Register(retentionPolicyMux)
 	rootMux.Handle("/api/v1/admin/retention-policies", middleware.CorrelationHTTP(retentionPolicyMux))
 	rootMux.Handle("/api/v1/admin/retention-policies/", middleware.CorrelationHTTP(retentionPolicyMux))
+
+	// Phase 5 — per-document retention exemption (distinct from legal
+	// hold; see service.SetDocumentRetentionExempt + migration 000054).
+	retentionExemptMux := http.NewServeMux()
+	handler.NewRetentionExemptHandler(svc).Register(retentionExemptMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/retention-exempt",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(retentionExemptMux),
+		))
+
+	// Phase 9 — named versions. PATCH the optional `label` on an existing
+	// version row (migration 000055). Authorization mirrors the document
+	// title-update rule ("edit" on the document).
+	versionLabelMux := http.NewServeMux()
+	handler.NewVersionLabelHandler(svc).Register(versionLabelMux)
+	rootMux.Handle("PATCH /api/v1/documents/{document_id}/versions/{version_id}/label",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(versionLabelMux),
+		))
 
 	// Redaction endpoint — Wave 11.5. Uses Go 1.22 method+pattern
 	// routing so only the /redact suffix lands here; everything else
@@ -488,6 +507,17 @@ func main() {
 	rootMux.Handle("/api/v1/admin/platform/db-info", middleware.CorrelationHTTP(
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(dbInfoMux),
 	))
+
+	// Phase 3 — workspace owner transfer. Outside the grpc-gateway
+	// surface because it's an explicit owner-only action (not an
+	// admin-capability rename) and benefits from a dedicated route
+	// that the FE settings page can call without proto regen.
+	wsTransferMux := http.NewServeMux()
+	handler.NewWorkspaceTransferHandler(svc).Register(wsTransferMux)
+	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/transfer-ownership",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(wsTransferMux),
+		))
 
 	// ADR 0095 — admin license-state surface (stub). Today returns
 	// `unlicensed_dev_mode`; future JWT validator wires through here

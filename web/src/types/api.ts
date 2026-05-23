@@ -30,6 +30,9 @@ export interface Workspace {
   member_count: number
   created_at: string
   updated_at?: string
+  // The workspace creator — also the canonical "owner" in our single-
+  // owner model. Mutable via POST /workspaces/{id}/transfer-ownership.
+  created_by?: string
 }
 
 export interface Folder {
@@ -61,6 +64,11 @@ export interface Document {
   updated_at?: string
   has_thumbnail: boolean
   thumbnail_url?: string
+  // Phase 5 — business retention waiver (NOT legal hold). When true,
+  // the retention sweep skips this document. reason carries the
+  // justification recorded with the exemption event.
+  retention_exempt?: boolean
+  retention_exempt_reason?: string
 }
 
 export interface Version {
@@ -68,6 +76,10 @@ export interface Version {
   document_id: string
   version_number: number
   change_summary?: string
+  // Phase 9 — optional human-friendly label set after upload
+  // ("Q1 final", "Approved for legal review"). Empty string when
+  // unset. Mutable via PATCH /api/v1/documents/{doc}/versions/{ver}/label.
+  label?: string
   size_bytes: number
   created_by: string
   created_by_name: string

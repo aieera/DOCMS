@@ -575,6 +575,92 @@ Tested: all 4 Python containers came up healthy after the changes,
 all 28 services running, intelligence `/healthz` returns 200,
 `/api/v1/intelligence/qa` returns 422 (validation) instead of 500.
 
+---
+
+## Track 8 — Share → in-app notification not delivered
+
+**Origin:** Phase 9 verification of "notify-on-share". The FE
+`ShareDialog` flow calls the share endpoints, which DO persist
+share rows, but the recipient never sees an in-app notification.
+Two emitter sites diverge from the notification consumer's
+contract:
+
+### Gap 8a — Classic share-link event subject doesn't reach the consumer
+
+`services/document/internal/service/sharing_tags.go:105` emits
+`dms.sharelink.created.v1`:
+
+```go
+evt, err := model.NewOutboxEvent(tenantID, "dms.sharelink.created.v1", "share_link", link.ID,
+    model.ShareLinkCreatedPayload{
+        LinkID:     link.ID.String(),
+        DocumentID: doc.ID.String(),
+        CreatedBy:  userID.String(),
+        ExpiresAt:  expiresAt.UTC().Format(time.RFC3339),
+    })
+return s.repos.Outbox.Insert(ctx, tx, evt)
+```
+
+The notification service consumer at
+`services/notification/internal/service/service.go:217` subscribes
+to `dms.notify.>` only:
+
+```go
+js.Subscribe("dms.notify.>", func(msg *nats.Msg) { ... })
+```
+
+So `dms.sharelink.created.v1` is published, lands in JetStream,
+and is never delivered to a `notifications` row. No badge appears
+in the FE topbar; nothing renders in `/notifications`.
+
+### Gap 8b — ZT share emits no event at all
+
+`services/document/internal/handler/zt_share_handler.go` creates
+ZT share tokens but never calls `outbox.Insert`. There is no
+event for the notification service to consume, no matter what
+subject it subscribes to.
+
+### Fix (backend track)
+
+Pick one of:
+
+**Option A — bridge in the notification consumer.** Subscribe
+to `dms.sharelink.created.v1` (and a new `dms.ztshare.created.v1`
+once 8b is fixed) in `services/notification/internal/service/service.go`.
+Resolve the recipient principal(s) from the share row, then
+`Deliver()` a notification with `type='document.shared'`. Subject
+mapping stays out of share business logic.
+
+**Option B — emit a `dms.notify.document_shared.v1` directly.**
+Add the second event publish in both share handlers so the
+notification consumer's existing wildcard catches it. Cheaper but
+couples share code to the notification taxonomy.
+
+For ZT share (Gap 8b), also add `outbox.Insert` for a new
+`dms.ztshare.created.v1` (or whichever subject the bridge wires
+up) so the recipient is reachable.
+
+### Acceptance
+
+- Creating a share-link or ZT share creates a row in
+  `notifications` for each named recipient.
+- Recipient sees a topbar badge (already wired to
+  `useNotifications`) and a row in `/notifications`.
+- Existing notification consumer tests (`services/notification/...`)
+  still pass; add one regression for the new subject.
+
+### FE handling
+
+No FE change required. The notifications inbox at
+`web/src/routes/_authenticated/notifications.tsx` already renders
+arbitrary notification types via the generic `title`/`body`/`type`
+shape; once the backend delivers, the rows appear automatically.
+Deep-link target (the document URL) should be set on the
+notification's `resource_id`/`resource_type` so the existing
+"click row → navigate" handler routes the user correctly.
+
+---
+
 ### Audit-branch state
 
 | Metric | Value |

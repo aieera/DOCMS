@@ -7,7 +7,7 @@
 // Top-level tabs separate the two so the user knows which surface
 // they're on. The header badge counts only the lightweight tasks.
 import { useMemo, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -18,6 +18,7 @@ import {
   listMyTasks, completeTask, reopenTask, cancelTask, deleteTask, createTask,
   type Task, type TaskPriority,
 } from '@/api/tasks'
+import { getDocument } from '@/api/documents'
 import { useAuthStore } from '@/store/authStore'
 import { getUsers } from '@/api/admin'
 import { readErrorMessage } from '@/api/client'
@@ -210,6 +211,7 @@ function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void })
 }
 
 function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
+  const navigate = useNavigate()
   // H-4: surface server errors for every transition button — without
   // onError the buttons looked dead on 403 / 404 / 5xx, and the user
   // had no signal anything happened. readErrorMessage parses the
@@ -226,14 +228,34 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
     onError: onTaskError,
   })
 
+  // Task → document deep link. The task row carries only
+  // linked_document_id; the route also needs workspaceId. Look it
+  // up on click rather than pre-fetching for every row.
+  const openLinkedDoc = async (docId: string) => {
+    try {
+      const doc = await getDocument(docId)
+      void navigate({
+        to: '/workspaces/$workspaceId/documents/$documentId',
+        params: { workspaceId: doc.workspace_id, documentId: doc.id },
+      })
+    } catch (e) {
+      toast.error(readErrorMessage(e) ?? 'Could not open linked document')
+    }
+  }
+
   const isDone = task.status === 'done' || task.status === 'cancelled'
   return (
     <tr className="border-t border-border" data-testid={`task-row-${task.id}`}>
       <td className="px-3 py-2">
         {task.linked_document_id ? (
-          <Link to="/workspaces/$workspaceId/documents/$documentId"
-            params={{ workspaceId: 'unused', documentId: task.linked_document_id }}
-            className="font-medium hover:underline">{task.title}</Link>
+          <button
+            type="button"
+            onClick={() => void openLinkedDoc(task.linked_document_id!)}
+            className="font-medium text-start hover:underline"
+            data-testid={`task-doc-link-${task.id}`}
+          >
+            {task.title}
+          </button>
         ) : (
           <span className={`font-medium ${isDone ? 'line-through text-muted-foreground' : ''}`}>{task.title}</span>
         )}
