@@ -61,3 +61,24 @@ export async function updateWorkspace(id: string, input: { name?: string; descri
 export async function deleteWorkspace(id: string) {
   await api.delete(`/workspaces/${id}`)
 }
+
+// Phase 3 — transfer the workspace's created_by (the canonical single-
+// owner field). Backend gates on tenant role=owner OR current creator
+// and requires the new owner be an active member.
+// Returns the resolved (workspace_id, created_by) pair so callers can
+// invalidate the workspace query without a follow-up GET.
+export interface TransferWorkspaceOwnershipResponse {
+  workspace_id: string
+  created_by: string
+}
+
+export async function transferWorkspaceOwnership(
+  workspaceId: string,
+  newOwnerId: string,
+): Promise<TransferWorkspaceOwnershipResponse> {
+  const { data } = await api.post<TransferWorkspaceOwnershipResponse>(
+    `/workspaces/${workspaceId}/transfer-ownership`,
+    { new_owner_id: newOwnerId },
+  )
+  return data
+}

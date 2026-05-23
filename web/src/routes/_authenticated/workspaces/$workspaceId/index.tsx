@@ -10,6 +10,8 @@ import { DocumentList } from '@/components/documents/DocumentList'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Link } from '@tanstack/react-router'
+import { Settings as SettingsIcon } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { WorkspaceAISettingsDialog } from '@/components/intelligence/WorkspaceAISettings'
 import { UploadReviewDialog } from '@/components/documents/UploadReviewDialog'
@@ -110,6 +112,17 @@ function WorkspacePage() {
             {isAdmin && (
               <Button variant="ghost" onClick={() => setAiOpen(true)} data-testid="open-ai-settings">
                 <Sparkles className="h-4 w-4" /> AI settings
+              </Button>
+            )}
+            {isAdmin && (
+              <Button variant="ghost" asChild data-testid="open-ws-settings">
+                <Link
+                  to="/workspaces/$workspaceId/settings"
+                  params={{ workspaceId }}
+                  aria-label="Workspace settings"
+                >
+                  <SettingsIcon className="h-4 w-4" /> Settings
+                </Link>
               </Button>
             )}
             <Button onClick={onPick} data-testid="open-upload">

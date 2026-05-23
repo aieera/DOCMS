@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/pkg/validation"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
@@ -223,8 +224,14 @@ func (s *DocumentService) UpdateWorkspace(ctx context.Context, in *UpdateWorkspa
 	return out, err
 }
 
-// DeleteWorkspace soft-deletes a workspace. Refuses when documents or
-// folders still belong to it; the caller must drain contents first.
+// DeleteWorkspace soft-deletes a workspace. Refuses when there are any
+// documents OR more than one folder. CreateWorkspace ships every workspace
+// with an auto-created "Root" folder, so the strict "FolderCount==0" rule
+// made it impossible to delete a brand-new empty workspace from the UI;
+// we loosen to allow up to one folder, which the same tx soft-deletes
+// alongside the workspace. (A user-created top-level folder also satisfies
+// FolderCount==1, but with zero documents it's still user-visibly empty
+// and safe to drop.)
 func (s *DocumentService) DeleteWorkspace(ctx context.Context, id uuid.UUID) error {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
@@ -243,8 +250,13 @@ func (s *DocumentService) DeleteWorkspace(ctx context.Context, id uuid.UUID) err
 		if err != nil {
 			return err
 		}
-		if w.DocumentCount > 0 || w.FolderCount > 0 {
+		if !workspaceIsUserEmpty(w) {
 			return vdmserr.Conflict("workspace is not empty; move or delete its contents first")
+		}
+		if w.FolderCount == 1 {
+			if err := s.repos.Folders.SoftDeleteAllInWorkspace(ctx, tx, tenantID, id); err != nil {
+				return err
+			}
 		}
 		if err := s.repos.Workspaces.SoftDelete(ctx, tx, tenantID, id); err != nil {
 			return err
@@ -261,7 +273,93 @@ func (s *DocumentService) DeleteWorkspace(ctx context.Context, id uuid.UUID) err
 	})
 }
 
+// TransferWorkspaceOwnershipInput names the workspace + the user who
+// should become the new creator/owner.
+type TransferWorkspaceOwnershipInput struct {
+	WorkspaceID uuid.UUID
+	NewOwnerID  uuid.UUID
+}
+
+// TransferWorkspaceOwnership reassigns workspaces.created_by to the named
+// user. This is the canonical "owner" field in our single-owner model
+// (no per-workspace owner role exists; created_by carries the semantic).
+//
+// Gate: caller must be the current creator OR hold tenant role=owner.
+// The new owner must already be an active workspace member — this avoids
+// silently granting access to a non-member as a side effect.
+//
+// Emits dms.workspace.owner_transferred.v1 with previous/new owner so
+// audit + search-readers consumers can react.
+func (s *DocumentService) TransferWorkspaceOwnership(ctx context.Context, in *TransferWorkspaceOwnershipInput) (*model.Workspace, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil || in.WorkspaceID == uuid.Nil {
+		return nil, errInvalidInput("workspace_id", "required")
+	}
+	if in.NewOwnerID == uuid.Nil {
+		return nil, errInvalidInput("new_owner_id", "required")
+	}
+	// Caller's tenant role (owner/admin/member/viewer). Tenant-owner can
+	// bypass the "must-be-current-creator" gate so a tenant-wide admin
+	// can rescue an orphaned workspace.
+	callerInfo, _ := auth.User(ctx)
+
+	var out *model.Workspace
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if callerInfo.Role != "owner" && w.CreatedBy != userID {
+			return vdmserr.ErrForbidden
+		}
+		if w.CreatedBy == in.NewOwnerID {
+			return errInvalidInput("new_owner_id", "is already the owner")
+		}
+		isMember, err := s.repos.Workspaces.IsMember(ctx, tx, tenantID, in.WorkspaceID, in.NewOwnerID)
+		if err != nil {
+			return err
+		}
+		if !isMember {
+			return errInvalidInput("new_owner_id", "must already be a workspace member")
+		}
+		prev := w.CreatedBy
+		if err := s.repos.Workspaces.UpdateCreatedBy(ctx, tx, tenantID, in.WorkspaceID, in.NewOwnerID); err != nil {
+			return err
+		}
+		refreshed, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		out = refreshed
+		evt, err := model.NewOutboxEvent(tenantID, "dms.workspace.owner_transferred.v1", "workspace", in.WorkspaceID, map[string]any{
+			"workspace_id":   in.WorkspaceID.String(),
+			"previous_owner": prev.String(),
+			"new_owner":      in.NewOwnerID.String(),
+			"transferred_by": userID.String(),
+		})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+	return out, err
+}
+
 // --- validation ------------------------------------------------------------
+
+// workspaceIsUserEmpty reports whether a workspace can be soft-deleted
+// from the UI: zero documents AND at most one folder. CreateWorkspace
+// auto-creates a "Root" folder, so the strict "FolderCount==0" rule
+// would block deletion of every brand-new empty workspace. Allowing
+// one residual folder lets DeleteWorkspace soft-delete it in the same
+// tx — the document-count gate (which we keep strict) ensures the
+// workspace is genuinely user-visibly empty.
+func workspaceIsUserEmpty(w *model.Workspace) bool {
+	return w.DocumentCount == 0 && w.FolderCount <= 1
+}
 
 func validateWorkspaceName(name string) error {
 	if name == "" {

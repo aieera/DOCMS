@@ -54,6 +54,7 @@ import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
 import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
+import { Route as AuthenticatedWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_authenticated/workspaces/$workspaceId/settings'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
 import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './routes/_authenticated/signatures.send.$documentId'
 import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
@@ -334,6 +335,12 @@ const AuthenticatedAdminIntegrationsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
   } as any)
+const AuthenticatedWorkspacesWorkspaceIdSettingsRoute =
+  AuthenticatedWorkspacesWorkspaceIdSettingsRouteImport.update({
+    id: '/workspaces/$workspaceId/settings',
+    path: '/workspaces/$workspaceId/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkflowsInstancesInstanceIdRoute =
   AuthenticatedWorkflowsInstancesInstanceIdRouteImport.update({
     id: '/workflows/instances/$instanceId',
@@ -571,6 +578,7 @@ export interface FileRoutesByFullPath {
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -644,6 +652,7 @@ export interface FileRoutesByTo {
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -720,6 +729,7 @@ export interface FileRoutesById {
   '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/_authenticated/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  '/_authenticated/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
@@ -796,6 +806,7 @@ export interface FileRouteTypes {
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
+    | '/workspaces/$workspaceId/settings'
     | '/admin/integrations/'
     | '/workspaces/$workspaceId/'
     | '/admin/tenant/identity/ldap'
@@ -869,6 +880,7 @@ export interface FileRouteTypes {
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
     | '/workflows/instances/$instanceId'
+    | '/workspaces/$workspaceId/settings'
     | '/admin/integrations'
     | '/workspaces/$workspaceId'
     | '/admin/tenant/identity/ldap'
@@ -944,6 +956,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sign/in-person/$requestId'
     | '/_authenticated/signatures/send/$documentId'
     | '/_authenticated/workflows/instances/$instanceId'
+    | '/_authenticated/workspaces/$workspaceId/settings'
     | '/_authenticated/admin/integrations/'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/admin/tenant/identity/ldap'
@@ -1278,6 +1291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsIndexRouteImport
       parentRoute: typeof AuthenticatedAdminIntegrationsRoute
     }
+    '/_authenticated/workspaces/$workspaceId/settings': {
+      id: '/_authenticated/workspaces/$workspaceId/settings'
+      path: '/workspaces/$workspaceId/settings'
+      fullPath: '/workspaces/$workspaceId/settings'
+      preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workflows/instances/$instanceId': {
       id: '/_authenticated/workflows/instances/$instanceId'
       path: '/workflows/instances/$instanceId'
@@ -1591,6 +1611,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSignInPersonRequestIdRoute: typeof AuthenticatedSignInPersonRequestIdRoute
   AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
   AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
+  AuthenticatedWorkspacesWorkspaceIdSettingsRoute: typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedAdminTenantIdentityLdapRoute: typeof AuthenticatedAdminTenantIdentityLdapRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
@@ -1673,6 +1694,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedSignaturesSendDocumentIdRoute,
   AuthenticatedWorkflowsInstancesInstanceIdRoute:
     AuthenticatedWorkflowsInstancesInstanceIdRoute,
+  AuthenticatedWorkspacesWorkspaceIdSettingsRoute:
+    AuthenticatedWorkspacesWorkspaceIdSettingsRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedAdminTenantIdentityLdapRoute:
