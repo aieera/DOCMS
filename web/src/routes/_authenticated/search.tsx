@@ -18,6 +18,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import { parseFieldSyntax } from '@/lib/searchParser'
+import type { SavedSearch } from '@/api/savedSearches'
 
 // ADR 0082 — facet sidebar state lives entirely in the URL so any
 // search-with-filters is bookmarkable. The route's validateSearch
@@ -123,8 +125,33 @@ function SearchPage() {
   const createSavedMut = useCreateSavedSearch()
   const deleteSavedMut = useDeleteSavedSearch()
 
-  const setQuery = (q: string) => {
-    navigate({ search: (s: SearchParams) => ({ ...s, q: q || undefined }) })
+  const setQuery = (raw: string) => {
+    const { free, fields } = parseFieldSyntax(raw)
+    navigate({
+      search: (s: SearchParams) => {
+        const next: SearchParams = { ...s, q: free || undefined }
+        // Merge parsed field tokens with existing URL params — sidebar
+        // selections made independently are preserved.
+        if (fields.tag?.length) next.tag = [...new Set([...asArray(s.tag), ...fields.tag])]
+        if (fields.author?.length) next.author = [...new Set([...asArray(s.author), ...fields.author])]
+        if (fields.classification?.length) next.classification = [...new Set([...asArray(s.classification), ...fields.classification])]
+        if (fields.region_pin?.length) next.region_pin = [...new Set([...asArray(s.region_pin), ...fields.region_pin])]
+        if (fields.lifecycle_state?.length) next.lifecycle_state = [...new Set([...asArray(s.lifecycle_state), ...fields.lifecycle_state])]
+        if (fields.mime_type?.length) next.mime_type = [...new Set([...asArray(s.mime_type), ...fields.mime_type])]
+        if (fields.workspace_id) next.workspace_id = fields.workspace_id
+        return next
+      },
+    })
+  }
+
+  const removeFilter = (key: string, value: string) => {
+    navigate({
+      search: (s: SearchParams) => {
+        const cur = asArray((s as Record<string, string | string[] | undefined>)[key])
+        const next = cur.filter((v) => v !== value)
+        return { ...s, [key]: next.length > 0 ? next : undefined }
+      },
+    })
   }
 
   const toggleFilter = (facet: string, value: string) => {
@@ -163,6 +190,7 @@ function SearchPage() {
         name: name.trim(),
         query: query || '',
         filters: searchBody.filters as Record<string, unknown>,
+        workspace_id: params.workspace_id,
       })
       toast.success('Saved')
     } catch {
@@ -170,7 +198,7 @@ function SearchPage() {
     }
   }
 
-  const handleApplySaved = (s: { query: string; filters?: Record<string, unknown> }) => {
+  const handleApplySaved = (s: SavedSearch) => {
     const f = (s.filters ?? {}) as Record<string, unknown>
     navigate({
       search: () => ({
@@ -181,6 +209,7 @@ function SearchPage() {
         mime_type:       arrayOf(f.mime_type),
         author:          arrayOf(f.created_by_name),
         region_pin:      arrayOf(f.region_pin),
+        workspace_id:    s.workspace_id ? String(s.workspace_id) : undefined,
       }),
     })
   }
@@ -284,6 +313,8 @@ function SearchPage() {
             <Bookmark className="me-1 h-4 w-4" /> Save
           </Button>
         </div>
+
+        <ActiveFilterChips params={params} onRemove={removeFilter} />
 
         {savedSearches && savedSearches.length > 0 && (
           <div className="mb-6 flex flex-wrap gap-2" data-testid="saved-searches">
@@ -394,6 +425,61 @@ function SearchPage() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Chip bar showing all active filter values as removable badges.
+// Surfaces both field-syntax parsed tokens and sidebar checkbox
+// selections so the full filter state is always visible at a glance.
+function ActiveFilterChips({
+  params,
+  onRemove,
+}: {
+  params: SearchParams
+  onRemove: (key: string, value: string) => void
+}) {
+  type ChipDef = { key: string; display: string; value: string }
+  const chips: ChipDef[] = []
+
+  const addChips = (
+    key: string,
+    label: string,
+    values: string[],
+    display?: (v: string) => string,
+  ) => {
+    for (const v of values) {
+      chips.push({ key, display: `${label}: ${display ? display(v) : v}`, value: v })
+    }
+  }
+
+  addChips('tag', 'Tag', asArray(params.tag))
+  addChips('lifecycle_state', 'Status', asArray(params.lifecycle_state), lifecycleStateLabel)
+  addChips('mime_type', 'Type', asArray(params.mime_type))
+  addChips('author', 'Author', asArray(params.author))
+  addChips('region_pin', 'Region', asArray(params.region_pin))
+  addChips('classification', 'Class', asArray(params.classification))
+
+  if (chips.length === 0) return null
+
+  return (
+    <div className="mb-3 flex flex-wrap gap-1.5" data-testid="active-filter-chips" aria-label="Active filters">
+      {chips.map((chip) => (
+        <span
+          key={`${chip.key}:${chip.value}`}
+          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+        >
+          {chip.display}
+          <button
+            type="button"
+            onClick={() => onRemove(chip.key, chip.value)}
+            aria-label={`Remove ${chip.display} filter`}
+            className="ms-0.5 text-primary/70 hover:text-primary"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
     </div>
   )
 }

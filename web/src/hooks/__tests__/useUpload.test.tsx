@@ -57,7 +57,7 @@ vi.mock('@/store/uploadStore', () => ({
 }))
 
 // Import AFTER the mocks are registered so the hook sees them.
-import { useUpload } from '@/hooks/useUpload'
+import { useUpload, preflightFile } from '@/hooks/useUpload'
 
 function wrap({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -74,6 +74,93 @@ beforeEach(() => {
   getFolders.mockReset()
   createFolder.mockReset()
   sendFilingFeedback.mockReset()
+})
+
+// --- preflightFile unit tests ----------------------------------------
+
+describe('preflightFile', () => {
+  it('returns null for a valid PDF', () => {
+    const file = new File(['pdf content'], 'report.pdf', { type: 'application/pdf' })
+    expect(preflightFile(file)).toBeNull()
+  })
+
+  it('rejects a file with a blocked MIME type', () => {
+    const file = new File(['data'], 'setup.exe', { type: 'application/x-msdownload' })
+    expect(preflightFile(file)).toMatch(/executable file types/i)
+  })
+
+  it('rejects a .ps1 script even when the MIME type is blank', () => {
+    const file = new File([''], 'deploy.ps1')
+    expect(preflightFile(file)).toMatch(/\.ps1.*is not permitted/i)
+  })
+
+  it('rejects a .exe file regardless of declared MIME type', () => {
+    const file = new File([''], 'trojan.exe', { type: 'application/octet-stream' })
+    expect(preflightFile(file)).toMatch(/\.exe.*is not permitted/i)
+  })
+
+  it('rejects a file exceeding 5 GiB', () => {
+    const oversized = { name: 'huge.iso', size: 6 * 1024 * 1024 * 1024, type: 'application/octet-stream' } as File
+    expect(preflightFile(oversized)).toMatch(/5 GiB/i)
+  })
+})
+
+// --- preflight integration: blocked files don't reach the server -----
+
+describe('useUpload — preflight', () => {
+  it('skips createDocument for a blocked MIME file', async () => {
+    const { result } = renderHook(
+      () => useUpload('ws-1', 'folder-A'),
+      { wrapper: wrap },
+    )
+
+    await act(async () => {
+      await result.current.uploadFiles([
+        new File(['hack'], 'exploit.exe', { type: 'application/x-msdownload' }),
+      ])
+    })
+
+    expect(createDocument).not.toHaveBeenCalled()
+  })
+
+  it('skips createDocument for a blocked extension when MIME is blank', async () => {
+    const { result } = renderHook(
+      () => useUpload('ws-1', 'folder-A'),
+      { wrapper: wrap },
+    )
+
+    await act(async () => {
+      await result.current.uploadFiles([new File([''], 'script.ps1')])
+    })
+
+    expect(createDocument).not.toHaveBeenCalled()
+  })
+
+  it('continues uploading the valid file in a mixed batch after skipping the blocked one', async () => {
+    createDocument.mockResolvedValue({ id: 'doc-ok' })
+    initiateUpload.mockResolvedValue({
+      upload_id: 'up-1',
+      presigned_put_url: 'https://example.test/put',
+    })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
+    createVersion.mockResolvedValue({ id: 'ver-1' })
+
+    const { result } = renderHook(
+      () => useUpload('ws-1', 'folder-A'),
+      { wrapper: wrap },
+    )
+
+    await act(async () => {
+      await result.current.uploadFiles([
+        new File(['bad'], 'bad.exe', { type: 'application/x-msdownload' }),
+        new File(['ok'], 'report.pdf', { type: 'application/pdf' }),
+      ])
+    })
+
+    // Only the valid file should reach the document-creation step
+    expect(createDocument).toHaveBeenCalledTimes(1)
+  })
 })
 
 // --- BUG-C3: folder-id consistency -----------------------------------

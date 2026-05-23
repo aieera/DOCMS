@@ -8,6 +8,48 @@ import { sendFilingFeedback } from '@/api/predictiveFiling'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
 
+// Mirrors services/storage/internal/scanner/mimecheck.go ExecutableMIMEBlocklist
+const BLOCKED_MIME_TYPES = new Set([
+  'application/x-msdownload',
+  'application/x-executable',
+  'application/x-dosexec',
+  'application/vnd.microsoft.portable-executable',
+  'application/x-msdos-program',
+  'application/x-ms-installer',
+  'application/x-ms-shortcut',
+  'application/x-bat',
+  'application/x-sh',
+  'application/x-python-code',
+  'application/vnd.ms-cab-compressed',
+])
+
+// Mirrors services/storage/internal/scanner/mimecheck.go ExecutableExtensions
+const BLOCKED_EXTENSIONS = new Set([
+  '.exe', '.bat', '.cmd', '.sh', '.ps1', '.com', '.scr',
+  '.pif', '.msi', '.dll', '.sys', '.vbs', '.js', '.jar', '.app',
+])
+
+// Default ceiling from services/storage/internal/service/service.go (5 GiB)
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024
+
+export function preflightFile(file: File): string | null {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const gb = (file.size / (1024 ** 3)).toFixed(1)
+    return `File size (${gb} GB) exceeds the 5 GiB upload limit`
+  }
+  if (file.type && BLOCKED_MIME_TYPES.has(file.type)) {
+    return 'Executable file types are not permitted'
+  }
+  const dotIdx = file.name.lastIndexOf('.')
+  if (dotIdx >= 0) {
+    const ext = file.name.slice(dotIdx).toLowerCase()
+    if (BLOCKED_EXTENSIONS.has(ext)) {
+      return `File extension "${ext}" is not permitted`
+    }
+  }
+  return null
+}
+
 // Full upload flow:
 //   1. CreateDocument          → documents row (no content yet)
 //   2. InitiateUpload          → upload_session + presigned PUT URL
@@ -74,6 +116,17 @@ export function useUpload(workspaceId?: string, folderId?: string) {
     }
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+
+      // Reject files that violate backend upload limits before touching the server.
+      const preflightError = preflightFile(file)
+      if (preflightError) {
+        const failId = crypto.randomUUID()
+        addUpload({ id: failId, file, progress: 0, status: 'pending' })
+        setStatus(failId, 'failed', preflightError)
+        toast.error(`${file.name} — ${preflightError}`)
+        continue
+      }
+
       const id = crypto.randomUUID()
       addUpload({ id, file, progress: 0, status: 'pending' })
 

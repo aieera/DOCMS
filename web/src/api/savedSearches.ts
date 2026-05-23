@@ -42,6 +42,7 @@ export async function createSavedSearch(input: {
   filters?: Record<string, unknown>
   notify?: boolean
   notify_interval_minutes?: number
+  workspace_id?: string
 }) {
   const { data } = await api.post<SavedSearch>('/saved-searches', input)
   return data
