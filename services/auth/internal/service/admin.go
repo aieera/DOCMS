@@ -468,6 +468,36 @@ func (s *Service) SuspendUser(ctx context.Context, tenantID, actorID, userID uui
 	})
 }
 
+// ReactivateUser is the inverse of SuspendUser: flips status back to
+// "active" so the user can log in again. Refuses on a user who is
+// already active OR has been hard-deactivated (status="deactivated") —
+// the latter is reserved for compliance-driven removals (GDPR erase)
+// where a soft reactivate would skip an audit-meaningful path. Emits
+// dms.user.reactivated.v1; sessions stay revoked (the user must
+// re-authenticate).
+func (s *Service) ReactivateUser(ctx context.Context, tenantID, actorID, userID uuid.UUID) error {
+	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		u, err := s.users.GetByID(ctx, tx, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		if err := validateReactivableStatus(u.Status); err != nil {
+			return err
+		}
+		if err := s.users.SetStatus(ctx, tx, tenantID, userID, model.StatusActive); err != nil {
+			return err
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":        userID.String(),
+			"tenant_id":      tenantID.String(),
+			"email":          u.Email,
+			"reactivated_by": actorID.String(),
+		})
+		evt := database.NewOutboxEvent(tenantID, "dms.user.reactivated.v1", "user", userID, payload)
+		return s.outbox.Insert(ctx, tx, evt)
+	})
+}
+
 // ResetUserMFA clears the stored MFA secret + recovery codes and disables
 // the user's MFA flag. The user is forced through MFA re-enrollment on
 // next login. Active sessions are revoked so any already-authenticated
@@ -499,6 +529,23 @@ func (s *Service) ResetUserMFA(ctx context.Context, tenantID, actorID, userID uu
 }
 
 // ---- small internals ------------------------------------------------------
+
+// validateReactivableStatus reports whether a user in the given state
+// can transition back to active via ReactivateUser. Only StatusSuspended
+// is allowed: StatusActive is a no-op (rejected so the audit event
+// doesn't fire spuriously), and any other state (notably
+// StatusDeactivated which is reserved for compliance-driven erasures)
+// must go through a dedicated restore path.
+func validateReactivableStatus(s model.Status) error {
+	switch s {
+	case model.StatusActive:
+		return vdmserr.Validation("user_id", "user is already active")
+	case model.StatusSuspended:
+		return nil
+	default:
+		return vdmserr.Validation("user_id", "user cannot be reactivated from current state")
+	}
+}
 
 func itoa(n int) string {
 	if n == 0 {

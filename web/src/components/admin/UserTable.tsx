@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
-import { MoreHorizontal, Shield, Ban, KeyRound } from 'lucide-react'
+import { MoreHorizontal, Shield, Ban, KeyRound, UserCheck } from 'lucide-react'
 
 import { DataTable } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -25,7 +25,8 @@ import {
   DialogFooter,
 } from '@/components/ui/shadcn/dialog'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
-import { changeUserRole, resetMFA, suspendUser } from '@/api/admin'
+import { changeUserRole, resetMFA, suspendUser, reactivateUser } from '@/api/admin'
+import { readErrorMessage } from '@/api/client'
 import type { User } from '@/types/api'
 import { formatRelativeTime } from '@/lib/formatters'
 
@@ -39,7 +40,7 @@ const ROLE_OPTIONS = [
 
 interface ActionState {
   user: User
-  kind: 'role' | 'mfa' | 'suspend'
+  kind: 'role' | 'mfa' | 'suspend' | 'reactivate'
 }
 
 // UserTable renders the admin user list and wires the dropdown
@@ -79,7 +80,16 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })
       close()
     },
-    onError: (e: Error) => toast.error(e.message || 'Could not suspend user'),
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not suspend user'),
+  })
+  const reactivateMut = useMutation({
+    mutationFn: (id: string) => reactivateUser(id),
+    onSuccess: () => {
+      toast.success('User reactivated')
+      qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+      close()
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not reactivate user'),
   })
 
   const columns: ColumnDef<User, unknown>[] = [
@@ -97,6 +107,17 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
       ),
     },
     { accessorKey: 'role', header: 'Role', cell: ({ row }) => <Badge>{row.original.role}</Badge> },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const s = row.original.status ?? 'active'
+        // Active is the dominant case so we render it understated to
+        // keep the column scanable; suspended/deactivated stand out.
+        const variant = s === 'active' ? 'active' : s === 'suspended' ? 'destructive' : 'draft'
+        return <Badge variant={variant}>{s}</Badge>
+      },
+    },
     {
       accessorKey: 'mfa_enabled',
       header: 'MFA',
@@ -143,14 +164,24 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
                 Reset MFA
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setAction({ user: u, kind: 'suspend' })}
-                data-testid={`suspend-${u.id}`}
-              >
-                <Ban className="h-4 w-4" />
-                Suspend
-              </DropdownMenuItem>
+              {u.status === 'suspended' ? (
+                <DropdownMenuItem
+                  onSelect={() => setAction({ user: u, kind: 'reactivate' })}
+                  data-testid={`reactivate-${u.id}`}
+                >
+                  <UserCheck className="h-4 w-4" />
+                  Reactivate
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => setAction({ user: u, kind: 'suspend' })}
+                  data-testid={`suspend-${u.id}`}
+                >
+                  <Ban className="h-4 w-4" />
+                  Suspend
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -213,6 +244,16 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         destructive
         loading={suspendMut.isPending}
         onConfirm={() => action && suspendMut.mutate(action.user.id)}
+      />
+
+      <ConfirmDialog
+        open={action?.kind === 'reactivate'}
+        onOpenChange={(o) => { if (!o) close() }}
+        title={action ? `Reactivate ${action.user.email}?` : 'Reactivate user'}
+        description="Reactivating restores sign-in but does not restore the user's old sessions — they'll go through the regular login flow (including MFA, if enabled)."
+        confirmLabel="Reactivate"
+        loading={reactivateMut.isPending}
+        onConfirm={() => action && reactivateMut.mutate(action.user.id)}
       />
     </>
   )

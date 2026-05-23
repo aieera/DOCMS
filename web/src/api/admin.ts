@@ -55,6 +55,14 @@ export async function suspendUser(id: string) {
   await api.post(`/admin/users/${id}/suspend`)
 }
 
+// Phase 4 — inverse of suspend. Sessions are NOT restored; the user
+// must re-authenticate. Validation errors flow through readErrorMessage
+// (e.g. "user is already active", "user cannot be reactivated from
+// current state").
+export async function reactivateUser(id: string) {
+  await api.post(`/admin/users/${id}/reactivate`)
+}
+
 export async function resetMFA(id: string) {
   await api.post(`/admin/users/${id}/reset-mfa`)
 }

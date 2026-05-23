@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Copy, Plus } from 'lucide-react'
+import { Copy, Plus, FileUp, Info } from 'lucide-react'
 
 import { createUser, getUsers, inviteUser, type InviteUserResponse } from '@/api/admin'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { UserTable } from '@/components/admin/UserTable'
+import { BulkInviteDialog } from '@/components/admin/BulkInviteDialog'
 import { Button } from '@/components/ui/shadcn/button'
 import {
   Dialog,
@@ -43,6 +44,7 @@ function UsersPage() {
   })
 
   const [open, setOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('invite')
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -108,17 +110,45 @@ function UsersPage() {
         title="Users"
         description="Manage team members, roles, and access. New users can be invited by email or created directly with an initial password."
         actions={
-          <Button onClick={() => setOpen(true)} aria-label="Add user" data-testid="add-user">
-            <Plus className="h-4 w-4" /> Add user
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(true)}
+              aria-label="Bulk invite from CSV"
+              data-testid="bulk-invite"
+            >
+              <FileUp className="h-4 w-4" /> Bulk invite
+            </Button>
+            <Button onClick={() => setOpen(true)} aria-label="Add user" data-testid="add-user">
+              <Plus className="h-4 w-4" /> Add user
+            </Button>
+          </>
         }
       />
+
+      <div className="flex items-start gap-2 rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <div>
+          <p>
+            <strong>"Last Login"</strong> is the most-recent sign-in timestamp — not last activity. A
+            per-request "last seen" timestamp ships with Phase 7 (Manage Access) when we surface
+            workspace ACL.
+          </p>
+          <p className="mt-1">
+            Per-workspace role assignment lives under the individual workspace's{' '}
+            <a href="/workspaces" className="underline">Settings → Transfer ownership</a> today; finer-grained
+            workspace ACL ships with Phase 7.
+          </p>
+        </div>
+      </div>
 
       {/* UserTable wraps the canonical DataTable internally — its
           isLoading + empty handling now flow through the shared
           chrome (skeleton row + "No results" text). The Card wrapper
           here just gives it a single shadowed surface. */}
       <UserTable users={users} isLoading={isLoading} />
+
+      <BulkInviteDialog open={bulkOpen} onOpenChange={setBulkOpen} />
 
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset() }}>
         <DialogContent>

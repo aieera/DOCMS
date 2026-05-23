@@ -207,6 +207,29 @@ func (h *Handler) SuspendUserAdmin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ---- POST /api/v1/admin/users/:id/reactivate ------------------------------
+
+// ReactivateUserAdmin handles POST /api/v1/admin/users/{id}/reactivate.
+// Flips status from "suspended" back to "active". Sessions remain revoked
+// — the user must sign in again.
+func (h *Handler) ReactivateUserAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	userID, err := parseUserID(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	if err := h.svc.ReactivateUser(r.Context(), tenantID, actorID, userID); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ---- POST /api/v1/admin/users/:id/reset-mfa -------------------------------
 
 // ResetUserMFAAdmin handles POST /api/v1/admin/users/{id}/reset-mfa.
