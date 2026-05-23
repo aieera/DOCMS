@@ -17,6 +17,7 @@ import {
   Network,
   RefreshCw,
   Share,
+  ShieldCheck,
 } from 'lucide-react'
 
 import { useDocument } from '@/hooks/useDocuments'
@@ -39,6 +40,9 @@ import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
 import { ShareDialog } from '@/components/documents/ShareDialog'
 import { CompareDialog } from '@/components/documents/CompareDialog'
 import { VersionHistory } from '@/components/documents/VersionHistory'
+import { RetentionExemptToggle } from '@/components/documents/RetentionExemptToggle'
+import { ManageAccessDialog } from '@/components/documents/ManageAccessDialog'
+import type { Document } from '@/types/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { FileIcon } from '@/components/ui/FileIcon'
@@ -182,6 +186,10 @@ function DocumentDetailPage() {
       {versionId && (
         <OCRFailureBanner documentId={documentId} versionId={versionId} />
       )}
+
+      {/* Surfaces legal-hold lock state so users understand why delete /
+          move are disabled in the actions menu. */}
+      <LegalHoldBanner doc={doc} />
 
       {/* ADR 0053 — banner appears only when smart_route produced
           pending suggestions for this doc. Self-hides otherwise. */}
@@ -384,6 +392,7 @@ function DocumentSidebar({
   const [shareOpen, setShareOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
   return (
     <aside className="space-y-4">
       {/* Primary actions — most-used commands surfaced as full-width
@@ -453,6 +462,17 @@ function DocumentSidebar({
         >
           <ArrowLeftRight className="h-4 w-4" /> Compare with…
         </Button>
+        {/* Phase 7 — Manage access. The dialog enforces admin via
+            checkPermission inside; non-admins see a read-only view. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          onClick={() => setManageAccessOpen(true)}
+          data-testid="open-manage-access-dialog"
+        >
+          <ShieldCheck className="h-4 w-4" /> Manage access
+        </Button>
       </Card>
       {taskOpen && (
         <CreateTaskDialog
@@ -472,6 +492,15 @@ function DocumentSidebar({
         onOpenChange={setCompareOpen}
         baseDocumentId={documentId}
         baseDocumentTitle={doc.title ?? 'document'}
+      />
+      <ManageAccessDialog
+        open={manageAccessOpen}
+        onOpenChange={setManageAccessOpen}
+        resourceType="document"
+        resourceId={documentId}
+        resourceTitle={doc.title ?? 'this document'}
+        workspaceId={doc.workspace_id}
+        folderId={doc.folder_id}
       />
       <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
         <SheetContent side="right" className="w-[440px] sm:max-w-md">
@@ -581,7 +610,31 @@ function DocumentSidebar({
       {versionId && (
         <TranslationPanel documentId={documentId} versionId={versionId} />
       )}
+
+      {/* Phase 5 — per-document retention exemption (business waiver).
+          Distinct from legal hold; self-hides for non-admins on docs
+          that aren't currently exempt. */}
+      <RetentionExemptSidebarSlot doc={doc} />
     </aside>
+  )
+}
+
+function RetentionExemptSidebarSlot({ doc }: { doc: Document | unknown }) {
+  // The sidebar receives doc as `any` to keep the existing prop
+  // contract; narrow here so the toggle has the typed shape it needs.
+  // useAuthStore is already loaded by the parent route so this is a
+  // cheap selector call.
+  const role = useAuthStore((s) => s.user?.role)
+  // Same gate the redaction admin and OCR rerun controls use elsewhere
+  // in this page: owner / admin / compliance_officer get the manage
+  // surface.
+  const canManage = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  if (!doc || typeof doc !== 'object') return null
+  return (
+    <RetentionExemptToggle
+      doc={doc as Document}
+      canManage={!!canManage}
+    />
   )
 }
 
@@ -673,6 +726,28 @@ function OCRFailureBanner({ documentId, versionId }: { documentId: string; versi
           <RefreshCw className="me-1 h-4 w-4" /> Re-run OCR
         </Button>
       )}
+    </Card>
+  )
+}
+
+// LegalHoldBanner renders when the document's lifecycle_state is
+// 'legal_hold'. It mirrors the backend enforcement in
+// services/document/internal/model/lifecycle.go (IsLegalHoldBlocked).
+function LegalHoldBanner({ doc }: { doc: Document }) {
+  if (doc.lifecycle_state !== 'legal_hold') return null
+  return (
+    <Card
+      className="flex items-start gap-3 border-amber-500/40 bg-amber-500/5 p-4"
+      data-testid="legal-hold-banner"
+    >
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="text-sm">
+        <p className="font-semibold text-foreground">Legal hold active</p>
+        <p className="mt-0.5 text-muted-foreground">
+          This document is under legal hold. Delete and move operations are blocked until the hold is released by a compliance officer.
+          Editing the title, adding comments, and downloading remain available.
+        </p>
+      </div>
     </Card>
   )
 }

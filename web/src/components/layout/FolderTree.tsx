@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Folder, FolderOpen, Sparkles, Lock, Users, Globe } from 'lucide-react'
+import { Folder, FolderOpen, Sparkles, Lock, Users, Globe, ShieldCheck } from 'lucide-react'
 import { getFolders } from '@/api/workspaces'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
 import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/lib/cn'
 import type { Folder as FolderType } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import {
+  ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem,
+} from '@/components/ui/shadcn/context-menu'
+import { ManageAccessDialog } from '@/components/documents/ManageAccessDialog'
 
 function FolderNode({ folder, workspaceId, depth }: { folder: FolderType; workspaceId: string; depth: number }) {
   const [expanded, setExpanded] = useState(false)
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
   const { activeFolderId, setActiveFolder } = useUIStore()
   const active = activeFolderId === folder.id
   const { data: children } = useQuery({
@@ -21,22 +26,44 @@ function FolderNode({ folder, workspaceId, depth }: { folder: FolderType; worksp
 
   return (
     <div>
-      <button
-        onClick={() => { setActiveFolder(folder.id); if (folder.children_count > 0) setExpanded(!expanded) }}
-        className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
-          active && 'bg-[var(--color-accent)] text-[var(--color-primary)] font-medium',
-        )}
-        style={{ paddingInlineStart: `${depth * 16 + 8}px` }}
-      >
-        {folder.children_count > 0 && (
-          <DirectionalIcon name="ChevronRight" className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
-        )}
-        {expanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
-        <span className="truncate">{folder.name}</span>
-        {folder.document_count > 0 && <span className="ms-auto text-xs text-[var(--color-text-secondary)]">{folder.document_count}</span>}
-      </button>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            onClick={() => { setActiveFolder(folder.id); if (folder.children_count > 0) setExpanded(!expanded) }}
+            className={cn(
+              'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
+              active && 'bg-[var(--color-accent)] text-[var(--color-primary)] font-medium',
+            )}
+            style={{ paddingInlineStart: `${depth * 16 + 8}px` }}
+            data-testid={`folder-node-${folder.id}`}
+          >
+            {folder.children_count > 0 && (
+              <DirectionalIcon name="ChevronRight" className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
+            )}
+            {expanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+            <span className="truncate">{folder.name}</span>
+            {folder.document_count > 0 && <span className="ms-auto text-xs text-[var(--color-text-secondary)]">{folder.document_count}</span>}
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent data-testid={`folder-context-menu-${folder.id}`}>
+          <ContextMenuItem
+            onSelect={() => setManageAccessOpen(true)}
+            data-testid={`folder-context-action-manage-access-${folder.id}`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Manage access…</span>
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       {expanded && children?.map((c) => <FolderNode key={c.id} folder={c} workspaceId={workspaceId} depth={depth + 1} />)}
+      <ManageAccessDialog
+        open={manageAccessOpen}
+        onOpenChange={setManageAccessOpen}
+        resourceType="folder"
+        resourceId={folder.id}
+        resourceTitle={folder.name}
+        workspaceId={workspaceId}
+      />
     </div>
   )
 }
