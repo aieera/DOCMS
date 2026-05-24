@@ -62,7 +62,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
   const threads = useMemo(() => groupThreads(comments ?? []), [comments])
 
   return (
-    <aside className="flex h-full w-96 flex-col border-s border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+    <aside className="flex w-full flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
       <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <MessageSquare className="h-4 w-4" /> Comments
@@ -73,7 +73,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
         </label>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="comments-list">
+      <div className="max-h-96 flex-1 overflow-y-auto p-4 space-y-4" data-testid="comments-list">
         {isLoading && <Spinner />}
         {threads.length === 0 && !isLoading && (
           <p className="text-sm text-[var(--color-text-secondary)]">No comments yet — be the first.</p>

@@ -18,6 +18,10 @@
 #     null for the whole entity if the policy check denies.
 
 scalar DateTime
+# Arbitrary JSON payload — used for tenant-defined custom metadata
+# fields on Document. The executor serializes via json.Marshal so
+# nested objects/arrays/primitives all round-trip cleanly.
+scalar JSON
 
 type Query {
   document(id: ID!): Document
@@ -52,6 +56,11 @@ type Document {
   createdBy: ID
   createdAt: DateTime
   updatedAt: DateTime
+  # Per-tenant custom metadata. Shape is whatever the admin schema at
+  # /api/v1/tenants/metadata-schema defines; null when unset. The
+  # document detail UI cross-references the live schema to render
+  # labels + required markers.
+  customMetadata: JSON
 
   # Resolved fields — DataLoader-batched per request.
   currentVersion: Version

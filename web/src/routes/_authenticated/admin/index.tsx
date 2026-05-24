@@ -71,6 +71,7 @@ const INTEL_GROUP: SectionGroup = {
     { to: '/admin/intelligence/compliance', icon: ShieldAlert, label: 'PII / PHI findings', desc: 'Open compliance findings queue' },
     { to: '/admin/intelligence/compliance-config', icon: Shield, label: 'Compliance config', desc: 'PHI opt-in, custom patterns, thresholds' },
     { to: '/admin/intelligence/ocr-review', icon: FileSearch, label: 'OCR review queue', desc: 'Pages flagged by OCR-quality scoring' },
+    { to: '/admin/intelligence/ocr-config', icon: FileSearch, label: 'OCR quality config', desc: 'Scoring thresholds, auto-retry, notify-on-poor' },
     { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans' },
     { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers' },
     { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key' },

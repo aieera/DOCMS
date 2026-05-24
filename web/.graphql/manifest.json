@@ -4,8 +4,8 @@
     "name": "ActivityForDocument",
     "doc": "query ActivityForDocument($id: ID!, $cursor: String) { activityForDocument(documentId: $id, cursor: $cursor, limit: 50) { nodes { id kind actorName summary occurredAt payload } nextCursor } }"
   },
-  "153e448dcdcd66b6713db58f84db62b61fed3a00de0a7a5a93007c8ae3b6e5ea": {
+  "9c331cc59050eb21403a1cbce72f7f3b3f7292d46802d887755fb92f92ddb93d": {
     "name": "DocumentDetail",
-    "doc": "query DocumentDetail($id: ID!) { document(id: $id) { id tenantId workspaceId folderId title description lifecycleState regionPin documentClass classificationConfidence tags mimeType totalSizeBytes sha256Hash createdBy createdAt updatedAt currentVersion { id versionNumber sizeBytes mimeType sha256Hash createdAt createdByName changeSummary } versions(limit: 20) { nodes { id versionNumber sizeBytes createdAt createdByName changeSummary } } comments { nodes { id body authorName authorId createdAt resolved replies { id body authorName createdAt } } } annotations { nodes { id kind page createdAt } } workflowInstances { id status definitionName startedAt tasks { id title status assigneeName dueAt } } permissions { canView canEdit canDelete canShare canAdmin } } }"
+    "doc": "query DocumentDetail($id: ID!) { document(id: $id) { id tenantId workspaceId folderId title description lifecycleState regionPin documentClass classificationConfidence tags mimeType totalSizeBytes sha256Hash createdBy createdAt updatedAt customMetadata currentVersion { id versionNumber sizeBytes mimeType sha256Hash createdAt createdByName changeSummary } versions(limit: 20) { nodes { id versionNumber sizeBytes createdAt createdByName changeSummary } } comments { nodes { id body authorName authorId createdAt resolved replies { id body authorName createdAt } } } annotations { nodes { id kind page createdAt } } workflowInstances { id status definitionName startedAt tasks { id title status assigneeName dueAt } } permissions { canView canEdit canDelete canShare canAdmin } } }"
   }
 }

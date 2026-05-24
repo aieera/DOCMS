@@ -7,6 +7,8 @@ import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
 import { getWorkspace } from '@/api/workspaces'
 import { DocumentList } from '@/components/documents/DocumentList'
+import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal'
+import { useNavigate } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -26,6 +28,14 @@ const REVIEW_BATCH_MAX = 5
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
+  // ?doc=<uuid> drives the document viewer modal. URL-state means the
+  // overlay is bookmarkable and survives back/forward. Direct URLs of
+  // the form /workspaces/.../documents/<id> still hit the full-page
+  // route — this modal is just the grid-side shortcut.
+  const search = Route.useSearch() as { doc?: string }
+  const navigate = useNavigate({ from: '/workspaces/$workspaceId/' })
+  const closeViewer = () =>
+    navigate({ search: (s: Record<string, unknown>) => ({ ...s, doc: undefined }) })
   const ws = useQuery({
     queryKey: ['workspace', workspaceId],
     queryFn: () => getWorkspace(workspaceId),
@@ -160,6 +170,18 @@ function WorkspacePage() {
         />
       )}
 
+      {/* Document viewer modal — opens when ?doc=<id> is present. The
+          modal hosts the FULL document detail surface (all 9 tabs +
+          sidebar + every dialog the page can spawn). Close clears the
+          search param. Direct-URL navigation to /workspaces/.../
+          documents/<id> still renders the full page unchanged. */}
+      <DocumentViewerModal
+        open={!!search.doc}
+        onOpenChange={(o) => { if (!o) closeViewer() }}
+        documentId={search.doc ?? null}
+        workspaceId={workspaceId}
+      />
+
       {/* Full-page drop overlay shown only while a drag is active.
           The visual matches the upload button so users connect the
           dots: dropping anywhere → same flow as clicking Upload. */}
@@ -183,4 +205,12 @@ function WorkspacePage() {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/')({ component: WorkspacePage })
+export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/')({
+  component: WorkspacePage,
+  // ?doc=<uuid> opens DocumentViewerModal as an overlay; URL-driven so
+  // back-button and bookmarks behave naturally. Anything else in search
+  // passes through (e.g. future ?folder= or ?filter= params).
+  validateSearch: (raw: Record<string, unknown>): { doc?: string } => ({
+    doc: typeof raw.doc === 'string' && raw.doc.length > 0 ? raw.doc : undefined,
+  }),
+})

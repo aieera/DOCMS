@@ -69,6 +69,7 @@ import { Route as AuthenticatedAdminIntelligenceUsageRouteImport } from './route
 import { Route as AuthenticatedAdminIntelligenceTagReviewRouteImport } from './routes/_authenticated/admin/intelligence/tag-review'
 import { Route as AuthenticatedAdminIntelligenceRoutingRulesRouteImport } from './routes/_authenticated/admin/intelligence/routing-rules'
 import { Route as AuthenticatedAdminIntelligenceOcrReviewRouteImport } from './routes/_authenticated/admin/intelligence/ocr-review'
+import { Route as AuthenticatedAdminIntelligenceOcrConfigRouteImport } from './routes/_authenticated/admin/intelligence/ocr-config'
 import { Route as AuthenticatedAdminIntelligenceNerConfigRouteImport } from './routes/_authenticated/admin/intelligence/ner-config'
 import { Route as AuthenticatedAdminIntelligenceModelsRouteImport } from './routes/_authenticated/admin/intelligence/models'
 import { Route as AuthenticatedAdminIntelligenceFilingAnalyticsRouteImport } from './routes/_authenticated/admin/intelligence/filing-analytics'
@@ -425,6 +426,12 @@ const AuthenticatedAdminIntelligenceOcrReviewRoute =
     path: '/admin/intelligence/ocr-review',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntelligenceOcrConfigRoute =
+  AuthenticatedAdminIntelligenceOcrConfigRouteImport.update({
+    id: '/admin/intelligence/ocr-config',
+    path: '/admin/intelligence/ocr-config',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntelligenceNerConfigRoute =
   AuthenticatedAdminIntelligenceNerConfigRouteImport.update({
     id: '/admin/intelligence/ner-config',
@@ -564,6 +571,7 @@ export interface FileRoutesByFullPath {
   '/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
   '/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
   '/admin/intelligence/ner-config': typeof AuthenticatedAdminIntelligenceNerConfigRoute
+  '/admin/intelligence/ocr-config': typeof AuthenticatedAdminIntelligenceOcrConfigRoute
   '/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
@@ -638,6 +646,7 @@ export interface FileRoutesByTo {
   '/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
   '/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
   '/admin/intelligence/ner-config': typeof AuthenticatedAdminIntelligenceNerConfigRoute
+  '/admin/intelligence/ocr-config': typeof AuthenticatedAdminIntelligenceOcrConfigRoute
   '/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
   '/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
@@ -715,6 +724,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/intelligence/filing-analytics': typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
   '/_authenticated/admin/intelligence/models': typeof AuthenticatedAdminIntelligenceModelsRoute
   '/_authenticated/admin/intelligence/ner-config': typeof AuthenticatedAdminIntelligenceNerConfigRoute
+  '/_authenticated/admin/intelligence/ocr-config': typeof AuthenticatedAdminIntelligenceOcrConfigRoute
   '/_authenticated/admin/intelligence/ocr-review': typeof AuthenticatedAdminIntelligenceOcrReviewRoute
   '/_authenticated/admin/intelligence/routing-rules': typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   '/_authenticated/admin/intelligence/tag-review': typeof AuthenticatedAdminIntelligenceTagReviewRoute
@@ -792,6 +802,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/filing-analytics'
     | '/admin/intelligence/models'
     | '/admin/intelligence/ner-config'
+    | '/admin/intelligence/ocr-config'
     | '/admin/intelligence/ocr-review'
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
@@ -866,6 +877,7 @@ export interface FileRouteTypes {
     | '/admin/intelligence/filing-analytics'
     | '/admin/intelligence/models'
     | '/admin/intelligence/ner-config'
+    | '/admin/intelligence/ocr-config'
     | '/admin/intelligence/ocr-review'
     | '/admin/intelligence/routing-rules'
     | '/admin/intelligence/tag-review'
@@ -942,6 +954,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/intelligence/filing-analytics'
     | '/_authenticated/admin/intelligence/models'
     | '/_authenticated/admin/intelligence/ner-config'
+    | '/_authenticated/admin/intelligence/ocr-config'
     | '/_authenticated/admin/intelligence/ocr-review'
     | '/_authenticated/admin/intelligence/routing-rules'
     | '/_authenticated/admin/intelligence/tag-review'
@@ -1396,6 +1409,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntelligenceOcrReviewRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/intelligence/ocr-config': {
+      id: '/_authenticated/admin/intelligence/ocr-config'
+      path: '/admin/intelligence/ocr-config'
+      fullPath: '/admin/intelligence/ocr-config'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceOcrConfigRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/intelligence/ner-config': {
       id: '/_authenticated/admin/intelligence/ner-config'
       path: '/admin/intelligence/ner-config'
@@ -1598,6 +1618,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIntelligenceFilingAnalyticsRoute: typeof AuthenticatedAdminIntelligenceFilingAnalyticsRoute
   AuthenticatedAdminIntelligenceModelsRoute: typeof AuthenticatedAdminIntelligenceModelsRoute
   AuthenticatedAdminIntelligenceNerConfigRoute: typeof AuthenticatedAdminIntelligenceNerConfigRoute
+  AuthenticatedAdminIntelligenceOcrConfigRoute: typeof AuthenticatedAdminIntelligenceOcrConfigRoute
   AuthenticatedAdminIntelligenceOcrReviewRoute: typeof AuthenticatedAdminIntelligenceOcrReviewRoute
   AuthenticatedAdminIntelligenceRoutingRulesRoute: typeof AuthenticatedAdminIntelligenceRoutingRulesRoute
   AuthenticatedAdminIntelligenceTagReviewRoute: typeof AuthenticatedAdminIntelligenceTagReviewRoute
@@ -1671,6 +1692,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntelligenceModelsRoute,
   AuthenticatedAdminIntelligenceNerConfigRoute:
     AuthenticatedAdminIntelligenceNerConfigRoute,
+  AuthenticatedAdminIntelligenceOcrConfigRoute:
+    AuthenticatedAdminIntelligenceOcrConfigRoute,
   AuthenticatedAdminIntelligenceOcrReviewRoute:
     AuthenticatedAdminIntelligenceOcrReviewRoute,
   AuthenticatedAdminIntelligenceRoutingRulesRoute:

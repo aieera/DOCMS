@@ -7,6 +7,7 @@ import {
   listOcrReviewQueue,
   type QualityGrade,
 } from '@/api/ocr-quality'
+import { OcrPageReviewDrawer } from '@/components/intelligence/OcrPageReviewDrawer'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
@@ -22,9 +23,17 @@ const GRADE_VARIANT: Record<QualityGrade, string> = {
 
 const PAGE_SIZE = 50
 
+interface DrillTarget {
+  documentId: string
+  grade: QualityGrade
+  flagged: number
+  total: number
+}
+
 function OcrReviewPage() {
   const [grade, setGrade] = useState<string>('')
   const [page, setPage] = useState(0)
+  const [drill, setDrill] = useState<DrillTarget | null>(null)
 
   const { data: stats } = useQuery({
     queryKey: ['ocr-quality-stats'],
@@ -113,7 +122,18 @@ function OcrReviewPage() {
               <tr><td colSpan={5} className="px-4 py-4 text-center text-muted-foreground">Inbox zero.</td></tr>
             )}
             {(queue?.items ?? []).map((it) => (
-              <tr key={it.document_id} className="border-t border-border">
+              <tr
+                key={it.document_id}
+                className="cursor-pointer border-t border-border transition-colors hover:bg-muted/40"
+                onClick={() => setDrill({
+                  documentId: it.document_id,
+                  grade: it.quality_grade,
+                  flagged: it.pages_needing_review,
+                  total: it.total_pages,
+                })}
+                data-testid={`ocr-queue-row-${it.document_id}`}
+                title="Open page-level review"
+              >
                 <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{it.document_id.slice(0, 8)}…</td>
                 <td className="px-4 py-2">
                   <Badge variant={GRADE_VARIANT[it.quality_grade]}>{it.quality_grade}</Badge>
@@ -141,6 +161,13 @@ function OcrReviewPage() {
           </div>
         )}
       </div>
+
+      <OcrPageReviewDrawer
+        open={drill !== null}
+        onOpenChange={(o) => { if (!o) setDrill(null) }}
+        documentId={drill?.documentId ?? null}
+        hint={drill ? { grade: drill.grade, flagged: drill.flagged, total: drill.total } : undefined}
+      />
     </div>
   )
 }

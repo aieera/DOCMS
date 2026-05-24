@@ -42,6 +42,8 @@ import { CompareDialog } from '@/components/documents/CompareDialog'
 import { VersionHistory } from '@/components/documents/VersionHistory'
 import { RetentionExemptToggle } from '@/components/documents/RetentionExemptToggle'
 import { ManageAccessDialog } from '@/components/documents/ManageAccessDialog'
+import { RerunOcrButton } from '@/components/intelligence/RerunOcrButton'
+import { getMetadataSchema } from '@/api/metadataSchema'
 import type { Document } from '@/types/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -85,6 +87,31 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
 
 function DocumentDetailPage() {
   const { documentId, workspaceId } = Route.useParams()
+  return <DocumentDetailBody documentId={documentId} workspaceId={workspaceId} />
+}
+
+// Renders the full document-detail surface (banners + tabs + sidebar)
+// without owning route params. Reused by:
+//   - DocumentDetailPage (route component) — passes params from URL
+//   - DocumentViewerModal — passes the doc id from a search param so
+//     the workspace grid can open the same surface as an overlay
+// Nothing about the body's logic differs between modal and full-page
+// modes; the modal supplies a fixed-height container so the inner
+// `overflow-y-auto`s land correctly.
+export function DocumentDetailBody({
+  documentId,
+  workspaceId,
+  inModal = false,
+}: {
+  documentId: string
+  workspaceId: string
+  // When rendered inside DocumentViewerModal the modal supplies its own
+  // header bar (icon + title + lifecycle badge + close). Set true to
+  // suppress the body's `<DocumentHeader />` so the title doesn't render
+  // twice in the same viewport. Default false keeps the full-page route
+  // unchanged.
+  inModal?: boolean
+}) {
   const { data: doc, isLoading } = useDocument(documentId)
   // Prime the workspace cache so the breadcrumb resolves the workspace
   // UUID to its name. The breadcrumb component reads
@@ -130,7 +157,21 @@ function DocumentDetailPage() {
 
   return (
     <div className="space-y-6">
-      <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} />
+      {!inModal && <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} />}
+      {/* Modal mode: replace the rich header with a compact metadata
+          strip so uploader + intelligence badges aren't lost. */}
+      {inModal && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span title={uploaderTooltip(doc)}>{uploaderLabel(doc)}</span>
+          <span aria-hidden>·</span>
+          <span>uploaded {formatDateTime(doc.created_at)}</span>
+          <span className="ms-auto flex flex-wrap items-center gap-2">
+            <LanguageBadge documentId={documentId} />
+            <ComplianceBadge documentId={documentId} />
+            <OcrQualityBadge documentId={documentId} />
+          </span>
+        </div>
+      )}
 
       {/* Quiet status pill so QA + ops can verify the GraphQL call
           fired without opening devtools — appears for a beat while
@@ -603,6 +644,13 @@ function DocumentSidebar({
         </div>
       </Card>
 
+      {/* Custom fields — cross-references the tenant-defined metadata
+          schema (admin → metadata schema) with this document's
+          custom_metadata payload. Self-hides when the schema has
+          zero properties so docs in tenants that never configured
+          custom metadata don't see an empty card. */}
+      <CustomFieldsSidebarSlot doc={doc as Document} />
+
       {/* Intelligence panels — each component self-hides when it has
           nothing to render, so the sidebar stays compact for docs
           that haven't reached the relevant pipeline stage yet. */}
@@ -616,6 +664,59 @@ function DocumentSidebar({
           that aren't currently exempt. */}
       <RetentionExemptSidebarSlot doc={doc} />
     </aside>
+  )
+}
+
+// Cross-references the tenant's custom-metadata JSON Schema (admin
+// surface at /admin/metadata-schema) against this document's
+// custom_metadata payload. Renders one row per declared property,
+// shows '—' for unset values, and marks required fields with *.
+// Whole card self-hides when the schema has zero properties.
+function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
+  const { data: schema } = useQuery({
+    queryKey: ['admin', 'metadata-schema'],
+    queryFn: getMetadataSchema,
+    // Schema is tenant-wide and rarely changes during a session;
+    // 5-min staleness keeps the sidebar snappy without going stale
+    // immediately after the admin saves the schema in another tab.
+    staleTime: 5 * 60_000,
+  })
+
+  const props = (schema as { properties?: Record<string, { description?: string; type?: string }> } | undefined)?.properties ?? {}
+  const required = new Set(
+    ((schema as { required?: string[] } | undefined)?.required ?? []),
+  )
+  const entries = Object.entries(props)
+  if (entries.length === 0) return null
+
+  const values = doc.custom_metadata ?? {}
+
+  return (
+    <Card className="p-4" data-testid="custom-fields-sidebar">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Custom fields
+      </h3>
+      <dl className="mt-3 space-y-2 text-sm">
+        {entries.map(([key, spec]) => {
+          const raw = values[key]
+          const display = raw == null || raw === ''
+            ? <span className="text-muted-foreground">—</span>
+            : typeof raw === 'object'
+              ? <code className="break-all font-mono text-xs">{JSON.stringify(raw)}</code>
+              : <span>{String(raw)}</span>
+          return (
+            <Row key={key} label={
+              <>
+                {spec?.description || key}
+                {required.has(key) && <span aria-label="required" className="ms-0.5 text-destructive">*</span>}
+              </>
+            }>
+              {display}
+            </Row>
+          )
+        })}
+      </dl>
+    </Card>
   )
 }
 
@@ -638,7 +739,7 @@ function RetentionExemptSidebarSlot({ doc }: { doc: Document | unknown }) {
   )
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <dt className="text-xs uppercase tracking-wider text-muted-foreground">{label}</dt>
@@ -686,20 +787,11 @@ function DocumentSkeleton() {
 // React Query dedupes the fetch — only one network call, two
 // readers.
 function OCRFailureBanner({ documentId, versionId }: { documentId: string; versionId: string }) {
-  const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const { data } = useQuery({
     queryKey: ['ocr', documentId, versionId],
     queryFn: () => getOCR(documentId, versionId),
-  })
-  const rerun = useMutation({
-    mutationFn: () => rerunOCR(documentId, versionId),
-    onSuccess: () => {
-      toast.success('OCR re-queued')
-      qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
-    },
-    onError: () => toast.error('Re-run failed'),
   })
   if ((data?.status ?? 'unknown') !== 'failed') return null
   return (
@@ -712,20 +804,18 @@ function OCRFailureBanner({ documentId, versionId }: { documentId: string; versi
         <div className="text-sm">
           <p className="font-medium text-foreground">OCR failed</p>
           <p className="text-muted-foreground">
-            Text extraction did not complete. Re-run to try again with the default engine.
+            Text extraction did not complete. Re-run to try again — use Auto for the default pipeline or force Surya if Auto skipped layout analysis.
           </p>
         </div>
       </div>
-      {canRerun && (
-        <Button
-          variant="outline"
-          onClick={() => rerun.mutate()}
-          loading={rerun.isPending}
-          data-testid="ocr-failure-rerun"
-        >
-          <RefreshCw className="me-1 h-4 w-4" /> Re-run OCR
-        </Button>
-      )}
+      <RerunOcrButton
+        documentId={documentId}
+        versionId={versionId}
+        canRerun={canRerun}
+        variant="outline"
+        size="default"
+        testId="ocr-failure-rerun"
+      />
     </Card>
   )
 }
@@ -761,7 +851,6 @@ function LegalHoldBanner({ doc }: { doc: Document }) {
 const STUCK_OCR_MINUTES = 30
 
 function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; versionId?: string; uploadedAt?: string }) {
-  const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const [highlight, setHighlight] = useState(true)
@@ -800,12 +889,6 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
         toast(`OCR queued — waiting for the worker`, { id: `ocr-${versionId}`, icon: '⏳' }); break
     }
   }, [data?.status, data?.total_pages, versionId])
-
-  const rerun = useMutation({
-    mutationFn: () => rerunOCR(documentId, versionId!),
-    onSuccess: () => { toast.success('OCR re-queued'); qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] }) },
-    onError: () => toast.error('Re-run failed'),
-  })
 
   if (!versionId) {
     return (
@@ -856,12 +939,12 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
             />
             Highlight entities
           </label>
-          {canRerun && (
-            <Button variant="outline" size="sm" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
-              {rerun.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-              Re-run OCR
-            </Button>
-          )}
+          <RerunOcrButton
+            documentId={documentId}
+            versionId={versionId}
+            canRerun={canRerun}
+            testId="ocr-panel-rerun"
+          />
         </div>
       </Card>
 
@@ -891,12 +974,13 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
                     </p>
                   </div>
                 </div>
-                {canRerun && (
-                  <Button size="sm" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
-                    {rerun.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-                    Re-run OCR
-                  </Button>
-                )}
+                <RerunOcrButton
+                  documentId={documentId}
+                  versionId={versionId}
+                  canRerun={canRerun}
+                  variant="default"
+                  testId="ocr-stuck-rerun"
+                />
               </Card>
             )
           }

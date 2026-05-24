@@ -178,6 +178,13 @@ func (r *Resolver) DocumentsByWorkspace(ctx context.Context, workspaceID string,
 }
 
 func docToModel(d *vaultdmsv1.Document) *model.Document {
+	// google.protobuf.Struct → map[string]any via AsMap(); a nil
+	// Struct returns nil so the model's omitempty JSON tag keeps the
+	// field absent rather than serializing a `null`.
+	var meta map[string]any
+	if s := d.GetCustomMetadata(); s != nil {
+		meta = s.AsMap()
+	}
 	return &model.Document{
 		ID:                       d.GetId(),
 		TenantID:                 d.GetTenantId(),
@@ -196,6 +203,7 @@ func docToModel(d *vaultdmsv1.Document) *model.Document {
 		CreatedBy:                d.GetCreatedBy(),
 		CreatedAt:                tsToTime(d.GetCreatedAt()),
 		UpdatedAt:                tsToTime(d.GetUpdatedAt()),
+		CustomMetadata:           meta,
 		CurrentVersionID:         d.GetCurrentVersionId(),
 	}
 }

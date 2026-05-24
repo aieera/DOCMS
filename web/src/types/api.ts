@@ -69,6 +69,12 @@ export interface Document {
   // justification recorded with the exemption event.
   retention_exempt?: boolean
   retention_exempt_reason?: string
+  // Tenant-defined custom metadata (admin schema at
+  // /api/v1/tenants/metadata-schema). Shape is whatever the tenant
+  // declared; values are arbitrary JSON. Optional because legacy
+  // docs predate the field. The doc-detail sidebar cross-references
+  // the live schema to render labels + required markers.
+  custom_metadata?: Record<string, unknown>
 }
 
 export interface Version {

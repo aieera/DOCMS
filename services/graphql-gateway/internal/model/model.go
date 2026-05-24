@@ -28,6 +28,10 @@ type Document struct {
 	CreatedBy                string                 `json:"createdBy,omitempty"`
 	CreatedAt                *time.Time             `json:"createdAt,omitempty"`
 	UpdatedAt                *time.Time             `json:"updatedAt,omitempty"`
+	// Tenant-defined custom metadata (schema at /admin/metadata-schema).
+	// Marshalled via the JSON scalar in the GraphQL executor; nil when
+	// the upstream document has no custom_metadata payload set.
+	CustomMetadata           map[string]any         `json:"customMetadata,omitempty"`
 	CurrentVersionID         string                 `json:"-"`
 	Permissions              *DocumentPermissions   `json:"permissions,omitempty"`
 }

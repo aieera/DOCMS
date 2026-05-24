@@ -35,6 +35,11 @@ export interface GqlDocumentDetail {
   annotations: { nodes: GqlAnnotation[]; nextCursor?: string }
   workflowInstances: GqlWorkflowInstance[]
   permissions: GqlPermissions
+  // Tenant-defined custom metadata (admin schema). The GraphQL
+  // gateway exposes this via the JSON scalar; shape is whatever the
+  // tenant declared. Absent (undefined) when the document was never
+  // assigned custom_metadata.
+  customMetadata?: Record<string, unknown>
 }
 
 export interface GqlVersion {

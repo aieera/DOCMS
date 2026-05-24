@@ -8,9 +8,15 @@ import { DocumentActionsMenu } from './DocumentActionsMenu'
 export function DocumentCard({ doc }: { doc: Document }) {
   return (
     <DocumentActionsMenu doc={doc}>
+      {/* Card click opens the document viewer as a modal overlay over
+          the workspace grid. URL becomes ?doc=<id> so the overlay is
+          bookmarkable + back-button friendly. The direct-URL route
+          /workspaces/.../documents/<id> still works for deep-links
+          arriving from outside (task→doc nav, email links, etc.). */}
       <Link
-        to="/workspaces/$workspaceId/documents/$documentId"
-        params={{ workspaceId: doc.workspace_id, documentId: doc.id }}
+        to="/workspaces/$workspaceId"
+        params={{ workspaceId: doc.workspace_id }}
+        search={{ doc: doc.id }}
         className="group flex flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-shadow hover:shadow-md"
         data-testid={`document-card-${doc.id}`}
       >
