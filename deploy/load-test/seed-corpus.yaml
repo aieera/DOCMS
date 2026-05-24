@@ -1,0 +1,192 @@
+# Load-test corpus seeder Job — referenced by
+# docs/load-tests/RUNBOOK.md §2.2.
+#
+# Runs tests/load/seed.py inside the cluster against the load-test
+# Postgres. The seeder is resumable via load_seed_progress so a
+# kubectl session drop or pod restart doesn't lose progress. At default
+# scale (100 tenants × 1M docs = 100M total, 8 workers) this Job
+# takes 8-12 hours; the activeDeadlineSeconds reflects that.
+#
+# Apply protocol:
+#   1. kubectl create secret generic loadtest-seeder \
+#        --from-literal=database-url="postgresql://seeder:PASS@vaultdms-postgres-rw.vaultdms.svc:5432/vaultdms_loadtest" \
+#        --namespace=vaultdms
+#      (database name MUST contain "loadtest" — seed.py refuses otherwise.)
+#   2. kubectl apply -f deploy/load-test/seed-corpus.yaml
+#   3. kubectl logs -f job/dms-load-seed --namespace=vaultdms
+#
+# To restart from checkpoint:
+#   kubectl delete job/dms-load-seed
+#   kubectl apply -f deploy/load-test/seed-corpus.yaml
+# The script reads load_seed_progress and continues where it left off.
+#
+# Sizing note: the seeder pod requests 4 CPU / 8 Gi so it doesn't
+# starve at scale. ProcessPoolExecutor with workers=8 needs ~6 GB
+# steady-state on a 100M-row run (each worker holds its own COPY
+# buffer + a few open server connections).
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dms-load-seed
+  namespace: vaultdms
+  labels:
+    app.kubernetes.io/component: loadtest
+    app.kubernetes.io/part-of: vaultdms
+    adr: "0105"
+spec:
+  # Don't auto-retry the whole 12-hour run on a transient failure —
+  # the seeder is idempotent at the row level (ON CONFLICT DO
+  # NOTHING) so a restart resumes cleanly, but a backoffLimit of 4
+  # would burn ~48 h before giving up. Manual restart is the right
+  # cost ratio at this scale.
+  backoffLimit: 0
+  # 14 h ceiling. Default run is 8-12 h on c6i.4xlarge; the extra
+  # 2 h covers slower disk or AZ-local latency degradation.
+  activeDeadlineSeconds: 50400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: loadtest
+        adr: "0105"
+    spec:
+      restartPolicy: Never
+      # Seeder must NOT land on the loadrunner pool — it would
+      # contend with k6 runners during the protocol if someone
+      # forgets to delete it. Put it on the data pool where the
+      # Postgres pods live so the COPY traffic stays AZ-local.
+      nodeSelector:
+        workload: data
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Wait for Postgres to accept connections. The seeder will
+        # ultimately surface a useful error if Postgres is down, but
+        # this Job runs unattended so a 30-min retry is cheaper than
+        # paging the operator.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          env:
+            - name: PGCONNECT_TIMEOUT
+              value: "5"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-seeder
+                  key: database-url
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 60); do
+                if psql "$DATABASE_URL" -c 'SELECT 1' > /dev/null 2>&1; then
+                  echo "postgres ready after ${i} attempts"
+                  exit 0
+                fi
+                sleep 5
+              done
+              echo "postgres not ready after 5 min" >&2
+              exit 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: seeder
+          # The Python image with psycopg[c] preinstalled. Pinned
+          # for reproducibility — a campaign's tfvars file pins
+          # everything else; this Job pins the seeder image. The
+          # actual seed.py is baked into the image at /app/seed.py
+          # by build/Dockerfile.load-seeder (see commented block
+          # below for the equivalent ConfigMap-mount variant if you
+          # don't want to bake an image).
+          image: ghcr.io/vaultdms/load-seeder:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/seed.py"]
+          args:
+            - --tenants
+            - "$(TENANT_COUNT)"
+            - --docs-per-tenant
+            - "$(DOCS_PER_TENANT)"
+            - --batch-size
+            - "5000"
+            - --workers
+            - "8"
+          env:
+            - name: VAULTDMS_LOAD_SEED_OK
+              value: "1"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-seeder
+                  key: database-url
+            - name: TENANT_COUNT
+              value: "100"
+            - name: DOCS_PER_TENANT
+              value: "1000000"
+            # Tenants manifest from the prior Job — seed.py reads
+            # this to align tenant_ids it INSERTs with the ones
+            # billing already created. Without alignment k6 logs in
+            # as tenant A but the corpus belongs to tenant B → 0
+            # results.
+            - name: TENANTS_MANIFEST
+              value: /tenants/manifest.json
+            # Postgres tuning hints the seeder respects:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PGOPTIONS
+              # synchronous_commit=off and statement_timeout=0 cut
+              # the run from ~14 h to ~10 h on c6i.4xlarge. Local
+              # to the seeder's session only — does NOT affect the
+              # cluster default.
+              value: "-c synchronous_commit=off -c statement_timeout=0"
+          volumeMounts:
+            - { name: tenants, mountPath: /tenants, readOnly: true }
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 16Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: tenants
+          persistentVolumeClaim:
+            claimName: loadtest-tenants-manifest
+
+# ----------------------------------------------------------------------
+# ConfigMap-mount variant (avoid building load-seeder image):
+#
+#   kubectl create configmap loadtest-seed-py \
+#     --from-file=seed.py=tests/load/seed.py \
+#     --namespace=vaultdms
+#
+# then replace the container block above with:
+#
+#   - name: seeder
+#     image: python:3.13-slim-bookworm
+#     command: ["sh", "-c"]
+#     args:
+#       - pip install --no-cache-dir 'psycopg[c]>=3.1' && python /app/seed.py --tenants=$TENANT_COUNT ...
+#     volumeMounts:
+#       - { name: code,    mountPath: /app, readOnly: true }
+#       - { name: tenants, mountPath: /tenants, readOnly: true }
+#
+# and add to volumes:
+#   - name: code
+#     configMap:
+#       name: loadtest-seed-py
+#       defaultMode: 0644
+#
+# Cost: ~30 s slower start (pip install). For a 10-hour run that's
+# negligible; the image is only worth baking if you re-seed often.
+# ----------------------------------------------------------------------

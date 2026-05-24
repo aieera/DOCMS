@@ -1,0 +1,183 @@
+# Load-test tenant bootstrap Job — referenced by
+# docs/load-tests/RUNBOOK.md §2.1.
+#
+# Wraps services/auth/scripts/create-loadtest-tenants.sh inside a
+# k8s Job so it can run unattended in the load-test cluster with
+# direct service-DNS access to billing. The manifest produced at
+# /tmp/loadtest-tenants/manifest.json is copied out to a PVC so the
+# subsequent seed-corpus Job (and the k6 runners) can read it.
+#
+# Apply protocol:
+#   1. kubectl create secret generic loadtest-tenants \
+#        --from-literal=billing-api-key=$BILLING_API_KEY \
+#        --namespace=vaultdms
+#   2. kubectl apply -f deploy/load-test/seed-tenants.yaml
+#   3. kubectl wait --for=condition=complete job/create-loadtest-tenants \
+#        --namespace=vaultdms --timeout=30m
+#
+# Idempotent: re-applying does not recreate the Job (immutable spec
+# error). To re-run, delete first: `kubectl delete job/create-loadtest-tenants`.
+#
+# Safety: VAULTDMS_LOAD_SEED_OK=1 is set explicitly here. The script
+# refuses without it. Don't apply this manifest against a non-loadtest
+# cluster — the load-test IAM policy keyed on the
+# vaultdms_environment_class=loadtest tag is your second-line defence.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loadtest-tenants-manifest
+  namespace: vaultdms
+  labels:
+    app.kubernetes.io/component: loadtest
+    app.kubernetes.io/part-of: vaultdms
+    adr: "0105"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi  # the manifest is ~50 KB for 100 tenants
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-loadtest-tenants
+  namespace: vaultdms
+  labels:
+    app.kubernetes.io/component: loadtest
+    app.kubernetes.io/part-of: vaultdms
+    adr: "0105"
+spec:
+  # Single shot. If a partial run leaves some tenants created,
+  # delete the Job, fix the issue, re-apply — the script is
+  # idempotent at the org_name level (provision returns 409 on
+  # duplicate orgs, which we log but don't retry).
+  backoffLimit: 1
+  # 30 min ceiling. The default budget for 100 provision calls
+  # against a warm billing svc is ~2 min; if we're past 30 something
+  # is wrong and human attention is cheaper than burning more time.
+  activeDeadlineSeconds: 1800
+  # ADR 0105 — only the loadrunner node group has the right CPU
+  # headroom AND avoids placing this script on the SUT control
+  # nodes (which would create observer-effect noise).
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: loadtest
+        adr: "0105"
+    spec:
+      restartPolicy: Never
+      # The runbook spec puts the loadrunner pool under a NoSchedule
+      # taint; this toleration lets the seed Job land there. We
+      # don't want it competing with the SUT services for CPU.
+      tolerations:
+        - key: loadrunner
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      nodeSelector:
+        workload: loadrunner
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Wait for the billing service to be reachable + ready before
+      # firing the script. Cuts down on noisy "Connection refused"
+      # output during a cold cluster bring-up.
+      initContainers:
+        - name: wait-for-billing
+          image: curlimages/curl:8.10.1
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 60); do
+                if curl -fsS -o /dev/null -m 2 http://vaultdms-billing.vaultdms.svc.cluster.local:8080/healthz; then
+                  echo "billing ready after ${i} attempts"
+                  exit 0
+                fi
+                sleep 5
+              done
+              echo "billing not ready after 5 min" >&2
+              exit 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: create-tenants
+          # Use a thin base image and bake the script in via the
+          # auth service image — the auth service image already
+          # contains the scripts/ directory mounted into /app/scripts.
+          # If the auth image doesn't ship scripts in its build
+          # (check build/Dockerfile.go-service), mount it as a
+          # ConfigMap instead — see commented block below.
+          image: ghcr.io/vaultdms/auth:1.0.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash"]
+          args: ["/app/scripts/create-loadtest-tenants.sh"]
+          env:
+            - name: VAULTDMS_LOAD_SEED_OK
+              value: "1"
+            - name: BILLING_URL
+              value: http://vaultdms-billing.vaultdms.svc.cluster.local:8080
+            - name: BILLING_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: loadtest-tenants
+                  key: billing-api-key
+            - name: REGION
+              value: us-east-1
+            - name: TENANT_COUNT
+              value: "100"
+            - name: PLAN
+              value: enterprise
+            - name: OUT_DIR
+              value: /manifest
+          volumeMounts:
+            - name: manifest
+              mountPath: /manifest
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: manifest
+          persistentVolumeClaim:
+            claimName: loadtest-tenants-manifest
+
+# ----------------------------------------------------------------------
+# If the auth service image doesn't ship scripts/, run the script
+# from a ConfigMap instead:
+#
+#   kubectl create configmap loadtest-scripts \
+#     --from-file=create-loadtest-tenants.sh=services/auth/scripts/create-loadtest-tenants.sh \
+#     --namespace=vaultdms
+#
+# then replace the container block above with:
+#
+#   - name: create-tenants
+#     image: curlimages/curl:8.10.1  # has bash + openssl + curl
+#     command: ["sh", "/scripts/create-loadtest-tenants.sh"]
+#     volumeMounts:
+#       - { name: scripts,  mountPath: /scripts, readOnly: true }
+#       - { name: manifest, mountPath: /manifest }
+#     # ...env identical...
+#
+# and add to volumes:
+#   - name: scripts
+#     configMap:
+#       name: loadtest-scripts
+#       defaultMode: 0755
+# ----------------------------------------------------------------------

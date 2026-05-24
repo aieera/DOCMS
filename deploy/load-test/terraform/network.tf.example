@@ -1,0 +1,108 @@
+# Load-test VPC bootstrap — example. COPY to network.tf (or a
+# separate tfvars stack) and apply BEFORE deploy/load-test/terraform/
+# main.tf, since main.tf consumes vpc_id + private_subnet_ids as
+# inputs.
+#
+# Why this is .example rather than .tf:
+#   - VPC + subnet IDs are environment-specific. We don't want to
+#     accidentally apply someone else's CIDR range and clash with
+#     prod peering.
+#   - Networking is the one part of the infra that should outlive
+#     a single campaign: VPC creation takes ~5 min and you re-use
+#     it for every monthly run.
+#
+# Apply this stack ONCE per AWS account; subsequent campaigns reuse
+# the outputs. The state for this stack lives in a separate S3 key
+# (load-test/network.tfstate) so a `terraform destroy` of the
+# cluster stack can't accidentally tear down the network.
+#
+# Cost when idle: 3 × NAT gateway ~$96/mo. Acceptable cost for a
+# monthly-campaign cadence; if you only run quarterly, set
+# enable_nat_gateway=false here and re-enable before the campaign.
+
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
+
+  backend "s3" {
+    bucket = "vaultdms-loadtest-tfstate"
+    key    = "load-test/network.tfstate"
+    region = "us-east-1"
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+  default_tags {
+    tags = {
+      Environment              = "loadtest"
+      Purpose                  = "blueprint-section-16-network"
+      ManagedBy                = "terraform"
+      ADR                      = "0105"
+      vaultdms_environment_class = "loadtest"
+    }
+  }
+}
+
+# Standard 3-AZ VPC. 10.42.0.0/16 picks an unused-by-default range
+# unlikely to clash with corporate VPN ranges; change if yours
+# overlaps.
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.13"
+
+  name = "vaultdms-loadtest"
+  cidr = "10.42.0.0/16"
+
+  # us-east-1 only — EKS in main.tf will refuse to place node
+  # groups across regions. If you want a different region, change
+  # in three places: provider above, the backend bucket region, and
+  # campaigns/*.tfvars.
+  azs              = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  private_subnets  = ["10.42.1.0/24",  "10.42.2.0/24",  "10.42.3.0/24"]
+  public_subnets   = ["10.42.101.0/24", "10.42.102.0/24", "10.42.103.0/24"]
+
+  enable_nat_gateway     = true
+  single_nat_gateway     = false  # one per AZ — survives an AZ outage during chaos overlay
+  one_nat_gateway_per_az = true
+
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  # Tags EKS requires for subnet discovery. Without these the EKS
+  # module's auto-discovery silently picks the wrong subnets.
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = 1
+  }
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = 1
+  }
+}
+
+output "vpc_id" {
+  value       = module.vpc.vpc_id
+  description = "Copy into deploy/load-test/terraform/campaigns/<YYYY-MM>.tfvars → vpc_id"
+}
+
+output "private_subnet_ids" {
+  value       = module.vpc.private_subnets
+  description = "Copy into deploy/load-test/terraform/campaigns/<YYYY-MM>.tfvars → private_subnet_ids"
+}
+
+output "public_subnet_ids" {
+  value       = module.vpc.public_subnets
+  description = "Public subnets — main.tf doesn't use them, but the EKS module's ELB integration may."
+}
+
+# After `terraform apply`:
+#
+#   terraform output -raw vpc_id
+#   terraform output -json private_subnet_ids
+#
+# then paste the values into your campaign tfvars and proceed to the
+# cluster stack (deploy/load-test/terraform/main.tf).

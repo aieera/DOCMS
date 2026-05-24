@@ -15,6 +15,35 @@ A buyer's enterprise-evaluation team will ask:
 The right answer is "yes, here is the artifact." This runbook produces
 that artifact in `docs/load-tests/<YYYY-MM-DD>/summary.md`.
 
+## 0.5. Preflight (run BEFORE any spend)
+
+`terraform apply` triggers ~$10/hour of cluster spend. Discovering a
+missing IAM permission or absent state bucket 30 minutes in costs
+real money. Run the preflight script first — it costs nothing and
+fails fast.
+
+```sh
+./deploy/load-test/preflight.sh deploy/load-test/terraform/campaigns/$(date +%Y-%m).tfvars
+```
+
+The script verifies: terraform/helm/kubectl/aws/k6/jq installed; AWS
+identity callable; the eight required IAM actions allowed (where
+`iam:SimulatePrincipalPolicy` is granted); the `vaultdms-loadtest-tfstate`
+S3 bucket exists with versioning + encryption + public-block; the
+campaign tfvars has no `CHANGE_ME` placeholders and references a real
+VPC id; and the local Helm chart is lint-clean.
+
+If you've never run a campaign in this AWS account, do the network
+stack first (one-time, ~5 min):
+
+```sh
+cd deploy/load-test/terraform
+cp network.tf.example network.tf
+terraform init -backend-config="key=load-test/network.tfstate"
+terraform apply
+# Copy the vpc_id + private_subnet_ids outputs into your campaign tfvars.
+```
+
 ## 1. One-time setup per campaign (~3 hours)
 
 ```sh
@@ -44,18 +73,38 @@ helm upgrade --install vaultdms ../../../deploy/helm/vaultdms \
 ## 2. Seed the corpus (~8-12 hours)
 
 ```sh
-# 2.1. Bootstrap the 100 tenants. The auth service has a
-#      bulk-tenant-create endpoint (see services/auth/scripts/
-#      create-loadtest-tenants.sh) — run it via a k8s Job:
-kubectl apply -f ../../deploy/load-test/seed-tenants.yaml
-kubectl wait --for=condition=complete job/create-loadtest-tenants --timeout=30m
+# 2.1. Bootstrap the 100 tenants. Calls billing's
+#      POST /internal/v1/tenants/provision 100x.
+#
+#      Pre-req secret (billing api-key matches the billing svc
+#      --api-key flag; rotate via `helm upgrade --set
+#      billing.apiKey=…`):
+kubectl create secret generic loadtest-tenants \
+  --from-literal=billing-api-key="$BILLING_API_KEY" \
+  --namespace=vaultdms
+
+kubectl apply  -f deploy/load-test/seed-tenants.yaml
+kubectl wait   --for=condition=complete job/create-loadtest-tenants \
+               --namespace=vaultdms --timeout=30m
+
+# Capture the manifest from the PVC (you'll feed it to k6 below):
+kubectl cp vaultdms/$(kubectl get pod -n vaultdms \
+    -l job-name=create-loadtest-tenants \
+    -o jsonpath='{.items[0].metadata.name}'):/manifest/manifest.json \
+  ./tests/load/manifest.json
 
 # 2.2. Seed 100M docs. Runs as a k8s Job so it can survive a
 #      kubectl session drop. Resumable — restart the job and it
 #      picks up from load_seed_progress.
-export VAULTDMS_LOAD_SEED_OK=1
-kubectl apply -f ../../deploy/load-test/seed-corpus.yaml
-kubectl logs -f job/dms-load-seed
+#
+#      Pre-req: a seeder-scoped Postgres DSN whose database name
+#      contains "loadtest" (seed.py refuses otherwise):
+kubectl create secret generic loadtest-seeder \
+  --from-literal=database-url="postgresql://seeder:${PG_PASS}@vaultdms-postgres-rw.vaultdms.svc:5432/vaultdms_loadtest" \
+  --namespace=vaultdms
+
+kubectl apply  -f deploy/load-test/seed-corpus.yaml
+kubectl logs -f job/dms-load-seed --namespace=vaultdms
 
 # Expected throughput: ~25k rows/s × 8 workers = ~720k docs/min ≈
 # 100M docs in ~2.5 h on c6i.4xlarge. Most time is the COPY into
