@@ -21,7 +21,7 @@ interface SectionGroup {
 
 const TENANT_GROUP: SectionGroup = {
   label: 'Tenant administration',
-  description: 'People, policy, integrations, and tenant-wide configuration.',
+  description: 'People, policy, and tenant-wide configuration.',
   sections: [
     { to: '/admin/users', icon: Users, label: 'Users', desc: 'Manage team members' },
     { to: '/admin/groups', icon: Shield, label: 'Groups', desc: 'Group permissions' },
@@ -32,20 +32,10 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/retention', icon: Archive, label: 'Retention', desc: 'Retention policies' },
     { to: '/admin/legal-holds', icon: Scale, label: 'Legal holds', desc: 'Active holds' },
     { to: '/admin/audit-log', icon: ScrollText, label: 'Audit log', desc: 'Activity history' },
-    { to: '/admin/webhooks', icon: Webhook, label: 'Webhooks', desc: 'Event subscriptions' },
-    { to: '/admin/integrations/events', icon: Antenna, label: 'Event streaming', desc: 'Per-tenant event stream' },
-    { to: '/admin/integrations/email', icon: Mail, label: 'Email ingestion', desc: 'Microsoft / Gmail / IMAP → documents' },
     { to: '/admin/tags', icon: Tag, label: 'Tags', desc: 'Tenant tag catalog' },
     { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
     { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
     { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
-    { to: '/admin/connectors', icon: Plug, label: 'Connectors', desc: 'M365 / Salesforce sync' },
-    { to: '/admin/integrations', icon: PenTool, label: 'eSignature integrations', desc: 'DocuSign + Adobe Sign' },
-    { to: '/admin/integrations/mcp', icon: Bot, label: 'MCP (LLM agents)', desc: 'Claude / Cursor / Copilot tool access' },
-    // iPaaS surface (ADR 0090) hidden from the tile grid until external
-    // Zapier/Make/n8n apps are actually published. Code + route remain
-    // wired so re-enabling is just uncommenting this line.
-    // { to: '/admin/integrations/ipaas', icon: Zap, label: 'iPaaS (Zapier / Make / n8n)', desc: 'Issue API keys + see trigger URLs (ADR 0090)' },
     { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
     { to: '/admin/residency', icon: Globe, label: 'Residency', desc: 'Regions + migrate docs' },
     { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
@@ -54,6 +44,26 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
     { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
     { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
+  ],
+}
+
+// Integration / connector surfaces — everything that bridges VaultDMS
+// to a third-party system. Split out of TENANT_GROUP so the home grid
+// is easier to scan; the underlying routes are unchanged.
+const INTEGRATIONS_GROUP: SectionGroup = {
+  label: 'Integrations',
+  description: 'Connect VaultDMS to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
+  sections: [
+    { to: '/admin/integrations', icon: PenTool, label: 'eSignature integrations', desc: 'DocuSign + Adobe Sign' },
+    { to: '/admin/connectors', icon: Plug, label: 'Connectors', desc: 'M365 / Salesforce / Google Workspace sync' },
+    { to: '/admin/integrations/events', icon: Antenna, label: 'Event streaming', desc: 'Per-tenant event stream' },
+    { to: '/admin/integrations/email', icon: Mail, label: 'Email ingestion', desc: 'Microsoft / Gmail / IMAP → documents' },
+    { to: '/admin/integrations/mcp', icon: Bot, label: 'MCP (LLM agents)', desc: 'Claude / Cursor / Copilot tool access' },
+    { to: '/admin/webhooks', icon: Webhook, label: 'Webhooks', desc: 'Outbound event subscriptions' },
+    // iPaaS surface (ADR 0090) hidden from the tile grid until external
+    // Zapier/Make/n8n apps are actually published. Code + route remain
+    // wired so re-enabling is just uncommenting this line.
+    // { to: '/admin/integrations/ipaas', icon: Zap, label: 'iPaaS (Zapier / Make / n8n)', desc: 'Issue API keys + see trigger URLs (ADR 0090)' },
   ],
 }
 
@@ -94,7 +104,7 @@ const PLATFORM_GROUP: SectionGroup = {
 
 function AdminPage() {
   const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
-  const groups = [TENANT_GROUP, INTEL_GROUP, ...(isPlatformAdmin ? [PLATFORM_GROUP] : [])]
+  const groups = [TENANT_GROUP, INTEGRATIONS_GROUP, INTEL_GROUP, ...(isPlatformAdmin ? [PLATFORM_GROUP] : [])]
 
   return (
     <div className="space-y-10">
