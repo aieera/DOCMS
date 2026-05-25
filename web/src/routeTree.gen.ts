@@ -53,6 +53,7 @@ import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
 import { Route as AuthenticatedWorkspacesWorkspaceIdIndexRouteImport } from './routes/_authenticated/workspaces/$workspaceId/index'
+import { Route as AuthenticatedAdminTenantIndexRouteImport } from './routes/_authenticated/admin/tenant/index'
 import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_authenticated/workspaces/$workspaceId/settings'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
@@ -81,6 +82,7 @@ import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/
 import { Route as AuthenticatedAdminIntegrationsIpaasRouteImport } from './routes/_authenticated/admin/integrations/ipaas'
 import { Route as AuthenticatedAdminIntegrationsEventsRouteImport } from './routes/_authenticated/admin/integrations/events'
 import { Route as AuthenticatedAdminIntegrationsEmailRouteImport } from './routes/_authenticated/admin/integrations/email'
+import { Route as AuthenticatedAdminTenantIdentityIndexRouteImport } from './routes/_authenticated/admin/tenant/identity/index'
 import { Route as AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport } from './routes/_authenticated/workspaces/$workspaceId/documents/$documentId'
 import { Route as AuthenticatedSettingsSecurityMfaRecoveryRouteImport } from './routes/_authenticated/settings/security/mfa.recovery'
 import { Route as AuthenticatedAdminTenantIdentityLdapRouteImport } from './routes/_authenticated/admin/tenant/identity/ldap'
@@ -330,6 +332,12 @@ const AuthenticatedWorkspacesWorkspaceIdIndexRoute =
     path: '/workspaces/$workspaceId/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminTenantIndexRoute =
+  AuthenticatedAdminTenantIndexRouteImport.update({
+    id: '/admin/tenant/',
+    path: '/admin/tenant/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntegrationsIndexRoute =
   AuthenticatedAdminIntegrationsIndexRouteImport.update({
     id: '/',
@@ -498,6 +506,12 @@ const AuthenticatedAdminIntegrationsEmailRoute =
     path: '/email',
     getParentRoute: () => AuthenticatedAdminIntegrationsRoute,
   } as any)
+const AuthenticatedAdminTenantIdentityIndexRoute =
+  AuthenticatedAdminTenantIdentityIndexRouteImport.update({
+    id: '/admin/tenant/identity/',
+    path: '/admin/tenant/identity/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute =
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRouteImport.update({
     id: '/workspaces/$workspaceId/documents/$documentId',
@@ -588,10 +602,12 @@ export interface FileRoutesByFullPath {
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
+  '/admin/tenant/': typeof AuthenticatedAdminTenantIndexRoute
   '/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
+  '/admin/tenant/identity/': typeof AuthenticatedAdminTenantIdentityIndexRoute
 }
 export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
@@ -663,10 +679,12 @@ export interface FileRoutesByTo {
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
+  '/admin/tenant': typeof AuthenticatedAdminTenantIndexRoute
   '/workspaces/$workspaceId': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
+  '/admin/tenant/identity': typeof AuthenticatedAdminTenantIdentityIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -741,10 +759,12 @@ export interface FileRoutesById {
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/_authenticated/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
+  '/_authenticated/admin/tenant/': typeof AuthenticatedAdminTenantIndexRoute
   '/_authenticated/workspaces/$workspaceId/': typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   '/_authenticated/admin/tenant/identity/ldap': typeof AuthenticatedAdminTenantIdentityLdapRoute
   '/_authenticated/settings/security/mfa/recovery': typeof AuthenticatedSettingsSecurityMfaRecoveryRoute
   '/_authenticated/workspaces/$workspaceId/documents/$documentId': typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
+  '/_authenticated/admin/tenant/identity/': typeof AuthenticatedAdminTenantIdentityIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -819,10 +839,12 @@ export interface FileRouteTypes {
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/settings'
     | '/admin/integrations/'
+    | '/admin/tenant/'
     | '/workspaces/$workspaceId/'
     | '/admin/tenant/identity/ldap'
     | '/settings/security/mfa/recovery'
     | '/workspaces/$workspaceId/documents/$documentId'
+    | '/admin/tenant/identity/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invite'
@@ -894,10 +916,12 @@ export interface FileRouteTypes {
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/settings'
     | '/admin/integrations'
+    | '/admin/tenant'
     | '/workspaces/$workspaceId'
     | '/admin/tenant/identity/ldap'
     | '/settings/security/mfa/recovery'
     | '/workspaces/$workspaceId/documents/$documentId'
+    | '/admin/tenant/identity'
   id:
     | '__root__'
     | '/_authenticated'
@@ -971,10 +995,12 @@ export interface FileRouteTypes {
     | '/_authenticated/workflows/instances/$instanceId'
     | '/_authenticated/workspaces/$workspaceId/settings'
     | '/_authenticated/admin/integrations/'
+    | '/_authenticated/admin/tenant/'
     | '/_authenticated/workspaces/$workspaceId/'
     | '/_authenticated/admin/tenant/identity/ldap'
     | '/_authenticated/settings/security/mfa/recovery'
     | '/_authenticated/workspaces/$workspaceId/documents/$documentId'
+    | '/_authenticated/admin/tenant/identity/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1297,6 +1323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/tenant/': {
+      id: '/_authenticated/admin/tenant/'
+      path: '/admin/tenant'
+      fullPath: '/admin/tenant/'
+      preLoaderRoute: typeof AuthenticatedAdminTenantIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/integrations/': {
       id: '/_authenticated/admin/integrations/'
       path: '/'
@@ -1493,6 +1526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsEmailRouteImport
       parentRoute: typeof AuthenticatedAdminIntegrationsRoute
     }
+    '/_authenticated/admin/tenant/identity/': {
+      id: '/_authenticated/admin/tenant/identity/'
+      path: '/admin/tenant/identity'
+      fullPath: '/admin/tenant/identity/'
+      preLoaderRoute: typeof AuthenticatedAdminTenantIdentityIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/workspaces/$workspaceId/documents/$documentId': {
       id: '/_authenticated/workspaces/$workspaceId/documents/$documentId'
       path: '/workspaces/$workspaceId/documents/$documentId'
@@ -1633,9 +1673,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
   AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   AuthenticatedWorkspacesWorkspaceIdSettingsRoute: typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
+  AuthenticatedAdminTenantIndexRoute: typeof AuthenticatedAdminTenantIndexRoute
   AuthenticatedWorkspacesWorkspaceIdIndexRoute: typeof AuthenticatedWorkspacesWorkspaceIdIndexRoute
   AuthenticatedAdminTenantIdentityLdapRoute: typeof AuthenticatedAdminTenantIdentityLdapRoute
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute: typeof AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute
+  AuthenticatedAdminTenantIdentityIndexRoute: typeof AuthenticatedAdminTenantIdentityIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1719,12 +1761,15 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedWorkflowsInstancesInstanceIdRoute,
   AuthenticatedWorkspacesWorkspaceIdSettingsRoute:
     AuthenticatedWorkspacesWorkspaceIdSettingsRoute,
+  AuthenticatedAdminTenantIndexRoute: AuthenticatedAdminTenantIndexRoute,
   AuthenticatedWorkspacesWorkspaceIdIndexRoute:
     AuthenticatedWorkspacesWorkspaceIdIndexRoute,
   AuthenticatedAdminTenantIdentityLdapRoute:
     AuthenticatedAdminTenantIdentityLdapRoute,
   AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute:
     AuthenticatedWorkspacesWorkspaceIdDocumentsDocumentIdRoute,
+  AuthenticatedAdminTenantIdentityIndexRoute:
+    AuthenticatedAdminTenantIdentityIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
