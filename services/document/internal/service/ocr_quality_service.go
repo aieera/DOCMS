@@ -69,7 +69,7 @@ func (s *DocumentService) ReviewOCRQualityPage(ctx context.Context, documentID, 
 		}
 		out = updated
 
-		evt, oErr := model.NewOutboxEvent(tenantID, "dms.ocr_quality.reviewed.v1", "document", documentID,
+		evt, oErr := model.NewOutboxEvent(tenantID, "dms.ocr.quality.reviewed.v1", "document", documentID,
 			ocrQualityReviewedPayload{
 				DocumentID: documentID.String(),
 				TenantID:   tenantID.String(),

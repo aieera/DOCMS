@@ -2,7 +2,7 @@
 
 Triggered by: dms.version.ocr_completed.v1
 Persists to:  ocr_quality_scores + ocr_quality_summary
-Emits:        dms.ocr_quality.completed.v1
+Emits:        dms.ocr.quality.completed.v1
               dms.version.ocr_retry_requested.v1   (auto-retry path)
               dms.notification.send.v1             (notify_on_poor + grade=poor)
 
@@ -42,7 +42,7 @@ from app.db.pool import get_pool
 
 log = logging.getLogger(__name__)
 
-OCR_QUALITY_COMPLETED_SUBJECT = "dms.ocr_quality.completed.v1"
+OCR_QUALITY_COMPLETED_SUBJECT = "dms.ocr.quality.completed.v1"
 OCR_RETRY_REQUESTED_SUBJECT = "dms.version.ocr_retry_requested.v1"
 NOTIFICATION_SUBJECT = "dms.notification.send.v1"
 CONSUMER = "ocr_quality"

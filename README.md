@@ -106,7 +106,7 @@ See `make help` for the full list.
 | **Document Q&A** (ADR 0055) | on-demand REST | `POST /api/v1/intelligence/qa{,/sync}`, `app.tasks.rag.stream_ask` | `qa_conversations`, `qa_messages` | — (SSE response stream) |
 | **Language detect** (ADR 0056) | `dms.version.ocr_completed.v1` | `app.tasks.lang_detect` | `document_languages` | `dms.language.detected.v1` |
 | **Translation** (ADR 0056) | on-demand REST | `POST /api/v1/intelligence/translate`, `app.tasks.translate` | `document_translations` | `dms.translation.completed.v1` |
-| **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr_quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
+| **OCR quality** (ADR 0057) | `dms.version.ocr_completed.v1` | `app.tasks.ocr_quality` | `ocr_quality_scores`, `ocr_quality_summary` | `dms.ocr.quality.completed.v1` (+ `dms.version.ocr_retry_requested.v1` on auto-retry) |
 | **Anomaly detection** (ADR 0058) | on-demand REST | `POST /api/v1/intelligence/anomaly/run`, `app.tasks.anomaly_detect.run` | `anomaly_reports`, `anomaly_findings` | `dms.anomaly.completed.v1` |
 | **Classify corrections** (ADR 0059) | user click in UI | `POST /api/v1/documents/{id}/classify/correct` (Go); bulk variant on `/admin/documents/bulk-reclassify` | `classification_corrections`, updates `documents.document_class` | `dms.classify.corrected.v1` |
 | **Training collector** (ADR 0060) | `dms.classify.corrected.v1` | `app.tasks.training_collector` | `training_examples` (deterministic train/val/test split) | dispatches `app.tasks.model_retrain` at threshold |
