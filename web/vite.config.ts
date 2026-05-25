@@ -196,6 +196,12 @@ export default defineConfig(({ command }) => {
             // ADR 0104 — clause library (document service).
             '/api/v1/clauses':                  wsig('http://localhost:8182'),
             '/api':                             wsig('http://localhost:8180'),
+            // ADR 0110 — Residency admin page fetches /healthz directly
+            // (not under /api) to read the cluster `region` field. Route
+            // it at the document service's health port; without this
+            // mapping Vite falls through to the SPA shell and the page
+            // shows "Cluster region unknown" forever.
+            '/healthz':                         wsig('http://localhost:8084'),
             // ADR 0096 — Yjs CRDT WebSocket. Same-origin proxy lets
             // the browser send the dms_session cookie on Upgrade, which
             // the collab service validates against Postgres.

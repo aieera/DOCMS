@@ -42,6 +42,12 @@ x-go-env: &go-env
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   VAULTDMS_ENV:          "development"
+  # ADR 0110 — cluster region. Echoed in /healthz so the Residency
+  # admin page can confirm which region a service is serving. Without
+  # this set, every /healthz reports `"region":"unknown"` and the
+  # admin UI shows a "Cluster region unknown" warning banner.
+  # Override per regional cluster via deploy/regions/<name>.yaml.
+  VAULTDMS_REGION_ID:    "${VAULTDMS_REGION_ID:-us-east-1}"
   # ADR 0078 — small-secret AES-256 KEK shared with the intelligence
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
