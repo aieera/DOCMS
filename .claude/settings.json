@@ -28,7 +28,29 @@
       "Bash(grep -n \"app.tasks.redact\\\\|include=\\\\\\\\[\" services/intelligence/app/worker.py)",
       "Bash(bash -c 'curl -s -o /dev/null -w '\\\\''%{http_code}'\\\\'' -X POST '\\\\''http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/__TRACKED_VAR__'\\\\'' -H '\\\\''Content-Type: application/json'\\\\'' -d '\\\\''{}'\\\\'' __TRACKED_VAR__')",
       "Bash(bash -c 'curl -s -o /dev/null -w '\\\\''%{http_code}'\\\\'' '\\\\''http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/__TRACKED_VAR__'\\\\'' __TRACKED_VAR__')",
-      "Bash(curl -s -i \"http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/redaction-candidates\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\")"
+      "Bash(curl -s -i \"http://localhost:8182/api/v1/documents/00000000-0000-0000-0000-000000000abc/redaction-candidates\" -H \"X-Gateway-Signature: dev-only-gateway-secret-rotate-in-prod\" -H \"X-Auth-Tenant-ID: aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa\" -H \"X-User-ID: 7bb83dcf-82a4-4b22-a212-57dc52c78baf\" -H \"X-User-Role: admin\")",
+      "Bash(/c/Windows/System32/ipconfig.exe /all)",
+      "Bash(cmd.exe //c \"ipconfig /all\")",
+      "Bash(/c/Windows/System32/cmd.exe //c \"C:\\\\\\\\Windows\\\\\\\\System32\\\\\\\\ipconfig.exe /all\")",
+      "Bash(curl -s -o /tmp/n.txt -w \"HTTP %{http_code} bytes=%{size_download}\\\\n\" http://localhost:8222/healthz)",
+      "Bash(curl -s -o /tmp/j.txt -w \"HTTP %{http_code} bytes=%{size_download}\\\\n\" http://localhost:8222/jsz)",
+      "Bash(curl -s http://localhost:3000/api/v1/tasks/mine)",
+      "Bash(DOCKER_BUILDKIT=1 docker compose up -d --build --force-recreate document intelligence-worker)",
+      "Bash(grep -E \"vaultdms-dev-\\(document|intelligence-worker\\)$\")",
+      "Bash(docker system *)",
+      "Bash(docker builder *)",
+      "Bash(curl -s -o /tmp/g.txt -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:3000/api/v1/graphql -H \"Content-Type: application/json\" -d '{\"query\":\"query{ document\\(id:\\\\\"019e3c46-6ee2-7da7-8284-3bfceae74ad1\\\\\"\\){ id title } }\"}')",
+      "Bash(curl -s -o /tmp/r.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/admin/retention)",
+      "Bash(curl -s -o /tmp/s.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/admin/share-links)",
+      "Bash(curl -s -o /tmp/r.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/admin/retention-policies)",
+      "Bash(curl -s -o /tmp/r.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/admin/share-links)",
+      "Bash(grep -nA3 \"^migrate-up:\" Makefile)",
+      "Bash(curl -s -o /tmp/s.txt -w \"HTTP %{http_code}\\\\n\" \"http://localhost:3000/api/v1/admin/share-links?status=active\")",
+      "Bash(grep -nA5 \"func.*\\\\*ShareLinksAdminHandler.*list\\\\|h\\\\.list\\\\b\" services/document/internal/handler/share_links_admin_handler.go)",
+      "Bash(curl -s http://localhost:8182/healthz)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\dell"
     ]
   }
 }
