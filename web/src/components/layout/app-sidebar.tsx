@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Bell, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -47,7 +47,6 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: 'sidebar.inbox',
     items: [
       { to: '/tasks', icon: CheckSquare, labelKey: 'sidebar.tasks' },
-      { to: '/notifications', icon: Bell, labelKey: 'sidebar.notifications' },
       { to: '/trash', icon: Trash2, labelKey: 'sidebar.trash' },
     ],
   },

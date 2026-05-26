@@ -1,10 +1,13 @@
-import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Bell, CheckSquare, LogOut, Menu, Search, UserCog } from 'lucide-react'
+import { Bell, CheckCheck, CheckSquare, LogOut, Menu, Search, UserCog } from 'lucide-react'
+import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks } from '@/api/tasks'
+import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
 import { Breadcrumbs } from './breadcrumbs'
 import { ThemeToggle } from './theme-toggle'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
@@ -44,7 +47,7 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
       <div className="flex items-center gap-1.5">
         <CommandTrigger />
         <MyTasksBadge />
-        <NotificationsButton />
+        <NotificationsDropdown />
         <ThemeToggle />
         <LanguageSelector />
         <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
@@ -105,17 +108,173 @@ function MyTasksBadge() {
   )
 }
 
-function NotificationsButton() {
-  const navigate = useNavigate()
+// Bell + dropdown panel. Replaces the prior NotificationsButton that
+// navigated to /notifications on click. The full-page route is still
+// reachable via the "See all" link in the dropdown header and the
+// /settings/notifications preferences deep link in the footer — both
+// still need to exist as a destination, just not as the primary
+// affordance.
+function NotificationsDropdown() {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  // Unread count polls every 30s — drives the red dot on the bell.
+  // Cheap endpoint (single SQL COUNT) so polling is fine.
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: getUnreadCount,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  })
+
+  // Full list is fetched only when the dropdown opens — no point
+  // paying for the heavier query on every page when most users won't
+  // click the bell. enabled: open is what makes it lazy.
+  const { data: listData, isLoading } = useQuery({
+    queryKey: ['notifications-inbox'],
+    queryFn: () => getNotifications(),
+    enabled: open,
+    staleTime: 10_000,
+  })
+  const items = listData?.items ?? []
+
+  const readOne = useMutation({
+    mutationFn: markAsRead,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
+      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+    },
+    onError: () => toast.error("Couldn't mark as read"),
+  })
+
+  const readAll = useMutation({
+    mutationFn: markAllRead,
+    onSuccess: () => {
+      toast.success('Marked all read')
+      qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
+      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+    },
+    onError: () => toast.error("Couldn't mark all as read"),
+  })
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => navigate({ to: '/notifications' })}
-      aria-label="Notifications"
-    >
-      <Bell className="h-[1.1rem] w-[1.1rem]" />
-    </Button>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+          data-testid="notifications-button"
+        >
+          <Bell className="h-[1.1rem] w-[1.1rem]" />
+          {unreadCount > 0 && (
+            <span
+              className="pointer-events-none absolute end-1 top-1 h-2 w-2 rounded-full bg-destructive"
+              aria-hidden
+              data-testid="notifications-unread-dot"
+            />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        align="end"
+        sideOffset={8}
+        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-lg"
+      >
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-sm font-semibold">Notifications</span>
+          <div className="flex items-center gap-1">
+            {items.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => readAll.mutate()}
+                disabled={readAll.isPending}
+                data-testid="notif-mark-all-read"
+              >
+                <CheckCheck className="me-1 h-3.5 w-3.5" />
+                Mark all read
+              </Button>
+            )}
+            <Link
+              to="/notifications"
+              className="rounded px-2 py-1 text-xs text-primary hover:underline"
+              onClick={() => setOpen(false)}
+              data-testid="notif-see-all"
+            >
+              See all
+            </Link>
+          </div>
+        </div>
+
+        <div className="max-h-[420px] overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
+              Loading…
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Bell className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">You're all caught up</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {items.map((n) => (
+                <li
+                  key={n.id}
+                  className={`flex items-start gap-2 px-3 py-2.5 transition-colors hover:bg-muted/50 ${
+                    n.read ? 'opacity-60' : ''
+                  }`}
+                  data-testid={`notif-row-${n.id}`}
+                >
+                  <span className="mt-1.5 shrink-0">
+                    {!n.read ? (
+                      <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
+                    ) : (
+                      <span className="block h-2 w-2" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{n.title}</p>
+                    {n.body && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
+                    )}
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {new Date(n.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {!n.read && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0 p-0"
+                      onClick={(e) => { e.stopPropagation(); readOne.mutate(n.id) }}
+                      title="Mark as read"
+                      data-testid={`notif-read-${n.id}`}
+                    >
+                      <CheckCheck className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="border-t border-border px-3 py-2">
+          <Link
+            to="/settings/notifications"
+            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            onClick={() => setOpen(false)}
+          >
+            Notification preferences →
+          </Link>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
