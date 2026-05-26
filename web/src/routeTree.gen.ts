@@ -24,6 +24,7 @@ import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authen
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
+import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows/index'
 import { Route as AuthenticatedClausesIndexRouteImport } from './routes/_authenticated/clauses/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedWorkflowsDesignerRouteImport } from './routes/_authenticated/workflows/designer'
@@ -164,6 +165,12 @@ const AuthenticatedWorkspacesIndexRoute =
   AuthenticatedWorkspacesIndexRouteImport.update({
     id: '/workspaces/',
     path: '/workspaces/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedWorkflowsIndexRoute =
+  AuthenticatedWorkflowsIndexRouteImport.update({
+    id: '/workflows/',
+    path: '/workflows/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedClausesIndexRoute =
@@ -587,6 +594,7 @@ export interface FileRoutesByFullPath {
   '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/clauses/': typeof AuthenticatedClausesIndexRoute
+  '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
@@ -666,6 +674,7 @@ export interface FileRoutesByTo {
   '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/clauses': typeof AuthenticatedClausesIndexRoute
+  '/workflows': typeof AuthenticatedWorkflowsIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
   '/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
@@ -748,6 +757,7 @@ export interface FileRoutesById {
   '/_authenticated/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/clauses/': typeof AuthenticatedClausesIndexRoute
+  '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
   '/_authenticated/admin/integrations/email': typeof AuthenticatedAdminIntegrationsEmailRoute
   '/_authenticated/admin/integrations/events': typeof AuthenticatedAdminIntegrationsEventsRoute
@@ -830,6 +840,7 @@ export interface FileRouteTypes {
     | '/workflows/designer'
     | '/admin/'
     | '/clauses/'
+    | '/workflows/'
     | '/workspaces/'
     | '/admin/integrations/email'
     | '/admin/integrations/events'
@@ -909,6 +920,7 @@ export interface FileRouteTypes {
     | '/workflows/designer'
     | '/admin'
     | '/clauses'
+    | '/workflows'
     | '/workspaces'
     | '/admin/integrations/email'
     | '/admin/integrations/events'
@@ -990,6 +1002,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workflows/designer'
     | '/_authenticated/admin/'
     | '/_authenticated/clauses/'
+    | '/_authenticated/workflows/'
     | '/_authenticated/workspaces/'
     | '/_authenticated/admin/integrations/email'
     | '/_authenticated/admin/integrations/events'
@@ -1144,6 +1157,13 @@ declare module '@tanstack/react-router' {
       path: '/workspaces'
       fullPath: '/workspaces/'
       preLoaderRoute: typeof AuthenticatedWorkspacesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/workflows/': {
+      id: '/_authenticated/workflows/'
+      path: '/workflows'
+      fullPath: '/workflows/'
+      preLoaderRoute: typeof AuthenticatedWorkflowsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/clauses/': {
@@ -1690,6 +1710,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkflowsDesignerRoute: typeof AuthenticatedWorkflowsDesignerRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedClausesIndexRoute: typeof AuthenticatedClausesIndexRoute
+  AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminIntelligenceAnomaliesRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRoute
   AuthenticatedAdminIntelligenceAutoTagRoute: typeof AuthenticatedAdminIntelligenceAutoTagRoute
@@ -1761,6 +1782,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkflowsDesignerRoute: AuthenticatedWorkflowsDesignerRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedClausesIndexRoute: AuthenticatedClausesIndexRoute,
+  AuthenticatedWorkflowsIndexRoute: AuthenticatedWorkflowsIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminIntelligenceAnomaliesRoute:
     AuthenticatedAdminIntelligenceAnomaliesRoute,
