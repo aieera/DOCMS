@@ -17,25 +17,34 @@ import (
 )
 
 // Task is the row shape used by the service + handler.
+//
+// JSON tags are explicit because the handler returns this struct directly
+// (no DTO transform); without them Go's encoder defaulted to PascalCase
+// field names — `Title`, `ID`, etc. — while the React frontend reads
+// snake_case (`task.title`, `task.id`). Without the tags every field
+// was `undefined` on the client: rows rendered as empty badge
+// placeholders and `key={t.id}` collapsed to `key={undefined}` for
+// every row, producing the "duplicate key" warning + the blank Tasks
+// table seen on the 2026-05-26 inbox.
 type Task struct {
-	TenantID                 uuid.UUID
-	ID                       uuid.UUID
-	Title                    string
-	Description              string
-	Status                   string
-	Priority                 string
-	DueAt                    *time.Time
-	AssigneeID               *uuid.UUID
-	LinkedDocumentID         *uuid.UUID
-	LinkedWorkflowInstanceID *uuid.UUID
-	Source                   string
-	CreatedBy                uuid.UUID
-	CompletedBy              *uuid.UUID
-	CompletedAt              *time.Time
-	RemindedAt               *time.Time
-	OverdueNotifiedAt        *time.Time
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	TenantID                 uuid.UUID  `json:"tenant_id"`
+	ID                       uuid.UUID  `json:"id"`
+	Title                    string     `json:"title"`
+	Description              string     `json:"description"`
+	Status                   string     `json:"status"`
+	Priority                 string     `json:"priority"`
+	DueAt                    *time.Time `json:"due_at,omitempty"`
+	AssigneeID               *uuid.UUID `json:"assignee_id,omitempty"`
+	LinkedDocumentID         *uuid.UUID `json:"linked_document_id,omitempty"`
+	LinkedWorkflowInstanceID *uuid.UUID `json:"linked_workflow_instance_id,omitempty"`
+	Source                   string     `json:"source"`
+	CreatedBy                uuid.UUID  `json:"created_by"`
+	CompletedBy              *uuid.UUID `json:"completed_by,omitempty"`
+	CompletedAt              *time.Time `json:"completed_at,omitempty"`
+	RemindedAt               *time.Time `json:"reminded_at,omitempty"`
+	OverdueNotifiedAt        *time.Time `json:"overdue_notified_at,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
 }
 
 // TaskFilters narrows listings.
