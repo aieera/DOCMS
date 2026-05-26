@@ -58,13 +58,36 @@ allow if {
 }
 
 # Rule 5: Workspace admin has every capability on the workspace + contents.
+# Accepts the workspace id from either input.context.workspace_id (set
+# when evaluating document/folder resources via the cascade rules) or
+# from input.resource_id directly when the resource itself is a
+# workspace. Without that second path, asking "can user X view
+# workspace Y" never fired Rule 5 even when X is a wm.role=admin row
+# for Y — the caller in services/document/internal/service/
+# documents.go:ListDocuments passes extra=nil so context.workspace_id
+# is empty.
 allow if {
     input.subject_type == "user"
-    input.context.workspace_id != ""
     some wm in data.workspace_members
     wm.user_id == input.subject_id
-    wm.workspace_id == input.context.workspace_id
     wm.role == "admin"
+    workspace_id_of_input(input) == wm.workspace_id
+}
+
+# Rule 5a: Any workspace member (admin / member / viewer) has at least
+# `view` on the workspace itself + its content cascade. Without this, a
+# user added as wm.role=member could see the workspace card in the list
+# (the document service's workspace_repo.List grants visibility on
+# membership) but the inner /workspaces/{id}/documents call 403'd
+# because no OPA rule recognised non-admin membership as a view grant.
+# Higher capabilities (edit/share/delete/admin) still require Rule 1/2
+# explicit grants or Rule 5 workspace-admin membership.
+allow if {
+    input.subject_type == "user"
+    input.action == "view"
+    some wm in data.workspace_members
+    wm.user_id == input.subject_id
+    wm_ws_in_scope(wm, input)
 }
 
 # Rule 6: Organization owner/admin has every capability.
@@ -104,6 +127,26 @@ matches_principal(p, inp) if {
     p.principal_type == "group"
     some gid in data.user_groups
     p.principal_id == gid
+}
+
+# workspace_id_of_input resolves the workspace ID the rule should check
+# against, regardless of whether the resource itself is a workspace
+# (resource_id IS the workspace id) or a document/folder under a
+# workspace (context.workspace_id was set by the caller).
+workspace_id_of_input(inp) := id if {
+    inp.resource_type == "workspace"
+    id := inp.resource_id
+}
+workspace_id_of_input(inp) := id if {
+    inp.resource_type != "workspace"
+    inp.context.workspace_id != ""
+    id := inp.context.workspace_id
+}
+
+# wm_ws_in_scope reports whether a workspace_members row's workspace
+# matches the request — either the resource itself or via context.
+wm_ws_in_scope(wm, inp) if {
+    wm.workspace_id == workspace_id_of_input(inp)
 }
 
 # Capability hierarchy: admin > delete > edit > share > view_unredacted > view.
