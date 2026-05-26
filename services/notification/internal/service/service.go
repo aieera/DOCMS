@@ -216,13 +216,31 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	}
 	_, err := js.Subscribe("dms.notify.>", func(msg *nats.Msg) {
 		var payload model.DeliveryPayload
-		if err := json.Unmarshal(msg.Data, &payload); err != nil {
-			// Try CloudEvents envelope.
-			var env map[string]any
-			if err2 := json.Unmarshal(msg.Data, &env); err2 == nil {
-				if data, ok := env["data"].(map[string]any); ok {
-					raw, _ := json.Marshal(data)
-					_ = json.Unmarshal(raw, &payload)
+		// Two valid shapes for msg.Data:
+		//   1) the bare DeliveryPayload itself (legacy direct-publish path)
+		//   2) a CloudEvents envelope with `data` containing the payload
+		//      (the outbox publisher in pkg/database wraps every emit in
+		//      this envelope so consumers can read tenant_id at the root)
+		//
+		// Earlier code unmarshalled (1) and only attempted (2) if the
+		// direct unmarshal returned an error — but Go's JSON decoder
+		// silently ignores fields it doesn't know, so a CloudEvents
+		// envelope unmarshalled as DeliveryPayload "succeeds" with an
+		// empty UserIDs slice. We then incorrectly rejected the event
+		// with "notification event missing fields". Result: every
+		// outbox-published notify event was Term'd by the consumer and
+		// no rows ever landed in notifications.
+		//
+		// Fix: always look for a CloudEvents `data` object, and prefer
+		// the inner payload whenever it has the required fields.
+		_ = json.Unmarshal(msg.Data, &payload)
+		var env map[string]any
+		if err := json.Unmarshal(msg.Data, &env); err == nil {
+			if data, ok := env["data"].(map[string]any); ok {
+				var inner model.DeliveryPayload
+				raw, _ := json.Marshal(data)
+				if json.Unmarshal(raw, &inner) == nil && inner.TenantID != "" && len(inner.UserIDs) > 0 {
+					payload = inner
 				}
 			}
 		}
