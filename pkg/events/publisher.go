@@ -69,18 +69,40 @@ type StreamSpec struct {
 // broker because no stream bound them. See `docs/runbooks/05-event-pipeline.md`
 // for recovery if an older broker still has the old topology.
 var DefaultStreams = []StreamSpec{
-	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>"}},
+	// dms.email.> covers email-ingestion events (ADR 0087) — incoming
+	// messages routed into documents land here. Bound to DOC_EVENTS
+	// because the lifecycle of an ingested email IS a document
+	// lifecycle event from the system's perspective.
+	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>"}},
 	{Name: "USER_EVENTS", Subjects: []string{"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>"}},
 	{Name: "POLICY_EVENTS", Subjects: []string{"dms.policy.>", "dms.permission.>"}},
 	{Name: "BILLING_EVENTS", Subjects: []string{"dms.billing.>", "dms.subscription.>", "dms.usage.>"}},
 	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>"}},
 	{Name: "SEARCH_EVENTS", Subjects: []string{"dms.search.>"}},
-	{Name: "WORKFLOW_EVENTS", Subjects: []string{"dms.workflow.>", "dms.task.>"}},
-	// dms.model.> covers the active-learning lifecycle (ADR 0060):
-	// retrain_requested / trained / evaluated / promoted. Without
-	// binding, every "Trigger retrain" click left the outbox publisher
-	// in an infinite retry loop ("nats: no response from stream").
-	{Name: "INTEL_EVENTS", Subjects: []string{"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>", "dms.model.>", "dms.redaction.>"}},
+	// dms.review.> — workflow review approve/reject (ADR 0073). Bound
+	// here because reviews ARE workflow steps; without this the
+	// approve/reject buttons left the outbox publisher in an infinite
+	// retry loop ("nats: no response from stream").
+	{Name: "WORKFLOW_EVENTS", Subjects: []string{"dms.workflow.>", "dms.task.>", "dms.review.>"}},
+	// INTEL_EVENTS umbrella for every intelligence-pipeline domain:
+	//   - dms.model.> covers the active-learning lifecycle (ADR 0060):
+	//     retrain_requested / trained / evaluated / promoted.
+	//   - dms.routing.> covers smart-routing accept/dismiss (ADR 0064).
+	//   - dms.anomaly.> covers workspace-outlier reviews (ADR 0058).
+	//   - dms.autotag.> covers tag-suggestion reviews (ADR 0050).
+	//   - dms.entity.> covers NER correction events (ADR 0056).
+	//   - dms.ner_config.> covers per-tenant LLM-tier key changes
+	//     (ADR 0081); single token, sibling of `ner`, so needs its
+	//     own binding.
+	// Without these bindings each was an infinite outbox-retry bomb
+	// halting the entire batch (same shape as dms.ocr_quality before
+	// the 2026-05-25 rename).
+	{Name: "INTEL_EVENTS", Subjects: []string{
+		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
+		"dms.model.>", "dms.redaction.>",
+		"dms.routing.>", "dms.anomaly.>", "dms.autotag.>",
+		"dms.entity.>", "dms.ner_config.>",
+	}},
 	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
 	// Compliance + lifecycle events emitted by services/document/internal/compliance
 	// (legal holds) and services/workflow/internal/activities/residency.
@@ -88,7 +110,13 @@ var DefaultStreams = []StreamSpec{
 	// (ADR 0054); without binding, those events were silently dropped by
 	// the broker — discovered when the "Run scan" admin button enqueued
 	// dms.compliance.rescan_requested.v1 with no stream to land on.
-	{Name: "COMPLIANCE_EVENTS", Subjects: []string{"dms.hold.>", "dms.residency.>", "dms.compliance.>"}},
+	// dms.retention.> covers archive/dispose-candidate sweep events.
+	// dms.dsr.> covers GDPR subject-rights requested/completed/blocked/failed.
+	// dms.ediscovery.> covers cross-tenant eDiscovery export emissions.
+	{Name: "COMPLIANCE_EVENTS", Subjects: []string{
+		"dms.hold.>", "dms.residency.>", "dms.compliance.>",
+		"dms.retention.>", "dms.dsr.>", "dms.ediscovery.>",
+	}},
 	// Signature lifecycle events emitted by services/signature and the
 	// workflow signature_stub activity (completed, declined).
 	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},
@@ -100,11 +128,19 @@ var DefaultStreams = []StreamSpec{
 	// publisher halts the batch on first failure, downstream events
 	// (login, audit, notification) silently failed to land. Surfaced as
 	// "BUG-20 audit log empty" in QA.
-	{Name: "COLLAB_EVENTS", Subjects: []string{"dms.comment.>", "dms.thread.>"}},
+	// dms.coauth.> covers Yjs realtime collab session start/end (ADR 0096).
+	{Name: "COLLAB_EVENTS", Subjects: []string{"dms.comment.>", "dms.thread.>", "dms.coauth.>"}},
+	// dms.webhook.> covers admin "Send test event" deliveries from the
+	// connector service. Lives in LEGACY_EVENTS because the webhook
+	// dispatcher is itself a legacy outbound surface (will move to its
+	// own stream when the v2 dispatcher lands).
 	// Retained alongside the new topology for back-compat with events
 	// that still use these prefixes (e.g. dms.sharelink.*, dms.folder.*,
 	// dms.intelligence.*). Remove once every emitter is migrated.
-	{Name: "LEGACY_EVENTS", Subjects: []string{"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>"}},
+	{Name: "LEGACY_EVENTS", Subjects: []string{
+		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>",
+		"dms.rotation.>", "dms.webhook.>",
+	}},
 }
 
 // ConnectNATS dials NATS, initializes JetStream, and declares all default
