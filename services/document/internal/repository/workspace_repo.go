@@ -67,8 +67,19 @@ func (r *workspaceRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uui
 	return scanWorkspace(row)
 }
 
-func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.Workspace, error) {
-	rows, err := tx.Query(ctx, `
+// List returns the workspaces the caller can access.
+//
+// Tenant owner/admin sees every active workspace (the gateway grants
+// them cross-workspace access anyway). Members see only:
+//   - workspaces they created, OR
+//   - workspaces they're in via workspace_members.
+//
+// Previously this returned every workspace in the tenant — the UI
+// then had to render "No access" hints because a member's click hit
+// 403 on the inner /documents call. With per-caller filtering, the
+// frontend just renders whatever comes back.
+func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role string) ([]model.Workspace, error) {
+	const baseSelect = `
 		SELECT w.tenant_id, w.id, w.name, COALESCE(w.description, ''),
 		       COALESCE(w.region_pin, ''), w.settings::text::bytea,
 		       w.created_by, w.created_at, w.updated_at, w.deleted_at,
@@ -78,10 +89,28 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID)
 		       COALESCE((SELECT count(*) FROM folders f
 		                 WHERE f.tenant_id = w.tenant_id AND f.workspace_id = w.id
 		                   AND f.deleted_at IS NULL), 0)
-		FROM workspaces w
-		WHERE w.tenant_id = $1 AND w.deleted_at IS NULL
-		ORDER BY w.created_at ASC, w.id ASC
-	`, tenantID)
+		  FROM workspaces w
+		 WHERE w.tenant_id = $1 AND w.deleted_at IS NULL`
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if role == "owner" || role == "admin" {
+		rows, err = tx.Query(ctx, baseSelect+" ORDER BY w.created_at ASC, w.id ASC", tenantID)
+	} else {
+		rows, err = tx.Query(ctx, baseSelect+`
+		   AND (
+		     w.created_by = $2
+		     OR EXISTS (
+		       SELECT 1 FROM workspace_members wm
+		        WHERE wm.tenant_id    = w.tenant_id
+		          AND wm.workspace_id = w.id
+		          AND wm.user_id      = $2
+		     )
+		   )
+		 ORDER BY w.created_at ASC, w.id ASC`, tenantID, userID)
+	}
 	if err != nil {
 		return nil, mapPgError(err)
 	}

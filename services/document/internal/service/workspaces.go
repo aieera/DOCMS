@@ -158,15 +158,19 @@ func (s *DocumentService) GetWorkspace(ctx context.Context, id uuid.UUID) (*mode
 	return out, err
 }
 
-// ListWorkspaces returns all active workspaces in the tenant.
+// ListWorkspaces returns the workspaces the caller can access:
+// tenant owner/admin sees every active workspace; everyone else sees
+// only ones they created or are in via workspace_members. The repo
+// does the filtering — see workspaceRepo.List for the rationale.
 func (s *DocumentService) ListWorkspaces(ctx context.Context) ([]model.Workspace, error) {
-	tenantID, _, err := mustCaller(ctx)
+	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
+	role := auth.GetUserRole(ctx)
 	var out []model.Workspace
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		ws, err := s.repos.Workspaces.List(ctx, tx, tenantID)
+		ws, err := s.repos.Workspaces.List(ctx, tx, tenantID, userID, role)
 		if err != nil {
 			return err
 		}

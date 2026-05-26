@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Plus, FolderOpen, Users, FileText, Search, Calendar, Lock } from 'lucide-react'
+import { Plus, FolderOpen, Users, FileText, Search, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
@@ -14,7 +14,6 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
-import { useAuthStore } from '@/store/authStore'
 
 function WorkspacesPage() {
   const { data, isLoading, isError } = useQuery({
@@ -101,94 +100,44 @@ function WorkspacesPage() {
 
 // ---- Card ----------------------------------------------------------------
 
+// Backend filters /workspaces server-side: tenant owner/admin sees
+// every active workspace; everyone else sees only ones they created
+// or are members of (see services/document/internal/repository/
+// workspace_repo.go). The frontend just renders whatever lands — no
+// locked-card or "No access" branching needed.
 function WorkspaceCard({ ws }: { ws: Workspace }) {
-  // Backend's GET /workspaces returns every workspace in the tenant
-  // (discovery mode) — even ones the caller can't open. Clicking into
-  // one you don't belong to surfaces "Access denied" via the inner
-  // /documents call, which is a confusing UX. Until the backend ships
-  // an `is_member` boolean on each workspace row, approximate access
-  // from the two signals we already have:
-  //   1) tenant-level admin/owner role  → gateway grants them access
-  //      to every workspace in the tenant
-  //   2) the caller created this workspace → creator always has access
-  // The `member_count` field is NOT a usable signal — it tells us
-  // someone is a member, not whether *you* are. Without per-row
-  // membership data this heuristic is conservative: it correctly
-  // labels workspaces you can't open AND it may label some you CAN
-  // open (you were added as a member of someone else's workspace).
-  // Replace the heuristic with `ws.is_member` once that field lands.
-  const me = useAuthStore((s) => s.user)
-  const isAdmin = me?.role === 'owner' || me?.role === 'admin'
-  const isCreator = !!me?.id && me.id === ws.created_by
-  const likelyHasAccess = isAdmin || isCreator
-
-  const body = (
-    <Card
-      className={
-        likelyHasAccess
-          ? 'group h-full p-5 transition-all hover:border-foreground/20 hover:shadow-md'
-          : 'h-full p-5 opacity-60'
-      }
-    >
-      <div className="flex items-start justify-between">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-foreground">
-          <FolderOpen className="h-5 w-5" />
-        </span>
-        {likelyHasAccess ? (
-          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-        ) : (
-          <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-        )}
-      </div>
-      <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
-      <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
-        {ws.description ?? 'No description.'}
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1">
-          <FileText className="h-3.5 w-3.5" />
-          {ws.document_count.toLocaleString()} {ws.document_count === 1 ? 'doc' : 'docs'}
-        </span>
-        <span className="flex items-center gap-1">
-          <Users className="h-3.5 w-3.5" />
-          {ws.member_count ?? 0} {(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
-        </span>
-        {likelyHasAccess ? (
-          <span className="ms-auto flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" />
-            {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
-          </span>
-        ) : (
-          <span className="ms-auto flex items-center gap-1 text-muted-foreground">
-            <Lock className="h-3 w-3" /> No access
-          </span>
-        )}
-      </div>
-    </Card>
-  )
-
-  // Locked cards become a plain (non-link) container with a helpful
-  // tooltip. Letting the user click into a 403-toast loop is worse UX
-  // than disabling the click entirely.
-  if (!likelyHasAccess) {
-    return (
-      <div
-        className="rounded-lg"
-        title="You don't have document access to this workspace. Ask the workspace creator or a tenant admin to add you."
-        data-testid={`workspace-card-locked-${ws.id}`}
-      >
-        {body}
-      </div>
-    )
-  }
-
   return (
     <Link
       to="/workspaces/$workspaceId"
       params={{ workspaceId: ws.id }}
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg"
     >
-      {body}
+      <Card className="group h-full p-5 transition-all hover:border-foreground/20 hover:shadow-md">
+        <div className="flex items-start justify-between">
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-foreground">
+            <FolderOpen className="h-5 w-5" />
+          </span>
+          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </div>
+        <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
+        <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
+          {ws.description ?? 'No description.'}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <FileText className="h-3.5 w-3.5" />
+            {ws.document_count.toLocaleString()} {ws.document_count === 1 ? 'doc' : 'docs'}
+          </span>
+          <span className="flex items-center gap-1">
+            <Users className="h-3.5 w-3.5" />
+            {ws.member_count ?? 0} {(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+          </span>
+          <span className="ms-auto flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" />
+            {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+          </span>
+        </div>
+      </Card>
     </Link>
   )
 }
