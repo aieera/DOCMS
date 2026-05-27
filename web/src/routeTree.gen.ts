@@ -64,6 +64,7 @@ import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './rou
 import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
 import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes/_authenticated/sign.$requestId.$signerId'
 import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
+import { Route as AuthenticatedAdminTenantUploadPolicyRouteImport } from './routes/_authenticated/admin/tenant/upload-policy'
 import { Route as AuthenticatedAdminTenantLicenseRouteImport } from './routes/_authenticated/admin/tenant/license'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
 import { Route as AuthenticatedAdminPlatformSupportSearchRouteImport } from './routes/_authenticated/admin/platform/support-search'
@@ -401,6 +402,12 @@ const AuthenticatedSettingsSecurityMfaRoute =
     path: '/mfa',
     getParentRoute: () => AuthenticatedSettingsSecurityRoute,
   } as any)
+const AuthenticatedAdminTenantUploadPolicyRoute =
+  AuthenticatedAdminTenantUploadPolicyRouteImport.update({
+    id: '/admin/tenant/upload-policy',
+    path: '/admin/tenant/upload-policy',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminTenantLicenseRoute =
   AuthenticatedAdminTenantLicenseRouteImport.update({
     id: '/admin/tenant/license',
@@ -617,6 +624,7 @@ export interface FileRoutesByFullPath {
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -697,6 +705,7 @@ export interface FileRoutesByTo {
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -780,6 +789,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
   '/_authenticated/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/_authenticated/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
   '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRouteWithChildren
   '/_authenticated/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -863,6 +873,7 @@ export interface FileRouteTypes {
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/admin/tenant/license'
+    | '/admin/tenant/upload-policy'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
@@ -943,6 +954,7 @@ export interface FileRouteTypes {
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
     | '/admin/tenant/license'
+    | '/admin/tenant/upload-policy'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
@@ -1025,6 +1037,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/platform/support-search'
     | '/_authenticated/admin/tenant/ai'
     | '/_authenticated/admin/tenant/license'
+    | '/_authenticated/admin/tenant/upload-policy'
     | '/_authenticated/settings/security/mfa'
     | '/_authenticated/sign/$requestId/$signerId'
     | '/_authenticated/sign/in-person/$requestId'
@@ -1439,6 +1452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsSecurityMfaRouteImport
       parentRoute: typeof AuthenticatedSettingsSecurityRoute
     }
+    '/_authenticated/admin/tenant/upload-policy': {
+      id: '/_authenticated/admin/tenant/upload-policy'
+      path: '/admin/tenant/upload-policy'
+      fullPath: '/admin/tenant/upload-policy'
+      preLoaderRoute: typeof AuthenticatedAdminTenantUploadPolicyRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/tenant/license': {
       id: '/_authenticated/admin/tenant/license'
       path: '/admin/tenant/license'
@@ -1729,6 +1749,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
   AuthenticatedAdminTenantLicenseRoute: typeof AuthenticatedAdminTenantLicenseRoute
+  AuthenticatedAdminTenantUploadPolicyRoute: typeof AuthenticatedAdminTenantUploadPolicyRoute
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
   AuthenticatedSignInPersonRequestIdRoute: typeof AuthenticatedSignInPersonRequestIdRoute
   AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
@@ -1815,6 +1836,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminPlatformSupportSearchRoute,
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
   AuthenticatedAdminTenantLicenseRoute: AuthenticatedAdminTenantLicenseRoute,
+  AuthenticatedAdminTenantUploadPolicyRoute:
+    AuthenticatedAdminTenantUploadPolicyRoute,
   AuthenticatedSignRequestIdSignerIdRoute:
     AuthenticatedSignRequestIdSignerIdRoute,
   AuthenticatedSignInPersonRequestIdRoute:
