@@ -43,6 +43,22 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
     queryFn: () => listComments(documentId, showResolved),
   })
 
+  // Resolve comment author UUIDs → display names. Backend returns
+  // only author_id on the comment; without this lookup the bubble
+  // header rendered a UUID prefix ("7bb83dcf") instead of a person.
+  const { data: usersList } = useQuery({
+    queryKey: ['mention-search', ''],
+    queryFn: () => getUsers({}),
+    staleTime: 5 * 60_000,
+  })
+  const authorNames = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const u of usersList?.items ?? []) {
+      m.set(u.id, u.display_name ?? u.email)
+    }
+    return m
+  }, [usersList])
+
   // Real-time: any dms.comment.* event for this document
   // invalidates the comments query. Reaction events ALSO need to
   // invalidate the per-comment reaction query — otherwise an emoji
@@ -83,7 +99,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
           </div>
         )}
         {threads.map((t) => (
-          <ThreadCard key={t.root.id} thread={t} currentUserId={me?.id ?? ''} />
+          <ThreadCard key={t.root.id} thread={t} currentUserId={me?.id ?? ''} authorNames={authorNames} />
         ))}
       </div>
 
@@ -117,7 +133,7 @@ function groupThreads(comments: Comment[]): Thread[] {
   )
 }
 
-function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: string }) {
+function ThreadCard({ thread, currentUserId, authorNames }: { thread: Thread; currentUserId: string; authorNames: Map<string, string> }) {
   const qc = useQueryClient()
   const [replying, setReplying] = useState(false)
 
@@ -135,11 +151,11 @@ function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: 
       }`}
       data-testid={`thread-${thread.root.id}`}
     >
-      <CommentBubble c={thread.root} currentUserId={currentUserId} />
+      <CommentBubble c={thread.root} currentUserId={currentUserId} authorNames={authorNames} />
       {thread.replies.length > 0 && (
         <div className="mt-2 space-y-2 border-s-2 border-[var(--color-border)] ps-3">
           {thread.replies.map((r) => (
-            <CommentBubble key={r.id} c={r} currentUserId={currentUserId} />
+            <CommentBubble key={r.id} c={r} currentUserId={currentUserId} authorNames={authorNames} />
           ))}
         </div>
       )}
@@ -170,7 +186,7 @@ function ThreadCard({ thread, currentUserId }: { thread: Thread; currentUserId: 
   )
 }
 
-function CommentBubble({ c, currentUserId }: { c: Comment; currentUserId: string }) {
+function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentUserId: string; authorNames: Map<string, string> }) {
   const segments = parseBodyForRender(c.body)
   const qc = useQueryClient()
   const remove = useMutation({
@@ -181,7 +197,7 @@ function CommentBubble({ c, currentUserId }: { c: Comment; currentUserId: string
   return (
     <div className="text-sm">
       <div className="flex items-baseline gap-2">
-        <strong>{c.author_id.slice(0, 8)}</strong>
+        <strong>{authorNames.get(c.author_id) ?? c.author_id.slice(0, 8)}</strong>
         <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(c.created_at)}</span>
         {c.author_id === currentUserId && (
           <button
