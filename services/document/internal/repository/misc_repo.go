@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
@@ -15,17 +16,39 @@ import (
 
 type outboxRepo struct{}
 
+// Insert writes an outbox row inside the caller's tx, stamping the
+// authenticated caller's user_id / email and the request's client IP
+// (read from ctx) onto the row. Those three fields propagate through
+// the outbox publisher's CloudEvents envelope into audit_events so
+// audit log rows have actor + IP without every emitter needing to
+// thread them through its payload manually. Background-job callers
+// without a request ctx end up with NULL — correct behaviour, since
+// there is no human actor.
 func (r *outboxRepo) Insert(ctx context.Context, tx pgx.Tx, e *model.OutboxEvent) error {
+	var (
+		actorID   any
+		actorName any
+		ipAddr    any
+	)
+	if uid, err := auth.GetUserID(ctx); err == nil && uid != uuid.Nil {
+		actorID = uid
+	}
+	if name := auth.GetUserName(ctx); name != "" {
+		actorName = name
+	}
+	if ip := auth.GetClientIP(ctx); ip != "" {
+		ipAddr = ip
+	}
 	// Schema no longer carries a `subject` column — the publisher derives
 	// NATS subject from `event_type`. e.Subject is still present on the
 	// in-memory event for logging convenience but is not persisted.
 	_, err := tx.Exec(ctx, `
 		INSERT INTO outbox (
 			id, tenant_id, event_type, aggregate_type, aggregate_id,
-			payload, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			payload, created_at, actor_id, actor_name, ip_address
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`, e.ID, e.TenantID, e.EventType, e.AggregateType, e.AggregateID,
-		e.Payload, e.CreatedAt)
+		e.Payload, e.CreatedAt, actorID, actorName, ipAddr)
 	return mapPgError(err)
 }
 

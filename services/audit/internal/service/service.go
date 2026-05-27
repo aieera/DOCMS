@@ -52,7 +52,13 @@ func (s *Service) IngestEvent(ctx context.Context, subject string, raw []byte) e
 	if data == nil {
 		data = envelope
 	}
-	tenantID := strField(data, "tenant_id")
+	// Tenant ID lives at the envelope root (CloudEvents tenantid
+	// extension) for outbox-published events; fall back to data.tenant_id
+	// for legacy direct-publish callers.
+	tenantID := strField(envelope, "tenantid")
+	if tenantID == "" {
+		tenantID = strField(data, "tenant_id")
+	}
 	if tenantID == "" {
 		return fmt.Errorf("event missing tenant_id")
 	}
@@ -60,17 +66,57 @@ func (s *Service) IngestEvent(ctx context.Context, subject string, raw []byte) e
 	if action == "" {
 		action = subject
 	}
+
+	// Actor + IP: prefer the inner payload (an emitter that explicitly
+	// included them is the most authoritative source), then fall back
+	// to the CloudEvents envelope where the outbox publisher stamps
+	// them from the request ctx (pkg/database/outbox.go ActorID/Name +
+	// outbox_publisher cloudEvent VDMS* extensions). Pre-plumbing
+	// emitters that don't include these in their payload now still
+	// get correct actor/IP rows in audit_events.
+	actor := strField(data, "actor_id")
+	if actor == "" {
+		actor = strField(envelope, "vdmsactorid")
+	}
+	actorName := strField(data, "actor_name")
+	if actorName == "" {
+		actorName = strField(envelope, "vdmsactorname")
+	}
+	ipAddr := strField(data, "ip_address")
+	if ipAddr == "" {
+		ipAddr = strField(envelope, "vdmsclientip")
+	}
+
+	// Resource type/id: prefer explicit payload fields, else recover
+	// from the CloudEvents envelope's `subject` attribute which the
+	// outbox publisher formats as "<aggregateType>/<aggregateID>".
+	// That format covers every domain event the outbox produces, so
+	// audit rows for document / version / workflow / etc. events get
+	// resource fields populated without changes to those emitters.
+	resourceType := strField(data, "resource_type")
+	resourceID := strField(data, "resource_id")
+	if resourceType == "" || resourceID == "" {
+		if rt, rid, ok := splitEnvelopeSubject(strField(envelope, "subject")); ok {
+			if resourceType == "" {
+				resourceType = rt
+			}
+			if resourceID == "" {
+				resourceID = rid
+			}
+		}
+	}
+
 	event := &model.AuditEvent{
 		ID:           newID(),
 		TenantID:     tenantID,
-		Actor:        strField(data, "actor_id"),
-		ActorName:    strField(data, "actor_name"),
+		Actor:        actor,
+		ActorName:    actorName,
 		Action:       action,
-		ResourceType: strField(data, "resource_type"),
-		ResourceID:   strField(data, "resource_id"),
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
 		ResourceTitle: strField(data, "resource_title"),
 		Details:      raw,
-		IPAddress:    strField(data, "ip_address"),
+		IPAddress:    ipAddr,
 		UserAgent:    strField(data, "user_agent"),
 		SourceEvent:  subject,
 		CreatedAt:    time.Now().UTC(),
@@ -228,4 +274,21 @@ func newID() string {
 func strField(m map[string]any, key string) string {
 	v, _ := m[key].(string)
 	return v
+}
+
+// splitEnvelopeSubject parses a CloudEvents subject formatted as
+// "<aggregateType>/<aggregateID>" (the shape the outbox publisher
+// emits at pkg/database/outbox_publisher.go) into the parts the
+// audit row needs. Returns ok=false for empty / malformed subjects
+// so the caller can leave resource fields empty rather than insert
+// garbage.
+func splitEnvelopeSubject(s string) (resourceType, resourceID string, ok bool) {
+	if s == "" {
+		return "", "", false
+	}
+	i := strings.IndexByte(s, '/')
+	if i <= 0 || i == len(s)-1 {
+		return "", "", false
+	}
+	return s[:i], s[i+1:], true
 }

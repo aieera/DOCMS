@@ -105,6 +105,44 @@ func GetUserGroups(ctx context.Context) []uuid.UUID {
 	return u.Groups
 }
 
+// GetUserName returns a human-readable identifier for the caller, used
+// by audit/notification surfaces that don't want a raw UUID. Returns
+// the user's email when set, empty otherwise (background goroutines
+// without a request context, callers identified only by API key, etc).
+// Audit consumer surfaces this as audit_events.actor_name.
+func GetUserName(ctx context.Context) string {
+	u, err := User(ctx)
+	if err != nil {
+		return ""
+	}
+	return u.Email
+}
+
+// clientIPKey identifies the request's client IP address on a context.
+// Populated by HTTP middleware reading X-Forwarded-For / X-Real-IP /
+// RemoteAddr in that order. Empty for ctx without a request (background
+// jobs, cron, NATS consumers).
+type clientIPKey struct{}
+
+// WithClientIP stamps the client IP onto ctx so downstream callers can
+// stash it on outbox rows / audit events without each layer having to
+// re-parse the request.
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	if ip == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientIPKey{}, ip)
+}
+
+// GetClientIP returns the client IP stamped by WithClientIP, or empty
+// if the ctx didn't originate from an HTTP request.
+func GetClientIP(ctx context.Context) string {
+	if s, ok := ctx.Value(clientIPKey{}).(string); ok {
+		return s
+	}
+	return ""
+}
+
 // scopesKey identifies the API-key scopes list on a request context.
 // Only set when authentication came through an API key (Bearer); empty
 // for session-cookie auth where scope is implicit in role.

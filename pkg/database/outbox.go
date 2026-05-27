@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/vaultdms/vaultdms/pkg/auth"
 )
 
 // OutboxEvent is the minimal shape of an `outbox` row. The fields are
@@ -25,6 +27,15 @@ type OutboxEvent struct {
 	AggregateID   uuid.UUID
 	Payload       json.RawMessage
 	CreatedAt     time.Time
+	// Request-context audit fields. Populated by the outbox Insert
+	// from auth.GetUserID / GetUserName / GetClientIP on ctx; empty
+	// when the event was produced by a background goroutine without
+	// a request ctx. The outbox publisher copies these into the
+	// CloudEvents envelope so the audit consumer can stamp
+	// audit_events.actor_id / actor_name / ip_address.
+	ActorID   *uuid.UUID
+	ActorName string
+	IPAddress string
 }
 
 // NewOutboxEvent builds an event with a fresh UUIDv7 id and the current UTC
@@ -85,12 +96,32 @@ func (r *OutboxRepository) Insert(ctx context.Context, tx pgx.Tx, event *OutboxE
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
 	}
+	// Stamp the actor/IP from ctx so audit_events rows inherit them
+	// via the outbox publisher's CloudEvents envelope. Callers without
+	// a request ctx (background goroutines) get NULLs — correct.
+	var (
+		actorID   any
+		actorName any
+		ipAddr    any
+	)
+	if uid, err := auth.GetUserID(ctx); err == nil && uid != uuid.Nil {
+		actorID = uid
+	}
+	if name := auth.GetUserName(ctx); name != "" {
+		actorName = name
+	}
+	if ip := auth.GetClientIP(ctx); ip != "" {
+		ipAddr = ip
+	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id, payload, published, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, false, $7)
+		INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id,
+		                    payload, published, created_at,
+		                    actor_id, actor_name, ip_address)
+		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10)
 	`,
 		event.ID, event.TenantID, event.EventType, event.AggregateType,
 		event.AggregateID, event.Payload, event.CreatedAt,
+		actorID, actorName, ipAddr,
 	)
 	if err != nil {
 		return fmt.Errorf("outbox insert: %w", err)

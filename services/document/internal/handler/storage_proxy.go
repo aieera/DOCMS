@@ -287,9 +287,40 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 		writeGRPCErr(w, r, err)
 		return
 	}
+	p.emitDownloadAudit(r, tenantID, versionID)
 	writeProxyJSON(w, http.StatusOK, map[string]any{
 		"url":        resp.GetUrl(),
 		"expires_at": formatTs(resp.GetExpiresAt()),
+	})
+}
+
+// emitDownloadAudit writes a dms.document.downloaded.v1 outbox event
+// best-effort. The audit consumer ingests it and lands a row in
+// audit_events with actor + IP populated by the outbox publisher's
+// CloudEvents envelope (Phase 1). Errors are logged but never
+// surfaced to the caller — failing the download just because we
+// couldn't log it would be worse UX.
+func (p *StorageProxy) emitDownloadAudit(r *http.Request, tenantID, versionID uuid.UUID) {
+	if p.pool == nil {
+		return
+	}
+	docID, err := uuid.Parse(r.PathValue("document_id"))
+	if err != nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]any{
+		"tenant_id":   tenantID.String(),
+		"document_id": docID.String(),
+		"version_id":  versionID.String(),
+		"at":          time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return
+	}
+	evt := database.NewOutboxEvent(tenantID, "dms.document.downloaded.v1", "document", docID, payload)
+	repo := database.NewOutboxRepository()
+	_ = database.WithTenantTx(r.Context(), p.pool, tenantID, func(tx pgx.Tx) error {
+		return repo.Insert(r.Context(), tx, evt)
 	})
 }
 

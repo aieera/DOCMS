@@ -137,7 +137,8 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id, payload, created_at
+		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
+		       payload, created_at, actor_id, actor_name, ip_address
 		FROM outbox
 		WHERE NOT published
 		ORDER BY created_at, id
@@ -150,13 +151,26 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 
 	var batch []OutboxEvent
 	for rows.Next() {
-		var e OutboxEvent
+		var (
+			e         OutboxEvent
+			actorID   *uuid.UUID
+			actorName *string
+			ipAddress *string
+		)
 		if err := rows.Scan(
 			&e.ID, &e.TenantID, &e.EventType, &e.AggregateType,
 			&e.AggregateID, &e.Payload, &e.CreatedAt,
+			&actorID, &actorName, &ipAddress,
 		); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan: %w", err)
+		}
+		e.ActorID = actorID
+		if actorName != nil {
+			e.ActorName = *actorName
+		}
+		if ipAddress != nil {
+			e.IPAddress = *ipAddress
 		}
 		batch = append(batch, e)
 	}
@@ -207,6 +221,11 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 		DataContentType: "application/json",
 		TenantID:        e.TenantID.String(),
 		Data:            e.Payload,
+		VDMSActorName:   e.ActorName,
+		VDMSClientIP:    e.IPAddress,
+	}
+	if e.ActorID != nil {
+		envelope.VDMSActorID = e.ActorID.String()
 	}
 	body, err := json.Marshal(envelope)
 	if err != nil {
@@ -254,5 +273,15 @@ type cloudEvent struct {
 	DataContentType string          `json:"datacontenttype"`
 	TenantID        string          `json:"tenantid,omitempty"`
 	Data            json.RawMessage `json:"data"`
+	// VaultDMS-specific CloudEvents extensions: request-context audit
+	// fields stamped on the outbox row at write time. The audit
+	// consumer reads these as a fallback when the inner data payload
+	// doesn't include actor / IP (i.e. for every emitter that
+	// pre-dates the outbox-audit-context plumbing). Lowercase
+	// per the CloudEvents spec's extension-naming convention
+	// (https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md#attribute-naming-convention).
+	VDMSActorID   string `json:"vdmsactorid,omitempty"`
+	VDMSActorName string `json:"vdmsactorname,omitempty"`
+	VDMSClientIP  string `json:"vdmsclientip,omitempty"`
 }
 
