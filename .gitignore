@@ -22,6 +22,11 @@ coverage.html
 # proto/vaultdms/v1/*.pb.go
 # proto/vaultdms/v1/*.pb.gw.go
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Node / frontend
 node_modules/
 .pnpm-store/
