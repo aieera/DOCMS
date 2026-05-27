@@ -69,7 +69,23 @@
       "Bash(grep -nA40 \"func.*CreateWorkspace\" services/document/internal/service/workspaces.go)",
       "Bash(DOCKER_BUILDKIT=1 docker compose up -d --build policy)",
       "Bash(curl -s -o /tmp/sf.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/api/v1/saved-searches/smart-folders)",
-      "Bash(grep -nA10 \"UserWorkspacesKey\\\\|REDIS_DB\\\\|VAULTDMS_REDIS_DB\" services/policy/internal/cache/cache.go services/policy/cmd/server/main.go)"
+      "Bash(grep -nA10 \"UserWorkspacesKey\\\\|REDIS_DB\\\\|VAULTDMS_REDIS_DB\" services/policy/internal/cache/cache.go services/policy/cmd/server/main.go)",
+      "Bash(grep -nA45 \"func.*IngestEvent\" services/audit/internal/service/service.go)",
+      "Bash(grep -nA8 \"type cloudEvent struct\" pkg/database/outbox_publisher.go)",
+      "Bash(grep -nA10 \"OutboxRepository interface\" services/document/internal/repository/repository.go)",
+      "Bash(grep -nB1 -A20 \"FROM outbox\" pkg/database/outbox_publisher.go)",
+      "Bash(grep -nA8 \"func CorrelationHTTP\" pkg/middleware/correlation.go)",
+      "Bash(echo \"pkg rc=$?\")",
+      "Bash(echo \"audit rc=$?\")",
+      "Bash(echo \"document rc=$?\")",
+      "Bash(grep -nB1 -A10 \"type StorageProxy struct\" services/document/internal/handler/storage_proxy.go)",
+      "Bash(DOCKER_BUILDKIT=1 docker compose build --no-cache document audit)",
+      "Bash(DOCKER_BUILDKIT=1 docker compose build search auth billing connector notification policy signature storage workflow mcp-server graphql-gateway)",
+      "Bash(DOCKER_BUILDKIT=1 docker compose build --no-cache search auth billing connector notification policy signature storage workflow mcp-server graphql-gateway)",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "Bash(curl -s -o /tmp/l.txt -w \"HTTP %{http_code}\\\\n\" -X POST http://localhost:3000/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"tenant_slug\":\"acme\",\"email\":\"admin@acme.local\",\"password\":\"ChangeMe!Now2026\"}')",
+      "mcp__plugin_playwright_playwright__browser_close"
     ],
     "additionalDirectories": [
       "C:\\Users\\dell"
