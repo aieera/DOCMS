@@ -170,7 +170,9 @@ function DetailsSection({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!canEdit || !dirty || update.isPending) return
+          if (!canEdit || update.isPending) return
+          if (!trimmedName) { toast.error('Name is required'); return }
+          if (!dirty) return
           update.mutate(
             { id: workspaceId, input: { name: trimmedName, description } },
             { onSuccess: () => toast.success('Workspace updated') },
@@ -200,7 +202,7 @@ function DetailsSection({
           <div className="flex justify-end">
             <Button
               type="submit"
-              disabled={!dirty || update.isPending}
+              disabled={update.isPending}
               loading={update.isPending}
               data-testid="ws-settings-save"
             >
@@ -301,8 +303,11 @@ function TransferOwnershipSection({
           </p>
           <Button
             variant="outline"
-            disabled={!newOwnerId || transfer.isPending}
-            onClick={() => setConfirmOpen(true)}
+            disabled={transfer.isPending}
+            onClick={() => {
+              if (!newOwnerId) { toast.error('Select a user to transfer to'); return }
+              setConfirmOpen(true)
+            }}
             data-testid="ws-transfer-open"
           >
             Transfer…

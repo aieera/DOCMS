@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -19,11 +20,11 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
     if (open) setTitle(initialTitle)
   }, [open, initialTitle])
 
-  const trimmed = title.trim()
-  const dirty = trimmed.length > 0 && trimmed !== initialTitle
-
   const submit = () => {
-    if (!dirty || update.isPending) return
+    if (update.isPending) return
+    const trimmed = title.trim()
+    if (!trimmed) { toast.error('Title is required'); return }
+    if (trimmed === initialTitle) { toast.error('Enter a new title'); return }
     update.mutate(
       { id: documentId, body: { title: trimmed } },
       { onSuccess: () => onOpenChange(false) },
@@ -54,7 +55,7 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
           </Button>
           <Button
             type="submit"
-            disabled={!dirty || update.isPending}
+            disabled={update.isPending}
             loading={update.isPending}
             data-testid="rename-document-submit"
           >

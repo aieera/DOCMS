@@ -459,7 +459,15 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => create.mutate()} disabled={!title.trim() || create.isPending} data-testid="create-task-submit">
+          <Button
+            onClick={() => {
+              if (create.isPending) return
+              if (!title.trim()) { toast.error('Title is required'); return }
+              create.mutate()
+            }}
+            disabled={create.isPending}
+            data-testid="create-task-submit"
+          >
             Create
           </Button>
         </div>
