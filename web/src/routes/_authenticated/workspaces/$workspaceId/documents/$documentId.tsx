@@ -136,6 +136,12 @@ export function DocumentDetailBody({
   const gql = useDocumentDetailGQL(documentId)
   const [tab, setTab] = useState<TabKey>('preview')
   const userRole = useAuthStore((s) => s.user?.role)
+  useEffect(() => {
+    if (gql.isError) {
+      const msg = gql.error instanceof Error ? gql.error.message : String(gql.error)
+      console.warn(`[graphql-aggregate] ${documentId}: ${msg} — deep tabs falling back to REST`)
+    }
+  }, [gql.isError, gql.error, documentId])
   // ADR 0079 — bulk-apply redaction gate. Compliance officer also
   // counts because they're the typical reviewers.
   const isAdminCaller =
@@ -174,27 +180,16 @@ export function DocumentDetailBody({
         </div>
       )}
 
-      {/* Quiet status pill so QA + ops can verify the GraphQL call
-          fired without opening devtools — appears for a beat while
-          the persisted query is in flight, hides on success. ADR
-          0074 makes the GraphQL endpoint the source of truth for
-          the activity feed + the multi-join data the deeper tabs
-          read; this surface only shows the loading/error part.
-          Regular users never see either pill — the REST fallback
-          still serves them. Limited to owner/admin so it surfaces
-          to QA + ops without alarming end users. */}
+      {/* ADR 0074 — GraphQL aggregate fires per page and feeds the
+          deeper tabs; on failure REST takes over silently. The
+          previously-visible admin diagnostics banner cluttered every
+          document page since errors are common while graphql-gateway
+          upstream wiring is partial. Error stays in the devtools
+          console for QA; the loading pill is kept as a transient cue. */}
       {isAdminCaller && gql.isLoading && (
         <p className="text-xs text-muted-foreground" data-testid="gql-status-loading">
           Loading aggregated detail via GraphQL…
         </p>
-      )}
-      {isAdminCaller && gql.isError && (
-        <details className="text-xs text-warning" data-testid="gql-status-error">
-          <summary className="cursor-pointer select-none opacity-70 hover:opacity-100">GraphQL aggregate failed (admin diagnostics)</summary>
-          <p className="mt-1 font-mono text-[11px]">
-            Deep tabs fall back to REST. {gql.error instanceof Error ? gql.error.message : String(gql.error)}
-          </p>
-        </details>
       )}
 
       {/* No-content prompt: when the document row exists but no file
