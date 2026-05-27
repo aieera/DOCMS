@@ -101,6 +101,7 @@ var PublishedSubjects = []string{
 	"dms.hold.released.v1",
 	"dms.hold.updated.v1",
 	// notify
+	"dms.notify.document.uploaded.v1",
 	"dms.notify.dsr_verify.v1",
 	"dms.notify.signature_requested.v1",
 	"dms.notify.workflow_assigned.v1",

@@ -530,6 +530,26 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 			return err
 		}
 		versionUploadedEmitted.WithLabelValues("dms.version.uploaded.v1").Inc()
+
+		// Dual-publish a notify event so the uploader gets an inbox row.
+		// The notification consumer subscribes to dms.notify.> and reads
+		// `data` as a DeliveryPayload (tenant_id + user_ids required).
+		notifyEvt, err := model.NewOutboxEvent(tenantID, "dms.notify.document.uploaded.v1", "document", doc.ID,
+			map[string]any{
+				"tenant_id":     tenantID.String(),
+				"user_ids":      []string{userID.String()},
+				"type":          "document.uploaded",
+				"title":         "Document uploaded",
+				"body":          fmt.Sprintf("%q v%d is ready.", doc.Title, v.VersionNumber),
+				"resource_type": "document",
+				"resource_id":   doc.ID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		if err := s.repos.Outbox.Insert(ctx, tx, notifyEvt); err != nil {
+			return err
+		}
 		out = v
 		return nil
 	})
