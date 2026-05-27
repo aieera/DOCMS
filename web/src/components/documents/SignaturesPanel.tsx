@@ -84,12 +84,17 @@ export function SignaturesPanel({ documentId }: Props) {
       )}
 
       {reqsQ.data && reqsQ.data.length === 0 && (
-        <p className="text-xs text-[var(--color-text-secondary)]" data-testid="no-signature-requests">
-          No signature requests yet.{' '}
-          <Link to="/signatures/send/$documentId" params={{ documentId }} className="text-[var(--color-primary)] hover:underline">
-            Start one
-          </Link>.
-        </p>
+        <div className="flex flex-col items-start gap-2" data-testid="no-signature-requests">
+          <p className="text-xs text-muted-foreground">No signature requests yet.</p>
+          <Link
+            to="/signatures/send/$documentId"
+            params={{ documentId }}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Send className="h-3 w-3" />
+            Start a signature request
+          </Link>
+        </div>
       )}
     </div>
   )

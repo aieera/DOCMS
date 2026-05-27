@@ -80,21 +80,22 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
         'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+          ? 'bg-sidebar-accent/50 text-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent/30 hover:text-foreground',
         collapsed && 'justify-center px-0',
       )}
     >
-      {/* Active indicator rail — subtle accent bar on the leading
-          edge so the active row reads at a glance even in collapsed
-          mode where the label is hidden. */}
+      {/* Active indicator rail — 2px leading-edge accent at the
+          primary color so the active row reads at a glance, paired
+          with a softer background tint (sidebar-accent/50) instead
+          of the previous fully-saturated solid fill. */}
       {active && (
         <span
           aria-hidden
-          className="absolute inset-y-1 start-0 w-0.5 rounded-e-full bg-foreground"
+          className="absolute inset-y-1.5 start-0 w-[2px] rounded-e-full bg-primary"
         />
       )}
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active && 'text-foreground')} />
+      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-muted-foreground/80 group-hover:text-foreground')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
@@ -131,17 +132,17 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
   // identity for now; later this becomes a workspace switcher
   // populated from /auth/me.tenants[].
   return (
-    <div className="px-3 pb-2 pt-3">
+    <div className="border-b border-sidebar-border/60 px-3 py-3">
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/50 px-2.5 py-2 text-start transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-background/50 px-3 py-2.5 text-start transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
           {user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-xs font-semibold">{user.display_name ?? 'Account'}</span>
-          <span className="block truncate text-[11px] text-muted-foreground">{user.email}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
         </span>
         <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
       </button>
@@ -149,12 +150,12 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-function NavGroupBlock({ group, collapsed, pathname }: { group: NavGroup; collapsed: boolean; pathname: string }) {
+function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGroup; collapsed: boolean; pathname: string; isFirst: boolean }) {
   const { t } = useTranslation('common')
   return (
-    <div className="space-y-0.5">
+    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-2 border-t border-sidebar-border/40 pt-2')}>
       {!collapsed && (
-        <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <div className="px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
           {t(group.labelKey)}
         </div>
       )}
@@ -232,8 +233,8 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
       <BrandRow collapsed={collapsed} onToggle={onToggle} />
       <WorkspaceCard collapsed={collapsed} />
       <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4', collapsed && 'px-1.5')}>
-        {visibleGroups.map((group) => (
-          <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} />
+        {visibleGroups.map((group, i) => (
+          <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} isFirst={i === 0} />
         ))}
         <SmartFoldersBlock collapsed={collapsed} />
       </nav>

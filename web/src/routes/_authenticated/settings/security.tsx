@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
-  Fingerprint, Trash2, ShieldCheck, AlertTriangle, Plus,
+  Fingerprint, Trash2, ShieldCheck, AlertTriangle, Plus, Info,
   User as UserIcon, Mail, Building2, Monitor, Globe, Clock, LogOut,
 } from 'lucide-react'
 
@@ -69,9 +69,12 @@ function ProfileSection() {
         <Field label="Role"         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
         <Field label="Tenant ID"    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
       </dl>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
-      </p>
+      <div className="mt-4 flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+        <p>
+          Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
+        </p>
+      </div>
     </Section>
   )
 }
@@ -86,15 +89,15 @@ function Field({ label, value, icon, mono, title }: {
   title?: string
 }) {
   return (
-    <div className="flex flex-col">
-      <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-1">
+      <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {icon}{label}
       </dt>
       <dd
-        className={`mt-0.5 break-all ${mono ? 'font-mono text-xs' : 'break-words font-medium'}`}
+        className={`break-all text-sm font-medium ${mono ? 'font-mono text-xs text-muted-foreground' : 'break-words'}`}
         title={title}
       >
-        {value || <em className="text-muted-foreground">not set</em>}
+        {value || <em className="font-normal text-muted-foreground/70">not set</em>}
       </dd>
     </div>
   )
@@ -416,7 +419,7 @@ function Section({ title, icon, action, children }: {
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           {icon}{title}

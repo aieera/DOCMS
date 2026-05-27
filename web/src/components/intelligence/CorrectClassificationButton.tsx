@@ -47,18 +47,22 @@ export function CorrectClassificationButton({
   })
 
   if (!editing) {
+    // Compact pencil icon-button — sits inline with the displayed
+    // classification (e.g. "Unclassified ✏️") instead of as a
+    // separate text button on a new line.
     return (
       <Button
-        size="sm"
+        size="icon"
         variant="ghost"
         onClick={() => {
           setValue(currentCategory)
           setEditing(true)
         }}
+        title="Correct classification"
         aria-label="Correct classification"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
       >
-        <Pencil className="me-1 h-3 w-3" />
-        Correct
+        <Pencil className="h-3 w-3" />
       </Button>
     )
   }

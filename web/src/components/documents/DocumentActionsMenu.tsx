@@ -178,7 +178,7 @@ export function DocumentActionsMenu({ doc, children }: Props) {
     ))
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent data-testid="document-context-menu">
@@ -192,7 +192,10 @@ export function DocumentActionsMenu({ doc, children }: Props) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              // 40% opacity always, 100% on hover/focus — gives the
+              // affordance a discoverable visual anchor even before
+              // hover, instead of the previous hover-only reveal.
+              className="h-7 w-7 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
               // The card body is itself a navigable link. Stop bubbling
               // so opening the menu doesn't also navigate.
               onClick={(e) => { e.preventDefault(); e.stopPropagation() }}

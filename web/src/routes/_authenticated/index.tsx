@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, CheckSquare, Clock, FolderOpen, Search, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
+import { Bell, CheckSquare, Clock, FolderOpen, MessageSquare, PenTool, Search, ShieldAlert, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
@@ -112,13 +112,13 @@ interface KpiCardProps {
 
 function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: KpiCardProps) {
   const inner = (
-    <Card className="group relative overflow-hidden p-5 transition-shadow hover:shadow-md">
+    <Card className="group relative overflow-hidden p-5 shadow-sm transition-all hover:border-primary/40 hover:bg-accent/30 hover:shadow-md">
       <div className="flex items-start justify-between">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
           <Icon className="h-[1.1rem] w-[1.1rem]" />
         </span>
         {href && (
-          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
         )}
       </div>
       <p className="mt-4 text-sm font-medium text-muted-foreground">{label}</p>
@@ -173,9 +173,9 @@ function QuickActions() {
           <Link
             key={label}
             to={href}
-            className="group flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group flex items-start gap-3 rounded-lg border border-border bg-gradient-to-br from-card to-muted/20 p-4 shadow-sm transition-all hover:border-primary/40 hover:from-accent hover:to-accent/70 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background text-foreground transition-colors group-hover:bg-foreground group-hover:text-background">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
               <Icon className="h-[1.1rem] w-[1.1rem]" />
             </span>
             <div className="min-w-0 flex-1">
@@ -208,7 +208,7 @@ function OpenTasksCard() {
   const open = (data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress')
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <div className="flex items-center justify-between border-b border-border p-4">
         <div>
           <h2 className="text-sm font-semibold">My open tasks</h2>
@@ -294,6 +294,24 @@ interface NotificationLite {
   read_at?: string | null
 }
 
+// Maps notification event-type prefixes to a representative icon so
+// each row in the Recent activity panel reads at a glance instead of
+// relying on a generic blue dot. Fallback is Bell — same as the
+// dropdown's empty-state icon — so unknown types stay visually
+// consistent with the rest of the notification surface.
+function notificationIcon(type: string | undefined): LucideIcon {
+  if (!type) return Bell
+  if (type.startsWith('document.uploaded') || type.startsWith('document.created')) return Upload
+  if (type.startsWith('document.')) return FolderOpen
+  if (type.startsWith('task.')) return CheckSquare
+  if (type.startsWith('workflow.') || type.startsWith('task.assigned')) return Workflow
+  if (type.startsWith('saved_search')) return Sparkles
+  if (type.startsWith('signature') || type.startsWith('esign')) return PenTool
+  if (type.startsWith('comment.') || type.startsWith('mention.')) return MessageSquare
+  if (type.startsWith('compliance.') || type.startsWith('legal_hold.')) return ShieldAlert
+  return Bell
+}
+
 function RecentActivityCard() {
   const navigate = useNavigate()
   const { data, isLoading, isError } = useQuery({
@@ -304,7 +322,7 @@ function RecentActivityCard() {
   const items = ((data as { items?: NotificationLite[] } | undefined)?.items ?? []).slice(0, 6)
 
   return (
-    <Card>
+    <Card className="shadow-sm">
       <div className="flex items-center justify-between border-b border-border p-4">
         <div>
           <h2 className="text-sm font-semibold">Recent activity</h2>
@@ -335,38 +353,49 @@ function RecentActivityCard() {
             <p className="text-xs text-muted-foreground">As work happens in your workspaces it'll show up here.</p>
           </div>
         )}
-        {items.map((n) => (
-          <div key={n.id} className="flex items-start gap-3 p-4">
-            <span
-              className={cn(
-                'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                n.read_at ? 'bg-muted-foreground/40' : 'bg-info',
-              )}
-              aria-hidden
-            />
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-2 text-sm font-medium">
-                <span className="truncate">{n.title ?? 'Update'}</span>
-                {n.type?.startsWith('digest.') && (
-                  <span
-                    className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
-                    title="This is a digest notification combining multiple events."
-                    aria-label="Digest notification combining multiple events"
-                  >
-                    <span aria-hidden="true">D</span>
-                    <span className="sr-only">Digest</span>
-                  </span>
+        {items.map((n) => {
+          const Icon = notificationIcon(n.type)
+          return (
+            <Link
+              key={n.id}
+              to="/notifications"
+              className="flex items-start gap-3 p-4 transition-colors hover:bg-accent/40"
+            >
+              <span
+                className={cn(
+                  'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+                  n.read_at
+                    ? 'bg-muted text-muted-foreground'
+                    : 'bg-primary/10 text-primary',
                 )}
-              </p>
-              {n.body && <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
-              {n.created_at && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {relTime(n.created_at, { addSuffix: true })}
+                aria-hidden
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <span className="truncate">{n.title ?? 'Update'}</span>
+                  {n.type?.startsWith('digest.') && (
+                    <span
+                      className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
+                      title="This is a digest notification combining multiple events."
+                      aria-label="Digest notification combining multiple events"
+                    >
+                      <span aria-hidden="true">D</span>
+                      <span className="sr-only">Digest</span>
+                    </span>
+                  )}
                 </p>
-              )}
-            </div>
-          </div>
-        ))}
+                {n.body && <p className="line-clamp-2 text-xs text-muted-foreground">{n.body}</p>}
+                {n.created_at && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {relTime(n.created_at, { addSuffix: true })}
+                  </p>
+                )}
+              </div>
+            </Link>
+          )
+        })}
       </div>
     </Card>
   )

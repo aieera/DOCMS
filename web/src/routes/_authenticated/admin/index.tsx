@@ -42,6 +42,7 @@ const TENANT_GROUP: SectionGroup = {
     { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
     { to: '/admin/tenant/license', icon: ScrollText, label: 'License', desc: 'JWT claims, seats, feature flags, expiry' },
     { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
+    { to: '/admin/tenant/upload-policy', icon: Upload, label: 'Upload policy', desc: 'Allowed MIME types + extensions org-wide' },
     { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
     { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
   ],
@@ -148,14 +149,18 @@ function SectionCard({ section: { to, icon: Icon, label, desc } }: { section: Se
         'block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg',
       )}
     >
-      <Card className="group flex h-full items-start gap-3 p-4 transition-colors hover:bg-accent">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground transition-colors group-hover:bg-foreground group-hover:text-background">
-          <Icon className="h-[1.05rem] w-[1.05rem]" />
+      {/* Card hover: a subtle primary-tinted border + slight bg lift,
+          matching the workspace cards' pattern so the admin grid feels
+          part of the same product. Icon sits in a fixed 40px tile with
+          a primary-tinted background that intensifies on hover. */}
+      <Card className="group flex h-full items-start gap-3 border p-4 transition-all hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+          <Icon className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1 truncate text-sm font-medium">
-            {label}
-            <DirectionalIcon name="ChevronRight" className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          <p className="flex items-center justify-between gap-1 truncate text-sm font-medium">
+            <span className="truncate">{label}</span>
+            <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
           </p>
           <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{desc}</p>
         </div>

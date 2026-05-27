@@ -17,7 +17,6 @@ import {
 } from '@/api/savedSearches'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
-import { Badge } from '@/components/ui/shadcn/badge'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
@@ -141,9 +140,13 @@ function SavedSearchesPage() {
               <div className="flex items-center gap-2">
                 <span className="font-medium">{s.name}</span>
                 {s.notify ? (
-                  <Badge variant="info" data-testid={`alert-badge-${s.id}`}>
-                    <Bell className="me-1 h-3 w-3 inline" /> Alert
-                  </Badge>
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
+                    data-testid={`alert-badge-${s.id}`}
+                    title="An alert fires when new matches show up"
+                  >
+                    <Bell className="h-3 w-3" /> Alerting
+                  </span>
                 ) : null}
                 {(s.subscriber_count ?? 0) > 0 && (
                   <span className="text-xs text-muted-foreground">
@@ -161,7 +164,7 @@ function SavedSearchesPage() {
               )}
             </div>
 
-            <div className="ms-4 flex shrink-0 items-center gap-1">
+            <div className="ms-4 flex shrink-0 items-center gap-2">
               <Button variant="ghost" onClick={() => handleRun(s)} data-testid={`run-${s.id}`}>
                 <Play className="h-4 w-4" /> Run
               </Button>
@@ -208,6 +211,10 @@ function SavedSearchesPage() {
                   <UserPlus className="h-4 w-4" /> Subscribe
                 </Button>
               )}
+              {/* Destructive action separated by a thin divider so it
+                  reads as a different concern from the routine row
+                  actions above. */}
+              <span aria-hidden className="mx-1 h-5 w-px bg-border" />
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -217,8 +224,9 @@ function SavedSearchesPage() {
                 data-testid={`delete-${s.id}`}
                 aria-label={`Delete saved search: ${s.name}`}
                 title={`Delete saved search: ${s.name}`}
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
-                <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
                 <span className="sr-only">Delete {s.name}</span>
               </Button>
             </div>

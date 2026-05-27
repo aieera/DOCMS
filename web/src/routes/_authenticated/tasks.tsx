@@ -161,7 +161,11 @@ function MyTasksSection() {
             aria-label="Kanban view"
           ><LayoutGrid className="h-4 w-4" /></button>
         </div>
-        <Button onClick={() => setCreating(true)} data-testid="new-task">
+        <Button
+          onClick={() => setCreating(true)}
+          data-testid="new-task"
+          className="gap-2 shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+        >
           <Plus className="h-4 w-4" /> New task
         </Button>
       </div>
@@ -193,13 +197,13 @@ function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void })
   return (
     <div className="overflow-hidden rounded border border-border" data-testid="task-table">
       <table className="w-full text-sm">
-        <thead className="bg-[var(--color-bg-tertiary)] text-start text-xs uppercase">
+        <thead className="border-b border-border bg-muted/40 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           <tr>
-            <th className="px-3 py-2">Title</th>
-            <th className="px-3 py-2">Priority</th>
-            <th className="px-3 py-2">Due</th>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2 text-end">Actions</th>
+            <th className="px-3 py-2.5 text-start font-semibold">Title</th>
+            <th className="px-3 py-2.5 text-start font-semibold">Priority</th>
+            <th className="px-3 py-2.5 text-start font-semibold">Due</th>
+            <th className="px-3 py-2.5 text-start font-semibold">Status</th>
+            <th className="px-3 py-2.5 text-end font-semibold">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -267,9 +271,16 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
       </td>
       <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
       <td className="px-3 py-2 text-end">
-        <div className="inline-flex gap-1">
+        <div className="inline-flex items-center gap-1">
           {!isDone && (
-            <Button size="sm" onClick={() => complete.mutate()} disabled={complete.isPending} data-testid={`complete-${task.id}`}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => complete.mutate()}
+              disabled={complete.isPending}
+              data-testid={`complete-${task.id}`}
+              className="gap-1 border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+            >
               <Check className="h-3 w-3" /> Complete
             </Button>
           )}
@@ -279,16 +290,17 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
             </Button>
           )}
           {!isDone && (
-            <Button size="sm" variant="ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+            <Button size="sm" variant="ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending} className="gap-1 text-muted-foreground">
               <X className="h-3 w-3" /> Cancel
             </Button>
           )}
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
             onClick={() => remove.mutate()}
             aria-label={`Delete task: ${task.title}`}
             title={`Delete task: ${task.title}`}
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </Button>

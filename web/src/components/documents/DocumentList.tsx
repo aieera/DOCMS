@@ -37,18 +37,36 @@ export function DocumentList({ documents, isLoading, onUploadClick }: Props) {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-sm text-[var(--color-text-secondary)]">{documents.length} documents</span>
+        <span className="text-sm text-muted-foreground">{documents.length} documents</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => setViewMode('grid')} className={`rounded-md p-1.5 ${viewMode === 'grid' ? 'bg-slate-200 dark:bg-slate-700' : ''}`} aria-label="Grid view">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`rounded-md p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+            aria-label="Grid view"
+            title="Grid view"
+            aria-pressed={viewMode === 'grid'}
+          >
             <Grid className="h-4 w-4" />
           </button>
-          <button onClick={() => setViewMode('table')} className={`rounded-md p-1.5 ${viewMode === 'table' ? 'bg-slate-200 dark:bg-slate-700' : ''}`} aria-label="Table view">
+          <button
+            onClick={() => setViewMode('table')}
+            className={`rounded-md p-1.5 transition-colors ${viewMode === 'table' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+            aria-label="Table view"
+            title="Table view"
+            aria-pressed={viewMode === 'table'}
+          >
             <List className="h-4 w-4" />
           </button>
           {onUploadClick && <Button variant="default" size="sm" onClick={onUploadClick}><Upload className="h-4 w-4" /> Upload</Button>}
         </div>
       </div>
-      <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-4' : 'flex flex-col gap-2'}>
+      <div
+        className={
+          viewMode === 'grid'
+            ? 'grid grid-cols-3 gap-4'
+            : 'flex flex-col divide-y divide-border rounded-lg border border-border bg-card'
+        }
+      >
         {documents.map((d) => <DocumentCard key={d.id} doc={d} />)}
       </div>
     </div>

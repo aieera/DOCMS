@@ -28,7 +28,7 @@ export function MetadataPanel({ doc, open, onClose }: Props) {
             <div className="space-y-4">
               <div className="space-y-2 text-sm">
                 <Row label="Status"><Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge></Row>
-                <Row label="Class">{doc.document_class || '—'}</Row>
+                <Row label="Class">{doc.document_class ? <span className="capitalize">{doc.document_class}</span> : <span className="italic text-muted-foreground/70">Unclassified</span>}</Row>
                 <Row label="Size">{formatFileSize(doc.size_bytes)}</Row>
                 <Row label="MIME">{doc.mime_type}</Row>
                 <Row label="Versions">{doc.version_count}</Row>

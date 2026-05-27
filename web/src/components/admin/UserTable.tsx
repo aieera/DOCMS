@@ -106,16 +106,49 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
         </div>
       ),
     },
-    { accessorKey: 'role', header: 'Role', cell: ({ row }) => <Badge>{row.original.role}</Badge> },
+    {
+      accessorKey: 'role',
+      header: 'Role',
+      cell: ({ row }) => {
+        const r: string = row.original.role
+        // Distinct color per privilege tier so an admin row reads
+        // differently at a glance from a member row. Owner gets the
+        // strongest accent; member stays neutral so the dominant
+        // case doesn't shout.
+        const cls =
+          r === 'owner'
+            ? 'border-violet-500/40 bg-violet-500/15 text-violet-700 dark:text-violet-300'
+            : r === 'admin'
+              ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+              : r === 'compliance_officer'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                : r === 'viewer' || r === 'guest'
+                  ? 'border-border bg-muted text-muted-foreground'
+                  : 'border-border bg-card text-foreground'
+        return (
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${cls}`}>
+            {r}
+          </span>
+        )
+      },
+    },
     {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => {
         const s = row.original.status ?? 'active'
-        // Active is the dominant case so we render it understated to
-        // keep the column scanable; suspended/deactivated stand out.
-        const variant = s === 'active' ? 'active' : s === 'suspended' ? 'destructive' : 'draft'
-        return <Badge variant={variant}>{s}</Badge>
+        const cls =
+          s === 'active'
+            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+            : s === 'suspended'
+              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              : 'border-border bg-muted text-muted-foreground'
+        const label = !row.original.last_login_at && s === 'active' ? 'Never logged in' : s
+        return (
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${cls}`}>
+            {label}
+          </span>
+        )
       },
     },
     {

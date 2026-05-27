@@ -14,6 +14,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import { cn } from '@/lib/cn'
 
 function WorkspacesPage() {
   const { data, isLoading, isError } = useQuery({
@@ -39,7 +40,11 @@ function WorkspacesPage() {
         title="Workspaces"
         description="Organize documents by team or project. Each workspace is permission-scoped."
         actions={
-          <Button onClick={() => setCreateOpen(true)} data-testid="new-workspace">
+          <Button
+            onClick={() => setCreateOpen(true)}
+            data-testid="new-workspace"
+            className="shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+          >
             <Plus className="h-4 w-4" /> New workspace
           </Button>
         }
@@ -47,9 +52,9 @@ function WorkspacesPage() {
 
       {/* Toolbar — search appears once there's anything to filter. */}
       {!isLoading && (data?.length ?? 0) > 0 && (
-        <div className="flex items-center gap-3">
-          <div className="relative max-w-xs flex-1">
-            <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center justify-between gap-3">
+          <div className="relative w-full max-w-sm">
+            <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground/70" />
             <Input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -57,7 +62,7 @@ function WorkspacesPage() {
               className="ps-9"
             />
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span className="inline-flex shrink-0 items-center rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground tabular-nums">
             {filtered.length} of {data?.length ?? 0}
           </span>
         </div>
@@ -100,28 +105,53 @@ function WorkspacesPage() {
 
 // ---- Card ----------------------------------------------------------------
 
+// Deterministic hash → palette index. djb2-lite over the workspace
+// name so the same name always lands on the same accent, giving each
+// workspace card a small but persistent visual identity. Pure
+// presentation; the order is meaningless beyond "consistent across
+// renders". 8 hues covers the realistic per-tenant workspace count
+// without two cards looking identical.
+const WORKSPACE_ACCENTS = [
+  'border-s-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300',
+  'border-s-sky-500/60 bg-sky-500/10 text-sky-600 dark:text-sky-300',
+  'border-s-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
+  'border-s-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300',
+  'border-s-rose-500/60 bg-rose-500/10 text-rose-600 dark:text-rose-300',
+  'border-s-cyan-500/60 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300',
+  'border-s-indigo-500/60 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
+  'border-s-teal-500/60 bg-teal-500/10 text-teal-600 dark:text-teal-300',
+] as const
+function accentFor(name: string): string {
+  let h = 5381
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0
+  return WORKSPACE_ACCENTS[Math.abs(h) % WORKSPACE_ACCENTS.length]
+}
+
 // Backend filters /workspaces server-side: tenant owner/admin sees
 // every active workspace; everyone else sees only ones they created
 // or are members of (see services/document/internal/repository/
 // workspace_repo.go). The frontend just renders whatever lands — no
 // locked-card or "No access" branching needed.
 function WorkspaceCard({ ws }: { ws: Workspace }) {
+  const accent = accentFor(ws.name)
   return (
     <Link
       to="/workspaces/$workspaceId"
       params={{ workspaceId: ws.id }}
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg"
     >
-      <Card className="group h-full p-5 transition-all hover:border-foreground/20 hover:shadow-md">
+      <Card className={cn('group h-full border-s-[3px] p-5 transition-all hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
         <div className="flex items-start justify-between">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-foreground">
+          <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
             <FolderOpen className="h-5 w-5" />
           </span>
           <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
         <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
-        <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
-          {ws.description ?? 'No description.'}
+        <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm">
+          {ws.description?.trim()
+            ? <span className="text-muted-foreground">{ws.description}</span>
+            : <span className="italic text-muted-foreground/60">No description</span>}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">

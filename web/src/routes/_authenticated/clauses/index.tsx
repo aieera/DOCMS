@@ -82,8 +82,11 @@ function ClausesPage() {
         title="Clause library"
         description="Manage reusable contract clauses for your organization. Create, edit, and organize standard clauses for use across your documents."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="me-1 h-4 w-4" /> New clause
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="gap-2 shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+          >
+            <Plus className="h-4 w-4" /> New clause
           </Button>
         }
       />
@@ -141,9 +144,15 @@ function ClausesPage() {
             }}
           />
         ) : (
-          <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            Select a clause on the left to preview its body, jurisdiction, tags, and version.
-          </p>
+          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border p-12 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <FileText className="h-6 w-6" />
+            </span>
+            <p className="text-sm font-medium">No clause selected</p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              Pick a clause on the left to preview its body, jurisdiction, tags, and version.
+            </p>
+          </div>
         )}
       </section>
 
@@ -202,20 +211,24 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
     >
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold">{clause.name}</span>
-        <span className="font-mono text-[10px] text-muted-foreground">v{clause.version}</span>
       </div>
       <p className="line-clamp-2 text-xs text-muted-foreground">{clause.body_text}</p>
+      {/* Unified metadata strip: jurisdiction → tags → version → status,
+          all at consistent size/shape so the row reads as one band. */}
       <div className="flex flex-wrap items-center gap-1 text-[11px]">
         {clause.jurisdiction && (
-          <span className="rounded-full border border-border px-1.5 py-0.5">{clause.jurisdiction}</span>
+          <span className="rounded-full border border-border px-2 py-0.5 text-xs">{clause.jurisdiction}</span>
         )}
         {clause.tags.slice(0, 4).map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5">
+          <span key={t} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
             <Tag className="h-3 w-3" /> {t}
           </span>
         ))}
+        <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs text-muted-foreground">
+          v{clause.version}
+        </span>
         {clause.approved_at && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 className="h-3 w-3" /> Approved
           </span>
         )}

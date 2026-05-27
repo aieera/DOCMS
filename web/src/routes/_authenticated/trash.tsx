@@ -17,13 +17,8 @@ function TrashPage() {
       <PageHeader title="Trash" description="Deleted items — restore or permanently delete" />
       <ComingSoon
         icon={<Trash2 className="h-6 w-6" />}
-        title="Trash isn't ready yet"
-        description="When a document is deleted today, it's soft-deleted and only the retention pipeline can fully remove it. A user-facing trash with restore is on the roadmap."
-        bullets={[
-          'List documents you (or your workspace) have deleted',
-          'Restore a soft-deleted document back to its workspace',
-          'Permanent deletion stays with retention — no user purge button',
-        ]}
+        title="Nothing here yet"
+        description="Documents you delete will land here, ready to restore. Permanent deletion stays with the retention pipeline — you'll never need a purge button."
       />
     </div>
   )

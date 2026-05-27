@@ -54,15 +54,20 @@ function WorkflowsPage() {
     return (
       <div>
         <PageHeader title="Workflows" description="Define and manage approval workflows" />
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-          <GitBranch className="h-10 w-10 text-muted-foreground" />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center shadow-sm">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <GitBranch className="h-7 w-7" />
+          </span>
           <h3 className="mt-4 text-lg font-medium">No workflows defined</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
             Build approval, parallel, and signature workflows in the visual designer.
           </p>
-          <Button asChild className="mt-4">
+          <Button
+            asChild
+            className="mt-5 gap-2 shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+          >
             <Link to="/workflows/designer" data-testid="open-designer">
-              <Plus className="me-1 h-4 w-4" /> Open designer
+              <Plus className="h-4 w-4" /> Open designer
             </Link>
           </Button>
         </div>

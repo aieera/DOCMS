@@ -20,6 +20,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { useDocument } from '@/hooks/useDocuments'
 import { useDocumentDetailGQL, useActivityForDocument } from '@/hooks/useDocumentDetailGQL'
 import { useAuthStore } from '@/store/authStore'
@@ -178,16 +179,22 @@ export function DocumentDetailBody({
           the persisted query is in flight, hides on success. ADR
           0074 makes the GraphQL endpoint the source of truth for
           the activity feed + the multi-join data the deeper tabs
-          read; this surface only shows the loading/error part. */}
-      {gql.isLoading && (
+          read; this surface only shows the loading/error part.
+          Regular users never see either pill — the REST fallback
+          still serves them. Limited to owner/admin so it surfaces
+          to QA + ops without alarming end users. */}
+      {isAdminCaller && gql.isLoading && (
         <p className="text-xs text-muted-foreground" data-testid="gql-status-loading">
           Loading aggregated detail via GraphQL…
         </p>
       )}
-      {gql.isError && (
-        <p className="text-xs text-warning" data-testid="gql-status-error">
-          GraphQL aggregate failed; deep tabs fall back to REST. ({gql.error instanceof Error ? gql.error.message : String(gql.error)})
-        </p>
+      {isAdminCaller && gql.isError && (
+        <details className="text-xs text-warning" data-testid="gql-status-error">
+          <summary className="cursor-pointer select-none opacity-70 hover:opacity-100">GraphQL aggregate failed (admin diagnostics)</summary>
+          <p className="mt-1 font-mono text-[11px]">
+            Deep tabs fall back to REST. {gql.error instanceof Error ? gql.error.message : String(gql.error)}
+          </p>
+        </details>
       )}
 
       {/* No-content prompt: when the document row exists but no file
@@ -328,16 +335,22 @@ function DocumentHeader({
       <Link
         to="/workspaces/$workspaceId"
         params={{ workspaceId }}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
       >
-        ← Back to workspace
+        <DirectionalIcon name="ChevronLeft" className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
+        Back to workspace
       </Link>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
           <FileIcon mime={doc.mime_type} className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{doc.title}</h1>
+          <h1
+            className="break-words text-2xl font-semibold tracking-tight line-clamp-2"
+            title={doc.title}
+          >
+            {doc.title}
+          </h1>
           <p className="mt-1 text-xs text-muted-foreground">
             {/* Fallback chain: display name → email → "Deleted user".
                 "Unknown" was misleading — the user record either exists
@@ -369,7 +382,11 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
   // active tab gets the card surface so it visually rises above the
   // pill bar.
   return (
-    <div className="overflow-x-auto" role="tablist" aria-label="Document views">
+    <div
+      className="relative overflow-x-auto [mask-image:linear-gradient(to_right,black_0,black_calc(100%-2rem),transparent)] [scroll-snap-type:x_mandatory] [&::-webkit-scrollbar]:hidden"
+      role="tablist"
+      aria-label="Document views"
+    >
       <div className="inline-flex min-w-full gap-1 rounded-md bg-muted/60 p-1">
         {TABS.map(({ key, label, icon: Icon }) => {
           const active = tab === key
@@ -382,7 +399,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
               onClick={() => onChange(key)}
               data-testid={`tab-${key}`}
               className={cn(
-                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all',
+                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all [scroll-snap-align:start]',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 active
                   ? 'bg-background text-foreground shadow-sm'

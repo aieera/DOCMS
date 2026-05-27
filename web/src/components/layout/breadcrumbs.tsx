@@ -169,10 +169,10 @@ export function Breadcrumbs() {
   ])
 
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center text-sm">
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center text-sm">
       <Link
         to="/"
-        className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+        className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
       >
         <Home className="h-3.5 w-3.5" />
         <span className="sr-only">Home</span>
@@ -181,13 +181,19 @@ export function Breadcrumbs() {
         const isLast = idx === crumbs.length - 1
         return (
           <Fragment key={crumb.href}>
-            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 text-muted-foreground/50" aria-hidden />
+            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
             {isLast ? (
-              <span className="font-medium text-foreground">{crumb.label}</span>
+              <span
+                className="block max-w-[28ch] truncate font-medium text-foreground sm:max-w-[44ch]"
+                title={crumb.label}
+              >
+                {crumb.label}
+              </span>
             ) : (
               <Link
                 to={crumb.href}
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className="block max-w-[20ch] truncate text-muted-foreground transition-colors hover:text-foreground"
+                title={crumb.label}
               >
                 {crumb.label}
               </Link>

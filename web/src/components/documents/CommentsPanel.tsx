@@ -76,7 +76,11 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
       <div className="max-h-96 flex-1 overflow-y-auto p-4 space-y-4" data-testid="comments-list">
         {isLoading && <Spinner />}
         {threads.length === 0 && !isLoading && (
-          <p className="text-sm text-[var(--color-text-secondary)]">No comments yet — be the first.</p>
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <MessageSquare className="h-8 w-8 text-muted-foreground/40" aria-hidden />
+            <p className="text-sm font-medium">No comments yet</p>
+            <p className="text-xs text-muted-foreground">Be the first to leave a comment.</p>
+          </div>
         )}
         {threads.map((t) => (
           <ThreadCard key={t.root.id} thread={t} currentUserId={me?.id ?? ''} />

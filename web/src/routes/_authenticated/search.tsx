@@ -227,7 +227,7 @@ function SearchPage() {
       {/* ---- Sidebar ------------------------------------------------- */}
       <aside data-testid="facet-sidebar" className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Filters</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</h3>
           {activeFilterCount > 0 && (
             <button
               type="button"
@@ -239,6 +239,15 @@ function SearchPage() {
             </button>
           )}
         </div>
+        {/* No-results-yet hint so the sidebar doesn't render as just a
+            naked "Filters" label when the page first opens. The facet
+            buckets only populate after the first successful search,
+            and previously the empty sidebar made it look broken. */}
+        {!enabled && (
+          <p className="rounded-md border border-dashed border-border bg-muted/20 p-3 text-[11px] text-muted-foreground">
+            Start typing in the search bar (or pick a filter once results load) to see facets like tags, authors, and classifications here.
+          </p>
+        )}
 
         {facetsToShow.map((facet) => {
           const buckets = data?.facets?.[facet] ?? []
@@ -296,21 +305,23 @@ function SearchPage() {
         <div className="mb-4 flex gap-2">
           <div className="flex-1">
             <Input
-              icon={<Search className="h-4 w-4" />}
-              placeholder="Search documents..."
+              icon={<Search className="h-5 w-5" />}
+              placeholder="Search by filename, content, tags…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
               data-testid="search-input"
+              className="h-12 text-base shadow-sm"
             />
           </div>
           <Button
-            variant="ghost"
+            variant="outline"
             onClick={handleSave}
             disabled={(!query && activeFilterCount === 0) || createSavedMut.isPending}
             data-testid="save-search"
+            className="h-12 gap-2"
           >
-            <Bookmark className="me-1 h-4 w-4" /> Save
+            <Bookmark className="h-4 w-4" /> Save
           </Button>
         </div>
 
@@ -321,7 +332,7 @@ function SearchPage() {
             {savedSearches.map((s) => (
               <div
                 key={s.id}
-                className="flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs"
+                className="flex items-center gap-1 rounded-full border border-border bg-card py-1 ps-3 pe-1 text-xs"
               >
                 <button
                   type="button"
@@ -335,13 +346,25 @@ function SearchPage() {
                   type="button"
                   onClick={() => deleteSavedMut.mutate(s.id)}
                   aria-label={`Delete saved search ${s.name}`}
-                  className="ms-1 text-muted-foreground hover:text-destructive"
+                  title={`Remove ${s.name}`}
+                  className="ms-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
           </div>
+        )}
+
+        {/* Item 40 — pre-query empty canvas. Renders only when nothing
+            else is on screen (no skeleton, no hint, no results, no
+            "type 2 chars" notice). */}
+        {!isLoading && !enabled && query.length === 0 && (
+          <EmptyState
+            icon={<Search className="h-8 w-8" />}
+            title="Search across all workspaces"
+            description="Type a query above to find documents by filename, content, or tags. Or pick a filter from the left sidebar once results load."
+          />
         )}
 
         {isLoading && (

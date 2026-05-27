@@ -11,6 +11,7 @@ import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api
 import { Breadcrumbs } from './breadcrumbs'
 import { ThemeToggle } from './theme-toggle'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
+import { formatRelativeTime } from '@/lib/formatters'
 import { Button } from '@/components/ui/shadcn/button'
 import { Separator } from '@/components/ui/shadcn/separator'
 import {
@@ -44,13 +45,16 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
       </div>
       <div className="flex-1 lg:hidden" />
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         <CommandTrigger />
-        <MyTasksBadge />
-        <NotificationsDropdown />
-        <ThemeToggle />
-        <LanguageSelector />
-        <Separator orientation="vertical" className="mx-1 hidden h-6 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <div className="flex items-center gap-2">
+          <MyTasksBadge />
+          <NotificationsDropdown />
+          <ThemeToggle />
+          <LanguageSelector />
+        </div>
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <UserMenu />
       </div>
     </header>
@@ -242,8 +246,11 @@ function NotificationsDropdown() {
                     {n.body && (
                       <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
                     )}
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {new Date(n.created_at).toLocaleString()}
+                    <p
+                      className="mt-0.5 text-[10px] text-muted-foreground"
+                      title={new Date(n.created_at).toLocaleString()}
+                    >
+                      {formatRelativeTime(n.created_at)}
                     </p>
                   </div>
                   {!n.read && (

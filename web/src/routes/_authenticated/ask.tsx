@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Textarea } from '@/components/ui/shadcn/textarea'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
-import { EmptyState } from '@/components/ui/EmptyState'
 
 const ALL_WORKSPACES = '__all__'
 
@@ -65,8 +64,11 @@ function AskPage() {
       />
 
       <div className="space-y-3">
-        <div className="flex items-end gap-2">
-          <div className="w-64">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+          {/* Item 41 — shrink-0 + self-start keep the Scope dropdown
+              snapped to the top of the row and stop it from stretching
+              to match the textarea's height. */}
+          <div className="w-full shrink-0 self-start sm:w-56">
             <Select
               label="Scope"
               value={workspaceId}
@@ -89,17 +91,26 @@ function AskPage() {
               }}
             />
           </div>
+          {/* Item 42 — explicit aria-label + title for the icon-led
+              submit button so screen readers + hover tooltips both
+              surface "Ask the corpus". */}
           <Button
             onClick={handleSubmit}
             disabled={!question.trim() || askMut.isPending}
             data-testid="ask-submit"
+            aria-label="Ask the corpus"
+            title="Ask the corpus (⌘/Ctrl + Enter)"
+            className="gap-2 self-start sm:h-[88px] sm:flex-col"
           >
             {askMut.isPending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            Ask
+            <span>Ask</span>
           </Button>
         </div>
+        {/* Item 44 — keep the kbd hint readable on mobile by wrapping
+            the modifier and the action on their own lines if needed. */}
         <p className="text-xs text-muted-foreground">
-          ⌘/Ctrl + Enter to submit. Answers come from your readable documents only.
+          <kbd className="me-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">⌘/Ctrl + Enter</kbd>
+          to submit. Answers come from your readable documents only.
         </p>
       </div>
 
@@ -122,12 +133,14 @@ function AskPage() {
       )}
 
       {!answer && !askMut.isPending && (
-        <div className="mt-12">
-          <EmptyState
-            icon={<Sparkles className="h-8 w-8" />}
-            title="Ask your documents"
-            description="Type a question above to search across your workspaces. Each answer is grounded in real document pages."
-          />
+        <div className="mt-12 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Sparkles className="h-8 w-8" />
+          </span>
+          <h2 className="text-xl font-medium">Ask your documents</h2>
+          <p className="max-w-md text-sm text-muted-foreground">
+            Type a question above to search across your workspaces. Each answer is grounded in real document pages.
+          </p>
         </div>
       )}
     </div>

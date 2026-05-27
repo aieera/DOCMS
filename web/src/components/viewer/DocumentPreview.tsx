@@ -53,8 +53,19 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
 
   if (dl.isLoading) {
     return (
-      <Card className="flex h-[60vh] items-center justify-center" data-testid="preview-loading">
-        <Spinner />
+      <Card
+        className="flex h-[60vh] flex-col items-center justify-center gap-3 bg-gradient-to-br from-muted/40 to-muted/10"
+        data-testid="preview-loading"
+        aria-busy
+        aria-label="Loading preview"
+      >
+        <div className="relative h-12 w-9 rounded-sm border border-border bg-background shadow-sm">
+          <div className="absolute inset-x-2 top-2 h-1 rounded bg-muted-foreground/30" />
+          <div className="absolute inset-x-2 top-4 h-1 rounded bg-muted-foreground/20" />
+          <div className="absolute inset-x-2 top-6 h-1 w-5 rounded bg-muted-foreground/20" />
+          <Spinner className="absolute -end-3 -bottom-3 h-5 w-5" />
+        </div>
+        <p className="text-xs text-muted-foreground">Preparing preview…</p>
       </Card>
     )
   }
