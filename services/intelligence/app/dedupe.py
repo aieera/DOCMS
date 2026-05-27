@@ -11,12 +11,10 @@ Retention: rows older than 14 days are cleaned by
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from app.db.pool import get_pool
 from app.events.publisher import publish_cloudevent

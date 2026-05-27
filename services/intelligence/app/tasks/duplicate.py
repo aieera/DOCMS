@@ -6,7 +6,7 @@ import logging
 import time
 
 import redis as redispy
-from datasketch import MinHash, MinHashLSH
+from datasketch import MinHash
 
 from app.config import settings
 from app.worker import celery_app
@@ -94,7 +94,6 @@ def detect_duplicates(self, tenant_id: str, document_id: str, version_id: str, t
                 if not already:
                     duplicates.append({"document_id": other_id, "similarity": round(sim, 3), "method": "simhash"})
 
-        import numpy as np
         r.set(f"{key_prefix}{document_id}", mh.hashvalues.tobytes(), ex=90 * 86400)
         r.set(f"{simhash_prefix}{document_id}", str(sh), ex=90 * 86400)
     finally:

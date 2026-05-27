@@ -111,7 +111,6 @@ def stream_completion(
     # fallback, but it must still fail closed against external
     # providers when air_gapped is true.
     from app.llm_routing import (
-        AirGappedError, BreakerOpenError, BudgetExceededError,
         _check_air_gapped, _check_breaker, _check_budget,
         _record_failure, _record_success,
         _classify_error, resolve_provider,

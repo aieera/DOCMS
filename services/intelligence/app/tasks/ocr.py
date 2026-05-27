@@ -11,12 +11,10 @@ import logging
 import os
 import random
 import shutil
-import signal
 import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
-from contextlib import contextmanager
 
 import fitz
 from PIL import Image

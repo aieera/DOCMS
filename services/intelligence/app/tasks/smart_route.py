@@ -29,10 +29,9 @@ import json
 import logging
 import time
 import uuid
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 from statistics import mean
-from typing import Any
 
 from app.config import settings
 from app.error_classifier import classify_error_reason

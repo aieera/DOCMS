@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import tempfile
-from typing import Any
 
 from app.config import settings
 from app.db.pool import get_pool

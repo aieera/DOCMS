@@ -1,7 +1,6 @@
 """Sentence-transformer embedding model — loaded once per worker process."""
 from __future__ import annotations
 import logging
-from typing import Optional
 import numpy as np
 from app.config import settings
 

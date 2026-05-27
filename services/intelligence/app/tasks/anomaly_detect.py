@@ -317,7 +317,7 @@ async def _content_findings(tenant_id: str, docs: list[dict], cfg: dict) -> list
     is unreachable or no docs have embeddings."""
     try:
         from qdrant_client import QdrantClient
-        from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
     except Exception:
         return []
 

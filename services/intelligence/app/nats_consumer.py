@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections import defaultdict
 from typing import Optional
 
 import nats
@@ -32,7 +31,6 @@ from app.dedupe import (
 from app.metrics import ocr_queue_depth
 from app.tasks.auto_tag import auto_tag
 from app.tasks.compliance_scan import compliance_scan
-from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
 from app.tasks.model_retrain import retrain as model_retrain
 from app.tasks.ocr_quality import score as ocr_quality_score
@@ -42,7 +40,6 @@ from app.tasks.training_collector import collect as training_collect
 from app.tasks.classify import classify_document
 from app.tasks.duplicate import detect_duplicates
 from app.tasks.embed import generate_embeddings
-from app.tasks.extract import extract_fields
 from app.tasks.ner import detect_entities
 from app.tasks.ocr import process_ocr
 
@@ -278,7 +275,7 @@ class IntelligenceConsumer:
                     queue="intelligence-ocr",
                 )
                 await msg.ack()
-            except Exception as exc:
+            except Exception:
                 log.exception(
                     "enqueue OCR failed",
                     extra={

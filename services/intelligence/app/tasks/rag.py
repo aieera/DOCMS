@@ -1,7 +1,6 @@
 """RAG Q&A pipeline — hybrid retrieval + RRF fusion + re-rank + LLM."""
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any
@@ -12,7 +11,6 @@ from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 from app.config import settings
 from app.models.embedder import embed_single
 from app.models.reranker import rerank
-from app.worker import celery_app
 
 log = logging.getLogger(__name__)
 
