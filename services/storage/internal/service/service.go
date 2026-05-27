@@ -197,6 +197,15 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	if scanner.IsBlockedExtension(in.Filename) {
 		return nil, vdmserr.Validation("filename", "executable file extensions are not accepted")
 	}
+	// Per-tenant allowlist (migration 000060). Empty allowlist = not
+	// configured = no extra gate; the exec blocklist above still
+	// applies. When configured, BOTH the MIME and the extension must
+	// be in their respective allowlists. Best-effort: a DB error here
+	// fails-open with a warning, so a Postgres outage can't strand
+	// uploads.
+	if err := s.enforceUploadPolicy(ctx, in.TenantID, in.MimeType, in.Filename); err != nil {
+		return nil, err
+	}
 	// Permission check. The handler populates DocumentID / FolderID /
 	// WorkspaceID from gRPC metadata headers (X-Document-ID etc.). At
 	// least one must be present in production; dev paths may skip via
@@ -722,6 +731,68 @@ func (s *Service) emit(ctx context.Context, tx pgx.Tx, tenantID, aggregateID uui
 }
 
 // ---- validation + helpers -------------------------------------------------
+
+// enforceUploadPolicy applies the per-tenant allowlist from
+// tenant_upload_policies. Empty lists (= unconfigured) short-circuit
+// to nil so prior tenants keep working unchanged. When configured,
+// BOTH the MIME and the extension must be in their respective lists
+// — a partial match still rejects, which matches the admin's mental
+// model ("only PDFs" should not let "evil.exe" through just because
+// its sniffed MIME is application/pdf). DB read errors fail-OPEN with
+// a warning: a brief Postgres blip must not strand the upload path
+// for the whole org.
+func (s *Service) enforceUploadPolicy(ctx context.Context, tenantID uuid.UUID, mime, filename string) error {
+	if s.repos.UploadPolicies == nil {
+		return nil
+	}
+	var pol *repository.UploadPolicy
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		p, gerr := s.repos.UploadPolicies.Get(ctx, tx, tenantID)
+		if gerr != nil {
+			return gerr
+		}
+		pol = p
+		return nil
+	})
+	if err != nil {
+		s.log.Warn().Err(err).Str("tenant_id", tenantID.String()).
+			Msg("upload policy read failed; allowlist gate skipped")
+		return nil
+	}
+	if pol == nil || (len(pol.AllowedMimeTypes) == 0 && len(pol.AllowedExtensions) == 0) {
+		return nil
+	}
+	if len(pol.AllowedMimeTypes) > 0 {
+		ok := false
+		for _, m := range pol.AllowedMimeTypes {
+			if strings.EqualFold(m, mime) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return vdmserr.Validation("mime_type", "this file type is not allowed by your organization")
+		}
+	}
+	if len(pol.AllowedExtensions) > 0 {
+		ext := strings.ToLower(path.Ext(filename))
+		ok := false
+		for _, e := range pol.AllowedExtensions {
+			e = strings.ToLower(e)
+			if !strings.HasPrefix(e, ".") {
+				e = "." + e
+			}
+			if e == ext {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return vdmserr.Validation("filename", "this file extension is not allowed by your organization")
+		}
+	}
+	return nil
+}
 
 // ensureUploadPermission runs CheckPermission against the most-specific
 // resource supplied in the input. Returns nil when the user is allowed,

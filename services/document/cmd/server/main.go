@@ -508,6 +508,16 @@ func main() {
 		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(dbInfoMux),
 	))
 
+	// Per-tenant upload format allowlist (migration 000060). Storage
+	// service reads the same table on InitiateUpload; this surface is
+	// the single source of truth admins write to. Owner/admin gated
+	// inside the handler.
+	uploadPolicyMux := http.NewServeMux()
+	handler.NewUploadPolicyHandler(pool).Register(uploadPolicyMux)
+	rootMux.Handle("/api/v1/admin/tenant/upload-policy", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(uploadPolicyMux),
+	))
+
 	// Phase 3 — workspace owner transfer. Outside the grpc-gateway
 	// surface because it's an explicit owner-only action (not an
 	// admin-capability rename) and benefits from a dedicated route

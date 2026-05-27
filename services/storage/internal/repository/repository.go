@@ -18,21 +18,23 @@ import (
 
 // Bundle wires all storage repos.
 type Bundle struct {
-	Pool         *pgxpool.Pool
-	Uploads      UploadRepo
-	Scans        ScanRepo
-	Lifecycle    LifecycleRepo
-	ContentBlobs ContentBlobRepo
+	Pool           *pgxpool.Pool
+	Uploads        UploadRepo
+	Scans          ScanRepo
+	Lifecycle      LifecycleRepo
+	ContentBlobs   ContentBlobRepo
+	UploadPolicies UploadPolicyRepo
 }
 
 // New constructs the bundle.
 func New(pool *pgxpool.Pool) *Bundle {
 	return &Bundle{
-		Pool:         pool,
-		Uploads:      &uploadRepo{},
-		Scans:        &scanRepo{},
-		Lifecycle:    &lifecycleRepo{},
-		ContentBlobs: &contentBlobRepo{},
+		Pool:           pool,
+		Uploads:        &uploadRepo{},
+		Scans:          &scanRepo{},
+		Lifecycle:      &lifecycleRepo{},
+		ContentBlobs:   &contentBlobRepo{},
+		UploadPolicies: NewUploadPolicyRepo(),
 	}
 }
 

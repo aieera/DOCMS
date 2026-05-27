@@ -108,6 +108,10 @@ export default defineConfig(({ command }) => {
             // (intelligence) because http-proxy-middleware routes by
             // object-key insertion order, not longest-match.
             '/api/v1/admin/tenant/license':     wsig('http://localhost:8182'),
+            // Migration 000060 — per-tenant upload format allowlist
+            // (owned by document service). Same insertion-order rule:
+            // must land before /api/v1/admin/tenant catch-all.
+            '/api/v1/admin/tenant/upload-policy': wsig('http://localhost:8182'),
             // ADR 0081 — tenant LLM config (provider keys, defaults).
             // Intelligence service owns it. MUST come before the
             // /api/v1/admin catch-all below: http-proxy-middleware

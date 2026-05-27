@@ -72,9 +72,16 @@ export function useUpload(workspaceId?: string, folderId?: string) {
   // defaults". `useUpload` applies the decision to CreateDocument
   // (folder_id + tags) and POSTs sendFilingFeedback after a
   // successful upload so the training corpus grows on every batch.
+  //
+  // `onComplete` is the post-upload enrichment hook: fires once per
+  // file as soon as createVersion succeeds, with the new document id.
+  // Fire-and-forget — useUpload does not await it, so the next file
+  // can start uploading while the caller (e.g. the enrichment dialog
+  // queue on the workspace page) does its own bookkeeping.
   const uploadFiles = useCallback(async (
     files: File[],
     decisions?: (FilingDecision | null)[],
+    onComplete?: (file: File, docId: string) => void,
   ) => {
     if (!workspaceId) {
       toast.error('Pick a workspace before uploading')
@@ -191,6 +198,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           setStatus(id, 'completed')
           toast.success(`${file.name} — deduplicated, no upload needed`)
           await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+          onComplete?.(file, doc.id)
           continue
         }
 
@@ -221,6 +229,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
         await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+        onComplete?.(file, doc.id)
 
         // ADR 0102 — record the filing decision for the training
         // corpus. Best-effort: a feedback failure must not break the
