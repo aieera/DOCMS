@@ -43,7 +43,7 @@ const EVENT_TYPE_REFERENCE = [
   { prefix: 'dms.billing.*',   desc: 'Subscription + usage signals.' },
 ]
 
-function EventStreamPage() {
+export function EventStreamPage() {
   const qc = useQueryClient()
   const { data: tokens, isLoading } = useQuery({
     queryKey: ['event-stream-tokens'],

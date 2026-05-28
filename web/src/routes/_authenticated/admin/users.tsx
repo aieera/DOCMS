@@ -36,7 +36,7 @@ function buildActivationURL(slug: string, token: string): string {
   return `${window.location.origin}/accept-invite?tenant=${encodeURIComponent(slug)}&token=${encodeURIComponent(token)}`
 }
 
-function UsersPage() {
+export function UsersPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],

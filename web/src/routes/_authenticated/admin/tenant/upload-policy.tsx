@@ -43,7 +43,7 @@ const PRESETS: { label: string; mimes: string[]; exts: string[] }[] = [
   },
 ]
 
-function UploadPolicyPage() {
+export function UploadPolicyPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'upload-policy'],

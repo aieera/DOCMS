@@ -30,7 +30,7 @@ const STATUS_VARIANT: Record<ModelStatus, string> = {
   failed:     'disposed',
 }
 
-function ModelsPage() {
+export function ModelsPage() {
   const qc = useQueryClient()
   const [filterStatus, setFilterStatus] = useState<ModelStatus | ''>('')
 

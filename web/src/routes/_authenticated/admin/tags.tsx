@@ -19,7 +19,7 @@ const PRESET_COLORS = [
   '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#64748b', '#888888',
 ]
 
-function TagsPage() {
+export function TagsPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'tags'], queryFn: listTags })
 

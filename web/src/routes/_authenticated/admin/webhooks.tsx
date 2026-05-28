@@ -37,7 +37,7 @@ const EVENT_PRESETS = [
   'dms.dsr.completed.v1',
 ]
 
-function WebhooksPage() {
+export function WebhooksPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['webhooks'], queryFn: listWebhooks })
 

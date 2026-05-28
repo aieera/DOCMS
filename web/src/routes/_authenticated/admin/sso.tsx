@@ -25,7 +25,7 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 type Step = 'pick' | 'configure' | 'attrs' | 'validate' | 'done'
 
-function SsoPage() {
+export function SsoPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'sso-configs'], queryFn: listSSOConfigs })
 

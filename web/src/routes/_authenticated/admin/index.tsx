@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Activity, AlertTriangle, Antenna, Archive, Brain, CreditCard, FileJson, FileSearch, Globe, Key, KeyRound, Languages, Link2, Mail, MapPinned, Network, PenTool, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Tag, Tags as TagsIcon, Upload, UserCog, Users, Webhook, Workflow, Bot, Database, type LucideIcon } from 'lucide-react'
+import { Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, KeyRound, Link2, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, Tags as TagsIcon, Upload, UserCog, Users, Workflow, Database, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
@@ -19,75 +19,61 @@ interface SectionGroup {
   sections: Section[]
 }
 
+// 2026-05-29 admin-consolidation:
+// Merged tiles replace their per-page predecessors. The standalone
+// keep-list (License, Billing, Workflows, Retention, Legal holds,
+// Audit log, Metadata schema, Share links, API keys, Privacy requests,
+// Bulk, Permission propagation) stays as-is — only navigation grouping
+// changes. Old URLs (/admin/users, /admin/compliance, etc.) still
+// resolve and render the same component for bookmark compatibility.
 const TENANT_GROUP: SectionGroup = {
   label: 'Tenant administration',
   description: 'People, policy, and tenant-wide configuration.',
   sections: [
-    { to: '/admin/users', icon: Users, label: 'Users', desc: 'Manage team members' },
-    { to: '/admin/groups', icon: Shield, label: 'Groups', desc: 'Group permissions' },
-    { to: '/admin/permissions', icon: ShieldCheck, label: 'Permission matrix', desc: 'Role × resource grid (read-only)' },
-    { to: '/admin/sso', icon: Key, label: 'SSO', desc: 'SAML / OIDC config' },
-    { to: '/admin/tenant/identity/ldap', icon: Network, label: 'LDAP / AD', desc: 'Direct-bind + group sync' },
+    { to: '/admin/identity', icon: Users, label: 'Identity & Access', desc: 'Users, groups, roles, SSO, LDAP/AD' },
+    { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
+    { to: '/admin/data-governance', icon: ShieldAlert, label: 'Data governance', desc: 'Compliance overview + residency migrations' },
+    { to: '/admin/tenant/license', icon: ScrollText, label: 'License', desc: 'JWT claims, seats, feature flags, expiry' },
+    { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
     { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
     { to: '/admin/retention', icon: Archive, label: 'Retention', desc: 'Retention policies' },
     { to: '/admin/legal-holds', icon: Scale, label: 'Legal holds', desc: 'Active holds' },
     { to: '/admin/audit-log', icon: ScrollText, label: 'Audit log', desc: 'Activity history' },
-    { to: '/admin/tags', icon: Tag, label: 'Tags', desc: 'Tenant tag catalog' },
     { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
     { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
     { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
     { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
-    { to: '/admin/residency', icon: Globe, label: 'Residency', desc: 'Regions + migrate docs' },
-    { to: '/admin/compliance', icon: ShieldAlert, label: 'Compliance', desc: 'Encryption + residency overview' },
-    { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
-    { to: '/admin/tenant/license', icon: ScrollText, label: 'License', desc: 'JWT claims, seats, feature flags, expiry' },
-    { to: '/admin/settings', icon: Settings, label: 'Settings', desc: 'Tenant config' },
-    { to: '/admin/tenant/upload-policy', icon: Upload, label: 'Upload policy', desc: 'Allowed MIME types + extensions org-wide' },
     { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
     { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
   ],
 }
 
-// Integration / connector surfaces — everything that bridges VaultDMS
-// to a third-party system. Split out of TENANT_GROUP so the home grid
-// is easier to scan; the underlying routes are unchanged.
+// Consolidated to a single hub per the 2026-05-29 plan. Old URLs
+// (/admin/integrations, /admin/connectors, /admin/webhooks,
+// /admin/integrations/{email,events,mcp}) still resolve so external
+// links keep working.
 const INTEGRATIONS_GROUP: SectionGroup = {
   label: 'Integrations',
   description: 'Connect VaultDMS to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
   sections: [
-    { to: '/admin/integrations', icon: PenTool, label: 'eSignature integrations', desc: 'DocuSign + Adobe Sign' },
-    { to: '/admin/connectors', icon: Plug, label: 'Connectors', desc: 'M365 / Salesforce / Google Workspace sync' },
-    { to: '/admin/integrations/events', icon: Antenna, label: 'Event streaming', desc: 'Per-tenant event stream' },
-    { to: '/admin/integrations/email', icon: Mail, label: 'Email ingestion', desc: 'Microsoft / Gmail / IMAP → documents' },
-    { to: '/admin/integrations/mcp', icon: Bot, label: 'MCP (LLM agents)', desc: 'Claude / Cursor / Copilot tool access' },
-    { to: '/admin/webhooks', icon: Webhook, label: 'Webhooks', desc: 'Outbound event subscriptions' },
-    // iPaaS surface (ADR 0090) hidden from the tile grid until external
-    // Zapier/Make/n8n apps are actually published. Code + route remain
-    // wired so re-enabling is just uncommenting this line.
-    // { to: '/admin/integrations/ipaas', icon: Zap, label: 'iPaaS (Zapier / Make / n8n)', desc: 'Issue API keys + see trigger URLs (ADR 0090)' },
+    { to: '/admin/integrations-hub', icon: Plug, label: 'Integrations hub', desc: 'eSignature · Connectors · Webhooks · Email · Event streaming · MCP' },
   ],
 }
 
-// All Intel-Feature 01–10 admin surfaces in one group so they're
-// discoverable from the admin landing page rather than hidden behind
-// direct URLs only.
+// Intelligence surfaces — 4 consolidated tiles + 3 standalone-kept
+// (Routing rules, Filing analytics, Anomaly reports). The merged
+// /admin/intelligence/* URLs still resolve for back-compat.
 const INTEL_GROUP: SectionGroup = {
   label: 'Intelligence',
-  description: 'Auto-tag, smart routing, compliance findings, OCR review, and the model + LLM registries.',
+  description: 'AI provider config, tagging, OCR, PII/PHI scanning, smart routing, and analytics.',
   sections: [
-    { to: '/admin/intelligence/auto-tag', icon: Sparkles, label: 'Auto-tag config', desc: 'Thresholds + weights for tag suggestions' },
-    { to: '/admin/intelligence/tag-review', icon: TagsIcon, label: 'Tag review queue', desc: 'Tenant-wide pending tag suggestions' },
+    { to: '/admin/ai', icon: Brain, label: 'AI & Models', desc: 'Provider keys · NER tier · model registry · usage & cost' },
+    { to: '/admin/tagging', icon: TagsIcon, label: 'Tagging', desc: 'Catalog · auto-tag thresholds · review queue' },
+    { to: '/admin/ocr', icon: FileSearch, label: 'OCR', desc: 'Quality config + review queue' },
+    { to: '/admin/pii-scanning', icon: Shield, label: 'PII / PHI scanning', desc: 'Findings + detection rules' },
     { to: '/admin/intelligence/routing-rules', icon: MapPinned, label: 'Routing rules', desc: 'Smart-routing rules + config' },
     { to: '/admin/intelligence/filing-analytics', icon: FileSearch, label: 'Filing analytics', desc: 'Suggestion acceptance + filing patterns' },
-    { to: '/admin/intelligence/compliance', icon: ShieldAlert, label: 'PII / PHI findings', desc: 'Open compliance findings queue' },
-    { to: '/admin/intelligence/compliance-config', icon: Shield, label: 'Compliance config', desc: 'PHI opt-in, custom patterns, thresholds' },
-    { to: '/admin/intelligence/ocr-review', icon: FileSearch, label: 'OCR review queue', desc: 'Pages flagged by OCR-quality scoring' },
-    { to: '/admin/intelligence/ocr-config', icon: FileSearch, label: 'OCR quality config', desc: 'Scoring thresholds, auto-retry, notify-on-poor' },
     { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans' },
-    { to: '/admin/intelligence/models', icon: Brain, label: 'Model registry', desc: 'Per-tenant fine-tuned classifiers' },
-    { to: '/admin/intelligence/ner-config', icon: Languages, label: 'NER configuration', desc: 'LLM tier toggle + per-tenant API key' },
-    { to: '/admin/intelligence/usage', icon: Activity, label: 'LLM usage', desc: 'Per-tenant token + cost tally across all models' },
-    { to: '/admin/tenant/ai', icon: KeyRound, label: 'AI provider', desc: 'Provider, model, fallback, API key, budget' },
   ],
 }
 

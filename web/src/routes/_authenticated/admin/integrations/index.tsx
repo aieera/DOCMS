@@ -38,7 +38,7 @@ export const Route = createFileRoute('/_authenticated/admin/integrations/')({
   component: IntegrationsIndexPage,
 })
 
-function IntegrationsIndexPage() {
+export function IntegrationsIndexPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'connections' | 'envelopes' | 'notifications' | 'connectors'>('connections')
   const [credentialsFor, setCredentialsFor] = useState<ESignProvider | null>(null)

@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/shadcn/input'
 
 const SOURCE_KEYS = ['ner', 'classification', 'llm', 'pattern'] as const
 
-function AutoTagAdminPage() {
+export function AutoTagAdminPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['auto-tag-config'],

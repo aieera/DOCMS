@@ -14,7 +14,7 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(5)}`
 }
 
-function LLMUsagePage() {
+export function LLMUsagePage() {
   const { data, isLoading } = useQuery({
     queryKey: ['llm-usage'],
     queryFn: getLLMUsage,

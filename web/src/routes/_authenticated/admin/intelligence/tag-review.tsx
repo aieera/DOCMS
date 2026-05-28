@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 const PAGE_SIZE = 50
 
-function TagReviewQueuePage() {
+export function TagReviewQueuePage() {
   const qc = useQueryClient()
   const [minConf, setMinConf] = useState(0)
   const [page, setPage] = useState(0)

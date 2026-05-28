@@ -34,7 +34,7 @@ const MODEL_PRESETS = [
   { value: 'ollama/llama3.1:8b',   label: 'Ollama Llama 3.1 8B (self-hosted)' },
 ]
 
-function NERConfigPage() {
+export function NERConfigPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['ner-config'],

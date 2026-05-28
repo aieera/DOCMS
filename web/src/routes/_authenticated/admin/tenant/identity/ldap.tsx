@@ -69,7 +69,7 @@ const DEFAULT_BODY: LDAPWriteBody = {
   is_active: false,
 }
 
-function LDAPAdminPage() {
+export function LDAPAdminPage() {
   const qc = useQueryClient()
   const { data: configs, isLoading } = useQuery({
     queryKey: ['admin', 'ldap', 'configs'],

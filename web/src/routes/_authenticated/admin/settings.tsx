@@ -40,7 +40,7 @@ const FLAG_LABELS: Record<keyof FeatureFlags, { title: string; help: string }> =
   data_rooms:        { title: 'Data rooms',           help: 'Time-limited M&A / due-diligence collaboration spaces.' },
 }
 
-function SettingsPage() {
+export function SettingsPage() {
   const qc = useQueryClient()
   const { data, isLoading, isError, error, refetch } = useQuery<FeatureFlags>({
     queryKey: ['admin', 'tenant-settings'],

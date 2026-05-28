@@ -27,7 +27,7 @@ import { formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-function GroupsPage() {
+export function GroupsPage() {
   const qc = useQueryClient()
   const { data: groups, isLoading } = useQuery({ queryKey: ['admin', 'groups'], queryFn: listGroups })
 

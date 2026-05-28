@@ -20,7 +20,7 @@ const RISK_COLOR: Record<string, string> = {
   none:     'bg-muted-foreground/40',
 }
 
-function ComplianceAdminDashboard() {
+export function ComplianceAdminDashboard() {
   const [riskFilter, setRiskFilter] = useState<string>('')
 
   const { data: dash, isLoading: dashLoading } = useQuery({

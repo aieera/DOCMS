@@ -48,7 +48,7 @@ function relativeTime(iso: string | null): string {
   return `${Math.floor(ms / 86_400_000)} d ago`
 }
 
-function TenantAIPage() {
+export function TenantAIPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['tenant-llm-config'],

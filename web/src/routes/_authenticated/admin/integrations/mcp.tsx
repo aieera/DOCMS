@@ -30,7 +30,7 @@ const MCP_SCOPES = [
   { id: 'mcp:*',     label: 'mcp:*',     desc: 'Both read and write' },
 ]
 
-function MCPPage() {
+export function MCPPage() {
   const qc = useQueryClient()
   const keysQ = useQuery({ queryKey: ['api-keys'], queryFn: listAPIKeys })
   const toolsQ = useQuery({ queryKey: ['mcp-tools'], queryFn: listMCPTools, refetchInterval: 60_000 })

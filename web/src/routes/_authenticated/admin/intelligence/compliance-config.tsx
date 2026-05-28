@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/shadcn/input'
 
 const RISK_LEVELS = ['critical', 'high', 'medium', 'low'] as const
 
-function ComplianceConfigPage() {
+export function ComplianceConfigPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['compliance-config'],

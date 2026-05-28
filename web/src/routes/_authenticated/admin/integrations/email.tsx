@@ -39,7 +39,7 @@ const SOURCE_OPTIONS: Array<{ value: EmailSource; label: string; desc: string }>
   { value: 'imap',      label: 'IMAP (everything else)',   desc: 'Legacy Exchange, ProtonMail bridge, Fastmail, etc.' },
 ]
 
-function EmailIngestionPage() {
+export function EmailIngestionPage() {
   const qc = useQueryClient()
   const { data: configs, isLoading } = useQuery({
     queryKey: ['email-configs'],

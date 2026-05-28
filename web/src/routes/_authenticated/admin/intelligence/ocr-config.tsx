@@ -44,7 +44,7 @@ function frac(n: number) {
   return Math.max(0, Math.min(1, n / 100))
 }
 
-function OcrConfigPage() {
+export function OcrConfigPage() {
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role) ?? ''
   const canView = (VIEW_ROLES as readonly string[]).includes(role)

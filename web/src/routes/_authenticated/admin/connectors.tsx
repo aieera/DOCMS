@@ -37,7 +37,7 @@ interface InstalledConnector {
   status?: string
 }
 
-function ConnectorsPage() {
+export function ConnectorsPage() {
   const qc = useQueryClient()
   // ADR 0111 — M365 has a real flow (save credentials → modal → OAuth
   // round-trip); the other tiles still hit the stub `/auth-url`

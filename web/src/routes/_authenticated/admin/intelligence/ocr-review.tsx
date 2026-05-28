@@ -30,7 +30,7 @@ interface DrillTarget {
   total: number
 }
 
-function OcrReviewPage() {
+export function OcrReviewPage() {
   const [grade, setGrade] = useState<string>('')
   const [page, setPage] = useState(0)
   const [drill, setDrill] = useState<DrillTarget | null>(null)

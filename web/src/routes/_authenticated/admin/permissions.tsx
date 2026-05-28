@@ -50,7 +50,7 @@ function prettyNote(note: string): string {
     .trim()
 }
 
-function PermissionsPage() {
+export function PermissionsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'permissions-matrix'],
     queryFn: getPermissionMatrix,
