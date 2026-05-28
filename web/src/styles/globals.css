@@ -2,56 +2,81 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * VaultDMS theme — warm Crextio palette (2026-05-28).
+ *
+ * Light mode is the primary target: cream background (#FFFAEF), charcoal
+ * foreground, mustard (#F5C13B) primary. Dark mode is warmed up to a
+ * brown-tinted near-black so the mustard primary still pops without
+ * the slate/blue cast of the previous palette.
+ *
+ * Shadcn tokens are HSL channels (no `hsl()` wrapper) so they compose
+ * with Tailwind's `hsl(var(--x) / <alpha-value>)`. Conversions:
+ *   #FFFAEF cream          → 45 80% 96%
+ *   #1A1A1A charcoal       → 0 0% 10%
+ *   #F5C13B mustard        → 43 90% 60%
+ *   #8C8273 warm muted txt → 34 11% 50%
+ *
+ * --radius bumped to 1rem (16px) so `rounded-lg` = 16px,
+ * `rounded-md` = 14px, `rounded-sm` = 12px throughout. Pleasant
+ * without making small UI elements oversized.
+ */
+
 @layer base {
   :root {
-    /* Canonical shadcn tokens — HSL channels, no hsl() wrapper, so
-     * they compose with Tailwind's `hsl(var(--x) / <alpha-value>)`. */
-    --background: 0 0% 100%;
-    --foreground: 222.2 47.4% 11.2%;
+    --background: 45 80% 96%;
+    --foreground: 0 0% 10%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 42 60% 90%;
+    --muted-foreground: 34 11% 50%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
+    --popover: 45 80% 97%;
+    --popover-foreground: 0 0% 10%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card: 45 85% 97%;
+    --card-foreground: 0 0% 10%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 40 30% 85%;
+    --input: 40 30% 85%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 43 90% 60%;
+    --primary-foreground: 0 0% 10%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 42 65% 91%;
+    --secondary-foreground: 0 0% 10%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* `accent` is used by shadcn for hover backgrounds — keep it
+     * cream-soft rather than the loud mustard, otherwise every
+     * hover flashes yellow. Use `--primary` explicitly for the
+     * mustard call-to-action surfaces. */
+    --accent: 42 70% 88%;
+    --accent-foreground: 0 0% 10%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Warm red — sits on cream without the clinical bright-red feel */
+    --destructive: 5 65% 50%;
+    --destructive-foreground: 45 80% 96%;
 
-    --success: 142.1 76.2% 36.3%;
-    --success-foreground: 355.7 100% 97.3%;
+    /* Olive-y green so success states don't clash with cream */
+    --success: 100 30% 38%;
+    --success-foreground: 45 80% 96%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 48 96% 89%;
+    /* Warm orange (close to the mustard's hue family) */
+    --warning: 30 85% 50%;
+    --warning-foreground: 0 0% 10%;
 
-    --info: 217.2 91.2% 59.8%;
-    --info-foreground: 210 40% 98%;
+    /* Muted blue — used rarely; tuned to coexist with cream */
+    --info: 200 55% 45%;
+    --info-foreground: 45 80% 96%;
 
-    --ring: 222.2 84% 4.9%;
+    --ring: 43 90% 60%;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
 
-    /* Sidebar surfaces (subtle separation from the canvas) */
-    --sidebar: 210 40% 98%;
-    --sidebar-foreground: 222.2 47.4% 11.2%;
-    --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-accent: 210 40% 94%;
-    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar: 42 70% 92%;
+    --sidebar-foreground: 0 0% 10%;
+    --sidebar-border: 40 30% 82%;
+    --sidebar-accent: 43 90% 60%;
+    --sidebar-accent-foreground: 0 0% 10%;
 
     /* Legacy aliases — kept so existing `var(--color-*)` usages don't
      * break while pages migrate. Phase 2/3 will remove these. */
@@ -59,8 +84,8 @@
     --color-bg-secondary: hsl(var(--card));
     --color-text: hsl(var(--foreground));
     --color-text-secondary: hsl(var(--muted-foreground));
-    --color-primary: #1e40af;
-    --color-primary-hover: #1e3a8a;
+    --color-primary: #F5C13B;
+    --color-primary-hover: #D9A422;
     --color-border: hsl(var(--border));
     --color-accent: hsl(var(--accent));
     --color-danger: hsl(var(--destructive));
@@ -72,49 +97,49 @@
   }
 
   .dark {
-    --background: 222.2 47.4% 4%;
-    --foreground: 210 40% 98%;
+    --background: 30 12% 8%;
+    --foreground: 45 60% 92%;
 
-    --muted: 217.2 32.6% 14%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 30 10% 14%;
+    --muted-foreground: 35 12% 65%;
 
-    --popover: 222.2 47.4% 6%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 30 12% 10%;
+    --popover-foreground: 45 60% 92%;
 
-    --card: 222.2 47.4% 6%;
-    --card-foreground: 210 40% 98%;
+    --card: 30 12% 10%;
+    --card-foreground: 45 60% 92%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --border: 30 10% 18%;
+    --input: 30 10% 18%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 43 90% 60%;
+    --primary-foreground: 0 0% 10%;
 
-    --secondary: 217.2 32.6% 14%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 30 10% 14%;
+    --secondary-foreground: 45 60% 92%;
 
-    --accent: 217.2 32.6% 14%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 30 10% 16%;
+    --accent-foreground: 45 60% 92%;
 
-    --destructive: 0 62.8% 50.6%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 5 65% 50%;
+    --destructive-foreground: 45 60% 92%;
 
-    --success: 142.1 70.6% 45.3%;
-    --success-foreground: 144.9 80.4% 10%;
+    --success: 100 30% 50%;
+    --success-foreground: 0 0% 10%;
 
-    --warning: 48 96% 53%;
-    --warning-foreground: 26 83.3% 14.1%;
+    --warning: 35 85% 55%;
+    --warning-foreground: 0 0% 10%;
 
-    --info: 217.2 91.2% 59.8%;
-    --info-foreground: 222.2 47.4% 11.2%;
+    --info: 200 55% 55%;
+    --info-foreground: 0 0% 10%;
 
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 43 90% 60%;
 
-    --sidebar: 222.2 47.4% 5%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-accent: 217.2 32.6% 11%;
-    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar: 30 12% 6%;
+    --sidebar-foreground: 45 60% 92%;
+    --sidebar-border: 30 10% 18%;
+    --sidebar-accent: 43 90% 60%;
+    --sidebar-accent-foreground: 0 0% 10%;
 
     /* Legacy alias overrides for dark mode */
     --color-bg-secondary: hsl(var(--card));
