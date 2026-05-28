@@ -164,6 +164,14 @@ setup: gen-env up migrate seed ## Full local setup: env, docker, migrate, seed
 	@echo "Setup complete. Start the web UI with 'make run-web'."
 	@echo "Then open http://localhost:5173 and log in with the credentials above."
 
+.PHONY: wake
+wake: ## Recover from a Docker/WSL restart: up + verify + restart dead-port containers
+	bash scripts/wake.sh $(ARGS)
+
+.PHONY: wake-rebuild
+wake-rebuild: ## Like 'wake' but rebuilds all images first (~5-10 min)
+	bash scripts/wake.sh --rebuild
+
 .PHONY: gen-env
 gen-env: ## Generate .env from .env.example with random secrets
 	./scripts/gen-dev-env.sh
