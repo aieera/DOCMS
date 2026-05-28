@@ -47,6 +47,7 @@ import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin/integrations'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
+import { Route as AuthenticatedAdminDataGovernanceRouteImport } from './routes/_authenticated/admin/data-governance'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
 import { Route as AuthenticatedAdminBulkRouteImport } from './routes/_authenticated/admin/bulk'
@@ -299,6 +300,12 @@ const AuthenticatedAdminGroupsRoute =
   AuthenticatedAdminGroupsRouteImport.update({
     id: '/admin/groups',
     path: '/admin/groups',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminDataGovernanceRoute =
+  AuthenticatedAdminDataGovernanceRouteImport.update({
+    id: '/admin/data-governance',
+    path: '/admin/data-governance',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminConnectorsRoute =
@@ -579,6 +586,7 @@ export interface FileRoutesByFullPath {
   '/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -661,6 +669,7 @@ export interface FileRoutesByTo {
   '/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
@@ -744,6 +753,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/bulk': typeof AuthenticatedAdminBulkRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
+  '/_authenticated/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -828,6 +838,7 @@ export interface FileRouteTypes {
     | '/admin/bulk'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/data-governance'
     | '/admin/groups'
     | '/admin/integrations'
     | '/admin/legal-holds'
@@ -910,6 +921,7 @@ export interface FileRouteTypes {
     | '/admin/bulk'
     | '/admin/compliance'
     | '/admin/connectors'
+    | '/admin/data-governance'
     | '/admin/groups'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
@@ -992,6 +1004,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/bulk'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
+    | '/_authenticated/admin/data-governance'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/legal-holds'
@@ -1331,6 +1344,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/groups'
       fullPath: '/admin/groups'
       preLoaderRoute: typeof AuthenticatedAdminGroupsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/data-governance': {
+      id: '/_authenticated/admin/data-governance'
+      path: '/admin/data-governance'
+      fullPath: '/admin/data-governance'
+      preLoaderRoute: typeof AuthenticatedAdminDataGovernanceRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/connectors': {
@@ -1708,6 +1728,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminBulkRoute: typeof AuthenticatedAdminBulkRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
+  AuthenticatedAdminDataGovernanceRoute: typeof AuthenticatedAdminDataGovernanceRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRouteWithChildren
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
@@ -1778,6 +1799,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminBulkRoute: AuthenticatedAdminBulkRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
+  AuthenticatedAdminDataGovernanceRoute: AuthenticatedAdminDataGovernanceRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminIntegrationsRoute:
     AuthenticatedAdminIntegrationsRouteWithChildren,

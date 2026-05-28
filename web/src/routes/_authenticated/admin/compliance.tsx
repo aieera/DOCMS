@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ComplianceDashboard } from '@/components/admin/ComplianceDashboard'
 
-function CompliancePage() {
+export function CompliancePage() {
   return (
     <div>
       <PageHeader title="Compliance" description="Data residency, encryption, and retention overview" />

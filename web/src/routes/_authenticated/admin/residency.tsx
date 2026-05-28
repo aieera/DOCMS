@@ -33,7 +33,7 @@ async function fetchClusterRegion(): Promise<string> {
   }
 }
 
-function ResidencyPage() {
+export function ResidencyPage() {
   const qc = useQueryClient()
   const stats = useQuery({ queryKey: ['residency-stats'], queryFn: getResidencyStats })
   const migrations = useQuery({ queryKey: ['residency-migrations'], queryFn: listResidencyMigrations })
