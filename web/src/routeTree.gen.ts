@@ -31,6 +31,7 @@ import { Route as AuthenticatedWorkflowsDesignerRouteImport } from './routes/_au
 import { Route as AuthenticatedSignDoneRouteImport } from './routes/_authenticated/sign.done'
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
+import { Route as AuthenticatedSandboxCrextioRouteImport } from './routes/_authenticated/sandbox.crextio'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -206,6 +207,12 @@ const AuthenticatedSettingsNotificationsRoute =
   AuthenticatedSettingsNotificationsRouteImport.update({
     id: '/settings/notifications',
     path: '/settings/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSandboxCrextioRoute =
+  AuthenticatedSandboxCrextioRouteImport.update({
+    id: '/sandbox/crextio',
+    path: '/sandbox/crextio',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminWorkflowsRoute =
@@ -595,6 +602,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/sign/done': typeof AuthenticatedSignDoneRoute
@@ -676,6 +684,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/sign/done': typeof AuthenticatedSignDoneRoute
@@ -760,6 +769,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/_authenticated/sign/done': typeof AuthenticatedSignDoneRoute
@@ -844,6 +854,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/sandbox/crextio'
     | '/settings/notifications'
     | '/settings/security'
     | '/sign/done'
@@ -925,6 +936,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/sandbox/crextio'
     | '/settings/notifications'
     | '/settings/security'
     | '/sign/done'
@@ -1008,6 +1020,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/sandbox/crextio'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/security'
     | '/_authenticated/sign/done'
@@ -1219,6 +1232,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/notifications'
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sandbox/crextio': {
+      id: '/_authenticated/sandbox/crextio'
+      path: '/sandbox/crextio'
+      fullPath: '/sandbox/crextio'
+      preLoaderRoute: typeof AuthenticatedSandboxCrextioRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
@@ -1724,6 +1744,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
+  AuthenticatedSandboxCrextioRoute: typeof AuthenticatedSandboxCrextioRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRouteWithChildren
   AuthenticatedSignDoneRoute: typeof AuthenticatedSignDoneRoute
@@ -1795,6 +1816,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
+  AuthenticatedSandboxCrextioRoute: AuthenticatedSandboxCrextioRoute,
   AuthenticatedSettingsNotificationsRoute:
     AuthenticatedSettingsNotificationsRoute,
   AuthenticatedSettingsSecurityRoute:
