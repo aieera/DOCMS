@@ -12,6 +12,10 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+        // Display serif used by the Crextio kit
+        // (web/src/components/ui/crextio). Loaded in index.html;
+        // falls back to system serif if Google Fonts is blocked.
+        serif: ['Fraunces', 'ui-serif', 'Georgia', 'serif'],
       },
       colors: {
         // Canonical shadcn semantic tokens — sourced from CSS vars in
