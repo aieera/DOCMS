@@ -238,8 +238,8 @@ export function DocumentDetailBody({
           pending suggestions for this doc. Self-hides otherwise. */}
       <RouteSuggestionBanner documentId={documentId} />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-4">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="flex min-w-0 min-h-[calc(100vh-12rem)] flex-col space-y-4">
           <DocumentTabs tab={tab} onChange={setTab} />
 
           <TabPanel current={tab} value="preview">
@@ -447,7 +447,7 @@ function DocumentSidebar({
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [manageAccessOpen, setManageAccessOpen] = useState(false)
   return (
-    <aside className="space-y-4">
+    <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1">
       {/* Primary actions — most-used commands surfaced as full-width
           buttons so they're tap-friendly and never pushed below the
           fold by intelligence panels. */}
@@ -775,7 +775,7 @@ function DocumentSkeleton() {
           </div>
         </div>
       </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-3">
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-72 w-full" />
