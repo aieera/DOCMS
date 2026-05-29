@@ -60,6 +60,13 @@ function WorkspacePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [aiOpen, setAiOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  // dragCounter pattern: native dragenter/dragleave fire as the cursor
+  // crosses every CHILD element under the drop zone, so a naive
+  // boolean toggles in and out as the user drags over interior
+  // content (cards, badges, etc.), producing visible overlay
+  // flicker. Counting enter/leave events instead — and only
+  // toggling the overlay at 0↔1 transitions — keeps it stable.
+  const dragCounter = useRef(0)
 
   const role = useAuthStore((s) => s.user?.role)
   // Workspace AI settings are admin-curated; matches the policy
@@ -180,6 +187,7 @@ function WorkspacePage() {
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
+    dragCounter.current = 0
     setDragOver(false)
     const files = Array.from(e.dataTransfer.files ?? [])
     if (files.length) startUpload(files)
@@ -187,8 +195,21 @@ function WorkspacePage() {
 
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false) }}
+      onDragEnter={(e) => {
+        e.preventDefault()
+        // Only react to file drags — ignore text/range/etc selections
+        // that produce dragenter on the document body during ordinary
+        // mouse use.
+        if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return
+        dragCounter.current += 1
+        if (dragCounter.current === 1) setDragOver(true)
+      }}
+      onDragOver={(e) => { e.preventDefault() }}
+      onDragLeave={(e) => {
+        e.preventDefault()
+        dragCounter.current = Math.max(0, dragCounter.current - 1)
+        if (dragCounter.current === 0) setDragOver(false)
+      }}
       onDrop={onDrop}
       className="relative space-y-6"
     >

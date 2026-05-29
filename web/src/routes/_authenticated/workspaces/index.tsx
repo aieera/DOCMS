@@ -43,7 +43,7 @@ function WorkspacesPage() {
           <Button
             onClick={() => setCreateOpen(true)}
             data-testid="new-workspace"
-            className="shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+            className="shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
           >
             <Plus className="h-4 w-4" /> New workspace
           </Button>
@@ -111,15 +111,19 @@ function WorkspacesPage() {
 // presentation; the order is meaningless beyond "consistent across
 // renders". 8 hues covers the realistic per-tenant workspace count
 // without two cards looking identical.
+// Desaturated, cream-safe accents. The previous 500-stop palette
+// produced jewel-tone fills that fought the warm theme — these are
+// muted enough to sit on cream without shouting and preserve dark-
+// mode legibility via dark: variants.
 const WORKSPACE_ACCENTS = [
-  'border-s-violet-500/60 bg-violet-500/10 text-violet-600 dark:text-violet-300',
-  'border-s-sky-500/60 bg-sky-500/10 text-sky-600 dark:text-sky-300',
-  'border-s-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-  'border-s-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300',
-  'border-s-rose-500/60 bg-rose-500/10 text-rose-600 dark:text-rose-300',
-  'border-s-cyan-500/60 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300',
-  'border-s-indigo-500/60 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300',
-  'border-s-teal-500/60 bg-teal-500/10 text-teal-600 dark:text-teal-300',
+  'border-s-violet-400/70 bg-violet-100/40 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300',
+  'border-s-sky-400/70 bg-sky-100/40 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+  'border-s-emerald-400/70 bg-emerald-100/40 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+  'border-s-amber-400/70 bg-amber-100/40 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+  'border-s-rose-400/70 bg-rose-100/40 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
+  'border-s-cyan-400/70 bg-cyan-100/40 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
+  'border-s-indigo-400/70 bg-indigo-100/40 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+  'border-s-teal-400/70 bg-teal-100/40 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
 ] as const
 function accentFor(name: string): string {
   let h = 5381
@@ -138,9 +142,9 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
     <Link
       to="/workspaces/$workspaceId"
       params={{ workspaceId: ws.id }}
-      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg"
+      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
     >
-      <Card className={cn('group h-full border-s-[3px] p-5 transition-all hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
+      <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-shadow transition-colors motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
         <div className="flex items-start justify-between">
           <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
             <FolderOpen className="h-5 w-5" />
