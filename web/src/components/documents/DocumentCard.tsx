@@ -30,7 +30,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
           )}
           <div className="min-w-0 flex-1 pe-8">
             <p className="truncate text-sm font-medium group-hover:text-primary" title={doc.title}>{doc.title}</p>
-            <p className="text-xs text-muted-foreground">{formatFileSize(doc.size_bytes)}</p>
+            <p className="text-xs text-muted-foreground">{formatFileSize(doc.total_size_bytes)}</p>
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">

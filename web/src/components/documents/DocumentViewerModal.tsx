@@ -95,10 +95,10 @@ export function DocumentViewerModal({ open, onOpenChange, documentId, workspaceI
                 <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
                   {doc.mime_type}
                 </code>
-                {doc.size_bytes ? (
+                {doc.total_size_bytes ? (
                   <>
                     <span className="mx-1.5" aria-hidden>·</span>
-                    {formatFileSize(doc.size_bytes)}
+                    {formatFileSize(doc.total_size_bytes)}
                   </>
                 ) : null}
               </p>

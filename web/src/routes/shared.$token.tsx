@@ -196,7 +196,7 @@ function SharedViewerPage() {
             <div className="min-w-0">
               <h1 className="truncate text-lg font-semibold" title={doc.title}>{doc.title}</h1>
               <p className="text-sm text-muted-foreground">
-                {doc.mime_type || 'unknown'} · {formatFileSize(doc.size_bytes)}
+                {doc.mime_type || 'unknown'} · {formatFileSize(doc.total_size_bytes)}
                 {doc.created_at ? ` · shared ${formatDateTime(doc.created_at)}` : ''}
               </p>
             </div>

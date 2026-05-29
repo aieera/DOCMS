@@ -31,7 +31,7 @@ const baseDoc: Document = {
   title: 'Acme MSA 2026',
   lifecycle_state: 'active',
   mime_type: 'application/pdf',
-  size_bytes: 1024,
+  total_size_bytes: 1024,
   version_count: 1,
   tags: [],
   created_by: 'u',

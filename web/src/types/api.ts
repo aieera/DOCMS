@@ -55,7 +55,10 @@ export interface Document {
   document_class?: string
   lifecycle_state: string
   mime_type: string
-  size_bytes: number
+  /** Sum of every version's blob size. Wire field is `total_size_bytes`
+   *  on the document service (proto field 15). Empty/zero on legacy
+   *  documents whose versions never recomputed the rollup. */
+  total_size_bytes: number
   version_count: number
   tags: string[]
   created_by: string

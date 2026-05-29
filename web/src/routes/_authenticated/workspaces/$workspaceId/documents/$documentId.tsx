@@ -632,7 +632,7 @@ function DocumentSidebar({
               />
             </span>
           </Row>
-          <Row label="Size">{formatFileSize(doc.size_bytes)}</Row>
+          <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
           <Row label="Versions">{doc.version_count}</Row>
           <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
         </dl>
