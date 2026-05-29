@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import random
 import shutil
@@ -209,6 +210,26 @@ def _ocr_image(path: str) -> list[dict]:
     }]
 
 
+def _scrub_nonfinite(v):
+    """Recursively replace NaN/+Inf/-Inf floats with None so json.dumps + Postgres jsonb accept the payload.
+
+    surya occasionally emits float('nan') for confidence or bbox
+    coordinates on pages with no detectable text. Python's json.dumps
+    serialises NaN as the literal token "NaN" (not standard JSON), and
+    asyncpg's jsonb encoder rejects it with InvalidTextRepresentationError,
+    aborting the whole transaction and leaving the OCR job in a
+    permanent failed state. Converting non-finite floats to None
+    keeps the payload valid JSON.
+    """
+    if isinstance(v, float):
+        return None if (math.isnan(v) or math.isinf(v)) else v
+    if isinstance(v, dict):
+        return {k: _scrub_nonfinite(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_scrub_nonfinite(x) for x in v]
+    return v
+
+
 async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], language: str) -> None:
     """Write every page to ocr_results inside one RLS-scoped transaction.
 
@@ -231,6 +252,19 @@ async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], lan
                 tenant_id, version_id,
             )
             for p in pages:
+                raw_conf = p.get("confidence")
+                try:
+                    conf = float(raw_conf) if raw_conf is not None else 0.0
+                except (TypeError, ValueError):
+                    conf = 0.0
+                if math.isnan(conf) or math.isinf(conf):
+                    log.warning(
+                        "ocr: non-finite confidence %r on version %s page %s — coercing to 0.0",
+                        raw_conf, version_id, p.get("page_number"),
+                    )
+                    conf = 0.0
+                boxes = _scrub_nonfinite(p.get("boxes") or [])
+                word_boxes = _scrub_nonfinite(p.get("word_boxes") or [])
                 await conn.execute(
                     """
                     INSERT INTO ocr_results (
@@ -246,10 +280,10 @@ async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], lan
                     version_id,
                     int(p["page_number"]),
                     p["text"],
-                    float(p["confidence"]),
+                    conf,
                     language,
-                    json.dumps(p.get("boxes") or []),
-                    json.dumps(p.get("word_boxes") or []),
+                    json.dumps(boxes),
+                    json.dumps(word_boxes),
                     int(p.get("processing_time_ms") or 0),
                     p.get("method") or "surya",
                 )
