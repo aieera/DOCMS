@@ -356,8 +356,13 @@ function CreateClauseDialog({
           placeholder="indemnification, mutual, vendor"
         />
         <Button
-          onClick={() => mut.mutate(form)}
-          disabled={!form.name || !form.body_text || mut.isPending}
+          onClick={() => {
+            if (mut.isPending) return
+            if (!form.name.trim()) { toast.error('Name is required'); return }
+            if (!form.body_text.trim()) { toast.error('Body is required'); return }
+            mut.mutate(form)
+          }}
+          disabled={mut.isPending}
           className="w-full"
         >
           {mut.isPending ? 'Creating…' : 'Create clause'}

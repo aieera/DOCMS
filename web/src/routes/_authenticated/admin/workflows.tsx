@@ -24,7 +24,20 @@ function WorkflowsPage() {
     return (
       <div>
         <PageHeader title="Workflows" description="Define and manage approval workflows" />
-        <Skeleton className="h-64" />
+        <div className="grid grid-cols-[260px_1fr] gap-4">
+          <ul className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="rounded-md border border-border p-3">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="mt-2 h-3 w-1/3" />
+              </li>
+            ))}
+          </ul>
+          <div className="rounded-md border border-border p-4">
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="mt-3 h-48 w-full" />
+          </div>
+        </div>
       </div>
     )
   }

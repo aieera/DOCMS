@@ -1,0 +1,93 @@
+# VaultDMS CODEOWNERS
+#
+# Syntax: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Rules:
+# - Last matching pattern wins.
+# - Patterns starting with `/` are anchored to repo root.
+# - Today @ezcobar owns everything. As the team grows, replace the per-area
+#   owners below — the layout is here so future per-service tech leads can
+#   slot in without restructuring the file.
+# - The /docs/security/ block is the security-lead override and must always
+#   require security-lead review, even if a service lead owns the rest of
+#   their service.
+
+# ---------------------------------------------------------------------------
+# Default — catch-all for anything not matched below.
+# ---------------------------------------------------------------------------
+*                                       @ezcobar
+
+# ---------------------------------------------------------------------------
+# Go services (services/*)
+# Each line is a placeholder for the eventual service tech lead.
+# ---------------------------------------------------------------------------
+/services/audit/                        @ezcobar
+/services/auth/                         @ezcobar
+/services/billing/                      @ezcobar
+/services/collaboration/                @ezcobar
+/services/connector/                    @ezcobar
+/services/document/                     @ezcobar
+/services/graphql-gateway/              @ezcobar
+/services/intelligence/                 @ezcobar
+/services/mcp-server/                   @ezcobar
+/services/notification/                 @ezcobar
+/services/policy/                       @ezcobar
+/services/preview/                      @ezcobar
+/services/search/                       @ezcobar
+/services/signature/                    @ezcobar
+/services/signature-signer/             @ezcobar
+/services/storage/                      @ezcobar
+/services/workflow/                     @ezcobar
+
+# ---------------------------------------------------------------------------
+# Shared libraries and contracts — changes here ripple across every service,
+# so they should always need an extra reviewer once a second owner exists.
+# ---------------------------------------------------------------------------
+/pkg/                                   @ezcobar
+/proto/                                 @ezcobar
+/cmd/                                   @ezcobar
+/go.work                                @ezcobar
+/go.work.sum                            @ezcobar
+
+# ---------------------------------------------------------------------------
+# Frontend, mobile, addins, extension
+# ---------------------------------------------------------------------------
+/web/                                   @ezcobar
+/mobile/                                @ezcobar
+/addins/                                @ezcobar
+/extension/                             @ezcobar
+
+# ---------------------------------------------------------------------------
+# Build, deploy, ops, CI
+# ---------------------------------------------------------------------------
+/Makefile                               @ezcobar
+/docker-compose*.yml                    @ezcobar
+/deploy/                                @ezcobar
+/ops/                                   @ezcobar
+/.github/                               @ezcobar
+/.github/workflows/                     @ezcobar
+/scripts/                               @ezcobar
+
+# ---------------------------------------------------------------------------
+# Docs
+# ---------------------------------------------------------------------------
+/docs/                                  @ezcobar
+/docs/adr/                              @ezcobar
+/CHANGELOG.md                           @ezcobar
+/README.md                              @ezcobar
+/SETUP.md                               @ezcobar
+/CLAUDE.md                              @ezcobar
+
+# ---------------------------------------------------------------------------
+# Security — explicit override. Anything under here requires the security
+# lead, regardless of which service it appears to live in. This is the line
+# that backs the pentest remediation workflow in
+# docs/security/pentests/REMEDIATION-PLAYBOOK.md.
+# ---------------------------------------------------------------------------
+/docs/security/                         @ezcobar
+/docs/security/pentests/                @ezcobar
+/docs/security/accepted-risks/          @ezcobar
+/docs/security/threat-model.md          @ezcobar
+/docs/security/customer-trust-report-*.md @ezcobar
+/scripts/pentest-labels.sh              @ezcobar
+/scripts/soc2-evidence.sh               @ezcobar

@@ -19,16 +19,29 @@ export function formatFileSize(bytes: number | null | undefined): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
-export function formatDate(date: string | Date): string {
-  return dayjs(date).format('MMM D, YYYY')
+// Reject obviously-bogus input (null/undefined/empty, invalid, or the
+// Go zero-time "0001-01-01T00:00:00Z" that leaks through when a
+// time.Time field is unpopulated). Search hits in particular have
+// surfaced "2025 years ago" when the indexer skipped created_at.
+function isUsefulDate(date: string | Date | null | undefined): boolean {
+  if (date == null || date === '') return false
+  const d = dayjs(date)
+  return d.isValid() && d.year() > 1900
 }
 
-export function formatDateTime(date: string | Date): string {
-  return dayjs(date).format('MMM D, YYYY h:mm A')
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!isUsefulDate(date)) return '—'
+  return dayjs(date as string | Date).format('MMM D, YYYY')
 }
 
-export function formatRelativeTime(date: string | Date): string {
-  return dayjs(date).fromNow()
+export function formatDateTime(date: string | Date | null | undefined): string {
+  if (!isUsefulDate(date)) return '—'
+  return dayjs(date as string | Date).format('MMM D, YYYY h:mm A')
+}
+
+export function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (!isUsefulDate(date)) return '—'
+  return dayjs(date as string | Date).fromNow()
 }
 
 // Map proto-style lifecycle state enums (LIFECYCLE_STATE_DRAFT) to

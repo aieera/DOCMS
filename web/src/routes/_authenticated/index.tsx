@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { WarmCard, HeadlineMetric } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { listMyTasks, type Task } from '@/api/tasks'
 import { getWorkspaces } from '@/api/workspaces'
@@ -111,38 +112,65 @@ interface KpiCardProps {
 }
 
 function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: KpiCardProps) {
+  // Crextio-kit retrofit. WarmCard cream surface + HeadlineMetric for
+  // the serif numeral; size-bound to match the previous compact KPI
+  // tile rather than the kit's default oversized headline. min-h on
+  // the value box reserves space during the loading state so CLS
+  // stays at zero on slow networks (matched the text-3xl line-box
+  // previously; serif 40px line-box now).
   const inner = (
-    <Card className="group relative overflow-hidden p-5 shadow-sm transition-all hover:border-primary/40 hover:bg-accent/30 hover:shadow-md">
+    <WarmCard
+      padded="md"
+      className={cn(
+        'group relative h-full overflow-hidden transition-all',
+        'hover:-translate-y-0.5 hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+      )}
+    >
       <div className="flex items-start justify-between">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        <span
+          className={cn(
+            'flex h-9 w-9 items-center justify-center rounded-[12px]',
+            'bg-[#F4E8C8] text-[#1A1A1A] transition-colors',
+            'group-hover:bg-[#F5C13B]',
+          )}
+          aria-hidden
+        >
           <Icon className="h-[1.1rem] w-[1.1rem]" />
         </span>
         {href && (
-          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+          <DirectionalIcon
+            name="ChevronRight"
+            className="h-4 w-4 text-[#B9AC95] transition-transform group-hover:translate-x-0.5 group-hover:text-[#1A1A1A]"
+          />
         )}
       </div>
-      <p className="mt-4 text-sm font-medium text-muted-foreground">{label}</p>
-      {/* min-h-9 matches the text-3xl line-box (line-height: 2.25rem)
-          so the value row reserves the same vertical space whether
-          we render the skeleton or the number. Without this the row
-          grows 4px when the query resolves, pushing the hint down
-          and causing measurable CLS on slow connections. */}
-      <div className="mt-1 min-h-9 text-3xl font-semibold tracking-tight">
-        {value === undefined ? <Skeleton className="h-9 w-16" /> : value}
-      </div>
+      {value === undefined ? (
+        <div className="mt-5 flex min-h-[60px] flex-col gap-1">
+          <Skeleton className="h-10 w-20 rounded-md" />
+          <p className="mt-1 text-sm font-medium text-[#8C8273]">{label}</p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <HeadlineMetric
+            value={value}
+            label={label}
+            className="!gap-0 [&>span:last-child]:!text-[12.5px] [&>span:last-child]:!font-medium [&>span:last-child]:!text-[#8C8273]"
+          />
+        </div>
+      )}
       {hint && (
         <p
           className={cn(
             'mt-1 text-xs',
-            hintTone === 'warning' ? 'text-warning' : 'text-muted-foreground',
+            hintTone === 'warning' ? 'text-[#C0392B]' : 'text-[#8C8273]',
           )}
         >
           {hint}
         </p>
       )}
-    </Card>
+    </WarmCard>
   )
-  return href ? <Link to={href} className="block">{inner}</Link> : inner
+  return href ? <Link to={href} className="block h-full">{inner}</Link> : inner
 }
 
 // ---- Quick actions -------------------------------------------------------

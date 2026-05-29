@@ -45,9 +45,18 @@ export function SettingsPage() {
   const { data, isLoading, isError, error, refetch } = useQuery<FeatureFlags>({
     queryKey: ['admin', 'tenant-settings'],
     queryFn: () => getTenantSettings() as Promise<FeatureFlags>,
+    // 60s staleTime suppresses focus-triggered refetches while the user
+    // is editing. The unsaved-draft guard below is the real fix; this
+    // also reduces network noise.
+    staleTime: 60_000,
   })
   const [draft, setDraft] = useState<FeatureFlags | null>(null)
-  useEffect(() => { if (data) setDraft({ ...data }) }, [data])
+  // Seed the draft from the server ONCE on initial load. Any later
+  // refetch (focus, refetchInterval, manual refetch()) must not stomp
+  // unsaved changes — see report 2026-05-28. The save mutation's
+  // onSuccess explicitly resets the draft after a successful PUT, so
+  // post-save sync still happens.
+  useEffect(() => { if (data && draft === null) setDraft({ ...data }) }, [data, draft])
 
   const save = useMutation({
     mutationFn: () => updateTenantSettings(draft as unknown as Record<string, unknown>),

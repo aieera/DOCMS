@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -64,19 +64,72 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 function CommandTrigger() {
   const navigate = useNavigate()
   const { t } = useTranslation('common')
+  const [q, setQ] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Cmd/Ctrl+K (and `/` when no other input is focused) focuses the
+  // header search input. preventDefault so `/` doesn't slip into the
+  // value as a literal character.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'
+      const target = e.target as HTMLElement | null
+      const editingElsewhere =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable
+      const isSlash = e.key === '/' && !editingElsewhere
+      if (isModK || isSlash) {
+        e.preventDefault()
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }
+      if (e.key === 'Escape' && document.activeElement === inputRef.current) {
+        inputRef.current?.blur()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
-    <Button
-      variant="outline"
-      onClick={() => navigate({ to: '/search' })}
-      className="hidden h-9 justify-start gap-2 px-3 text-sm font-normal text-muted-foreground hover:text-foreground sm:inline-flex sm:w-64 md:w-80"
-      aria-label={t('sidebar.search')}
+    <form
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault()
+        const trimmed = q.trim()
+        if (!trimmed) return
+        navigate({ to: '/search', search: { q: trimmed } })
+      }}
+      className={
+        'group hidden h-9 items-center gap-2 rounded-md border border-input bg-background px-3 ' +
+        'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
+        'hover:border-ring/60 sm:inline-flex sm:w-64 md:w-80'
+      }
     >
-      <Search className="h-4 w-4" />
-      <span className="flex-1 text-start">{t('search_placeholder')}</span>
-      <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+      <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
+      <input
+        ref={inputRef}
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t('search_placeholder') ?? 'Search documents…'}
+        aria-label={t('sidebar.search') ?? 'Search'}
+        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <kbd
+        aria-hidden
+        className={
+          'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
+          'border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ' +
+          'group-focus-within:invisible'
+        }
+      >
         <span className="text-xs">⌘</span>K
       </kbd>
-    </Button>
+    </form>
   )
 }
 

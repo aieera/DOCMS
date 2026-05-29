@@ -108,14 +108,6 @@ function SavedSearchesPage() {
     patchMut.mutate({ id: s.id, patch: { notify: !s.notify } })
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Spinner className="h-6 w-6" />
-      </div>
-    )
-  }
-
   return (
     <div>
       <PageHeader
@@ -123,7 +115,13 @@ function SavedSearchesPage() {
         description="Saved queries + alerts. Toggle 'alert' to get notified when new docs match."
       />
 
-      {(rows ?? []).length === 0 && (
+      {isLoading && (
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Spinner className="h-6 w-6" />
+        </div>
+      )}
+
+      {!isLoading && (rows ?? []).length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           You haven&apos;t saved any searches yet. Click <strong>Save</strong> on the search page to get started.
         </div>

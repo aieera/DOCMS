@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, Search, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -36,7 +36,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard', exact: true },
       { to: '/workspaces', icon: FolderOpen, labelKey: 'sidebar.workspaces' },
-      { to: '/search', icon: Search, labelKey: 'sidebar.search' },
+      // /search entry removed 2026-05-29 — search is reached via the
+      // header search bar (Cmd+K). Result page still lives at /search.
       { to: '/ask', icon: Sparkles, labelKey: 'sidebar.ask' },
       { to: '/saved-searches', icon: Bookmark, labelKey: 'sidebar.saved_searches' },
       // ADR 0104 — clause library.

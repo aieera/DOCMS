@@ -219,7 +219,11 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       description="A workspace is a permission scope for a team or project."
     >
       <form
-        onSubmit={(e) => { e.preventDefault(); if (name.trim()) mut.mutate() }}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!name.trim()) { toast.error('Name is required'); return }
+          mut.mutate()
+        }}
         className="space-y-4"
       >
         <Input
@@ -242,7 +246,7 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={mut.isPending}>
             Cancel
           </Button>
-          <Button type="submit" loading={mut.isPending} disabled={!name.trim()}>
+          <Button type="submit" loading={mut.isPending} disabled={mut.isPending}>
             Create workspace
           </Button>
         </div>

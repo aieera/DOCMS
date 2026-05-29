@@ -29,7 +29,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
             </div>
           )}
           <div className="min-w-0 flex-1 pe-8">
-            <p className="truncate text-sm font-medium group-hover:text-[var(--color-primary)]">{doc.title}</p>
+            <p className="truncate text-sm font-medium group-hover:text-[var(--color-primary)]" title={doc.title}>{doc.title}</p>
             <p className="text-xs text-[var(--color-text-secondary)]">{formatFileSize(doc.size_bytes)}</p>
           </div>
         </div>
