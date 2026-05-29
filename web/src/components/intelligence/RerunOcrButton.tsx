@@ -48,6 +48,11 @@ interface Props {
   className?: string
   /** data-testid root; the chevron uses `${testId}-engine-menu`. */
   testId?: string
+  /** Notify the parent when the re-queue request succeeds. Useful for
+   *  suppressing the "OCR appears stuck" banner for a grace period
+   *  after a re-run, since the upload-time-based stuck detection
+   *  would otherwise still flag the doc as stuck. */
+  onRerunSuccess?: () => void
 }
 
 export function RerunOcrButton({
@@ -57,6 +62,7 @@ export function RerunOcrButton({
   successMessage = 'OCR re-queued',
   className,
   testId = 'rerun-ocr',
+  onRerunSuccess,
 }: Props) {
   const qc = useQueryClient()
 
@@ -70,6 +76,7 @@ export function RerunOcrButton({
           : successMessage,
       )
       qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
+      onRerunSuccess?.()
     },
     defaultErrorMessage: 'Re-run failed',
   })

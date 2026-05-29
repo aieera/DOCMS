@@ -1156,6 +1156,12 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const [highlight, setHighlight] = useState(true)
   const lastStatus = useRef<OCRStatus | null>(null)
+  // Tracks the wall-clock time of the most-recent successful Re-run
+  // click. The stuck banner uses uploadedAt to detect "OCR has been
+  // running too long," but a fresh re-queue resets the clock without
+  // updating uploadedAt — so we explicitly suppress the banner for
+  // a grace window after the user re-queues.
+  const [lastRerunAt, setLastRerunAt] = useState<number | null>(null)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['ocr', documentId, versionId],
@@ -1245,6 +1251,7 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
             versionId={versionId}
             canRerun={canRerun}
             testId="ocr-panel-rerun"
+            onRerunSuccess={() => setLastRerunAt(Date.now())}
           />
         </div>
       </Card>
@@ -1258,30 +1265,41 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
           const elapsedMin = uploadedAt
             ? Math.floor((Date.now() - new Date(uploadedAt).getTime()) / 60_000)
             : null
-          const isStuck = status === 'running' && elapsedMin != null && elapsedMin > STUCK_OCR_MINUTES
+          // Grace window: if the user just clicked Re-run, suppress
+          // the stuck banner for 60s so the worker has time to actually
+          // process before we re-declare the doc stuck.
+          const recentlyRerun = lastRerunAt != null && Date.now() - lastRerunAt < 60_000
+          const isStuck =
+            status === 'running' &&
+            elapsedMin != null &&
+            elapsedMin > STUCK_OCR_MINUTES &&
+            !recentlyRerun
           if (isStuck) {
             return (
               <Card
-                className="flex flex-col items-start gap-3 border-warning/40 bg-warning/5 p-4 text-sm"
+                className="flex items-start gap-2 border-warning/40 bg-warning/5 p-4 text-sm"
                 data-testid="ocr-stuck"
               >
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                  <div>
-                    <p className="font-medium">OCR appears to be stuck</p>
-                    <p className="text-muted-foreground">
-                      OCR started {formatRelativeTime(uploadedAt!)} and hasn&apos;t reported back.
-                      The worker may have dropped this job — click Re-run OCR to requeue.
-                    </p>
-                  </div>
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <div>
+                  <p className="font-medium">OCR appears to be stuck</p>
+                  <p className="text-muted-foreground">
+                    OCR started {formatRelativeTime(uploadedAt!)} and hasn&apos;t reported back.
+                    Use <strong className="text-foreground">Re-run OCR</strong> above to requeue.
+                  </p>
                 </div>
-                <RerunOcrButton
-                  documentId={documentId}
-                  versionId={versionId}
-                  canRerun={canRerun}
-                  variant="default"
-                  testId="ocr-stuck-rerun"
-                />
+              </Card>
+            )
+          }
+          // Show a transient "queued" state for the grace window so
+          // the user gets visible confirmation that their click did
+          // something, not just a status flip back to "running" with
+          // the original 5-day-old timestamp.
+          if (recentlyRerun && (status === 'running' || status === 'pending')) {
+            return (
+              <Card className="flex items-center gap-2 p-4 text-sm" data-testid="ocr-rerun-queued">
+                <Spinner className="h-4 w-4" />
+                <span>Re-queued. Worker is processing — text will appear here when complete.</span>
               </Card>
             )
           }
