@@ -11,8 +11,8 @@ interface Props {
 export function CitationList({ citations, onJumpTo }: Props) {
   if (citations.length === 0) return null
   return (
-    <ol className="mt-3 space-y-1 rounded bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-      <div className="mb-1 text-zinc-500">Citations</div>
+    <ol className="mt-3 space-y-1 rounded-xl border border-border/60 bg-background/60 p-3 text-xs">
+      <div className="mb-1 text-muted-foreground">Citations</div>
       {citations.map((c, i) => (
         <li key={`${c.document_id}-${c.chunk_index}-${i}`}>
           <button
@@ -20,11 +20,11 @@ export function CitationList({ citations, onJumpTo }: Props) {
             disabled={!onJumpTo}
             className={[
               'text-start',
-              onJumpTo ? 'text-violet-600 hover:underline' : 'cursor-default',
+              onJumpTo ? 'text-primary hover:underline' : 'cursor-default text-foreground',
             ].join(' ')}
             title={c.text}
           >
-            <span className="font-mono text-[10px] text-zinc-500">
+            <span className="font-mono text-[10px] text-muted-foreground">
               [{i + 1}]
               {c.page ? ` p.${c.page}` : ''}
             </span>{' '}

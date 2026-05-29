@@ -166,10 +166,10 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
   }
 
   return (
-    <div className="flex h-[600px] flex-col rounded border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2 text-sm font-medium dark:border-zinc-900">
+    <div className="flex h-[600px] flex-col rounded-2xl border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm font-medium">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-violet-500" />
+          <MessageSquare className="h-4 w-4 text-primary" />
           Ask about this document
         </div>
         <div className="flex items-center gap-2">
@@ -185,20 +185,20 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
       </div>
 
       {showHistory && (
-        <div className="border-b border-zinc-100 px-4 py-2 text-xs dark:border-zinc-900">
-          <div className="mb-1 text-zinc-500">Previous conversations</div>
+        <div className="border-b border-border px-4 py-2 text-xs">
+          <div className="mb-1 text-muted-foreground">Previous conversations</div>
           {(history?.conversations ?? []).length === 0 ? (
-            <div className="text-zinc-400">No history yet.</div>
+            <div className="text-muted-foreground/70">No history yet.</div>
           ) : (
             <ul className="space-y-1">
               {history!.conversations.map((c) => (
                 <li key={c.id}>
                   <button
                     onClick={() => loadConversation(c)}
-                    className="block w-full truncate rounded px-2 py-1 text-start hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="block w-full truncate rounded-md px-2 py-1 text-start hover:bg-muted"
                   >
-                    <span className="text-zinc-700 dark:text-zinc-200">{c.title}</span>
-                    <span className="ms-2 text-zinc-400">
+                    <span className="text-foreground">{c.title}</span>
+                    <span className="ms-2 text-muted-foreground">
                       {new Date(c.updated_at).toLocaleString()}
                     </span>
                   </button>
@@ -209,9 +209,9 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {messages.length === 0 && !streaming && (
-          <div className="text-sm text-zinc-500">
+          <div className="text-sm text-muted-foreground">
             Ask a question to start. Answers cite the document.
           </div>
         )}
@@ -228,7 +228,7 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
         <SuggestedQuestions onPick={(q) => submit(q)} />
       )}
 
-      <div className="flex items-end gap-2 border-t border-zinc-100 px-3 py-3 dark:border-zinc-900">
+      <div className="flex items-end gap-2 border-t border-border bg-background/40 px-3 py-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -240,7 +240,7 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
           }}
           placeholder="Ask a question…"
           rows={1}
-          className="flex-1 resize-none rounded border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 dark:border-zinc-800 dark:bg-zinc-900"
+          className="flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background"
         />
         {streaming ? (
           <Button size="sm" variant="outline" onClick={cancel} aria-label="Stop">
@@ -268,10 +268,10 @@ function Bubble({
     <div className={['flex', isUser ? 'justify-end' : 'justify-start'].join(' ')}>
       <div
         className={[
-          'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+          'max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm',
           isUser
-            ? 'bg-violet-500 text-white'
-            : 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100',
+            ? 'bg-primary text-primary-foreground'
+            : 'bg-muted text-foreground',
         ].join(' ')}
       >
         <div className="whitespace-pre-wrap">
@@ -300,7 +300,7 @@ function UsageChip({ usage }: { usage: NonNullable<UIMessage['usage']> }) {
         : '—'
   const seconds = (usage.elapsed_ms / 1000).toFixed(1)
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-zinc-300/50 pt-1.5 text-[10px] text-zinc-500 dark:border-zinc-700/50 dark:text-zinc-400">
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-border/60 pt-1.5 text-[10px] text-muted-foreground">
       <span className="font-mono">{usage.model}</span>
       <span>·</span>
       <span title={`${usage.input_tokens.toLocaleString()} input + ${usage.output_tokens.toLocaleString()} output`}>

@@ -16,8 +16,8 @@ const DEFAULTS = [
 
 export function SuggestedQuestions({ onPick }: Props) {
   return (
-    <div className="flex flex-wrap gap-2 px-4 py-2 text-xs">
-      <span className="flex items-center gap-1 text-zinc-500">
+    <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs">
+      <span className="flex items-center gap-1 text-muted-foreground">
         <Sparkles className="h-3 w-3" />
         Suggested:
       </span>
@@ -25,7 +25,7 @@ export function SuggestedQuestions({ onPick }: Props) {
         <button
           key={q}
           onClick={() => onPick(q)}
-          className="rounded-full bg-zinc-100 px-3 py-1 hover:bg-violet-100 dark:bg-zinc-800 dark:hover:bg-violet-950"
+          className="rounded-full bg-muted px-3 py-1 text-foreground transition-colors hover:bg-primary hover:text-primary-foreground"
         >
           {q}
         </button>
