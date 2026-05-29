@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
@@ -78,7 +78,17 @@ function SearchPage() {
   const navigate = useNavigate({ from: '/search' })
   const params = Route.useSearch() as SearchParams
 
-  const query = params.q ?? ''
+  const urlQuery = params.q ?? ''
+  // Debounce keystrokes → URL writes so the search query fires once per
+  // settled value, not once per keystroke. Keep the input value local
+  // so typing stays responsive; URL state catches up after 250ms.
+  const [inputValue, setInputValue] = useState(urlQuery)
+  const debounceRef = useRef<number | null>(null)
+  useEffect(() => { setInputValue(urlQuery) }, [urlQuery])
+  useEffect(() => () => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current)
+  }, [])
+  const query = inputValue
   const facetsToShow = useMemo(
     () => (params.facet ? params.facet.split(',') : DEFAULT_FACETS),
     [params.facet],
@@ -114,11 +124,16 @@ function SearchPage() {
   const enabled = (query?.length ?? 0) >= 2 || asArray(params.tag).length > 0
     || asArray(params.author).length > 0 || asArray(params.classification).length > 0
     || asArray(params.region_pin).length > 0 || asArray(params.lifecycle_state).length > 0
+  // keepPreviousData prevents the results list from collapsing to a
+  // spinner on every keystroke; the previous page stays visible until
+  // the new one resolves so the user can see what changed instead of
+  // a thrashing skeleton.
   const { data, isLoading } = useQuery({
     queryKey: ['search', searchBody],
     queryFn: () => search(searchBody),
     enabled,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
 
   const { data: savedSearches } = useSavedSearches()
@@ -308,7 +323,12 @@ function SearchPage() {
               icon={<Search className="h-5 w-5" />}
               placeholder="Search by filename, content, tags…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setInputValue(v)
+                if (debounceRef.current) window.clearTimeout(debounceRef.current)
+                debounceRef.current = window.setTimeout(() => setQuery(v), 250)
+              }}
               autoFocus
               data-testid="search-input"
               className="h-12 text-base shadow-sm"
