@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	temporalclient "go.temporal.io/sdk/client"
@@ -23,6 +24,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/config"
 	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
@@ -296,14 +298,35 @@ func main() {
 			if tid == "" {
 				tid = get("X-Auth-Tenant-ID")
 			}
+			// Cookie-only browser callers (the React app) reach this
+			// middleware *after* SessionAuthOptional has populated
+			// auth.UserInfo on ctx but *without* X-User-*/X-Tenant-ID
+			// HTTP headers. The previous header-only read produced
+			// gRPC-side ctx with no user_role, so OPA's Rule 6
+			// (org admin/owner) never fired and the list endpoints
+			// 403'd unless the user was an explicit workspace_member.
+			// Fall back to ctx so SessionAuth is the single source.
+			user, userErr := auth.User(r.Context())
+			if tid == "" {
+				if existing, e := auth.GetTenantID(r.Context()); e == nil && existing != uuid.Nil {
+					tid = existing.String()
+				}
+			}
 			if tid != "" {
 				r.Header.Set("Grpc-Metadata-X-Tenant-Id", tid)
 			}
 			if v := get("X-User-ID"); v != "" {
 				r.Header.Set("Grpc-Metadata-X-User-Id", v)
+			} else if userErr == nil && user.ID != uuid.Nil {
+				r.Header.Set("Grpc-Metadata-X-User-Id", user.ID.String())
 			}
 			if v := get("X-User-Role"); v != "" {
 				r.Header.Set("Grpc-Metadata-X-User-Role", v)
+			} else if userErr == nil && user.Role != "" {
+				r.Header.Set("Grpc-Metadata-X-User-Role", user.Role)
+			}
+			if userErr == nil && user.Email != "" {
+				r.Header.Set("Grpc-Metadata-X-User-Name", user.Email)
 			}
 			next.ServeHTTP(w, r)
 		})
