@@ -78,8 +78,8 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
   const threads = useMemo(() => groupThreads(comments ?? []), [comments])
 
   return (
-    <aside className="flex w-full flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
-      <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+    <aside className="flex w-full flex-col rounded-lg border border-border bg-card">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <MessageSquare className="h-4 w-4" /> Comments
         </h2>
@@ -89,7 +89,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
         </label>
       </header>
 
-      <div className="max-h-96 flex-1 overflow-y-auto p-4 space-y-4" data-testid="comments-list">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" data-testid="comments-list">
         {isLoading && <Spinner />}
         {threads.length === 0 && !isLoading && (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
@@ -103,7 +103,7 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
         ))}
       </div>
 
-      <div className="border-t border-[var(--color-border)] p-3">
+      <div className="border-t border-border p-3">
         <NewCommentForm documentId={documentId} />
       </div>
     </aside>
@@ -146,14 +146,14 @@ function ThreadCard({ thread, currentUserId, authorNames }: { thread: Thread; cu
     <article
       className={`rounded-md border p-3 ${
         thread.root.is_resolved
-          ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
-          : 'border-[var(--color-border)] bg-[var(--color-bg)]'
+          ? 'border-success/40 bg-success/10'
+          : 'border-border bg-background'
       }`}
       data-testid={`thread-${thread.root.id}`}
     >
       <CommentBubble c={thread.root} currentUserId={currentUserId} authorNames={authorNames} />
       {thread.replies.length > 0 && (
-        <div className="mt-2 space-y-2 border-s-2 border-[var(--color-border)] ps-3">
+        <div className="mt-2 space-y-2 border-s-2 border-border ps-3">
           {thread.replies.map((r) => (
             <CommentBubble key={r.id} c={r} currentUserId={currentUserId} authorNames={authorNames} />
           ))}
@@ -161,12 +161,12 @@ function ThreadCard({ thread, currentUserId, authorNames }: { thread: Thread; cu
       )}
 
       <div className="mt-2 flex items-center gap-2 text-xs">
-        <button onClick={() => setReplying((v) => !v)} className="text-[var(--color-text-secondary)] hover:underline">
+        <button onClick={() => setReplying((v) => !v)} className="text-muted-foreground hover:underline">
           <Reply className="me-1 inline h-3 w-3" /> Reply
         </button>
         <button
           onClick={() => toggleResolve.mutate()}
-          className={thread.root.is_resolved ? 'text-emerald-700' : 'text-[var(--color-text-secondary)] hover:underline'}
+          className={thread.root.is_resolved ? 'text-success' : 'text-muted-foreground hover:underline'}
           data-testid={`resolve-${thread.root.id}`}
         >
           {thread.root.is_resolved ? (
@@ -198,13 +198,13 @@ function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentU
     <div className="text-sm">
       <div className="flex items-baseline gap-2">
         <strong>{authorNames.get(c.author_id) ?? c.author_id.slice(0, 8)}</strong>
-        <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(c.created_at)}</span>
+        <span className="text-xs text-muted-foreground">{formatRelativeTime(c.created_at)}</span>
         {c.author_id === currentUserId && (
           <button
             onClick={() => remove.mutate()}
             aria-label="Delete your comment"
             title="Delete your comment"
-            className="ms-auto text-[var(--color-text-secondary)] hover:text-red-600"
+            className="ms-auto text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </button>
@@ -213,7 +213,7 @@ function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentU
       <p className="mt-1 whitespace-pre-wrap break-words">
         {segments.map((s, i) =>
           s.userId ? (
-            <span key={i} className="rounded bg-blue-100 px-1 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+            <span key={i} className="rounded bg-primary/10 px-1 text-primary">
               {s.text}
             </span>
           ) : (
@@ -256,7 +256,7 @@ function ReactionBar({ commentId }: { commentId: string }) {
             key={r.emoji}
             onClick={() => toggle.mutate(r.emoji)}
             className={`rounded-full border px-2 py-0.5 text-xs ${
-              mine ? 'border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950/40' : 'border-[var(--color-border)]'
+              mine ? 'border-primary/50 bg-primary/10' : 'border-border'
             }`}
             data-testid={`reaction-${commentId}-${r.emoji}`}
           >
@@ -275,13 +275,13 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs"
+        className="rounded-full border border-border px-1.5 py-0.5 text-xs"
         aria-label="Add reaction"
       >
         <Smile className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute z-10 mt-1 flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-1 shadow">
+        <div className="absolute z-10 mt-1 flex gap-1 rounded-md border border-border bg-card p-1 shadow">
           {QUICK_EMOJI.map((e) => (
             <button
               key={e}
@@ -407,12 +407,12 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSubmit()
         }}
         placeholder={placeholder}
-        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-sm"
+        className="w-full rounded border border-border bg-background p-2 text-sm"
         data-testid={`${testid}-input`}
       />
       {mentionQuery !== null && items.length > 0 && (
         <ul
-          className="absolute bottom-full start-0 z-10 mb-1 max-h-40 w-full overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow"
+          className="absolute bottom-full start-0 z-10 mb-1 max-h-40 w-full overflow-y-auto rounded-md border border-border bg-card shadow"
           data-testid={`${testid}-mentions`}
         >
           {items.map((u) => (
@@ -422,7 +422,7 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
                 className="block w-full px-2 py-1 text-start text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <strong>{u.display_name ?? u.email}</strong>
-                <span className="ms-2 text-xs text-[var(--color-text-secondary)]">{u.email}</span>
+                <span className="ms-2 text-xs text-muted-foreground">{u.email}</span>
               </button>
             </li>
           ))}
