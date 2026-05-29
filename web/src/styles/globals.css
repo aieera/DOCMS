@@ -167,38 +167,18 @@
     font-family: 'IBM Plex Sans Arabic', var(--font-sans);
   }
 
-  /* Visible rail + vivid mustard pill thumb. The 3-px transparent
-     border on the thumb (via background-clip:content-box) gives the
-     pill that "floating" look from the reference GIF — the thumb is
-     narrower than the rail and sits centered. Hover bumps the
-     opacity so the affordance is obvious on use. */
   *::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
   *::-webkit-scrollbar-track {
-    background: hsl(var(--muted));
-    border-radius: 9999px;
-  }
-  *::-webkit-scrollbar-thumb {
-    background: hsl(var(--primary));
-    border: 3px solid transparent;
-    background-clip: content-box;
-    border-radius: 9999px;
-    transition: background-color 120ms ease;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--primary) / 0.85);
-    background-clip: content-box;
-  }
-  *::-webkit-scrollbar-corner {
     background: transparent;
   }
-}
-
-@layer base {
-  :root {
-    scrollbar-color: hsl(var(--primary)) hsl(var(--muted));
-    scrollbar-width: thin;
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 5px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 }
