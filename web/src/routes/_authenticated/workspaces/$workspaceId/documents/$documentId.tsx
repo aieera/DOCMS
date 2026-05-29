@@ -12,7 +12,6 @@ import {
   FileText,
   History,
   ArrowLeftRight,
-  LayoutGrid,
   MessageSquare,
   Network,
   RefreshCw,
@@ -75,12 +74,11 @@ import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 
-type TabKey = 'preview' | 'text' | 'layout' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'redaction' | 'activity'
+type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'redaction' | 'activity'
 
 const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'preview', label: 'Preview', icon: FileText },
-  { key: 'text', label: 'Raw text', icon: FileText },
-  { key: 'layout', label: 'Layout', icon: LayoutGrid },
+  { key: 'text', label: 'Text', icon: FileText },
   { key: 'qa', label: 'Q&A', icon: MessageSquare },
   { key: 'compliance', label: 'Compliance', icon: AlertCircle },
   { key: 'entities', label: 'Entities', icon: FileText },
@@ -260,11 +258,8 @@ export function DocumentDetailBody({
               documentId={documentId}
               versionId={versionId}
               uploadedAt={doc.created_at}
+              mimeType={doc.mime_type}
             />
-          </TabPanel>
-
-          <TabPanel current={tab} value="layout">
-            <LayoutTab documentId={documentId} versionId={versionId} mimeType={doc.mime_type} />
           </TabPanel>
 
           <TabPanel current={tab} value="qa">
@@ -300,10 +295,10 @@ export function DocumentDetailBody({
             <ActivityTabContent documentId={documentId} />
           </TabPanel>
 
-          {/* OCR quality lives below the layout/text content because it
-              quotes per-page scores users compare against the actual
-              text. Self-hides when the scorer hasn't run. */}
-          {(tab === 'text' || tab === 'layout') && (
+          {/* OCR quality lives below the merged Text/Layout content
+              because it quotes per-page scores users compare against
+              the actual text. Self-hides when the scorer hasn't run. */}
+          {tab === 'text' && (
             <OcrQualityPanel documentId={documentId} />
           )}
         </div>
@@ -1151,10 +1146,18 @@ function LegalHoldBanner({ doc }: { doc: Document }) {
 // "OCR is running…" message.
 const STUCK_OCR_MINUTES = 30
 
-function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; versionId?: string; uploadedAt?: string }) {
+function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId: string; versionId?: string; uploadedAt?: string; mimeType: string }) {
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
+  const isPdf = mimeType === 'application/pdf'
+  const qc = useQueryClient()
   const [highlight, setHighlight] = useState(true)
+  // ADR follow-up — Layout merged into Text. The same OCR response
+  // backs both views; the toggle switches the renderer, not the
+  // dataset. Disabled when boxes are empty (text-PDF fast path);
+  // hidden entirely for non-PDF mimes where there's no page raster
+  // to overlay onto.
+  const [showLayout, setShowLayout] = useState(false)
   const lastStatus = useRef<OCRStatus | null>(null)
   // Tracks the wall-clock time of the most-recent successful Re-run
   // click. The stuck banner uses uploadedAt to detect "OCR has been
@@ -1176,7 +1179,29 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
   const entitiesQuery = useQuery({
     queryKey: ['entities', documentId, 'for-raw-text'],
     queryFn: () => listEntities(documentId, { limit: 1000 }),
-    enabled: Boolean(versionId) && highlight,
+    enabled: Boolean(versionId) && (highlight || showLayout),
+  })
+  // Lazy: only fetch the signed PDF URL once the user opts into the
+  // overlay. Keeps the default text-only view free of an extra round
+  // trip the user may not need.
+  const dl = useQuery({
+    queryKey: ['download-url', documentId, versionId],
+    queryFn: () => getDownloadURL(documentId, versionId!),
+    enabled: Boolean(versionId) && isPdf && showLayout,
+    staleTime: 60 * 1000,
+    retry: 1,
+  })
+  // Engine choice ('surya') is an implementation detail kept inside
+  // the mutation; the user-facing surface ('Run full layout analysis')
+  // doesn't mention it. If the OCR pipeline swaps engines later this
+  // call site changes one string; no copy update needed.
+  const runFullLayout = useMutation({
+    mutationFn: () => rerunOCR(documentId, versionId!, { forceEngine: 'surya' }),
+    onSuccess: () => {
+      toast.success('Running full layout analysis — boxes will appear when complete')
+      qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
+    },
+    onError: () => toast.error('Layout analysis rerun failed'),
   })
 
   useEffect(() => {
@@ -1211,6 +1236,23 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
   const status = data?.status ?? 'unknown'
   const pages = data?.pages ?? []
   const avgConf = data?.avg_confidence ?? 0
+  const totalBoxes = pages.reduce((acc, p) => {
+    const raw = p.bounding_boxes
+    const arr = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as { lines?: unknown[] })?.lines)
+        ? (raw as { lines: unknown[] }).lines
+        : []
+    return acc + arr.length
+  }, 0)
+  const canShowLayout = isPdf && totalBoxes > 0
+  // Auto-snap back to text when boxes disappear (engine swap, re-run
+  // mid-view). Prevents the overlay rendering against an empty dataset.
+  if (showLayout && !canShowLayout) {
+    // No useEffect — direct setState on the descending edge is safe
+    // because the conditional is below the bail-out and React batches.
+    setShowLayout(false)
+  }
 
   return (
     <div className="space-y-3">
@@ -1237,6 +1279,26 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             <RefreshCw className="h-3 w-3" />
           </Button>
+          {isPdf && (
+            <label
+              className={`flex items-center gap-1.5 text-xs ${canShowLayout ? 'cursor-pointer text-muted-foreground' : 'cursor-not-allowed text-muted-foreground/50'}`}
+              title={
+                canShowLayout
+                  ? 'Overlay layout bounding boxes on the page image'
+                  : 'No layout boxes available — run full layout analysis to generate them'
+              }
+            >
+              <input
+                type="checkbox"
+                checked={showLayout}
+                disabled={!canShowLayout}
+                onChange={(e) => setShowLayout(e.target.checked)}
+                className="rounded border-input"
+                data-testid="ocr-show-layout"
+              />
+              Show layout boxes
+            </label>
+          )}
           <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -1255,6 +1317,33 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
           />
         </div>
       </Card>
+
+      {/* Layout-skipped notice (text-PDF fast path). Owns the
+          'Run full layout analysis' action. Self-hides once boxes
+          exist. Out of the controls row so the explanation reads
+          left-to-right without crowding the toolbar. */}
+      {isPdf && totalBoxes === 0 && pages.length > 0 && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+          data-testid="layout-skipped-notice"
+        >
+          <span>
+            Layout analysis was skipped — this PDF already had a clean text layer, so we used the fast path instead. Click <strong>Run full layout analysis</strong> to detect headers, tables, and bounding boxes (~1&nbsp;min).
+          </span>
+          {canRerun && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => runFullLayout.mutate()}
+              disabled={runFullLayout.isPending}
+              title="Detect headers, tables, and bounding boxes for this PDF."
+            >
+              {runFullLayout.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+              Run full layout analysis
+            </Button>
+          )}
+        </div>
+      )}
 
       {pages.length === 0 ? (
         (() => {
@@ -1322,6 +1411,28 @@ function OCRPanel({ documentId, versionId, uploadedAt }: { documentId: string; v
             </Card>
           )
         })()
+      ) : showLayout ? (
+        // Layout overlay branch — same OCR data, different renderer.
+        // Loading state guards against rendering before the lazy
+        // download URL resolves; PDFLayoutViewer itself handles the
+        // PDF-fetch error case.
+        dl.isLoading ? (
+          <div className="flex justify-center py-12" data-testid="ocr-layout-loading">
+            <Spinner className="h-6 w-6" />
+          </div>
+        ) : !dl.data?.url ? (
+          <Card className="p-8 text-center text-sm text-muted-foreground">
+            Could not load document URL — switch back to text or retry.
+          </Card>
+        ) : (
+          <Card className="p-3">
+            <PDFLayoutViewer
+              url={dl.data.url}
+              pages={pages}
+              entities={highlight ? entitiesQuery.data?.entities : undefined}
+            />
+          </Card>
+        )
       ) : (
         <div className="space-y-2">
           {pages.map((p, idx) => {
@@ -1375,77 +1486,6 @@ function entitiesForPage(all: Entity[], pages: { text_content: string }[], pageI
   return all
     .filter((e) => e.start_offset >= pageStart && e.end_offset <= pageEnd)
     .map((e) => ({ ...e, start_offset: e.start_offset - pageStart, end_offset: e.end_offset - pageStart }))
-}
-
-function LayoutTab({ documentId, versionId, mimeType }: { documentId: string; versionId?: string; mimeType: string }) {
-  const isPdf = mimeType === 'application/pdf'
-  const qc = useQueryClient()
-  const role = useAuthStore((s) => s.user?.role)
-  const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
-  const ocr = useQuery({
-    queryKey: ['ocr', documentId, versionId],
-    queryFn: () => getOCR(documentId, versionId!),
-    enabled: Boolean(versionId) && isPdf,
-  })
-  const entitiesQ = useQuery({
-    queryKey: ['entities', documentId, 'for-raw-text'],
-    queryFn: () => listEntities(documentId, { limit: 1000 }),
-    enabled: Boolean(versionId) && isPdf,
-  })
-  const dl = useQuery({
-    queryKey: ['download-url', documentId, versionId],
-    queryFn: () => getDownloadURL(documentId, versionId!),
-    enabled: Boolean(versionId) && isPdf,
-    staleTime: 60 * 1000,
-    retry: 1,
-  })
-  // Engine choice ('surya') is an implementation detail kept inside
-  // the mutation; the user-facing surface ("Run full layout analysis")
-  // doesn't mention it. If the OCR pipeline swaps engines later this
-  // call site changes one string; no copy update needed.
-  const runFullLayout = useMutation({
-    mutationFn: () => rerunOCR(documentId, versionId!, { forceEngine: 'surya' }),
-    onSuccess: () => { toast.success('Running full layout analysis — boxes will appear when complete'); qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] }) },
-    onError: () => toast.error('Layout analysis rerun failed'),
-  })
-
-  if (!isPdf) return <Card className="p-8 text-center text-sm text-muted-foreground">Layout view is only available for PDF documents.</Card>
-  if (!versionId) return <Card className="p-8 text-center text-sm text-muted-foreground">No version available — upload a file to enable layout analysis.</Card>
-  if (ocr.isLoading || dl.isLoading) return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-  if (!dl.data?.url) return <Card className="p-8 text-center text-sm text-muted-foreground">Could not load document URL.</Card>
-
-  const pages = ocr.data?.pages ?? []
-  const totalBoxes = pages.reduce((acc, p) => {
-    const raw = p.bounding_boxes
-    const arr = Array.isArray(raw) ? raw : Array.isArray((raw as { lines?: unknown[] })?.lines) ? (raw as { lines: unknown[] }).lines : []
-    return acc + arr.length
-  }, 0)
-  return (
-    <div className="space-y-3">
-      {totalBoxes === 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
-          <span>
-            Layout analysis was skipped — this PDF already had a clean text layer, so we used the fast path instead. Click <strong>Run full layout analysis</strong> to detect headers, tables, and bounding boxes (~1&nbsp;min).
-          </span>
-          {canRerun && (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => runFullLayout.mutate()}
-              disabled={runFullLayout.isPending}
-              title="Detect headers, tables, and bounding boxes for this PDF."
-            >
-              {runFullLayout.isPending ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-              Run full layout analysis
-            </Button>
-          )}
-        </div>
-      )}
-      <Card className="p-3">
-        <PDFLayoutViewer url={dl.data.url} pages={pages} entities={entitiesQ.data?.entities} />
-      </Card>
-    </div>
-  )
 }
 
 // uploaderLabel produces the human-readable name for the document
