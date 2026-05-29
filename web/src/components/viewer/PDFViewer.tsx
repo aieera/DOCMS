@@ -31,6 +31,24 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
   const [visible, setVisible] = useState(true)
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const pageRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(800)
+
+  // ResizeObserver replaces the hard-coded width={800}. The PDF page
+  // tracks the actual column width so it renders correctly when the
+  // right rail is open vs closed, on mobile, and at the lg/xl
+  // breakpoints. Cap at 1100px so very wide screens don't blow the
+  // rendered page up past its natural readable size.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 800
+      if (w > 0) setContainerWidth(Math.min(Math.max(w - 16, 320), 1100))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!documentId || !versionId) return
@@ -121,6 +139,7 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
           )}
         </div>
       )}
+      <div ref={containerRef} className="w-full">
       <Document
         file={url}
         onLoadSuccess={({ numPages: n }) => setNumPages(n)}
@@ -139,12 +158,14 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
+          role="application"
+          aria-label={mode ? `Annotation surface in ${mode} mode` : 'PDF page'}
           className={`relative ${mode ? 'cursor-crosshair' : 'cursor-default'}`}
           data-testid="pdf-page-surface"
         >
           <Page
             pageNumber={page}
-            width={800}
+            width={containerWidth}
             renderTextLayer
             renderAnnotationLayer={false}
           />
@@ -162,6 +183,7 @@ export function PDFViewer({ url, documentId, versionId, canCreate = true }: PDFV
           )}
         </div>
       </Document>
+      </div>
       {numPages > 1 && (
         <div className="mt-3 flex items-center gap-2">
           <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
