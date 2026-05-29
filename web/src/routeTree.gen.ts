@@ -41,10 +41,12 @@ import { Route as AuthenticatedAdminTaggingRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminSsoRouteImport } from './routes/_authenticated/admin/sso'
 import { Route as AuthenticatedAdminShareLinksRouteImport } from './routes/_authenticated/admin/share-links'
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
+import { Route as AuthenticatedAdminRoutingRouteImport } from './routes/_authenticated/admin/routing'
 import { Route as AuthenticatedAdminRetentionRouteImport } from './routes/_authenticated/admin/retention'
 import { Route as AuthenticatedAdminResidencyRouteImport } from './routes/_authenticated/admin/residency'
 import { Route as AuthenticatedAdminPrivacyRouteImport } from './routes/_authenticated/admin/privacy'
 import { Route as AuthenticatedAdminPiiScanningRouteImport } from './routes/_authenticated/admin/pii-scanning'
+import { Route as AuthenticatedAdminPiiRouteImport } from './routes/_authenticated/admin/pii'
 import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_authenticated/admin/permissions'
 import { Route as AuthenticatedAdminPermissionLagRouteImport } from './routes/_authenticated/admin/permission-lag'
 import { Route as AuthenticatedAdminOcrRouteImport } from './routes/_authenticated/admin/ocr'
@@ -90,6 +92,7 @@ import { Route as AuthenticatedAdminIntelligenceFilingAnalyticsRouteImport } fro
 import { Route as AuthenticatedAdminIntelligenceComplianceConfigRouteImport } from './routes/_authenticated/admin/intelligence/compliance-config'
 import { Route as AuthenticatedAdminIntelligenceComplianceRouteImport } from './routes/_authenticated/admin/intelligence/compliance'
 import { Route as AuthenticatedAdminIntelligenceAutoTagRouteImport } from './routes/_authenticated/admin/intelligence/auto-tag'
+import { Route as AuthenticatedAdminIntelligenceAnomalyReportsRouteImport } from './routes/_authenticated/admin/intelligence/anomaly-reports'
 import { Route as AuthenticatedAdminIntelligenceAnomaliesRouteImport } from './routes/_authenticated/admin/intelligence/anomalies'
 import { Route as AuthenticatedAdminIntegrationsMcpRouteImport } from './routes/_authenticated/admin/integrations/mcp'
 import { Route as AuthenticatedAdminIntegrationsIpaasRouteImport } from './routes/_authenticated/admin/integrations/ipaas'
@@ -274,6 +277,12 @@ const AuthenticatedAdminSettingsRoute =
     path: '/admin/settings',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminRoutingRoute =
+  AuthenticatedAdminRoutingRouteImport.update({
+    id: '/admin/routing',
+    path: '/admin/routing',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminRetentionRoute =
   AuthenticatedAdminRetentionRouteImport.update({
     id: '/admin/retention',
@@ -298,6 +307,11 @@ const AuthenticatedAdminPiiScanningRoute =
     path: '/admin/pii-scanning',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminPiiRoute = AuthenticatedAdminPiiRouteImport.update({
+  id: '/admin/pii',
+  path: '/admin/pii',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminPermissionsRoute =
   AuthenticatedAdminPermissionsRouteImport.update({
     id: '/admin/permissions',
@@ -565,6 +579,12 @@ const AuthenticatedAdminIntelligenceAutoTagRoute =
     path: '/admin/intelligence/auto-tag',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminIntelligenceAnomalyReportsRoute =
+  AuthenticatedAdminIntelligenceAnomalyReportsRouteImport.update({
+    id: '/admin/intelligence/anomaly-reports',
+    path: '/admin/intelligence/anomaly-reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminIntelligenceAnomaliesRoute =
   AuthenticatedAdminIntelligenceAnomaliesRouteImport.update({
     id: '/admin/intelligence/anomalies',
@@ -651,10 +671,12 @@ export interface FileRoutesByFullPath {
   '/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
+  '/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
+  '/admin/routing': typeof AuthenticatedAdminRoutingRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
@@ -678,6 +700,7 @@ export interface FileRoutesByFullPath {
   '/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/admin/intelligence/anomaly-reports': typeof AuthenticatedAdminIntelligenceAnomalyReportsRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
   '/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
@@ -741,10 +764,12 @@ export interface FileRoutesByTo {
   '/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
+  '/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
+  '/admin/routing': typeof AuthenticatedAdminRoutingRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
@@ -768,6 +793,7 @@ export interface FileRoutesByTo {
   '/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
   '/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/admin/intelligence/anomaly-reports': typeof AuthenticatedAdminIntelligenceAnomalyReportsRoute
   '/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
   '/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
@@ -834,10 +860,12 @@ export interface FileRoutesById {
   '/_authenticated/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/_authenticated/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/_authenticated/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
+  '/_authenticated/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/_authenticated/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/_authenticated/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
   '/_authenticated/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/_authenticated/admin/retention': typeof AuthenticatedAdminRetentionRoute
+  '/_authenticated/admin/routing': typeof AuthenticatedAdminRoutingRoute
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/_authenticated/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
   '/_authenticated/admin/sso': typeof AuthenticatedAdminSsoRoute
@@ -861,6 +889,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/integrations/ipaas': typeof AuthenticatedAdminIntegrationsIpaasRoute
   '/_authenticated/admin/integrations/mcp': typeof AuthenticatedAdminIntegrationsMcpRoute
   '/_authenticated/admin/intelligence/anomalies': typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  '/_authenticated/admin/intelligence/anomaly-reports': typeof AuthenticatedAdminIntelligenceAnomalyReportsRoute
   '/_authenticated/admin/intelligence/auto-tag': typeof AuthenticatedAdminIntelligenceAutoTagRoute
   '/_authenticated/admin/intelligence/compliance': typeof AuthenticatedAdminIntelligenceComplianceRoute
   '/_authenticated/admin/intelligence/compliance-config': typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
@@ -927,10 +956,12 @@ export interface FileRouteTypes {
     | '/admin/ocr'
     | '/admin/permission-lag'
     | '/admin/permissions'
+    | '/admin/pii'
     | '/admin/pii-scanning'
     | '/admin/privacy'
     | '/admin/residency'
     | '/admin/retention'
+    | '/admin/routing'
     | '/admin/settings'
     | '/admin/share-links'
     | '/admin/sso'
@@ -954,6 +985,7 @@ export interface FileRouteTypes {
     | '/admin/integrations/ipaas'
     | '/admin/integrations/mcp'
     | '/admin/intelligence/anomalies'
+    | '/admin/intelligence/anomaly-reports'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
     | '/admin/intelligence/compliance-config'
@@ -1017,10 +1049,12 @@ export interface FileRouteTypes {
     | '/admin/ocr'
     | '/admin/permission-lag'
     | '/admin/permissions'
+    | '/admin/pii'
     | '/admin/pii-scanning'
     | '/admin/privacy'
     | '/admin/residency'
     | '/admin/retention'
+    | '/admin/routing'
     | '/admin/settings'
     | '/admin/share-links'
     | '/admin/sso'
@@ -1044,6 +1078,7 @@ export interface FileRouteTypes {
     | '/admin/integrations/ipaas'
     | '/admin/integrations/mcp'
     | '/admin/intelligence/anomalies'
+    | '/admin/intelligence/anomaly-reports'
     | '/admin/intelligence/auto-tag'
     | '/admin/intelligence/compliance'
     | '/admin/intelligence/compliance-config'
@@ -1109,10 +1144,12 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/ocr'
     | '/_authenticated/admin/permission-lag'
     | '/_authenticated/admin/permissions'
+    | '/_authenticated/admin/pii'
     | '/_authenticated/admin/pii-scanning'
     | '/_authenticated/admin/privacy'
     | '/_authenticated/admin/residency'
     | '/_authenticated/admin/retention'
+    | '/_authenticated/admin/routing'
     | '/_authenticated/admin/settings'
     | '/_authenticated/admin/share-links'
     | '/_authenticated/admin/sso'
@@ -1136,6 +1173,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/integrations/ipaas'
     | '/_authenticated/admin/integrations/mcp'
     | '/_authenticated/admin/intelligence/anomalies'
+    | '/_authenticated/admin/intelligence/anomaly-reports'
     | '/_authenticated/admin/intelligence/auto-tag'
     | '/_authenticated/admin/intelligence/compliance'
     | '/_authenticated/admin/intelligence/compliance-config'
@@ -1406,6 +1444,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/routing': {
+      id: '/_authenticated/admin/routing'
+      path: '/admin/routing'
+      fullPath: '/admin/routing'
+      preLoaderRoute: typeof AuthenticatedAdminRoutingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/retention': {
       id: '/_authenticated/admin/retention'
       path: '/admin/retention'
@@ -1432,6 +1477,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/pii-scanning'
       fullPath: '/admin/pii-scanning'
       preLoaderRoute: typeof AuthenticatedAdminPiiScanningRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/pii': {
+      id: '/_authenticated/admin/pii'
+      path: '/admin/pii'
+      fullPath: '/admin/pii'
+      preLoaderRoute: typeof AuthenticatedAdminPiiRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/permissions': {
@@ -1749,6 +1801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntelligenceAutoTagRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/intelligence/anomaly-reports': {
+      id: '/_authenticated/admin/intelligence/anomaly-reports'
+      path: '/admin/intelligence/anomaly-reports'
+      fullPath: '/admin/intelligence/anomaly-reports'
+      preLoaderRoute: typeof AuthenticatedAdminIntelligenceAnomalyReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/intelligence/anomalies': {
       id: '/_authenticated/admin/intelligence/anomalies'
       path: '/admin/intelligence/anomalies'
@@ -1897,10 +1956,12 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminOcrRoute: typeof AuthenticatedAdminOcrRoute
   AuthenticatedAdminPermissionLagRoute: typeof AuthenticatedAdminPermissionLagRoute
   AuthenticatedAdminPermissionsRoute: typeof AuthenticatedAdminPermissionsRoute
+  AuthenticatedAdminPiiRoute: typeof AuthenticatedAdminPiiRoute
   AuthenticatedAdminPiiScanningRoute: typeof AuthenticatedAdminPiiScanningRoute
   AuthenticatedAdminPrivacyRoute: typeof AuthenticatedAdminPrivacyRoute
   AuthenticatedAdminResidencyRoute: typeof AuthenticatedAdminResidencyRoute
   AuthenticatedAdminRetentionRoute: typeof AuthenticatedAdminRetentionRoute
+  AuthenticatedAdminRoutingRoute: typeof AuthenticatedAdminRoutingRoute
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
   AuthenticatedAdminShareLinksRoute: typeof AuthenticatedAdminShareLinksRoute
   AuthenticatedAdminSsoRoute: typeof AuthenticatedAdminSsoRoute
@@ -1920,6 +1981,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
   AuthenticatedAdminIntelligenceAnomaliesRoute: typeof AuthenticatedAdminIntelligenceAnomaliesRoute
+  AuthenticatedAdminIntelligenceAnomalyReportsRoute: typeof AuthenticatedAdminIntelligenceAnomalyReportsRoute
   AuthenticatedAdminIntelligenceAutoTagRoute: typeof AuthenticatedAdminIntelligenceAutoTagRoute
   AuthenticatedAdminIntelligenceComplianceRoute: typeof AuthenticatedAdminIntelligenceComplianceRoute
   AuthenticatedAdminIntelligenceComplianceConfigRoute: typeof AuthenticatedAdminIntelligenceComplianceConfigRoute
@@ -1978,10 +2040,12 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminOcrRoute: AuthenticatedAdminOcrRoute,
   AuthenticatedAdminPermissionLagRoute: AuthenticatedAdminPermissionLagRoute,
   AuthenticatedAdminPermissionsRoute: AuthenticatedAdminPermissionsRoute,
+  AuthenticatedAdminPiiRoute: AuthenticatedAdminPiiRoute,
   AuthenticatedAdminPiiScanningRoute: AuthenticatedAdminPiiScanningRoute,
   AuthenticatedAdminPrivacyRoute: AuthenticatedAdminPrivacyRoute,
   AuthenticatedAdminResidencyRoute: AuthenticatedAdminResidencyRoute,
   AuthenticatedAdminRetentionRoute: AuthenticatedAdminRetentionRoute,
+  AuthenticatedAdminRoutingRoute: AuthenticatedAdminRoutingRoute,
   AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
   AuthenticatedAdminShareLinksRoute: AuthenticatedAdminShareLinksRoute,
   AuthenticatedAdminSsoRoute: AuthenticatedAdminSsoRoute,
@@ -2004,6 +2068,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,
   AuthenticatedAdminIntelligenceAnomaliesRoute:
     AuthenticatedAdminIntelligenceAnomaliesRoute,
+  AuthenticatedAdminIntelligenceAnomalyReportsRoute:
+    AuthenticatedAdminIntelligenceAnomalyReportsRoute,
   AuthenticatedAdminIntelligenceAutoTagRoute:
     AuthenticatedAdminIntelligenceAutoTagRoute,
   AuthenticatedAdminIntelligenceComplianceRoute:

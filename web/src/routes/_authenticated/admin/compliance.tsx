@@ -1,21 +1,39 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ComplianceDashboard } from '@/components/admin/ComplianceDashboard'
+import { Spinner } from '@/components/ui/Spinner'
+import { getComplianceOverview } from '@/api/compliance'
 
 export function CompliancePage() {
+  // Previously this page hard-coded encryptionCoverage=94 and a
+  // storageByRegion list that included a fictional 67 GB in
+  // me-south-1. Both numbers contradicted the real DB (56.8%
+  // coverage, zero bytes in me-south-1) and were the basis of two
+  // alarming dashboard signals. The /admin/compliance/overview
+  // endpoint computes them live from documents + content_blobs.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin-compliance-overview'],
+    queryFn: getComplianceOverview,
+    staleTime: 60_000,
+  })
+
   return (
     <div>
       <PageHeader title="Compliance" description="Data residency, encryption, and retention overview" />
-      <ComplianceDashboard
-        docsByState={[
-          { name: 'active', count: 1240 }, { name: 'draft', count: 380 },
-          { name: 'archived', count: 560 }, { name: 'in_review', count: 95 },
-        ]}
-        storageByRegion={[
-          { name: 'us-east-1', gb: 245 }, { name: 'eu-west-1', gb: 128 }, { name: 'me-south-1', gb: 67 },
-        ]}
-        encryptionCoverage={94}
-      />
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+      ) : isError ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          Could not load compliance overview — check the document service is reachable.
+        </div>
+      ) : (
+        <ComplianceDashboard
+          docsByState={data?.docs_by_state ?? []}
+          storageByRegion={data?.storage_by_region ?? []}
+          encryptionCoverage={data?.encryption_coverage ?? 0}
+        />
+      )}
     </div>
   )
 }

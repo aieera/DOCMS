@@ -28,8 +28,11 @@ const PROVIDER_OPTIONS = [
 
 // US-domiciled providers that don't trigger the export-control banner.
 // vLLM is the on-prem path; bedrock is AWS US (regional config is the
-// admin's responsibility and out of scope here).
-const US_PROVIDERS = new Set(['vllm_local', 'openai', 'bedrock'])
+// admin's responsibility and out of scope here). Anthropic itself is
+// headquartered in San Francisco — the original list omitted it which
+// raised a false-positive "not US-domiciled" warning every time an
+// admin picked the platform's default provider.
+const US_PROVIDERS = new Set(['vllm_local', 'openai', 'bedrock', 'anthropic'])
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string[]> = {
   anthropic:  ['anthropic/claude-haiku-4-5', 'anthropic/claude-sonnet-4-6', 'anthropic/claude-opus-4-7'],

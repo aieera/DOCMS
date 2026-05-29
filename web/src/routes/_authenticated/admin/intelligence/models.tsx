@@ -153,7 +153,23 @@ export function ModelsPage() {
             )}
             {!versions.isLoading && rows.length === 0 && (
               <tr><td colSpan={7} className="px-4 py-4 text-center text-muted-foreground">
-                No model versions yet. Trigger a retrain once you have training examples.
+                No model versions yet.
+                {(() => {
+                  // Surface the threshold so the empty state reads as
+                  // "you have N of M examples" instead of an alarming
+                  // "nothing here" when retraining is correctly gated
+                  // on a minimum example count. Falls back to the
+                  // generic copy if either signal hasn't loaded.
+                  const have = stats.data?.total ?? null
+                  const need = config.data?.min_examples_for_retrain ?? null
+                  if (have == null || need == null) {
+                    return ' Trigger a retrain once you have training examples.'
+                  }
+                  if (have < need) {
+                    return ` Need ${need} training examples to trigger a retrain — currently have ${have.toLocaleString()}. Add more by correcting auto-classifications below.`
+                  }
+                  return ` ${have.toLocaleString()} examples available (threshold ${need.toLocaleString()}). Use Trigger retrain above.`
+                })()}
               </td></tr>
             )}
             {rows.map((v) => {

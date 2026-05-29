@@ -21,14 +21,20 @@ interface ProviderDef {
   id: string
   label: string
   description: string
+  /** comingSoon = no backend provider exists yet under
+   *  services/connector/internal/providers. The card shows a
+   *  "Coming soon" badge instead of "Available", and the Install
+   *  button is disabled so admins don't kick off an OAuth flow
+   *  that would dead-end at the stub /auth-url handler. */
+  comingSoon?: boolean
 }
 
 const CATALOG: ProviderDef[] = [
   { id: 'salesforce',   label: 'Salesforce',    description: 'Sync attachments + ContentDocument between Salesforce and a VaultDMS workspace.' },
   { id: 'google_drive', label: 'Google Drive',  description: 'Two-way sync between a Drive folder and a VaultDMS workspace.' },
   { id: 'm365',         label: 'Microsoft 365', description: 'Pull files from SharePoint / OneDrive sites into VaultDMS.' },
-  { id: 'dropbox',      label: 'Dropbox',       description: 'Mirror a Dropbox team folder into a VaultDMS workspace.' },
-  { id: 'box',          label: 'Box',           description: 'Sync Box folders with VaultDMS, mapping permissions per workspace.' },
+  { id: 'dropbox',      label: 'Dropbox',       description: 'Mirror a Dropbox team folder into a VaultDMS workspace.', comingSoon: true },
+  { id: 'box',          label: 'Box',           description: 'Sync Box folders with VaultDMS, mapping permissions per workspace.', comingSoon: true },
 ]
 
 interface InstalledConnector {
@@ -118,6 +124,8 @@ export function ConnectorsPage() {
                     </h3>
                     {isInstalled ? (
                       <Badge variant="active"><CheckCircle2 className="me-1 h-3 w-3" /> Installed</Badge>
+                    ) : p.comingSoon ? (
+                      <Badge variant="outline">Coming soon</Badge>
                     ) : (
                       <Badge variant="draft">Available</Badge>
                     )}
@@ -129,11 +137,13 @@ export function ConnectorsPage() {
                       variant={isInstalled ? 'outline' : 'default'}
                       onClick={() => handleInstallClick(p.id)}
                       loading={install.isPending && install.variables === p.id}
+                      disabled={p.comingSoon}
+                      title={p.comingSoon ? 'OAuth handshake not implemented yet — track ADR 0111 follow-ups for ETA.' : undefined}
                       data-testid={`install-${p.id}`}
                     >
                       <Sparkles className="me-1 h-3.5 w-3.5" />
-                      {isInstalled ? 'Re-authorize' : 'Install'}
-                      <ExternalLink className="ms-1 h-3 w-3" />
+                      {p.comingSoon ? 'Not available' : isInstalled ? 'Re-authorize' : 'Install'}
+                      {!p.comingSoon && <ExternalLink className="ms-1 h-3 w-3" />}
                     </Button>
                   </div>
                 </Card>

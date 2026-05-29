@@ -507,20 +507,29 @@ async def _fetch_workspace_docs(tenant_id: str, workspace_id: str | None) -> lis
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id
             )
+            # document_versions has no is_current flag — the current
+            # version is documents.current_version_id pointing at one
+            # version row. Earlier code referenced v.is_current which
+            # silently aborted every anomaly scan (UndefinedColumn,
+            # surfaced only in worker logs). documents stores the size
+            # rollup as total_size_bytes, not size_bytes.
             rows = await conn.fetch(
                 f"""
                 WITH doc_words AS (
                   SELECT v.tenant_id, v.document_id,
                          COALESCE(SUM(array_length(string_to_array(o.text_content, ' '), 1)), 0) AS word_count
                     FROM document_versions v
+                    JOIN documents d2
+                      ON d2.tenant_id = v.tenant_id
+                     AND d2.id = v.document_id
+                     AND d2.current_version_id = v.id
                     LEFT JOIN ocr_results o
                       ON o.tenant_id = v.tenant_id AND o.version_id = v.id
                    WHERE v.tenant_id = $1
-                     AND v.is_current = true
                    GROUP BY v.tenant_id, v.document_id
                 )
                 SELECT d.id::text, d.workspace_id::text, d.created_by::text,
-                       d.created_at, d.size_bytes,
+                       d.created_at, d.total_size_bytes AS size_bytes,
                        COALESCE(d.document_class, '') AS document_class,
                        COALESCE(dw.word_count, 0) AS word_count
                   FROM documents d

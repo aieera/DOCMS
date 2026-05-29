@@ -501,6 +501,16 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("DELETE /api/v1/admin/trash/{id}", middleware.CorrelationHTTP(trashAuth))
 
+	// Compliance dashboard real-data feed. Replaces the mocked
+	// docs-by-state / storage-by-region / encryption-coverage props
+	// that previously rendered fictional numbers (94% / 67 GB
+	// me-south-1) in /admin/compliance.
+	complianceOverviewMux := http.NewServeMux()
+	handler.NewComplianceOverviewHandler(pool).Register(complianceOverviewMux)
+	rootMux.Handle("GET /api/v1/admin/compliance/overview", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(complianceOverviewMux),
+	))
+
 	// Phase 9 — named versions. PATCH the optional `label` on an existing
 	// version row (migration 000055). Authorization mirrors the document
 	// title-update rule ("edit" on the document).
