@@ -109,12 +109,12 @@ function MetadataSchemaPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
       <PageHeader
         title="Metadata schema"
         description="Tenant-wide JSON Schema for document custom fields. Documents validate their custom fields against this schema on every save."
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={loadExample}>Load example</Button>
             <Button variant="outline" onClick={reset} disabled={!dirty}>
               <RotateCcw className="h-4 w-4" /> Reset
@@ -129,8 +129,8 @@ function MetadataSchemaPage() {
       {isLoading ? (
         <Skeleton className="h-96" />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="overflow-hidden p-0">
+        <div className="grid flex-1 min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Card className="flex min-h-[60vh] flex-col overflow-hidden p-0 lg:min-h-0">
             <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs">
               <div className="flex items-center gap-2">
                 <FileJson className="h-3.5 w-3.5 text-muted-foreground" />
@@ -147,7 +147,7 @@ function MetadataSchemaPage() {
             <textarea
               spellCheck={false}
               className={cn(
-                'h-[520px] w-full resize-none border-0 bg-background p-3 font-mono text-xs leading-relaxed',
+                'min-h-0 w-full flex-1 resize-none border-0 bg-background p-3 font-mono text-xs leading-relaxed',
                 'focus:outline-none focus:ring-1 focus:ring-ring',
                 parsed && !parsed.ok && 'text-destructive',
               )}
@@ -156,18 +156,20 @@ function MetadataSchemaPage() {
             />
           </Card>
 
-          <aside className="space-y-3">
-            <Card className="p-4">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)]">
+            <Card className="flex min-h-0 flex-col p-4">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Fields &amp; required
               </h3>
               <p className="mb-2 text-[11px] text-muted-foreground">
                 Toggle the switch to mark a field required. Documents save-blocks until required fields have a value.
               </p>
-              <SchemaPreview
-                schema={parsed?.ok ? parsed.value : null}
-                onToggleRequired={parsed?.ok ? toggleRequired : undefined}
-              />
+              <div className="min-h-0 flex-1 overflow-y-auto pe-1">
+                <SchemaPreview
+                  schema={parsed?.ok ? parsed.value : null}
+                  onToggleRequired={parsed?.ok ? toggleRequired : undefined}
+                />
+              </div>
             </Card>
             <Card className="space-y-2 p-4 text-xs text-muted-foreground">
               <p>
