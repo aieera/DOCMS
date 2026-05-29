@@ -17,35 +17,32 @@ export function DocumentCard({ doc }: { doc: Document }) {
         to="/workspaces/$workspaceId"
         params={{ workspaceId: doc.workspace_id }}
         search={{ doc: doc.id }}
-        className="group flex flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4 transition-shadow hover:shadow-md"
+        className="group flex flex-col rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         data-testid={`document-card-${doc.id}`}
       >
         <div className="mb-3 flex items-center gap-3">
           {doc.has_thumbnail && doc.thumbnail_url ? (
-            <img src={doc.thumbnail_url} alt="" className="h-10 w-10 rounded object-cover" />
+            <img src={doc.thumbnail_url} alt="" className="h-10 w-10 rounded-lg object-cover" />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded bg-slate-100 dark:bg-slate-700">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <FileIcon mime={doc.mime_type} />
             </div>
           )}
           <div className="min-w-0 flex-1 pe-8">
-            <p className="truncate text-sm font-medium group-hover:text-[var(--color-primary)]" title={doc.title}>{doc.title}</p>
-            <p className="text-xs text-[var(--color-text-secondary)]">{formatFileSize(doc.size_bytes)}</p>
+            <p className="truncate text-sm font-medium group-hover:text-primary" title={doc.title}>{doc.title}</p>
+            <p className="text-xs text-muted-foreground">{formatFileSize(doc.size_bytes)}</p>
           </div>
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1">
             <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
             {!(doc as unknown as { current_version_id?: string }).current_version_id && (
-              <span
-                title="Document has no uploaded content yet"
-                className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-              >
+              <Badge variant="warning" title="Document has no uploaded content yet">
                 No content
-              </span>
+              </Badge>
             )}
           </div>
-          <span className="text-xs text-[var(--color-text-secondary)]">{formatRelativeTime(doc.created_at)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(doc.created_at)}</span>
         </div>
       </Link>
     </DocumentActionsMenu>
