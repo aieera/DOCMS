@@ -80,6 +80,8 @@ export default defineConfig(({ command }) => {
             '/api/v1/admin/share-links':        wsig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': wsig('http://localhost:8182'),
             '/api/v1/admin/documents':          wsig('http://localhost:8182'),
+            // Admin Trash — list soft-deleted, restore, permanent purge.
+            '/api/v1/admin/trash':              wsig('http://localhost:8182'),
             // ADR 0094 — DB driver+capability matrix (document svc owns it).
             '/api/v1/admin/platform/db-info':   wsig('http://localhost:8182'),
             // Document-service intelligence-admin endpoints (must list
