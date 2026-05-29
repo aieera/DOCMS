@@ -134,7 +134,12 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 	if policy, err := s.LoadMFAPolicy(ctx, user.TenantID); err == nil && policy.Mode == "required" {
 		methods, _ := s.ListEnrolledMethods(ctx, user.TenantID, user.ID)
 		if len(methods) == 0 && !user.MFAEnabled {
-			s.incrementLoginAttempt(ctx, org.ID, email)
+			// Do NOT increment the login-attempt counter here. The
+			// credential check just succeeded — the failure is purely
+			// "tenant policy requires MFA, this user has none
+			// enrolled," which is an admin/onboarding state, not a
+			// credential-guessing attempt. Audit the event so the
+			// admin can see it, but don't rate-limit-lock the user.
 			_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "mfa_enrollment_required")
 			return nil, ErrMFAEnrollmentRequired
 		}
@@ -161,7 +166,13 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 // user has zero methods enrolled. Login refuses; an admin must
 // pre-provision a method out-of-band (or temporarily flip the policy
 // to `optional`) before the user can sign in.
-var ErrMFAEnrollmentRequired = vdmserr.Forbidden("multi-factor authentication is required by your administrator; ask them to enroll a method on your account")
+//
+// MUST use Conflict (not Forbidden) so the custom errors.Is in
+// pkg/errors — which compares on (Kind, Code) — doesn't match this
+// against ErrAccountLocked (also a Forbidden). The collision caused
+// every "needs to enrol MFA" response to be re-stamped to 429
+// "account temporarily locked" by the handler's special case.
+var ErrMFAEnrollmentRequired = vdmserr.Conflict("multi-factor authentication is required by your administrator; ask them to enroll a method on your account")
 
 // finishLogin completes a successful authentication by creating a session,
 // writing the audit event, and updating last_login_at — all in one TX.
