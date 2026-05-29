@@ -30,6 +30,8 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
+import { Dialog } from '@/components/ui/Dialog'
+import { cn } from '@/lib/cn'
 
 type Tab = 'my' | 'approvals'
 type View = 'table' | 'kanban'
@@ -39,31 +41,67 @@ const PRIORITY_RANK: Record<TaskPriority, number> = { urgent: 4, high: 3, normal
 
 function TasksPage() {
   const [tab, setTab] = useState<Tab>('my')
+  const TABS: { value: Tab; label: string; testid: string }[] = [
+    { value: 'my',        label: 'My tasks', testid: 'tab-my-tasks' },
+    { value: 'approvals', label: 'Approvals', testid: 'tab-approvals' },
+  ]
+
+  // Real tablist semantics with arrow-key navigation. Replaces the
+  // bespoke TabButton that announced as a generic <button> to screen
+  // readers and had no keyboard navigation between tabs.
+  const onTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const idx = TABS.findIndex((t) => t.value === tab)
+    const next = e.key === 'ArrowRight' ? (idx + 1) % TABS.length : (idx - 1 + TABS.length) % TABS.length
+    setTab(TABS[next].value)
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Tasks" description="Your inbox of work — lightweight tasks and approval steps." />
 
-      <div className="flex items-center gap-1 border-b border-border">
-        <TabButton active={tab === 'my'}        onClick={() => setTab('my')}        label="My tasks" testid="tab-my-tasks" />
-        <TabButton active={tab === 'approvals'} onClick={() => setTab('approvals')} label="Approvals" testid="tab-approvals" />
+      <div
+        role="tablist"
+        aria-label="Tasks views"
+        onKeyDown={onTabKey}
+        className="flex items-center gap-1 border-b border-border"
+      >
+        {TABS.map((t) => {
+          const active = tab === t.value
+          return (
+            <button
+              key={t.value}
+              role="tab"
+              type="button"
+              id={`tasks-tab-${t.value}`}
+              aria-selected={active}
+              aria-controls={`tasks-panel-${t.value}`}
+              tabIndex={active ? 0 : -1}
+              onClick={() => setTab(t.value)}
+              data-testid={t.testid}
+              className={cn(
+                '-mb-px border-b-2 px-3 py-1.5 text-sm font-medium transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                active
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t.label}
+            </button>
+          )
+        })}
       </div>
 
-      {tab === 'my' ? <MyTasksSection /> : <ApprovalsSection />}
+      <div
+        role="tabpanel"
+        id={`tasks-panel-${tab}`}
+        aria-labelledby={`tasks-tab-${tab}`}
+      >
+        {tab === 'my' ? <MyTasksSection /> : <ApprovalsSection />}
+      </div>
     </div>
-  )
-}
-
-function TabButton({ active, onClick, label, testid }: { active: boolean; onClick: () => void; label: string; testid: string }) {
-  return (
-    <button
-      onClick={onClick}
-      data-testid={testid}
-      className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition ${
-        active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-[var(--color-text-primary)]'
-      }`}
-    >
-      {label}
-    </button>
   )
 }
 
@@ -164,7 +202,7 @@ function MyTasksSection() {
         <Button
           onClick={() => setCreating(true)}
           data-testid="new-task"
-          className="gap-2 shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+          className="gap-2 shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
         >
           <Plus className="h-4 w-4" /> New task
         </Button>
@@ -195,15 +233,15 @@ function MyTasksSection() {
 
 function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void }) {
   return (
-    <div className="overflow-hidden rounded border border-border" data-testid="task-table">
-      <table className="w-full text-sm">
-        <thead className="border-b border-border bg-muted/40 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2.5 text-start font-semibold">Title</th>
-            <th className="px-3 py-2.5 text-start font-semibold">Priority</th>
-            <th className="px-3 py-2.5 text-start font-semibold">Due</th>
-            <th className="px-3 py-2.5 text-start font-semibold">Status</th>
-            <th className="px-3 py-2.5 text-end font-semibold">Actions</th>
+    <div className="overflow-x-auto rounded-md border border-border" data-testid="task-table">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Title</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Priority</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Due</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Status</th>
+            <th scope="col" className="px-3 py-2.5 text-end font-semibold">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -485,6 +523,33 @@ function ApprovalsSection() {
   const me = useAuthStore((s) => s.user)
   type Filter = 'pending' | 'completed' | 'all'
   const [filter, setFilter] = useState<Filter>('pending')
+  const [delegateTask, setDelegateTask] = useState<WorkflowTask | null>(null)
+  const [delegateTo, setDelegateTo] = useState('')
+  const [delegateNote, setDelegateNote] = useState('')
+  const [delegating, setDelegating] = useState(false)
+
+  const submitDelegate = async () => {
+    if (!delegateTask) return
+    const to = delegateTo.trim()
+    if (!to) { toast.error('Delegate-to user is required'); return }
+    setDelegating(true)
+    try {
+      await signalStep(delegateTask.instance_id, 0, 'delegate', {
+        delegate_to: to,
+        notes: delegateNote.trim(),
+      })
+      qc.invalidateQueries({ queryKey: ['workflow-tasks'] })
+      toast.success('Task delegated')
+      setDelegateTask(null)
+      setDelegateTo('')
+      setDelegateNote('')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Could not delegate'
+      toast.error(msg)
+    } finally {
+      setDelegating(false)
+    }
+  }
   const statusParam = filter === 'all' ? undefined : filter
   const { data, isLoading } = useQuery({
     queryKey: ['workflow-tasks', filter],
@@ -556,12 +621,9 @@ function ApprovalsSection() {
                   <Button
                     variant="ghost"
                     onClick={() => {
-                      const to = window.prompt('Delegate to (user id):')
-                      if (!to) return
-                      const note = window.prompt('Note (optional):') ?? ''
-                      signalStep(task.instance_id, 0, 'delegate', { delegate_to: to, notes: note })
-                        .then(() => qc.invalidateQueries({ queryKey: ['workflow-tasks'] }))
-                        .catch((e) => toast.error(e?.response?.data?.error ?? 'failed'))
+                      setDelegateTask(task)
+                      setDelegateTo('')
+                      setDelegateNote('')
                     }}
                     disabled={act.isPending}
                     data-testid={`delegate-${task.id}`}
@@ -579,6 +641,41 @@ function ApprovalsSection() {
       )}
       {/* Silence unused: me may inform future per-user filters. */}
       <span className="hidden">{me?.id}</span>
+
+      <Dialog
+        open={delegateTask != null}
+        onOpenChange={(o) => { if (!o) setDelegateTask(null) }}
+        title="Delegate approval"
+        description={delegateTask ? `Pass "${delegateTask.step_name}" to another user.` : undefined}
+      >
+        <form
+          onSubmit={(e) => { e.preventDefault(); void submitDelegate() }}
+          className="space-y-3"
+        >
+          <Input
+            label="Delegate to (user id)"
+            value={delegateTo}
+            onChange={(e) => setDelegateTo(e.target.value)}
+            autoFocus
+            required
+            data-testid="delegate-to-input"
+          />
+          <Input
+            label="Note (optional)"
+            value={delegateNote}
+            onChange={(e) => setDelegateNote(e.target.value)}
+            data-testid="delegate-note-input"
+          />
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => setDelegateTask(null)} disabled={delegating}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={delegating} data-testid="delegate-submit">
+              Delegate
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </section>
   )
 }
