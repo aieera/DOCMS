@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, ChevronsUpDown, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -81,22 +81,22 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
         'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active
-          ? 'bg-sidebar-accent/50 text-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent/30 hover:text-foreground',
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
         collapsed && 'justify-center px-0',
       )}
     >
       {/* Active indicator rail — 2px leading-edge accent at the
           primary color so the active row reads at a glance, paired
-          with a softer background tint (sidebar-accent/50) instead
-          of the previous fully-saturated solid fill. */}
+          with the cream-soft accent background (not the loud mustard
+          sidebar-accent token, which produces zero icon contrast). */}
       {active && (
         <span
           aria-hidden
           className="absolute inset-y-1.5 start-0 w-[2px] rounded-e-full bg-primary"
         />
       )}
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-muted-foreground/80 group-hover:text-foreground')} />
+      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-foreground' : 'text-muted-foreground/80 group-hover:text-foreground')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
@@ -129,14 +129,15 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
 function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
   const user = useAuthStore((s) => s.user)
   if (collapsed || !user) return null
-  // Tenant slug isn't on user, but display_name fits as tenant
-  // identity for now; later this becomes a workspace switcher
-  // populated from /auth/me.tenants[].
+  // Tenant switcher is not yet wired (no auth.tenants[] endpoint).
+  // Render as a non-interactive card with the user's display name +
+  // email so it's clearly a status surface, not a control. Once the
+  // switcher API lands, this becomes a real button again.
   return (
     <div className="border-b border-sidebar-border/60 px-3 py-3">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-background/50 px-3 py-2.5 text-start transition-colors hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <div
+        className="flex w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-background/50 px-3 py-2.5"
+        aria-label={`Signed in as ${user.display_name ?? user.email}`}
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
           {user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
@@ -145,8 +146,7 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
           <span className="block truncate text-xs font-semibold">{user.display_name ?? 'Account'}</span>
           <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
         </span>
-        <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
+      </div>
     </div>
   )
 }
