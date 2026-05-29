@@ -33,8 +33,13 @@ const (
 	SessionSlidingThreshold = 1 * time.Hour // extend when less than this remains
 	SessionMaxLifetime      = 7 * 24 * time.Hour
 	ConcurrentSessionLimit  = 5
+	// Login attempt budget. Raised from 5 → 10 in this 15-minute
+	// window so the MFA flow (login → MFA verify → MFA recovery) has
+	// headroom for normal user error without locking the account
+	// after a single failed enrol attempt. Still tight enough to
+	// shoulder-attack credential stuffing.
 	LoginAttemptsWindow     = 15 * time.Minute
-	LoginAttemptsMax        = 5
+	LoginAttemptsMax        = 10
 	MFASessionTTL           = 5 * time.Minute
 	MFAAttemptsMax          = 3
 	APIKeyMaxPerUser        = 20
