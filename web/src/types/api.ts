@@ -115,7 +115,10 @@ export interface SearchHit {
   folder_id?: string
   tags: string[]
   created_by_name: string
-  created_at: string
+  /** Optional: the backend omits this when the OpenSearch source field
+   *  is missing or unparseable (search/internal/service mapHit) so the
+   *  caller doesn't render the Go zero time as "2025 years ago". */
+  created_at?: string
   size_bytes: number
   mime_type: string
   has_thumbnail: boolean

@@ -460,7 +460,9 @@ function SearchPage() {
                   <div className="mt-2 flex items-center gap-2">
                     <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
-                    <span className="text-xs text-muted-foreground">{formatRelativeTime(hit.created_at)}</span>
+                    {hit.created_at && (
+                      <span className="text-xs text-muted-foreground">{formatRelativeTime(hit.created_at)}</span>
+                    )}
                   </div>
                 </div>
               </Link>

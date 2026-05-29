@@ -546,11 +546,14 @@ func mapHit(h opensearch.RawHit) model.DocumentHit {
 		hit.HasThumbnail = v
 	}
 	if v, ok := src["created_at"].(string); ok {
-		hit.CreatedAt, _ = time.Parse(time.RFC3339, v)
+		if t, err := parseSearchTime(v); err == nil {
+			hit.CreatedAt = &t
+		}
 	}
 	if v, ok := src["updated_at"].(string); ok {
-		t, _ := time.Parse(time.RFC3339, v)
-		hit.UpdatedAt = &t
+		if t, err := parseSearchTime(v); err == nil {
+			hit.UpdatedAt = &t
+		}
 	}
 	if tags, ok := src["tags"].([]any); ok {
 		for _, t := range tags {
@@ -560,6 +563,24 @@ func mapHit(h opensearch.RawHit) model.DocumentHit {
 		}
 	}
 	return hit
+}
+
+// parseSearchTime tries the date formats OpenSearch can serialise dates
+// in for our schema's "date" fields. The default mapping is
+// strict_date_optional_time, which emits one of:
+//   - 2026-05-20T10:30:00Z
+//   - 2026-05-20T10:30:00.123Z
+//   - 2026-05-20T10:30:00+00:00
+//
+// time.RFC3339 alone misses the millisecond variant, which produced
+// hit.CreatedAt == zero-time and "2025 years ago" on the frontend.
+func parseSearchTime(v string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.000Z07:00"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognised time format: %q", v)
 }
 
 func strFromSource(src map[string]any, key string) string {

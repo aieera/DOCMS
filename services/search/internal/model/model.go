@@ -112,7 +112,11 @@ type DocumentHit struct {
 	Tags           []string            `json:"tags,omitempty"`
 	CreatedBy      string              `json:"created_by"`
 	CreatedByName  string              `json:"created_by_name"`
-	CreatedAt      time.Time           `json:"created_at"`
+	// Pointer + omitempty so a parse failure (OpenSearch emits a date
+	// format the mapper doesn't recognise) renders as null on the
+	// frontend instead of the Go zero time (0001-01-01T00:00:00Z),
+	// which formatRelativeTime previously surfaced as "2025 years ago".
+	CreatedAt      *time.Time          `json:"created_at,omitempty"`
 	UpdatedAt      *time.Time          `json:"updated_at,omitempty"`
 	SizeBytes      int64               `json:"size_bytes"`
 	MimeType       string              `json:"mime_type"`
