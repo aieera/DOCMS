@@ -136,6 +136,98 @@ func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id u
 	return nil
 }
 
+// Restore clears deleted_at. Returns ErrNotFound if the row doesn't
+// exist or is not currently soft-deleted.
+func (r *documentRepo) Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET deleted_at = NULL, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL
+	`, tenantID, id)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// HardDelete removes the documents row outright. The caller is
+// responsible for deleting downstream rows (versions, blobs) and
+// the blob bytes from object storage; this only drops the parent.
+func (r *documentRepo) HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		DELETE FROM documents WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// BlobsForDocument returns one row per content blob backing any
+// version of the document — bucket + key so the caller can issue
+// S3 DeleteObject before dropping the rows. Returns blobs even for
+// soft-deleted documents (the whole point of the purge path).
+func (r *documentRepo) BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]struct {
+	BlobID uuid.UUID
+	Bucket string
+	Key    string
+}, error,
+) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT b.id, b.storage_bucket, b.storage_key
+		FROM document_versions v
+		JOIN content_blobs b
+		  ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
+		WHERE v.tenant_id = $1 AND v.document_id = $2
+	`, tenantID, docID)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := []struct {
+		BlobID uuid.UUID
+		Bucket string
+		Key    string
+	}{}
+	for rows.Next() {
+		var b struct {
+			BlobID uuid.UUID
+			Bucket string
+			Key    string
+		}
+		if err := rows.Scan(&b.BlobID, &b.Bucket, &b.Key); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DeleteVersionsAndBlobs removes every version + content_blob row
+// for the document. Caller invokes this inside the same tx as
+// HardDelete after MinIO objects are gone. Cascading FKs handle
+// ocr_results, document_chunks, etc.
+func (r *documentRepo) DeleteVersionsAndBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) error {
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM content_blobs
+		WHERE tenant_id = $1
+		  AND id IN (SELECT content_blob_id FROM document_versions WHERE tenant_id = $1 AND document_id = $2)
+	`, tenantID, docID); err != nil {
+		return mapPgError(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM document_versions WHERE tenant_id = $1 AND document_id = $2
+	`, tenantID, docID); err != nil {
+		return mapPgError(err)
+	}
+	return nil
+}
+
 // UpdateLifecycleState only touches the state column; callers that need
 // finer updates use Update.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
@@ -205,7 +297,10 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 	// below brings ambiguous columns (tenant_id, id, deleted_at) into
 	// scope and Postgres would error on unqualified references.
 	where = append(where, "d.tenant_id = "+add(tenantID))
-	if !f.IncludeDeleted {
+	switch {
+	case f.DeletedOnly:
+		where = append(where, "d.deleted_at IS NOT NULL")
+	case !f.IncludeDeleted:
 		where = append(where, "d.deleted_at IS NULL")
 	}
 	if f.WorkspaceID != nil {

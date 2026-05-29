@@ -294,6 +294,146 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 	})
 }
 
+// ListTrash returns the tenant's soft-deleted documents. Admin/owner
+// only — gated at the handler layer because the trash spans every
+// workspace and the row-level OPA checks (Rule 4/5) would short-circuit
+// the cross-workspace view.
+func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken string) (*model.Page[model.Document], error) {
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f := model.DocumentFilter{
+		DeletedOnly: true,
+		PageSize:    pageSize,
+		PageToken:   pageToken,
+		SortBy:      "updated_at",
+		SortOrder:   "desc",
+	}
+	var page *model.Page[model.Document]
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		page, err = s.repos.Documents.List(ctx, tx, tenantID, f)
+		return err
+	})
+	return page, err
+}
+
+// RestoreDocument clears the soft-delete flag so the document
+// reappears in its original workspace. Legal hold blocks restore the
+// same way it blocks delete — a doc that was held when deleted needs
+// the hold released before the row is "alive" again.
+func (s *DocumentService) RestoreDocument(ctx context.Context, id uuid.UUID) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if cur.DeletedAt == nil {
+			return vdmserr.ErrNotFound
+		}
+		if s.holds != nil {
+			held, herr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
+			if herr != nil {
+				return fmt.Errorf("hold check: %w", herr)
+			}
+			if held {
+				return vdmserr.ErrLegalHold
+			}
+		}
+		if err := s.repos.Documents.Restore(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.document.restored.v1", "document", id,
+			map[string]any{
+				"document_id": id.String(),
+				"restored_by": userID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// PurgeDocument hard-deletes a soft-deleted document. Removes the S3
+// blob bytes first (best-effort — a missing object is not an error so
+// re-runs of a partially-failed purge complete), then drops the DB
+// rows in a single tx. Legal hold blocks the purge unconditionally;
+// the doc must not be currently active (deleted_at IS NOT NULL).
+// Requires admin/owner — gated at the handler layer.
+func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error {
+	if s.s3 == nil {
+		return fmt.Errorf("purge unavailable: s3 client not configured")
+	}
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	// Step 1 — collect blob targets + verify state under a tx.
+	var blobs []struct {
+		BlobID uuid.UUID
+		Bucket string
+		Key    string
+	}
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, gErr := s.repos.Documents.GetByID(ctx, tx, tenantID, id)
+		if gErr != nil {
+			return gErr
+		}
+		if cur.DeletedAt == nil {
+			return vdmserr.Validation("document", "must be soft-deleted before purge")
+		}
+		if s.holds != nil {
+			held, hErr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
+			if hErr != nil {
+				return fmt.Errorf("hold check: %w", hErr)
+			}
+			if held {
+				return vdmserr.ErrLegalHold
+			}
+		}
+		bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, id)
+		if bErr != nil {
+			return bErr
+		}
+		blobs = bs
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Step 2 — delete object bytes. DeleteObject returns nil on
+	// NoSuchKey so a re-run after a half-failed purge completes.
+	for _, b := range blobs {
+		if err := s.s3.DeleteObject(ctx, b.Bucket, b.Key); err != nil {
+			return fmt.Errorf("s3 delete %s/%s: %w", b.Bucket, b.Key, err)
+		}
+	}
+	// Step 3 — drop DB rows + emit audit in one tx. Cascading FKs
+	// remove ocr_results, document_chunks, etc.
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		if err := s.repos.Documents.DeleteVersionsAndBlobs(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		if err := s.repos.Documents.HardDelete(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		evt, evtErr := model.NewOutboxEvent(tenantID, "dms.document.purged.v1", "document", id,
+			map[string]any{
+				"document_id": id.String(),
+				"purged_by":   userID.String(),
+				"blob_count":  len(blobs),
+			})
+		if evtErr != nil {
+			return evtErr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
 // MoveDocument re-parents a document. Blocked by legal hold. Refuses a move
 // that would change the document's region_pin — region is immutable after
 // creation and is enforced via data-residency policy.

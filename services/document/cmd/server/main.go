@@ -153,6 +153,12 @@ func main() {
 			log.Warn(ctx).Err(err).Msg("VAULTDMS_LOCAL_KEK base64 decode failed; tenant secrets disabled")
 		}
 	}
+	// Admin Trash purge needs the S3 client to delete blob bytes
+	// alongside the DB rows. Nil-safe — when MinIO isn't wired,
+	// PurgeDocument fails with a clear "s3 not configured" error.
+	if s3c != nil {
+		svc.SetS3Client(s3c)
+	}
 	// LocalKeyManager — same KEK used by storage's encrypt-at-rest path.
 	// The decrypt-stream handler unwraps per-blob DEKs through this so
 	// downloads of envelope-encrypted blobs return plaintext. Nil leaves
@@ -483,6 +489,17 @@ func main() {
 		middleware.CorrelationHTTP(
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(retentionExemptMux),
 		))
+
+	// Admin Trash — list soft-deleted docs + restore + permanent
+	// purge (S3 + DB). All three routes role-gate to owner/admin
+	// inside the handler. SessionAuth populates ctx so the service
+	// layer's requireRole + tx wrapper see the right tenant/user.
+	trashMux := http.NewServeMux()
+	handler.NewTrashHandler(svc).Register(trashMux)
+	trashAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(trashMux)
+	rootMux.Handle("GET /api/v1/admin/trash", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("POST /api/v1/admin/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("DELETE /api/v1/admin/trash/{id}", middleware.CorrelationHTTP(trashAuth))
 
 	// Phase 9 — named versions. PATCH the optional `label` on an existing
 	// version row (migration 000055). Authorization mirrors the document

@@ -22,6 +22,14 @@ type DocumentRepository interface {
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error)
 	Update(ctx context.Context, tx pgx.Tx, d *model.Document) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]struct {
+		BlobID uuid.UUID
+		Bucket string
+		Key    string
+	}, error)
+	DeleteVersionsAndBlobs(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) error
 	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, f model.DocumentFilter) (*model.Page[model.Document], error)
 	UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error
 	SetCurrentVersion(ctx context.Context, tx pgx.Tx, tenantID, id, versionID uuid.UUID, sha, mime string, size int64) error

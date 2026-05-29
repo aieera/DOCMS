@@ -206,6 +206,9 @@ type DocumentFilter struct {
 	PageSize       int
 	PageToken      string
 	IncludeDeleted bool
+	// DeletedOnly flips the filter to soft-deleted rows only. Used by
+	// the admin Trash list, which doesn't scope by workspace.
+	DeletedOnly bool
 }
 
 // VersionFilter is pagination scoped to a single document.

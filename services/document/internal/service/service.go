@@ -27,6 +27,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/vaultdms/vaultdms/pkg/storage"
 	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
@@ -66,7 +67,14 @@ type DocumentService struct {
 	// Read by entity-name validation to decide between warn (non-prod)
 	// and hard-reject (prod). Empty string = treat as non-prod (lenient).
 	env string
+	// s3 is set by main.go for the admin Trash purge path. Nil means
+	// PurgeDocument cannot proceed (admin Trash falls back to a 503).
+	s3 *storage.S3Client
 }
+
+// SetS3Client wires the S3/MinIO client used by the admin Trash
+// purge path so it can delete blob bytes alongside the DB rows.
+func (s *DocumentService) SetS3Client(c *storage.S3Client) { s.s3 = c }
 
 // SetLocalKEK installs the AES-256 key used to encrypt/decrypt small
 // per-tenant secrets stored in the document DB (currently the LLM API
