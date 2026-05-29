@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -43,6 +43,10 @@ import { CompareDialog } from '@/components/documents/CompareDialog'
 import { VersionHistory } from '@/components/documents/VersionHistory'
 import { RetentionExemptToggle } from '@/components/documents/RetentionExemptToggle'
 import { ManageAccessDialog } from '@/components/documents/ManageAccessDialog'
+import { Pencil } from 'lucide-react'
+import { Input } from '@/components/ui/shadcn/input'
+import { LabeledSelect as ShadcnSelect } from '@/components/ui/shadcn/select'
+import { useUpdateDocument } from '@/hooks/useDocuments'
 import { RerunOcrButton } from '@/components/intelligence/RerunOcrButton'
 import { getMetadataSchema } from '@/api/metadataSchema'
 import type { Document } from '@/types/api'
@@ -694,6 +698,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
     staleTime: 5 * 60_000,
   })
   const [showEmpty, setShowEmpty] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   const props = (schema as { properties?: Record<string, { description?: string; type?: string }> } | undefined)?.properties ?? {}
   const required = new Set(
@@ -719,9 +724,27 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
 
   return (
     <Card className="p-4" data-testid="custom-fields-sidebar">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Custom fields
-      </h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Custom fields
+        </h3>
+        <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          aria-label="Edit custom fields"
+          title="Edit custom fields"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="edit-custom-fields"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <EditCustomFieldsSheet
+        doc={doc}
+        schema={schema as MetadataSchema}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
       <dl className="mt-3 space-y-2 text-sm">
         {visible.map(([key, spec]) => {
           const raw = values[key]
@@ -755,6 +778,246 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
         </button>
       )}
     </Card>
+  )
+}
+
+// ---- Edit custom fields sheet -------------------------------------------
+
+interface MetadataPropertySpec {
+  description?: string
+  type?: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object'
+  format?: string
+  enum?: string[]
+  items?: { type?: string }
+  minimum?: number
+  maximum?: number
+}
+
+interface MetadataSchema {
+  type?: 'object'
+  properties?: Record<string, MetadataPropertySpec>
+  required?: string[]
+}
+
+function EditCustomFieldsSheet({
+  doc,
+  schema,
+  open,
+  onOpenChange,
+}: {
+  doc: Document
+  schema: MetadataSchema | undefined
+  open: boolean
+  onOpenChange: (o: boolean) => void
+}) {
+  // Seed once on open so the user can cancel without losing their
+  // edits if they re-open. Re-seed when the upstream doc changes
+  // (e.g. NDJSON import landed while the sheet was closed).
+  const seed = useMemo<Record<string, unknown>>(
+    () => ({ ...(doc.custom_metadata ?? {}) }),
+    [doc.custom_metadata, open],
+  )
+  const [values, setValues] = useState<Record<string, unknown>>(seed)
+  useEffect(() => { if (open) setValues(seed) }, [open, seed])
+
+  const qc = useQueryClient()
+  const update = useUpdateDocument()
+  const props = schema?.properties ?? {}
+  const required = useMemo(() => new Set(schema?.required ?? []), [schema])
+  const entries = Object.entries(props)
+
+  const isEmpty = (v: unknown) =>
+    v == null || v === '' || (Array.isArray(v) && v.length === 0)
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (update.isPending) return
+    const missing = Array.from(required).filter((k) => isEmpty(values[k]))
+    if (missing.length) {
+      const label = (k: string) => props[k]?.description || k
+      toast.error(
+        missing.length === 1
+          ? `${label(missing[0])} is required`
+          : `${missing.length} required fields missing`,
+      )
+      return
+    }
+    // Strip empty optional fields so the saved payload stays clean —
+    // the backend treats absent and null identically.
+    const clean: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(values)) {
+      if (!isEmpty(v)) clean[k] = v
+    }
+    update.mutate(
+      { id: doc.id, body: { custom_metadata: clean } },
+      {
+        onSuccess: () => {
+          toast.success('Custom fields saved')
+          qc.invalidateQueries({ queryKey: ['document', doc.id] })
+          onOpenChange(false)
+        },
+        onError: (err: unknown) => {
+          const msg = err instanceof Error ? err.message : "Couldn't save custom fields"
+          toast.error(msg)
+        },
+      },
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex w-full flex-col sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Edit custom fields</SheetTitle>
+        </SheetHeader>
+        {entries.length === 0 ? (
+          <p className="mt-6 text-sm text-muted-foreground">
+            No custom fields defined in the tenant metadata schema.
+          </p>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-4 flex min-h-0 flex-1 flex-col">
+            <div className="flex-1 space-y-3 overflow-y-auto pe-1">
+              {entries.map(([key, spec]) => (
+                <FieldRenderer
+                  key={key}
+                  name={key}
+                  spec={spec}
+                  required={required.has(key)}
+                  value={values[key]}
+                  onChange={(v) => setValues((s) => ({ ...s, [key]: v }))}
+                />
+              ))}
+            </div>
+            <div className="sticky bottom-0 mt-3 flex justify-end gap-2 border-t border-border bg-background pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={update.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={update.isPending} data-testid="save-custom-fields">
+                Save
+              </Button>
+            </div>
+          </form>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function FieldRenderer({
+  name,
+  spec,
+  required,
+  value,
+  onChange,
+}: {
+  name: string
+  spec: MetadataPropertySpec
+  required: boolean
+  value: unknown
+  onChange: (v: unknown) => void
+}) {
+  const label = (
+    <span className="flex items-center gap-1 text-sm font-medium">
+      {spec.description || name}
+      {required && <span className="text-destructive" aria-label="required">*</span>}
+    </span>
+  )
+
+  // Enum → labeled select. Add a leading "—" so the user can clear
+  // an optional enum back to empty.
+  if (Array.isArray(spec.enum)) {
+    const NONE = '__none__'
+    const opts = [
+      ...(required ? [] : [{ value: NONE, label: '— None —' }]),
+      ...spec.enum.map((v) => ({ value: v, label: v })),
+    ]
+    return (
+      <ShadcnSelect
+        label={spec.description || name}
+        value={typeof value === 'string' ? value : NONE}
+        onValueChange={(v) => onChange(v === NONE ? '' : v)}
+        options={opts}
+      />
+    )
+  }
+
+  // Boolean → checkbox with inline label.
+  if (spec.type === 'boolean') {
+    return (
+      <label className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-border"
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        {label}
+      </label>
+    )
+  }
+
+  // Number / integer.
+  if (spec.type === 'number' || spec.type === 'integer') {
+    return (
+      <Input
+        label={spec.description || name}
+        type="number"
+        step={spec.type === 'integer' ? 1 : 'any'}
+        min={spec.minimum}
+        max={spec.maximum}
+        value={value == null ? '' : String(value)}
+        onChange={(e) => {
+          const raw = e.target.value
+          if (raw === '') onChange(undefined)
+          else {
+            const n = Number(raw)
+            if (!Number.isNaN(n)) onChange(spec.type === 'integer' ? Math.trunc(n) : n)
+          }
+        }}
+        required={required}
+      />
+    )
+  }
+
+  // Array of strings → comma-separated tags input.
+  if (spec.type === 'array') {
+    return (
+      <Input
+        label={(spec.description || name) + ' (comma-separated)'}
+        value={Array.isArray(value) ? (value as unknown[]).map(String).join(', ') : ''}
+        onChange={(e) =>
+          onChange(
+            e.target.value
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean),
+          )
+        }
+        placeholder="a, b, c"
+      />
+    )
+  }
+
+  // String with optional format.
+  const inputType =
+    spec.format === 'date' ? 'date' :
+    spec.format === 'email' ? 'email' :
+    spec.format === 'uri' || spec.format === 'url' ? 'url' :
+    'text'
+
+  return (
+    <Input
+      label={spec.description || name}
+      type={inputType}
+      value={typeof value === 'string' ? value : ''}
+      onChange={(e) => onChange(e.target.value)}
+      required={required}
+    />
   )
 }
 
