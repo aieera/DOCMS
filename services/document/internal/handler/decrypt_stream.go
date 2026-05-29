@@ -23,6 +23,7 @@ package handler
 import (
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -90,11 +91,19 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 		bucket, key, mimeType, kekID string
 		encryptedDEK, dekNonce       []byte
 	)
+	// BUG-05: prefer the version's mime_type over the blob's. The
+	// blob row's mime is set by the storage uploader from raw
+	// Content-Type guesses (often application/octet-stream); the
+	// version row's mime comes from the explicit document API and
+	// is what every other surface displays. When react-pdf gets
+	// application/octet-stream it refuses to parse, so PDFs that
+	// happened to be uploaded with the wrong blob mime never
+	// previewed.
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			SELECT b.storage_bucket,
 			       b.storage_key,
-			       COALESCE(b.mime_type, 'application/octet-stream'),
+			       COALESCE(NULLIF(v.mime_type, ''), NULLIF(b.mime_type, ''), 'application/octet-stream'),
 			       COALESCE(b.kek_id, ''),
 			       b.encrypted_dek,
 			       b.dek_nonce
@@ -122,6 +131,11 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = obj.Close() }()
 
 	w.Header().Set("Content-Type", mimeType)
+	// BUG-05: react-pdf and image viewers rely on Content-Length
+	// for progress + on inline disposition to not get prompted as
+	// a download. Pass-through previously emitted neither, which
+	// looked like a hang on slow connections.
+	w.Header().Set("Content-Disposition", "inline")
 	// Caching off — the URL itself doesn't carry version info beyond
 	// the path, and a re-encrypted blob would serve stale plaintext.
 	w.Header().Set("Cache-Control", "no-store")
@@ -168,6 +182,7 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decrypt failed", http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
 	if _, err := w.Write(plaintext); err != nil {
 		h.log.Warn().Err(err).Msg("decrypt-stream: plaintext write failed")
 	}
