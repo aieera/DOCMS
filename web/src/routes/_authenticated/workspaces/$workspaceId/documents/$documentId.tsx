@@ -693,6 +693,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
     // immediately after the admin saves the schema in another tab.
     staleTime: 5 * 60_000,
   })
+  const [showEmpty, setShowEmpty] = useState(false)
 
   const props = (schema as { properties?: Record<string, { description?: string; type?: string }> } | undefined)?.properties ?? {}
   const required = new Set(
@@ -702,6 +703,19 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
   if (entries.length === 0) return null
 
   const values = doc.custom_metadata ?? {}
+  const isFilled = (key: string) => {
+    const raw = values[key]
+    return raw != null && raw !== '' && !(Array.isArray(raw) && raw.length === 0)
+  }
+
+  // Default: show required + filled. Empty optional fields collapse
+  // behind a "Show empty (N)" toggle so tenants with 20+ schema
+  // fields don't render a giant noisy rail of em-dashes for every
+  // document. Required-but-empty fields stay visible because they
+  // need attention (the * indicator carries weight).
+  const alwaysShown = entries.filter(([key]) => required.has(key) || isFilled(key))
+  const collapsed = entries.filter(([key]) => !required.has(key) && !isFilled(key))
+  const visible = showEmpty ? entries : alwaysShown
 
   return (
     <Card className="p-4" data-testid="custom-fields-sidebar">
@@ -709,7 +723,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
         Custom fields
       </h3>
       <dl className="mt-3 space-y-2 text-sm">
-        {entries.map(([key, spec]) => {
+        {visible.map(([key, spec]) => {
           const raw = values[key]
           const display = raw == null || raw === ''
             ? <span className="text-muted-foreground">—</span>
@@ -728,6 +742,18 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
           )
         })}
       </dl>
+      {collapsed.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowEmpty((s) => !s)}
+          className="mt-3 w-full rounded-md border border-dashed border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          data-testid="toggle-empty-custom-fields"
+        >
+          {showEmpty
+            ? `Hide ${collapsed.length} empty optional field${collapsed.length === 1 ? '' : 's'}`
+            : `Show ${collapsed.length} empty optional field${collapsed.length === 1 ? '' : 's'}`}
+        </button>
+      )}
     </Card>
   )
 }
