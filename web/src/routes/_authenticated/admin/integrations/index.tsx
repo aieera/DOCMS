@@ -1,19 +1,23 @@
-// /admin/integrations — ADR 0071 OAuth + envelope-status surface +
-// per-tenant notification provider configuration.
+// /admin/integrations — CANONICAL unified Integrations page.
 //
-// Three tabs:
-//   1. Connections — DocuSign / Adobe Sign OAuth (Connect/Disconnect, token expiry)
-//   2. In-progress envelopes — live list of vendor envelopes; polled
-//      every 30s so a completed-via-webhook update lands without refresh
-//   3. Notifications — per-tenant Twilio (SMS MFA) + SMTP credentials
+// Replaces the previous split between /admin/integrations-hub (which
+// had the full top tab bar) and /admin/integrations (which rendered
+// the same eSignature/notifications content without any way to reach
+// the other sections). One URL, one source of truth.
 //
-// This file is the INDEX child of the integrations layout. Sibling
-// child routes (events.tsx, email.tsx) are mounted at
-// /admin/integrations/events and /admin/integrations/email and render
-// into the same parent <Outlet />. Keeping this as a sibling instead
-// of inlining it into integrations.tsx is what stops the parent's
-// content from rendering on /events (the bug it replaces).
-import { createFileRoute, Link } from '@tanstack/react-router'
+// Six top-level tabs:
+//   1. eSignature        — DocuSign / Adobe Sign OAuth, envelopes, notifications, connectors
+//   2. Connectors        — third-party catalog (Salesforce / M365 / Google / etc)
+//   3. Webhooks          — outbound webhook subscription management
+//   4. Email ingestion   — IMAP/SMTP pollers
+//   5. Event streaming   — per-tenant event mirroring
+//   6. MCP               — LLM agent access keys
+//
+// Tab state is URL-driven via `?tab=`. Legacy URLs
+// (/admin/integrations-hub, /admin/integrations/events,
+// /admin/integrations/email, /admin/integrations/mcp) redirect into
+// the matching tab on this page so existing deep-links keep working.
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -33,11 +37,65 @@ import { GoogleWorkspaceModal } from '@/components/admin/GoogleWorkspaceModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { useAuthStore } from '@/store/authStore'
+import { ConnectorsPage } from '../connectors'
+import { WebhooksPage } from '../webhooks'
+import { EmailIngestionPage } from './email'
+import { EventStreamPage } from './events'
+import { MCPPage } from './mcp'
+
+type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp'
+const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp']
+interface S { tab?: TopTab }
 
 export const Route = createFileRoute('/_authenticated/admin/integrations/')({
-  component: IntegrationsIndexPage,
+  component: IntegrationsPage,
+  validateSearch: (raw: Record<string, unknown>): S => {
+    const t = raw.tab
+    return TOP_TABS.includes(t as TopTab) ? { tab: t as TopTab } : {}
+  },
 })
+
+function IntegrationsPage() {
+  const navigate = useNavigate()
+  const { tab } = Route.useSearch()
+  const active: TopTab = tab ?? 'esign'
+  return (
+    <div className="mx-auto max-w-5xl p-6">
+      <PageHeader
+        title="Integrations"
+        description="Third-party providers, outbound webhooks, inbound email + event streams, and MCP keys for this tenant."
+      />
+      <Tabs
+        value={active}
+        onValueChange={(v) => navigate({ to: '/admin/integrations', search: { tab: v as TopTab } })}
+      >
+        <TabsList>
+          <TabsTrigger value="esign" data-testid="top-tab-esign">eSignature</TabsTrigger>
+          <TabsTrigger value="connectors" data-testid="top-tab-connectors">Connectors</TabsTrigger>
+          <TabsTrigger value="webhooks" data-testid="top-tab-webhooks">Webhooks</TabsTrigger>
+          <TabsTrigger value="email" data-testid="top-tab-email">Email ingestion</TabsTrigger>
+          <TabsTrigger value="events" data-testid="top-tab-events">Event streaming</TabsTrigger>
+          <TabsTrigger value="mcp" data-testid="top-tab-mcp">MCP</TabsTrigger>
+        </TabsList>
+        <TabsContent value="esign" className="mt-4"><ESignatureSection /></TabsContent>
+        <TabsContent value="connectors" className="mt-4"><ConnectorsPage /></TabsContent>
+        <TabsContent value="webhooks" className="mt-4"><WebhooksPage /></TabsContent>
+        <TabsContent value="email" className="mt-4"><EmailIngestionPage /></TabsContent>
+        <TabsContent value="events" className="mt-4"><EventStreamPage /></TabsContent>
+        <TabsContent value="mcp" className="mt-4"><MCPPage /></TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+// IntegrationsIndexPage is kept exported under its old name so the
+// historical /admin/integrations-hub import path doesn't break while
+// the redirect lands. New code should use the route directly.
+export { IntegrationsPage as IntegrationsIndexPage }
+
+// ----- eSignature section (formerly the entirety of /admin/integrations) -----
 
 // ConnectionPill picks the colour + label off the server-derived
 // status field. Falls back to the legacy 'Connected' (green) when
@@ -72,8 +130,11 @@ function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; t
   )
 }
 
-export function IntegrationsIndexPage() {
+function ESignatureSection() {
   const qc = useQueryClient()
+  // Inner sub-tab state inside the eSignature top-tab. Local state is
+  // fine here — these are not deep-linked individually; the eSignature
+  // top tab is the deep-linkable surface.
   const [tab, setTab] = useState<'connections' | 'envelopes' | 'notifications' | 'connectors'>('connections')
   const [credentialsFor, setCredentialsFor] = useState<ESignProvider | null>(null)
   const [twilioOpen, setTwilioOpen] = useState(false)
@@ -134,31 +195,7 @@ export function IntegrationsIndexPage() {
   const connectionFor = (id: ESignProvider) => connsQ.data?.find((c) => c.provider === id)
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <PageHeader
-        title="Integrations"
-        description="Connect third-party providers for this tenant: e-signature (DocuSign / Adobe Sign), SMS MFA (Twilio), and outbound email (SMTP)."
-      />
-
-      <div className="mb-4 flex flex-wrap gap-2 text-xs">
-        <Link to="/admin/integrations/events" className="rounded-full border border-border bg-card px-3 py-1 hover:bg-muted">
-          Event streaming →
-        </Link>
-        <Link to="/admin/integrations/email" className="rounded-full border border-border bg-card px-3 py-1 hover:bg-muted">
-          Email ingestion →
-        </Link>
-        <Link to="/admin/integrations/mcp" className="rounded-full border border-border bg-card px-3 py-1 hover:bg-muted">
-          MCP (LLM agents) →
-        </Link>
-        {/* iPaaS chip hidden (ADR 0090) — the route + backend triggers
-            still work; we just don't surface them until the external
-            Zapier/Make/n8n apps are published.
-        <Link to="/admin/integrations/ipaas" className="rounded-full border border-border bg-card px-3 py-1 hover:bg-muted">
-          iPaaS (Zapier / Make / n8n) →
-        </Link>
-        */}
-      </div>
-
+    <div>
       <div className="mb-4 flex gap-2 border-b border-border">
         <button
           onClick={() => setTab('connections')}
@@ -186,7 +223,7 @@ export function IntegrationsIndexPage() {
           className={`px-3 py-2 text-sm font-medium ${tab === 'connectors' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connectors"
         >
-          Connectors
+          Workspace connectors
         </button>
       </div>
 

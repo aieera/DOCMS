@@ -410,6 +410,13 @@ curl -s 'https://api.vaultdms.io/api/v1/events?cursor=seq:1234&limit=100' \\
   -H "Authorization: Bearer $VAULTDMS_EVENT_TOKEN" | jq`,
 } as const
 
+// The route is a redirect alias into the canonical
+// /admin/integrations?tab=events. Older deep-links and external docs
+// still resolve to the same content. EventStreamPage is exported
+// above so the canonical page can render it inside its 'events' tab.
+import { redirect } from '@tanstack/react-router'
 export const Route = createFileRoute('/_authenticated/admin/integrations/events')({
-  component: EventStreamPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/integrations', search: { tab: 'events' }, replace: true })
+  },
 })

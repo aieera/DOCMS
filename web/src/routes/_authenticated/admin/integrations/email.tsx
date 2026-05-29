@@ -354,8 +354,14 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   )
 }
 
+// The route is a redirect alias into the canonical
+// /admin/integrations?tab=email. EmailIngestionPage is exported above
+// so the canonical page can render it inside its 'email' tab.
+import { redirect } from '@tanstack/react-router'
 export const Route = createFileRoute('/_authenticated/admin/integrations/email')({
-  component: EmailIngestionPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/integrations', search: { tab: 'email' }, replace: true })
+  },
 })
 
 // Silence unused-import warnings for utility imports referenced in

@@ -20,8 +20,14 @@ import {
 //   1. API-key issuance with mcp:read / mcp:write scopes
 //   2. Copy-paste install snippets for Claude Desktop, Cursor, Copilot
 
+// The route is a redirect alias into the canonical
+// /admin/integrations?tab=mcp. MCPPage is exported below so the
+// canonical page can render it inside its 'mcp' tab.
+import { redirect } from '@tanstack/react-router'
 export const Route = createFileRoute('/_authenticated/admin/integrations/mcp')({
-  component: MCPPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/integrations', search: { tab: 'mcp' }, replace: true })
+  },
 })
 
 const MCP_SCOPES = [

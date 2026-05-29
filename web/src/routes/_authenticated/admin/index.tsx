@@ -48,15 +48,16 @@ const TENANT_GROUP: SectionGroup = {
   ],
 }
 
-// Consolidated to a single hub per the 2026-05-29 plan. Old URLs
-// (/admin/integrations, /admin/connectors, /admin/webhooks,
-// /admin/integrations/{email,events,mcp}) still resolve so external
-// links keep working.
+// Consolidated to a single page at /admin/integrations. Old URLs
+// (/admin/integrations-hub, /admin/integrations/{email,events,mcp},
+// and /admin/connectors / /admin/webhooks as standalone) still
+// resolve so external links keep working — they redirect into the
+// matching tab on the canonical page.
 const INTEGRATIONS_GROUP: SectionGroup = {
   label: 'Integrations',
   description: 'Connect VaultDMS to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
   sections: [
-    { to: '/admin/integrations-hub', icon: Plug, label: 'Integrations hub', desc: 'eSignature · Connectors · Webhooks · Email · Event streaming · MCP' },
+    { to: '/admin/integrations', icon: Plug, label: 'Integrations', desc: 'eSignature · Connectors · Webhooks · Email · Event streaming · MCP' },
   ],
 }
 
