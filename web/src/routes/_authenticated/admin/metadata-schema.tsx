@@ -90,6 +90,24 @@ function MetadataSchemaPage() {
     setDirty(true)
   }
 
+  // Friendly per-field "required" toggle in the preview rail. Reads
+  // the current parsed schema, flips the field's presence in the
+  // `required` array, re-serialises, and marks dirty. Disabled when
+  // the JSON is invalid (we'd have nothing to modify). Preserves
+  // existing property order and other keys.
+  const toggleRequired = (fieldName: string) => {
+    if (!parsed || !parsed.ok) return
+    const next: Record<string, unknown> = { ...parsed.value }
+    const current = Array.isArray(next.required) ? [...(next.required as string[])] : []
+    const idx = current.indexOf(fieldName)
+    if (idx >= 0) current.splice(idx, 1)
+    else current.push(fieldName)
+    if (current.length) next.required = current
+    else delete next.required
+    setText(JSON.stringify(next, null, 2))
+    setDirty(true)
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -140,8 +158,16 @@ function MetadataSchemaPage() {
 
           <aside className="space-y-3">
             <Card className="p-4">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Preview</h3>
-              <SchemaPreview schema={parsed?.ok ? parsed.value : null} />
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Fields &amp; required
+              </h3>
+              <p className="mb-2 text-[11px] text-muted-foreground">
+                Toggle the switch to mark a field required. Documents save-blocks until required fields have a value.
+              </p>
+              <SchemaPreview
+                schema={parsed?.ok ? parsed.value : null}
+                onToggleRequired={parsed?.ok ? toggleRequired : undefined}
+              />
             </Card>
             <Card className="space-y-2 p-4 text-xs text-muted-foreground">
               <p>
@@ -165,7 +191,13 @@ function MetadataSchemaPage() {
   )
 }
 
-function SchemaPreview({ schema }: { schema: Record<string, unknown> | null }) {
+function SchemaPreview({
+  schema,
+  onToggleRequired,
+}: {
+  schema: Record<string, unknown> | null
+  onToggleRequired?: (name: string) => void
+}) {
   if (!schema) {
     return <p className="text-xs text-muted-foreground">Fix the JSON to see a field preview.</p>
   }
@@ -180,23 +212,52 @@ function SchemaPreview({ schema }: { schema: Record<string, unknown> | null }) {
     )
   }
   return (
-    <ul className="space-y-1.5">
-      {entries.map(([name, spec]) => (
-        <li key={name} className="flex items-start justify-between gap-2 text-xs">
-          <div className="min-w-0">
-            <div className="font-mono font-medium">
-              {name}
-              {required.has(name) && <span className="text-destructive"> *</span>}
+    <ul className="space-y-1">
+      {entries.map(([name, spec]) => {
+        const isRequired = required.has(name)
+        return (
+          <li
+            key={name}
+            className="flex items-start justify-between gap-2 rounded-md border border-transparent p-1.5 text-xs transition-colors hover:border-border hover:bg-accent/40"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="font-mono font-medium">
+                {name}
+                {isRequired && <span className="text-destructive" aria-label="required"> *</span>}
+              </div>
+              {typeof spec.description === 'string' && (
+                <div className="line-clamp-2 text-muted-foreground">{spec.description}</div>
+              )}
             </div>
-            {typeof spec.description === 'string' && (
-              <div className="text-muted-foreground">{spec.description}</div>
-            )}
-          </div>
-          <div className="shrink-0 text-end">
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{describe(spec)}</code>
-          </div>
-        </li>
-      ))}
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{describe(spec)}</code>
+              {onToggleRequired ? (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isRequired}
+                  aria-label={`${isRequired ? 'Unmark' : 'Mark'} ${name} required`}
+                  onClick={() => onToggleRequired(name)}
+                  className={cn(
+                    'relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                    isRequired ? 'bg-destructive' : 'bg-muted',
+                  )}
+                  title={isRequired ? 'Required — click to unmark' : 'Optional — click to require'}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'absolute top-0.5 inline-block h-3 w-3 rounded-full bg-background shadow-sm transition-[left]',
+                      isRequired ? 'left-[14px]' : 'left-0.5',
+                    )}
+                  />
+                </button>
+              ) : null}
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 }
