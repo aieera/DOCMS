@@ -84,7 +84,7 @@ function NotificationsPage() {
                   <h3 className="text-sm font-medium">{n.title}</h3>
                   {isDigest && (
                     <span
-                      className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
+                      className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
                       title="This is a digest notification combining multiple events."
                       aria-label="Digest notification combining multiple events"
                       data-testid={`notif-digest-badge-${n.id}`}

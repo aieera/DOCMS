@@ -84,7 +84,7 @@ function ClausesPage() {
         actions={
           <Button
             onClick={() => setCreateOpen(true)}
-            className="gap-2 shadow-sm transition-all hover:shadow-md hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-background"
+            className="gap-2 shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
           >
             <Plus className="h-4 w-4" /> New clause
           </Button>
@@ -206,7 +206,7 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
     <button
       onClick={onClick}
       className={`flex w-full flex-col gap-1 rounded-md border p-3 text-start text-sm transition-colors ${
-        active ? 'border-violet-500/50 bg-violet-50/40 dark:bg-violet-950/15' : 'border-border bg-card hover:bg-accent'
+        active ? 'border-primary/50 bg-primary/10' : 'border-border bg-card hover:bg-accent'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -266,7 +266,7 @@ function ClauseDetail({
 
       <div className="flex flex-wrap gap-1 text-xs">
         {clause.tags.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-violet-800 dark:text-violet-200">
+          <span key={t} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-secondary-foreground">
             <Tag className="h-3 w-3" />
             {t}
           </span>
