@@ -29,7 +29,11 @@ interface AppTopbarProps {
 
 export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:px-6">
+    <header
+      role="banner"
+      aria-label="Application toolbar"
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/80 bg-background px-4 shadow-sm lg:px-6"
+    >
       <Button
         variant="ghost"
         size="icon"

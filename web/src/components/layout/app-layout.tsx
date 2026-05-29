@@ -12,12 +12,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="relative isolate min-h-screen bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-50 focus:rounded-md focus:bg-foreground focus:px-3 focus:py-1.5 focus:text-sm focus:text-background"
+      >
+        Skip to content
+      </a>
       <AppSidebar />
       <MobileSidebar open={mobileOpen} onOpenChange={setMobileOpen} />
       <div
         className={cn(
-          'flex min-h-screen flex-col transition-[padding] duration-200 ease-out',
+          'flex min-h-screen flex-col transition-[padding] duration-200 ease-out motion-reduce:transition-none',
           // The sidebar is hidden below lg; on lg+ we reserve space
           // for it so the content doesn't slide under the panel.
           'lg:ps-[260px]',
@@ -25,8 +31,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         <AppTopbar onOpenMobileNav={() => setMobileOpen(true)} />
-        <main className="flex-1">
-          <div className="mx-auto w-full max-w-screen-2xl p-4 sm:p-6 lg:p-8">{children}</div>
+        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="mx-auto flex w-full flex-1 flex-col p-4 sm:p-6 lg:p-8">{children}</div>
         </main>
       </div>
     </div>
