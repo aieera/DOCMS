@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, CheckSquare, Clock, FolderOpen, MessageSquare, PenTool, Search, ShieldAlert, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, Bell, CheckSquare, Clock, FolderOpen, MessageSquare, PenTool, Search, ShieldAlert, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { WarmCard, HeadlineMetric } from '@/components/ui/crextio'
+import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
 import { listMyTasks, type Task } from '@/api/tasks'
 import { getWorkspaces } from '@/api/workspaces'
@@ -66,27 +66,50 @@ function KpiRow() {
   const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({ queryKey: ['notif-count'], queryFn: getUnreadCount, staleTime: 30_000 })
 
-  // M-2: getWorkspaces() is typed as Promise<Workspace[]> at the
-  // source, so `workspaces.data` is Workspace[] | undefined. The old
-  // `{items:[]}` cast was dead code — the helper never returned that
-  // shape — and the redundant Array.isArray was paranoia. One read.
   const wsCount = workspaces.data?.length
   const openTaskCount = (tasks.data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress').length
   const overdue = (tasks.data ?? []).filter((t) => t.due_at && new Date(t.due_at) < new Date() && t.status !== 'done' && t.status !== 'cancelled').length
+
+  // Atomic loading: render the three cards as a skeleton together
+  // until ALL three queries resolve. Previously each card flipped
+  // independently which caused visible layout shift as numerals
+  // settled. Skeleton uses the same WarmCard shell so radius matches.
+  const allLoading = workspaces.isLoading && tasks.isLoading && unread.isLoading
+  const allError = workspaces.isError && tasks.isError && unread.isError
+  const onRetryAll = () => {
+    void workspaces.refetch()
+    void tasks.refetch()
+    void unread.refetch()
+  }
+
+  if (allError) {
+    return (
+      <Card className="flex items-center justify-between gap-3 border-destructive/40 bg-destructive/5 p-4" data-testid="kpi-error">
+        <div className="flex items-start gap-2 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <p className="font-medium">Couldn&apos;t load workspace overview</p>
+            <p className="text-muted-foreground">Workspaces, tasks, and notifications all failed.</p>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={onRetryAll}>Retry</Button>
+      </Card>
+    )
+  }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <KpiCard
         icon={FolderOpen}
         label="Workspaces"
-        value={workspaces.isLoading ? undefined : wsCount ?? 0}
+        value={allLoading || workspaces.isLoading ? undefined : wsCount ?? 0}
         hint={workspaces.isError ? 'unable to load' : 'tenant total'}
         href="/workspaces"
       />
       <KpiCard
         icon={CheckSquare}
         label="Open tasks"
-        value={tasks.isLoading ? undefined : openTaskCount}
+        value={allLoading || tasks.isLoading ? undefined : openTaskCount}
         hint={overdue > 0 ? `${overdue} overdue` : tasks.isError ? 'unable to load' : 'assigned to you'}
         hintTone={overdue > 0 ? 'warning' : 'muted'}
         href="/tasks"
@@ -94,7 +117,7 @@ function KpiRow() {
       <KpiCard
         icon={Bell}
         label="Unread notifications"
-        value={unread.isLoading ? undefined : unread.data ?? 0}
+        value={allLoading || unread.isLoading ? undefined : unread.data ?? 0}
         hint={unread.isError ? 'unable to load' : 'across all channels'}
         href="/notifications"
       />
@@ -130,8 +153,8 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
         <span
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-[12px]',
-            'bg-[#F4E8C8] text-[#1A1A1A] transition-colors',
-            'group-hover:bg-[#F5C13B]',
+            'bg-muted text-foreground transition-colors',
+            'group-hover:bg-primary group-hover:text-primary-foreground',
           )}
           aria-hidden
         >
@@ -140,29 +163,31 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
         {href && (
           <DirectionalIcon
             name="ChevronRight"
-            className="h-4 w-4 text-[#B9AC95] transition-transform group-hover:translate-x-0.5 group-hover:text-[#1A1A1A]"
+            className="h-4 w-4 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
           />
         )}
       </div>
       {value === undefined ? (
         <div className="mt-5 flex min-h-[60px] flex-col gap-1">
           <Skeleton className="h-10 w-20 rounded-md" />
-          <p className="mt-1 text-sm font-medium text-[#8C8273]">{label}</p>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">{label}</p>
         </div>
       ) : (
-        <div className="mt-3">
-          <HeadlineMetric
-            value={value}
-            label={label}
-            className="!gap-0 [&>span:last-child]:!text-[12.5px] [&>span:last-child]:!font-medium [&>span:last-child]:!text-[#8C8273]"
-          />
+        <div className="mt-3 flex flex-col gap-0">
+          <span
+            className="font-serif text-[40px] font-light leading-none tracking-[-0.045em] text-foreground"
+            style={{ fontVariationSettings: '"opsz" 144' }}
+          >
+            {value}
+          </span>
+          <span className="mt-1 text-[13px] font-medium text-muted-foreground">{label}</span>
         </div>
       )}
       {hint && (
         <p
           className={cn(
             'mt-1 text-xs',
-            hintTone === 'warning' ? 'text-[#C0392B]' : 'text-[#8C8273]',
+            hintTone === 'warning' ? 'text-destructive' : 'text-muted-foreground',
           )}
         >
           {hint}
@@ -201,22 +226,32 @@ function QuickActions() {
           <Link
             key={label}
             to={href}
-            className="group flex items-start gap-3 rounded-lg border border-border bg-gradient-to-br from-card to-muted/20 p-4 shadow-sm transition-all hover:border-primary/40 hover:from-accent hover:to-accent/70 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[24px]"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-              <Icon className="h-[1.1rem] w-[1.1rem]" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">{label}</p>
-                {kbd && (
-                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                    {kbd}
-                  </kbd>
-                )}
+            <WarmCard
+              padded="md"
+              className="h-full transition-all group-hover:-translate-y-0.5 group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]"
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-muted text-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground"
+                  aria-hidden
+                >
+                  <Icon className="h-[1.1rem] w-[1.1rem]" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{label}</p>
+                    {kbd && (
+                      <kbd className="pointer-events-none inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-foreground/70">
+                        {kbd}
+                      </kbd>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+                </div>
               </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-            </div>
+            </WarmCard>
           </Link>
         ))}
       </div>
