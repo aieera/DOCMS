@@ -366,11 +366,15 @@ func (p *StorageProxy) outbound(r *http.Request) (context.Context, context.Cance
 			role = u.Role
 		}
 	}
-	md := metadata.Pairs(
+	pairs := []string{
 		middleware.TenantMetadataKey, tenantID,
 		"x-user-id", userID,
 		"x-user-role", role,
-	)
+	}
+	if name := auth.GetUserName(r.Context()); name != "" {
+		pairs = append(pairs, "x-user-name", name)
+	}
+	md := metadata.Pairs(pairs...)
 	ctx, cancel := context.WithTimeout(r.Context(), proxyRPCBudget)
 	return metadata.NewOutgoingContext(ctx, md), cancel
 }

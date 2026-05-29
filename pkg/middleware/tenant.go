@@ -30,6 +30,13 @@ const TenantMetadataKey = "x-tenant-id"
 const (
 	UserMetadataKey     = "x-user-id"
 	UserRoleMetadataKey = "x-user-role"
+	// UserNameMetadataKey carries the caller's human-readable
+	// identifier (typically email). Optional — when present it lets
+	// downstream services stamp audit_events.actor_name without
+	// having to re-look-up the user from Postgres. Set by the auth
+	// service when it issues outbound gRPC calls on behalf of an
+	// authenticated session.
+	UserNameMetadataKey = "x-user-name"
 )
 
 // UserIdentityInterceptor reads x-user-id + x-user-role from the
@@ -44,8 +51,9 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 			return handler(ctx, req)
 		}
 		var (
-			userID uuid.UUID
-			role   string
+			userID   uuid.UUID
+			role     string
+			userName string
 		)
 		if v := md.Get(UserMetadataKey); len(v) > 0 && v[0] != "" {
 			if id, err := uuid.Parse(v[0]); err == nil {
@@ -55,6 +63,9 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 		if v := md.Get(UserRoleMetadataKey); len(v) > 0 {
 			role = v[0]
 		}
+		if v := md.Get(UserNameMetadataKey); len(v) > 0 {
+			userName = v[0]
+		}
 		if userID == uuid.Nil && role == "" {
 			return handler(ctx, req)
 		}
@@ -62,6 +73,7 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 		ctx = auth.WithUser(ctx, auth.UserInfo{
 			ID:       userID,
 			TenantID: tenantID,
+			Email:    userName,
 			Role:     role,
 		})
 		return handler(ctx, req)

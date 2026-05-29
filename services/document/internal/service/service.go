@@ -287,6 +287,13 @@ func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID,
 	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
 		pairs = append(pairs, "x-tenant-id", tid.String())
 	}
+	if name := auth.GetUserName(ctx); name != "" {
+		// Forward the caller's email so the downstream service's
+		// TenantInterceptor can stamp it onto outbox rows; without
+		// this, every cross-service write produced an audit_events
+		// row with actor_name="" (BUG-15).
+		pairs = append(pairs, "x-user-name", name)
+	}
 	if role := auth.GetUserRole(ctx); role != "" {
 		pairs = append(pairs, "x-user-role", role)
 		// Forward role into the OPA context too so Rule 6 (owner/admin)
@@ -404,6 +411,9 @@ func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, user
 	pairs := []string{"x-user-id", userID.String()}
 	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
 		pairs = append(pairs, "x-tenant-id", tid.String())
+	}
+	if name := auth.GetUserName(ctx); name != "" {
+		pairs = append(pairs, "x-user-name", name)
 	}
 	if role := auth.GetUserRole(ctx); role != "" {
 		pairs = append(pairs, "x-user-role", role)

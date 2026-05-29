@@ -1,11 +1,18 @@
 import { DataTable } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { type ColumnDef } from '@tanstack/react-table'
-import { formatDateTime } from '@/lib/formatters'
+import { formatDateTime, formatShortId } from '@/lib/formatters'
 
 interface AuditEntry {
   id: string
-  actor_name: string
+  /** actor UUID. Always populated. */
+  actor?: string
+  /** human-readable name (email). Empty for service-internal writers
+   *  (gRPC tenant interceptor + API-key auth don't populate Email on
+   *  ctx, so the outbox row + downstream audit_events row land with
+   *  actor_name=""). Fall back to a short-id on the actor UUID so the
+   *  column is never visually empty when an actor IS recorded. */
+  actor_name?: string
   action: string
   resource_type: string
   resource_id: string
@@ -22,7 +29,12 @@ const columns: ColumnDef<AuditEntry, unknown>[] = [
   {
     accessorKey: 'actor_name',
     header: 'Actor',
-    cell: ({ row }) => <span className="text-sm font-medium">{row.original.actor_name}</span>,
+    cell: ({ row }) => {
+      const { actor_name, actor } = row.original
+      if (actor_name) return <span className="text-sm font-medium">{actor_name}</span>
+      if (actor) return <span className="font-mono text-xs text-muted-foreground" title={actor}>{formatShortId('usr', actor)}</span>
+      return <span className="text-sm text-muted-foreground">system</span>
+    },
   },
   {
     accessorKey: 'action',

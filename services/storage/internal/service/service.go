@@ -836,6 +836,9 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 		"x-tenant-id", in.TenantID.String(),
 		"x-user-id", in.UserID.String(),
 	}
+	if name := auth.GetUserName(ctx); name != "" {
+		pairs = append(pairs, "x-user-name", name)
+	}
 	if role := auth.GetUserRole(ctx); role != "" {
 		pairs = append(pairs, "x-user-role", role)
 	}
