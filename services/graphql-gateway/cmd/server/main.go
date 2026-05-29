@@ -63,21 +63,30 @@ func main() {
 	defer func() { _ = rdb.Close() }()
 
 	// ---- Upstream gRPC clients (each optional at boot) ---------------
+	//
+	// Lazy dial — `grpc.NewClient` returns immediately and the
+	// connection is established (and re-established) on demand by the
+	// underlying resolver/balancer. The previous DialContext+WithBlock
+	// pattern returned nil whenever the upstream wasn't ready in the
+	// 5s window, and `clients.Document` stayed nil for the lifetime of
+	// the gateway — every resolver returned null until the process was
+	// restarted. Two upshots:
+	//   - boot order between gateway and upstream services no longer
+	//     matters
+	//   - a transient upstream restart self-heals instead of requiring
+	//     a gateway restart too
 	clients := resolver.Clients{}
 	dial := func(name, addr string) *grpc.ClientConn {
 		if addr == "" {
 			log.Warn(ctx).Str("service", name).Msg("addr empty; field returns null until configured")
 			return nil
 		}
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		conn, err := grpc.DialContext(dctx, addr,
+		conn, err := grpc.NewClient(addr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
 		)
 		if err != nil {
 			log.Warn(ctx).Err(err).Str("service", name).Str("addr", addr).
-				Msg("upstream dial failed; field returns null until reachable")
+				Msg("upstream client init failed; field returns null until process restart")
 			return nil
 		}
 		return conn
