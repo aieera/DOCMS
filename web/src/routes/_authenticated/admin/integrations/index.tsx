@@ -17,11 +17,12 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Link2, Link2Off, Activity, CheckCircle2 } from 'lucide-react'
+import { Link2, Link2Off, Activity, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 
 import {
   listESignConnections, startESignOAuth, disconnectESign, listESignEnvelopes,
-  type ESignProvider,
+  refreshESignConnection,
+  type ESignProvider, type ESignConnection,
 } from '@/api/signatures'
 import { getTwilioConfig, getSMTPConfig } from '@/api/notif-providers'
 import { getGoogleConnector, disconnectGoogle } from '@/api/connectors'
@@ -37,6 +38,39 @@ import { useAuthStore } from '@/store/authStore'
 export const Route = createFileRoute('/_authenticated/admin/integrations/')({
   component: IntegrationsIndexPage,
 })
+
+// ConnectionPill picks the colour + label off the server-derived
+// status field. Falls back to the legacy 'Connected' (green) when
+// the field is absent so older API responses still render.
+function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; testId: string }) {
+  if (!conn) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground" data-testid={testId}>
+        Not connected
+      </span>
+    )
+  }
+  const status = conn.status ?? 'healthy'
+  if (status === 'expired') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive" data-testid={testId}>
+        <AlertTriangle className="h-3 w-3" /> Token expired
+      </span>
+    )
+  }
+  if (status === 'expiring_soon') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning" data-testid={testId}>
+        <AlertTriangle className="h-3 w-3" /> Token expiring soon
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" data-testid={testId}>
+      <CheckCircle2 className="h-3 w-3" /> Connected
+    </span>
+  )
+}
 
 export function IntegrationsIndexPage() {
   const qc = useQueryClient()
@@ -73,6 +107,17 @@ export function IntegrationsIndexPage() {
       toast.error(detail || 'Could not start OAuth — check credentials')
     }
   }
+  const refreshConn = useMutation({
+    mutationFn: refreshESignConnection,
+    onSuccess: () => {
+      toast.success('Token refreshed')
+      qc.invalidateQueries({ queryKey: ['esign-connections'] })
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } }).response?.data?.error
+      toast.error(msg ?? 'Refresh failed — admin may need to reconnect')
+    },
+  })
   const disconnect = useMutation({
     mutationFn: disconnectESign,
     onSuccess: () => {
@@ -156,15 +201,7 @@ export function IntegrationsIndexPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
-                        {conn ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" data-testid={`status-${p.id}`}>
-                            <CheckCircle2 className="h-3 w-3" /> Connected
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200" data-testid={`status-${p.id}`}>
-                            Not connected
-                          </span>
-                        )}
+                        <ConnectionPill conn={conn} testId={`status-${p.id}`} />
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{p.help}</p>
                       {conn?.account_id && (
@@ -172,7 +209,7 @@ export function IntegrationsIndexPage() {
                       )}
                       {conn && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Token expires {new Date(conn.expires_at).toLocaleString()}
+                          Token {conn.status === 'expired' ? 'expired' : 'expires'} {new Date(conn.expires_at).toLocaleString()}
                         </p>
                       )}
                       {conn && (
@@ -185,14 +222,27 @@ export function IntegrationsIndexPage() {
                       )}
                     </div>
                     {conn ? (
-                      <Button
-                        size="sm" variant="outline"
-                        onClick={() => disconnect.mutate(p.id)}
-                        loading={disconnect.isPending && disconnect.variables === p.id}
-                        data-testid={`disconnect-${p.id}`}
-                      >
-                        <Link2Off className="me-1 h-4 w-4" /> Disconnect
-                      </Button>
+                      <div className="flex flex-col items-end gap-2">
+                        {(conn.status === 'expiring_soon' || conn.status === 'expired') && (
+                          <Button
+                            size="sm"
+                            onClick={() => refreshConn.mutate(p.id)}
+                            loading={refreshConn.isPending && refreshConn.variables === p.id}
+                            data-testid={`refresh-${p.id}`}
+                          >
+                            <RefreshCw className="me-1 h-4 w-4" />
+                            {conn.status === 'expired' ? 'Reconnect / refresh' : 'Refresh token'}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm" variant="outline"
+                          onClick={() => disconnect.mutate(p.id)}
+                          loading={disconnect.isPending && disconnect.variables === p.id}
+                          data-testid={`disconnect-${p.id}`}
+                        >
+                          <Link2Off className="me-1 h-4 w-4" /> Disconnect
+                        </Button>
+                      </div>
                     ) : (
                       <Button
                         size="sm"

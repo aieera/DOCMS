@@ -111,6 +111,38 @@ func (r *Repository) ListESignTokens(ctx context.Context, tenantID string) ([]*E
 	return out, rows.Err()
 }
 
+// ListESignTokensExpiringWithin returns every tenant's tokens that
+// will expire within `window` (including already-expired ones).
+// Tenant-id-aware — the caller is the refresh worker which runs
+// outside any tenant scope, so we don't gate the read on RLS.
+// access_token / refresh_token come back sealed so the caller can
+// hand them straight to the seal-unseal cycle without re-reading.
+func (r *Repository) ListESignTokensExpiringWithin(ctx context.Context, window time.Duration) ([]*ESignToken, error) {
+	cutoff := time.Now().Add(window)
+	rows, err := r.pool.Query(ctx, `
+		SELECT tenant_id, provider, access_token, COALESCE(refresh_token,''),
+			expires_at, COALESCE(account_id,''), COALESCE(base_uri,''), COALESCE(scope,''),
+			COALESCE(connected_by::text,''), connected_at, updated_at
+		FROM esign_oauth_tokens
+		WHERE expires_at <= $1
+		  AND refresh_token IS NOT NULL`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*ESignToken, 0)
+	for rows.Next() {
+		t := &ESignToken{}
+		if err := rows.Scan(&t.TenantID, &t.Provider, &t.AccessToken, &t.RefreshToken,
+			&t.ExpiresAt, &t.AccountID, &t.BaseURI, &t.Scope,
+			&t.ConnectedBy, &t.ConnectedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // DeleteESignToken disconnects a tenant's link to a provider.
 func (r *Repository) DeleteESignToken(ctx context.Context, tenantID, provider string) error {
 	_, err := r.pool.Exec(ctx,

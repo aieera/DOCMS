@@ -199,6 +199,10 @@ export interface ESignConnection {
   scope?: string
   connected_at: string
   expires_at: string
+  /** Server-derived: 'healthy' (>7d to expiry), 'expiring_soon'
+   *  (≤7d), 'expired' (past expires_at). Lets the UI pick the
+   *  pill colour without re-computing from expires_at. */
+  status?: 'healthy' | 'expiring_soon' | 'expired'
 }
 
 export interface ESignEnvelope {
@@ -231,6 +235,14 @@ export async function startESignOAuth(provider: ESignProvider): Promise<string> 
 
 export async function disconnectESign(provider: ESignProvider): Promise<void> {
   await api.post('/signatures/esign/disconnect', { provider })
+}
+
+// refreshESignConnection trades the stored refresh token for a new
+// access token. Background worker calls the same service method
+// every 30 minutes; this endpoint is the admin's manual override.
+export async function refreshESignConnection(provider: ESignProvider): Promise<ESignConnection> {
+  const { data } = await api.post<ESignConnection>(`/signatures/esign/connections/${provider}/refresh`)
+  return data
 }
 
 // ----- Per-tenant provider credentials (paste-from-UI flow) -------

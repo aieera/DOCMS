@@ -273,6 +273,38 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// eSign token refresh loop. Runs every 30 minutes; refreshes any
+	// access token that will expire within 24 hours. Without this,
+	// tokens silently expire and the UI shows 'Connected' against a
+	// dead row until the next admin send-attempt fails. Errors per
+	// token are logged inside the service method.
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		// Kick once at startup so a restart after a long outage
+		// recovers without waiting for the first tick.
+		if ok, fail, err := svc.RefreshDueTokens(ctx, 24*time.Hour); err != nil {
+			log.Warn(ctx).Err(err).Msg("esign refresh sweep failed at startup")
+		} else if ok+fail > 0 {
+			log.Info(ctx).Int("ok", ok).Int("fail", fail).Msg("esign refresh sweep")
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ok, fail, err := svc.RefreshDueTokens(ctx, 24*time.Hour)
+				if err != nil {
+					log.Warn(ctx).Err(err).Msg("esign refresh sweep failed")
+					continue
+				}
+				if ok+fail > 0 {
+					log.Info(ctx).Int("ok", ok).Int("fail", fail).Msg("esign refresh sweep")
+				}
+			}
+		}
+	}()
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")

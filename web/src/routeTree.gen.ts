@@ -50,6 +50,7 @@ import { Route as AuthenticatedAdminPiiRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAdminPermissionsRouteImport } from './routes/_authenticated/admin/permissions'
 import { Route as AuthenticatedAdminPermissionLagRouteImport } from './routes/_authenticated/admin/permission-lag'
 import { Route as AuthenticatedAdminOcrRouteImport } from './routes/_authenticated/admin/ocr'
+import { Route as AuthenticatedAdminMfaPolicyRouteImport } from './routes/_authenticated/admin/mfa-policy'
 import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_authenticated/admin/metadata-schema'
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminIntegrationsHubRouteImport } from './routes/_authenticated/admin/integrations-hub'
@@ -329,6 +330,12 @@ const AuthenticatedAdminOcrRoute = AuthenticatedAdminOcrRouteImport.update({
   path: '/admin/ocr',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminMfaPolicyRoute =
+  AuthenticatedAdminMfaPolicyRouteImport.update({
+    id: '/admin/mfa-policy',
+    path: '/admin/mfa-policy',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminMetadataSchemaRoute =
   AuthenticatedAdminMetadataSchemaRouteImport.update({
     id: '/admin/metadata-schema',
@@ -668,6 +675,7 @@ export interface FileRoutesByFullPath {
   '/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/admin/mfa-policy': typeof AuthenticatedAdminMfaPolicyRoute
   '/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
@@ -761,6 +769,7 @@ export interface FileRoutesByTo {
   '/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/admin/mfa-policy': typeof AuthenticatedAdminMfaPolicyRoute
   '/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
@@ -857,6 +866,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/_authenticated/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
+  '/_authenticated/admin/mfa-policy': typeof AuthenticatedAdminMfaPolicyRoute
   '/_authenticated/admin/ocr': typeof AuthenticatedAdminOcrRoute
   '/_authenticated/admin/permission-lag': typeof AuthenticatedAdminPermissionLagRoute
   '/_authenticated/admin/permissions': typeof AuthenticatedAdminPermissionsRoute
@@ -953,6 +963,7 @@ export interface FileRouteTypes {
     | '/admin/integrations-hub'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
+    | '/admin/mfa-policy'
     | '/admin/ocr'
     | '/admin/permission-lag'
     | '/admin/permissions'
@@ -1046,6 +1057,7 @@ export interface FileRouteTypes {
     | '/admin/integrations-hub'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
+    | '/admin/mfa-policy'
     | '/admin/ocr'
     | '/admin/permission-lag'
     | '/admin/permissions'
@@ -1141,6 +1153,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/integrations-hub'
     | '/_authenticated/admin/legal-holds'
     | '/_authenticated/admin/metadata-schema'
+    | '/_authenticated/admin/mfa-policy'
     | '/_authenticated/admin/ocr'
     | '/_authenticated/admin/permission-lag'
     | '/_authenticated/admin/permissions'
@@ -1505,6 +1518,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/ocr'
       fullPath: '/admin/ocr'
       preLoaderRoute: typeof AuthenticatedAdminOcrRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/mfa-policy': {
+      id: '/_authenticated/admin/mfa-policy'
+      path: '/admin/mfa-policy'
+      fullPath: '/admin/mfa-policy'
+      preLoaderRoute: typeof AuthenticatedAdminMfaPolicyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/metadata-schema': {
@@ -1953,6 +1973,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIntegrationsHubRoute: typeof AuthenticatedAdminIntegrationsHubRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
   AuthenticatedAdminMetadataSchemaRoute: typeof AuthenticatedAdminMetadataSchemaRoute
+  AuthenticatedAdminMfaPolicyRoute: typeof AuthenticatedAdminMfaPolicyRoute
   AuthenticatedAdminOcrRoute: typeof AuthenticatedAdminOcrRoute
   AuthenticatedAdminPermissionLagRoute: typeof AuthenticatedAdminPermissionLagRoute
   AuthenticatedAdminPermissionsRoute: typeof AuthenticatedAdminPermissionsRoute
@@ -2037,6 +2058,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAdminIntegrationsHubRoute,
   AuthenticatedAdminLegalHoldsRoute: AuthenticatedAdminLegalHoldsRoute,
   AuthenticatedAdminMetadataSchemaRoute: AuthenticatedAdminMetadataSchemaRoute,
+  AuthenticatedAdminMfaPolicyRoute: AuthenticatedAdminMfaPolicyRoute,
   AuthenticatedAdminOcrRoute: AuthenticatedAdminOcrRoute,
   AuthenticatedAdminPermissionLagRoute: AuthenticatedAdminPermissionLagRoute,
   AuthenticatedAdminPermissionsRoute: AuthenticatedAdminPermissionsRoute,

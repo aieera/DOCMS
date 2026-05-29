@@ -28,6 +28,7 @@ func (h *Handler) RegisterESign(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/signatures/esign/oauth/start", e.oauthStart)
 	mux.HandleFunc("GET /api/v1/signatures/esign/oauth/callback", e.oauthCallback)
 	mux.HandleFunc("POST /api/v1/signatures/esign/disconnect", e.disconnect)
+	mux.HandleFunc("POST /api/v1/signatures/esign/connections/{provider}/refresh", e.refresh)
 	mux.HandleFunc("GET /api/v1/signatures/esign/envelopes", e.envelopes)
 	// Per-tenant OAuth client credentials (paste-from-UI flow). Admin
 	// fills the modal with Integration Key + Secret Key + environment
@@ -97,6 +98,30 @@ type connectionRow struct {
 	Scope       string `json:"scope,omitempty"`
 	ConnectedAt string `json:"connected_at"`
 	ExpiresAt   string `json:"expires_at"`
+	// Status is a derived field the UI uses to pick the connection
+	// pill colour. Values: 'healthy' (expires_at > now+expiringWindow),
+	// 'expiring_soon' (expires within 7 days), 'expired'
+	// (expires_at <= now). Computed at read time — no DB column —
+	// so the refresh worker doesn't have to update it separately.
+	Status string `json:"status"`
+}
+
+// expiringWindow is how close to expiry a token must be before the
+// status flips from 'healthy' to 'expiring_soon'. Matches the
+// background refresh worker's lookahead so the UI never shows
+// 'expiring_soon' for a token the worker hasn't already attempted
+// to refresh.
+const expiringWindow = 7 * 24 * time.Hour
+
+func deriveTokenStatus(expiresAt time.Time) string {
+	now := time.Now()
+	if !expiresAt.After(now) {
+		return "expired"
+	}
+	if expiresAt.Sub(now) <= expiringWindow {
+		return "expiring_soon"
+	}
+	return "healthy"
 }
 
 func (e *esignRoutes) connections(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +146,7 @@ func (e *esignRoutes) connections(w http.ResponseWriter, r *http.Request) {
 			Scope: t.Scope,
 			ConnectedAt: t.ConnectedAt.Format(time.RFC3339),
 			ExpiresAt:   t.ExpiresAt.Format(time.RFC3339),
+			Status:      deriveTokenStatus(t.ExpiresAt),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"connections": out})
@@ -190,6 +216,41 @@ func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// refresh exchanges the stored refresh token for a fresh access
+// token + (when the vendor rotates it) a new refresh token. The
+// admin button in the Connections UI hits this directly; the
+// background worker calls the same service method on a 30-min tick.
+func (e *esignRoutes) refresh(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusUnauthorized, "tenant required")
+		return
+	}
+	provider := esign.Provider(r.PathValue("provider"))
+	if provider == "" {
+		writeError(w, http.StatusBadRequest, "provider required")
+		return
+	}
+	tok, err := e.svc.RefreshAccessToken(r.Context(), tenantID, provider)
+	if err != nil {
+		// Caller gets the underlying reason so the UI can decide
+		// whether to surface "reconnect" (refresh token revoked) vs
+		// "try again" (transport / 5xx). Service layer wraps the
+		// classification.
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, connectionRow{
+		Provider:    tok.Provider,
+		AccountID:   tok.AccountID,
+		BaseURI:     tok.BaseURI,
+		Scope:       tok.Scope,
+		ConnectedAt: tok.ConnectedAt.Format(time.RFC3339),
+		ExpiresAt:   tok.ExpiresAt.Format(time.RFC3339),
+		Status:      deriveTokenStatus(tok.ExpiresAt),
+	})
 }
 
 // ----- Envelope status tab ----------------------------------------

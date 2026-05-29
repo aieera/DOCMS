@@ -333,6 +333,95 @@ func (s *Service) ListConnections(ctx context.Context, tenantID string) ([]*repo
 	return s.repo.ListESignTokens(ctx, tenantID)
 }
 
+// RefreshAccessToken trades the stored refresh token for a fresh
+// access token + (when the vendor rotates it) a new refresh token.
+// The new row keeps every field that wasn't replaced — account_id,
+// base_uri, scope, connected_by — so the UI's connected-by-and-when
+// stays intact across silent refreshes. Returns the persisted token
+// or an error classifying the failure (so the caller can surface
+// "refresh token revoked → admin must reconnect" distinctly from
+// transport errors that warrant a retry).
+func (s *Service) RefreshAccessToken(ctx context.Context, tenantID string, provider esign.Provider) (*repository.ESignToken, error) {
+	if s.esign == nil {
+		return nil, errors.New("esign not configured")
+	}
+	cur, err := s.repo.GetESignToken(ctx, tenantID, string(provider))
+	if err != nil || cur == nil {
+		return nil, fmt.Errorf("esign: no token for %s/%s", tenantID, provider)
+	}
+	if cur.RefreshToken == "" {
+		return nil, errors.New("esign: refresh token absent; admin must reconnect")
+	}
+	plainRefresh, err := esign.UnsealString(cur.RefreshToken, s.esign.SealingKey)
+	if err != nil {
+		return nil, fmt.Errorf("esign: unseal refresh: %w", err)
+	}
+	cfg, err := s.resolveOAuthConfig(ctx, tenantID, provider)
+	if err != nil {
+		return nil, err
+	}
+	res, err := cfg.RefreshToken(ctx, s.esign.HTTPClient, plainRefresh)
+	if err != nil {
+		return nil, fmt.Errorf("esign: refresh: %w", err)
+	}
+	access, err := esign.SealString([]byte(res.AccessToken), s.esign.SealingKey)
+	if err != nil {
+		return nil, err
+	}
+	// DocuSign rotates the refresh token on every exchange; Adobe
+	// keeps it. Preserve the existing one when the response doesn't
+	// include a new value so we don't overwrite a valid refresh
+	// token with the empty string.
+	refresh := cur.RefreshToken
+	if res.RefreshToken != "" {
+		sealed, sErr := esign.SealString([]byte(res.RefreshToken), s.esign.SealingKey)
+		if sErr != nil {
+			return nil, sErr
+		}
+		refresh = sealed
+	}
+	row := &repository.ESignToken{
+		TenantID:     tenantID,
+		Provider:     string(provider),
+		AccessToken:  access,
+		RefreshToken: refresh,
+		ExpiresAt:    res.ExpiresAt,
+		AccountID:    cur.AccountID,
+		BaseURI:      cur.BaseURI,
+		Scope:        cur.Scope,
+		ConnectedBy:  cur.ConnectedBy,
+		ConnectedAt:  cur.ConnectedAt,
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := s.repo.UpsertESignToken(ctx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+// RefreshDueTokens scans every tenant's eSign tokens and refreshes
+// any that are within `window` of their expiry. Errors per token are
+// logged but don't fail the sweep. Intended to be called from a
+// ticker loop in signature/cmd/server/main.go.
+func (s *Service) RefreshDueTokens(ctx context.Context, window time.Duration) (int, int, error) {
+	if s.esign == nil {
+		return 0, 0, errors.New("esign not configured")
+	}
+	due, err := s.repo.ListESignTokensExpiringWithin(ctx, window)
+	if err != nil {
+		return 0, 0, err
+	}
+	ok, fail := 0, 0
+	for _, t := range due {
+		if _, err := s.RefreshAccessToken(ctx, t.TenantID, esign.Provider(t.Provider)); err != nil {
+			fail++
+			continue
+		}
+		ok++
+	}
+	return ok, fail, nil
+}
+
 // Disconnect clears the connection.
 func (s *Service) Disconnect(ctx context.Context, tenantID string, provider esign.Provider) error {
 	return s.repo.DeleteESignToken(ctx, tenantID, string(provider))

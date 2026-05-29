@@ -48,6 +48,8 @@ func (h *ResidencyHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/residency/migrations", h.createMigration)
 	mux.HandleFunc("GET /api/v1/residency/migrations", h.listMigrations)
 	mux.HandleFunc("GET /api/v1/residency/migrations/{id}", h.getMigration)
+	mux.HandleFunc("POST /api/v1/residency/migrations/{id}/redispatch", h.redispatchMigration)
+	mux.HandleFunc("POST /api/v1/residency/migrations/{id}/cancel", h.cancelMigration)
 }
 
 type regionRow struct {
@@ -311,7 +313,148 @@ func (h *ResidencyHandler) getMigration(w http.ResponseWriter, r *http.Request) 
 	writeJSONStatus(w, http.StatusOK, res)
 }
 
-// unused import guard — keeps `fmt`, `strings` available for future
-// extensions without churn on this file.
+// redispatchMigration re-fires the Temporal workflow for a row that
+// was created but whose initial dispatch failed (Temporal unreachable,
+// crash between INSERT and ExecuteWorkflow, etc) and is still
+// 'pending' with no workflow_run_id. Idempotent: a row already
+// 'running' or terminal is left untouched and returns the current
+// state. Admin/owner only.
+func (h *ResidencyHandler) redispatchMigration(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	var (
+		source, target string
+		fworkspace     *uuid.UUID
+		fclass         *string
+		curStatus      string
+		runID          *string
+	)
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			SELECT source_region, target_region, filter_workspace, filter_document_class, status, workflow_run_id
+			FROM residency_migrations WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id).Scan(&source, &target, &fworkspace, &fclass, &curStatus, &runID)
+	})
+	if err != nil {
+		writeErr(w, r, vdmserr.FromPgError(err))
+		return
+	}
+	if curStatus != "pending" {
+		writeJSONStatus(w, http.StatusOK, map[string]any{
+			"id":      id.String(),
+			"status":  curStatus,
+			"message": "migration not in pending state; nothing to redispatch",
+		})
+		return
+	}
+	if h.tc == nil {
+		writeErr(w, r, vdmserr.Wrap(vdmserr.ErrInternal, fmt.Errorf("temporal client unavailable")))
+		return
+	}
+	wsArg := ""
+	if fworkspace != nil {
+		wsArg = fworkspace.String()
+	}
+	classArg := ""
+	if fclass != nil {
+		classArg = *fclass
+	}
+	we, werr := h.tc.ExecuteWorkflow(r.Context(),
+		client.StartWorkflowOptions{
+			ID:        "residency-" + id.String(),
+			TaskQueue: residencyTaskQueue,
+		},
+		"ResidencyMigrationWorkflow",
+		map[string]any{
+			"tenant_id":             tenantID.String(),
+			"migration_id":          id.String(),
+			"source_region":         source,
+			"target_region":         target,
+			"filter_workspace":      wsArg,
+			"filter_document_class": classArg,
+			"batch_size":            100,
+		},
+	)
+	if werr != nil {
+		h.log.Warn().Err(werr).Str("migration_id", id.String()).Msg("residency redispatch failed")
+		writeErr(w, r, vdmserr.Wrap(vdmserr.ErrInternal, werr))
+		return
+	}
+	// Stamp the new run id so subsequent GETs can find the workflow.
+	if uerr := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(r.Context(),
+			`UPDATE residency_migrations SET workflow_run_id = $3 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id, we.GetRunID())
+		return e
+	}); uerr != nil {
+		h.log.Warn().Err(uerr).Str("migration_id", id.String()).Msg("redispatch: run_id write failed (workflow already running)")
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"id":              id.String(),
+		"workflow_run_id": we.GetRunID(),
+		"status":          "pending",
+	})
+}
+
+// cancelMigration marks a 'pending' migration as 'cancelled' with an
+// optional reason. Does NOT signal Temporal — only safe to call on
+// rows that were never successfully dispatched. For a running
+// workflow, use Temporal's cancellation primitives instead. Admin/
+// owner only.
+func (h *ResidencyHandler) cancelMigration(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := callers(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body) // reason is optional
+	reason := strings.TrimSpace(body.Reason)
+	if reason == "" {
+		reason = "Cancelled by admin"
+	}
+	var status string
+	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(), `
+			UPDATE residency_migrations
+			   SET status = 'cancelled', completed_at = now(), error_summary = $3
+			 WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+			 RETURNING status`,
+			tenantID, id, reason).Scan(&status)
+	})
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			writeErr(w, r, vdmserr.Validation("status", "only pending migrations can be cancelled via this endpoint"))
+			return
+		}
+		writeErr(w, r, vdmserr.FromPgError(err))
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{
+		"id":     id.String(),
+		"status": status,
+		"reason": reason,
+	})
+}
+
 var _ = fmt.Sprintf
 var _ = strings.TrimSpace
