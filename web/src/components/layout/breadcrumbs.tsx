@@ -181,7 +181,7 @@ export function Breadcrumbs() {
         const isLast = idx === crumbs.length - 1
         return (
           <Fragment key={crumb.href}>
-            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
+            <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
             {isLast ? (
               <span
                 className="block max-w-[28ch] truncate font-medium text-foreground sm:max-w-[44ch]"

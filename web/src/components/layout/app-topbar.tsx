@@ -71,9 +71,11 @@ function CommandTrigger() {
   const [q, setQ] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Cmd/Ctrl+K (and `/` when no other input is focused) focuses the
-  // header search input. preventDefault so `/` doesn't slip into the
-  // value as a literal character.
+  // Cmd/Ctrl+K (and `/` when nothing else is taking input) focuses the
+  // header search input. The `/` path must NOT trigger inside Radix
+  // popovers/comboboxes, contenteditable surfaces, or CodeMirror
+  // editors used elsewhere — otherwise typing a clause path or query
+  // that contains `/` yanks the user out of their current control.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'
@@ -81,7 +83,8 @@ function CommandTrigger() {
       const editingElsewhere =
         target?.tagName === 'INPUT' ||
         target?.tagName === 'TEXTAREA' ||
-        target?.isContentEditable
+        target?.isContentEditable ||
+        !!target?.closest('[role="combobox"], [role="listbox"], [role="dialog"], [contenteditable], .cm-editor')
       const isSlash = e.key === '/' && !editingElsewhere
       if (isModK || isSlash) {
         e.preventDefault()
@@ -95,6 +98,10 @@ function CommandTrigger() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // Show Ctrl on non-Mac, ⌘ on Mac. navigator.platform is deprecated
+  // but still the most reliable signal here; userAgentData is uneven.
+  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
 
   return (
     <form
@@ -127,11 +134,12 @@ function CommandTrigger() {
         aria-hidden
         className={
           'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
-          'border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground ' +
+          'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +
           'group-focus-within:invisible'
         }
       >
-        <span className="text-xs">⌘</span>K
+        {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}
+        <span>K</span>
       </kbd>
     </form>
   )
@@ -360,7 +368,7 @@ function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="default"
+          variant="secondary"
           size="icon"
           aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
           data-testid="user-avatar-button"
@@ -368,7 +376,7 @@ function UserMenu() {
           disabled={isHydrating}
         >
           {isHydrating ? (
-            <span aria-hidden className="inline-block h-3 w-3 animate-pulse rounded-full bg-current/30" />
+            <span aria-hidden className="inline-block h-3 w-3 animate-pulse rounded-full bg-foreground/20" />
           ) : (
             initial
           )}
