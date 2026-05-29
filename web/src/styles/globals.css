@@ -167,10 +167,6 @@
     font-family: 'IBM Plex Sans Arabic', var(--font-sans);
   }
 
-  /* Warm, theme-coherent scrollbar. Pill-shaped thumb with a soft
-     mustard tint on hover so the gutter doesn't read as a foreign
-     OS chrome element against the cream background.
-     Firefox respects scrollbar-color via :root below. */
   *::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -180,23 +176,9 @@
   }
   *::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
-    border: 2px solid transparent;
-    background-clip: content-box;
-    border-radius: 9999px;
-    transition: background-color 120ms ease;
+    border-radius: 5px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--primary) / 0.55);
-    background-clip: content-box;
-  }
-  *::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-}
-
-@layer base {
-  :root {
-    scrollbar-color: hsl(var(--border)) transparent;
-    scrollbar-width: thin;
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 }
