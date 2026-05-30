@@ -8,7 +8,13 @@ import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
 import { getFolder, getWorkspace } from '@/api/workspaces'
 import { updateDocument } from '@/api/documents'
-import { useCreateFolder, useDeleteFolder, useFolders, useRenameFolder } from '@/hooks/useFolders'
+import {
+  useCreateFolder,
+  useDeleteFolder,
+  useFolders,
+  useRenameFolder,
+  useSetFolderVisibility,
+} from '@/hooks/useFolders'
 import { FolderBreadcrumbs } from '@/components/folders/FolderBreadcrumbs'
 import { FolderGrid } from '@/components/folders/FolderGrid'
 import { NewFolderDialog } from '@/components/folders/NewFolderDialog'
@@ -92,6 +98,7 @@ function WorkspacePage() {
   const createFolder = useCreateFolder()
   const renameFolder = useRenameFolder()
   const deleteFolder = useDeleteFolder()
+  const setVisibility = useSetFolderVisibility()
   // dragCounter pattern: native dragenter/dragleave fire as the cursor
   // crosses every CHILD element under the drop zone, so a naive
   // boolean toggles in and out as the user drags over interior
@@ -349,6 +356,15 @@ function WorkspacePage() {
             },
           })
         }}
+        onSetVisibility={(folder, visibility) => {
+          setVisibility.mutate(
+            { folderId: folder.id, visibility },
+            {
+              onSuccess: () => toast.success(t('toasts.visibility_changed')),
+              onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('toasts.error')),
+            },
+          )
+        }}
         canManage={isAdmin}
       />
 
@@ -368,12 +384,12 @@ function WorkspacePage() {
         open={newFolderOpen}
         onOpenChange={setNewFolderOpen}
         parentName={folderDetail.data?.name ?? null}
-        canPickVisibility={false}
+        canPickVisibility={true}
         isCreating={createFolder.isPending}
-        onCreate={async (name) => {
+        onCreate={async (name, visibility) => {
           await new Promise<void>((resolve, reject) => {
             createFolder.mutate(
-              { workspaceId, name, parentId: currentFolderId ?? undefined },
+              { workspaceId, name, parentId: currentFolderId ?? undefined, visibility },
               {
                 onSuccess: () => {
                   toast.success(t('toasts.created'))

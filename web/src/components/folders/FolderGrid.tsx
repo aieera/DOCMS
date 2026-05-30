@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Folder as FolderIcon, MoreHorizontal, Pencil, Trash2, FolderOpen, Lock } from 'lucide-react'
+import {
+  Folder as FolderIcon,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  FolderOpen,
+  Lock,
+  Unlock,
+  UserPlus,
+} from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -19,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/shadcn/dialog'
+import { ManageFolderAccessDialog } from './ManageFolderAccessDialog'
 import type { Folder } from '@/types/api'
 
 interface Props {
@@ -27,6 +37,9 @@ interface Props {
   onOpen: (folder: Folder) => void
   onRename?: (folder: Folder, name: string) => void
   onDelete?: (folder: Folder) => void
+  // onSetVisibility flips shared↔private. Backend re-asserts owner/admin
+  // gating; the menu just routes the click.
+  onSetVisibility?: (folder: Folder, visibility: 'shared' | 'private') => void
   // canManage = caller has rename/delete permission on these folders
   // (admins always; owners on their own folders). Hides the ⋮ menu
   // entirely when false.
@@ -45,12 +58,15 @@ export function FolderGrid({
   onOpen,
   onRename,
   onDelete,
+  onSetVisibility,
   canManage = false,
   dropTargetId = null,
 }: Props) {
   const { t } = useTranslation('folders')
   const [renameFor, setRenameFor] = useState<Folder | null>(null)
   const [deleteFor, setDeleteFor] = useState<Folder | null>(null)
+  const [flipFor, setFlipFor] = useState<Folder | null>(null)
+  const [accessFor, setAccessFor] = useState<Folder | null>(null)
 
   if (isLoading) {
     return (
@@ -81,6 +97,12 @@ export function FolderGrid({
               onOpen={() => onOpen(f)}
               onRename={canManage && onRename ? () => setRenameFor(f) : undefined}
               onDelete={canManage && onDelete ? () => setDeleteFor(f) : undefined}
+              onFlipVisibility={
+                canManage && onSetVisibility ? () => setFlipFor(f) : undefined
+              }
+              onManageAccess={
+                canManage && f.visibility === 'private' ? () => setAccessFor(f) : undefined
+              }
               isDropTarget={dropTargetId === f.id}
             />
           </li>
@@ -112,6 +134,36 @@ export function FolderGrid({
           }}
         />
       )}
+
+      {flipFor && (() => {
+        const target: 'shared' | 'private' =
+          flipFor.visibility === 'private' ? 'shared' : 'private'
+        const keyBase =
+          target === 'private'
+            ? 'visibility.flip_to_private_confirm'
+            : 'visibility.flip_to_shared_confirm'
+        return (
+          <ConfirmDialog
+            open={!!flipFor}
+            onOpenChange={(o) => !o && setFlipFor(null)}
+            title={t(`${keyBase}.title`)}
+            description={t(`${keyBase}.description`)}
+            confirmLabel={t(`${keyBase}.confirm`)}
+            onConfirm={() => {
+              onSetVisibility?.(flipFor, target)
+              setFlipFor(null)
+            }}
+          />
+        )
+      })()}
+
+      {accessFor && (
+        <ManageFolderAccessDialog
+          open={!!accessFor}
+          onOpenChange={(o) => !o && setAccessFor(null)}
+          folder={accessFor}
+        />
+      )}
     </>
   )
 }
@@ -121,10 +173,20 @@ interface CardProps {
   onOpen: () => void
   onRename?: () => void
   onDelete?: () => void
+  onFlipVisibility?: () => void
+  onManageAccess?: () => void
   isDropTarget?: boolean
 }
 
-function FolderCard({ folder, onOpen, onRename, onDelete, isDropTarget }: CardProps) {
+function FolderCard({
+  folder,
+  onOpen,
+  onRename,
+  onDelete,
+  onFlipVisibility,
+  onManageAccess,
+  isDropTarget,
+}: CardProps) {
   const { t } = useTranslation('folders')
   const childCount = folder.child_folder_count ?? 0
   const docCount = folder.document_count ?? 0
@@ -181,7 +243,7 @@ function FolderCard({ folder, onOpen, onRename, onDelete, isDropTarget }: CardPr
               })}
         </p>
       </div>
-      {(onRename || onDelete) && (
+      {(onRename || onDelete || onFlipVisibility || onManageAccess) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -204,6 +266,34 @@ function FolderCard({ folder, onOpen, onRename, onDelete, isDropTarget }: CardPr
               <DropdownMenuItem onSelect={onRename}>
                 <Pencil className="me-2 h-4 w-4" />
                 {t('actions.rename')}
+              </DropdownMenuItem>
+            )}
+            {(onFlipVisibility || onManageAccess) && <DropdownMenuSeparator />}
+            {onFlipVisibility && (
+              <DropdownMenuItem
+                onSelect={onFlipVisibility}
+                data-testid={`folder-flip-visibility-${folder.id}`}
+              >
+                {folder.visibility === 'private' ? (
+                  <>
+                    <Unlock className="me-2 h-4 w-4" />
+                    {t('actions.make_shared')}
+                  </>
+                ) : (
+                  <>
+                    <Lock className="me-2 h-4 w-4" />
+                    {t('actions.make_private')}
+                  </>
+                )}
+              </DropdownMenuItem>
+            )}
+            {onManageAccess && (
+              <DropdownMenuItem
+                onSelect={onManageAccess}
+                data-testid={`folder-manage-access-${folder.id}`}
+              >
+                <UserPlus className="me-2 h-4 w-4" />
+                {t('actions.manage_access')}
               </DropdownMenuItem>
             )}
             {onDelete && (

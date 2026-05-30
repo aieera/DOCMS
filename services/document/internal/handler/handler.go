@@ -46,6 +46,7 @@ func (h *Handler) CreateFolder(ctx context.Context, req *vaultdmsv1.CreateFolder
 		WorkspaceID:    ws,
 		Name:           req.GetName(),
 		ParentFolderID: parent,
+		Visibility:     model.FolderVisibility(req.GetVisibility()),
 	})
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -115,6 +116,75 @@ func (h *Handler) DeleteFolder(ctx context.Context, req *vaultdmsv1.DeleteFolder
 		return nil, vdmserr.ToGRPCError(err)
 	}
 	if err := h.svc.DeleteFolder(ctx, id); err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// SetFolderVisibility flips a folder's visibility between shared and
+// private. Visibility = '' returns InvalidArgument. The service layer
+// enforces owner / admin gating.
+func (h *Handler) SetFolderVisibility(ctx context.Context, req *vaultdmsv1.SetFolderVisibilityRequest) (*vaultdmsv1.Folder, error) {
+	id, err := parseUUID("folder_id", req.GetFolderId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	f, err := h.svc.SetFolderVisibility(ctx, &service.SetFolderVisibilityInput{
+		FolderID:   id,
+		Visibility: model.FolderVisibility(req.GetVisibility()),
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return folderToProto(f), nil
+}
+
+func (h *Handler) ListFolderGrants(ctx context.Context, req *vaultdmsv1.ListFolderGrantsRequest) (*vaultdmsv1.ListFolderGrantsResponse, error) {
+	id, err := parseUUID("folder_id", req.GetFolderId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	grants, err := h.svc.ListFolderGrants(ctx, id)
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	out := &vaultdmsv1.ListFolderGrantsResponse{Grants: make([]*vaultdmsv1.FolderGrant, 0, len(grants))}
+	for i := range grants {
+		out.Grants = append(out.Grants, folderGrantToProto(&grants[i]))
+	}
+	return out, nil
+}
+
+func (h *Handler) AddFolderGrant(ctx context.Context, req *vaultdmsv1.AddFolderGrantRequest) (*vaultdmsv1.FolderGrant, error) {
+	id, err := parseUUID("folder_id", req.GetFolderId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	grantee, err := parseUUID("grantee_id", req.GetGranteeId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	g, err := h.svc.AddFolderGrant(ctx, &service.AddFolderGrantInput{
+		FolderID:    id,
+		GranteeType: req.GetGranteeType(),
+		GranteeID:   grantee,
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return folderGrantToProto(g), nil
+}
+
+func (h *Handler) RemoveFolderGrant(ctx context.Context, req *vaultdmsv1.RemoveFolderGrantRequest) (*emptypb.Empty, error) {
+	id, err := parseUUID("folder_id", req.GetFolderId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	grantee, err := parseUUID("grantee_id", req.GetGranteeId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	if err := h.svc.RemoveFolderGrant(ctx, id, req.GetGranteeType(), grantee); err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
 	return &emptypb.Empty{}, nil

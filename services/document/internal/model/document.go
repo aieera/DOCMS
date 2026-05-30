@@ -128,6 +128,17 @@ type Workspace struct {
 	FolderCount   int64
 }
 
+// FolderVisibility classifies who can see + act on a folder.
+//   - FolderShared: inherits workspace membership / permissions
+//   - FolderPrivate: visible only to the OwnerID + folder_grants
+//                   rows + workspace admins
+type FolderVisibility string
+
+const (
+	FolderShared  FolderVisibility = "shared"
+	FolderPrivate FolderVisibility = "private"
+)
+
 // Folder is an ltree-pathed container for documents and sub-folders.
 type Folder struct {
 	TenantID         uuid.UUID
@@ -143,10 +154,28 @@ type Folder struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DeletedAt        *time.Time
+	// Phase 2: visibility + owner. Visibility defaults to shared on
+	// every row (DB default). OwnerID is populated for private
+	// folders; NULL for shared (the column is nullable in the schema).
+	Visibility FolderVisibility
+	OwnerID    *uuid.UUID
 	// Ancestors is populated by GetFolder; the breadcrumb trail from root
 	// to (but not including) this folder, ordered shallowest → deepest.
 	// Empty for root folders. Not persisted.
 	Ancestors []Folder `json:"ancestors,omitempty"`
+}
+
+// FolderGrant is one row of the folder-scoped ACL. (GranteeType,
+// GranteeID) uniquely identifies the principal granted access; the
+// FK constraint to (tenant_id, folder_id) cascades on folder delete.
+type FolderGrant struct {
+	TenantID    uuid.UUID
+	ID          uuid.UUID
+	FolderID    uuid.UUID
+	GranteeType string // 'user' | 'group'
+	GranteeID   uuid.UUID
+	GrantedBy   *uuid.UUID
+	CreatedAt   time.Time
 }
 
 // ShareLink is a tokenized anonymous access grant to a document.

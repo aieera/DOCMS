@@ -30,6 +30,10 @@ const (
 	DocumentService_ListFolders_FullMethodName          = "/vaultdms.v1.DocumentService/ListFolders"
 	DocumentService_UpdateFolder_FullMethodName         = "/vaultdms.v1.DocumentService/UpdateFolder"
 	DocumentService_DeleteFolder_FullMethodName         = "/vaultdms.v1.DocumentService/DeleteFolder"
+	DocumentService_SetFolderVisibility_FullMethodName  = "/vaultdms.v1.DocumentService/SetFolderVisibility"
+	DocumentService_ListFolderGrants_FullMethodName     = "/vaultdms.v1.DocumentService/ListFolderGrants"
+	DocumentService_AddFolderGrant_FullMethodName       = "/vaultdms.v1.DocumentService/AddFolderGrant"
+	DocumentService_RemoveFolderGrant_FullMethodName    = "/vaultdms.v1.DocumentService/RemoveFolderGrant"
 	DocumentService_CreateDocument_FullMethodName       = "/vaultdms.v1.DocumentService/CreateDocument"
 	DocumentService_GetDocument_FullMethodName          = "/vaultdms.v1.DocumentService/GetDocument"
 	DocumentService_UpdateDocument_FullMethodName       = "/vaultdms.v1.DocumentService/UpdateDocument"
@@ -67,6 +71,11 @@ type DocumentServiceClient interface {
 	ListFolders(ctx context.Context, in *ListFoldersRequest, opts ...grpc.CallOption) (*ListFoldersResponse, error)
 	UpdateFolder(ctx context.Context, in *UpdateFolderRequest, opts ...grpc.CallOption) (*Folder, error)
 	DeleteFolder(ctx context.Context, in *DeleteFolderRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Phase 2 — folder visibility + grants.
+	SetFolderVisibility(ctx context.Context, in *SetFolderVisibilityRequest, opts ...grpc.CallOption) (*Folder, error)
+	ListFolderGrants(ctx context.Context, in *ListFolderGrantsRequest, opts ...grpc.CallOption) (*ListFolderGrantsResponse, error)
+	AddFolderGrant(ctx context.Context, in *AddFolderGrantRequest, opts ...grpc.CallOption) (*FolderGrant, error)
+	RemoveFolderGrant(ctx context.Context, in *RemoveFolderGrantRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	CreateDocument(ctx context.Context, in *CreateDocumentRequest, opts ...grpc.CallOption) (*Document, error)
 	GetDocument(ctx context.Context, in *GetDocumentRequest, opts ...grpc.CallOption) (*Document, error)
 	UpdateDocument(ctx context.Context, in *UpdateDocumentRequest, opts ...grpc.CallOption) (*Document, error)
@@ -182,6 +191,42 @@ func (c *documentServiceClient) UpdateFolder(ctx context.Context, in *UpdateFold
 func (c *documentServiceClient) DeleteFolder(ctx context.Context, in *DeleteFolderRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, DocumentService_DeleteFolder_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *documentServiceClient) SetFolderVisibility(ctx context.Context, in *SetFolderVisibilityRequest, opts ...grpc.CallOption) (*Folder, error) {
+	out := new(Folder)
+	err := c.cc.Invoke(ctx, DocumentService_SetFolderVisibility_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *documentServiceClient) ListFolderGrants(ctx context.Context, in *ListFolderGrantsRequest, opts ...grpc.CallOption) (*ListFolderGrantsResponse, error) {
+	out := new(ListFolderGrantsResponse)
+	err := c.cc.Invoke(ctx, DocumentService_ListFolderGrants_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *documentServiceClient) AddFolderGrant(ctx context.Context, in *AddFolderGrantRequest, opts ...grpc.CallOption) (*FolderGrant, error) {
+	out := new(FolderGrant)
+	err := c.cc.Invoke(ctx, DocumentService_AddFolderGrant_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *documentServiceClient) RemoveFolderGrant(ctx context.Context, in *RemoveFolderGrantRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DocumentService_RemoveFolderGrant_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +436,11 @@ type DocumentServiceServer interface {
 	ListFolders(context.Context, *ListFoldersRequest) (*ListFoldersResponse, error)
 	UpdateFolder(context.Context, *UpdateFolderRequest) (*Folder, error)
 	DeleteFolder(context.Context, *DeleteFolderRequest) (*emptypb.Empty, error)
+	// Phase 2 — folder visibility + grants.
+	SetFolderVisibility(context.Context, *SetFolderVisibilityRequest) (*Folder, error)
+	ListFolderGrants(context.Context, *ListFolderGrantsRequest) (*ListFolderGrantsResponse, error)
+	AddFolderGrant(context.Context, *AddFolderGrantRequest) (*FolderGrant, error)
+	RemoveFolderGrant(context.Context, *RemoveFolderGrantRequest) (*emptypb.Empty, error)
 	CreateDocument(context.Context, *CreateDocumentRequest) (*Document, error)
 	GetDocument(context.Context, *GetDocumentRequest) (*Document, error)
 	UpdateDocument(context.Context, *UpdateDocumentRequest) (*Document, error)
@@ -448,6 +498,18 @@ func (UnimplementedDocumentServiceServer) UpdateFolder(context.Context, *UpdateF
 }
 func (UnimplementedDocumentServiceServer) DeleteFolder(context.Context, *DeleteFolderRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteFolder not implemented")
+}
+func (UnimplementedDocumentServiceServer) SetFolderVisibility(context.Context, *SetFolderVisibilityRequest) (*Folder, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetFolderVisibility not implemented")
+}
+func (UnimplementedDocumentServiceServer) ListFolderGrants(context.Context, *ListFolderGrantsRequest) (*ListFolderGrantsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFolderGrants not implemented")
+}
+func (UnimplementedDocumentServiceServer) AddFolderGrant(context.Context, *AddFolderGrantRequest) (*FolderGrant, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddFolderGrant not implemented")
+}
+func (UnimplementedDocumentServiceServer) RemoveFolderGrant(context.Context, *RemoveFolderGrantRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveFolderGrant not implemented")
 }
 func (UnimplementedDocumentServiceServer) CreateDocument(context.Context, *CreateDocumentRequest) (*Document, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateDocument not implemented")
@@ -701,6 +763,78 @@ func _DocumentService_DeleteFolder_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DocumentServiceServer).DeleteFolder(ctx, req.(*DeleteFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DocumentService_SetFolderVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetFolderVisibilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DocumentServiceServer).SetFolderVisibility(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DocumentService_SetFolderVisibility_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DocumentServiceServer).SetFolderVisibility(ctx, req.(*SetFolderVisibilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DocumentService_ListFolderGrants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFolderGrantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DocumentServiceServer).ListFolderGrants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DocumentService_ListFolderGrants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DocumentServiceServer).ListFolderGrants(ctx, req.(*ListFolderGrantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DocumentService_AddFolderGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFolderGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DocumentServiceServer).AddFolderGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DocumentService_AddFolderGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DocumentServiceServer).AddFolderGrant(ctx, req.(*AddFolderGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DocumentService_RemoveFolderGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveFolderGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DocumentServiceServer).RemoveFolderGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DocumentService_RemoveFolderGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DocumentServiceServer).RemoveFolderGrant(ctx, req.(*RemoveFolderGrantRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1129,6 +1263,22 @@ var DocumentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteFolder",
 			Handler:    _DocumentService_DeleteFolder_Handler,
+		},
+		{
+			MethodName: "SetFolderVisibility",
+			Handler:    _DocumentService_SetFolderVisibility_Handler,
+		},
+		{
+			MethodName: "ListFolderGrants",
+			Handler:    _DocumentService_ListFolderGrants_Handler,
+		},
+		{
+			MethodName: "AddFolderGrant",
+			Handler:    _DocumentService_AddFolderGrant_Handler,
+		},
+		{
+			MethodName: "RemoveFolderGrant",
+			Handler:    _DocumentService_RemoveFolderGrant_Handler,
 		},
 		{
 			MethodName: "CreateDocument",

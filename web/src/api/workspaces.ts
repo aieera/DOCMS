@@ -36,9 +36,60 @@ export async function getFolders(workspaceId: string, parentId?: string): Promis
   return unwrapList<Folder>(data, 'folders')
 }
 
-export async function createFolder(workspaceId: string, name: string, parentId?: string) {
-  const { data } = await api.post<Folder>(`/workspaces/${workspaceId}/folders`, { name, parent_folder_id: parentId })
+export async function createFolder(
+  workspaceId: string,
+  name: string,
+  parentId?: string,
+  visibility?: 'shared' | 'private',
+) {
+  const { data } = await api.post<Folder>(`/workspaces/${workspaceId}/folders`, {
+    name,
+    parent_folder_id: parentId,
+    visibility,
+  })
   return data
+}
+
+export async function setFolderVisibility(
+  folderId: string,
+  visibility: 'shared' | 'private',
+): Promise<Folder> {
+  const { data } = await api.post<Folder>(`/folders/${folderId}/visibility`, { visibility })
+  return data
+}
+
+export interface FolderGrant {
+  id: string
+  folder_id: string
+  grantee_type: 'user' | 'group'
+  grantee_id: string
+  granted_by?: string
+  created_at: string
+}
+
+export async function listFolderGrants(folderId: string): Promise<FolderGrant[]> {
+  const { data } = await api.get<{ grants?: FolderGrant[] }>(`/folders/${folderId}/grants`)
+  return data?.grants ?? []
+}
+
+export async function addFolderGrant(
+  folderId: string,
+  granteeType: 'user' | 'group',
+  granteeId: string,
+): Promise<FolderGrant> {
+  const { data } = await api.post<FolderGrant>(`/folders/${folderId}/grants`, {
+    grantee_type: granteeType,
+    grantee_id: granteeId,
+  })
+  return data
+}
+
+export async function removeFolderGrant(
+  folderId: string,
+  granteeType: 'user' | 'group',
+  granteeId: string,
+): Promise<void> {
+  await api.delete(`/folders/${folderId}/grants/${granteeType}/${granteeId}`)
 }
 
 export async function updateFolder(

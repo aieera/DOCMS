@@ -479,6 +479,21 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 		}); err != nil {
 			return err
 		}
+		// Phase 2 — visibility / grants gate. The OPA workspace +
+		// folder grant rules above don't know about per-folder
+		// privacy. If the target is a private folder the caller
+		// can't access, refuse before touching the row.
+		isAdmin := s.callerIsTenantAdmin(ctx)
+		if okSrc, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, cur.FolderID, userID, nil, isAdmin); cerr != nil {
+			return cerr
+		} else if !okSrc {
+			return vdmserr.ErrNotFound
+		}
+		if okDst, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, in.TargetFolderID, userID, nil, isAdmin); cerr != nil {
+			return cerr
+		} else if !okDst {
+			return vdmserr.ErrNotFound
+		}
 
 		fromFolder := cur.FolderID
 		fromWorkspace := cur.WorkspaceID
@@ -565,6 +580,15 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			"workspace_id": targetWS.String(),
 		}); err != nil {
 			return err
+		}
+		// Phase 2 — visibility gate on the target folder. The source
+		// is already accessible (we ran requirePermission view above)
+		// so we only need to check the destination here.
+		isAdmin := s.callerIsTenantAdmin(ctx)
+		if okDst, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, in.TargetFolderID, userID, nil, isAdmin); cerr != nil {
+			return cerr
+		} else if !okDst {
+			return vdmserr.ErrNotFound
 		}
 		now := time.Now().UTC()
 		newID, _ := uuid.NewV7()

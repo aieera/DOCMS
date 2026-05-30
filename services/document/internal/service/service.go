@@ -152,12 +152,36 @@ type CreateFolderInput struct {
 	WorkspaceID    uuid.UUID
 	Name           string
 	ParentFolderID *uuid.UUID
+	// Visibility defaults to FolderShared when empty. Private folders
+	// auto-set OwnerID = caller (no separate field — owner is always
+	// the creator at creation time; can be transferred via PATCH).
+	Visibility model.FolderVisibility
 }
 
 type UpdateFolderInput struct {
 	FolderID          uuid.UUID
 	Name              *string
 	NewParentFolderID *uuid.UUID
+}
+
+// SetFolderVisibilityInput names the folder + the desired new
+// visibility. Owner is implicit: promoting shared → private sets
+// owner = caller; demoting private → shared clears the owner.
+// A no-op (current visibility == requested) returns the existing
+// folder unchanged.
+type SetFolderVisibilityInput struct {
+	FolderID   uuid.UUID
+	Visibility model.FolderVisibility
+}
+
+// AddFolderGrantInput is the body for POST .../grants. The owner /
+// admin authorisation gate lives in the service layer, not the
+// input shape — the handler just parses the request body and the
+// service decides whether the caller may grant.
+type AddFolderGrantInput struct {
+	FolderID    uuid.UUID
+	GranteeType string // 'user' | 'group'
+	GranteeID   uuid.UUID
 }
 
 type CreateVersionInput struct {

@@ -229,6 +229,10 @@ func folderToProto(f *model.Folder) *vaultdmsv1.Folder {
 	if f == nil {
 		return nil
 	}
+	visibility := string(f.Visibility)
+	if visibility == "" {
+		visibility = string(model.FolderShared)
+	}
 	out := &vaultdmsv1.Folder{
 		Id:               f.ID.String(),
 		TenantId:         f.TenantID.String(),
@@ -241,9 +245,30 @@ func folderToProto(f *model.Folder) *vaultdmsv1.Folder {
 		CreatedBy:        f.CreatedBy.String(),
 		CreatedAt:        timestamppb.New(f.CreatedAt),
 		UpdatedAt:        timestamppb.New(f.UpdatedAt),
+		Visibility:       visibility,
 	}
 	if f.ParentFolderID != nil {
 		out.ParentFolderId = f.ParentFolderID.String()
+	}
+	if f.OwnerID != nil {
+		out.OwnerId = f.OwnerID.String()
+	}
+	return out
+}
+
+func folderGrantToProto(g *model.FolderGrant) *vaultdmsv1.FolderGrant {
+	if g == nil {
+		return nil
+	}
+	out := &vaultdmsv1.FolderGrant{
+		Id:          g.ID.String(),
+		FolderId:    g.FolderID.String(),
+		GranteeType: g.GranteeType,
+		GranteeId:   g.GranteeID.String(),
+		CreatedAt:   timestamppb.New(g.CreatedAt),
+	}
+	if g.GrantedBy != nil {
+		out.GrantedBy = g.GrantedBy.String()
 	}
 	return out
 }

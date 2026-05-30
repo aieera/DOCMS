@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 )
@@ -35,15 +36,26 @@ func (s *DocumentService) CreateFolder(ctx context.Context, in *CreateFolderInpu
 	if err != nil {
 		return nil, err
 	}
+	visibility := in.Visibility
+	if visibility == "" {
+		visibility = model.FolderShared
+	}
 	folder := &model.Folder{
 		TenantID:       tenantID,
 		ID:             id,
 		WorkspaceID:    in.WorkspaceID,
 		ParentFolderID: in.ParentFolderID,
 		Name:           in.Name,
+		Visibility:     visibility,
 		CreatedBy:      userID,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
+	}
+	// Private folders are owned by the creator at creation; the owner
+	// always retains access regardless of the grants table state.
+	if visibility == model.FolderPrivate {
+		u := userID
+		folder.OwnerID = &u
 	}
 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -115,6 +127,15 @@ func (s *DocumentService) GetFolder(ctx context.Context, id uuid.UUID) (*model.F
 	}); err != nil {
 		return nil, err
 	}
+	// Phase 2 visibility gate. requirePermission above handles
+	// workspace + folder OPA rules; CanAccessFolder layers the
+	// private-folder rule on top so a private folder's owner +
+	// grantees see it and everyone else gets ErrNotFound (NOT
+	// ErrForbidden — leaking existence of a private folder defeats
+	// the purpose).
+	if err := s.checkFolderAccess(ctx, tenantID, id, userID); err != nil {
+		return nil, err
+	}
 	return f, nil
 }
 
@@ -128,10 +149,64 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 	}
 	var out []model.Folder
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		out, err = s.repos.Folders.ListByParent(ctx, tx, tenantID, workspaceID, parentID)
-		return err
+		raw, lerr := s.repos.Folders.ListByParent(ctx, tx, tenantID, workspaceID, parentID)
+		if lerr != nil {
+			return lerr
+		}
+		// Filter private folders the caller can't access. Shared
+		// folders pass through unchanged. CanAccessFolder is a
+		// single query per private folder + an EXISTS lookup; the
+		// typical workspace has 0–1 private folder so this is
+		// effectively free.
+		isAdmin := s.callerIsTenantAdmin(ctx)
+		filtered := raw[:0]
+		for i := range raw {
+			if raw[i].Visibility == model.FolderShared {
+				filtered = append(filtered, raw[i])
+				continue
+			}
+			ok, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, raw[i].ID, userID, nil, isAdmin)
+			if cerr != nil {
+				return cerr
+			}
+			if ok {
+				filtered = append(filtered, raw[i])
+			}
+		}
+		out = filtered
+		return nil
 	})
 	return out, err
+}
+
+// callerIsTenantAdmin returns true when the request's auth role is
+// owner or admin. Used to fast-path the visibility check (admins
+// see every folder regardless of visibility).
+func (s *DocumentService) callerIsTenantAdmin(ctx context.Context) bool {
+	role := auth.GetUserRole(ctx)
+	return role == "owner" || role == "admin"
+}
+
+// checkFolderAccess wraps CanAccessFolder so the caller doesn't
+// have to open a tx. Returns ErrNotFound (not ErrForbidden) on
+// denial so a private folder's existence isn't leaked.
+func (s *DocumentService) checkFolderAccess(ctx context.Context, tenantID, folderID, userID uuid.UUID) error {
+	isAdmin := s.callerIsTenantAdmin(ctx)
+	if isAdmin {
+		return nil
+	}
+	var ok bool
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		var cerr error
+		ok, cerr = s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, folderID, userID, nil, false)
+		return cerr
+	}); err != nil {
+		return err
+	}
+	if !ok {
+		return vdmserr.ErrNotFound
+	}
+	return nil
 }
 
 // UpdateFolder handles rename and/or re-parent. Rename keeps the same id
@@ -231,6 +306,210 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}
 		return s.repos.Folders.SoftDelete(ctx, tx, tenantID, id)
 	})
+}
+
+// SetFolderVisibility flips a folder between shared and private.
+// Promoting shared → private sets owner = caller (the caller becomes
+// the access owner). Demoting private → shared clears owner_id so
+// the column doesn't leak a stale value.
+//
+// Authorization:
+//   - owner of the folder can flip it
+//   - tenant admin/owner can flip any folder
+//   - everyone else gets ErrForbidden (NOT ErrNotFound — the caller
+//     reached this endpoint via the folder id, so existence is
+//     already known; we just refuse the action).
+func (s *DocumentService) SetFolderVisibility(ctx context.Context, in *SetFolderVisibilityInput) (*model.Folder, error) {
+	if in == nil || in.FolderID == uuid.Nil {
+		return nil, errInvalidInput("folder_id", "required")
+	}
+	if in.Visibility != model.FolderShared && in.Visibility != model.FolderPrivate {
+		return nil, errInvalidInput("visibility", "must be 'shared' or 'private'")
+	}
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out *model.Folder
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageFolder(ctx, cur, userID) {
+			return vdmserr.ErrForbidden
+		}
+		// No-op shortcut.
+		if cur.Visibility == in.Visibility {
+			out = cur
+			return nil
+		}
+		var owner *uuid.UUID
+		if in.Visibility == model.FolderPrivate {
+			u := userID
+			owner = &u
+		}
+		if err := s.repos.Folders.UpdateVisibility(ctx, tx, tenantID, in.FolderID, in.Visibility, owner); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.visibility_changed.v1", "folder", in.FolderID,
+			map[string]any{
+				"folder_id":      in.FolderID.String(),
+				"old_visibility": string(cur.Visibility),
+				"new_visibility": string(in.Visibility),
+				"changed_by":     userID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		out, err = s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
+		return err
+	})
+	return out, err
+}
+
+// ListFolderGrants returns every grant on a folder. Visible to the
+// owner + admins (anyone else gets ErrForbidden — the grant list is
+// effectively access metadata).
+func (s *DocumentService) ListFolderGrants(ctx context.Context, folderID uuid.UUID) ([]model.FolderGrant, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.FolderGrant
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Folders.GetByID(ctx, tx, tenantID, folderID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageFolder(ctx, cur, userID) {
+			return vdmserr.ErrForbidden
+		}
+		out, err = s.repos.Folders.ListGrants(ctx, tx, tenantID, folderID)
+		return err
+	})
+	return out, err
+}
+
+// AddFolderGrant grants a user or group access to a private folder.
+// Granting to a shared folder is allowed but redundant — the grant
+// is recorded and would only take effect if the folder is later
+// flipped to private. Same auth as SetFolderVisibility.
+func (s *DocumentService) AddFolderGrant(ctx context.Context, in *AddFolderGrantInput) (*model.FolderGrant, error) {
+	if in == nil || in.FolderID == uuid.Nil {
+		return nil, errInvalidInput("folder_id", "required")
+	}
+	if in.GranteeID == uuid.Nil {
+		return nil, errInvalidInput("grantee_id", "required")
+	}
+	if in.GranteeType != "user" && in.GranteeType != "group" {
+		return nil, errInvalidInput("grantee_type", "must be 'user' or 'group'")
+	}
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := uuid.NewV7()
+	now := time.Now().UTC()
+	grant := &model.FolderGrant{
+		TenantID:    tenantID,
+		ID:          id,
+		FolderID:    in.FolderID,
+		GranteeType: in.GranteeType,
+		GranteeID:   in.GranteeID,
+		GrantedBy:   &userID,
+		CreatedAt:   now,
+	}
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageFolder(ctx, cur, userID) {
+			return vdmserr.ErrForbidden
+		}
+		if err := s.repos.Folders.AddGrant(ctx, tx, grant); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.grant_added.v1", "folder", in.FolderID,
+			map[string]any{
+				"folder_id":    in.FolderID.String(),
+				"grantee_type": in.GranteeType,
+				"grantee_id":   in.GranteeID.String(),
+				"granted_by":   userID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return grant, nil
+}
+
+// RemoveFolderGrant revokes access. Identifies the grant by
+// (folder, grantee_type, grantee_id) so the caller doesn't need the
+// row id. Same auth as SetFolderVisibility.
+func (s *DocumentService) RemoveFolderGrant(ctx context.Context, folderID uuid.UUID, granteeType string, granteeID uuid.UUID) error {
+	if folderID == uuid.Nil {
+		return errInvalidInput("folder_id", "required")
+	}
+	if granteeID == uuid.Nil {
+		return errInvalidInput("grantee_id", "required")
+	}
+	if granteeType != "user" && granteeType != "group" {
+		return errInvalidInput("grantee_type", "must be 'user' or 'group'")
+	}
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Folders.GetByID(ctx, tx, tenantID, folderID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageFolder(ctx, cur, userID) {
+			return vdmserr.ErrForbidden
+		}
+		if err := s.repos.Folders.RemoveGrant(ctx, tx, tenantID, folderID, granteeType, granteeID); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.grant_removed.v1", "folder", folderID,
+			map[string]any{
+				"folder_id":    folderID.String(),
+				"grantee_type": granteeType,
+				"grantee_id":   granteeID.String(),
+				"removed_by":   userID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// canManageFolder returns true iff the caller may flip visibility,
+// list grants, add a grant, or remove a grant on the named folder:
+// owner of the folder OR tenant admin/owner.
+func (s *DocumentService) canManageFolder(ctx context.Context, f *model.Folder, userID uuid.UUID) bool {
+	if s.callerIsTenantAdmin(ctx) {
+		return true
+	}
+	if f.OwnerID != nil && *f.OwnerID == userID {
+		return true
+	}
+	// Shared folders without an owner: the creator is the de-facto
+	// manager so they can flip to private + start granting.
+	if f.OwnerID == nil && f.CreatedBy == userID {
+		return true
+	}
+	return false
 }
 
 // ltreeLabel builds a valid ltree label from a human name + uuid. ltree

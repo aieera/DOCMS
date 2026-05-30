@@ -72,6 +72,12 @@ type FolderRepository interface {
 	// workspace. Used by DeleteWorkspace to clean up the auto-Root.
 	SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) error
 	HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
+	// Phase 2 — visibility + folder-scoped ACL.
+	UpdateVisibility(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, visibility model.FolderVisibility, owner *uuid.UUID) error
+	ListGrants(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID) ([]model.FolderGrant, error)
+	AddGrant(ctx context.Context, tx pgx.Tx, g *model.FolderGrant) error
+	RemoveGrant(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID, granteeType string, granteeID uuid.UUID) error
+	CanAccessFolder(ctx context.Context, tx pgx.Tx, tenantID, folderID, userID uuid.UUID, userGroups []uuid.UUID, isAdmin bool) (bool, error)
 }
 
 type VersionRepository interface {

@@ -104,6 +104,20 @@ message Folder {
   string                    created_by         = 10;
   google.protobuf.Timestamp created_at         = 11;
   google.protobuf.Timestamp updated_at         = 12;
+  // Phase 2 — visibility + owner. visibility is 'shared' | 'private';
+  // owner_id is populated only for private folders (the access owner)
+  // and stays empty for shared rows.
+  string                    visibility         = 13;
+  string                    owner_id           = 14;
+}
+
+message FolderGrant {
+  string                    id                 = 1;
+  string                    folder_id          = 2;
+  string                    grantee_type       = 3; // 'user' | 'group'
+  string                    grantee_id         = 4;
+  string                    granted_by         = 5;
+  google.protobuf.Timestamp created_at         = 6;
 }
 
 message ShareLink {
@@ -148,6 +162,8 @@ message CreateFolderRequest {
   string workspace_id     = 1;
   string name             = 2;
   string parent_folder_id = 3;
+  // Phase 2 — optional. Empty defaults to 'shared'.
+  string visibility       = 4;
 }
 message GetFolderRequest { string folder_id = 1; }
 message ListFoldersRequest {
@@ -161,6 +177,24 @@ message UpdateFolderRequest {
   string new_parent_folder_id = 3;
 }
 message DeleteFolderRequest { string folder_id = 1; }
+
+// Phase 2 visibility flip + grants.
+message SetFolderVisibilityRequest {
+  string folder_id  = 1;
+  string visibility = 2; // 'shared' | 'private'
+}
+message ListFolderGrantsRequest  { string folder_id = 1; }
+message ListFolderGrantsResponse { repeated FolderGrant grants = 1; }
+message AddFolderGrantRequest {
+  string folder_id    = 1;
+  string grantee_type = 2; // 'user' | 'group'
+  string grantee_id   = 3;
+}
+message RemoveFolderGrantRequest {
+  string folder_id    = 1;
+  string grantee_type = 2;
+  string grantee_id   = 3;
+}
 
 message CreateDocumentRequest {
   string                 workspace_id    = 1;
@@ -310,6 +344,19 @@ service DocumentService {
   }
   rpc DeleteFolder(DeleteFolderRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = { delete: "/api/v1/folders/{folder_id}" };
+  }
+  // Phase 2 — folder visibility + grants.
+  rpc SetFolderVisibility(SetFolderVisibilityRequest) returns (Folder) {
+    option (google.api.http) = { post: "/api/v1/folders/{folder_id}/visibility" body: "*" };
+  }
+  rpc ListFolderGrants(ListFolderGrantsRequest) returns (ListFolderGrantsResponse) {
+    option (google.api.http) = { get: "/api/v1/folders/{folder_id}/grants" };
+  }
+  rpc AddFolderGrant(AddFolderGrantRequest) returns (FolderGrant) {
+    option (google.api.http) = { post: "/api/v1/folders/{folder_id}/grants" body: "*" };
+  }
+  rpc RemoveFolderGrant(RemoveFolderGrantRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/folders/{folder_id}/grants/{grantee_type}/{grantee_id}" };
   }
 
   rpc CreateDocument(CreateDocumentRequest) returns (Document) {

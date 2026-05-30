@@ -611,6 +611,154 @@
         ]
       }
     },
+    "/api/v1/folders/{folderId}/grants": {
+      "get": {
+        "operationId": "DocumentService_ListFolderGrants",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListFolderGrantsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      },
+      "post": {
+        "operationId": "DocumentService_AddFolderGrant",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1FolderGrant"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceAddFolderGrantBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/folders/{folderId}/grants/{granteeType}/{granteeId}": {
+      "delete": {
+        "operationId": "DocumentService_RemoveFolderGrant",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "granteeType",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "granteeId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
+    "/api/v1/folders/{folderId}/visibility": {
+      "post": {
+        "summary": "Phase 2 — folder visibility + grants.",
+        "operationId": "DocumentService_SetFolderVisibility",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Folder"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceSetFolderVisibilityBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
     "/api/v1/share-links/{shareLinkId}": {
       "delete": {
         "operationId": "DocumentService_DeleteShareLink",
@@ -1173,6 +1321,18 @@
         }
       }
     },
+    "DocumentServiceAddFolderGrantBody": {
+      "type": "object",
+      "properties": {
+        "granteeType": {
+          "type": "string",
+          "title": "'user' | 'group'"
+        },
+        "granteeId": {
+          "type": "string"
+        }
+      }
+    },
     "DocumentServiceCopyDocumentBody": {
       "type": "object",
       "properties": {
@@ -1193,6 +1353,10 @@
         },
         "parentFolderId": {
           "type": "string"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Phase 2 — optional. Empty defaults to 'shared'."
         }
       }
     },
@@ -1225,6 +1389,16 @@
           "type": "string"
         }
       }
+    },
+    "DocumentServiceSetFolderVisibilityBody": {
+      "type": "object",
+      "properties": {
+        "visibility": {
+          "type": "string",
+          "title": "'shared' | 'private'"
+        }
+      },
+      "description": "Phase 2 visibility flip + grants."
     },
     "DocumentServiceUpdateDocumentBody": {
       "type": "object",
@@ -2396,6 +2570,38 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Phase 2 — visibility + owner. visibility is 'shared' | 'private';\nowner_id is populated only for private folders (the access owner)\nand stays empty for shared rows."
+        },
+        "ownerId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1FolderGrant": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": "string"
+        },
+        "granteeType": {
+          "type": "string",
+          "title": "'user' | 'group'"
+        },
+        "granteeId": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -2757,6 +2963,18 @@
         },
         "page": {
           "$ref": "#/definitions/v1PageResponse"
+        }
+      }
+    },
+    "v1ListFolderGrantsResponse": {
+      "type": "object",
+      "properties": {
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FolderGrant"
+          }
         }
       }
     },
