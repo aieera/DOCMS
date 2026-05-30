@@ -56,6 +56,7 @@
     "title": "Manage folder access",
     "description": "These users and groups can see and act on this folder. The owner always has access.",
     "owner_label": "Owner",
+    "current_label": "People & groups with access",
     "no_grants": "No one else has been granted access yet.",
     "add_label": "Add a person or group",
     "add_user": "Add user",

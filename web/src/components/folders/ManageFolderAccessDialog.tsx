@@ -52,16 +52,21 @@ export function ManageFolderAccessDialog({ open, onOpenChange, folder }: Props) 
   const [tab, setTab] = useState<'user' | 'group'>('user')
   const [query, setQuery] = useState('')
 
+  // Users are always fetched (not gated on the active tab) so we can
+  // resolve the owner_id and any user-type grants to a human-readable
+  // label even when the user is on the "group" tab. Both caches are
+  // shared across dialog opens, so the cost is paid at most once per
+  // 60 s.
   const usersQ = useQuery({
     queryKey: ['admin-users-folder-grant'],
     queryFn: () => getUsers(),
-    enabled: open && tab === 'user',
+    enabled: open,
     staleTime: 60_000,
   })
   const groupsQ = useQuery({
     queryKey: ['groups-folder-grant'],
     queryFn: () => listGroups(),
-    enabled: open && tab === 'group',
+    enabled: open,
     staleTime: 60_000,
   })
 
@@ -135,7 +140,7 @@ export function ManageFolderAccessDialog({ open, onOpenChange, folder }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-4 w-4 text-warning" />
@@ -146,17 +151,40 @@ export function ManageFolderAccessDialog({ open, onOpenChange, folder }: Props) 
 
         <div className="space-y-4">
           {/* Owner */}
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {t('manage_access_dialog.owner_label')}
-            </p>
-            <p className="mt-1 truncate font-mono text-sm">{folder.owner_id ?? '—'}</p>
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <UserIcon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {t('manage_access_dialog.owner_label')}
+              </p>
+              {(() => {
+                const owner = folder.owner_id ? userById.get(folder.owner_id) : undefined
+                const label = owner?.display_name || owner?.email
+                if (label) {
+                  return (
+                    <>
+                      <p className="truncate text-sm font-medium">{label}</p>
+                      {owner?.email && owner?.display_name && owner.email !== owner.display_name && (
+                        <p className="truncate text-xs text-muted-foreground">{owner.email}</p>
+                      )}
+                    </>
+                  )
+                }
+                return (
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {folder.owner_id ?? '—'}
+                  </p>
+                )
+              })()}
+            </div>
           </div>
 
           {/* Current grants */}
           <div>
             <p className="mb-2 text-xs font-medium text-muted-foreground">
-              {t('actions.manage_access')}
+              {t('manage_access_dialog.current_label')}
             </p>
             {grants.isLoading ? (
               <div className="flex justify-center py-4">
