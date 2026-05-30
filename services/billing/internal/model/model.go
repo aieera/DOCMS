@@ -5,14 +5,14 @@ import "time"
 
 // Plan defines a subscription tier.
 type Plan struct {
-	ID                 string `json:"id"` // standard | enterprise | dedicated
-	Name               string `json:"name"`
-	StorageLimitGB     int64  `json:"storage_limit_gb"`
-	MaxUsers           int    `json:"max_users"`
-	PriceMonthly       int64  `json:"price_monthly_cents"`
-	StripePriceID      string `json:"stripe_price_id,omitempty"`
-	IncludedOCRPages   int    `json:"included_ocr_pages"`
-	IncludedAITokens   int64  `json:"included_ai_tokens"`
+	ID               string `json:"id"` // standard | enterprise | dedicated
+	Name             string `json:"name"`
+	StorageLimitGB   int64  `json:"storage_limit_gb"`
+	MaxUsers         int    `json:"max_users"`
+	PriceMonthly     int64  `json:"price_monthly_cents"`
+	StripePriceID    string `json:"stripe_price_id,omitempty"`
+	IncludedOCRPages int    `json:"included_ocr_pages"`
+	IncludedAITokens int64  `json:"included_ai_tokens"`
 }
 
 // DefaultPlans are the built-in plan definitions.
@@ -33,15 +33,15 @@ var DefaultPlans = map[string]Plan{
 
 // Subscription tracks a tenant's active subscription.
 type Subscription struct {
-	TenantID          string     `json:"tenant_id"`
-	PlanID            string     `json:"plan_id"`
-	StripeCustomerID  string     `json:"stripe_customer_id,omitempty"`
-	StripeSubID       string     `json:"stripe_subscription_id,omitempty"`
-	Status            string     `json:"status"` // active | past_due | suspended | cancelled
-	GracePeriodEnds   *time.Time `json:"grace_period_ends,omitempty"`
-	CurrentPeriodStart time.Time `json:"current_period_start"`
-	CurrentPeriodEnd   time.Time `json:"current_period_end"`
-	CreatedAt         time.Time  `json:"created_at"`
+	TenantID           string     `json:"tenant_id"`
+	PlanID             string     `json:"plan_id"`
+	StripeCustomerID   string     `json:"stripe_customer_id,omitempty"`
+	StripeSubID        string     `json:"stripe_subscription_id,omitempty"`
+	Status             string     `json:"status"` // active | past_due | suspended | cancelled
+	GracePeriodEnds    *time.Time `json:"grace_period_ends,omitempty"`
+	CurrentPeriodStart time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd   time.Time  `json:"current_period_end"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 // UsageRecord is one hourly metering snapshot.
@@ -58,13 +58,14 @@ type UsageRecord struct {
 
 // FeatureFlags per-tenant feature toggles stored in organizations.settings.
 type FeatureFlags struct {
-	AIEnabled        bool `json:"ai_enabled"`
-	AdvancedWorkflow bool `json:"advanced_workflow"`
-	SSOEnabled       bool `json:"sso_enabled"`
-	ESignatures      bool `json:"e_signatures"`
-	CustomBranding   bool `json:"custom_branding"`
-	APIAccess        bool `json:"api_access"`
-	DataRooms        bool `json:"data_rooms"`
+	AIEnabled              bool `json:"ai_enabled"`
+	AdvancedWorkflow       bool `json:"advanced_workflow"`
+	SSOEnabled             bool `json:"sso_enabled"`
+	ESignatures            bool `json:"e_signatures"`
+	CustomBranding         bool `json:"custom_branding"`
+	APIAccess              bool `json:"api_access"`
+	DataRooms              bool `json:"data_rooms"`
+	AutoDetectDocumentType bool `json:"auto_detect_document_type"` // If true, auto-classify document type on upload
 }
 
 // DefaultFlagsByPlan returns default feature flags for a plan.

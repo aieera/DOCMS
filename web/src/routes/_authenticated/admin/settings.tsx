@@ -28,9 +28,10 @@ interface FeatureFlags {
   custom_branding: boolean
   api_access: boolean
   data_rooms: boolean
+  auto_detect_document_type?: boolean // New flag for auto-detecting document type
 }
 
-const FLAG_LABELS: Record<keyof FeatureFlags, { title: string; help: string }> = {
+const FLAG_LABELS: Record<string, { title: string; help: string }> = {
   ai_enabled:        { title: 'AI features',          help: 'Doc Q&A, semantic search, classification, NER.' },
   advanced_workflow: { title: 'Advanced workflows',   help: 'Approval chains, parallel routing, conditional branches.' },
   sso_enabled:       { title: 'SSO (SAML / OIDC)',    help: 'External identity providers for tenant sign-in.' },
@@ -38,6 +39,10 @@ const FLAG_LABELS: Record<keyof FeatureFlags, { title: string; help: string }> =
   custom_branding:   { title: 'Custom branding',      help: 'Tenant logo + accent color on signing + share-link pages.' },
   api_access:        { title: 'Public API',           help: 'External API keys + scoped REST access.' },
   data_rooms:        { title: 'Data rooms',           help: 'Time-limited M&A / due-diligence collaboration spaces.' },
+  auto_detect_document_type: {
+    title: 'Auto-detect document type on upload',
+    help: 'If enabled, the system will automatically classify document type on upload and skip the manual prompt.'
+  },
 }
 
 export function SettingsPage() {
@@ -106,7 +111,7 @@ export function SettingsPage() {
 
       {draft && (
         <ul className="space-y-2" data-testid="feature-flags-list">
-          {(Object.keys(FLAG_LABELS) as (keyof FeatureFlags)[]).map((key) => (
+          {Object.keys(FLAG_LABELS).map((key) => (
             <li key={key}>
               <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="min-w-0 flex-1">
@@ -116,12 +121,12 @@ export function SettingsPage() {
                 <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
                   <input
                     type="checkbox"
-                    checked={draft[key]}
+                    checked={!!draft[key as keyof FeatureFlags]}
                     onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })}
                     className="h-4 w-4 rounded border-border"
                     data-testid={`flag-${key}`}
                   />
-                  {draft[key] ? 'Enabled' : 'Disabled'}
+                  {draft[key as keyof FeatureFlags] ? 'Enabled' : 'Disabled'}
                 </label>
               </Card>
             </li>
