@@ -201,6 +201,16 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdm
 	if d.CurrentVersionID != nil {
 		out.CurrentVersionId = d.CurrentVersionID.String()
 	}
+	if d.WorkflowInstance != nil {
+		out.WorkflowInstance = &vaultdmsv1.DocumentWorkflowInstance{
+			Id:             d.WorkflowInstance.ID.String(),
+			DefinitionId:   d.WorkflowInstance.DefinitionID.String(),
+			DefinitionName: d.WorkflowInstance.DefinitionName,
+			Status:         d.WorkflowInstance.Status,
+			CurrentStep:    int32(d.WorkflowInstance.CurrentStep),
+			StartedAt:      timestamppb.New(d.WorkflowInstance.StartedAt),
+		}
+	}
 	if p != nil {
 		out.Permissions = &vaultdmsv1.DocumentPermissions{
 			CanView:   p.CanView,

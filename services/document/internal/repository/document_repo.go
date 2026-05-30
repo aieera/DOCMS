@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,12 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 	// Soft-deleted users (deleted_at IS NOT NULL) still return their
 	// display_name — preserving uploader attribution after deletion is
 	// the explicit product requirement.
+	// LEFT JOIN LATERAL pulls the most-recent non-terminal workflow
+	// instance for this doc (at most one row by ORDER BY...LIMIT 1)
+	// plus its template name. Adds 6 trailing nullable columns to the
+	// projection; scanDocument scans them as pointers and stitches a
+	// model.WorkflowInstanceSummary when present. No active workflow
+	// → all NULLs → WorkflowInstance stays nil on the model.
 	row := tx.QueryRow(ctx, `
 		SELECT d.id, d.tenant_id, d.workspace_id, d.folder_id, d.title,
 		       COALESCE(d.description, '') AS description,
@@ -77,9 +84,22 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 		       d.total_size_bytes,
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
-		       d.created_at, d.updated_by, d.updated_at, d.deleted_at
+		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
+		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
+		LEFT JOIN LATERAL (
+		    SELECT i.id, i.definition_id, def.name AS definition_name,
+		           i.status, i.current_step_id, i.started_at
+		      FROM workflow_instances i
+		      LEFT JOIN workflow_definitions def
+		        ON def.tenant_id = i.tenant_id AND def.id = i.definition_id
+		     WHERE i.tenant_id = d.tenant_id
+		       AND i.document_id = d.id
+		       AND i.status NOT IN ('completed','failed','cancelled')
+		  ORDER BY i.started_at DESC
+		     LIMIT 1
+		) wf ON true
 		WHERE d.tenant_id = $1 AND d.id = $2
 	`, tenantID, id)
 	return scanDocument(row)
@@ -367,6 +387,10 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 	// in the format string but the only candidates (created_at,
 	// updated_at, title, total_size_bytes, id) all live on documents
 	// — no ambiguity for Postgres.
+	// Same LATERAL join as GetByID — see comment there. The list
+	// payload now carries the workflow summary inline, so the
+	// frontend DocumentCard can render a status pill without an
+	// N+1 useQuery per card.
 	q := fmt.Sprintf(`
 		SELECT d.id, d.tenant_id, d.workspace_id, d.folder_id, d.title,
 		       COALESCE(d.description, '') AS description,
@@ -380,9 +404,22 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		       d.total_size_bytes,
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
-		       d.created_at, d.updated_by, d.updated_at, d.deleted_at
+		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
+		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
+		LEFT JOIN LATERAL (
+		    SELECT i.id, i.definition_id, def.name AS definition_name,
+		           i.status, i.current_step_id, i.started_at
+		      FROM workflow_instances i
+		      LEFT JOIN workflow_definitions def
+		        ON def.tenant_id = i.tenant_id AND def.id = i.definition_id
+		     WHERE i.tenant_id = d.tenant_id
+		       AND i.document_id = d.id
+		       AND i.status NOT IN ('completed','failed','cancelled')
+		  ORDER BY i.started_at DESC
+		     LIMIT 1
+		) wf ON true
 		WHERE %s
 		ORDER BY d.%s %s, d.id %s
 		LIMIT %d`,
@@ -440,6 +477,14 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 		metaBytes    []byte
 		deleted      *time.Time
 		lifecycleRaw string
+		// Workflow LEFT JOIN trailers — every column nullable so a
+		// document without an active workflow scans cleanly.
+		wfID            *uuid.UUID
+		wfDefinitionID  *uuid.UUID
+		wfDefName       *string
+		wfStatus        *string
+		wfCurrentStepID *string
+		wfStartedAt     *time.Time
 	)
 	if err := r.Scan(
 		&d.ID, &d.TenantID, &d.WorkspaceID, &d.FolderID, &d.Title, &d.Description,
@@ -448,6 +493,7 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 		&d.SHA256Hash, &d.TotalSizeBytes, &d.MimeType,
 		&d.CreatedBy, &d.CreatedByName,
 		&d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted,
+		&wfID, &wfDefinitionID, &wfDefName, &wfStatus, &wfCurrentStepID, &wfStartedAt,
 	); err != nil {
 		return nil, mapPgError(err)
 	}
@@ -459,6 +505,27 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 	}
 	if d.CustomMetadata == nil {
 		d.CustomMetadata = map[string]any{}
+	}
+	if wfID != nil && wfStatus != nil {
+		wf := &model.WorkflowInstanceSummary{
+			ID:     *wfID,
+			Status: *wfStatus,
+		}
+		if wfDefinitionID != nil {
+			wf.DefinitionID = *wfDefinitionID
+		}
+		if wfDefName != nil {
+			wf.DefinitionName = *wfDefName
+		}
+		if wfStartedAt != nil {
+			wf.StartedAt = *wfStartedAt
+		}
+		if wfCurrentStepID != nil {
+			if n, perr := strconv.Atoi(*wfCurrentStepID); perr == nil {
+				wf.CurrentStep = n
+			}
+		}
+		d.WorkflowInstance = wf
 	}
 	return &d, nil
 }

@@ -4,6 +4,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { Link } from '@tanstack/react-router'
 import { DocumentActionsMenu } from './DocumentActionsMenu'
+import { WorkflowStatusBadge } from '@/components/workflows/WorkflowStatusBadge'
 
 export function DocumentCard({ doc }: { doc: Document }) {
   return (
@@ -40,6 +41,9 @@ export function DocumentCard({ doc }: { doc: Document }) {
               <Badge variant="warning" title="Document has no uploaded content yet">
                 No content
               </Badge>
+            )}
+            {doc.workflow_instance && (
+              <WorkflowStatusBadge status={doc.workflow_instance.status} size="sm" />
             )}
           </div>
           <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(doc.created_at)}</span>

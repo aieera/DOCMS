@@ -78,6 +78,17 @@ export interface Document {
   // docs predate the field. The doc-detail sidebar cross-references
   // the live schema to render labels + required markers.
   custom_metadata?: Record<string, unknown>
+  // Active workflow summary, joined into the document payload at
+  // read time. Absent (or null) when the document has no in-flight
+  // workflow. DocumentCard + header render a status pill off this.
+  workflow_instance?: {
+    id: string
+    definition_id: string
+    definition_name: string
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+    current_step: number
+    started_at: string
+  } | null
 }
 
 export interface Version {

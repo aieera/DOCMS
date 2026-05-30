@@ -209,7 +209,7 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
   { icon: Search, label: 'Search documents', href: '/search', description: 'Full-text + semantic across the tenant', kbd: '⌘K' },
   { icon: Sparkles, label: 'Ask the corpus', href: '/ask', description: 'RAG over the documents you can see' },
   { icon: Upload, label: 'Upload', href: '/workspaces', description: 'Drag a file into a workspace' },
-  { icon: Workflow, label: 'Design a workflow', href: '/workflows/designer', description: 'Approval chains + signature steps' },
+  { icon: Workflow, label: 'Workflow templates', href: '/workflows', description: 'Reusable approval, signature, notification chains' },
 ]
 
 function QuickActions() {

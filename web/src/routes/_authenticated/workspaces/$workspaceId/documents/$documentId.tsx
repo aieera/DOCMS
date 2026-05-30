@@ -37,6 +37,7 @@ import { CommentsPanel } from '@/components/documents/CommentsPanel'
 import { RealtimePresence } from '@/components/documents/RealtimePresence'
 import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
 import { WorkflowTab } from '@/components/workflows/WorkflowTab'
+import { WorkflowStatusBadge } from '@/components/workflows/WorkflowStatusBadge'
 import { AuditVisualization } from '@/components/documents/AuditVisualization'
 import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
 import { ShareDialog } from '@/components/documents/ShareDialog'
@@ -333,7 +334,13 @@ function DocumentHeader({
   workspaceId,
   documentId,
 }: {
-  doc: { title: string; mime_type: string; created_by_name?: string; created_at: string }
+  doc: {
+    title: string
+    mime_type: string
+    created_by_name?: string
+    created_at: string
+    workflow_instance?: Document['workflow_instance']
+  }
   workspaceId: string
   documentId: string
 }) {
@@ -372,6 +379,9 @@ function DocumentHeader({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {doc.workflow_instance && (
+            <WorkflowStatusBadge status={doc.workflow_instance.status} />
+          )}
           <LanguageBadge documentId={documentId} />
           <ComplianceBadge documentId={documentId} />
           <OcrQualityBadge documentId={documentId} />

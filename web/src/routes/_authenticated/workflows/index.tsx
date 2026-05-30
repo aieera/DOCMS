@@ -1,122 +1,273 @@
-import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { GitBranch, AlertTriangle, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import {
+  GitBranch,
+  AlertTriangle,
+  Plus,
+  Search,
+  Pencil,
+  Copy,
+  Trash2,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 
-import { getWorkflowDefinitions, type WorkflowDefinition } from '@/api/workflows'
+import {
+  createWorkflowDefinition,
+  deleteWorkflowDefinition,
+  getWorkflowDefinitions,
+  type ADR0073Step,
+  type WorkflowDefinition,
+} from '@/api/workflows'
+import { readErrorMessage } from '@/api/client'
+
 import { PageHeader } from '@/components/shared/PageHeader'
-import { WorkflowGraph } from '@/components/shared/WorkflowGraph'
-import { Skeleton } from '@/components/ui/Skeleton'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
+import { Input } from '@/components/ui/shadcn/input'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
+import { presetFor } from '@/components/workflows/step-presets'
 
-// /workflows — non-admin landing for the workflow definition list.
-// The /workflows/designer breadcrumb links here, so without this
-// index route the "Workflows" crumb 404s. Same component logic as
-// /admin/workflows; the admin variant lives behind the ADMIN_ROLES
-// gate in _authenticated.tsx so members get a 403 there, but they
-// can land on /workflows directly without that guard.
+// /workflows — Template library.
+// Card grid of every workflow template the tenant has authored, with
+// a search filter, a "New template" CTA that lands on the editor's
+// new-sentinel route, and per-card actions (Edit / Duplicate / Delete).
+
 function WorkflowsPage() {
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+  const { t } = useTranslation('workflows')
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [query, setQuery] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  const defsQ = useQuery({
     queryKey: ['workflow-definitions'],
     queryFn: getWorkflowDefinitions,
     retry: 1,
   })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const selected: WorkflowDefinition | undefined =
-    data?.find((d) => d.id === selectedId) ?? data?.[0]
-
-  if (isLoading) {
-    return (
-      <div>
-        <PageHeader title="Workflows" description="Define and manage approval workflows" />
-        <Skeleton className="h-64" />
-      </div>
+  const visible = useMemo(() => {
+    const items = defsQ.data ?? []
+    if (!query.trim()) return items
+    const q = query.toLowerCase()
+    return items.filter(
+      (d) => d.name.toLowerCase().includes(q) || (d.description?.toLowerCase().includes(q) ?? false),
     )
-  }
+  }, [defsQ.data, query])
 
-  if (isError) {
-    return (
-      <div>
-        <PageHeader title="Workflows" description="Define and manage approval workflows" />
-        <div
-          className="flex flex-col items-center justify-center rounded-lg border border-destructive/40 bg-destructive/5 p-12 text-center"
-          data-testid="workflows-error"
-        >
-          <AlertTriangle className="h-10 w-10 text-destructive" />
-          <h3 className="mt-4 text-lg font-medium">Could not load workflows</h3>
-          <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'Server error — please retry.'}
-          </p>
-          <Button className="mt-4" onClick={() => refetch()} loading={isFetching} data-testid="workflows-retry">
-            Retry
-          </Button>
-        </div>
-      </div>
-    )
-  }
+  const duplicate = useMutation({
+    mutationFn: (d: WorkflowDefinition) =>
+      createWorkflowDefinition({
+        name: `${d.name} (copy)`,
+        description: d.description,
+        steps: (d.steps as unknown as ADR0073Step[]) ?? [],
+      }),
+    onSuccess: (created) => {
+      toast.success(t('editor.save_success'))
+      qc.invalidateQueries({ queryKey: ['workflow-definitions'] })
+      navigate({
+        to: '/workflows/$templateId/edit',
+        params: { templateId: created.id },
+      })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('editor.save_error')),
+  })
 
-  if (!data || data.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Workflows" description="Define and manage approval workflows" />
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-          <GitBranch className="h-10 w-10 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-medium">No workflows defined</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build approval, parallel, and signature workflows in the visual designer.
-          </p>
-          <Button asChild className="mt-4">
-            <Link to="/workflows/designer" data-testid="open-designer">
-              <Plus className="me-1 h-4 w-4" /> Open designer
-            </Link>
-          </Button>
-        </div>
-      </div>
-    )
-  }
+  const del = useMutation({
+    mutationFn: (id: string) => deleteWorkflowDefinition(id),
+    onSuccess: () => {
+      toast.success(t('templates.delete_confirm.confirm'))
+      setConfirmDeleteId(null)
+      qc.invalidateQueries({ queryKey: ['workflow-definitions'] })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('editor.save_error')),
+  })
 
   return (
     <div>
-      <PageHeader title="Workflows" description="Define and manage approval workflows" />
-      <div className="grid grid-cols-[260px_1fr] gap-4">
-        <ul className="space-y-1">
-          {data.map((def) => {
-            const active = (selected?.id ?? data[0].id) === def.id
-            return (
-              <li key={def.id}>
-                <button
-                  onClick={() => setSelectedId(def.id)}
-                  className={`w-full rounded-md px-3 py-2 text-start text-sm ${
-                    active
-                      ? 'bg-[var(--color-accent)] text-[var(--color-primary)]'
-                      : 'hover:bg-[var(--color-bg-secondary)]'
-                  }`}
-                >
-                  <div className="font-medium">{def.name}</div>
-                  <div className="text-xs text-[var(--color-text-secondary)]">
-                    {def.steps.length} step{def.steps.length === 1 ? '' : 's'}
-                  </div>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-        <div>
-          {selected && (
-            <>
-              <div className="mb-2">
-                <h2 className="text-lg font-semibold">{selected.name}</h2>
-                {selected.description && (
-                  <p className="text-sm text-[var(--color-text-secondary)]">{selected.description}</p>
-                )}
-              </div>
-              <WorkflowGraph steps={selected.steps} />
-            </>
-          )}
+      <PageHeader
+        title={t('templates.title')}
+        description={t('templates.description')}
+        actions={
+          <Button
+            onClick={() =>
+              navigate({ to: '/workflows/$templateId/edit', params: { templateId: 'new' } })
+            }
+            data-testid="workflows-new-template"
+          >
+            <Plus className="me-1 h-4 w-4" />
+            {t('templates.new_button')}
+          </Button>
+        }
+      />
+
+      <div className="mb-4">
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('templates.search_placeholder')}
+            className="ps-9"
+            data-testid="workflows-search"
+          />
         </div>
       </div>
+
+      {defsQ.isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Skeleton className="h-44" />
+          <Skeleton className="h-44" />
+          <Skeleton className="h-44" />
+        </div>
+      ) : defsQ.isError ? (
+        <Card className="flex flex-col items-center justify-center gap-2 border-destructive/40 bg-destructive/5 p-12 text-center">
+          <AlertTriangle className="h-10 w-10 text-destructive" />
+          <h3 className="text-lg font-medium">Could not load templates</h3>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {defsQ.error instanceof Error ? defsQ.error.message : 'Server error — please retry.'}
+          </p>
+          <Button onClick={() => defsQ.refetch()} loading={defsQ.isFetching}>
+            Retry
+          </Button>
+        </Card>
+      ) : visible.length === 0 ? (
+        <Card className="flex flex-col items-center justify-center gap-3 border-dashed p-12 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <WorkflowIcon className="h-6 w-6" />
+          </span>
+          <h3 className="text-lg font-medium">{t('templates.empty_title')}</h3>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {t('templates.empty_description')}
+          </p>
+          <Button
+            onClick={() =>
+              navigate({ to: '/workflows/$templateId/edit', params: { templateId: 'new' } })
+            }
+          >
+            <Plus className="me-1 h-4 w-4" />
+            {t('templates.new_button')}
+          </Button>
+        </Card>
+      ) : (
+        <ul
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          data-testid="workflows-grid"
+        >
+          {visible.map((d) => (
+            <TemplateCard
+              key={d.id}
+              def={d}
+              onEdit={() =>
+                navigate({ to: '/workflows/$templateId/edit', params: { templateId: d.id } })
+              }
+              onDuplicate={() => duplicate.mutate(d)}
+              onDelete={() => setConfirmDeleteId(d.id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        onOpenChange={(o) => !o && setConfirmDeleteId(null)}
+        title={t('templates.delete_confirm.title')}
+        description={t('templates.delete_confirm.description')}
+        confirmLabel={t('templates.delete_confirm.confirm')}
+        destructive
+        loading={del.isPending}
+        onConfirm={() => confirmDeleteId && del.mutate(confirmDeleteId)}
+      />
     </div>
+  )
+}
+
+interface CardProps {
+  def: WorkflowDefinition
+  onEdit: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+}
+
+function TemplateCard({ def, onEdit, onDuplicate, onDelete }: CardProps) {
+  const { t } = useTranslation('workflows')
+  const steps = (def.steps as unknown as ADR0073Step[]) ?? []
+  return (
+    <li>
+      <Card className="flex h-full flex-col p-4 transition-shadow hover:shadow-md">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <GitBranch className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-base font-semibold" title={def.name}>
+              {def.name}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('templates.card.steps_count', {
+                count: steps.length,
+                defaultValue: steps.length === 1 ? '1 step' : `${steps.length} steps`,
+              })}
+            </p>
+          </div>
+        </div>
+
+        {def.description && (
+          <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{def.description}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-1">
+          {steps.slice(0, 6).map((s) => {
+            const preset = presetFor(s.type)
+            const Icon = preset.icon
+            return (
+              <span
+                key={s.id}
+                title={`${s.name || s.type} — ${s.id}`}
+                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${preset.toneCls}`}
+              >
+                <Icon className="h-3 w-3" />
+                {t(`editor.step.${s.type}`)}
+              </span>
+            )
+          })}
+          {steps.length > 6 && (
+            <span className="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              +{steps.length - 6}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-auto flex items-center justify-end gap-1 pt-3">
+          <Button size="sm" variant="ghost" onClick={onEdit} data-testid={`tpl-edit-${def.id}`}>
+            <Pencil className="me-1 h-3.5 w-3.5" />
+            {t('templates.card.edit')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onDuplicate}
+            data-testid={`tpl-duplicate-${def.id}`}
+          >
+            <Copy className="me-1 h-3.5 w-3.5" />
+            {t('templates.card.duplicate')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onDelete}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            data-testid={`tpl-delete-${def.id}`}
+          >
+            <Trash2 className="me-1 h-3.5 w-3.5" />
+            {t('templates.card.delete')}
+          </Button>
+        </div>
+      </Card>
+    </li>
   )
 }
 

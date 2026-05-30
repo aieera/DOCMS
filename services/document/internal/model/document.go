@@ -71,6 +71,25 @@ type Document struct {
 	UpdatedBy                uuid.UUID
 	UpdatedAt                time.Time
 	DeletedAt                *time.Time
+	// WorkflowInstance is the document's currently-active workflow
+	// summary, joined at read time from workflow_instances. nil when
+	// no active (non-terminal) workflow exists. Used by the frontend's
+	// DocumentCard + document header to render a status pill without
+	// a per-row useQuery.
+	WorkflowInstance *WorkflowInstanceSummary
+}
+
+// WorkflowInstanceSummary is the minimum the FE needs to render a
+// workflow status badge / chip on a document surface. Pulled directly
+// from workflow_instances + workflow_definitions; FK constraints
+// guarantee the join lands.
+type WorkflowInstanceSummary struct {
+	ID             uuid.UUID
+	DefinitionID   uuid.UUID
+	DefinitionName string
+	Status         string // pending | running | completed | failed | cancelled
+	CurrentStep    int
+	StartedAt      time.Time
 }
 
 // Version is an immutable record of a document content revision.

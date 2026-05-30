@@ -27,7 +27,6 @@ import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows/index'
 import { Route as AuthenticatedClausesIndexRouteImport } from './routes/_authenticated/clauses/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as AuthenticatedWorkflowsDesignerRouteImport } from './routes/_authenticated/workflows/designer'
 import { Route as AuthenticatedSignDoneRouteImport } from './routes/_authenticated/sign.done'
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
@@ -72,6 +71,7 @@ import { Route as AuthenticatedAdminIntelligenceIndexRouteImport } from './route
 import { Route as AuthenticatedAdminIntegrationsIndexRouteImport } from './routes/_authenticated/admin/integrations/index'
 import { Route as AuthenticatedWorkspacesWorkspaceIdSettingsRouteImport } from './routes/_authenticated/workspaces/$workspaceId/settings'
 import { Route as AuthenticatedWorkflowsInstancesInstanceIdRouteImport } from './routes/_authenticated/workflows/instances/$instanceId'
+import { Route as AuthenticatedWorkflowsTemplateIdEditRouteImport } from './routes/_authenticated/workflows/$templateId.edit'
 import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './routes/_authenticated/signatures.send.$documentId'
 import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
 import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes/_authenticated/sign.$requestId.$signerId'
@@ -198,12 +198,6 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedWorkflowsDesignerRoute =
-  AuthenticatedWorkflowsDesignerRouteImport.update({
-    id: '/workflows/designer',
-    path: '/workflows/designer',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedSignDoneRoute = AuthenticatedSignDoneRouteImport.update({
   id: '/sign/done',
   path: '/sign/done',
@@ -460,6 +454,12 @@ const AuthenticatedWorkflowsInstancesInstanceIdRoute =
     path: '/workflows/instances/$instanceId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedWorkflowsTemplateIdEditRoute =
+  AuthenticatedWorkflowsTemplateIdEditRouteImport.update({
+    id: '/workflows/$templateId/edit',
+    path: '/workflows/$templateId/edit',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSignaturesSendDocumentIdRoute =
   AuthenticatedSignaturesSendDocumentIdRouteImport.update({
     id: '/signatures/send/$documentId',
@@ -698,7 +698,6 @@ export interface FileRoutesByFullPath {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/sign/done': typeof AuthenticatedSignDoneRoute
-  '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/clauses/': typeof AuthenticatedClausesIndexRoute
   '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
@@ -730,6 +729,7 @@ export interface FileRoutesByFullPath {
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
+  '/workflows/$templateId/edit': typeof AuthenticatedWorkflowsTemplateIdEditRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -792,7 +792,6 @@ export interface FileRoutesByTo {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/sign/done': typeof AuthenticatedSignDoneRoute
-  '/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/clauses': typeof AuthenticatedClausesIndexRoute
   '/workflows': typeof AuthenticatedWorkflowsIndexRoute
@@ -824,6 +823,7 @@ export interface FileRoutesByTo {
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
+  '/workflows/$templateId/edit': typeof AuthenticatedWorkflowsTemplateIdEditRoute
   '/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -889,7 +889,6 @@ export interface FileRoutesById {
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRouteWithChildren
   '/_authenticated/sign/done': typeof AuthenticatedSignDoneRoute
-  '/_authenticated/workflows/designer': typeof AuthenticatedWorkflowsDesignerRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/clauses/': typeof AuthenticatedClausesIndexRoute
   '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
@@ -921,6 +920,7 @@ export interface FileRoutesById {
   '/_authenticated/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
   '/_authenticated/signatures/send/$documentId': typeof AuthenticatedSignaturesSendDocumentIdRoute
+  '/_authenticated/workflows/$templateId/edit': typeof AuthenticatedWorkflowsTemplateIdEditRoute
   '/_authenticated/workflows/instances/$instanceId': typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   '/_authenticated/workspaces/$workspaceId/settings': typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   '/_authenticated/admin/integrations/': typeof AuthenticatedAdminIntegrationsIndexRoute
@@ -986,7 +986,6 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/security'
     | '/sign/done'
-    | '/workflows/designer'
     | '/admin/'
     | '/clauses/'
     | '/workflows/'
@@ -1018,6 +1017,7 @@ export interface FileRouteTypes {
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
+    | '/workflows/$templateId/edit'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/settings'
     | '/admin/integrations/'
@@ -1080,7 +1080,6 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/security'
     | '/sign/done'
-    | '/workflows/designer'
     | '/admin'
     | '/clauses'
     | '/workflows'
@@ -1112,6 +1111,7 @@ export interface FileRouteTypes {
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
     | '/signatures/send/$documentId'
+    | '/workflows/$templateId/edit'
     | '/workflows/instances/$instanceId'
     | '/workspaces/$workspaceId/settings'
     | '/admin/integrations'
@@ -1176,7 +1176,6 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/security'
     | '/_authenticated/sign/done'
-    | '/_authenticated/workflows/designer'
     | '/_authenticated/admin/'
     | '/_authenticated/clauses/'
     | '/_authenticated/workflows/'
@@ -1208,6 +1207,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sign/$requestId/$signerId'
     | '/_authenticated/sign/in-person/$requestId'
     | '/_authenticated/signatures/send/$documentId'
+    | '/_authenticated/workflows/$templateId/edit'
     | '/_authenticated/workflows/instances/$instanceId'
     | '/_authenticated/workspaces/$workspaceId/settings'
     | '/_authenticated/admin/integrations/'
@@ -1357,13 +1357,6 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/workflows/designer': {
-      id: '/_authenticated/workflows/designer'
-      path: '/workflows/designer'
-      fullPath: '/workflows/designer'
-      preLoaderRoute: typeof AuthenticatedWorkflowsDesignerRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sign/done': {
@@ -1672,6 +1665,13 @@ declare module '@tanstack/react-router' {
       path: '/workflows/instances/$instanceId'
       fullPath: '/workflows/instances/$instanceId'
       preLoaderRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/workflows/$templateId/edit': {
+      id: '/_authenticated/workflows/$templateId/edit'
+      path: '/workflows/$templateId/edit'
+      fullPath: '/workflows/$templateId/edit'
+      preLoaderRoute: typeof AuthenticatedWorkflowsTemplateIdEditRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/signatures/send/$documentId': {
@@ -1996,7 +1996,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSettingsSecurityRoute: typeof AuthenticatedSettingsSecurityRouteWithChildren
   AuthenticatedSignDoneRoute: typeof AuthenticatedSignDoneRoute
-  AuthenticatedWorkflowsDesignerRoute: typeof AuthenticatedWorkflowsDesignerRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedClausesIndexRoute: typeof AuthenticatedClausesIndexRoute
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
@@ -2023,6 +2022,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
   AuthenticatedSignInPersonRequestIdRoute: typeof AuthenticatedSignInPersonRequestIdRoute
   AuthenticatedSignaturesSendDocumentIdRoute: typeof AuthenticatedSignaturesSendDocumentIdRoute
+  AuthenticatedWorkflowsTemplateIdEditRoute: typeof AuthenticatedWorkflowsTemplateIdEditRoute
   AuthenticatedWorkflowsInstancesInstanceIdRoute: typeof AuthenticatedWorkflowsInstancesInstanceIdRoute
   AuthenticatedWorkspacesWorkspaceIdSettingsRoute: typeof AuthenticatedWorkspacesWorkspaceIdSettingsRoute
   AuthenticatedAdminIntelligenceIndexRoute: typeof AuthenticatedAdminIntelligenceIndexRoute
@@ -2083,7 +2083,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsSecurityRoute:
     AuthenticatedSettingsSecurityRouteWithChildren,
   AuthenticatedSignDoneRoute: AuthenticatedSignDoneRoute,
-  AuthenticatedWorkflowsDesignerRoute: AuthenticatedWorkflowsDesignerRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedClausesIndexRoute: AuthenticatedClausesIndexRoute,
   AuthenticatedWorkflowsIndexRoute: AuthenticatedWorkflowsIndexRoute,
@@ -2129,6 +2128,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedSignInPersonRequestIdRoute,
   AuthenticatedSignaturesSendDocumentIdRoute:
     AuthenticatedSignaturesSendDocumentIdRoute,
+  AuthenticatedWorkflowsTemplateIdEditRoute:
+    AuthenticatedWorkflowsTemplateIdEditRoute,
   AuthenticatedWorkflowsInstancesInstanceIdRoute:
     AuthenticatedWorkflowsInstancesInstanceIdRoute,
   AuthenticatedWorkspacesWorkspaceIdSettingsRoute:

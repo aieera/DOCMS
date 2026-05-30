@@ -2095,6 +2095,10 @@
         "createdByName": {
           "type": "string",
           "description": "Denormalised uploader display name. Filled at read time by a\nLEFT JOIN against the users table in the document repository.\nEmpty when the uploader row is missing; frontend uses that as\nthe signal to render \"Deleted user\". Soft-deleted users still\ncarry their display_name on the row so attribution survives\naccount deletion."
+        },
+        "workflowInstance": {
+          "$ref": "#/definitions/v1DocumentWorkflowInstance",
+          "description": "Active workflow summary, filled at read time by a LEFT JOIN\nLATERAL against workflow_instances (status NOT IN ('completed',\n'failed','cancelled')). Absent when the document has no in-\nflight workflow. Frontend renders a status pill on the document\ncard + header."
         }
       }
     },
@@ -2137,6 +2141,32 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1DocumentWorkflowInstance": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "definitionId": {
+          "type": "string"
+        },
+        "definitionName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "pending | running | completed | failed | cancelled"
+        },
+        "currentStep": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

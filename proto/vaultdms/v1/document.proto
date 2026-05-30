@@ -38,6 +38,21 @@ message Document {
   // carry their display_name on the row so attribution survives
   // account deletion.
   string                    created_by_name          = 21;
+  // Active workflow summary, filled at read time by a LEFT JOIN
+  // LATERAL against workflow_instances (status NOT IN ('completed',
+  // 'failed','cancelled')). Absent when the document has no in-
+  // flight workflow. Frontend renders a status pill on the document
+  // card + header.
+  DocumentWorkflowInstance  workflow_instance        = 22;
+}
+
+message DocumentWorkflowInstance {
+  string                    id                  = 1;
+  string                    definition_id       = 2;
+  string                    definition_name     = 3;
+  string                    status              = 4; // pending | running | completed | failed | cancelled
+  int32                     current_step        = 5;
+  google.protobuf.Timestamp started_at          = 6;
 }
 
 message DocumentPermissions {
