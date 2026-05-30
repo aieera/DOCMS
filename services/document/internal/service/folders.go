@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -144,8 +145,24 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
+	// Effective workspace access: full workspace permission (member /
+	// admin) OR at least one folder grant in the workspace (direct
+	// user grant or via a group). Grantee-only callers get a
+	// read-only scoped view — the post-filter below drops shared
+	// folders so the grantee sees ONLY their entitled folders.
+	isMember := true
 	if err := s.requirePermission(ctx, userID, "view", "workspace", workspaceID, nil); err != nil {
-		return nil, err
+		if !errors.Is(err, vdmserr.ErrForbidden) {
+			return nil, err
+		}
+		ok, gerr := s.callerHasGrantInWorkspace(ctx, tenantID, workspaceID, userID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if !ok {
+			return nil, err
+		}
+		isMember = false
 	}
 	var out []model.Folder
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -154,15 +171,16 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 			return lerr
 		}
 		// Filter private folders the caller can't access. Shared
-		// folders pass through unchanged. CanAccessFolder is a
-		// single query per private folder + an EXISTS lookup; the
-		// typical workspace has 0–1 private folder so this is
-		// effectively free.
+		// folders pass through for full members; grantee-only callers
+		// see no shared folders at all (their entry was the grant,
+		// not workspace membership).
 		isAdmin := s.callerIsTenantAdmin(ctx)
 		filtered := raw[:0]
 		for i := range raw {
 			if raw[i].Visibility == model.FolderShared {
-				filtered = append(filtered, raw[i])
+				if isAdmin || isMember {
+					filtered = append(filtered, raw[i])
+				}
 				continue
 			}
 			ok, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, raw[i].ID, userID, nil, isAdmin)
@@ -177,6 +195,57 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 		return nil
 	})
 	return out, err
+}
+
+// ListSharedWithMe returns folders the caller has been granted access
+// to (directly or via a group), cross-workspace, scoped to the
+// tenant. Owner exclusion is enforced at the repo layer so this is
+// purely a discovery surface, never a re-list of "private folders I
+// can see anyway".
+func (s *DocumentService) ListSharedWithMe(ctx context.Context) ([]model.SharedFolder, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groups := auth.GetUserGroups(ctx)
+	groupIDs := make([]uuid.UUID, 0, len(groups))
+	groupIDs = append(groupIDs, groups...)
+	var out []model.SharedFolder
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		var lerr error
+		out, lerr = s.repos.Folders.ListSharedWithUser(ctx, tx, tenantID, userID, groupIDs)
+		return lerr
+	})
+	return out, err
+}
+
+// callerHasGrantInWorkspace returns true when the caller holds at
+// least one folder_grants row (direct or via group) for a folder in
+// the given workspace. Used as the grantee-only entry path for the
+// workspace shell + scoped folder listing.
+func (s *DocumentService) callerHasGrantInWorkspace(ctx context.Context, tenantID, workspaceID, userID uuid.UUID) (bool, error) {
+	groups := auth.GetUserGroups(ctx)
+	groupIDs := make([]uuid.UUID, 0, len(groups))
+	groupIDs = append(groupIDs, groups...)
+	if groupIDs == nil {
+		groupIDs = []uuid.UUID{}
+	}
+	var found bool
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM folder_grants fg
+				  JOIN folders f
+				    ON f.tenant_id = fg.tenant_id
+				   AND f.id        = fg.folder_id
+				 WHERE fg.tenant_id = $1
+				   AND f.workspace_id = $2
+				   AND f.deleted_at IS NULL
+				   AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $3)
+				     OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($4::uuid[])))
+			)`, tenantID, workspaceID, userID, groupIDs).Scan(&found)
+	})
+	return found, err
 }
 
 // callerIsTenantAdmin returns true when the request's auth role is

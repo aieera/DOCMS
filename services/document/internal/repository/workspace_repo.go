@@ -99,6 +99,14 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 	if role == "owner" || role == "admin" {
 		rows, err = tx.Query(ctx, baseSelect+" ORDER BY w.created_at ASC, w.id ASC", tenantID)
 	} else {
+		// Grantee-only access: a folder grant alone admits the caller
+		// to the workspace shell (read-only, scoped to the granted
+		// folder(s)). Group grants resolve via the precomputed
+		// userGroups slice on ctx; we deliberately ignore them in the
+		// non-admin gate here and rely on a separate UNION query for
+		// the grantee case to keep this hot path's plan stable.
+		// Direct user grants are the common case; group grants are
+		// surfaced via the dedicated /folders/shared-with-me endpoint.
 		rows, err = tx.Query(ctx, baseSelect+`
 		   AND (
 		     w.created_by = $2
@@ -107,6 +115,16 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		        WHERE wm.tenant_id    = w.tenant_id
 		          AND wm.workspace_id = w.id
 		          AND wm.user_id      = $2
+		     )
+		     OR EXISTS (
+		       SELECT 1 FROM folder_grants fg
+		         JOIN folders f
+		           ON f.tenant_id = fg.tenant_id
+		          AND f.id        = fg.folder_id
+		        WHERE fg.tenant_id   = w.tenant_id
+		          AND f.workspace_id = w.id
+		          AND fg.grantee_type = 'user'
+		          AND fg.grantee_id   = $2
 		     )
 		   )
 		 ORDER BY w.created_at ASC, w.id ASC`, tenantID, userID)

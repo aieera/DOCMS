@@ -338,6 +338,86 @@ func (r *folderRepo) CanAccessFolder(
 	return exists, nil
 }
 
+// ListSharedWithUser returns the cross-workspace "shared with me"
+// list — folders the caller has been granted access to (directly or
+// via a group) but does NOT own. Owner exclusion is what makes this
+// a discovery surface; an owner sees their private folders via the
+// normal workspace browse path.
+//
+// For mixed (direct + group) grants on the same folder we return the
+// direct grant row (DISTINCT ON keeps a single row per folder).
+func (r *folderRepo) ListSharedWithUser(
+	ctx context.Context, tx pgx.Tx,
+	tenantID, userID uuid.UUID,
+	userGroups []uuid.UUID,
+) ([]model.SharedFolder, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT ON (f.id)
+		       f.id, f.tenant_id, f.workspace_id, f.parent_folder_id, f.path::text,
+		       f.name, f.depth, f.created_by, f.created_at, f.updated_at, f.deleted_at,
+		       f.visibility, f.owner_id,
+		       COALESCE((SELECT count(*) FROM documents d
+		                 WHERE d.tenant_id = f.tenant_id AND d.folder_id = f.id
+		                   AND d.deleted_at IS NULL), 0) AS doc_count,
+		       COALESCE((SELECT count(*) FROM folders c
+		                 WHERE c.tenant_id = f.tenant_id AND c.parent_folder_id = f.id
+		                   AND c.deleted_at IS NULL), 0) AS child_count,
+		       w.name,
+		       fg.grantee_type,
+		       CASE WHEN fg.grantee_type = 'group' THEN fg.grantee_id END,
+		       fg.created_at
+		  FROM folder_grants fg
+		  JOIN folders f       ON f.tenant_id = fg.tenant_id AND f.id = fg.folder_id
+		  JOIN workspaces w    ON w.tenant_id = f.tenant_id  AND w.id = f.workspace_id
+		 WHERE fg.tenant_id = $1
+		   AND f.deleted_at IS NULL
+		   AND w.deleted_at IS NULL
+		   AND (f.owner_id IS NULL OR f.owner_id <> $2)
+		   AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $2)
+		     OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($3::uuid[])))
+		 ORDER BY f.id, (fg.grantee_type = 'user') DESC, fg.created_at ASC
+	`, tenantID, userID, uuidSlice(userGroups))
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := make([]model.SharedFolder, 0)
+	for rows.Next() {
+		var (
+			f          model.Folder
+			parent     *uuid.UUID
+			deleted    *time.Time
+			visibility string
+			owner      *uuid.UUID
+			wsName     string
+			via        string
+			groupID    *uuid.UUID
+			grantedAt  time.Time
+		)
+		if err := rows.Scan(
+			&f.ID, &f.TenantID, &f.WorkspaceID, &parent, &f.Path,
+			&f.Name, &f.Depth, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt, &deleted,
+			&visibility, &owner,
+			&f.DocumentCount, &f.ChildFolderCount,
+			&wsName, &via, &groupID, &grantedAt,
+		); err != nil {
+			return nil, mapPgError(err)
+		}
+		f.ParentFolderID = parent
+		f.DeletedAt = deleted
+		f.Visibility = model.FolderVisibility(visibility)
+		f.OwnerID = owner
+		out = append(out, model.SharedFolder{
+			Folder:        f,
+			WorkspaceName: wsName,
+			GrantedVia:    via,
+			GroupID:       groupID,
+			GrantedAt:     grantedAt,
+		})
+	}
+	return out, mapPgError(rows.Err())
+}
+
 // uuidSlice is a passthrough that pgx serialises as a uuid[] cleanly.
 // Defined as a helper so a nil slice (no groups) doesn't break the
 // query — pgx treats nil-slice as empty array which is what we want.

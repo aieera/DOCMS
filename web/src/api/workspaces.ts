@@ -145,3 +145,31 @@ export async function transferWorkspaceOwnership(
   )
   return data
 }
+
+// SharedFolder — one row of the cross-workspace "shared with me"
+// surface (backed by GET /api/v1/folders/shared-with-me). Owner
+// exclusion is enforced server-side; folders the caller owns never
+// appear here.
+export interface SharedFolder {
+  folder: {
+    id: string
+    name: string
+    workspace_id: string
+    visibility: 'shared' | 'private'
+    owner_id?: string
+    parent_folder_id?: string
+    depth: number
+  }
+  workspace: {
+    id: string
+    name: string
+  }
+  granted_via: 'user' | 'group'
+  group_id?: string
+  granted_at: string
+}
+
+export async function getSharedWithMe(): Promise<SharedFolder[]> {
+  const { data } = await api.get<{ items?: SharedFolder[] }>('/folders/shared-with-me')
+  return data?.items ?? []
+}

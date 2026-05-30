@@ -78,6 +78,12 @@ type FolderRepository interface {
 	AddGrant(ctx context.Context, tx pgx.Tx, g *model.FolderGrant) error
 	RemoveGrant(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID, granteeType string, granteeID uuid.UUID) error
 	CanAccessFolder(ctx context.Context, tx pgx.Tx, tenantID, folderID, userID uuid.UUID, userGroups []uuid.UUID, isAdmin bool) (bool, error)
+	// ListSharedWithUser returns folders the caller has been granted
+	// access to (directly or via a group) but does NOT own. Used by
+	// the cross-workspace "Shared with me" view. Owner exclusion is
+	// the only criterion that makes the result a discovery surface
+	// rather than a re-list of "private folders I can see anyway".
+	ListSharedWithUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID) ([]model.SharedFolder, error)
 }
 
 type VersionRepository interface {

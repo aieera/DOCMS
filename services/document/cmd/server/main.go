@@ -490,6 +490,17 @@ func main() {
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(retentionExemptMux),
 		))
 
+	// Shared-with-me — cross-workspace discovery of folders the
+	// caller holds a grant for (direct or via group). SessionAuth
+	// populates ctx; no role gate (any authenticated user can read
+	// their own grants).
+	sharedWithMeMux := http.NewServeMux()
+	handler.NewSharedWithMeHandler(svc).Register(sharedWithMeMux)
+	rootMux.Handle("GET /api/v1/folders/shared-with-me",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(sharedWithMeMux),
+		))
+
 	// Admin Trash — list soft-deleted docs + restore + permanent
 	// purge (S3 + DB). All three routes role-gate to owner/admin
 	// inside the handler. SessionAuth populates ctx so the service

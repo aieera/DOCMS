@@ -178,6 +178,18 @@ type FolderGrant struct {
 	CreatedAt   time.Time
 }
 
+// SharedFolder is one row of the cross-workspace "shared with me"
+// list. Carries enough folder + workspace metadata for the UI to
+// render the row and deep-link to /workspaces/{wsId}?folder={folderId},
+// plus the grant provenance (direct vs via group).
+type SharedFolder struct {
+	Folder        Folder
+	WorkspaceName string
+	GrantedVia    string // 'user' | 'group'
+	GroupID       *uuid.UUID
+	GrantedAt     time.Time
+}
+
 // ShareLink is a tokenized anonymous access grant to a document.
 type ShareLink struct {
 	TenantID     uuid.UUID

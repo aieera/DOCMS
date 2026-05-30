@@ -19,6 +19,7 @@ import { Route as ZtTokenRouteImport } from './routes/zt.$token'
 import { Route as SharedTokenRouteImport } from './routes/shared.$token'
 import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated/trash'
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
+import { Route as AuthenticatedSharedWithMeRouteImport } from './routes/_authenticated/shared-with-me'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authenticated/saved-searches'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
@@ -153,6 +154,12 @@ const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSharedWithMeRoute =
+  AuthenticatedSharedWithMeRouteImport.update({
+    id: '/shared-with-me',
+    path: '/shared-with-me',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSearchRoute = AuthenticatedSearchRouteImport.update({
   id: '/search',
   path: '/search',
@@ -657,6 +664,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
+  '/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -751,6 +759,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
+  '/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -847,6 +856,7 @@ export interface FileRoutesById {
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
+  '/_authenticated/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
   '/shared/$token': typeof SharedTokenRoute
@@ -945,6 +955,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/saved-searches'
     | '/search'
+    | '/shared-with-me'
     | '/tasks'
     | '/trash'
     | '/shared/$token'
@@ -1039,6 +1050,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/saved-searches'
     | '/search'
+    | '/shared-with-me'
     | '/tasks'
     | '/trash'
     | '/shared/$token'
@@ -1134,6 +1146,7 @@ export interface FileRouteTypes {
     | '/_authenticated/notifications'
     | '/_authenticated/saved-searches'
     | '/_authenticated/search'
+    | '/_authenticated/shared-with-me'
     | '/_authenticated/tasks'
     | '/_authenticated/trash'
     | '/shared/$token'
@@ -1301,6 +1314,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof AuthenticatedTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/shared-with-me': {
+      id: '/_authenticated/shared-with-me'
+      path: '/shared-with-me'
+      fullPath: '/shared-with-me'
+      preLoaderRoute: typeof AuthenticatedSharedWithMeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/search': {
@@ -1956,6 +1976,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSavedSearchesRoute: typeof AuthenticatedSavedSearchesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
+  AuthenticatedSharedWithMeRoute: typeof AuthenticatedSharedWithMeRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -2039,6 +2060,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSavedSearchesRoute: AuthenticatedSavedSearchesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
+  AuthenticatedSharedWithMeRoute: AuthenticatedSharedWithMeRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

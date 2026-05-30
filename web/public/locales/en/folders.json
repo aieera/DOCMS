@@ -65,6 +65,17 @@
     "type_user": "User",
     "type_group": "Group"
   },
+  "shared_with_me": {
+    "title": "Shared with me",
+    "description": "Folders other people have granted you access to, across all workspaces.",
+    "empty_title": "Nothing shared yet",
+    "empty_description": "Folders shared with you — directly or via a group — will appear here.",
+    "error": "Could not load shared folders.",
+    "via_user": "Shared with you",
+    "via_group": "Via group",
+    "via_group_tooltip": "You can see this folder because a group you belong to was granted access.",
+    "open_aria": "Open shared folder {{name}}"
+  },
   "toasts": {
     "created": "Folder created",
     "renamed": "Folder renamed",

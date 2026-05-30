@@ -8,6 +8,7 @@ import {
   listFolderGrants,
   addFolderGrant,
   removeFolderGrant,
+  getSharedWithMe,
 } from '@/api/workspaces'
 import { useAppMutation } from './useAppMutation'
 
@@ -104,8 +105,10 @@ export function useAddFolderGrant() {
       granteeType: 'user' | 'group'
       granteeId: string
     }) => addFolderGrant(folderId, granteeType, granteeId),
-    onSuccess: (_, { folderId }) =>
-      qc.invalidateQueries({ queryKey: ['folder-grants', folderId] }),
+    onSuccess: (_, { folderId }) => {
+      qc.invalidateQueries({ queryKey: ['folder-grants', folderId] })
+      qc.invalidateQueries({ queryKey: ['shared-with-me'] })
+    },
     defaultErrorMessage: 'Could not grant access',
   })
 }
@@ -122,8 +125,23 @@ export function useRemoveFolderGrant() {
       granteeType: 'user' | 'group'
       granteeId: string
     }) => removeFolderGrant(folderId, granteeType, granteeId),
-    onSuccess: (_, { folderId }) =>
-      qc.invalidateQueries({ queryKey: ['folder-grants', folderId] }),
+    onSuccess: (_, { folderId }) => {
+      qc.invalidateQueries({ queryKey: ['folder-grants', folderId] })
+      // Revoking removes the row from any grantee's Shared-with-me list.
+      qc.invalidateQueries({ queryKey: ['shared-with-me'] })
+    },
     defaultErrorMessage: 'Could not revoke access',
+  })
+}
+
+// useSharedWithMe — cross-workspace list of folders the caller has
+// been granted access to (directly or via group). Refresh-on-focus
+// so revocations elsewhere show through quickly without a manual
+// reload.
+export function useSharedWithMe() {
+  return useQuery({
+    queryKey: ['shared-with-me'],
+    queryFn: getSharedWithMe,
+    staleTime: 30_000,
   })
 }

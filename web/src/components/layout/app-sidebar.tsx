@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -36,6 +36,11 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard', exact: true },
       { to: '/workspaces', icon: FolderOpen, labelKey: 'sidebar.workspaces' },
+      // Cross-workspace surface for folders shared with the caller via
+      // folder_grants (direct or group). Hidden from admins is NOT a
+      // goal — admins see all so they'd rarely need this, but it's
+      // safe + cheap to show universally.
+      { to: '/shared-with-me', icon: Inbox, labelKey: 'sidebar.shared_with_me' },
       // /search entry removed 2026-05-29 — search is reached via the
       // header search bar (Cmd+K). Result page still lives at /search.
       { to: '/ask', icon: Sparkles, labelKey: 'sidebar.ask' },
