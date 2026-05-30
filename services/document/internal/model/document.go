@@ -126,6 +126,7 @@ type Workspace struct {
 	DeletedAt     *time.Time
 	DocumentCount int64
 	FolderCount   int64
+	MemberCount   int64
 }
 
 // WorkspaceMember is one row of the workspace ACL plus enough user

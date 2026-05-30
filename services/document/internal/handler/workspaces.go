@@ -94,6 +94,7 @@ func workspaceToProto(w *model.Workspace) *vaultdmsv1.Workspace {
 		UpdatedAt:     timestamppb.New(w.UpdatedAt),
 		DocumentCount: w.DocumentCount,
 		FolderCount:   w.FolderCount,
+		MemberCount:   w.MemberCount,
 	}
 	// Settings is stored as JSON bytes; surface as Struct for protobuf
 	// callers and omit if empty/invalid.

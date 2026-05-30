@@ -4436,6 +4436,11 @@
         "folderCount": {
           "type": "string",
           "format": "int64"
+        },
+        "memberCount": {
+          "type": "string",
+          "format": "int64",
+          "description": "member_count — workspace_members rows for this workspace. Powers\nthe \"N members\" pill on workspace cards. Includes admins, members,\nand viewers; folder-grant-only callers are not counted."
         }
       }
     },

@@ -60,7 +60,9 @@ func (r *workspaceRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uui
 		                   AND d.deleted_at IS NULL), 0),
 		       COALESCE((SELECT count(*) FROM folders f
 		                 WHERE f.tenant_id = w.tenant_id AND f.workspace_id = w.id
-		                   AND f.deleted_at IS NULL), 0)
+		                   AND f.deleted_at IS NULL), 0),
+		       COALESCE((SELECT count(*) FROM workspace_members wm
+		                 WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id), 0)
 		FROM workspaces w
 		WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL
 	`, tenantID, id)
@@ -88,7 +90,9 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		                   AND d.deleted_at IS NULL), 0),
 		       COALESCE((SELECT count(*) FROM folders f
 		                 WHERE f.tenant_id = w.tenant_id AND f.workspace_id = w.id
-		                   AND f.deleted_at IS NULL), 0)
+		                   AND f.deleted_at IS NULL), 0),
+		       COALESCE((SELECT count(*) FROM workspace_members wm
+		                 WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id), 0)
 		  FROM workspaces w
 		 WHERE w.tenant_id = $1 AND w.deleted_at IS NULL`
 
@@ -289,7 +293,7 @@ func scanWorkspace(row workspaceRow) (*model.Workspace, error) {
 		&w.TenantID, &w.ID, &w.Name, &w.Description,
 		&w.RegionPin, &w.Settings,
 		&w.CreatedBy, &w.CreatedAt, &w.UpdatedAt, &w.DeletedAt,
-		&w.DocumentCount, &w.FolderCount,
+		&w.DocumentCount, &w.FolderCount, &w.MemberCount,
 	)
 	if err != nil {
 		return nil, mapPgError(err)

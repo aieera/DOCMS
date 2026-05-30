@@ -89,6 +89,10 @@ message Workspace {
   google.protobuf.Timestamp updated_at      = 9;
   int64                     document_count  = 10;
   int64                     folder_count    = 11;
+  // member_count — workspace_members rows for this workspace. Powers
+  // the "N members" pill on workspace cards. Includes admins, members,
+  // and viewers; folder-grant-only callers are not counted.
+  int64                     member_count    = 12;
 }
 
 message Folder {
