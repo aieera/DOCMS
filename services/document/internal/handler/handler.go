@@ -225,6 +225,32 @@ func (h *Handler) MoveDocument(ctx context.Context, req *vaultdmsv1.MoveDocument
 	return documentToProto(d, nil), nil
 }
 
+func (h *Handler) CopyDocument(ctx context.Context, req *vaultdmsv1.CopyDocumentRequest) (*vaultdmsv1.Document, error) {
+	id, err := parseUUID("document_id", req.GetDocumentId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	target, err := parseUUID("target_folder_id", req.GetTargetFolderId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	targetWS, err := parseUUIDOptional("target_workspace_id", req.GetTargetWorkspaceId())
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	userID, _ := auth.GetUserID(ctx)
+	d, err := h.svc.CopyDocument(ctx, &service.CopyDocumentInput{
+		DocumentID:        id,
+		TargetFolderID:    target,
+		TargetWorkspaceID: targetWS,
+		CopiedBy:          userID,
+	})
+	if err != nil {
+		return nil, vdmserr.ToGRPCError(err)
+	}
+	return documentToProto(d, nil), nil
+}
+
 func (h *Handler) ListDocuments(ctx context.Context, req *vaultdmsv1.ListDocumentsRequest) (*vaultdmsv1.ListDocumentsResponse, error) {
 	ws, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {

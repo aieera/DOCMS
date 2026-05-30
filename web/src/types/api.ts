@@ -39,10 +39,23 @@ export interface Folder {
   id: string
   workspace_id: string
   parent_id?: string
+  parent_folder_id?: string
   name: string
   path: string
+  depth?: number
   document_count: number
-  children_count: number
+  // Two server keys exist for back-compat. New endpoints emit
+  // child_folder_count; legacy ones emit children_count. Components
+  // read whichever is present.
+  child_folder_count?: number
+  children_count?: number
+  // Visibility + owner_id land in Phase 2. Optional here so the
+  // type compiles before the migration; the FE treats missing
+  // visibility as 'shared'.
+  visibility?: 'shared' | 'private'
+  owner_id?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface Document {

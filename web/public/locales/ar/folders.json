@@ -1,0 +1,86 @@
+{
+  "actions": {
+    "open": "فتح",
+    "rename": "إعادة تسمية",
+    "delete": "حذف",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "create": "إنشاء مجلّد",
+    "new_folder": "مجلّد جديد",
+    "make_private": "اجعله خاصاً",
+    "make_shared": "اجعله مشتركاً",
+    "manage_access": "إدارة الوصول"
+  },
+  "actions_aria_label": "إجراءات المجلّد",
+  "card_aria_label": "افتح المجلّد {{name}}",
+  "breadcrumb_label": "مسار المجلّدات",
+  "empty_folder": "مجلّد فارغ",
+  "item_count_one": "عنصر واحد",
+  "item_count_other": "{{count}} عناصر",
+  "private_label": "خاص",
+  "private_tooltip": "ظاهر لك فقط وللأشخاص الذين منحتهم الوصول",
+  "new_dialog": {
+    "title": "مجلّد جديد",
+    "description_in_workspace": "ينشئ مجلّداً في مساحة العمل هذه.",
+    "description_in_folder": "ينشئ مجلّداً داخل {{name}}.",
+    "name_label": "اسم المجلّد",
+    "name_placeholder": "مثال: العقود",
+    "visibility_label": "من يستطيع رؤية هذا المجلّد؟"
+  },
+  "rename_dialog": {
+    "title": "إعادة تسمية المجلّد",
+    "name_label": "الاسم الجديد"
+  },
+  "delete_confirm": {
+    "title": "حذف المجلّد؟",
+    "description": "حذف \"{{name}}\"؟ يجب أن يكون فارغاً (لا مستندات ولا مجلّدات فرعية) قبل الحذف.",
+    "confirm": "حذف المجلّد"
+  },
+  "visibility": {
+    "shared": "مشترك",
+    "shared_hint": "يستطيع رؤيته كل من يصل لمساحة العمل.",
+    "private": "خاص",
+    "private_hint": "أنت فقط ومن منحتهم الوصول يستطيعون رؤيته.",
+    "flip_to_private_confirm": {
+      "title": "هل تجعل هذا المجلّد خاصاً؟",
+      "description": "سيفقد بقية أعضاء مساحة العمل الوصول. أنت ومن تمنحهم الصلاحية فقط ستظهر لكم.",
+      "confirm": "اجعله خاصاً"
+    },
+    "flip_to_shared_confirm": {
+      "title": "هل تجعل هذا المجلّد مشتركاً؟",
+      "description": "سيتمكّن جميع أعضاء مساحة العمل من رؤيته والعمل عليه.",
+      "confirm": "اجعله مشتركاً"
+    }
+  },
+  "manage_access_dialog": {
+    "title": "إدارة الوصول للمجلّد",
+    "description": "يمكن لهؤلاء المستخدمين والمجموعات رؤية المجلّد والعمل عليه. المالك له الوصول دائماً.",
+    "owner_label": "المالك",
+    "no_grants": "لم يُمنح أحد آخر الوصول بعد.",
+    "add_label": "أضف شخصاً أو مجموعة",
+    "add_user": "أضف مستخدماً",
+    "add_group": "أضف مجموعة",
+    "revoke": "إلغاء الوصول",
+    "type_user": "مستخدم",
+    "type_group": "مجموعة"
+  },
+  "toasts": {
+    "created": "تم إنشاء المجلّد",
+    "renamed": "تمت إعادة تسمية المجلّد",
+    "deleted": "تم حذف المجلّد",
+    "moved": "تم نقل المجلّد",
+    "visibility_changed": "تم تحديث ظهور المجلّد",
+    "grant_added": "تم منح الوصول",
+    "grant_removed": "تم إلغاء الوصول",
+    "error": "تعذّر إكمال عملية المجلّد",
+    "delete_not_empty": "المجلّد غير فارغ — انقل أو احذف محتوياته أولاً."
+  },
+  "toolbar": {
+    "new_folder": "مجلّد جديد",
+    "upload_in_folder": "ارفع هنا"
+  },
+  "empty_state": {
+    "title": "هذا المجلّد فارغ",
+    "description": "أسقط ملفات للرفع هنا أو أنشئ مجلّداً فرعياً."
+  }
+}

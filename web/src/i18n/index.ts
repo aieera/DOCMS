@@ -38,6 +38,7 @@ export const NAMESPACES = [
   'signatures',
   'intelligence',
   'workflows',
+  'folders',
   'errors',
 ] as const
 

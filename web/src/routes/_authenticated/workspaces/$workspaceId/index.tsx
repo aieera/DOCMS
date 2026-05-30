@@ -1,12 +1,18 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, Sparkles, FolderOpen, FileText, Users } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Upload, Sparkles, FolderOpen, FileText, Users, FolderPlus } from 'lucide-react'
 
 import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
-import { getWorkspace } from '@/api/workspaces'
+import { getFolder, getWorkspace } from '@/api/workspaces'
 import { updateDocument } from '@/api/documents'
+import { useCreateFolder, useDeleteFolder, useFolders, useRenameFolder } from '@/hooks/useFolders'
+import { FolderBreadcrumbs } from '@/components/folders/FolderBreadcrumbs'
+import { FolderGrid } from '@/components/folders/FolderGrid'
+import { NewFolderDialog } from '@/components/folders/NewFolderDialog'
+import { readErrorMessage } from '@/api/client'
 import {
   predictFiling,
   sendFilingFeedback,
@@ -41,25 +47,51 @@ interface EnrichmentItem {
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
-  // ?doc=<uuid> drives the document viewer modal. URL-state means the
-  // overlay is bookmarkable and survives back/forward. Direct URLs of
-  // the form /workspaces/.../documents/<id> still hit the full-page
-  // route — this modal is just the grid-side shortcut.
-  const search = Route.useSearch() as { doc?: string }
+  // ?doc=<uuid> drives the document viewer modal.
+  // ?folder=<uuid> drives the current-folder navigation — empty/missing
+  //   means the workspace root. Storing both in the URL makes deep
+  //   links to a specific folder bookmarkable + back/forward natural.
+  const search = Route.useSearch() as { doc?: string; folder?: string }
   const navigate = useNavigate({ from: '/workspaces/$workspaceId/' })
+  const { t } = useTranslation('folders')
+  const currentFolderId = search.folder ?? null
   const closeViewer = () =>
     navigate({ search: (s: Record<string, unknown>) => ({ ...s, doc: undefined }) })
+  const navigateToFolder = (folderId: string | null) =>
+    navigate({
+      search: (s: Record<string, unknown>) => ({ ...s, folder: folderId ?? undefined }),
+    })
   const ws = useQuery({
     queryKey: ['workspace', workspaceId],
     queryFn: () => getWorkspace(workspaceId),
     staleTime: 60_000,
   })
-  const { data, isLoading } = useDocuments(workspaceId)
-  const { uploadFiles } = useUpload(workspaceId)
+  // Documents in the current folder only. When at workspace root we
+  // pass the root folder id once it's been discovered via useFolders;
+  // the backend's ListDocuments accepts folder_id as a filter.
+  const { data: foldersData, isLoading: foldersLoading } = useFolders(
+    workspaceId,
+    currentFolderId ?? undefined,
+  )
+  // Folder detail for breadcrumbs — only fetch when a folder is selected.
+  const folderDetail = useQuery({
+    queryKey: ['folder', currentFolderId],
+    queryFn: () => getFolder(currentFolderId!),
+    enabled: !!currentFolderId,
+  })
+  const documentsParams: Record<string, string> = currentFolderId
+    ? { folder_id: currentFolderId }
+    : {}
+  const { data, isLoading } = useDocuments(workspaceId, documentsParams)
+  const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [aiOpen, setAiOpen] = useState(false)
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const createFolder = useCreateFolder()
+  const renameFolder = useRenameFolder()
+  const deleteFolder = useDeleteFolder()
   // dragCounter pattern: native dragenter/dragleave fire as the cursor
   // crosses every CHILD element under the drop zone, so a naive
   // boolean toggles in and out as the user drags over interior
@@ -267,11 +299,57 @@ function WorkspacePage() {
                 </Link>
               </Button>
             )}
+            <Button
+              variant="outline"
+              onClick={() => setNewFolderOpen(true)}
+              data-testid="open-new-folder"
+              className="gap-2"
+            >
+              <FolderPlus className="h-4 w-4" />
+              {t('toolbar.new_folder')}
+            </Button>
             <Button onClick={onPick} data-testid="open-upload" className="gap-2 shadow-sm hover:shadow-md">
               <Upload className="h-4 w-4" /> Upload
             </Button>
           </>
         }
+      />
+
+      {/* Folder breadcrumb + nested folders. Rendered between the
+          header and document list so navigation always reads
+          "workspace > folder > current" before the contents. */}
+      <FolderBreadcrumbs
+        ancestors={folderDetail.data?.ancestors ?? []}
+        current={folderDetail.data ?? null}
+        workspaceName={ws.data?.name ?? ''}
+        onNavigate={navigateToFolder}
+      />
+
+      <FolderGrid
+        folders={foldersData ?? []}
+        isLoading={foldersLoading}
+        onOpen={(f) => navigateToFolder(f.id)}
+        onRename={(folder, name) => {
+          renameFolder.mutate(
+            { folderId: folder.id, name },
+            {
+              onSuccess: () => {
+                toast.success(t('toasts.renamed'))
+                qc.invalidateQueries({ queryKey: ['folder', folder.id] })
+              },
+            },
+          )
+        }}
+        onDelete={(folder) => {
+          deleteFolder.mutate(folder.id, {
+            onSuccess: () => toast.success(t('toasts.deleted')),
+            onError: (e: unknown) => {
+              const msg = readErrorMessage(e) ?? ''
+              toast.error(msg.includes('not empty') ? t('toasts.delete_not_empty') : (msg || t('toasts.error')))
+            },
+          })
+        }}
+        canManage={isAdmin}
       />
 
       {/* Backend ListDocumentsResponse uses `documents`, not `items` —
@@ -285,6 +363,32 @@ function WorkspacePage() {
       />
 
       <WorkspaceAISettingsDialog open={aiOpen} onOpenChange={setAiOpen} workspaceId={workspaceId} />
+
+      <NewFolderDialog
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        parentName={folderDetail.data?.name ?? null}
+        canPickVisibility={false}
+        isCreating={createFolder.isPending}
+        onCreate={async (name) => {
+          await new Promise<void>((resolve, reject) => {
+            createFolder.mutate(
+              { workspaceId, name, parentId: currentFolderId ?? undefined },
+              {
+                onSuccess: () => {
+                  toast.success(t('toasts.created'))
+                  setNewFolderOpen(false)
+                  resolve()
+                },
+                onError: (e) => {
+                  toast.error(readErrorMessage(e) ?? t('toasts.error'))
+                  reject(e as Error)
+                },
+              },
+            )
+          })
+        }}
+      />
 
       {/* Post-upload enrichment. Renders queue[0] only; keying on
           docId forces a fresh useState on dequeue so the next file's
@@ -340,7 +444,8 @@ export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/')
   // ?doc=<uuid> opens DocumentViewerModal as an overlay; URL-driven so
   // back-button and bookmarks behave naturally. Anything else in search
   // passes through (e.g. future ?folder= or ?filter= params).
-  validateSearch: (raw: Record<string, unknown>): { doc?: string } => ({
+  validateSearch: (raw: Record<string, unknown>): { doc?: string; folder?: string } => ({
     doc: typeof raw.doc === 'string' && raw.doc.length > 0 ? raw.doc : undefined,
+    folder: typeof raw.folder === 'string' && raw.folder.length > 0 ? raw.folder : undefined,
   }),
 })

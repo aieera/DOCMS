@@ -510,6 +510,113 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 	return out, err
 }
 
+// CopyDocument creates a NEW document row in the target folder that
+// points at the same content_blob as the source document's current
+// version. Shallow copy: only the current version is brought over,
+// history / share-links / comments / annotations / OCR / chunks
+// stay with the original.
+//
+// Region pin follows the target folder's workspace — the new row is
+// a fresh creation, not a relocation, so the residency restriction
+// that blocks moving across regions doesn't apply.
+//
+// Blocked by legal hold (same as Move). Requires edit permission on
+// the target folder. The source is read-only here so we only need
+// "view" on it; current_user is implicit (mustCaller).
+func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInput) (*model.Document, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil || in.DocumentID == uuid.Nil || in.TargetFolderID == uuid.Nil {
+		return nil, errInvalidInput("document_id", "required")
+	}
+
+	var out *model.Document
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		src, err := s.repos.Documents.GetByID(ctx, tx, tenantID, in.DocumentID)
+		if err != nil {
+			return err
+		}
+		if src.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if model.IsLegalHoldBlocked(src.LifecycleState, "copy") {
+			return vdmserr.ErrLegalHold
+		}
+		targetFolder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.TargetFolderID)
+		if err != nil {
+			return err
+		}
+		targetWS := src.WorkspaceID
+		if in.TargetWorkspaceID != nil {
+			targetWS = *in.TargetWorkspaceID
+		}
+		if targetFolder.WorkspaceID != targetWS {
+			return vdmserr.Validation("target_folder_id", "folder is not in the target workspace")
+		}
+		// Caller must be able to read the source + edit the target.
+		if err := s.requirePermission(ctx, userID, "view", "document", src.ID, map[string]any{
+			"workspace_id": src.WorkspaceID.String(),
+		}); err != nil {
+			return err
+		}
+		if err := s.requirePermission(ctx, userID, "edit", "folder", in.TargetFolderID, map[string]any{
+			"workspace_id": targetWS.String(),
+		}); err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		newID, _ := uuid.NewV7()
+		dst := &model.Document{
+			ID:                       newID,
+			TenantID:                 tenantID,
+			WorkspaceID:              targetWS,
+			FolderID:                 in.TargetFolderID,
+			Title:                    src.Title,
+			Description:              src.Description,
+			LifecycleState:           model.StateDraft,
+			// Inherit region from the source. Cross-region copy would
+			// require a residency migration; that's out of scope for
+			// the user-facing Copy action.
+			RegionPin:                src.RegionPin,
+			CustomMetadata:           src.CustomMetadata,
+			Tags:                     append([]string(nil), src.Tags...),
+			CurrentVersionID:         src.CurrentVersionID,
+			DocumentClass:            src.DocumentClass,
+			ClassificationConfidence: src.ClassificationConfidence,
+			SHA256Hash:               src.SHA256Hash,
+			TotalSizeBytes:           src.TotalSizeBytes,
+			MimeType:                 src.MimeType,
+			CreatedBy:                in.CopiedBy,
+			CreatedAt:                now,
+			UpdatedBy:                in.CopiedBy,
+			UpdatedAt:                now,
+		}
+		if err := s.repos.Documents.Create(ctx, tx, dst); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.document.copied.v1", "document", dst.ID,
+			map[string]any{
+				"document_id":          dst.ID.String(),
+				"source_document_id":   src.ID.String(),
+				"source_workspace_id":  src.WorkspaceID.String(),
+				"target_workspace_id":  targetWS.String(),
+				"target_folder_id":     in.TargetFolderID.String(),
+				"copied_by":            in.CopiedBy.String(),
+			})
+		if err != nil {
+			return err
+		}
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		out = dst
+		return nil
+	})
+	return out, err
+}
+
 // ListDocuments returns a page of documents matching filter. Filter validation
 // (region, lifecycle_state values) is deferred to the repository's SQL +
 // sort_column allowlist.

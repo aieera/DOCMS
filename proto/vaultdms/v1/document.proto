@@ -186,6 +186,15 @@ message MoveDocumentRequest {
   string target_folder_id    = 2;
   string target_workspace_id = 3;
 }
+// CopyDocument creates a new document row in the target folder pointing
+// at the same content_blob as the source's current version. Shallow:
+// only the current version is brought over; versions / share-links /
+// comments / annotations / OCR stay with the original.
+message CopyDocumentRequest {
+  string document_id         = 1;
+  string target_folder_id    = 2;
+  string target_workspace_id = 3;
+}
 message ListDocumentsRequest {
   string                    workspace_id     = 1;
   string                    folder_id        = 2;
@@ -317,6 +326,9 @@ service DocumentService {
   }
   rpc MoveDocument(MoveDocumentRequest) returns (Document) {
     option (google.api.http) = { post: "/api/v1/documents/{document_id}/move" body: "*" };
+  }
+  rpc CopyDocument(CopyDocumentRequest) returns (Document) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/copy" body: "*" };
   }
   rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse) {
     option (google.api.http) = { get: "/api/v1/workspaces/{workspace_id}/documents" };

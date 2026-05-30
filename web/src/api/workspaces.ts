@@ -53,6 +53,18 @@ export async function deleteFolder(folderId: string) {
   await api.delete(`/folders/${folderId}`)
 }
 
+// FolderDetail extends Folder with the ancestor chain the backend
+// pre-loads on a single GetFolder call. Used by the workspace view's
+// breadcrumb so we don't N+1 walk parents one at a time.
+export interface FolderDetail extends Folder {
+  ancestors?: Folder[]
+}
+
+export async function getFolder(folderId: string): Promise<FolderDetail> {
+  const { data } = await api.get<FolderDetail>(`/folders/${folderId}`)
+  return data
+}
+
 export async function updateWorkspace(id: string, input: { name?: string; description?: string }) {
   const { data } = await api.patch<Workspace>(`/workspaces/${id}`, input)
   return data

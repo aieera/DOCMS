@@ -135,6 +135,19 @@ type MoveDocumentInput struct {
 	UpdatedBy         uuid.UUID
 }
 
+// CopyDocumentInput names a source doc + a destination folder. Same
+// shape as Move except the source row stays intact. The new row gets
+// a fresh UUID and uses the caller as created_by, but content_blob_id
+// + sha256 + size are copied verbatim — copy is shallow at the
+// version level (only the current version is brought over). Versions,
+// share-links, comments, annotations are NOT copied.
+type CopyDocumentInput struct {
+	DocumentID        uuid.UUID
+	TargetFolderID    uuid.UUID
+	TargetWorkspaceID *uuid.UUID // nil = same workspace as source folder
+	CopiedBy          uuid.UUID
+}
+
 type CreateFolderInput struct {
 	WorkspaceID    uuid.UUID
 	Name           string

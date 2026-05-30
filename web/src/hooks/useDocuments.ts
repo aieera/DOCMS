@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { getDocuments, getDocument, updateDocument, deleteDocument, moveDocument } from '@/api/documents'
+import { getDocuments, getDocument, updateDocument, deleteDocument, moveDocument, copyDocument } from '@/api/documents'
 import { readErrorMessage } from '@/api/client'
 import { useAppMutation } from './useAppMutation'
 
@@ -55,5 +55,15 @@ export function useMoveDocument() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? 'Could not move document'),
+  })
+}
+
+export function useCopyDocument() {
+  const qc = useQueryClient()
+  return useAppMutation({
+    mutationFn: ({ id, folderId }: { id: string; folderId: string }) => copyDocument(id, folderId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+    onError: (e: unknown) =>
+      toast.error(readErrorMessage(e) ?? 'Could not copy document'),
   })
 }

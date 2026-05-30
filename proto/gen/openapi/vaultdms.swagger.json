@@ -211,6 +211,44 @@
         ]
       }
     },
+    "/api/v1/documents/{documentId}/copy": {
+      "post": {
+        "operationId": "DocumentService_CopyDocument",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Document"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DocumentServiceCopyDocumentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DocumentService"
+        ]
+      }
+    },
     "/api/v1/documents/{documentId}/lifecycle": {
       "post": {
         "operationId": "DocumentService_UpdateLifecycle",
@@ -1134,6 +1172,18 @@
           "type": "string"
         }
       }
+    },
+    "DocumentServiceCopyDocumentBody": {
+      "type": "object",
+      "properties": {
+        "targetFolderId": {
+          "type": "string"
+        },
+        "targetWorkspaceId": {
+          "type": "string"
+        }
+      },
+      "description": "CopyDocument creates a new document row in the target folder pointing\nat the same content_blob as the source's current version. Shallow:\nonly the current version is brought over; versions / share-links /\ncomments / annotations / OCR stay with the original."
     },
     "DocumentServiceCreateFolderBody": {
       "type": "object",

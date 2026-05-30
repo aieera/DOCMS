@@ -35,6 +35,7 @@ const (
 	DocumentService_UpdateDocument_FullMethodName       = "/vaultdms.v1.DocumentService/UpdateDocument"
 	DocumentService_DeleteDocument_FullMethodName       = "/vaultdms.v1.DocumentService/DeleteDocument"
 	DocumentService_MoveDocument_FullMethodName         = "/vaultdms.v1.DocumentService/MoveDocument"
+	DocumentService_CopyDocument_FullMethodName         = "/vaultdms.v1.DocumentService/CopyDocument"
 	DocumentService_ListDocuments_FullMethodName        = "/vaultdms.v1.DocumentService/ListDocuments"
 	DocumentService_CreateVersion_FullMethodName        = "/vaultdms.v1.DocumentService/CreateVersion"
 	DocumentService_ListVersions_FullMethodName         = "/vaultdms.v1.DocumentService/ListVersions"
@@ -71,6 +72,7 @@ type DocumentServiceClient interface {
 	UpdateDocument(ctx context.Context, in *UpdateDocumentRequest, opts ...grpc.CallOption) (*Document, error)
 	DeleteDocument(ctx context.Context, in *DeleteDocumentRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	MoveDocument(ctx context.Context, in *MoveDocumentRequest, opts ...grpc.CallOption) (*Document, error)
+	CopyDocument(ctx context.Context, in *CopyDocumentRequest, opts ...grpc.CallOption) (*Document, error)
 	ListDocuments(ctx context.Context, in *ListDocumentsRequest, opts ...grpc.CallOption) (*ListDocumentsResponse, error)
 	CreateVersion(ctx context.Context, in *CreateVersionRequest, opts ...grpc.CallOption) (*Version, error)
 	ListVersions(ctx context.Context, in *ListVersionsRequest, opts ...grpc.CallOption) (*ListVersionsResponse, error)
@@ -231,6 +233,15 @@ func (c *documentServiceClient) MoveDocument(ctx context.Context, in *MoveDocume
 	return out, nil
 }
 
+func (c *documentServiceClient) CopyDocument(ctx context.Context, in *CopyDocumentRequest, opts ...grpc.CallOption) (*Document, error) {
+	out := new(Document)
+	err := c.cc.Invoke(ctx, DocumentService_CopyDocument_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *documentServiceClient) ListDocuments(ctx context.Context, in *ListDocumentsRequest, opts ...grpc.CallOption) (*ListDocumentsResponse, error) {
 	out := new(ListDocumentsResponse)
 	err := c.cc.Invoke(ctx, DocumentService_ListDocuments_FullMethodName, in, out, opts...)
@@ -385,6 +396,7 @@ type DocumentServiceServer interface {
 	UpdateDocument(context.Context, *UpdateDocumentRequest) (*Document, error)
 	DeleteDocument(context.Context, *DeleteDocumentRequest) (*emptypb.Empty, error)
 	MoveDocument(context.Context, *MoveDocumentRequest) (*Document, error)
+	CopyDocument(context.Context, *CopyDocumentRequest) (*Document, error)
 	ListDocuments(context.Context, *ListDocumentsRequest) (*ListDocumentsResponse, error)
 	CreateVersion(context.Context, *CreateVersionRequest) (*Version, error)
 	ListVersions(context.Context, *ListVersionsRequest) (*ListVersionsResponse, error)
@@ -451,6 +463,9 @@ func (UnimplementedDocumentServiceServer) DeleteDocument(context.Context, *Delet
 }
 func (UnimplementedDocumentServiceServer) MoveDocument(context.Context, *MoveDocumentRequest) (*Document, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MoveDocument not implemented")
+}
+func (UnimplementedDocumentServiceServer) CopyDocument(context.Context, *CopyDocumentRequest) (*Document, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CopyDocument not implemented")
 }
 func (UnimplementedDocumentServiceServer) ListDocuments(context.Context, *ListDocumentsRequest) (*ListDocumentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDocuments not implemented")
@@ -776,6 +791,24 @@ func _DocumentService_MoveDocument_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DocumentServiceServer).MoveDocument(ctx, req.(*MoveDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DocumentService_CopyDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopyDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DocumentServiceServer).CopyDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DocumentService_CopyDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DocumentServiceServer).CopyDocument(ctx, req.(*CopyDocumentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1116,6 +1149,10 @@ var DocumentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MoveDocument",
 			Handler:    _DocumentService_MoveDocument_Handler,
+		},
+		{
+			MethodName: "CopyDocument",
+			Handler:    _DocumentService_CopyDocument_Handler,
 		},
 		{
 			MethodName: "ListDocuments",

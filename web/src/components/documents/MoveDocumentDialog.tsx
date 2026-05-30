@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { useMoveDocument } from '@/hooks/useDocuments'
+import { useCopyDocument, useMoveDocument } from '@/hooks/useDocuments'
 import { getFolders } from '@/api/workspaces'
 import { cn } from '@/lib/cn'
 import type { Folder as FolderType } from '@/types/api'
@@ -16,6 +17,13 @@ interface Props {
   documentId: string
   workspaceId: string
   currentFolderId?: string
+  // mode controls the verb + endpoint. 'move' is the legacy default;
+  // 'copy' calls /documents/{id}/copy and creates a new row in the
+  // target folder. The picker UI is identical for both — only the
+  // submit button label, mutation, and the disabledId-vs-no-disable
+  // rule differ (a copy back to the current folder is still legal,
+  // it just produces a clone). Defaults to 'move' for back-compat.
+  mode?: 'move' | 'copy'
 }
 
 // Picker walks the folder tree lazily — each expanded folder fires a
@@ -39,7 +47,7 @@ function FolderRow({
   const children = useQuery({
     queryKey: ['folders', workspaceId, folder.id],
     queryFn: () => getFolders(workspaceId, folder.id),
-    enabled: expanded && folder.children_count > 0,
+    enabled: expanded && (folder.child_folder_count ?? folder.children_count ?? 0) > 0,
   })
 
   const selected = selectedId === folder.id
@@ -58,7 +66,7 @@ function FolderRow({
         onClick={() => { if (!disabled) onSelect(folder.id) }}
         data-testid={`move-picker-folder-${folder.id}`}
       >
-        {folder.children_count > 0 ? (
+        {(folder.child_folder_count ?? folder.children_count ?? 0) > 0 ? (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
@@ -95,9 +103,14 @@ function FolderRow({
   )
 }
 
-export function MoveDocumentDialog({ open, onOpenChange, documentId, workspaceId, currentFolderId }: Props) {
+export function MoveDocumentDialog({
+  open, onOpenChange, documentId, workspaceId, currentFolderId, mode = 'move',
+}: Props) {
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const move = useMoveDocument()
+  const copy = useCopyDocument()
+  const isCopy = mode === 'copy'
+  const pending = isCopy ? copy.isPending : move.isPending
 
   const roots = useQuery({
     queryKey: ['folders', workspaceId, 'root'],
@@ -105,25 +118,47 @@ export function MoveDocumentDialog({ open, onOpenChange, documentId, workspaceId
     enabled: open && !!workspaceId,
   })
 
-  // MoveDocument requires a valid folder UUID on the backend — see
-  // services/document/internal/handler/handler.go:207 (parseUUID on
-  // target_folder_id). There's no "workspace root" target, so the
-  // picker only offers existing folders and disables the current one.
+  // Move can't target the current folder (would be a no-op); Copy CAN
+  // target the current folder (produces a same-folder duplicate).
   const canSubmit =
-    !move.isPending &&
+    !pending &&
     !!selected &&
-    selected !== currentFolderId
+    (isCopy || selected !== currentFolderId)
 
   const submit = () => {
     if (!canSubmit || !selected) return
-    move.mutate(
-      { id: documentId, folderId: selected },
-      { onSuccess: () => { onOpenChange(false); setSelected(undefined) } },
-    )
+    const finalize = () => {
+      onOpenChange(false)
+      setSelected(undefined)
+    }
+    if (isCopy) {
+      copy.mutate(
+        { id: documentId, folderId: selected },
+        {
+          onSuccess: () => {
+            toast.success('Document copied')
+            finalize()
+          },
+        },
+      )
+    } else {
+      move.mutate(
+        { id: documentId, folderId: selected },
+        {
+          onSuccess: () => {
+            toast.success('Document moved')
+            finalize()
+          },
+        },
+      )
+    }
   }
 
+  const title = isCopy ? 'Copy document' : 'Move document'
+  const submitLabel = isCopy ? 'Copy' : 'Move'
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Move document" size="md">
+    <Dialog open={open} onOpenChange={onOpenChange} title={title} size="md">
       <div className="space-y-4">
         <div
           className="max-h-80 overflow-y-auto rounded-md border border-border bg-background p-2"
@@ -145,7 +180,8 @@ export function MoveDocumentDialog({ open, onOpenChange, documentId, workspaceId
                 depth={0}
                 selectedId={selected}
                 onSelect={setSelected}
-                disabledId={currentFolderId}
+                // Move disables the current folder; Copy doesn't.
+                disabledId={isCopy ? undefined : currentFolderId}
               />
             ))
           ) : (
@@ -158,7 +194,7 @@ export function MoveDocumentDialog({ open, onOpenChange, documentId, workspaceId
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            disabled={move.isPending}
+            disabled={pending}
           >
             Cancel
           </Button>
@@ -166,10 +202,10 @@ export function MoveDocumentDialog({ open, onOpenChange, documentId, workspaceId
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            loading={move.isPending}
-            data-testid="move-document-submit"
+            loading={pending}
+            data-testid={`${mode}-document-submit`}
           >
-            Move
+            {submitLabel}
           </Button>
         </div>
       </div>

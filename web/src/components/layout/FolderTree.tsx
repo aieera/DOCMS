@@ -29,7 +29,7 @@ function FolderNode({ folder, workspaceId, depth }: { folder: FolderType; worksp
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
-            onClick={() => { setActiveFolder(folder.id); if (folder.children_count > 0) setExpanded(!expanded) }}
+            onClick={() => { setActiveFolder(folder.id); if ((folder.child_folder_count ?? folder.children_count ?? 0) > 0) setExpanded(!expanded) }}
             className={cn(
               'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800',
               active && 'bg-[var(--color-accent)] text-[var(--color-primary)] font-medium',
@@ -37,7 +37,7 @@ function FolderNode({ folder, workspaceId, depth }: { folder: FolderType; worksp
             style={{ paddingInlineStart: `${depth * 16 + 8}px` }}
             data-testid={`folder-node-${folder.id}`}
           >
-            {folder.children_count > 0 && (
+            {(folder.child_folder_count ?? folder.children_count ?? 0) > 0 && (
               <DirectionalIcon name="ChevronRight" className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
             )}
             {expanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}

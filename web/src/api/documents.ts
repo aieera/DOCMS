@@ -62,6 +62,15 @@ export async function moveDocument(id: string, folderId: string) {
   return data
 }
 
+// copyDocument creates a new document row in the target folder that
+// shares the same current version + content blob as the source.
+// Shallow copy at the version level: versions / share-links / comments
+// / annotations / OCR / chunks stay with the source doc.
+export async function copyDocument(id: string, folderId: string) {
+  const { data } = await api.post<Document>(`/documents/${id}/copy`, { target_folder_id: folderId })
+  return data
+}
+
 export async function getDownloadURL(documentId: string, versionId: string) {
   const { data } = await api.get<{ url: string; expires_at: string }>(
     `/storage/downloads/${documentId}/${versionId}`,

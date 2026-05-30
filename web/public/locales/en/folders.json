@@ -1,0 +1,86 @@
+{
+  "actions": {
+    "open": "Open",
+    "rename": "Rename",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create folder",
+    "new_folder": "New folder",
+    "make_private": "Make private",
+    "make_shared": "Make shared",
+    "manage_access": "Manage access"
+  },
+  "actions_aria_label": "Folder actions",
+  "card_aria_label": "Open folder {{name}}",
+  "breadcrumb_label": "Folder breadcrumb",
+  "empty_folder": "Empty folder",
+  "item_count_one": "1 item",
+  "item_count_other": "{{count}} items",
+  "private_label": "Private",
+  "private_tooltip": "Visible only to you and people you grant access",
+  "new_dialog": {
+    "title": "New folder",
+    "description_in_workspace": "Creates a folder in this workspace.",
+    "description_in_folder": "Creates a folder inside {{name}}.",
+    "name_label": "Folder name",
+    "name_placeholder": "e.g. Contracts",
+    "visibility_label": "Who can see this folder?"
+  },
+  "rename_dialog": {
+    "title": "Rename folder",
+    "name_label": "New folder name"
+  },
+  "delete_confirm": {
+    "title": "Delete folder?",
+    "description": "Delete \"{{name}}\"? It must be empty (no documents and no subfolders) before deletion.",
+    "confirm": "Delete folder"
+  },
+  "visibility": {
+    "shared": "Shared",
+    "shared_hint": "Everyone with workspace access can see it.",
+    "private": "Private",
+    "private_hint": "Only you and people you grant access can see it.",
+    "flip_to_private_confirm": {
+      "title": "Make this folder private?",
+      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
+      "confirm": "Make private"
+    },
+    "flip_to_shared_confirm": {
+      "title": "Make this folder shared?",
+      "description": "Every workspace member will be able to see and act on this folder again.",
+      "confirm": "Make shared"
+    }
+  },
+  "manage_access_dialog": {
+    "title": "Manage folder access",
+    "description": "These users and groups can see and act on this folder. The owner always has access.",
+    "owner_label": "Owner",
+    "no_grants": "No one else has been granted access yet.",
+    "add_label": "Add a person or group",
+    "add_user": "Add user",
+    "add_group": "Add group",
+    "revoke": "Revoke",
+    "type_user": "User",
+    "type_group": "Group"
+  },
+  "toasts": {
+    "created": "Folder created",
+    "renamed": "Folder renamed",
+    "deleted": "Folder deleted",
+    "moved": "Folder moved",
+    "visibility_changed": "Folder visibility updated",
+    "grant_added": "Access granted",
+    "grant_removed": "Access revoked",
+    "error": "Could not complete folder action",
+    "delete_not_empty": "Folder is not empty — move or delete its contents first."
+  },
+  "toolbar": {
+    "new_folder": "New folder",
+    "upload_in_folder": "Upload here"
+  },
+  "empty_state": {
+    "title": "This folder is empty",
+    "description": "Drop files to upload them here or create a subfolder."
+  }
+}

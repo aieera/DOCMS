@@ -76,6 +76,7 @@ async function downloadLatest(documentId: string) {
 export function DocumentActionsMenu({ doc, children }: Props) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
+  const [copyOpen, setCopyOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -102,8 +103,8 @@ export function DocumentActionsMenu({ doc, children }: Props) {
     {
       kind: 'action', key: 'copy', label: 'Copy to folder…',
       icon: <Copy className="h-4 w-4" />,
-      onSelect: () => {},
-      disabledHint: 'Copy endpoint is pending — server-side support not built yet.',
+      onSelect: () => setCopyOpen(true),
+      ...(isOnHold ? { disabledHint: 'Document is under legal hold — copy is not permitted' } : {}),
     },
     { kind: 'action', key: 'download', label: 'Download', icon: <Download className="h-4 w-4" />, onSelect: () => { void onDownload() } },
     { kind: 'action', key: 'share', label: 'Share…', icon: <Share2 className="h-4 w-4" />, onSelect: () => setShareOpen(true) },
@@ -223,6 +224,15 @@ export function DocumentActionsMenu({ doc, children }: Props) {
         documentId={doc.id}
         workspaceId={doc.workspace_id}
         currentFolderId={doc.folder_id}
+        mode="move"
+      />
+      <MoveDocumentDialog
+        open={copyOpen}
+        onOpenChange={setCopyOpen}
+        documentId={doc.id}
+        workspaceId={doc.workspace_id}
+        currentFolderId={doc.folder_id}
+        mode="copy"
       />
       <ShareDialog
         open={shareOpen}
