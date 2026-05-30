@@ -135,12 +135,12 @@ interface KpiCardProps {
 }
 
 function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: KpiCardProps) {
-  // Crextio-kit retrofit. WarmCard cream surface + HeadlineMetric for
-  // the serif numeral; size-bound to match the previous compact KPI
-  // tile rather than the kit's default oversized headline. min-h on
-  // the value box reserves space during the loading state so CLS
-  // stays at zero on slow networks (matched the text-3xl line-box
-  // previously; serif 40px line-box now).
+  // Crextio-kit retrofit. WarmCard cream surface; numeral is the
+  // sans body face (Inter) at 40px to match the rest of the UI
+  // chrome — the earlier serif (Fraunces) read as decorative
+  // against the cream background. min-h on the value box reserves
+  // space during the loading state so CLS stays at zero on slow
+  // networks.
   const inner = (
     <WarmCard
       padded="md"
@@ -174,10 +174,7 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
         </div>
       ) : (
         <div className="mt-3 flex flex-col gap-0">
-          <span
-            className="font-serif text-[40px] font-light leading-none tracking-[-0.045em] text-foreground"
-            style={{ fontVariationSettings: '"opsz" 144' }}
-          >
+          <span className="text-[40px] font-semibold leading-none tracking-[-0.025em] text-foreground tabular-nums">
             {value}
           </span>
           <span className="mt-1 text-[13px] font-medium text-muted-foreground">{label}</span>
