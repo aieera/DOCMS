@@ -1,1 +1,154 @@
-{}
+{
+  "templates": {
+    "title": "قوالب سير العمل",
+    "description": "سلاسل اعتماد وتوقيع وإشعارات قابلة لإعادة الاستخدام. أرفق قالباً بمستند لبدء مراجعته.",
+    "new_button": "قالب جديد",
+    "search_placeholder": "ابحث عن القوالب…",
+    "empty_title": "لا توجد قوالب بعد",
+    "empty_description": "أنشئ سلسلة سير عمل قابلة لإعادة الاستخدام لبدء توجيه المستندات.",
+    "card": {
+      "steps_count_one": "خطوة واحدة",
+      "steps_count_other": "{{count}} خطوات",
+      "version": "النسخة {{version}}",
+      "active": "نشط",
+      "inactive": "غير نشط",
+      "edit": "تعديل",
+      "duplicate": "تكرار",
+      "delete": "حذف"
+    },
+    "delete_confirm": {
+      "title": "حذف القالب؟",
+      "description": "ستظل أي حالات نشطة قيد التشغيل. لن تتمكن المستندات الجديدة من بدء هذا القالب.",
+      "confirm": "حذف القالب"
+    }
+  },
+  "editor": {
+    "new_title": "قالب سير عمل جديد",
+    "edit_title": "تعديل القالب",
+    "name_label": "اسم القالب",
+    "name_placeholder": "مثال: اعتماد العقود",
+    "description_label": "الوصف",
+    "description_placeholder": "اختياري — الغرض من هذا السير",
+    "chain_title": "الخطوات",
+    "chain_empty": "لا توجد خطوات بعد. اختر نوع خطوة من الأعلى للبدء.",
+    "config_title": "إعدادات الخطوة",
+    "config_empty": "اختر خطوة من اليسار لتعديلها.",
+    "add_step": "إضافة خطوة",
+    "save": "حفظ القالب",
+    "saving": "جارٍ الحفظ…",
+    "save_success": "تم حفظ القالب",
+    "save_error": "تعذّر حفظ القالب",
+    "validation_title": "التحقق",
+    "validation_ok": "التعريف صالح",
+    "validation_issue_one": "مشكلة واحدة",
+    "validation_issue_other": "{{count}} مشكلات",
+    "step": {
+      "approval": "اعتماد",
+      "signature": "توقيع",
+      "notification": "إشعار",
+      "conditional": "شرطي",
+      "parallel": "متوازٍ"
+    },
+    "fields": {
+      "name": "اسم الخطوة",
+      "assignee_type": "نوع المُكلَّف",
+      "assignee_user": "مستخدم",
+      "assignee_group": "مجموعة",
+      "assignee_dynamic": "ديناميكي",
+      "assignee_value": "المُكلَّف",
+      "assignee_value_help": "معرّف المستخدم، اسم المجموعة، أو تعبير",
+      "sla_hours": "مدة الإنجاز (ساعات)",
+      "on_expire": "عند انتهاء المدة",
+      "escalation": "إستراتيجية التصعيد",
+      "escalate_to": "صعّد إلى",
+      "approvers": "الفروع",
+      "approvers_help": "معرّفات خطوات تعمل بالتوازي، مفصولة بفواصل",
+      "join_mode": "سياسة الانضمام",
+      "require_all": "يجب أن يوافق الجميع",
+      "require_any": "يكفي موافقة أحدهم",
+      "condition_rego": "شرط Rego",
+      "on_true": "إذا تحقق → خطوة",
+      "on_false": "إذا لم يتحقق → خطوة",
+      "allow_delegate": "السماح بالتفويض"
+    }
+  },
+  "tab": {
+    "title": "سير العمل",
+    "empty_title": "لا يوجد سير عمل نشط",
+    "empty_description": "ابدأ سير عمل لتوجيه هذا المستند للمراجعة أو التوقيع.",
+    "start_button": "ابدأ سير عمل",
+    "picker_title": "اختر قالباً",
+    "picker_description": "اختر قالب سير عمل لإرفاقه بهذا المستند.",
+    "picker_search": "ابحث عن القوالب…",
+    "picker_empty": "لا توجد قوالب متاحة — أنشئ واحداً في /workflows أولاً.",
+    "picker_start": "ابدأ سير العمل",
+    "cancel_button": "إلغاء سير العمل",
+    "cancel_confirm": {
+      "title": "إلغاء سير العمل هذا؟",
+      "description": "ستُلغى جميع الخطوات المعلّقة. يبقى المستند في حالته الحالية.",
+      "confirm": "إلغاء سير العمل"
+    },
+    "banner": {
+      "running": "بانتظار إجراء على {{step_name}}",
+      "completed": "اكتمل سير العمل",
+      "cancelled": "تم إلغاء سير العمل",
+      "failed": "فشل سير العمل",
+      "pending": "سير العمل في قائمة الانتظار"
+    },
+    "actions": {
+      "approve": "اعتمد",
+      "reject": "ارفض",
+      "sign": "وقّع",
+      "delegate": "فوّض",
+      "comment_placeholder": "أضف تعليقاً (اختياري)",
+      "submit": "إرسال"
+    },
+    "toasts": {
+      "started": "بدأ سير العمل",
+      "cancelled": "تم إلغاء سير العمل",
+      "approved": "تم اعتماد الخطوة",
+      "rejected": "تم رفض الخطوة",
+      "signed": "تم التوقيع",
+      "delegated": "تم تفويض الخطوة",
+      "error": "فشل الإجراء"
+    },
+    "step_status": {
+      "pending": "معلّق",
+      "in_progress": "نشط",
+      "completed": "معتمَد",
+      "rejected": "مرفوض",
+      "delegated": "مفوَّض",
+      "escalated": "مُصعَّد",
+      "skipped": "متخطّى"
+    },
+    "due_in": "مستحق خلال {{when}}",
+    "overdue_by": "متأخر بـ {{when}}",
+    "acted_by": "بواسطة {{user}}",
+    "acted_at": "في {{time}}"
+  },
+  "status": {
+    "pending": "معلّق",
+    "running": "قيد التنفيذ",
+    "completed": "مكتمل",
+    "failed": "فاشل",
+    "cancelled": "ملغى"
+  },
+  "admin": {
+    "title": "سير العمل",
+    "description": "قوالب على مستوى المستأجر وحالات سير العمل النشطة.",
+    "templates_section": "القوالب",
+    "instances_section": "الحالات النشطة",
+    "instances_empty": "لا توجد حالات سير عمل نشطة",
+    "columns": {
+      "document": "المستند",
+      "template": "القالب",
+      "status": "الحالة",
+      "started_by": "بدأها",
+      "started_at": "تاريخ البدء",
+      "current_step": "الخطوة الحالية",
+      "actions": "إجراءات"
+    },
+    "view": "عرض",
+    "cancel": "إلغاء"
+  }
+}

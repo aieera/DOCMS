@@ -1,1 +1,154 @@
-{}
+{
+  "templates": {
+    "title": "Workflow Templates",
+    "description": "Reusable approval, signature, and notification chains. Attach a template to a document to start its review.",
+    "new_button": "New template",
+    "search_placeholder": "Search templates…",
+    "empty_title": "No templates yet",
+    "empty_description": "Create a reusable workflow chain to start routing documents.",
+    "card": {
+      "steps_count_one": "{{count}} step",
+      "steps_count_other": "{{count}} steps",
+      "version": "v{{version}}",
+      "active": "Active",
+      "inactive": "Inactive",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete"
+    },
+    "delete_confirm": {
+      "title": "Delete template?",
+      "description": "Active instances using this template will keep running. New documents won't be able to start it.",
+      "confirm": "Delete template"
+    }
+  },
+  "editor": {
+    "new_title": "New workflow template",
+    "edit_title": "Edit template",
+    "name_label": "Template name",
+    "name_placeholder": "e.g. Contract approval",
+    "description_label": "Description",
+    "description_placeholder": "Optional — what this workflow is for",
+    "chain_title": "Steps",
+    "chain_empty": "No steps yet. Pick a step type above to begin.",
+    "config_title": "Step configuration",
+    "config_empty": "Select a step on the left to edit it.",
+    "add_step": "Add step",
+    "save": "Save template",
+    "saving": "Saving…",
+    "save_success": "Template saved",
+    "save_error": "Could not save template",
+    "validation_title": "Validation",
+    "validation_ok": "Definition valid",
+    "validation_issue_one": "{{count}} issue",
+    "validation_issue_other": "{{count}} issues",
+    "step": {
+      "approval": "Approval",
+      "signature": "Signature",
+      "notification": "Notification",
+      "conditional": "Conditional",
+      "parallel": "Parallel"
+    },
+    "fields": {
+      "name": "Step name",
+      "assignee_type": "Assignee type",
+      "assignee_user": "User",
+      "assignee_group": "Group",
+      "assignee_dynamic": "Dynamic",
+      "assignee_value": "Assignee",
+      "assignee_value_help": "User ID, group name, or expression",
+      "sla_hours": "SLA (hours)",
+      "on_expire": "On SLA expiry",
+      "escalation": "Escalation strategy",
+      "escalate_to": "Escalate to",
+      "approvers": "Branches",
+      "approvers_help": "Comma-separated step ids that run concurrently",
+      "join_mode": "Join policy",
+      "require_all": "All must approve",
+      "require_any": "Any can approve",
+      "condition_rego": "Rego condition",
+      "on_true": "On true → step",
+      "on_false": "On false → step",
+      "allow_delegate": "Allow delegation"
+    }
+  },
+  "tab": {
+    "title": "Workflow",
+    "empty_title": "No active workflow",
+    "empty_description": "Start a workflow to route this document for review or signature.",
+    "start_button": "Start a workflow",
+    "picker_title": "Choose a template",
+    "picker_description": "Pick a workflow template to attach to this document.",
+    "picker_search": "Search templates…",
+    "picker_empty": "No templates available — create one in /workflows first.",
+    "picker_start": "Start workflow",
+    "cancel_button": "Cancel workflow",
+    "cancel_confirm": {
+      "title": "Cancel this workflow?",
+      "description": "All pending steps will be discarded. The document remains in its current lifecycle state.",
+      "confirm": "Cancel workflow"
+    },
+    "banner": {
+      "running": "Awaiting action on {{step_name}}",
+      "completed": "Workflow completed",
+      "cancelled": "Workflow cancelled",
+      "failed": "Workflow failed",
+      "pending": "Workflow queued"
+    },
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "sign": "Sign",
+      "delegate": "Delegate",
+      "comment_placeholder": "Add a comment (optional)",
+      "submit": "Submit"
+    },
+    "toasts": {
+      "started": "Workflow started",
+      "cancelled": "Workflow cancelled",
+      "approved": "Step approved",
+      "rejected": "Step rejected",
+      "signed": "Signed",
+      "delegated": "Step delegated",
+      "error": "Action failed"
+    },
+    "step_status": {
+      "pending": "Pending",
+      "in_progress": "Active",
+      "completed": "Approved",
+      "rejected": "Rejected",
+      "delegated": "Delegated",
+      "escalated": "Escalated",
+      "skipped": "Skipped"
+    },
+    "due_in": "Due in {{when}}",
+    "overdue_by": "Overdue by {{when}}",
+    "acted_by": "by {{user}}",
+    "acted_at": "at {{time}}"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "In progress",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "admin": {
+    "title": "Workflows",
+    "description": "Tenant-wide templates and active workflow instances.",
+    "templates_section": "Templates",
+    "instances_section": "Active instances",
+    "instances_empty": "No active workflow instances",
+    "columns": {
+      "document": "Document",
+      "template": "Template",
+      "status": "Status",
+      "started_by": "Started by",
+      "started_at": "Started",
+      "current_step": "Current step",
+      "actions": "Actions"
+    },
+    "view": "View",
+    "cancel": "Cancel"
+  }
+}

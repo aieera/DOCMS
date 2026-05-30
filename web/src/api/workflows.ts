@@ -139,3 +139,121 @@ export async function revokeDelegation(id: string): Promise<void> {
 export async function recallInstance(instanceId: string): Promise<void> {
   await api.post(`/workflows/instances/${instanceId}/recall`)
 }
+
+// ---- Document-associated workflows (new template system) ------------------
+// Templates are reusable definitions. Instances are templates attached
+// to a specific document. The Document detail "Workflow" tab consumes
+// these via React Query.
+
+export type InstanceStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type TaskStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'rejected'
+  | 'delegated'
+  | 'escalated'
+  | 'skipped'
+export type TaskOutcome = 'approve' | 'reject' | 'delegate' | 'escalate'
+
+export interface WorkflowInstance {
+  id: string
+  tenant_id: string
+  definition_id: string
+  document_id: string
+  initiated_by: string
+  status: InstanceStatus
+  current_step: number
+  temporal_run_id?: string
+  created_at: string
+  completed_at?: string | null
+}
+
+export interface DocumentWorkflowBundle {
+  instance: WorkflowInstance
+  tasks: WorkflowTask[]
+}
+
+// getDocumentWorkflow returns the active workflow + ordered task
+// timeline for a document, or null when the document has no active
+// workflow (backend returns 204). The 204 case is the empty-state the
+// Workflow tab renders the "Start a workflow" picker for.
+export async function getDocumentWorkflow(documentId: string): Promise<DocumentWorkflowBundle | null> {
+  const res = await api.get<DocumentWorkflowBundle>(`/workflows/documents/${documentId}`, {
+    validateStatus: (s) => s === 200 || s === 204 || s === 404,
+  })
+  if (res.status === 204 || res.status === 404) return null
+  return res.data
+}
+
+export async function getWorkflowDefinition(id: string): Promise<WorkflowDefinition> {
+  const { data } = await api.get<WorkflowDefinition>(`/workflows/definitions/${id}`)
+  return data
+}
+
+export async function createWorkflowDefinition(input: {
+  name: string
+  description?: string
+  steps: ADR0073Step[]
+}): Promise<WorkflowDefinition> {
+  const { data } = await api.post<WorkflowDefinition>('/workflows/definitions', input)
+  return data
+}
+
+export async function updateWorkflowDefinition(
+  id: string,
+  input: { name: string; description?: string; steps: ADR0073Step[] },
+): Promise<WorkflowDefinition> {
+  const { data } = await api.put<WorkflowDefinition>(`/workflows/definitions/${id}`, input)
+  return data
+}
+
+export async function deleteWorkflowDefinition(id: string): Promise<void> {
+  await api.delete(`/workflows/definitions/${id}`)
+}
+
+// attachWorkflowToDocument starts a workflow instance bound to a
+// document. The backend route is POST /workflows/instances; we wrap
+// for the document-centric naming the UI uses.
+export async function attachWorkflowToDocument(
+  documentId: string,
+  definitionId: string,
+): Promise<WorkflowInstance> {
+  const { data } = await api.post<WorkflowInstance>('/workflows/instances', {
+    document_id: documentId,
+    definition_id: definitionId,
+  })
+  return data
+}
+
+// actOnStep is the typed convenience the document UI calls. It maps
+// the user-facing action ('approve' / 'reject' / 'sign' / 'comment')
+// to the backend's outcome enum. 'sign' surfaces as 'approve' on the
+// wire — the Signature step type just adds the signature artifact
+// path. 'comment' is currently a no-op until the backend grows a
+// comment-only signal; surfaced here so the FE doesn't need to know.
+export async function actOnStep(
+  instanceId: string,
+  stepIndex: number,
+  action: 'approve' | 'reject' | 'sign' | 'delegate',
+  opts: { comment?: string; delegate_to?: string } = {},
+): Promise<void> {
+  const outcome: TaskOutcome = action === 'sign' ? 'approve' : action
+  await api.post(`/workflows/instances/${instanceId}/signal`, {
+    step_index: stepIndex,
+    outcome,
+    notes: opts.comment,
+    delegate_to: opts.delegate_to,
+  })
+}
+
+export async function cancelWorkflowInstance(instanceId: string): Promise<void> {
+  await api.post(`/workflows/instances/${instanceId}/cancel`)
+}
+
+export async function listActiveInstances(): Promise<WorkflowInstance[]> {
+  const { data } = await api.get<WorkflowInstance[]>('/workflows/instances', {
+    params: { status: 'active' },
+  })
+  return data ?? []
+}

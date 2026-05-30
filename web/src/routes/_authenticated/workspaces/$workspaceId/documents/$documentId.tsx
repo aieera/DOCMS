@@ -10,6 +10,7 @@ import {
   Download,
   Eraser,
   FileText,
+  GitBranch,
   History,
   ArrowLeftRight,
   MessageSquare,
@@ -35,6 +36,7 @@ import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
 import { RealtimePresence } from '@/components/documents/RealtimePresence'
 import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
+import { WorkflowTab } from '@/components/workflows/WorkflowTab'
 import { AuditVisualization } from '@/components/documents/AuditVisualization'
 import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
 import { ShareDialog } from '@/components/documents/ShareDialog'
@@ -74,7 +76,7 @@ import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 
-type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'redaction' | 'activity'
+type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'redaction' | 'activity'
 
 const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'preview', label: 'Preview', icon: FileText },
@@ -84,6 +86,8 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'entities', label: 'Entities', icon: FileText },
   // ADR 0099 — contract intelligence graph.
   { key: 'relationships', label: 'Relationships', icon: Network },
+  // Document-associated workflow (templates attached to this doc).
+  { key: 'workflow', label: 'Workflow', icon: GitBranch },
   { key: 'activity', label: 'Activity', icon: History },
   { key: 'redaction', label: 'Redaction', icon: Eraser },
 ]
@@ -278,6 +282,15 @@ export function DocumentDetailBody({
               non-contract docs (no edges → empty-state message). */}
           <TabPanel current={tab} value="relationships">
             <RelationshipsGraph documentId={documentId} workspaceId={workspaceId} />
+          </TabPanel>
+
+          {/* Document-associated workflow — templates attached to this
+              specific doc. Renders empty-state + Start picker when no
+              active instance exists, or the timeline + actions when
+              one is running. canCancel: tenant admin/owner or the
+              user who initiated the workflow. */}
+          <TabPanel current={tab} value="workflow">
+            <WorkflowTab documentId={documentId} canCancel={isAdminCaller} />
           </TabPanel>
 
           <TabPanel current={tab} value="redaction">

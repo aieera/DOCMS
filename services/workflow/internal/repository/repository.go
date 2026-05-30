@@ -209,6 +209,163 @@ func (r *Repository) GetInstance(ctx context.Context, tenantID, id string) (*mod
 	return inst, nil
 }
 
+// GetActiveInstanceByDocument returns the single non-terminal instance
+// for a document, if any. "Active" means status NOT IN ('completed',
+// 'failed', 'cancelled'). The unique-active-per-doc invariant isn't
+// enforced at the schema level, so we ORDER BY started_at DESC and
+// take one; the document service must avoid starting a second
+// instance when one is already active.
+func (r *Repository) GetActiveInstanceByDocument(ctx context.Context, tenantID, documentID string) (*model.WorkflowInstance, error) {
+	inst := &model.WorkflowInstance{}
+	var found bool
+	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var currentStepID, temporal *string
+		var startedBy *string
+		err := tx.QueryRow(ctx, `
+			SELECT id, tenant_id, definition_id, COALESCE(document_id::text,''), started_by::text, status,
+			       current_step_id, temporal_workflow_id, started_at, completed_at
+			FROM workflow_instances
+			WHERE tenant_id = $1 AND document_id = $2
+			  AND status NOT IN ('completed','failed','cancelled')
+			ORDER BY started_at DESC
+			LIMIT 1`, tenantID, documentID).
+			Scan(&inst.ID, &inst.TenantID, &inst.DefinitionID, &inst.DocumentID, &startedBy,
+				&inst.Status, &currentStepID, &temporal, &inst.CreatedAt, &inst.CompletedAt)
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if startedBy != nil {
+			inst.InitiatedBy = *startedBy
+		}
+		if currentStepID != nil {
+			if n, perr := strconv.Atoi(*currentStepID); perr == nil {
+				inst.CurrentStep = n
+			}
+		}
+		if temporal != nil {
+			inst.TemporalRunID = *temporal
+		}
+		found = true
+		return nil
+	})
+	if err != nil || !found {
+		return nil, err
+	}
+	return inst, nil
+}
+
+// UpdateDefinition replaces name/description/steps on an existing
+// row + bumps the updated_at trigger. Returns ErrNoRows if no row
+// matches (tenant_id, id).
+func (r *Repository) UpdateDefinition(ctx context.Context, d *model.WorkflowDefinition) error {
+	defJSON, err := marshalDefinition(d.Steps)
+	if err != nil {
+		return err
+	}
+	return r.runTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx, `
+			UPDATE workflow_definitions
+			   SET name = $3, description = $4, definition = $5::jsonb
+			 WHERE tenant_id = $1 AND id = $2 AND is_active = true`,
+			d.TenantID, d.ID, d.Name, d.Description, defJSON)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// DeleteDefinition soft-deletes via is_active=false. Active instances
+// referencing this definition keep running; only the template's
+// availability to start new instances is revoked.
+func (r *Repository) DeleteDefinition(ctx context.Context, tenantID, id string) error {
+	return r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx, `
+			UPDATE workflow_definitions SET is_active = false
+			 WHERE tenant_id = $1 AND id = $2 AND is_active = true`,
+			tenantID, id)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// MarkInstanceCancelled flips status to 'cancelled' + stamps
+// completed_at. Used by the immediate-DB-write path of
+// service.CancelInstance so the UI reflects the new state without
+// waiting for the Temporal callback (which may never arrive if
+// Temporal is degraded).
+func (r *Repository) MarkInstanceCancelled(ctx context.Context, tenantID, id string) error {
+	return r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx, `
+			UPDATE workflow_instances
+			   SET status = 'cancelled', completed_at = now()
+			 WHERE tenant_id = $1 AND id = $2
+			   AND status NOT IN ('completed','failed','cancelled')`,
+			tenantID, id)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// ListActiveInstances returns every non-terminal instance for the
+// tenant. Used by the admin panel's active-instances table.
+func (r *Repository) ListActiveInstances(ctx context.Context, tenantID string) ([]*model.WorkflowInstance, error) {
+	var out []*model.WorkflowInstance
+	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, tenant_id, definition_id, COALESCE(document_id::text,''),
+			       started_by::text, status, current_step_id, temporal_workflow_id,
+			       started_at, completed_at
+			FROM workflow_instances
+			WHERE tenant_id = $1 AND status NOT IN ('completed','failed','cancelled')
+			ORDER BY started_at DESC`, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			inst := &model.WorkflowInstance{}
+			var currentStepID, temporal *string
+			var startedBy *string
+			if err := rows.Scan(&inst.ID, &inst.TenantID, &inst.DefinitionID, &inst.DocumentID,
+				&startedBy, &inst.Status, &currentStepID, &temporal,
+				&inst.CreatedAt, &inst.CompletedAt); err != nil {
+				return err
+			}
+			if startedBy != nil {
+				inst.InitiatedBy = *startedBy
+			}
+			if currentStepID != nil {
+				if n, perr := strconv.Atoi(*currentStepID); perr == nil {
+					inst.CurrentStep = n
+				}
+			}
+			if temporal != nil {
+				inst.TemporalRunID = *temporal
+			}
+			out = append(out, inst)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // ---- Tasks ----------------------------------------------------------------
 
 // ListTasks returns tasks for an assignee across all instances, optionally

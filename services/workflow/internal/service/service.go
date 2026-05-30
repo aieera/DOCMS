@@ -114,10 +114,76 @@ func (s *Service) GetInstanceTimeline(ctx context.Context, tenantID, instanceID 
 }
 
 // CancelInstance cancels a running workflow.
+//
+// We write the DB row to cancelled FIRST, then best-effort signal
+// Temporal. The previous implementation only signaled Temporal and
+// relied on the Temporal callback to update Postgres — if Temporal
+// was unreachable or the workflow had already exited, the row stayed
+// in 'running' forever and the UI showed a stuck workflow. The DB
+// write is the user-visible source of truth; the Temporal signal is
+// cleanup.
 func (s *Service) CancelInstance(ctx context.Context, tenantID, instanceID string) error {
 	inst, err := s.repo.GetInstance(ctx, tenantID, instanceID)
 	if err != nil || inst == nil {
 		return fmt.Errorf("instance not found")
 	}
-	return s.temporal.CancelWorkflow(ctx, "wf-"+inst.ID, inst.TemporalRunID)
+	if err := s.repo.MarkInstanceCancelled(ctx, tenantID, instanceID); err != nil {
+		return fmt.Errorf("mark cancelled: %w", err)
+	}
+	// Best-effort temporal cleanup. Already-completed workflows
+	// return a benign error which we swallow.
+	if inst.TemporalRunID != "" {
+		_ = s.temporal.CancelWorkflow(ctx, "wf-"+inst.ID, inst.TemporalRunID)
+	}
+	return nil
+}
+
+// GetDefinition returns one definition by ID.
+func (s *Service) GetDefinition(ctx context.Context, tenantID, id string) (*model.WorkflowDefinition, error) {
+	return s.repo.GetDefinition(ctx, tenantID, id)
+}
+
+// UpdateDefinition replaces an existing template's name / description
+// / steps. Active instances using this template keep executing the
+// version they were started with; only future starts use the new
+// definition.
+func (s *Service) UpdateDefinition(ctx context.Context, tenantID, id, name, desc string, steps []model.Step) (*model.WorkflowDefinition, error) {
+	cur, err := s.repo.GetDefinition(ctx, tenantID, id)
+	if err != nil || cur == nil {
+		return nil, fmt.Errorf("definition not found")
+	}
+	cur.Name = name
+	cur.Description = desc
+	cur.Steps = steps
+	if err := s.repo.UpdateDefinition(ctx, cur); err != nil {
+		return nil, err
+	}
+	cur.UpdatedAt = time.Now().UTC()
+	return cur, nil
+}
+
+// DeleteDefinition soft-deletes a template.
+func (s *Service) DeleteDefinition(ctx context.Context, tenantID, id string) error {
+	return s.repo.DeleteDefinition(ctx, tenantID, id)
+}
+
+// GetActiveInstanceByDocument returns the in-flight workflow instance
+// for a document, plus its full task timeline, in a single round
+// trip. Used by the document detail Workflow tab.
+func (s *Service) GetActiveInstanceByDocument(ctx context.Context, tenantID, documentID string) (*model.WorkflowInstance, []*model.Task, error) {
+	inst, err := s.repo.GetActiveInstanceByDocument(ctx, tenantID, documentID)
+	if err != nil || inst == nil {
+		return nil, nil, err
+	}
+	tasks, terr := s.repo.ListTasksByInstance(ctx, tenantID, inst.ID)
+	if terr != nil {
+		return inst, nil, terr
+	}
+	return inst, tasks, nil
+}
+
+// ListActiveInstances returns every non-terminal instance for the
+// tenant. Used by the admin Active instances table.
+func (s *Service) ListActiveInstances(ctx context.Context, tenantID string) ([]*model.WorkflowInstance, error) {
+	return s.repo.ListActiveInstances(ctx, tenantID)
 }

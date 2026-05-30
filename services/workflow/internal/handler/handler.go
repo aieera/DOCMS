@@ -26,11 +26,16 @@ func New(svc *service.Service, log zerolog.Logger) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workflows/definitions", h.listDefinitions)
 	mux.HandleFunc("POST /api/v1/workflows/definitions", h.createDefinition)
+	mux.HandleFunc("GET /api/v1/workflows/definitions/{id}", h.getDefinition)
+	mux.HandleFunc("PUT /api/v1/workflows/definitions/{id}", h.updateDefinition)
+	mux.HandleFunc("DELETE /api/v1/workflows/definitions/{id}", h.deleteDefinition)
 	mux.HandleFunc("POST /api/v1/workflows/instances", h.startInstance)
+	mux.HandleFunc("GET /api/v1/workflows/instances", h.listInstances)
 	mux.HandleFunc("GET /api/v1/workflows/instances/{id}", h.getInstance)
 	mux.HandleFunc("GET /api/v1/workflows/instances/{id}/timeline", h.getInstanceTimeline)
 	mux.HandleFunc("POST /api/v1/workflows/instances/{id}/signal", h.signalStep)
 	mux.HandleFunc("POST /api/v1/workflows/instances/{id}/cancel", h.cancelInstance)
+	mux.HandleFunc("GET /api/v1/workflows/documents/{document_id}", h.getActiveInstanceByDocument)
 	mux.HandleFunc("GET /api/v1/workflows/tasks/mine", h.listMyTasks)
 	mux.HandleFunc("GET /api/v1/workflows/tasks", h.listTasks)
 }
@@ -141,6 +146,112 @@ func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signaled"})
+}
+
+func (h *Handler) getDefinition(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	def, err := h.svc.GetDefinition(r.Context(), tenantID, id)
+	if err != nil || def == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, def)
+}
+
+func (h *Handler) updateDefinition(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	var body createDefBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		writeError(w, http.StatusBadRequest, "name required")
+		return
+	}
+	def, err := h.svc.UpdateDefinition(r.Context(), tenantID, id, body.Name, body.Description, body.Steps)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, def)
+}
+
+func (h *Handler) deleteDefinition(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	if err := h.svc.DeleteDefinition(r.Context(), tenantID, id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// listInstances supports the admin "Active instances" table.
+// Query params:
+//   - status=active     — non-terminal instances (default behaviour
+//     for the admin page). Empty / any other value returns 400 today;
+//     extend when the UI grows a "completed" filter.
+func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "active"
+	}
+	if status != "active" {
+		writeError(w, http.StatusBadRequest, "only status=active is supported today")
+		return
+	}
+	insts, err := h.svc.ListActiveInstances(r.Context(), tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	if insts == nil {
+		insts = []*model.WorkflowInstance{}
+	}
+	writeJSON(w, http.StatusOK, insts)
+}
+
+// getActiveInstanceByDocument is the per-document Workflow tab read.
+// Returns {instance, tasks} bundle so the FE renders the timeline
+// without a second round trip. 204 (no body) when the document has
+// no active workflow — distinct from 404 "document doesn't exist"
+// which the doc service handles.
+func (h *Handler) getActiveInstanceByDocument(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	docID := r.PathValue("document_id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	inst, tasks, err := h.svc.GetActiveInstanceByDocument(r.Context(), tenantID, docID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if inst == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if tasks == nil {
+		tasks = []*model.Task{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"instance": inst, "tasks": tasks})
 }
 
 func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
