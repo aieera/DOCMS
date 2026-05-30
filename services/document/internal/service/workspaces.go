@@ -168,9 +168,10 @@ func (s *DocumentService) ListWorkspaces(ctx context.Context) ([]model.Workspace
 		return nil, err
 	}
 	role := auth.GetUserRole(ctx)
+	groups := auth.GetUserGroups(ctx)
 	var out []model.Workspace
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		ws, err := s.repos.Workspaces.List(ctx, tx, tenantID, userID, role)
+		ws, err := s.repos.Workspaces.List(ctx, tx, tenantID, userID, groups, role)
 		if err != nil {
 			return err
 		}

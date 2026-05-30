@@ -40,10 +40,11 @@ type WorkspaceRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, w *model.Workspace) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Workspace, error)
 	// List returns workspaces visible to the caller. tenant owner/admin
-	// sees all; other roles see only ones they created or are members
-	// of. Role string is the caller's tenant-level role (owner/admin/
-	// member/viewer); empty role is treated as the most-restrictive.
-	List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role string) ([]model.Workspace, error)
+	// sees all; other roles see only ones they created, are members
+	// of, OR hold a folder grant in (direct user OR via a group on the
+	// caller's userGroups slice). Role string is the caller's
+	// tenant-level role; empty role is treated as the most-restrictive.
+	List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID, role string) ([]model.Workspace, error)
 	Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description string) error
 	// UpdateCreatedBy reassigns the workspace's creator (single-owner
 	// model). Callers gate on tenant role / current creator before
