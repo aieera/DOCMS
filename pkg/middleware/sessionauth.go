@@ -37,6 +37,30 @@ type SessionAuthConfig struct {
 	CookieName string // default "dms_session"
 }
 
+// loadUserGroups returns the group UUIDs the user belongs to in their
+// tenant. Empty slice on error (best-effort — middleware shouldn't
+// 500 a request because a group lookup hiccups; the downstream gates
+// just see no groups and fall back to direct-grant / member checks).
+func loadUserGroups(r *http.Request, pool *pgxpool.Pool, tenantID, userID uuid.UUID) []uuid.UUID {
+	rows, err := pool.Query(r.Context(), `
+		SELECT group_id FROM group_members
+		 WHERE tenant_id = $1 AND user_id = $2
+	`, tenantID, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var g uuid.UUID
+		if err := rows.Scan(&g); err != nil {
+			return out
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
 // SessionAuth returns an http middleware that validates the session cookie
 // and attaches a UserInfo to the request context. Unauthenticated requests
 // are rejected with 401.
@@ -86,6 +110,7 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 				TenantID: tenantID,
 				Email:    email,
 				Role:     role,
+				Groups:   loadUserGroups(r, pool, tenantID, userID),
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -147,6 +172,7 @@ func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler 
 				TenantID: tenantID,
 				Email:    email,
 				Role:     role,
+				Groups:   loadUserGroups(r, pool, tenantID, userID),
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
