@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getWorkspaces, createWorkspace,
   updateWorkspace, deleteWorkspace, transferWorkspaceOwnership,
+  listWorkspaceMembers, addWorkspaceMember, updateWorkspaceMemberRole, removeWorkspaceMember,
 } from '@/api/workspaces'
 import { useAppMutation } from './useAppMutation'
 
@@ -57,5 +58,67 @@ export function useTransferWorkspaceOwnership() {
       qc.invalidateQueries({ queryKey: ['workspaces'] })
     },
     defaultErrorMessage: 'Could not transfer ownership',
+  })
+}
+
+// Workspace members — settings → Members panel.
+
+export function useWorkspaceMembers(workspaceId: string | null) {
+  return useQuery({
+    queryKey: ['workspace-members', workspaceId],
+    queryFn: () => listWorkspaceMembers(workspaceId!),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  })
+}
+
+export function useAddWorkspaceMember() {
+  const qc = useQueryClient()
+  return useAppMutation({
+    mutationFn: ({
+      workspaceId,
+      userId,
+      role,
+    }: {
+      workspaceId: string
+      userId: string
+      role?: 'admin' | 'member' | 'viewer'
+    }) => addWorkspaceMember(workspaceId, userId, role ?? 'member'),
+    onSuccess: (_d, { workspaceId }) => {
+      qc.invalidateQueries({ queryKey: ['workspace-members', workspaceId] })
+      qc.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+    defaultErrorMessage: 'Could not add member',
+  })
+}
+
+export function useUpdateWorkspaceMemberRole() {
+  const qc = useQueryClient()
+  return useAppMutation({
+    mutationFn: ({
+      workspaceId,
+      userId,
+      role,
+    }: {
+      workspaceId: string
+      userId: string
+      role: 'admin' | 'member' | 'viewer'
+    }) => updateWorkspaceMemberRole(workspaceId, userId, role),
+    onSuccess: (_d, { workspaceId }) =>
+      qc.invalidateQueries({ queryKey: ['workspace-members', workspaceId] }),
+    defaultErrorMessage: 'Could not change role',
+  })
+}
+
+export function useRemoveWorkspaceMember() {
+  const qc = useQueryClient()
+  return useAppMutation({
+    mutationFn: ({ workspaceId, userId }: { workspaceId: string; userId: string }) =>
+      removeWorkspaceMember(workspaceId, userId),
+    onSuccess: (_d, { workspaceId }) => {
+      qc.invalidateQueries({ queryKey: ['workspace-members', workspaceId] })
+      qc.invalidateQueries({ queryKey: ['workspaces'] })
+    },
+    defaultErrorMessage: 'Could not remove member',
   })
 }

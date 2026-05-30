@@ -173,3 +173,44 @@ export async function getSharedWithMe(): Promise<SharedFolder[]> {
   const { data } = await api.get<{ items?: SharedFolder[] }>('/folders/shared-with-me')
   return data?.items ?? []
 }
+
+// WorkspaceMember — one row of the per-workspace ACL. Backend joins
+// users so the FE can render name/email without a follow-up call.
+export interface WorkspaceMember {
+  user_id: string
+  email: string
+  display_name?: string
+  role: 'admin' | 'member' | 'viewer'
+  added_by?: string
+  added_at: string
+}
+
+export async function listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const { data } = await api.get<{ items?: WorkspaceMember[] }>(
+    `/workspaces/${workspaceId}/members`,
+  )
+  return data?.items ?? []
+}
+
+export async function addWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+  role: 'admin' | 'member' | 'viewer' = 'member',
+): Promise<void> {
+  await api.post(`/workspaces/${workspaceId}/members`, { user_id: userId, role })
+}
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  userId: string,
+  role: 'admin' | 'member' | 'viewer',
+): Promise<void> {
+  await api.patch(`/workspaces/${workspaceId}/members/${userId}`, { role })
+}
+
+export async function removeWorkspaceMember(
+  workspaceId: string,
+  userId: string,
+): Promise<void> {
+  await api.delete(`/workspaces/${workspaceId}/members/${userId}`)
+}

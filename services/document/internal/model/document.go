@@ -128,6 +128,17 @@ type Workspace struct {
 	FolderCount   int64
 }
 
+// WorkspaceMember is one row of the workspace ACL plus enough user
+// metadata to render the row without a follow-up fetch.
+type WorkspaceMember struct {
+	UserID      uuid.UUID
+	Email       string
+	DisplayName string
+	Role        string // 'admin' | 'member' | 'viewer'
+	AddedBy     *uuid.UUID
+	AddedAt     time.Time
+}
+
 // FolderVisibility classifies who can see + act on a folder.
 //   - FolderShared: inherits workspace membership / permissions
 //   - FolderPrivate: visible only to the OwnerID + folder_grants

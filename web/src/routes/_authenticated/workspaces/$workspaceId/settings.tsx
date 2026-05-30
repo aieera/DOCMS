@@ -1,18 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Settings as SettingsIcon, HardDrive, Users, ShieldAlert, UserCog } from 'lucide-react'
+import { Settings as SettingsIcon, HardDrive, Users, ShieldAlert, UserCog, UserPlus, UserMinus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getWorkspace } from '@/api/workspaces'
 import { getUsers } from '@/api/admin'
 import {
   useUpdateWorkspace, useDeleteWorkspace, useTransferWorkspaceOwnership,
+  useWorkspaceMembers, useAddWorkspaceMember, useUpdateWorkspaceMemberRole,
+  useRemoveWorkspaceMember,
 } from '@/hooks/useWorkspaces'
 import { useCurrentUser } from '@/hooks/useAuth'
+import { readErrorMessage } from '@/api/client'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
@@ -88,7 +92,11 @@ function SettingsPage() {
             initialDescription={wsQ.data.description ?? ''}
             canEdit={canEditDetails}
           />
-          <MembersSection workspaceId={workspaceId} />
+          <MembersSection
+            workspaceId={workspaceId}
+            workspaceCreatedBy={wsQ.data.created_by ?? ''}
+            canManage={canEditDetails}
+          />
           <StorageSection />
           {canTransfer && (
             <TransferOwnershipSection
@@ -220,26 +228,250 @@ function DetailsSection({
   )
 }
 
-function MembersSection({ workspaceId }: { workspaceId: string }) {
+function MembersSection({
+  workspaceId,
+  workspaceCreatedBy,
+  canManage,
+}: {
+  workspaceId: string
+  workspaceCreatedBy: string
+  canManage: boolean
+}) {
+  const membersQ = useWorkspaceMembers(workspaceId)
+  const add = useAddWorkspaceMember()
+  const updateRole = useUpdateWorkspaceMemberRole()
+  const remove = useRemoveWorkspaceMember()
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
+
+  const memberIds = useMemo(
+    () => new Set((membersQ.data ?? []).map((m) => m.user_id)),
+    [membersQ.data],
+  )
+  const pendingRemove = (membersQ.data ?? []).find((m) => m.user_id === pendingRemoveId) ?? null
+
   return (
     <SectionCard
       icon={<Users className="h-4 w-4" />}
       title="Members"
       description="Add or remove people, change their workspace role."
     >
-      <div className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-sm text-muted-foreground">
-        Per-workspace member management lives in the Manage Access surface (Phase 7).
-        Until then, workspace_members entries are created when an admin grants
-        permissions through the policy service.
-      </div>
+      {canManage && (
+        <div className="mb-4">
+          <MemberPicker
+            excludeIds={memberIds}
+            isPending={add.isPending}
+            onPick={(userId) =>
+              add.mutate(
+                { workspaceId, userId, role: 'member' },
+                { onSuccess: () => toast.success('Member added') },
+              )
+            }
+          />
+        </div>
+      )}
+
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Members ({membersQ.data?.length ?? 0})
+      </h4>
+
+      {membersQ.isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : membersQ.isError ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          {readErrorMessage(membersQ.error) ?? 'Could not load members.'}
+        </p>
+      ) : (membersQ.data?.length ?? 0) === 0 ? (
+        <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+          {canManage
+            ? 'No members yet. Use the search above to add someone.'
+            : 'No members yet.'}
+        </p>
+      ) : (
+        <ul className="space-y-1.5" data-testid="workspace-members-list">
+          {(membersQ.data ?? []).map((m) => {
+            const isCreator = m.user_id === workspaceCreatedBy
+            return (
+              <li
+                key={m.user_id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-2"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Avatar name={m.display_name || m.email} size="sm" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">
+                        {m.display_name || m.email}
+                      </span>
+                      {isCreator && (
+                        <span className="rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium uppercase text-primary">
+                          Owner
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">{m.email}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {canManage ? (
+                    <Select
+                      label=""
+                      value={m.role}
+                      onValueChange={(v) =>
+                        updateRole.mutate(
+                          { workspaceId, userId: m.user_id, role: v as 'admin' | 'member' | 'viewer' },
+                          { onSuccess: () => toast.success('Role updated') },
+                        )
+                      }
+                      options={[
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'member', label: 'Member' },
+                        { value: 'viewer', label: 'Viewer' },
+                      ]}
+                      disabled={isCreator || updateRole.isPending}
+                    />
+                  ) : (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium uppercase text-muted-foreground">
+                      {m.role}
+                    </span>
+                  )}
+                  {canManage && !isCreator && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPendingRemoveId(m.user_id)}
+                      disabled={remove.isPending}
+                      aria-label={`Remove ${m.email}`}
+                      title={`Remove ${m.email}`}
+                    >
+                      <UserMinus className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={!!pendingRemoveId}
+        onOpenChange={(o) => !o && setPendingRemoveId(null)}
+        title="Remove member?"
+        description={pendingRemove
+          ? `Revoke workspace access for ${pendingRemove.display_name || pendingRemove.email}? They lose member-based access immediately; folder grants remain unchanged.`
+          : ''}
+        confirmLabel="Remove"
+        destructive
+        loading={remove.isPending}
+        onConfirm={() => {
+          if (!pendingRemoveId) return
+          remove.mutate(
+            { workspaceId, userId: pendingRemoveId },
+            {
+              onSuccess: () => {
+                toast.success('Member removed')
+                setPendingRemoveId(null)
+              },
+            },
+          )
+        }}
+      />
+
       <p className="mt-3 text-xs text-muted-foreground">
-        Tenant-wide user administration: <a className="underline" href="/admin/users">/admin/users</a>{' '}
-        ·{' '}
+        Tenant-wide user administration: <a className="underline" href="/admin/users">/admin/users</a>{' '}·{' '}
         Groups: <a className="underline" href="/admin/groups">/admin/groups</a>
       </p>
-      {/* Hidden anchor so the route can deep-link to this section. */}
       <span id={`workspace-members-${workspaceId}`} className="sr-only">members</span>
     </SectionCard>
+  )
+}
+
+// MemberPicker — focus opens initial candidate list; type to filter.
+// Already-member users are excluded. Mirrors the picker we added on
+// /admin/groups so admins get a consistent UX across the two surfaces.
+function MemberPicker({
+  excludeIds,
+  isPending,
+  onPick,
+}: {
+  excludeIds: Set<string>
+  isPending: boolean
+  onPick: (userId: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const usersQ = useQuery({
+    queryKey: ['admin', 'users', { for: 'workspace-member-picker' }],
+    queryFn: () => getUsers({ limit: '25' }),
+    enabled: open,
+    staleTime: 60_000,
+  })
+  const ql = q.trim().toLowerCase()
+  const candidates = (usersQ.data?.items ?? [])
+    .filter((u) => !excludeIds.has(u.id))
+    .filter((u) =>
+      ql === ''
+        ? true
+        : u.email?.toLowerCase().includes(ql) ||
+          u.display_name?.toLowerCase().includes(ql),
+    )
+    .slice(0, 8)
+  return (
+    <div className="relative space-y-1">
+      <div className="relative">
+        <Search className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or email to add a member…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          autoComplete="off"
+          className="ps-9"
+          data-testid="ws-member-picker-search"
+        />
+      </div>
+      {open && (
+        <ul
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card text-sm shadow-md"
+          data-testid="ws-member-picker-results"
+        >
+          {usersQ.isLoading ? (
+            <li className="px-3 py-2 text-xs text-muted-foreground">Loading…</li>
+          ) : candidates.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-muted-foreground">
+              {q ? 'No matching users.' : 'No users available to add.'}
+            </li>
+          ) : (
+            candidates.map((u) => (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onPick(u.id)
+                    setQ('')
+                    setOpen(false)
+                  }}
+                  disabled={isPending}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start hover:bg-muted disabled:opacity-50"
+                  data-testid={`ws-member-pick-${u.id}`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Avatar name={u.display_name || u.email} size="sm" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">{u.display_name || u.email}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{u.email}</span>
+                    </span>
+                  </span>
+                  <UserPlus className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
   )
 }
 

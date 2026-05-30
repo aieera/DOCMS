@@ -353,6 +353,159 @@ func (s *DocumentService) TransferWorkspaceOwnership(ctx context.Context, in *Tr
 	return out, err
 }
 
+// ---- Members (workspace settings → Members panel) -----------------------
+//
+// All four methods gate on canManageWorkspaceMembers: tenant
+// owner/admin OR the workspace's created_by. workspace_members owns
+// the gate column, so an admin's own workspace_members row is NOT
+// required to manage members on a workspace they didn't create.
+
+func (s *DocumentService) canManageWorkspaceMembers(ctx context.Context, w *model.Workspace, userID uuid.UUID) bool {
+	role := auth.GetUserRole(ctx)
+	if role == "owner" || role == "admin" {
+		return true
+	}
+	return w.CreatedBy == userID
+}
+
+// ListWorkspaceMembers returns the member roster. Read is permitted
+// for any member of the workspace (members need to see who else has
+// access). Non-members get ErrForbidden so the surface doesn't leak.
+func (s *DocumentService) ListWorkspaceMembers(ctx context.Context, workspaceID uuid.UUID) ([]model.WorkspaceMember, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.WorkspaceMember
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, workspaceID)
+		if err != nil {
+			return err
+		}
+		role := auth.GetUserRole(ctx)
+		isAdmin := role == "owner" || role == "admin"
+		if !isAdmin && w.CreatedBy != userID {
+			isMember, mErr := s.repos.Workspaces.IsMember(ctx, tx, tenantID, workspaceID, userID)
+			if mErr != nil {
+				return mErr
+			}
+			if !isMember {
+				return vdmserr.ErrForbidden
+			}
+		}
+		members, lerr := s.repos.Workspaces.ListMembers(ctx, tx, tenantID, workspaceID)
+		if lerr != nil {
+			return lerr
+		}
+		out = members
+		return nil
+	})
+	return out, err
+}
+
+// AddWorkspaceMemberInput names the workspace, the user to add, and
+// the role they should hold (admin / member / viewer).
+type AddWorkspaceMemberInput struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Role        string
+}
+
+func validateMemberRole(role string) (string, error) {
+	switch role {
+	case "":
+		return "member", nil
+	case "admin", "member", "viewer":
+		return role, nil
+	}
+	return "", errInvalidInput("role", "must be admin, member, or viewer")
+}
+
+// AddWorkspaceMember adds (or no-ops on existing) a workspace_members
+// row. Gate: tenant owner/admin OR workspace creator.
+func (s *DocumentService) AddWorkspaceMember(ctx context.Context, in *AddWorkspaceMemberInput) error {
+	tenantID, callerID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	if in == nil || in.WorkspaceID == uuid.Nil || in.UserID == uuid.Nil {
+		return errInvalidInput("user_id", "required")
+	}
+	role, err := validateMemberRole(in.Role)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageWorkspaceMembers(ctx, w, callerID) {
+			return vdmserr.ErrForbidden
+		}
+		return s.repos.Workspaces.AddMember(ctx, tx, tenantID, in.WorkspaceID, in.UserID, callerID, role)
+	})
+}
+
+// UpdateWorkspaceMemberRoleInput names the (workspace, user) target
+// and the new role to apply.
+type UpdateWorkspaceMemberRoleInput struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Role        string
+}
+
+// UpdateWorkspaceMemberRole flips a member's role. Same gate as Add.
+// Cannot demote the workspace creator — would orphan the workspace.
+func (s *DocumentService) UpdateWorkspaceMemberRole(ctx context.Context, in *UpdateWorkspaceMemberRoleInput) error {
+	tenantID, callerID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	if in == nil || in.WorkspaceID == uuid.Nil || in.UserID == uuid.Nil {
+		return errInvalidInput("user_id", "required")
+	}
+	role, err := validateMemberRole(in.Role)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, in.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageWorkspaceMembers(ctx, w, callerID) {
+			return vdmserr.ErrForbidden
+		}
+		if w.CreatedBy == in.UserID && role != "admin" {
+			return errInvalidInput("role", "the workspace creator must keep admin role; transfer ownership first")
+		}
+		return s.repos.Workspaces.UpdateMemberRole(ctx, tx, tenantID, in.WorkspaceID, in.UserID, role)
+	})
+}
+
+// RemoveWorkspaceMember deletes the (workspace, user) row. Same gate.
+// Cannot remove the workspace creator — would orphan the workspace.
+func (s *DocumentService) RemoveWorkspaceMember(ctx context.Context, workspaceID, userID uuid.UUID) error {
+	tenantID, callerID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, workspaceID)
+		if err != nil {
+			return err
+		}
+		if !s.canManageWorkspaceMembers(ctx, w, callerID) {
+			return vdmserr.ErrForbidden
+		}
+		if w.CreatedBy == userID {
+			return errInvalidInput("user_id", "cannot remove the workspace creator; transfer ownership first")
+		}
+		return s.repos.Workspaces.RemoveMember(ctx, tx, tenantID, workspaceID, userID)
+	})
+}
+
 // --- validation ------------------------------------------------------------
 
 // workspaceIsUserEmpty reports whether a workspace can be soft-deleted

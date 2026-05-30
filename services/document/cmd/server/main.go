@@ -501,6 +501,17 @@ func main() {
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(sharedWithMeMux),
 		))
 
+	// Workspace members — per-workspace ACL surface. Gating lives in
+	// the service layer (creator OR tenant admin for writes; any
+	// member for reads).
+	workspaceMembersMux := http.NewServeMux()
+	handler.NewWorkspaceMembersHandler(svc).Register(workspaceMembersMux)
+	workspaceMembersAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(workspaceMembersMux)
+	rootMux.Handle("GET /api/v1/workspaces/{workspace_id}/members", middleware.CorrelationHTTP(workspaceMembersAuth))
+	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/members", middleware.CorrelationHTTP(workspaceMembersAuth))
+	rootMux.Handle("PATCH /api/v1/workspaces/{workspace_id}/members/{user_id}", middleware.CorrelationHTTP(workspaceMembersAuth))
+	rootMux.Handle("DELETE /api/v1/workspaces/{workspace_id}/members/{user_id}", middleware.CorrelationHTTP(workspaceMembersAuth))
+
 	// Admin Trash — list soft-deleted docs + restore + permanent
 	// purge (S3 + DB). All three routes role-gate to owner/admin
 	// inside the handler. SessionAuth populates ctx so the service

@@ -181,6 +181,73 @@ func (r *workspaceRepo) UpdateCreatedBy(ctx context.Context, tx pgx.Tx, tenantID
 	return nil
 }
 
+// ListMembers returns every workspace_members row joined with users
+// so the FE renders name/email without a follow-up call. Ordered
+// admins first, then alphabetical by display_name/email so the
+// settings UI is stable across refetches.
+func (r *workspaceRepo) ListMembers(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) ([]model.WorkspaceMember, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT wm.user_id,
+		       COALESCE(u.email, ''),
+		       COALESCE(u.display_name, ''),
+		       wm.role,
+		       wm.added_by,
+		       wm.added_at
+		  FROM workspace_members wm
+		  LEFT JOIN users u
+		    ON u.tenant_id = wm.tenant_id AND u.id = wm.user_id
+		 WHERE wm.tenant_id = $1 AND wm.workspace_id = $2
+		 ORDER BY CASE wm.role WHEN 'admin' THEN 0 WHEN 'member' THEN 1 ELSE 2 END,
+		          COALESCE(NULLIF(u.display_name, ''), u.email) ASC
+	`, tenantID, workspaceID)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := make([]model.WorkspaceMember, 0)
+	for rows.Next() {
+		var m model.WorkspaceMember
+		if err := rows.Scan(&m.UserID, &m.Email, &m.DisplayName, &m.Role, &m.AddedBy, &m.AddedAt); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapPgError(rows.Err())
+}
+
+// UpdateMemberRole flips role to one of admin/member/viewer (the
+// CHECK constraint enforces the set). Returns ErrNotFound if no row
+// matches the caller's (workspace, user) pair.
+func (r *workspaceRepo) UpdateMemberRole(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID, role string) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE workspace_members
+		   SET role = $4
+		 WHERE tenant_id = $1 AND workspace_id = $2 AND user_id = $3
+	`, tenantID, workspaceID, userID, role)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFoundErr()
+	}
+	return nil
+}
+
+// RemoveMember deletes the (workspace, user) row.
+func (r *workspaceRepo) RemoveMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID) error {
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM workspace_members
+		 WHERE tenant_id = $1 AND workspace_id = $2 AND user_id = $3
+	`, tenantID, workspaceID, userID)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return notFoundErr()
+	}
+	return nil
+}
+
 // IsMember reports whether the given user has any active workspace_members
 // row for the workspace. Used by TransferWorkspaceOwnership to require the
 // new owner already be involved with the workspace.

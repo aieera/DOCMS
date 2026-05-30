@@ -57,6 +57,11 @@ type WorkspaceRepository interface {
 	// IsMember reports whether the user has any active membership row
 	// for the workspace.
 	IsMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID) (bool, error)
+	// ListMembers + UpdateMemberRole + RemoveMember power the
+	// per-workspace Settings → Members panel.
+	ListMembers(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) ([]model.WorkspaceMember, error)
+	UpdateMemberRole(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID, role string) error
+	RemoveMember(ctx context.Context, tx pgx.Tx, tenantID, workspaceID, userID uuid.UUID) error
 }
 
 type FolderRepository interface {
