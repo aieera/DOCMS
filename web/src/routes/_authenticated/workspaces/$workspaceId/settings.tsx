@@ -100,6 +100,7 @@ function SettingsPage() {
             <DangerZoneSection
               workspaceId={workspaceId}
               workspaceName={wsQ.data.name}
+              documentCount={wsQ.data.document_count ?? 0}
               onDeleted={() => navigate({ to: '/workspaces' })}
             />
           )}
@@ -269,8 +270,12 @@ function TransferOwnershipSection({
   const transfer = useTransferWorkspaceOwnership()
 
   // Tenant-wide user list. The backend gate (`IsMember`) refuses any
-  // non-member, so the worst case here is a "must already be a
-  // workspace member" 400 toast — clearer than silently filtering.
+  // non-member with a 400, so picking a non-member here would silently
+  // fail. We can't filter by workspace membership without a list-
+  // members endpoint (Phase 7), so for now we (a) surface the real
+  // backend error via the useAppMutation wrapper, and (b) hard-disable
+  // the action whenever the picker is empty so the bad-UUID 400 path
+  // can't fire at all.
   const usersQ = useQuery({
     queryKey: ['admin', 'users', { for: 'workspace-transfer' }],
     queryFn: () => getUsers(),
@@ -279,6 +284,7 @@ function TransferOwnershipSection({
 
   const candidates = (usersQ.data?.items ?? []).filter((u) => u.id !== currentOwnerId)
   const selectedUser = candidates.find((u) => u.id === newOwnerId)
+  const canTransfer = !!newOwnerId && !!selectedUser && !transfer.isPending
 
   return (
     <SectionCard
@@ -303,11 +309,9 @@ function TransferOwnershipSection({
           </p>
           <Button
             variant="outline"
-            disabled={transfer.isPending}
-            onClick={() => {
-              if (!newOwnerId) { toast.error('Select a user to transfer to'); return }
-              setConfirmOpen(true)
-            }}
+            disabled={!canTransfer}
+            onClick={() => setConfirmOpen(true)}
+            title={canTransfer ? undefined : 'Pick a workspace member to transfer to before continuing.'}
             data-testid="ws-transfer-open"
           >
             Transfer…
@@ -343,14 +347,19 @@ function TransferOwnershipSection({
 }
 
 function DangerZoneSection({
-  workspaceId, workspaceName, onDeleted,
+  workspaceId, workspaceName, documentCount, onDeleted,
 }: {
   workspaceId: string
   workspaceName: string
+  documentCount: number
   onDeleted: () => void
 }) {
   const [open, setOpen] = useState(false)
   const del = useDeleteWorkspace()
+  // Backend refuses with a 400 ("workspace is not empty") whenever
+  // documentCount > 0. Surface the constraint up-front instead of
+  // showing the typed-confirm dialog only to land on a toast error.
+  const blockedByContents = documentCount > 0
 
   return (
     <SectionCard
@@ -360,12 +369,21 @@ function DangerZoneSection({
       danger
     >
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          The workspace will be hidden from the UI. Re-activation requires admin support — there is no UI undo.
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">
+            The workspace will be hidden from the UI. Re-activation requires admin support — there is no UI undo.
+          </p>
+          {blockedByContents && (
+            <p className="text-xs text-destructive">
+              This workspace still holds {documentCount} document{documentCount === 1 ? '' : 's'}. Move or delete them before you can delete the workspace itself.
+            </p>
+          )}
+        </div>
         <Button
           variant="destructive"
           onClick={() => setOpen(true)}
+          disabled={blockedByContents}
+          title={blockedByContents ? 'Remove the documents inside this workspace first.' : undefined}
           data-testid="ws-delete-open"
         >
           Delete workspace
