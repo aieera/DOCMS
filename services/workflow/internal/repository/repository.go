@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -139,13 +140,33 @@ func (r *Repository) GetDefinition(ctx context.Context, tenantID, id string) (*m
 // ---- Instances ------------------------------------------------------------
 
 // CreateInstance persists a new workflow instance.
+//
+// Column-name reconciliation: the Go model uses domain-friendly
+// names (InitiatedBy / CurrentStep / TemporalRunID / CreatedAt) but
+// the DB columns are started_by / current_step_id / temporal_workflow_id
+// / started_at. The previous queries referenced the Go names verbatim
+// and failed at runtime with UndefinedColumn. We map at the SQL
+// boundary so the service-layer types stay stable.
+//
+// CurrentStep is an INT in the Go model but current_step_id is TEXT
+// in the DB. We marshal via strconv so a fresh instance writes "0",
+// and unmarshal back to int on read; non-numeric stored values
+// (future step-id strings) fall through with CurrentStep=0.
 func (r *Repository) CreateInstance(ctx context.Context, inst *model.WorkflowInstance) error {
 	return r.runTenant(ctx, inst.TenantID, func(tx pgx.Tx) error {
+		var startedBy any
+		if inst.InitiatedBy != "" {
+			startedBy = inst.InitiatedBy
+		}
+		var temporal any
+		if inst.TemporalRunID != "" {
+			temporal = inst.TemporalRunID
+		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO workflow_instances (id, tenant_id, definition_id, document_id, initiated_by, status, current_step, temporal_run_id, created_at)
+			INSERT INTO workflow_instances (id, tenant_id, definition_id, document_id, started_by, status, current_step_id, temporal_workflow_id, started_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-		`, inst.ID, inst.TenantID, inst.DefinitionID, inst.DocumentID, inst.InitiatedBy,
-			inst.Status, inst.CurrentStep, inst.TemporalRunID, inst.CreatedAt)
+		`, inst.ID, inst.TenantID, inst.DefinitionID, inst.DocumentID, startedBy,
+			inst.Status, strconv.Itoa(inst.CurrentStep), temporal, inst.CreatedAt)
 		return err
 	})
 }
@@ -155,16 +176,29 @@ func (r *Repository) GetInstance(ctx context.Context, tenantID, id string) (*mod
 	inst := &model.WorkflowInstance{}
 	var found bool
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var currentStepID, temporal *string
+		var startedBy *string
 		err := tx.QueryRow(ctx, `
-			SELECT id, tenant_id, definition_id, document_id, initiated_by, status, current_step, temporal_run_id, created_at, completed_at
+			SELECT id, tenant_id, definition_id, COALESCE(document_id::text,''), started_by::text, status, current_step_id, temporal_workflow_id, started_at, completed_at
 			FROM workflow_instances WHERE tenant_id = $1 AND id = $2`, tenantID, id).
-			Scan(&inst.ID, &inst.TenantID, &inst.DefinitionID, &inst.DocumentID, &inst.InitiatedBy,
-				&inst.Status, &inst.CurrentStep, &inst.TemporalRunID, &inst.CreatedAt, &inst.CompletedAt)
+			Scan(&inst.ID, &inst.TenantID, &inst.DefinitionID, &inst.DocumentID, &startedBy,
+				&inst.Status, &currentStepID, &temporal, &inst.CreatedAt, &inst.CompletedAt)
 		if err == pgx.ErrNoRows {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if startedBy != nil {
+			inst.InitiatedBy = *startedBy
+		}
+		if currentStepID != nil {
+			if n, perr := strconv.Atoi(*currentStepID); perr == nil {
+				inst.CurrentStep = n
+			}
+		}
+		if temporal != nil {
+			inst.TemporalRunID = *temporal
 		}
 		found = true
 		return nil
