@@ -2,7 +2,7 @@
 // Source: docs/load-tests/<date>/summary.md
 // Regenerate via: node scripts/build-load-test-index.mjs
 //
-// Generated at 2026-05-27T11:00:10.852Z from 0 campaign(s).
+// Generated at 2026-05-30T16:52:58.004Z from 0 campaign(s).
 
 export type Verdict = 'pending' | 'passed' | 'failed'
 
