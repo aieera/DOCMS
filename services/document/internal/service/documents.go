@@ -652,8 +652,27 @@ func (s *DocumentService) ListDocuments(ctx context.Context, f model.DocumentFil
 	if f.WorkspaceID == nil || *f.WorkspaceID == uuid.Nil {
 		return nil, errInvalidInput("workspace_id", "required")
 	}
+	// Two authorization paths:
+	//   A) Standard workspace permission via OPA (members + admins).
+	//   B) Folder-grantee scoping — caller has no workspace permission
+	//      but is querying a SPECIFIC folder they hold a grant on.
+	//      Workspace-wide listing without folder_id stays gated; this
+	//      keeps grantee-only callers from enumerating documents
+	//      outside their granted folder.
 	if err := s.requirePermission(ctx, userID, "view", "workspace", *f.WorkspaceID, nil); err != nil {
-		return nil, err
+		if !errors.Is(err, vdmserr.ErrForbidden) {
+			return nil, err
+		}
+		if f.FolderID == nil || *f.FolderID == uuid.Nil {
+			return nil, err
+		}
+		hasGrant, gerr := s.callerHasDirectGrantOnFolder(ctx, tenantID, *f.FolderID, userID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if !hasGrant {
+			return nil, err
+		}
 	}
 	// Only admins may request soft-deleted rows.
 	if f.IncludeDeleted {

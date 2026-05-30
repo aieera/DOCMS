@@ -123,19 +123,26 @@ func (s *DocumentService) GetFolder(ctx context.Context, id uuid.UUID) (*model.F
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requirePermission(ctx, userID, "view", "folder", id, map[string]any{
-		"workspace_id": f.WorkspaceID.String(),
-	}); err != nil {
-		return nil, err
-	}
-	// Phase 2 visibility gate. requirePermission above handles
-	// workspace + folder OPA rules; CanAccessFolder layers the
-	// private-folder rule on top so a private folder's owner +
-	// grantees see it and everyone else gets ErrNotFound (NOT
-	// ErrForbidden — leaking existence of a private folder defeats
-	// the purpose).
-	if err := s.checkFolderAccess(ctx, tenantID, id, userID); err != nil {
-		return nil, err
+	// Two authorization paths:
+	//   A) Direct folder grant (admin, owner, or folder_grants row,
+	//      including via a group). Skips workspace OPA.
+	//   B) Standard workspace permission via OPA + visibility check
+	//      — the path that worked before grants existed.
+	// We try (A) first so grantee-only users (no workspace membership)
+	// don't fail OPA's workspace gate. Falling back to (B) preserves
+	// the existing shared-folder-as-member behavior.
+	hasDirect, _ := s.callerHasDirectGrantOnFolder(ctx, tenantID, id, userID)
+	if !hasDirect {
+		if err := s.requirePermission(ctx, userID, "view", "folder", id, map[string]any{
+			"workspace_id": f.WorkspaceID.String(),
+		}); err != nil {
+			return nil, err
+		}
+		// Visibility check — private folders still need an explicit
+		// grant even for workspace members.
+		if err := s.checkFolderAccess(ctx, tenantID, id, userID); err != nil {
+			return nil, err
+		}
 	}
 	return f, nil
 }
@@ -217,6 +224,41 @@ func (s *DocumentService) ListSharedWithMe(ctx context.Context) ([]model.SharedF
 		return lerr
 	})
 	return out, err
+}
+
+// callerHasDirectGrantOnFolder returns true ONLY when the caller is
+// an admin, the folder's owner, or holds an explicit folder_grants
+// row (direct user OR via a group). Crucially, it does NOT return
+// true for shared folders by default — that's the workspace
+// membership case, handled separately via requirePermission. Used by
+// GetFolder + ListDocuments to give grantees a path through that
+// bypasses the OPA workspace gate.
+func (s *DocumentService) callerHasDirectGrantOnFolder(ctx context.Context, tenantID, folderID, userID uuid.UUID) (bool, error) {
+	if s.callerIsTenantAdmin(ctx) {
+		return true, nil
+	}
+	groups := auth.GetUserGroups(ctx)
+	groupIDs := make([]uuid.UUID, 0, len(groups))
+	groupIDs = append(groupIDs, groups...)
+	if groupIDs == nil {
+		groupIDs = []uuid.UUID{}
+	}
+	var found bool
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM folders
+				 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+				   AND owner_id = $3
+			)
+			OR EXISTS (
+				SELECT 1 FROM folder_grants
+				 WHERE tenant_id = $1 AND folder_id = $2
+				   AND ((grantee_type = 'user'  AND grantee_id = $3)
+				     OR (grantee_type = 'group' AND grantee_id = ANY($4::uuid[])))
+			)`, tenantID, folderID, userID, groupIDs).Scan(&found)
+	})
+	return found, err
 }
 
 // callerHasGrantInWorkspace returns true when the caller holds at
