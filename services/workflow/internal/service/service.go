@@ -3,17 +3,26 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 	"go.temporal.io/sdk/client"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
 	"github.com/vaultdms/vaultdms/services/workflow/internal/repository"
 	"github.com/vaultdms/vaultdms/services/workflow/internal/workflows"
 )
+
+// ErrNotFound is the access-denial / missing-row sentinel exposed to
+// the handler layer. We deliberately do NOT differentiate between
+// "row absent" and "row exists but caller cannot see it" — that's
+// the existence-leak guard mirrored from the folder pattern.
+var ErrNotFound = errors.New("not found")
 
 const taskQueue = "vaultdms-workflow"
 
@@ -36,13 +45,24 @@ func New(cfg Config) *Service {
 	return &Service{repo: cfg.Repo, temporal: cfg.Temporal, log: cfg.Logger}
 }
 
-// CreateDefinition saves a workflow template.
-func (s *Service) CreateDefinition(ctx context.Context, tenantID, name, desc, createdBy string, steps []model.Step) (*model.WorkflowDefinition, error) {
+// CreateDefinition saves a workflow template. Visibility defaults to
+// 'shared'; pass 'private' to stamp the caller as owner.
+func (s *Service) CreateDefinition(ctx context.Context, tenantID, name, desc, createdBy, visibility string, steps []model.Step) (*model.WorkflowDefinition, error) {
 	id, _ := uuid.NewV7()
 	now := time.Now().UTC()
+	if visibility == "" {
+		visibility = model.VisibilityShared
+	}
 	d := &model.WorkflowDefinition{
 		ID: id.String(), TenantID: tenantID, Name: name, Description: desc,
-		Steps: steps, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
+		Steps: steps, CreatedBy: createdBy,
+		Visibility: visibility,
+		CreatedAt:  now, UpdatedAt: now,
+	}
+	// Stamp owner=creator at create-time only when going straight to
+	// private; shared definitions leave owner_id NULL by design.
+	if visibility == model.VisibilityPrivate {
+		d.OwnerID = createdBy
 	}
 	if err := s.repo.CreateDefinition(ctx, d); err != nil {
 		return nil, err
@@ -50,16 +70,58 @@ func (s *Service) CreateDefinition(ctx context.Context, tenantID, name, desc, cr
 	return d, nil
 }
 
-// ListDefinitions returns all definitions for a tenant.
+// ListDefinitions returns the tenant's definitions filtered by what
+// the caller can see. Admins see all; everyone else gets a post-filter
+// pass via CanAccessWorkflow. The per-row gate cost is a single
+// query each (no JOIN) so this stays under the existing API budget
+// for typical N < 100 templates per tenant.
 func (s *Service) ListDefinitions(ctx context.Context, tenantID string) ([]*model.WorkflowDefinition, error) {
-	return s.repo.ListDefinitions(ctx, tenantID)
+	all, err := s.repo.ListDefinitions(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if s.callerIsTenantAdmin(ctx) {
+		return all, nil
+	}
+	userID, groups := s.callerCreds(ctx)
+	out := make([]*model.WorkflowDefinition, 0, len(all))
+	for _, d := range all {
+		// Cheap shortcuts so we only hit DB for private rows.
+		if d.Visibility == model.VisibilityShared {
+			out = append(out, d)
+			continue
+		}
+		if d.OwnerID == userID && userID != "" {
+			out = append(out, d)
+			continue
+		}
+		if d.CreatedBy == userID && userID != "" {
+			out = append(out, d)
+			continue
+		}
+		ok, _ := s.repo.CanAccessWorkflow(ctx, tenantID, d.ID, userID, groups)
+		if ok {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 
-// StartInstance launches a Temporal workflow execution.
+// StartInstance launches a Temporal workflow execution. Caller must
+// pass the visibility check (mirrors GetDefinition) — execution is
+// gated alongside reads so private templates can't be launched by
+// holders of the id who lack a grant. System / Temporal contexts (no
+// auth.User on ctx) are not callers here; this is reached from REST
+// only, so a missing User is treated as no access except for the
+// classic admin short-circuit.
 func (s *Service) StartInstance(ctx context.Context, tenantID, defID, docID, initiatedBy string) (*model.WorkflowInstance, error) {
 	def, err := s.repo.GetDefinition(ctx, tenantID, defID)
 	if err != nil || def == nil {
 		return nil, fmt.Errorf("definition not found")
+	}
+	if err := s.checkDefinitionAccess(ctx, def); err != nil {
+		// Same existence-leak guard as GetDefinition.
+		return nil, ErrNotFound
 	}
 	instID, _ := uuid.NewV7()
 	inst := &model.WorkflowInstance{
@@ -138,9 +200,20 @@ func (s *Service) CancelInstance(ctx context.Context, tenantID, instanceID strin
 	return nil
 }
 
-// GetDefinition returns one definition by ID.
+// GetDefinition returns one definition by ID, gated by visibility.
+// Returns ErrNotFound on denial (existence-leak guard).
 func (s *Service) GetDefinition(ctx context.Context, tenantID, id string) (*model.WorkflowDefinition, error) {
-	return s.repo.GetDefinition(ctx, tenantID, id)
+	def, err := s.repo.GetDefinition(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if def == nil {
+		return nil, ErrNotFound
+	}
+	if err := s.checkDefinitionAccess(ctx, def); err != nil {
+		return nil, err
+	}
+	return def, nil
 }
 
 // UpdateDefinition replaces an existing template's name / description
@@ -186,4 +259,205 @@ func (s *Service) GetActiveInstanceByDocument(ctx context.Context, tenantID, doc
 // tenant. Used by the admin Active instances table.
 func (s *Service) ListActiveInstances(ctx context.Context, tenantID string) ([]*model.WorkflowInstance, error) {
 	return s.repo.ListActiveInstances(ctx, tenantID)
+}
+
+// ---- Visibility + grants (migration 000062, recommended defaults) --------
+//
+// Caller credentials are read from auth.User on ctx. Temporal-driven
+// activities run without auth.User and are NOT expected to reach
+// these methods — visibility-management is an interactive surface,
+// not a system-actor one. The read/execute gates (GetDefinition,
+// StartInstance) ARE reached from Temporal in retry paths; for those
+// `callerIsSystem` (empty UserID + non-empty tenantID set via
+// auth.SetTenantID) short-circuits to true so scheduled retention /
+// residency / DSR flows on private templates keep firing.
+
+// callerCreds returns (userID, groupIDs) as strings. UserID is "" for
+// system contexts (Temporal activities).
+func (s *Service) callerCreds(ctx context.Context) (string, []string) {
+	u, err := auth.User(ctx)
+	if err != nil {
+		return "", nil
+	}
+	groups := make([]string, 0, len(u.Groups))
+	for _, g := range u.Groups {
+		groups = append(groups, g.String())
+	}
+	return u.ID.String(), groups
+}
+
+// callerIsTenantAdmin returns true for owner|admin roles. Treats a
+// system context (no auth.User) as admin so Temporal activities can
+// still resolve definitions through the gated APIs without a grant.
+func (s *Service) callerIsTenantAdmin(ctx context.Context) bool {
+	u, err := auth.User(ctx)
+	if err != nil {
+		return s.callerIsSystem(ctx)
+	}
+	switch u.Role {
+	case "owner", "admin":
+		return true
+	}
+	return false
+}
+
+// callerIsSystem detects a Temporal-driven invocation: a tenant id is
+// stamped on ctx (so RLS can fire) but no UserInfo was attached. The
+// REST middleware always sets both; activities set only tenantID.
+func (s *Service) callerIsSystem(ctx context.Context) bool {
+	if _, err := auth.User(ctx); err == nil {
+		return false
+	}
+	if _, err := auth.GetTenantID(ctx); err == nil {
+		return true
+	}
+	return false
+}
+
+// canManageDefinition gates write paths (SetVisibility, AddGrant,
+// RemoveGrant). Owner or admin; falls back to created_by when owner
+// is unset (legacy shared rows promoted to private by the creator).
+func (s *Service) canManageDefinition(ctx context.Context, def *model.WorkflowDefinition) bool {
+	if s.callerIsTenantAdmin(ctx) {
+		return true
+	}
+	userID, _ := s.callerCreds(ctx)
+	if userID == "" {
+		return false
+	}
+	if def.OwnerID == userID {
+		return true
+	}
+	if def.OwnerID == "" && def.CreatedBy == userID {
+		return true
+	}
+	return false
+}
+
+// checkDefinitionAccess returns ErrNotFound on denial (not Forbidden)
+// so we don't leak the existence of private templates the caller
+// can't see.
+func (s *Service) checkDefinitionAccess(ctx context.Context, def *model.WorkflowDefinition) error {
+	if def.Visibility == "" || def.Visibility == model.VisibilityShared {
+		return nil
+	}
+	if s.callerIsTenantAdmin(ctx) {
+		return nil
+	}
+	userID, groups := s.callerCreds(ctx)
+	if userID == "" {
+		// No user identity AND not a system actor → deny.
+		return ErrNotFound
+	}
+	if def.OwnerID == userID || (def.OwnerID == "" && def.CreatedBy == userID) {
+		return nil
+	}
+	ok, err := s.repo.CanAccessWorkflow(ctx, def.TenantID, def.ID, userID, groups)
+	if err != nil && err != pgx.ErrNoRows {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetDefinitionVisibility flips a workflow definition between shared
+// and private. Promoting to private stamps owner=caller when no
+// owner exists yet (i.e. legacy / shared rows being locked down by
+// their creator). Demoting to shared clears owner_id.
+func (s *Service) SetDefinitionVisibility(ctx context.Context, tenantID, id, visibility string) (*model.WorkflowDefinition, error) {
+	if visibility != model.VisibilityShared && visibility != model.VisibilityPrivate {
+		return nil, fmt.Errorf("visibility must be 'shared' or 'private'")
+	}
+	def, err := s.repo.GetDefinition(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if def == nil {
+		return nil, ErrNotFound
+	}
+	if !s.canManageDefinition(ctx, def) {
+		return nil, ErrNotFound
+	}
+	owner := ""
+	if visibility == model.VisibilityPrivate {
+		// Keep an existing owner; otherwise stamp the caller.
+		if def.OwnerID != "" {
+			owner = def.OwnerID
+		} else if uid, _ := s.callerCreds(ctx); uid != "" {
+			owner = uid
+		}
+	}
+	if err := s.repo.UpdateDefinitionVisibility(ctx, tenantID, id, visibility, owner); err != nil {
+		return nil, err
+	}
+	def.Visibility = visibility
+	def.OwnerID = owner
+	def.UpdatedAt = time.Now().UTC()
+	return def, nil
+}
+
+// ListGrants returns the ACL on a definition. Caller must be able to
+// manage the row (owner or admin); if they can't, we return
+// ErrNotFound to avoid leaking the row.
+func (s *Service) ListGrants(ctx context.Context, tenantID, workflowID string) ([]*model.WorkflowGrant, error) {
+	def, err := s.repo.GetDefinition(ctx, tenantID, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if def == nil {
+		return nil, ErrNotFound
+	}
+	if !s.canManageDefinition(ctx, def) {
+		return nil, ErrNotFound
+	}
+	return s.repo.ListGrants(ctx, tenantID, workflowID)
+}
+
+// AddGrant idempotently adds (granteeType, granteeID) to a definition.
+func (s *Service) AddGrant(ctx context.Context, tenantID, workflowID, granteeType, granteeID string) (*model.WorkflowGrant, error) {
+	if granteeType != "user" && granteeType != "group" {
+		return nil, fmt.Errorf("grantee_type must be 'user' or 'group'")
+	}
+	if _, err := uuid.Parse(granteeID); err != nil {
+		return nil, fmt.Errorf("grantee_id: %w", err)
+	}
+	def, err := s.repo.GetDefinition(ctx, tenantID, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if def == nil {
+		return nil, ErrNotFound
+	}
+	if !s.canManageDefinition(ctx, def) {
+		return nil, ErrNotFound
+	}
+	grantedBy, _ := s.callerCreds(ctx)
+	return s.repo.AddGrant(ctx, &model.WorkflowGrant{
+		TenantID: tenantID, WorkflowID: workflowID,
+		GranteeType: granteeType, GranteeID: granteeID,
+		GrantedBy: grantedBy,
+	})
+}
+
+// RemoveGrant revokes a grant.
+func (s *Service) RemoveGrant(ctx context.Context, tenantID, workflowID, granteeType, granteeID string) error {
+	def, err := s.repo.GetDefinition(ctx, tenantID, workflowID)
+	if err != nil {
+		return err
+	}
+	if def == nil {
+		return ErrNotFound
+	}
+	if !s.canManageDefinition(ctx, def) {
+		return ErrNotFound
+	}
+	if err := s.repo.RemoveGrant(ctx, tenantID, workflowID, granteeType, granteeID); err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
 }

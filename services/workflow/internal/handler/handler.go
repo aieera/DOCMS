@@ -9,6 +9,8 @@ import (
 
 	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
 	"github.com/vaultdms/vaultdms/services/workflow/internal/service"
+
+	"errors"
 )
 
 // Handler holds HTTP route handlers.
@@ -29,6 +31,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workflows/definitions/{id}", h.getDefinition)
 	mux.HandleFunc("PUT /api/v1/workflows/definitions/{id}", h.updateDefinition)
 	mux.HandleFunc("DELETE /api/v1/workflows/definitions/{id}", h.deleteDefinition)
+	mux.HandleFunc("POST /api/v1/workflows/definitions/{id}/visibility", h.setDefinitionVisibility)
+	mux.HandleFunc("GET /api/v1/workflows/definitions/{id}/grants", h.listDefinitionGrants)
+	mux.HandleFunc("POST /api/v1/workflows/definitions/{id}/grants", h.addDefinitionGrant)
+	mux.HandleFunc("DELETE /api/v1/workflows/definitions/{id}/grants/{granteeType}/{granteeId}", h.removeDefinitionGrant)
 	mux.HandleFunc("POST /api/v1/workflows/instances", h.startInstance)
 	mux.HandleFunc("GET /api/v1/workflows/instances", h.listInstances)
 	mux.HandleFunc("GET /api/v1/workflows/instances/{id}", h.getInstance)
@@ -58,6 +64,7 @@ type createDefBody struct {
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Steps       []model.Step `json:"steps"`
+	Visibility  string       `json:"visibility,omitempty"`
 }
 
 func (h *Handler) createDefinition(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +79,7 @@ func (h *Handler) createDefinition(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name required")
 		return
 	}
-	def, err := h.svc.CreateDefinition(r.Context(), tenantID, body.Name, body.Description, userID, body.Steps)
+	def, err := h.svc.CreateDefinition(r.Context(), tenantID, body.Name, body.Description, userID, body.Visibility, body.Steps)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create failed")
 		return
@@ -95,6 +102,10 @@ func (h *Handler) startInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	inst, err := h.svc.StartInstance(r.Context(), tenantID, body.DefinitionID, body.DocumentID, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
 		h.log.Error().Err(err).Msg("start instance")
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -156,11 +167,120 @@ func (h *Handler) getDefinition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	def, err := h.svc.GetDefinition(r.Context(), tenantID, id)
-	if err != nil || def == nil {
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if def == nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, def)
+}
+
+// ---- Visibility + grants (migration 000062) ------------------------------
+
+type visibilityBody struct {
+	Visibility string `json:"visibility"`
+}
+
+func (h *Handler) setDefinitionVisibility(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	var body visibilityBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	def, err := h.svc.SetDefinitionVisibility(r.Context(), tenantID, id, body.Visibility)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, def)
+}
+
+func (h *Handler) listDefinitionGrants(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	grants, err := h.svc.ListGrants(r.Context(), tenantID, id)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	if grants == nil {
+		grants = []*model.WorkflowGrant{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"grants": grants})
+}
+
+type grantBody struct {
+	GranteeType string `json:"grantee_type"`
+	GranteeID   string `json:"grantee_id"`
+}
+
+func (h *Handler) addDefinitionGrant(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	var body grantBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	g, err := h.svc.AddGrant(r.Context(), tenantID, id, body.GranteeType, body.GranteeID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, g)
+}
+
+func (h *Handler) removeDefinitionGrant(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	id := r.PathValue("id")
+	granteeType := r.PathValue("granteeType")
+	granteeID := r.PathValue("granteeId")
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		return
+	}
+	if err := h.svc.RemoveGrant(r.Context(), tenantID, id, granteeType, granteeID); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "remove failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) updateDefinition(w http.ResponseWriter, r *http.Request) {

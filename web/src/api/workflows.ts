@@ -21,8 +21,23 @@ export interface WorkflowDefinition {
   description?: string
   steps: WorkflowStep[]
   created_by: string
+  // Migration 000062 — visibility ACL.
+  visibility?: 'shared' | 'private'
+  owner_id?: string
   created_at: string
   updated_at: string
+}
+
+// WorkflowGrant — (workflow, user|group) ACL entry. Created via
+// addWorkflowGrant; the (workflow, grantee_type, grantee_id) tuple is
+// unique so re-grants are idempotent server-side.
+export interface WorkflowGrant {
+  id: string
+  workflow_id: string
+  grantee_type: 'user' | 'group'
+  grantee_id: string
+  granted_by?: string
+  created_at: string
 }
 
 export async function getWorkflowDefinitions(): Promise<WorkflowDefinition[]> {
@@ -195,6 +210,7 @@ export async function createWorkflowDefinition(input: {
   name: string
   description?: string
   steps: ADR0073Step[]
+  visibility?: 'shared' | 'private'
 }): Promise<WorkflowDefinition> {
   const { data } = await api.post<WorkflowDefinition>('/workflows/definitions', input)
   return data
@@ -256,4 +272,44 @@ export async function listActiveInstances(): Promise<WorkflowInstance[]> {
     params: { status: 'active' },
   })
   return data ?? []
+}
+
+// ---- Visibility + grants (migration 000062) -----------------------------
+
+export async function setWorkflowVisibility(
+  workflowId: string,
+  visibility: 'shared' | 'private',
+): Promise<WorkflowDefinition> {
+  const { data } = await api.post<WorkflowDefinition>(
+    `/workflows/definitions/${workflowId}/visibility`,
+    { visibility },
+  )
+  return data
+}
+
+export async function listWorkflowGrants(workflowId: string): Promise<WorkflowGrant[]> {
+  const { data } = await api.get<{ grants?: WorkflowGrant[] }>(
+    `/workflows/definitions/${workflowId}/grants`,
+  )
+  return data?.grants ?? []
+}
+
+export async function addWorkflowGrant(
+  workflowId: string,
+  granteeType: 'user' | 'group',
+  granteeId: string,
+): Promise<WorkflowGrant> {
+  const { data } = await api.post<WorkflowGrant>(
+    `/workflows/definitions/${workflowId}/grants`,
+    { grantee_type: granteeType, grantee_id: granteeId },
+  )
+  return data
+}
+
+export async function removeWorkflowGrant(
+  workflowId: string,
+  granteeType: 'user' | 'group',
+  granteeId: string,
+): Promise<void> {
+  await api.delete(`/workflows/definitions/${workflowId}/grants/${granteeType}/${granteeId}`)
 }

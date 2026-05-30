@@ -77,11 +77,19 @@ func (r *Repository) CreateDefinition(ctx context.Context, d *model.WorkflowDefi
 	if err != nil {
 		return err
 	}
+	visibility := d.Visibility
+	if visibility == "" {
+		visibility = model.VisibilityShared
+	}
+	var ownerID any
+	if d.OwnerID != "" {
+		ownerID = d.OwnerID
+	}
 	return r.runTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO workflow_definitions (id, tenant_id, name, description, definition, created_by, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
-		`, d.ID, d.TenantID, d.Name, d.Description, defJSON, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
+			INSERT INTO workflow_definitions (id, tenant_id, name, description, definition, created_by, visibility, owner_id, created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10)
+		`, d.ID, d.TenantID, d.Name, d.Description, defJSON, d.CreatedBy, visibility, ownerID, d.CreatedAt, d.UpdatedAt)
 		return err
 	})
 }
@@ -91,7 +99,9 @@ func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*m
 	var out []*model.WorkflowDefinition
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''), created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''),
+			       COALESCE(visibility,'shared'), COALESCE(owner_id::text,''),
+			       created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 ORDER BY created_at DESC`, tenantID)
 		if err != nil {
 			return err
@@ -100,7 +110,8 @@ func (r *Repository) ListDefinitions(ctx context.Context, tenantID string) ([]*m
 		for rows.Next() {
 			d := &model.WorkflowDefinition{}
 			var defJSON []byte
-			if err := rows.Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			if err := rows.Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy,
+				&d.Visibility, &d.OwnerID, &d.CreatedAt, &d.UpdatedAt); err != nil {
 				return err
 			}
 			d.Steps = unmarshalDefinition(defJSON)
@@ -118,9 +129,12 @@ func (r *Repository) GetDefinition(ctx context.Context, tenantID, id string) (*m
 	var found bool
 	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
-			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''), created_at, updated_at
+			SELECT id, tenant_id, name, COALESCE(description,''), definition, COALESCE(created_by::text,''),
+			       COALESCE(visibility,'shared'), COALESCE(owner_id::text,''),
+			       created_at, updated_at
 			FROM workflow_definitions WHERE tenant_id = $1 AND id = $2`, tenantID, id).
-			Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt)
+			Scan(&d.ID, &d.TenantID, &d.Name, &d.Description, &defJSON, &d.CreatedBy,
+				&d.Visibility, &d.OwnerID, &d.CreatedAt, &d.UpdatedAt)
 		if err == pgx.ErrNoRows {
 			return nil
 		}
@@ -445,4 +459,171 @@ func (r *Repository) CompleteTask(ctx context.Context, tenantID, taskID, status,
 			status, notes, time.Now().UTC(), tenantID, taskID)
 		return err
 	})
+}
+
+// ---- Visibility + grants (migration 000062) -------------------------------
+
+// UpdateDefinitionVisibility flips visibility and (optionally) stamps an
+// owner. When visibility=shared the caller should pass ownerID="".
+// Returns ErrNoRows if no row matches.
+func (r *Repository) UpdateDefinitionVisibility(ctx context.Context, tenantID, id, visibility, ownerID string) error {
+	return r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var owner any
+		if ownerID != "" {
+			owner = ownerID
+		}
+		ct, err := tx.Exec(ctx, `
+			UPDATE workflow_definitions
+			   SET visibility = $3, owner_id = $4, updated_at = now()
+			 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id, visibility, owner)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// ListGrants returns every grant on a workflow definition, oldest-first.
+func (r *Repository) ListGrants(ctx context.Context, tenantID, workflowID string) ([]*model.WorkflowGrant, error) {
+	var out []*model.WorkflowGrant
+	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id::text, tenant_id::text, workflow_id::text, grantee_type, grantee_id::text,
+			       COALESCE(granted_by::text,''), created_at
+			  FROM workflow_grants
+			 WHERE tenant_id = $1 AND workflow_id = $2
+			 ORDER BY created_at ASC`, tenantID, workflowID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			g := &model.WorkflowGrant{}
+			if err := rows.Scan(&g.ID, &g.TenantID, &g.WorkflowID, &g.GranteeType,
+				&g.GranteeID, &g.GrantedBy, &g.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, g)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// AddGrant upserts a (workflow, grantee_type, grantee_id) row. The
+// UNIQUE constraint makes a re-grant a silent no-op so the handler
+// doesn't need to special-case it. Returns the resolved row.
+func (r *Repository) AddGrant(ctx context.Context, g *model.WorkflowGrant) (*model.WorkflowGrant, error) {
+	if g.ID == "" {
+		g.ID = newID()
+	}
+	if g.CreatedAt.IsZero() {
+		g.CreatedAt = time.Now().UTC()
+	}
+	out := &model.WorkflowGrant{}
+	err := r.runTenant(ctx, g.TenantID, func(tx pgx.Tx) error {
+		var grantedBy any
+		if g.GrantedBy != "" {
+			grantedBy = g.GrantedBy
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO workflow_grants (id, tenant_id, workflow_id, grantee_type, grantee_id, granted_by, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			ON CONFLICT (tenant_id, workflow_id, grantee_type, grantee_id) DO NOTHING`,
+			g.ID, g.TenantID, g.WorkflowID, g.GranteeType, g.GranteeID, grantedBy, g.CreatedAt)
+		if err != nil {
+			return err
+		}
+		// Read back the resolved row — if INSERT was a no-op the
+		// existing row's id/created_at/granted_by are what the caller
+		// gets back (idempotent surface).
+		return tx.QueryRow(ctx, `
+			SELECT id::text, tenant_id::text, workflow_id::text, grantee_type, grantee_id::text,
+			       COALESCE(granted_by::text,''), created_at
+			  FROM workflow_grants
+			 WHERE tenant_id = $1 AND workflow_id = $2 AND grantee_type = $3 AND grantee_id = $4`,
+			g.TenantID, g.WorkflowID, g.GranteeType, g.GranteeID).
+			Scan(&out.ID, &out.TenantID, &out.WorkflowID, &out.GranteeType,
+				&out.GranteeID, &out.GrantedBy, &out.CreatedAt)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RemoveGrant deletes by (workflow, grantee_type, grantee_id).
+func (r *Repository) RemoveGrant(ctx context.Context, tenantID, workflowID, granteeType, granteeID string) error {
+	return r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx, `
+			DELETE FROM workflow_grants
+			 WHERE tenant_id = $1 AND workflow_id = $2
+			   AND grantee_type = $3 AND grantee_id = $4`,
+			tenantID, workflowID, granteeType, granteeID)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return pgx.ErrNoRows
+		}
+		return nil
+	})
+}
+
+// CanAccessWorkflow is the single source of truth for "can user U see
+// workflow W?". Mirrors CanAccessFolder. Returns true when ANY of:
+//   - definition is shared
+//   - caller is owner_id
+//   - caller is created_by (creator fallback when owner_id is NULL)
+//   - a workflow_grants row exists for (user, workflow)
+//   - a workflow_grants row exists for any of the caller's groups
+//
+// userGroups is the precomputed group-id list; computing it inside
+// the query would N+1.
+func (r *Repository) CanAccessWorkflow(ctx context.Context, tenantID, workflowID, userID string, userGroups []string) (bool, error) {
+	var allowed bool
+	err := r.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var visibility string
+		var owner, createdBy *string
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(visibility,'shared'),
+			       owner_id::text,
+			       created_by::text
+			  FROM workflow_definitions
+			 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, workflowID).Scan(&visibility, &owner, &createdBy); err != nil {
+			if err == pgx.ErrNoRows {
+				return pgx.ErrNoRows
+			}
+			return err
+		}
+		if visibility == model.VisibilityShared {
+			allowed = true
+			return nil
+		}
+		if owner != nil && *owner == userID {
+			allowed = true
+			return nil
+		}
+		if createdBy != nil && *createdBy == userID {
+			allowed = true
+			return nil
+		}
+		groups := userGroups
+		if groups == nil {
+			groups = []string{}
+		}
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM workflow_grants
+				 WHERE tenant_id = $1 AND workflow_id = $2
+				   AND ((grantee_type = 'user'  AND grantee_id::text = $3)
+				     OR (grantee_type = 'group' AND grantee_id::text = ANY($4::text[])))
+			)`, tenantID, workflowID, userID, groups).Scan(&allowed)
+	})
+	return allowed, err
 }

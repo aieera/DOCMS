@@ -11,8 +11,31 @@ type WorkflowDefinition struct {
 	Description string    `json:"description,omitempty"`
 	Steps       []Step    `json:"steps"`
 	CreatedBy   string    `json:"created_by"`
+	// Visibility — 'shared' (default) | 'private'. Migration 000062.
+	Visibility string `json:"visibility"`
+	// OwnerID — set when Visibility flips to 'private'. Empty for
+	// shared definitions; falls back to CreatedBy in canManage gates.
+	OwnerID   string    `json:"owner_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Workflow visibility constants. Mirrors the folder analog.
+const (
+	VisibilityShared  = "shared"
+	VisibilityPrivate = "private"
+)
+
+// WorkflowGrant is one (workflow, user|group) ACL entry. Unique on
+// (tenant, workflow, type, grantee_id); a re-grant is idempotent.
+type WorkflowGrant struct {
+	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
+	WorkflowID  string    `json:"workflow_id"`
+	GranteeType string    `json:"grantee_type"` // 'user' | 'group'
+	GranteeID   string    `json:"grantee_id"`
+	GrantedBy   string    `json:"granted_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Step is one stage in a workflow. ADR 0064 widened the shape; the

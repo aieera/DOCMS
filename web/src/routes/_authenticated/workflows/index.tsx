@@ -12,6 +12,10 @@ import {
   Copy,
   Trash2,
   Workflow as WorkflowIcon,
+  Lock,
+  Unlock,
+  UserPlus,
+  MoreHorizontal,
 } from 'lucide-react'
 
 import {
@@ -22,6 +26,7 @@ import {
   type WorkflowDefinition,
 } from '@/api/workflows'
 import { readErrorMessage } from '@/api/client'
+import { useSetWorkflowVisibility } from '@/hooks/useWorkflows'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -29,7 +34,15 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/shadcn/dropdown-menu'
 import { presetFor } from '@/components/workflows/step-presets'
+import { ManageWorkflowAccessDialog } from '@/components/workflows/ManageWorkflowAccessDialog'
 
 // /workflows — Template library.
 // Card grid of every workflow template the tenant has authored, with
@@ -42,6 +55,11 @@ function WorkflowsPage() {
   const qc = useQueryClient()
   const [query, setQuery] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  // flipFor — definition currently in the shared/private confirm dialog
+  // accessFor — definition currently in the Manage access dialog
+  const [flipFor, setFlipFor] = useState<WorkflowDefinition | null>(null)
+  const [accessFor, setAccessFor] = useState<WorkflowDefinition | null>(null)
+  const setVisibility = useSetWorkflowVisibility()
 
   const defsQ = useQuery({
     queryKey: ['workflow-definitions'],
@@ -166,6 +184,8 @@ function WorkflowsPage() {
               }
               onDuplicate={() => duplicate.mutate(d)}
               onDelete={() => setConfirmDeleteId(d.id)}
+              onFlipVisibility={() => setFlipFor(d)}
+              onManageAccess={d.visibility === 'private' ? () => setAccessFor(d) : undefined}
             />
           ))}
         </ul>
@@ -181,6 +201,44 @@ function WorkflowsPage() {
         loading={del.isPending}
         onConfirm={() => confirmDeleteId && del.mutate(confirmDeleteId)}
       />
+
+      {flipFor && (() => {
+        const target: 'shared' | 'private' =
+          flipFor.visibility === 'private' ? 'shared' : 'private'
+        const keyBase =
+          target === 'private'
+            ? 'visibility.flip_to_private_confirm'
+            : 'visibility.flip_to_shared_confirm'
+        return (
+          <ConfirmDialog
+            open={!!flipFor}
+            onOpenChange={(o) => !o && setFlipFor(null)}
+            title={t(`${keyBase}.title`)}
+            description={t(`${keyBase}.description`)}
+            confirmLabel={t(`${keyBase}.confirm`)}
+            onConfirm={() => {
+              const wf = flipFor
+              setFlipFor(null)
+              setVisibility.mutate(
+                { workflowId: wf.id, visibility: target },
+                {
+                  onSuccess: () => toast.success(t('toasts.visibility_changed')),
+                  onError: (e: unknown) =>
+                    toast.error(readErrorMessage(e) ?? t('toasts.error')),
+                },
+              )
+            }}
+          />
+        )
+      })()}
+
+      {accessFor && (
+        <ManageWorkflowAccessDialog
+          open={!!accessFor}
+          onOpenChange={(o) => !o && setAccessFor(null)}
+          definition={accessFor}
+        />
+      )}
     </div>
   )
 }
@@ -190,11 +248,23 @@ interface CardProps {
   onEdit: () => void
   onDuplicate: () => void
   onDelete: () => void
+  // Hands the flip back to the parent; the parent owns the confirm dialog.
+  onFlipVisibility?: () => void
+  // Only wired for private definitions; undefined hides the menu item.
+  onManageAccess?: () => void
 }
 
-function TemplateCard({ def, onEdit, onDuplicate, onDelete }: CardProps) {
+function TemplateCard({
+  def,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  onFlipVisibility,
+  onManageAccess,
+}: CardProps) {
   const { t } = useTranslation('workflows')
   const steps = (def.steps as unknown as ADR0073Step[]) ?? []
+  const isPrivate = def.visibility === 'private'
   return (
     <li>
       <Card className="flex h-full flex-col p-4 transition-shadow hover:shadow-md">
@@ -203,9 +273,20 @@ function TemplateCard({ def, onEdit, onDuplicate, onDelete }: CardProps) {
             <GitBranch className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-semibold" title={def.name}>
-              {def.name}
-            </h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="truncate text-base font-semibold" title={def.name}>
+                {def.name}
+              </h3>
+              {isPrivate && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning"
+                  title={t('templates.private_tooltip')}
+                >
+                  <Lock className="h-3 w-3" />
+                  {t('templates.private_label')}
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {t('templates.card.steps_count', {
                 count: steps.length,
@@ -213,6 +294,53 @@ function TemplateCard({ def, onEdit, onDuplicate, onDelete }: CardProps) {
               })}
             </p>
           </div>
+          {(onFlipVisibility || onManageAccess) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground"
+                  aria-label={t('templates.actions_aria_label')}
+                  data-testid={`tpl-menu-${def.id}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onFlipVisibility && (
+                  <DropdownMenuItem
+                    onSelect={onFlipVisibility}
+                    data-testid={`tpl-flip-visibility-${def.id}`}
+                  >
+                    {isPrivate ? (
+                      <>
+                        <Unlock className="me-2 h-4 w-4" />
+                        {t('templates.card.make_shared')}
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="me-2 h-4 w-4" />
+                        {t('templates.card.make_private')}
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                )}
+                {onManageAccess && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={onManageAccess}
+                      data-testid={`tpl-manage-access-${def.id}`}
+                    >
+                      <UserPlus className="me-2 h-4 w-4" />
+                      {t('templates.card.manage_access')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {def.description && (

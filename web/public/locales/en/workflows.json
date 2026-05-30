@@ -14,13 +14,50 @@
       "inactive": "Inactive",
       "edit": "Edit",
       "duplicate": "Duplicate",
-      "delete": "Delete"
+      "delete": "Delete",
+      "make_private": "Make private",
+      "make_shared": "Make shared",
+      "manage_access": "Manage access"
     },
+    "actions_aria_label": "Template actions",
+    "private_label": "Private",
+    "private_tooltip": "Visible only to you and people you grant access",
     "delete_confirm": {
       "title": "Delete template?",
       "description": "Active instances using this template will keep running. New documents won't be able to start it.",
       "confirm": "Delete template"
     }
+  },
+  "visibility": {
+    "flip_to_private_confirm": {
+      "title": "Make this workflow private?",
+      "description": "Other workspace members will lose access. Only you and people you grant will see it.",
+      "confirm": "Make private"
+    },
+    "flip_to_shared_confirm": {
+      "title": "Make this workflow shared?",
+      "description": "Every workspace member will be able to see and start this workflow again.",
+      "confirm": "Make shared"
+    }
+  },
+  "manage_access_dialog": {
+    "title": "Manage workflow access",
+    "description": "These users and groups can see and start this workflow. The owner always has access.",
+    "owner_label": "Owner",
+    "current_label": "People & groups with access",
+    "no_grants": "No one else has been granted access yet.",
+    "add_label": "Add a person or group",
+    "add_user": "Add user",
+    "add_group": "Add group",
+    "revoke": "Revoke",
+    "type_user": "User",
+    "type_group": "Group"
+  },
+  "toasts": {
+    "visibility_changed": "Workflow visibility updated",
+    "grant_added": "Access granted",
+    "grant_removed": "Access revoked",
+    "error": "Could not complete workflow action"
   },
   "editor": {
     "new_title": "New workflow template",
