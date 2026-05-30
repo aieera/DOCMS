@@ -178,9 +178,9 @@ export function GroupsPage() {
 
               <div className="border-t border-border pt-4">
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Members
+                  Add member
                 </h4>
-                <div className="mb-3">
+                <div className="mb-4">
                   <UserPicker
                     onPick={(u) => addMember.mutate({ id: selectedId, userId: u.id })}
                     isPending={addMember.isPending}
@@ -188,9 +188,12 @@ export function GroupsPage() {
                   />
                 </div>
 
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Members ({detail.data.members?.length ?? 0})
+                </h4>
                 {(detail.data.members?.length ?? 0) === 0 ? (
                   <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-                    No members yet. Paste a user UUID above to add the first one.
+                    No members yet. Use the search above to add someone.
                   </p>
                 ) : (
                   <ul className="space-y-1.5">
@@ -298,10 +301,10 @@ function CreateGroupForm({
   )
 }
 
-// UserPicker — search-and-pick replacement for the raw-UUID input
-// that used to live in the "Add member" row (BUG-18). Debounces the
-// query, filters out users who are already in the group, and
-// commits the pick straight through to the parent's onPick callback.
+// UserPicker — search-and-pick. Opens an initial candidate list on
+// focus (so admins don't have to guess what to type) and live-filters
+// it on type. Already-member users are excluded. Pick fires the
+// parent's onPick callback.
 function UserPicker({
   onPick,
   isPending,
@@ -312,44 +315,76 @@ function UserPicker({
   excludeIds: Set<string>
 }) {
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
   const [debounced, setDebounced] = useState('')
   useEffect(() => {
     const id = setTimeout(() => setDebounced(q.trim()), 200)
     return () => clearTimeout(id)
   }, [q])
+  // Always fetch first 25 users so we can render an initial pick list
+  // on focus; a typed query filters client-side so the user gets
+  // instant feedback even if the backend ignores the `query` param.
   const usersQ = useQuery({
-    queryKey: ['admin', 'user-picker', debounced],
-    queryFn: () => getUsers(debounced ? { query: debounced, limit: '10' } : { limit: '10' }),
-    enabled: q.length > 0,
-    staleTime: 30_000,
+    queryKey: ['admin', 'user-picker'],
+    queryFn: () => getUsers({ limit: '25' }),
+    enabled: open,
+    staleTime: 60_000,
   })
-  const candidates = (usersQ.data?.items ?? []).filter((u) => !excludeIds.has(u.id)).slice(0, 8)
+  const ql = debounced.toLowerCase()
+  const candidates = (usersQ.data?.items ?? [])
+    .filter((u) => !excludeIds.has(u.id))
+    .filter((u) =>
+      ql === ''
+        ? true
+        : u.email?.toLowerCase().includes(ql) ||
+          u.display_name?.toLowerCase().includes(ql),
+    )
+    .slice(0, 8)
   return (
-    <div className="space-y-1">
-      <Input
-        placeholder="Search by name or email…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        autoComplete="off"
-        data-testid="member-picker-search"
-      />
-      {q.length > 0 && (
-        <ul className="max-h-56 overflow-y-auto rounded-md border border-border bg-card text-sm" data-testid="member-picker-results">
-          {candidates.length === 0 ? (
+    <div className="relative space-y-1">
+      <div className="relative">
+        <UserPlus className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or email to add a member…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => setOpen(true)}
+          // Delay so a click on the dropdown lands before the blur
+          // hides it; matches the standard combobox pattern.
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          autoComplete="off"
+          className="ps-9"
+          data-testid="member-picker-search"
+        />
+      </div>
+      {open && (
+        <ul
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card text-sm shadow-md"
+          data-testid="member-picker-results"
+        >
+          {usersQ.isLoading ? (
+            <li className="px-3 py-2 text-xs text-muted-foreground">Loading…</li>
+          ) : candidates.length === 0 ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">
-              {usersQ.isLoading ? 'Searching…' : 'No matching users.'}
+              {q ? 'No matching users.' : 'No users available to add.'}
             </li>
           ) : (
             candidates.map((u) => (
               <li key={u.id}>
                 <button
                   type="button"
-                  onClick={() => onPick(u)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onPick(u)
+                    setQ('')
+                    setOpen(false)
+                  }}
                   disabled={isPending}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start hover:bg-muted disabled:opacity-50"
                   data-testid={`member-pick-${u.id}`}
                 >
                   <span className="flex min-w-0 items-center gap-2">
+                    <Avatar name={u.display_name || u.email} size="sm" />
                     <span className="min-w-0">
                       <span className="block truncate text-sm">{u.display_name || u.email}</span>
                       <span className="block truncate text-xs text-muted-foreground">{u.email}</span>
