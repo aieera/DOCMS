@@ -73,6 +73,10 @@ func (ix *Indexer) Start(parent context.Context) error {
 		// index via the document_ids list in the event payload so
 		// the recipient doesn't need a tree-walk view.
 		{"dms.folder.deleted.v1", ix.onFolderDeleted},
+		// FIX-4 follow-up: new version → refresh mime_type / size /
+		// version_count on the indexed doc. OCR content arrives
+		// separately via dms.version.ocr_completed.v1.
+		{"dms.version.uploaded.v1", ix.onVersionUploaded},
 	}
 
 	for _, s := range subjects {
@@ -174,6 +178,65 @@ func (ix *Indexer) onDocDeleted(msg *nats.Msg) {
 	defer cancel()
 	if err := ix.svc.DeleteDocument(ctx, tenantID, docID); err != nil {
 		ix.log.Error().Err(err).Str("document_id", docID).Msg("delete from index failed")
+		_ = msg.Nak()
+		return
+	}
+	_ = msg.Ack()
+}
+
+// onVersionUploaded refreshes per-version fields on the indexed
+// document when a new version lands. OCR-derived content arrives
+// separately via dms.version.ocr_completed.v1; this handler covers
+// the metadata that changes on every new version (mime_type,
+// size_bytes, the latest version_id). It does NOT touch readable_by
+// — that's owned by the permission/folder pipeline (FIX-4) and a
+// new version doesn't change who can see the document.
+//
+// Idempotent: PartialUpdate with the same payload is a no-op.
+func (ix *Indexer) onVersionUploaded(msg *nats.Msg) {
+	data, ok := ix.parseData(msg)
+	if !ok {
+		return
+	}
+	tenantID := strField(data, "tenant_id")
+	docID := strField(data, "document_id")
+	if tenantID == "" || docID == "" {
+		_ = msg.Term()
+		return
+	}
+	fields := map[string]any{}
+	if mime := strField(data, "mime_type"); mime != "" {
+		fields["mime_type"] = mime
+	}
+	if v, ok := data["size_bytes"].(float64); ok {
+		fields["size_bytes"] = int64(v)
+	}
+	if uploaded := strField(data, "uploaded_at"); uploaded != "" {
+		fields["updated_at"] = uploaded
+	}
+	if len(fields) == 0 {
+		// Nothing actionable on this event — payload was either
+		// minimal or malformed. Ack so it doesn't loop.
+		_ = msg.Ack()
+		return
+	}
+	ctx, cancel := handlerCtx(ix.parent, msg)
+	defer cancel()
+	if err := ix.svc.PartialUpdate(ctx, tenantID, docID, fields); err != nil {
+		// 404 (document_missing_exception) is a legitimate state
+		// for backfill scenarios: the index doc hasn't been
+		// created yet (the dms.document.created.v1 publisher
+		// hasn't shipped readable_by for this doc, or the doc
+		// pre-dates the search ACL projection fix). NAK-retrying
+		// would loop until JetStream gives up; ack so the metric
+		// counts a skip rather than a queue stall, and rely on the
+		// next document.updated.v1 event to fill the fields.
+		if strings.Contains(err.Error(), "document_missing_exception") || strings.Contains(err.Error(), "404") {
+			ix.log.Debug().Str("document_id", docID).Msg("version.uploaded: index doc missing; skipping")
+			_ = msg.Ack()
+			return
+		}
+		ix.log.Warn().Err(err).Str("document_id", docID).Msg("version.uploaded partial update failed; nak for retry")
 		_ = msg.Nak()
 		return
 	}
