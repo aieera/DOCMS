@@ -80,16 +80,27 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// TenantHTTP extracts the tenant from the request header, stores it on the
-// context, and optionally validates it by running SET app.current_tenant on
-// a pool connection. If the tenant is missing or malformed, the request is
-// rejected with 401.
+// TenantHTTP extracts the tenant from the request header (or, as a
+// fallback, from an already-populated context — host-dev mode where
+// SessionAuth ran first) and stores it on the context. Returns 401
+// if neither source carries a usable tenant.
 //
-// pool is optional: pass nil to skip the RLS set_config (useful for services
-// that don't own a Postgres connection, e.g. pure proxies). In that case the
-// tenant is only attached to the context; services that subsequently use
-// database.WithTenant will set the GUC themselves.
-func TenantHTTP(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+// FIX-9 (audit Section 14) — the previous implementation also tried
+// to "validate" the tenant by acquiring a pool connection and
+// running `SELECT set_config('app.current_tenant', $1, true)`, then
+// releasing the connection BEFORE any real query ran. The GUC is
+// transaction-local (third arg = true), so the moment the implicit
+// transaction holding that connection ended, the GUC was gone. The
+// next caller's repository acquired a fresh connection with no GUC
+// set — every RLS-protected query relied entirely on
+// database.WithTenantTx (which sets the GUC inside its own tx) for
+// enforcement. The middleware block was dead code that implied a
+// guarantee it didn't provide and invited future bugs.
+//
+// `pool` is kept in the signature for back-compat with the ~10
+// callers in cmd/server/main.go; it's deliberately unused now.
+// WithTenantTx is the only real enforcement boundary.
+func TenantHTTP(_ *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get(TenantHeader)
@@ -113,31 +124,15 @@ func TenantHTTP(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 			ctx := auth.SetTenantID(r.Context(), tid)
-
-			if pool != nil {
-				conn, err := pool.Acquire(ctx)
-				if err != nil {
-					writeInternal(w, r, "acquire conn")
-					return
-				}
-				if _, err := conn.Exec(ctx,
-					"SELECT set_config('app.current_tenant', $1, true)",
-					tid.String(),
-				); err != nil {
-					conn.Release()
-					writeInternal(w, r, "set tenant")
-					return
-				}
-				conn.Release()
-			}
-
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// TenantInterceptor is the gRPC equivalent of TenantHTTP.
-func TenantInterceptor(pool *pgxpool.Pool) grpc.UnaryServerInterceptor {
+// TenantInterceptor is the gRPC equivalent of TenantHTTP. See the
+// FIX-9 comment on TenantHTTP for why `pool` is accepted but
+// unused — WithTenantTx is the only real RLS enforcement boundary.
+func TenantInterceptor(_ *pgxpool.Pool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		raw := ""
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
@@ -159,22 +154,6 @@ func TenantInterceptor(pool *pgxpool.Pool) grpc.UnaryServerInterceptor {
 			return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
 		}
 		ctx = auth.SetTenantID(ctx, tid)
-
-		if pool != nil {
-			conn, err := pool.Acquire(ctx)
-			if err != nil {
-				return nil, vdmserr.ToGRPCError(vdmserr.ErrInternal)
-			}
-			if _, err := conn.Exec(ctx,
-				"SELECT set_config('app.current_tenant', $1, true)",
-				tid.String(),
-			); err != nil {
-				conn.Release()
-				return nil, vdmserr.ToGRPCError(vdmserr.ErrInternal)
-			}
-			conn.Release()
-		}
-
 		return handler(ctx, req)
 	}
 }
