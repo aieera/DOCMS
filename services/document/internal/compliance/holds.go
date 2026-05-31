@@ -396,16 +396,18 @@ func (s *HoldsService) Update(ctx context.Context, tenantID, holdID, actor uuid.
 // joined to legal_holds.is_active=true references documentID.
 func (s *HoldsService) AnyActiveHoldFor(ctx context.Context, tenantID, documentID uuid.UUID) (bool, error) {
 	var exists bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-		    SELECT 1
-		      FROM legal_hold_documents lhd
-		      JOIN legal_holds lh ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
-		     WHERE lhd.tenant_id = $1
-		       AND lhd.document_id = $2
-		       AND lh.is_active = true
-		)`, tenantID, documentID,
-	).Scan(&exists)
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS (
+			    SELECT 1
+			      FROM legal_hold_documents lhd
+			      JOIN legal_holds lh ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+			     WHERE lhd.tenant_id = $1
+			       AND lhd.document_id = $2
+			       AND lh.is_active = true
+			)`, tenantID, documentID,
+		).Scan(&exists)
+	})
 	return exists, err
 }
 

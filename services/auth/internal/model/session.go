@@ -76,20 +76,24 @@ type APIKeyIssued struct {
 
 // Valid scopes. Handlers check endpoint scope against this allowlist.
 const (
-	ScopeDocumentsRead  = "documents:read"
-	ScopeDocumentsWrite = "documents:write"
-	ScopeSearchRead     = "search:read"
-	ScopeUpload         = "upload"
-	ScopeWebhooksManage = "webhooks:manage"
+	ScopeDocumentsRead     = "documents:read"
+	ScopeDocumentsWrite    = "documents:write"
+	ScopeSearchRead        = "search:read"
+	ScopeUpload            = "upload"
+	ScopeWebhooksManage    = "webhooks:manage"
+	ScopeIntegrationsRead  = "integrations:read"
+	ScopeIntegrationsWrite = "integrations:write"
 )
 
 // ValidScopes returns the allowed scope set.
 func ValidScopes() map[string]struct{} {
 	return map[string]struct{}{
-		ScopeDocumentsRead:  {},
-		ScopeDocumentsWrite: {},
-		ScopeSearchRead:     {},
-		ScopeUpload:         {},
-		ScopeWebhooksManage: {},
+		ScopeDocumentsRead:     {},
+		ScopeDocumentsWrite:    {},
+		ScopeSearchRead:        {},
+		ScopeUpload:            {},
+		ScopeWebhooksManage:    {},
+		ScopeIntegrationsRead:  {},
+		ScopeIntegrationsWrite: {},
 	}
 }

@@ -17,9 +17,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/vaultdms/vaultdms/pkg/database"
 )
 
 // IntegrationTriggersHandler holds the pool. Constructed in main.go
@@ -66,39 +68,44 @@ func (h *IntegrationTriggersHandler) documentsCreated(w http.ResponseWriter, r *
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadRequest)
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `
-		SELECT id, title, workspace_id, folder_id, lifecycle_state,
-			document_class, tags, mime_type, total_size_bytes,
-			created_at, updated_at
-		FROM documents
-		WHERE tenant_id = $1
-		  AND deleted_at IS NULL
-		  AND updated_at > $2
-		ORDER BY updated_at ASC
-		LIMIT $3`,
-		tenantID, since, limit)
-	if err != nil {
+	out := make([]triggerDocument, 0)
+	qerr := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(r.Context(), `
+			SELECT id, title, workspace_id, folder_id, lifecycle_state,
+				document_class, tags, mime_type, total_size_bytes,
+				created_at, updated_at
+			FROM documents
+			WHERE tenant_id = $1
+			  AND deleted_at IS NULL
+			  AND updated_at > $2
+			ORDER BY updated_at ASC
+			LIMIT $3`,
+			tenantID, since, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var d triggerDocument
+			var class, mime *string
+			if err := rows.Scan(&d.ID, &d.Title, &d.WorkspaceID, &d.FolderID,
+				&d.LifecycleState, &class, &d.Tags, &mime, &d.TotalSizeBytes,
+				&d.CreatedAt, &d.UpdatedAt); err != nil {
+				return err
+			}
+			if class != nil {
+				d.DocumentClass = *class
+			}
+			if mime != nil {
+				d.MimeType = *mime
+			}
+			out = append(out, d)
+		}
+		return rows.Err()
+	})
+	if qerr != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-	out := make([]triggerDocument, 0)
-	for rows.Next() {
-		var d triggerDocument
-		var class, mime *string
-		if err := rows.Scan(&d.ID, &d.Title, &d.WorkspaceID, &d.FolderID,
-			&d.LifecycleState, &class, &d.Tags, &mime, &d.TotalSizeBytes,
-			&d.CreatedAt, &d.UpdatedAt); err != nil {
-			http.Error(w, `{"error":"scan failed"}`, http.StatusInternalServerError)
-			return
-		}
-		if class != nil {
-			d.DocumentClass = *class
-		}
-		if mime != nil {
-			d.MimeType = *mime
-		}
-		out = append(out, d)
 	}
 	writeJSONList(w, out)
 }

@@ -88,14 +88,18 @@ type ImportLogStatus struct {
 // processed. Returns the stored response so retries can replay
 // the same per-item Result without re-running processors.
 func (r *Repo) LookupRequest(ctx context.Context, tenantID, requestID uuid.UUID) (*ImportLogStatus, error) {
-	row := r.pool.QueryRow(ctx, `
-		SELECT request_id, items_digest, status, item_count, success_count, failure_count, response_json
-		FROM bulk_import_log
-		WHERE tenant_id = $1 AND request_id = $2
-	`, tenantID, requestID)
 	var out ImportLogStatus
-	if err := row.Scan(&out.RequestID, &out.ItemsDigest, &out.Status,
-		&out.ItemCount, &out.SuccessCount, &out.FailureCount, &out.ResponseJSON); err != nil {
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT request_id, items_digest, status, item_count, success_count, failure_count, response_json
+			FROM bulk_import_log
+			WHERE tenant_id = $1 AND request_id = $2
+		`, tenantID, requestID).Scan(
+			&out.RequestID, &out.ItemsDigest, &out.Status,
+			&out.ItemCount, &out.SuccessCount, &out.FailureCount, &out.ResponseJSON,
+		)
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
