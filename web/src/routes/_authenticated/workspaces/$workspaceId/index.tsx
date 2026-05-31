@@ -344,6 +344,14 @@ function WorkspacePage() {
                 toast.success(t('toasts.renamed'))
                 qc.invalidateQueries({ queryKey: ['folder', folder.id] })
               },
+              // BUG: backend rejects names outside `[A-Za-z0-9 _-]`
+              // with a 400, but without an explicit onError the
+              // failure was silent — the dialog closed and the card
+              // stayed at the old name with no toast. Mirror the
+              // onDelete pattern below so the user actually sees
+              // what went wrong.
+              onError: (e: unknown) =>
+                toast.error(readErrorMessage(e) ?? t('toasts.error')),
             },
           )
         }}
