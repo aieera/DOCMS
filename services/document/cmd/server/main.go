@@ -78,6 +78,14 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("postgres connect")
 	}
 	defer pool.Close()
+	// FIX-7: refuse to boot under an unexpected RLS posture. Prod
+	// connects as dms_app (NOBYPASSRLS); dev sets
+	// VAULTDMS_ALLOW_BYPASS_RLS=1 to opt into the superuser
+	// connection. Either drift produces a clear startup error rather
+	// than the silent zero-row Inserts that motivated the audit.
+	if err := database.AssertRLSPosture(ctx, pool); err != nil {
+		log.Fatal(ctx).Err(err).Msg("rls posture")
+	}
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()

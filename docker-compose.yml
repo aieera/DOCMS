@@ -13,6 +13,11 @@ x-go-env: &go-env
   # Must be identical to the gateway's VAULTDMS_GATEWAY_SECRET.
   VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
   VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+  # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
+  # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset
+  # so pkg/database.AssertRLSPosture refuses to boot under an
+  # accidentally-elevated role.
+  VAULTDMS_ALLOW_BYPASS_RLS: "1"
   VAULTDMS_REDIS_URL:    "redis:6379"
   VAULTDMS_NATS_URL:     "nats://nats:4222"
   VAULTDMS_HEALTH_PORT:  "8081"

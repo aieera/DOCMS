@@ -47,6 +47,16 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("postgres connect")
 	}
 	defer pool.Close()
+	// FIX-7: audit_events has FORCE ROW LEVEL SECURITY with an
+	// INSERT WITH CHECK keyed on app.current_tenant. If the
+	// connection role bypasses RLS we'd silently miss the WITH CHECK
+	// gap; if it doesn't bypass and the GUC isn't set, every Insert
+	// inserts zero rows. AssertRLSPosture refuses to boot under an
+	// unexpected role (set VAULTDMS_ALLOW_BYPASS_RLS=1 in dev where
+	// the connection runs as the superuser).
+	if err := database.AssertRLSPosture(ctx, pool); err != nil {
+		log.Fatal(ctx).Err(err).Msg("rls posture")
+	}
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()

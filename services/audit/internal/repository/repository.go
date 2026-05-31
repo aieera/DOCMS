@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/services/audit/internal/model"
 )
 
@@ -43,23 +45,40 @@ func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
 	if e.Actor != "" {
 		actorType = "user"
 	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO audit_events (
-			id, tenant_id, event_hash, previous_hash,
-			actor, actor_id, actor_name, actor_type,
-			action, resource_type, resource_id, resource_title,
-			details, ip_address, user_agent, source_event, created_at
-		) VALUES (
-			$1, $2, $3, $4,
-			$5, NULLIF($5, '')::uuid, $6, $7,
-			$8, NULLIF($9, ''), $10, NULLIF($11, ''),
-			$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
-		)
-	`, e.ID, e.TenantID, e.EventHash, e.PreviousHash,
-		e.Actor, e.ActorName, actorType,
-		e.Action, e.ResourceType, resourceID, e.ResourceTitle,
-		e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
-	return err
+	// FIX-7 (audit C6) — audit_events has FORCE ROW LEVEL SECURITY
+	// with an INSERT WITH CHECK keyed on app.current_tenant. The
+	// previous direct pool.Exec did NOT set that GUC, so under the
+	// dms_app role (NOBYPASSRLS in prod) every Insert silently
+	// inserted ZERO rows — a SOC2-blocker for any consumer that
+	// audited via this table. Wrapping in WithTenantTx applies the
+	// GUC inside the same transaction.
+	//
+	// In dev the connection role is `vaultdms` (BYPASSRLS=t) so the
+	// previous bug was invisible. The startup assertion in
+	// pkg/database.AssertRLSPosture catches future role drift.
+	tenantUUID, err := uuid.Parse(e.TenantID)
+	if err != nil {
+		return fmt.Errorf("audit insert: tenant_id not a uuid: %w", err)
+	}
+	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO audit_events (
+				id, tenant_id, event_hash, previous_hash,
+				actor, actor_id, actor_name, actor_type,
+				action, resource_type, resource_id, resource_title,
+				details, ip_address, user_agent, source_event, created_at
+			) VALUES (
+				$1, $2, $3, $4,
+				$5, NULLIF($5, '')::uuid, $6, $7,
+				$8, NULLIF($9, ''), $10, NULLIF($11, ''),
+				$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
+			)
+		`, e.ID, e.TenantID, e.EventHash, e.PreviousHash,
+			e.Actor, e.ActorName, actorType,
+			e.Action, e.ResourceType, resourceID, e.ResourceTitle,
+			e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
+		return err
+	})
 }
 
 // GetLastHash returns the most recent event_hash for a tenant.
