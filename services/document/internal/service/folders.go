@@ -391,8 +391,14 @@ func (s *DocumentService) UpdateFolder(ctx context.Context, in *UpdateFolderInpu
 	return updated, err
 }
 
-// DeleteFolder soft-deletes a folder, refusing if it has children (docs or
-// sub-folders). Requires "admin" on the folder.
+// DeleteFolder soft-deletes a folder AND every descendant folder +
+// document under it, atomically, as a single restorable cohort.
+// Requires "admin" on the folder.
+//
+// FIX-5 (audit Section 11). The previous implementation refused
+// non-empty folders outright, which left users with no way to
+// soft-delete a populated folder. SharePoint/Drive/Box/M-Files all
+// cascade. RestoreFolder undoes this by cohort id.
 func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
@@ -408,14 +414,58 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}); err != nil {
 			return err
 		}
-		has, err := s.repos.Folders.HasChildren(ctx, tx, tenantID, id)
+		cohort, err := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, id, userID)
 		if err != nil {
 			return err
 		}
-		if has {
-			return vdmserr.Conflict("folder is not empty")
+		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.deleted.v1", "folder", id, map[string]any{
+			"folder_id":   id.String(),
+			"workspace_id": cur.WorkspaceID.String(),
+			"cohort_id":   cohort.String(),
+			"deleted_by":  userID.String(),
+		})
+		if err != nil {
+			return err
 		}
-		return s.repos.Folders.SoftDelete(ctx, tx, tenantID, id)
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// RestoreFolder undoes a cascade soft-delete by cohort id: every
+// folder + document deleted in the SAME DeleteFolder call comes back
+// together. Folders soft-deleted before FIX-5 landed have no cohort
+// and return ErrValidation — they're unrecoverable from the UI
+// (matches today's reality where there was no restore at all).
+//
+// Auth: requires "admin" on the folder being restored, same as
+// DeleteFolder.
+func (s *DocumentService) RestoreFolder(ctx context.Context, id uuid.UUID) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cur, err := s.repos.Folders.GetByID(ctx, tx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if err := s.requirePermission(ctx, userID, "admin", "folder", cur.ID, map[string]any{
+			"workspace_id": cur.WorkspaceID.String(),
+		}); err != nil {
+			return err
+		}
+		if err := s.repos.Folders.RestoreSubtree(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.restored.v1", "folder", id, map[string]any{
+			"folder_id":    id.String(),
+			"workspace_id": cur.WorkspaceID.String(),
+			"restored_by":  userID.String(),
+		})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
 }
 

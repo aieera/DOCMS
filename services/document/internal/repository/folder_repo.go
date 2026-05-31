@@ -191,6 +191,115 @@ func (r *folderRepo) SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, te
 	return nil
 }
 
+// SoftDeleteSubtree cascades a folder soft-delete to every descendant
+// folder + every document under that subtree, stamping a single
+// cohort id on all of them so RestoreSubtree can bring them back as
+// one atomic group. Returns the cohort id so the caller can stash it
+// on the outbox event for forensic traceability.
+//
+// Uses the folder's ltree path (`<@` "ancestor of or equal to") so
+// arbitrary-depth subtrees are handled in two UPDATEs. Already-
+// deleted rows are skipped (deleted_at IS NULL predicate) so a
+// partial-delete redo is idempotent.
+//
+// FIX-5 (audit Section 11). The previous DeleteFolder refused non-
+// empty folders outright with no restore path — competing products
+// ship this as table stakes.
+func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (uuid.UUID, error) {
+	cohortID, err := uuid.NewRandom()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	var rootPath string
+	if err := tx.QueryRow(ctx, `
+		SELECT path::text FROM folders
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+	`, tenantID, rootID).Scan(&rootPath); err != nil {
+		if err == pgx.ErrNoRows {
+			return uuid.Nil, vdmserr.ErrNotFound
+		}
+		return uuid.Nil, mapPgError(err)
+	}
+	// Documents under any folder in this subtree. Run BEFORE the
+	// folder update so the documents.folder_id JOIN still sees live
+	// rows; the deleted_at predicate makes the order moot in practice
+	// but the explicit ordering keeps the intent readable.
+	if _, err := tx.Exec(ctx, `
+		UPDATE documents
+		   SET deleted_at = now(),
+		       deleted_cohort_id = $3,
+		       deleted_by = $4,
+		       updated_at = now()
+		 WHERE tenant_id = $1
+		   AND deleted_at IS NULL
+		   AND folder_id IN (
+		     SELECT id FROM folders
+		      WHERE tenant_id = $1 AND deleted_at IS NULL
+		        AND path <@ $2::ltree
+		   )
+	`, tenantID, rootPath, cohortID, deletedBy); err != nil {
+		return uuid.Nil, mapPgError(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE folders
+		   SET deleted_at = now(),
+		       deleted_cohort_id = $3,
+		       deleted_by = $4,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND deleted_at IS NULL
+		   AND path <@ $2::ltree
+	`, tenantID, rootPath, cohortID, deletedBy); err != nil {
+		return uuid.Nil, mapPgError(err)
+	}
+	return cohortID, nil
+}
+
+// RestoreSubtree un-deletes every folder + document that shares the
+// cohort id stamped on the given root folder. Cohort-scoping is what
+// makes restore safe: any descendant that happened to be deleted
+// INDEPENDENTLY (different cohort, different cohort=NULL legacy
+// soft-delete) stays deleted.
+//
+// Returns ErrNotFound if the root is not currently deleted or has
+// no cohort id (legacy soft-deletes without cohort cannot be
+// restored — they have no scope).
+func (r *folderRepo) RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error {
+	var cohort *uuid.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT deleted_cohort_id FROM folders
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL
+	`, tenantID, rootID).Scan(&cohort); err != nil {
+		if err == pgx.ErrNoRows {
+			return vdmserr.ErrNotFound
+		}
+		return mapPgError(err)
+	}
+	if cohort == nil {
+		return vdmserr.Validation("folder", "deleted before cascade support; cannot restore")
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE folders
+		   SET deleted_at = NULL,
+		       deleted_cohort_id = NULL,
+		       deleted_by = NULL,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND deleted_cohort_id = $2
+	`, tenantID, *cohort); err != nil {
+		return mapPgError(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE documents
+		   SET deleted_at = NULL,
+		       deleted_cohort_id = NULL,
+		       deleted_by = NULL,
+		       updated_at = now()
+		 WHERE tenant_id = $1 AND deleted_cohort_id = $2
+	`, tenantID, *cohort); err != nil {
+		return mapPgError(err)
+	}
+	return nil
+}
+
 func (r *folderRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE folders SET deleted_at = now(), updated_at = now()

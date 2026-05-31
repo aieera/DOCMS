@@ -77,6 +77,10 @@ type FolderRepository interface {
 	// SoftDeleteAllInWorkspace bulk-soft-deletes every folder in a
 	// workspace. Used by DeleteWorkspace to clean up the auto-Root.
 	SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID) error
+	// SoftDeleteSubtree / RestoreSubtree power folder cascade delete +
+	// recycle-bin restore (FIX-5).
+	SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (uuid.UUID, error)
+	RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error
 	HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
 	// Phase 2 — visibility + folder-scoped ACL.
 	UpdateVisibility(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, visibility model.FolderVisibility, owner *uuid.UUID) error

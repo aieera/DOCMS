@@ -504,6 +504,17 @@ func main() {
 			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(sharedWithMeMux),
 		))
 
+	// Folder cascade-restore (FIX-5). DeleteFolder is the gRPC rpc
+	// that triggers SoftDeleteSubtree; this side-mux exposes the
+	// matching restore action without a proto regen. Service-layer
+	// requirePermission ("admin" on the folder) gates internally.
+	folderRestoreMux := http.NewServeMux()
+	handler.NewFolderRestoreHandler(svc).Register(folderRestoreMux)
+	rootMux.Handle("POST /api/v1/folders/{folder_id}/restore",
+		middleware.CorrelationHTTP(
+			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(folderRestoreMux),
+		))
+
 	// Workspace members — per-workspace ACL surface. Gating lives in
 	// the service layer (creator OR tenant admin for writes; any
 	// member for reads).
