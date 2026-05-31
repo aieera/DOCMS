@@ -224,16 +224,14 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 				return err
 			}
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"specversion": "1.0",
-			"type":        "dms.signature.completed.v1",
-			"source":      "/vaultdms/signature",
-			"data": map[string]string{
-				"tenant_id":   req.TenantID,
-				"document_id": req.DocumentID,
-				"version_id":  req.VersionID,
-				"request_id":  req.ID,
-			},
+		// Flat payload — the outbox publisher wraps it as the CloudEvent `data`.
+		// A second envelope here double-nests fields at data.data.* (broke
+		// external webhook consumers reading data.document_id).
+		payload, _ := json.Marshal(map[string]string{
+			"tenant_id":   req.TenantID,
+			"document_id": req.DocumentID,
+			"version_id":  req.VersionID,
+			"request_id":  req.ID,
 		})
 		evt := database.NewOutboxEvent(tenantUUID, "dms.signature.completed.v1", "signature_request", reqUUID, payload)
 		return s.outbox.Insert(ctx, tx, evt)

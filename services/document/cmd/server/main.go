@@ -397,8 +397,13 @@ func main() {
 	// upstream Kong path wasn't in play (Vite host-mode proxy bypasses
 	// Kong) so X-Tenant-ID never reached the proxy and InitiateUpload
 	// failed with INVALID_ARGUMENT before doing any work.
+	// ERP outbound push accepts a Bearer API key (scope "upload") here in
+	// addition to the session cookie, so the sync worker can drive the
+	// initiate → PUT → complete flow service-to-service. SessionOrAPIKey
+	// stamps the same tenant/user identity either way, which the proxy's
+	// outbound() injects into the storage gRPC metadata.
 	rootMux.Handle("/api/v1/storage/", middleware.CorrelationHTTP(
-		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(storageMux),
+		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "upload")(storageMux),
 	))
 	// Download alias — handled by storageProxy.download but addressed at
 	// /api/v1/documents/{id}/versions/{vid}/download for backward compat
@@ -988,6 +993,33 @@ func main() {
 		middleware.CorrelationHTTP(activeLearningMux))
 	rootMux.Handle("PUT /api/v1/admin/active-learning/config",
 		middleware.CorrelationHTTP(activeLearningMux))
+
+	// ERP outbound push (integrations) — these specific gRPC-gateway routes
+	// also accept a Bearer API key (per-route scope) so the ERP sync worker
+	// can ingest documents service-to-service. Every other gRPC-gateway
+	// route stays cookie-only via the catch-all below. Same
+	// TenantHTTP + grpcGatewayInject chain so the identity stamped by either
+	// auth path propagates into the outbound gRPC metadata.
+	apiKeyGateway := func(scope string) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, scope)(
+				middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux))))
+	}
+	// Same chain, plus the Idempotency layer (after auth+tenant so the key is
+	// tenant-scoped). Used on the create + version writes so an Idempotency-Key
+	// retry replays the original document instead of duplicating it — the
+	// server-side counterpart to the ERP dms_sync_log UNIQUE(entity_type,entity_id).
+	apiKeyGatewayIdem := func(scope string) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, scope)(
+				middleware.TenantHTTP(pool)(
+					middleware.Idempotency(pool)(grpcGatewayInject(gwMux)))))
+	}
+	rootMux.Handle("POST /api/v1/documents", apiKeyGatewayIdem("documents:write"))
+	rootMux.Handle("GET /api/v1/documents/{document_id}", apiKeyGateway("documents:read"))
+	rootMux.Handle("POST /api/v1/documents/{document_id}/versions", apiKeyGatewayIdem("documents:write"))
+	rootMux.Handle("GET /api/v1/workspaces/{workspace_id}/folders", apiKeyGateway("documents:read"))
+	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/folders", apiKeyGateway("documents:write"))
 
 	// All other routes (including gRPC-Gateway) go through default chain.
 	// SessionAuthOptional populates ctx from the session cookie when

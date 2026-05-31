@@ -342,8 +342,16 @@ services:
   gateway:
     image: kong:3.5-ubuntu
     container_name: vaultdms-gateway
+    # Render kong.yaml with the gateway secret at boot (Kong's DBless
+    # loader does not template env vars). entrypoint.sh substitutes
+    # ${VAULTDMS_GATEWAY_SECRET} into /tmp/kong.resolved.yaml, then
+    # delegates to Kong's stock entrypoint.
+    entrypoint: ["/bin/sh", "/kong/declarative/entrypoint.sh"]
     environment:
       KONG_DATABASE: "off"
+      # Source template; entrypoint.sh reads this and writes the resolved
+      # copy that Kong actually loads (KONG_DECLARATIVE_CONFIG is exported
+      # to the resolved path inside the script).
       KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yaml
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_ADMIN_ACCESS_LOG: /dev/stdout

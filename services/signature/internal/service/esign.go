@@ -683,21 +683,21 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 
 	tenantUUID, _ := uuid.Parse(tenantID)
 	reqUUID, _ := uuid.Parse(requestID)
+	// Flat payload — the outbox publisher wraps this as the CloudEvent `data`
+	// (specversion/id/type/tenantid are added around it). Building a second
+	// envelope here double-nested the fields at data.data.*, which broke
+	// external webhook consumers reading data.document_id.
 	completedPayload, _ := json.Marshal(map[string]any{
-		"specversion": "1.0", "type": "dms.signature.completed.v1",
-		"source": "/vaultdms/signature",
-		"data": map[string]any{
-			"tenant_id":          tenantID,
-			"request_id":         requestID,
-			"document_id":        existing.DocumentID,
-			"provider":           string(provider),
-			"envelope_id":        envelopeID,
-			"signed_pdf_bytes":   len(got.SignedPDF),
-			"coc_pdf_bytes":      len(got.CoCPDF),
-			"signed_version_id":  versionID,
-			"content_blob_id":    contentBlobID,
-			"coc_content_blob_id": cocBlobID,
-		},
+		"tenant_id":           tenantID,
+		"request_id":          requestID,
+		"document_id":         existing.DocumentID,
+		"provider":            string(provider),
+		"envelope_id":         envelopeID,
+		"signed_pdf_bytes":    len(got.SignedPDF),
+		"coc_pdf_bytes":       len(got.CoCPDF),
+		"signed_version_id":   versionID,
+		"content_blob_id":     contentBlobID,
+		"coc_content_blob_id": cocBlobID,
 	})
 	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		if err := s.repo.CompleteTx(ctx, tx, tenantID, requestID); err != nil {

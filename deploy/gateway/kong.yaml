@@ -77,7 +77,7 @@ plugins:
 # ---- Services + routes (one Kong service per backend) --------------
 services:
   - name: auth
-    url: http://auth:8081
+    url: http://auth:8080
     routes:
       - name: auth-login
         paths: [/api/v1/auth/login]
@@ -117,9 +117,16 @@ services:
       - { name: api-v1-health,    paths: [/api/v1/health], methods: [GET], strip_path: true }
 
   - name: document
-    url: http://document:8081
+    url: http://document:8080
     routes:
       - { name: documents,          paths: [/api/v1/documents],                strip_path: false }
+      # Workspace + nested folder CRUD (grpc-gateway). One prefix covers
+      # /workspaces, /workspaces/{id}, and /workspaces/{id}/folders. Needed
+      # by the ERP provisioning flow (find-or-create workspace + verify key).
+      - { name: workspaces,         paths: [/api/v1/workspaces],               strip_path: false }
+      # ERP integration (ADR 0090) — iPaaS poll trigger, Bearer API-key auth
+      # (integrations:read). Sibling triggers live on signature + workflow.
+      - { name: integrations-triggers-documents, paths: [/api/v1/integrations/triggers/documents], strip_path: false }
       - { name: annotations,        paths: [/api/v1/annotations],              strip_path: false }
       - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
       - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
@@ -159,7 +166,7 @@ services:
             config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
 
   - name: search
-    url: http://search:8081
+    url: http://search:8080
     routes:
       - name: search
         paths: [/api/v1/search]
@@ -175,27 +182,29 @@ services:
       - { name: platform-search, paths: [/api/v1/platform/search], strip_path: false }
 
   - name: audit
-    url: http://audit:8081
+    url: http://audit:8080
     routes:
       - { name: audit, paths: [/api/v1/audit], strip_path: false }
 
   - name: workflow
-    url: http://workflow:8081
+    url: http://workflow:8080
     routes:
       - { name: workflows, paths: [/api/v1/workflows], strip_path: false }
+      - { name: integrations-triggers-workflows, paths: [/api/v1/integrations/triggers/workflows], strip_path: false }
 
   - name: notification
-    url: http://notification:8081
+    url: http://notification:8080
     routes:
       - { name: notifications, paths: [/api/v1/notifications], strip_path: false }
 
   - name: signature
-    url: http://signature:8081
+    url: http://signature:8080
     routes:
       - { name: signatures, paths: [/api/v1/signatures], strip_path: false }
+      - { name: integrations-triggers-signatures, paths: [/api/v1/integrations/triggers/signatures], strip_path: false }
 
   - name: connector
-    url: http://connector:8081
+    url: http://connector:8080
     routes:
       - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
       - { name: connectors, paths: [/api/v1/connectors], strip_path: false }

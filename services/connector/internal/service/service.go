@@ -120,13 +120,21 @@ func (s *Service) SendTestEvent(ctx context.Context, tenantID, subID string) (*m
 	if err != nil || sub == nil {
 		return nil, err
 	}
+	// Proper CloudEvent envelope — same field names as real domain events
+	// (pkg/events.CloudEvent) so subscribers can dedup on `id` and read
+	// `tenantid`. The previous ad-hoc shape (no `id`; `tenant_id` instead of
+	// `tenantid`) was rejected by CloudEvent-style receivers (e.g. the ERP
+	// inbound webhook, which keys idempotency on envelope.id).
 	envelope := map[string]any{
-		"type":           "dms.webhook.test.v1",
-		"subscription":   subID,
-		"tenant_id":      tenantID,
-		"data":           map[string]any{"message": "VaultDMS test delivery"},
-		"correlation_id": newID(),
-		"occurred_at":    time.Now().UTC().Format(time.RFC3339Nano),
+		"specversion":   "1.0",
+		"id":            newID(),
+		"source":        "/vaultdms/connector",
+		"type":          "dms.webhook.test.v1",
+		"subject":       subID,
+		"time":          time.Now().UTC().Format(time.RFC3339Nano),
+		"tenantid":      tenantID,
+		"correlationid": newID(),
+		"data":          map[string]any{"message": "VaultDMS test delivery", "subscription_id": subID},
 	}
 	payload, _ := json.Marshal(envelope)
 	d := &model.WebhookDelivery{
@@ -192,6 +200,10 @@ func (s *Service) StartEventFanout(parent context.Context, js nats.JetStreamCont
 		"dms.workflow.>", "dms.task.>",
 		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
 		"dms.notify.>",
+		// dms.signature.> (SIGNATURE_EVENTS stream) — needed so
+		// dms.signature.completed.v1 fans out to subscribers (e.g. the ERP
+		// inbound webhook that marks an invoice/quote signed).
+		"dms.signature.>",
 		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>", "dms.rotation.>",
 	}
 	handler := func(msg *nats.Msg) {
@@ -213,7 +225,15 @@ func (s *Service) StartEventFanout(parent context.Context, js nats.JetStreamCont
 		if data == nil {
 			data = envelope
 		}
-		tenantID, _ := data["tenant_id"].(string)
+		// Tenant is carried at the CloudEvent top level (`tenantid`); only
+		// some hand-built payloads also duplicate it into data.tenant_id.
+		// Prefer the envelope — reading only data.tenant_id silently dropped
+		// state_changed / deleted / version events (same class as the search
+		// "hoist tenantid" fix).
+		tenantID, _ := envelope["tenantid"].(string)
+		if tenantID == "" {
+			tenantID, _ = data["tenant_id"].(string)
+		}
 		if tenantID == "" {
 			_ = msg.Ack()
 			return

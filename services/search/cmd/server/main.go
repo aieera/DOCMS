@@ -169,9 +169,18 @@ func main() {
 	// user from ctx instead of trusting the X-Auth-Tenant-ID + X-User-*
 	// headers Kong now strips at the edge. Without this every search
 	// request 400s with "X-Tenant-ID and X-User-ID required".
+	// ERP outbound-push dedup hits POST /api/v1/search with a Bearer API key
+	// (scope "search:read"); the same route also serves the cookie-authed web
+	// UI. Wrap just that route with SessionOrAPIKey; all other search routes
+	// keep the optional-session chain. Both paths stamp the same tenant/user.
+	searchAuth := http.NewServeMux()
+	searchAuth.Handle("POST /api/v1/search",
+		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "search:read")(mux))
+	searchAuth.Handle("/",
+		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)),
+		Handler:           middleware.RequireGatewaySignature()(searchAuth),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

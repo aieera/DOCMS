@@ -249,7 +249,11 @@
       "mcp__plugin_playwright_playwright__browser_type",
       "mcp__plugin_playwright_playwright__browser_take_screenshot",
       "Bash(xargs tail -10)",
-      "Bash(cd \"c:/Users/dell/Documents/DOCMS\" && grep -nE \"useUpload|currentFolderId|invalidateQueries.*folders|child_folder_count|document_count\" web/src/routes/_authenticated/workspaces/\\\\$workspaceId/index.tsx | head -15)"
+      "Bash(cd \"c:/Users/dell/Documents/DOCMS\" && grep -nE \"useUpload|currentFolderId|invalidateQueries.*folders|child_folder_count|document_count\" web/src/routes/_authenticated/workspaces/\\\\$workspaceId/index.tsx | head -15)",
+      "Bash(cd \"c:/Users/dell/Documents/DOCMS\" && grep -nE \"useRenameFolder|onRename\" web/src/components/folders/FolderGrid.tsx web/src/routes/_authenticated/workspaces/\\\\$workspaceId/index.tsx 2>&1 | head -10)",
+      "Bash(curl -sI http://localhost:8080/)",
+      "Bash(curl -sI http://localhost:3000/)",
+      "mcp__plugin_playwright_playwright__browser_file_upload"
     ],
     "additionalDirectories": [
       "C:\\Users\\dell"
