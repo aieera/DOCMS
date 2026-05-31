@@ -550,6 +550,7 @@ func main() {
 	handler.NewTrashHandler(svc).Register(trashMux)
 	trashAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(trashMux)
 	rootMux.Handle("GET /api/v1/admin/trash", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("GET /api/v1/admin/trash/folders", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("POST /api/v1/admin/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("DELETE /api/v1/admin/trash/{id}", middleware.CorrelationHTTP(trashAuth))
 

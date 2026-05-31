@@ -444,6 +444,95 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 	})
 }
 
+// TrashedFolder is the per-row shape the Trash UI renders for
+// soft-deleted folders. Carries the cohort id + per-cohort doc count
+// so the admin can see "delete a folder, get N docs back with it"
+// before clicking Restore.
+//
+// FIX-5 FE follow-up — the audit's FIX-5 added cascade-delete +
+// POST /folders/{id}/restore but no listing endpoint. Without this
+// the admin would need the folder id from log spelunking to call
+// restore. This is the missing piece.
+type TrashedFolder struct {
+	model.Folder
+	DeletedBy       *uuid.UUID
+	DeletedCohortID *uuid.UUID
+	CohortDocs      int64
+	WorkspaceName   string
+}
+
+// ListTrashFolders returns soft-deleted folders for the tenant. Admin/
+// owner only (handler layer enforces, same as ListTrash). Returns
+// only cohort-root folders — descendants share the cohort id and
+// come back automatically when the root is restored, so listing them
+// individually is noise the UI doesn't want. "Root of the cohort" is
+// determined by depth: the shallowest folder per cohort id.
+//
+// Folders soft-deleted before FIX-5 landed (no cohort id) are
+// included with a NULL cohort_id so the admin can see them; they
+// can't be restored via POST /restore (it requires a cohort), but
+// can still be hard-purged via the existing delete-permanently
+// flow on documents — folder rows linger until cascade-fk purges
+// them with the parent workspace.
+func (s *DocumentService) ListTrashFolders(ctx context.Context) ([]TrashedFolder, error) {
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []TrashedFolder
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			WITH cohort_roots AS (
+				SELECT DISTINCT ON (COALESCE(deleted_cohort_id::text, id::text))
+				       id, tenant_id, workspace_id, parent_folder_id, path::text,
+				       name, depth, created_by, created_at, updated_at, deleted_at,
+				       visibility, owner_id, deleted_cohort_id, deleted_by
+				  FROM folders
+				 WHERE tenant_id = $1 AND deleted_at IS NOT NULL
+				 ORDER BY COALESCE(deleted_cohort_id::text, id::text), depth ASC
+			)
+			SELECT cr.id, cr.tenant_id, cr.workspace_id, cr.parent_folder_id,
+			       cr.path, cr.name, cr.depth, cr.created_by, cr.created_at,
+			       cr.updated_at, cr.deleted_at, cr.visibility, cr.owner_id,
+			       cr.deleted_by, cr.deleted_cohort_id,
+			       COALESCE(w.name, '<deleted workspace>') AS workspace_name,
+			       (SELECT count(*) FROM documents d
+			          WHERE d.tenant_id = cr.tenant_id
+			            AND d.deleted_cohort_id = cr.deleted_cohort_id) AS cohort_docs
+			  FROM cohort_roots cr
+			  LEFT JOIN workspaces w
+			    ON w.tenant_id = cr.tenant_id AND w.id = cr.workspace_id
+			 ORDER BY cr.deleted_at DESC NULLS LAST
+		`, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var f TrashedFolder
+			var parent, owner *uuid.UUID
+			var visibility string
+			var deletedAt *time.Time
+			if err := rows.Scan(
+				&f.ID, &f.TenantID, &f.WorkspaceID, &parent, &f.Path,
+				&f.Name, &f.Depth, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt,
+				&deletedAt, &visibility, &owner, &f.DeletedBy,
+				&f.DeletedCohortID,
+				&f.WorkspaceName, &f.CohortDocs,
+			); err != nil {
+				return err
+			}
+			f.ParentFolderID = parent
+			f.DeletedAt = deletedAt
+			f.Visibility = model.FolderVisibility(visibility)
+			f.OwnerID = owner
+			out = append(out, f)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // RestoreFolder undoes a cascade soft-delete by cohort id: every
 // folder + document deleted in the SAME DeleteFolder call comes back
 // together. Folders soft-deleted before FIX-5 landed have no cohort

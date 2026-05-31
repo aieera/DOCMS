@@ -37,6 +37,10 @@ func (h *TrashHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/trash", h.list)
 	mux.HandleFunc("POST /api/v1/admin/trash/{id}/restore", h.restore)
 	mux.HandleFunc("DELETE /api/v1/admin/trash/{id}", h.purge)
+	// FIX-5 FE follow-up: the cascade-delete + RestoreFolder pair
+	// shipped in the audit had no listing endpoint, so the UI had no
+	// way to enumerate cohort-root folders to restore.
+	mux.HandleFunc("GET /api/v1/admin/trash/folders", h.listFolders)
 }
 
 // trashEntry is the JSON shape returned to the admin UI. Flat,
@@ -88,6 +92,62 @@ func (h *TrashHandler) list(w http.ResponseWriter, r *http.Request) {
 		Items:         items,
 		NextPageToken: page.NextPageToken,
 	})
+}
+
+// trashFolderEntry is the FE-shaped row for the soft-deleted
+// folders table on the Trash page (FIX-5 FE follow-up).
+type trashFolderEntry struct {
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	WorkspaceID   string     `json:"workspace_id"`
+	WorkspaceName string     `json:"workspace_name"`
+	Visibility    string     `json:"visibility"`
+	DeletedBy     string     `json:"deleted_by,omitempty"`
+	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
+	CohortDocs    int64      `json:"cohort_docs"`
+	// Restorable is false for legacy soft-deletes that have no
+	// cohort id; the UI hides the Restore button on those rows.
+	Restorable bool `json:"restorable"`
+}
+
+type folderListResponse struct {
+	Items []trashFolderEntry `json:"items"`
+}
+
+func (h *TrashHandler) listFolders(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	folders, err := h.svc.ListTrashFolders(ctx)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	out := make([]trashFolderEntry, 0, len(folders))
+	for i := range folders {
+		f := &folders[i]
+		entry := trashFolderEntry{
+			ID:            f.ID.String(),
+			Name:          f.Name,
+			WorkspaceID:   f.WorkspaceID.String(),
+			WorkspaceName: f.WorkspaceName,
+			Visibility:    string(f.Visibility),
+			DeletedAt:     f.DeletedAt,
+			CohortDocs:    f.CohortDocs,
+			// Restore endpoint requires a cohort id. Legacy
+			// soft-deletes (no cohort) are display-only.
+			Restorable: f.DeletedCohortID != nil,
+		}
+		if f.DeletedBy != nil {
+			entry.DeletedBy = f.DeletedBy.String()
+		}
+		out = append(out, entry)
+	}
+	writeJSONStatus(w, http.StatusOK, folderListResponse{Items: out})
 }
 
 func (h *TrashHandler) restore(w http.ResponseWriter, r *http.Request) {

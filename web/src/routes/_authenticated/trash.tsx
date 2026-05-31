@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArchiveRestore, FileText, Trash2 } from 'lucide-react'
+import { ArchiveRestore, FileText, FolderClosed, Lock, Trash2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -11,7 +11,15 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { TypedConfirmDialog } from '@/components/ui/shadcn/typed-confirm-dialog'
-import { listTrash, purgeFromTrash, restoreFromTrash, type TrashEntry } from '@/api/trash'
+import {
+  listTrash,
+  listTrashedFolders,
+  purgeFromTrash,
+  restoreFolderFromTrash,
+  restoreFromTrash,
+  type TrashedFolder,
+  type TrashEntry,
+} from '@/api/trash'
 import { formatDateTime, formatFileSize } from '@/lib/formatters'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
@@ -35,6 +43,28 @@ function TrashPage() {
     queryKey: ['admin-trash', pageToken],
     queryFn: () => listTrash(pageToken),
     enabled: canManage,
+  })
+
+  // Soft-deleted folders surface from FIX-5 (cascade delete). Each
+  // row represents a cohort-root; restore brings every descendant
+  // folder + every document in the cohort back together.
+  const folderTrash = useQuery({
+    queryKey: ['admin-trash-folders'],
+    queryFn: listTrashedFolders,
+    enabled: canManage,
+  })
+
+  const restoreFolder = useMutation({
+    mutationFn: (id: string) => restoreFolderFromTrash(id),
+    onSuccess: () => {
+      toast.success('Folder restored')
+      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
+      // Document trash also changes — the cohort's documents come
+      // back too, so they leave the docs trash table.
+      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      qc.invalidateQueries({ queryKey: ['folders'] })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore folder"),
   })
 
   const restore = useMutation({
@@ -67,21 +97,69 @@ function TrashPage() {
   }
 
   const items = trash.data?.items ?? []
+  const folders = folderTrash.data ?? []
+  const docsEmpty = !trash.isLoading && items.length === 0
+  const foldersEmpty = !folderTrash.isLoading && folders.length === 0
   return (
-    <div>
+    <div className="space-y-8">
       <PageHeader
         title="Trash"
-        description="Soft-deleted documents across the tenant. Restore returns the document to its workspace; permanent delete removes the file from object storage and cannot be undone."
+        description="Soft-deleted folders and documents across the tenant. Restoring a folder brings its entire cascade back together; permanent delete removes files from object storage and cannot be undone."
       />
 
+      {/* ---- Folders ---------------------------------------------- */}
+      {!foldersEmpty && (
+        <section data-testid="trash-folders-section">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+            <FolderClosed className="h-4 w-4" /> Folders
+          </h2>
+          {folderTrash.isLoading ? (
+            <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
+          ) : (
+            <Card className="overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">Folder</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">Workspace</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">Contents</th>
+                    <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
+                    <th scope="col" className="px-4 py-2 text-end font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {folders.map((f) => (
+                    <TrashFolderRow
+                      key={f.id}
+                      f={f}
+                      pending={restoreFolder.isPending && restoreFolder.variables === f.id}
+                      onRestore={() => restoreFolder.mutate(f.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </section>
+      )}
+
+      {/* ---- Documents ------------------------------------------- */}
+      <section>
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <FileText className="h-4 w-4" /> Documents
+        </h2>
       {trash.isLoading ? (
         <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-      ) : items.length === 0 ? (
+      ) : docsEmpty && foldersEmpty ? (
         <EmptyState
           icon={<Trash2 className="h-12 w-12" />}
           title="Trash is empty"
-          description="Documents you delete will appear here, ready to restore."
+          description="Folders and documents you delete will appear here, ready to restore."
         />
+      ) : docsEmpty ? (
+        <Card className="p-6 text-center text-sm text-muted-foreground">
+          No soft-deleted documents.
+        </Card>
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
@@ -164,6 +242,7 @@ function TrashPage() {
           )}
         </Card>
       )}
+      </section>
 
       {purgeTarget && (
         <TypedConfirmDialog
@@ -181,6 +260,83 @@ function TrashPage() {
         />
       )}
     </div>
+  )
+}
+
+// TrashFolderRow renders one cohort-root soft-deleted folder. Carries
+// its own "Confirm restore" affordance via the button; cascade
+// restore is the only action — permanent purge for folders happens
+// via the cascade FK chain when the workspace is deleted, so we
+// deliberately don't expose a "Delete permanently" button here.
+function TrashFolderRow({
+  f,
+  pending,
+  onRestore,
+}: {
+  f: TrashedFolder
+  pending: boolean
+  onRestore: () => void
+}) {
+  const isPrivate = f.visibility === 'private'
+  return (
+    <tr data-testid={`trash-folder-row-${f.id}`}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="truncate font-medium" title={f.name}>{f.name}</p>
+              {isPrivate && (
+                <Badge variant="outline" className="gap-0.5 font-normal">
+                  <Lock className="h-3 w-3" /> Private
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        <Link
+          to="/workspaces/$workspaceId"
+          params={{ workspaceId: f.workspace_id }}
+          className="text-primary hover:underline"
+        >
+          {f.workspace_name}
+        </Link>
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        {f.cohort_docs > 0
+          ? `${f.cohort_docs} document${f.cohort_docs === 1 ? '' : 's'} in cohort`
+          : 'empty'}
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        {f.deleted_at ? formatDateTime(f.deleted_at) : '—'}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex justify-end gap-2">
+          {f.restorable ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRestore}
+              disabled={pending}
+              loading={pending}
+              data-testid={`trash-folder-restore-${f.id}`}
+            >
+              <ArchiveRestore className="me-1 h-3.5 w-3.5" />
+              Restore
+            </Button>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Soft-deleted before cohort tracking was added — restore by hand from the workspace if needed."
+            >
+              No cohort
+            </span>
+          )}
+        </div>
+      </td>
+    </tr>
   )
 }
 

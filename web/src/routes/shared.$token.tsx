@@ -186,7 +186,18 @@ function SharedViewerPage() {
 
   // status === 'unlocked' — we have a verified document.
   const doc = result!.document!
-  const downloadHref = result!.download_url
+  // FIX-10 follow-up: the backend's anonymous /shared/{token}/download
+  // endpoint re-validates the link and re-runs the password check on
+  // every byte fetch (the link is the entitlement; there's no
+  // session). For password-protected links we therefore need to
+  // append the password the user already typed to unlock, otherwise
+  // the download click 401s. The backend reads `?password=`
+  // directly from the query string.
+  let downloadHref = result!.download_url
+  if (downloadHref && password) {
+    const sep = downloadHref.includes('?') ? '&' : '?'
+    downloadHref = downloadHref + sep + 'password=' + encodeURIComponent(password)
+  }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
       <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-8 shadow-lg">
