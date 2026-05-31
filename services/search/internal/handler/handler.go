@@ -11,10 +11,35 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/search/internal/model"
 	"github.com/vaultdms/vaultdms/services/search/internal/repository"
 	"github.com/vaultdms/vaultdms/services/search/internal/service"
 )
+
+// tenantFromCtx + userFromCtx + roleFromCtx — FIX-1 follow-up.
+// SessionAuth populates auth.UserInfo from the session cookie; these
+// helpers read the trusted values instead of the X-Auth-Tenant-ID /
+// X-User-ID / X-User-Role headers Kong now strips.
+func tenantFromCtx(r *http.Request) string {
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil {
+		return ""
+	}
+	return tid.String()
+}
+
+func userFromCtx(r *http.Request) string {
+	uid, err := auth.GetUserID(r.Context())
+	if err != nil {
+		return ""
+	}
+	return uid.String()
+}
+
+func roleFromCtx(r *http.Request) string {
+	return auth.GetUserRole(r.Context())
+}
 
 // Handler holds HTTP route handlers for the search service.
 type Handler struct {
@@ -139,8 +164,8 @@ type filtersBody struct {
 }
 
 func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -218,8 +243,8 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 // handler glues them together with the same service.Search() entry
 // point used by the POST path.
 func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -242,8 +267,8 @@ func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
 // the user's recent-search ledger, all under the standard tenant +
 // readable_by permission filter.
 func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -270,8 +295,8 @@ func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
 // ---- autocomplete ---------------------------------------------------------
 
 func (h *Handler) autocomplete(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -306,8 +331,8 @@ type createSavedSearchBody struct {
 }
 
 func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -341,8 +366,8 @@ func (h *Handler) createSavedSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listSavedSearches(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -360,8 +385,8 @@ func (h *Handler) listSavedSearches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -390,8 +415,8 @@ type patchSavedSearchBody struct {
 }
 
 func (h *Handler) patchSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -444,9 +469,9 @@ type subscribeBody struct {
 }
 
 func (h *Handler) subscribeSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
-	role := r.Header.Get("X-User-Role")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
+	role := roleFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -481,9 +506,9 @@ func (h *Handler) subscribeSavedSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) unsubscribeSavedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
-	role := r.Header.Get("X-User-Role")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
+	role := roleFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -517,8 +542,8 @@ type federatedSearchBody struct {
 }
 
 func (h *Handler) federatedSearch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -568,8 +593,8 @@ func (h *Handler) federatedSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listFederatedAudit(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -602,8 +627,8 @@ func (h *Handler) listFederatedAudit(w http.ResponseWriter, r *http.Request) {
 // histogram_quantile() math matches what Grafana would compute
 // scraping /metrics.
 func (h *Handler) permissionPropagationStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	role := r.Header.Get("X-User-Role")
+	tenantID := tenantFromCtx(r)
+	role := roleFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return

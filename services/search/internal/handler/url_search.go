@@ -129,13 +129,16 @@ func ensureDateTime(s string) string {
 }
 
 // parseSearchRequestFromURL builds a model.SearchRequest from the
-// querystring. Identity headers (X-Auth-Tenant-ID / X-User-ID /
-// X-Group-IDs) are pulled from the request just like the POST path.
+// querystring. Identity is read from the SessionAuth-populated ctx
+// (FIX-1 follow-up — Kong strips X-Auth-Tenant-ID and X-User-ID at
+// the edge, so the previous header reads silently yielded empty
+// strings, which the OpenSearch routing then concatenated into the
+// nonsensical "dms-documents-" index name).
 func parseSearchRequestFromURL(r *http.Request) *model.SearchRequest {
 	q := r.URL.Query()
 
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := userFromCtx(r)
 	groups := splitHeader(r.Header.Get("X-Group-IDs"))
 
 	// share_token via header is the production shape (gateway-injected

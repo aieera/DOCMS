@@ -165,9 +165,13 @@ func main() {
 	h := handler.New(svc, debouncer, *log.Z())
 	h.Register(mux)
 
+	// FIX-1 follow-up: SessionAuthOptional so handlers can read tenant/
+	// user from ctx instead of trusting the X-Auth-Tenant-ID + X-User-*
+	// headers Kong now strips at the edge. Without this every search
+	// request 400s with "X-Tenant-ID and X-User-ID required".
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(mux),
+		Handler:           middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
