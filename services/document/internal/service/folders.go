@@ -476,6 +476,12 @@ func (s *DocumentService) SetFolderVisibility(ctx context.Context, in *SetFolder
 		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
 			return err
 		}
+		// FIX-4: visibility flips (shared↔private) change who can see
+		// the folder's documents — emit permission.changed so search
+		// rewrites readable_by on every doc in the folder.
+		if err := s.publishFolderACLChange(ctx, tx, tenantID, in.FolderID, cur.WorkspaceID); err != nil {
+			return err
+		}
 		out, err = s.repos.Folders.GetByID(ctx, tx, tenantID, in.FolderID)
 		return err
 	})
@@ -555,7 +561,11 @@ func (s *DocumentService) AddFolderGrant(ctx context.Context, in *AddFolderGrant
 		if err != nil {
 			return err
 		}
-		return s.repos.Outbox.Insert(ctx, tx, evt)
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		// FIX-4: emit permission.changed so search reindexes readable_by.
+		return s.publishFolderACLChange(ctx, tx, tenantID, in.FolderID, cur.WorkspaceID)
 	})
 	if err != nil {
 		return nil, err
@@ -601,8 +611,116 @@ func (s *DocumentService) RemoveFolderGrant(ctx context.Context, folderID uuid.U
 		if err != nil {
 			return err
 		}
-		return s.repos.Outbox.Insert(ctx, tx, evt)
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		// FIX-4: emit permission.changed so search reindexes readable_by.
+		return s.publishFolderACLChange(ctx, tx, tenantID, folderID, cur.WorkspaceID)
 	})
+}
+
+// computeFolderReaders returns the (combined readable_by, user IDs,
+// group IDs) that can see the folder. Used by both
+// publishFolderACLChange (folder ACL events) and CreateDocument /
+// UpdateDocument payloads (so freshly-indexed docs land with the
+// right ACL from the first event).
+//
+// readable_by is the union of:
+//   - workspace_members on this folder's workspace (any role)
+//   - direct user grants on the folder (folder_grants
+//     grantee_type='user')
+//
+// Group grants are surfaced via the groups slice (the indexer
+// supports both pre-split sets); user-level expansion of group
+// membership stays at query time so adding a new member to a group
+// doesn't require reindexing every doc the group can see.
+//
+// FIX-4 (2026-05-31). Audit C3.
+func (s *DocumentService) computeFolderReaders(ctx context.Context, tx pgx.Tx, tenantID, folderID, workspaceID uuid.UUID) (readableBy, users, groups []string, err error) {
+	userSet := map[string]struct{}{}
+	groupSet := map[string]struct{}{}
+	memberRows, err := tx.Query(ctx, `
+		SELECT DISTINCT user_id::text FROM workspace_members
+		 WHERE tenant_id = $1 AND workspace_id = $2
+	`, tenantID, workspaceID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for memberRows.Next() {
+		var u string
+		if err := memberRows.Scan(&u); err == nil {
+			userSet[u] = struct{}{}
+		}
+	}
+	memberRows.Close()
+	userGrantRows, err := tx.Query(ctx, `
+		SELECT grantee_id::text FROM folder_grants
+		 WHERE tenant_id = $1 AND folder_id = $2 AND grantee_type = 'user'
+	`, tenantID, folderID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for userGrantRows.Next() {
+		var u string
+		if err := userGrantRows.Scan(&u); err == nil {
+			userSet[u] = struct{}{}
+		}
+	}
+	userGrantRows.Close()
+	groupGrantRows, err := tx.Query(ctx, `
+		SELECT grantee_id::text FROM folder_grants
+		 WHERE tenant_id = $1 AND folder_id = $2 AND grantee_type = 'group'
+	`, tenantID, folderID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for groupGrantRows.Next() {
+		var g string
+		if err := groupGrantRows.Scan(&g); err == nil {
+			groupSet[g] = struct{}{}
+		}
+	}
+	groupGrantRows.Close()
+
+	users = make([]string, 0, len(userSet))
+	for u := range userSet {
+		users = append(users, u)
+	}
+	groups = make([]string, 0, len(groupSet))
+	for g := range groupSet {
+		groups = append(groups, g)
+	}
+	// Combined `readable_by` is the legacy mixed field still
+	// consumed by the indexer's pre-split fallback path.
+	readableBy = append(append([]string{}, users...), groups...)
+	return readableBy, users, groups, nil
+}
+
+// publishFolderACLChange emits dms.permission.changed.v1 for the
+// folder. Search subscribes to that subject and fans out via
+// UpdateReadableByFolder so every doc in the folder gets readable_by
+// rewritten — the doc service doesn't enumerate documents.
+//
+// FIX-4 (2026-05-31). The audit's C3 root cause was that no service
+// published this subject. This is the publisher.
+func (s *DocumentService) publishFolderACLChange(ctx context.Context, tx pgx.Tx, tenantID, folderID, workspaceID uuid.UUID) error {
+	readableBy, users, groups, err := s.computeFolderReaders(ctx, tx, tenantID, folderID, workspaceID)
+	if err != nil {
+		return err
+	}
+	evt, err := model.NewOutboxEvent(tenantID, "dms.permission.changed.v1", "folder", folderID, map[string]any{
+		"tenant_id":          tenantID.String(),
+		"resource_type":      "folder",
+		"resource_id":        folderID.String(),
+		"workspace_id":       workspaceID.String(),
+		"readable_by":        readableBy,
+		"readable_by_users":  users,
+		"readable_by_groups": groups,
+	})
+	if err != nil {
+		return err
+	}
+	return s.repos.Outbox.Insert(ctx, tx, evt)
 }
 
 // canManageFolder returns true iff the caller may flip visibility,

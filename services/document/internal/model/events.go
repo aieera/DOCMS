@@ -31,12 +31,26 @@ type DocumentCreatedPayload struct {
 	Title       string `json:"title"`
 	RegionPin   string `json:"region_pin"`
 	CreatedBy   string `json:"created_by"`
+	// FIX-4 (audit C3) — populated from publishFolderACLChange's
+	// query so freshly-indexed documents land in OpenSearch with the
+	// correct ACL from minute one. Without this, new docs match no
+	// user's `readable_by` filter and are invisible to search until
+	// the first folder-grant change retroactively rewrites them.
+	ReadableBy       []string `json:"readable_by,omitempty"`
+	ReadableByUsers  []string `json:"readable_by_users,omitempty"`
+	ReadableByGroups []string `json:"readable_by_groups,omitempty"`
 }
 
 type DocumentUpdatedPayload struct {
 	DocumentID    string   `json:"document_id"`
 	ChangedFields []string `json:"changed_fields"`
 	UpdatedBy     string   `json:"updated_by"`
+	// FIX-4 — same projection on update. Folder moves (changed_fields
+	// includes "folder_id") flip the doc into a new ACL scope; carry
+	// readable_by so the indexer rewrites without a separate event.
+	ReadableBy       []string `json:"readable_by,omitempty"`
+	ReadableByUsers  []string `json:"readable_by_users,omitempty"`
+	ReadableByGroups []string `json:"readable_by_groups,omitempty"`
 }
 
 type DocumentDeletedPayload struct {

@@ -91,14 +91,26 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		if err := s.repos.Documents.Create(ctx, tx, doc); err != nil {
 			return err
 		}
+		// FIX-4: materialise readable_by now so the search indexer's
+		// onDocCreatedOrUpdated lands the doc with the right ACL on
+		// the first event. Failures here log-and-continue — search
+		// would otherwise eventually catch up via permission.changed.
+		readableBy, readableUsers, readableGroups, rerr := s.computeFolderReaders(ctx, tx, tenantID, doc.FolderID, doc.WorkspaceID)
+		if rerr != nil {
+			s.log.Warn().Err(rerr).Str("doc", doc.ID.String()).Msg("compute readable_by failed; doc indexed without ACL")
+			readableBy, readableUsers, readableGroups = nil, nil, nil
+		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.created.v1", "document", doc.ID,
 			model.DocumentCreatedPayload{
-				DocumentID:  doc.ID.String(),
-				WorkspaceID: doc.WorkspaceID.String(),
-				FolderID:    doc.FolderID.String(),
-				Title:       doc.Title,
-				RegionPin:   doc.RegionPin,
-				CreatedBy:   userID.String(),
+				DocumentID:       doc.ID.String(),
+				WorkspaceID:      doc.WorkspaceID.String(),
+				FolderID:         doc.FolderID.String(),
+				Title:            doc.Title,
+				RegionPin:        doc.RegionPin,
+				CreatedBy:        userID.String(),
+				ReadableBy:       readableBy,
+				ReadableByUsers:  readableUsers,
+				ReadableByGroups: readableGroups,
 			})
 		if err != nil {
 			return err
