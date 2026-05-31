@@ -136,9 +136,17 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// BUG: pgx in binary mode can't decode `inet` (OID 869) into a
+	// *string scan target. Any outbox row with ip_address IS NOT NULL
+	// crash-loops the drain batch and blocks every subsequent event
+	// behind it (the FOR UPDATE SKIP LOCKED never advances past the
+	// failing row because the scan error rolls back the tx). Cast
+	// to text at the SELECT site so the existing *string scan
+	// continues to work; the text form of inet (e.g. "172.19.0.1")
+	// is exactly what the outbox event consumer wants anyway.
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
-		       payload, created_at, actor_id, actor_name, ip_address
+		       payload, created_at, actor_id, actor_name, ip_address::text
 		FROM outbox
 		WHERE NOT published
 		ORDER BY created_at, id
