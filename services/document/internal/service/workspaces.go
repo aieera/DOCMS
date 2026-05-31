@@ -65,7 +65,7 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 		regionPin = defaultWorkspaceRegionPin
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 		// fresh workspace returns 400 from CreateDocument because
 		// `getFolders(workspaceId)` finds no rows. Same tx so the
 		// workspace + member + root folder land atomically.
-		rootID, err := uuid.NewV7()
+		rootID, err := newExternalID()
 		if err != nil {
 			return err
 		}

@@ -74,7 +74,7 @@ func (s *DocumentService) CreateTask(ctx context.Context, in CreateTaskInput) (*
 		in.Source = "user"
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}

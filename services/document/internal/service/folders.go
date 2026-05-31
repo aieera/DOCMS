@@ -33,7 +33,7 @@ func (s *DocumentService) CreateFolder(ctx context.Context, in *CreateFolderInpu
 		return nil, err
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +523,7 @@ func (s *DocumentService) AddFolderGrant(ctx context.Context, in *AddFolderGrant
 	if err != nil {
 		return nil, err
 	}
-	id, _ := uuid.NewV7()
+	id, _ := newExternalID()
 	now := time.Now().UTC()
 	grant := &model.FolderGrant{
 		TenantID:    tenantID,

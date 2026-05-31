@@ -46,7 +46,7 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		return nil, err
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}
@@ -591,7 +591,7 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			return vdmserr.ErrNotFound
 		}
 		now := time.Now().UTC()
-		newID, _ := uuid.NewV7()
+		newID, _ := newExternalID()
 		dst := &model.Document{
 			ID:                       newID,
 			TenantID:                 tenantID,
@@ -764,7 +764,7 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		if err != nil {
 			return err
 		}
-		vid, err := uuid.NewV7()
+		vid, err := newExternalID()
 		if err != nil {
 			return err
 		}
@@ -797,7 +797,7 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		if err != nil {
 			return fmt.Errorf("lookup blob uri: %w", err)
 		}
-		evtID, _ := uuid.NewV7()
+		evtID, _ := newExternalID()
 		evt, err := model.NewOutboxEvent(tenantID, "dms.version.uploaded.v1", "version", v.ID,
 			model.VersionUploadedPayload{
 				EventID:          evtID.String(),
@@ -908,7 +908,7 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 		if err != nil {
 			return err
 		}
-		vid, err := uuid.NewV7()
+		vid, err := newExternalID()
 		if err != nil {
 			return err
 		}
@@ -1129,7 +1129,7 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
 				return err
 			}
-			holdID, err := uuid.NewV7()
+			holdID, err := newExternalID()
 			if err != nil {
 				return err
 			}

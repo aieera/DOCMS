@@ -67,7 +67,7 @@ func (s *DocumentService) CreateShareLink(ctx context.Context, in *CreateShareLi
 	}
 	expiresAt := time.Now().Add(time.Duration(hours) * time.Hour)
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (s *DocumentService) CreateTag(ctx context.Context, in *CreateTagInput) (*m
 	}); err != nil {
 		return nil, err
 	}
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}

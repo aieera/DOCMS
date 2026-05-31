@@ -104,7 +104,7 @@ func (s *DocumentService) CreateAnnotation(ctx context.Context, in *CreateAnnota
 		in.Data = map[string]any{}
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}

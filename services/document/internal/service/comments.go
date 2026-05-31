@@ -73,7 +73,7 @@ func (s *DocumentService) CreateComment(ctx context.Context, in *CreateCommentIn
 		return nil, vdmserr.Validation("body", "1..10000 chars")
 	}
 
-	id, err := uuid.NewV7()
+	id, err := newExternalID()
 	if err != nil {
 		return nil, err
 	}
