@@ -38,6 +38,20 @@ plugins:
       replace:
         headers:
           - "X-Gateway-Signature:${VAULTDMS_GATEWAY_SECRET}"
+      # FIX-1 (2026-05-31) defense-in-depth — strip any inbound
+      # X-User-*/X-Auth-Tenant-ID headers before forwarding. The
+      # backend now reads these values exclusively from the
+      # SessionAuth-populated ctx (trusted DB session), but stripping
+      # at the gateway means a header reaching a service is provably
+      # not client-controlled. Pairs with the callers()/requireRole()
+      # ctx-only rewrite in services/document/internal/handler/.
+      remove:
+        headers:
+          - "X-User-ID"
+          - "X-User-Role"
+          - "X-User-Name"
+          - "X-User-Email"
+          - "X-Auth-Tenant-ID"
   - name: prometheus
     config:
       per_consumer: false

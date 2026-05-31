@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -150,8 +151,9 @@ func (h *RedactionReviewHandler) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The bulk-apply gate consults the role for the >50 candidate
-	// threshold; stamp it on ctx for the service to read.
-	ctx = service.WithCallerRole(ctx, r.Header.Get("X-User-Role"))
+	// threshold; stamp it on ctx for the service to read. Role is the
+	// trusted DB-derived value SessionAuth wrote onto ctx (FIX-1).
+	ctx = service.WithCallerRole(ctx, auth.GetUserRole(ctx))
 	docID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))

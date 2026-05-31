@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -102,7 +101,7 @@ type anomalyConfigPatchBody struct {
 // ---- handlers ------------------------------------------------------------
 
 func (h *AnomalyHandler) listReports(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -120,7 +119,7 @@ func (h *AnomalyHandler) listReports(w http.ResponseWriter, r *http.Request) {
 			opts.WorkspaceID = &parsed
 		}
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, total, err := h.svc.ListAnomalyReports(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -139,7 +138,7 @@ func (h *AnomalyHandler) listReports(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnomalyHandler) getReport(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -151,7 +150,7 @@ func (h *AnomalyHandler) getReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	report, findings, err := h.svc.GetAnomalyReport(ctx, id)
 	if err != nil {
 		writeErr(w, r, err)
@@ -164,7 +163,7 @@ func (h *AnomalyHandler) getReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnomalyHandler) resolveFinding(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -181,7 +180,7 @@ func (h *AnomalyHandler) resolveFinding(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	updated, err := h.svc.ResolveAnomalyFinding(ctx, fid, body.Status, body.Note)
 	if err != nil {
 		writeErr(w, r, err)
@@ -191,14 +190,14 @@ func (h *AnomalyHandler) resolveFinding(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AnomalyHandler) getConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.GetAnomalyConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -212,7 +211,7 @@ func (h *AnomalyHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnomalyHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -224,7 +223,7 @@ func (h *AnomalyHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.UpsertAnomalyConfig(ctx, repository.AnomalyConfigPatch{
 		Enabled:                  body.Enabled,
 		ScheduleCron:             body.ScheduleCron,

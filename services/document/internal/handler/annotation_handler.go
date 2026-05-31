@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/model"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -58,7 +57,7 @@ type annotationUpdateBody struct {
 // ---- handlers ------------------------------------------------------
 
 func (h *AnnotationsHandler) create(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -78,7 +77,7 @@ func (h *AnnotationsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	ann, err := h.svc.CreateAnnotation(ctx, &service.CreateAnnotationInput{
 		DocumentID: docID,
 		VersionID:  versionID,
@@ -94,7 +93,7 @@ func (h *AnnotationsHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnnotationsHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -108,7 +107,7 @@ func (h *AnnotationsHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("vid", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	items, err := h.svc.ListAnnotations(ctx, docID, versionID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -123,7 +122,7 @@ func (h *AnnotationsHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnnotationsHandler) update(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -137,7 +136,7 @@ func (h *AnnotationsHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	ann, err := h.svc.UpdateAnnotation(ctx, &service.UpdateAnnotationInput{
 		ID:   id,
 		Page: body.Page,
@@ -151,7 +150,7 @@ func (h *AnnotationsHandler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnnotationsHandler) delete(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -160,7 +159,7 @@ func (h *AnnotationsHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.DeleteAnnotation(ctx, id); err != nil {
 		writeErr(w, r, err)
 		return

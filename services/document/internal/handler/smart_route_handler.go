@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -114,7 +113,7 @@ type configPatchSrBody struct {
 // ---- handlers -----------------------------------------------------------
 
 func (h *SmartRouteHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -123,7 +122,7 @@ func (h *SmartRouteHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, err := h.svc.ListRouteSuggestions(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -135,7 +134,7 @@ func (h *SmartRouteHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) accept(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -149,7 +148,7 @@ func (h *SmartRouteHandler) accept(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("sid", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	updated, doc, err := h.svc.AcceptRouteSuggestion(ctx, docID, sid)
 	if err != nil {
 		writeErr(w, r, err)
@@ -164,7 +163,7 @@ func (h *SmartRouteHandler) accept(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) dismiss(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -178,7 +177,7 @@ func (h *SmartRouteHandler) dismiss(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("sid", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.DismissRouteSuggestion(ctx, docID, sid); err != nil {
 		writeErr(w, r, err)
 		return
@@ -187,14 +186,14 @@ func (h *SmartRouteHandler) dismiss(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) listRules(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, err := h.svc.ListRoutingRules(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -204,7 +203,7 @@ func (h *SmartRouteHandler) listRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) createRule(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -234,7 +233,7 @@ func (h *SmartRouteHandler) createRule(w http.ResponseWriter, r *http.Request) {
 	if body.Enabled != nil {
 		enabled = *body.Enabled
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rule, err := h.svc.CreateRoutingRule(ctx, repository.RoutingRuleInput{
 		Name: body.Name, Description: body.Description,
 		CategoryKey: body.CategoryKey, TargetFolderID: folderID,
@@ -249,7 +248,7 @@ func (h *SmartRouteHandler) createRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) updateRule(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -266,7 +265,7 @@ func (h *SmartRouteHandler) updateRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rule, err := h.svc.UpdateRoutingRule(ctx, id, repository.RoutingRulePatch{
 		Name: body.Name, Description: body.Description,
 		Priority: body.Priority, Enabled: body.Enabled,
@@ -279,7 +278,7 @@ func (h *SmartRouteHandler) updateRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) deleteRule(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -291,7 +290,7 @@ func (h *SmartRouteHandler) deleteRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.DeleteRoutingRule(ctx, id); err != nil {
 		writeErr(w, r, err)
 		return
@@ -300,14 +299,14 @@ func (h *SmartRouteHandler) deleteRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) getConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.GetSmartRoutingConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -321,7 +320,7 @@ func (h *SmartRouteHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SmartRouteHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -333,7 +332,7 @@ func (h *SmartRouteHandler) upsertConfig(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.UpsertSmartRoutingConfig(ctx, repository.SmartRoutingConfigPatch{
 		Enabled:           body.Enabled,
 		AutoMoveThreshold: body.AutoMoveThreshold,
@@ -350,14 +349,14 @@ func (h *SmartRouteHandler) upsertConfig(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SmartRouteHandler) analytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	a, err := h.svc.FilingAnalytics(ctx)
 	if err != nil {
 		writeErr(w, r, err)

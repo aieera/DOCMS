@@ -974,7 +974,17 @@ func main() {
 	// param (see wopi_handler.go IssueWOPIToken).
 	wopiAndRoot := http.NewServeMux()
 	wopiAndRoot.Handle("/wopi/", wopiMux)
-	wopiAndRoot.Handle("/", middleware.RequireGatewaySignature()(rootMux))
+	// FIX-1 (2026-05-31): wrap rootMux with SessionAuthOptional so every
+	// authenticated request lands at downstream handlers with a
+	// populated auth.UserInfo on ctx (trusted DB-derived role/tenant/
+	// user). Handlers using callers()/authedContext() now read from ctx
+	// and reject sessionless requests themselves; sessionless paths
+	// (anonymous share links, ZT public viewer, OAuth callbacks) still
+	// work because Optional just no-ops when the cookie is absent.
+	wopiAndRoot.Handle("/",
+		middleware.RequireGatewaySignature()(
+			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(rootMux),
+		))
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

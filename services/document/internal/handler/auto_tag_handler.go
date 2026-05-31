@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -89,7 +88,7 @@ type configPatchBody struct {
 // ---- handlers ------------------------------------------------------------
 
 func (h *AutoTagHandler) listForDocument(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -98,7 +97,7 @@ func (h *AutoTagHandler) listForDocument(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, conf, err := h.svc.ListTagSuggestions(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -114,7 +113,7 @@ func (h *AutoTagHandler) listForDocument(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AutoTagHandler) batchReview(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -140,7 +139,7 @@ func (h *AutoTagHandler) batchReview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	summary, err := h.svc.BatchReviewTagSuggestions(ctx, docID, actions)
 	if err != nil {
 		writeErr(w, r, err)
@@ -156,7 +155,7 @@ func (h *AutoTagHandler) batchReview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AutoTagHandler) listPending(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -170,7 +169,7 @@ func (h *AutoTagHandler) listPending(w http.ResponseWriter, r *http.Request) {
 		Limit:         int32(parseInt(q.Get("limit"), 50)),
 		Offset:        int32(parseInt(q.Get("offset"), 0)),
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, total, err := h.svc.ListPendingTagSuggestions(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -185,14 +184,14 @@ func (h *AutoTagHandler) listPending(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AutoTagHandler) getConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.GetAutoTagConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -206,7 +205,7 @@ func (h *AutoTagHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AutoTagHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -226,7 +225,7 @@ func (h *AutoTagHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 		BlockedTags:        body.BlockedTags,
 		SourceWeights:      body.SourceWeights,
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.UpsertAutoTagConfig(ctx, patch)
 	if err != nil {
 		writeErr(w, r, err)

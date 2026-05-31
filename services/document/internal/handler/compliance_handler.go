@@ -245,57 +245,61 @@ func (h *HoldsHandler) release(w http.ResponseWriter, r *http.Request) {
 
 // ---- helpers --------------------------------------------------------------
 
-// callers extracts tenant + user from the X-Auth-Tenant-ID / X-User-ID
-// request headers (gateway-injected, trusted via RequireGatewaySignature
-// upstream). Returns zeros and writes 401 on failure. This is plain HTTP;
-// the grpc-gateway / middleware chain for /api/v1/* isn't applied here
-// because the intelligence/compliance routes mount on dedicated muxes.
+// callers extracts tenant + user from the authenticated context that
+// pkg/middleware.SessionAuth populated by validating the session cookie
+// against the DB. Returns zeros and writes 401 on failure.
+//
+// Security note (FIX-1, 2026-05-31): a previous version of this helper
+// read uuid values from inbound X-Auth-Tenant-ID / X-User-ID request
+// headers, which were *not* set by Kong upstream — they were always
+// client-controllable, giving any caller free choice of tenant + user
+// at every handler reachable via these helpers. The audit logged this
+// as a CISO-blocker (cross-tenant takeover + trash-purge IDOR). The
+// fix is to read exclusively from the request context, which
+// SessionAuth populated from the authoritative `sessions` table. The
+// mux wiring in cmd/server/main.go must therefore guarantee that
+// every mux using this helper is wrapped with SessionAuth (or
+// SessionAuthOptional + a no-anonymous policy at the handler level).
 func callers(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
-	tenantID, err := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
-	if err != nil || tenantID == uuid.Nil {
+	u, err := auth.User(r.Context())
+	if err != nil {
 		writeErr(w, r, vdmserr.ErrUnauthorized)
 		return uuid.Nil, uuid.Nil, false
 	}
-	userID, err := uuid.Parse(r.Header.Get("X-User-ID"))
-	if err != nil || userID == uuid.Nil {
+	if u.TenantID == uuid.Nil || u.ID == uuid.Nil {
 		writeErr(w, r, vdmserr.ErrUnauthorized)
 		return uuid.Nil, uuid.Nil, false
 	}
-	return tenantID, userID, true
+	return u.TenantID, u.ID, true
 }
 
-// authedContext bundles callers() with the role-extracting and ctx-stamping
-// step every intelligence handler needs to do. Returns a context with
-// tenant/user/role attached so the service layer's mustCaller +
-// requireDocPermission see the right values, and OPA's input.context
-// .user_role is populated (Rule 6 owner|admin shortcut). Without this
-// the role never reaches OPA and Rule 6 silently fails to fire — every
-// admin-looking request then has to pass via workspace_members or
-// direct grants, which is why intelligence reads were 403'ing for docs
-// in workspaces the admin wasn't an explicit member of.
+// authedContext returns the SessionAuth-populated request context plus
+// the resolved (tenantID, userID). The ctx already carries the trusted
+// auth.UserInfo (including role + groups) so downstream service-layer
+// calls — mustCaller, requireDocPermission, OPA input.context — see
+// the right values without any header dependency.
+//
+// Behavior change from FIX-1: this no longer re-creates the ctx from
+// inbound headers. The role placed on ctx is now the DB-trusted
+// `users.role` value SessionAuth wrote there, not the attacker-
+// controllable X-User-Role.
 func authedContext(w http.ResponseWriter, r *http.Request) (context.Context, uuid.UUID, uuid.UUID, bool) {
 	tenantID, userID, ok := callers(w, r)
 	if !ok {
 		return nil, uuid.Nil, uuid.Nil, false
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{
-		TenantID: tenantID,
-		ID:       userID,
-		Role:     r.Header.Get("X-User-Role"),
-	})
-	return ctx, tenantID, userID, true
+	return r.Context(), tenantID, userID, true
 }
 
-// requireRole is the Wave 11.2 OPA gate on mutating compliance
-// endpoints. Spec §7.2 says only compliance_officer can
-// create/release holds; we also accept org admin / owner since both
-// inherit admin capability through policy.rego rule 6.
+// requireRole gates mutating endpoints (legal-hold create/release,
+// trash purge, retention policy edit, etc.) to the listed roles. Role
+// is read from the SessionAuth-populated ctx — never from headers
+// (see FIX-1).
 //
-// Reads the role from X-User-Role — the auth service populates this
-// header on session-authenticated requests (same header the policy
-// service's session auth middleware emits). Missing header → 403.
+// Returns true if the caller's role is in `allowed`; otherwise writes
+// 403 and returns false.
 func requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
-	role := r.Header.Get("X-User-Role")
+	role := auth.GetUserRole(r.Context())
 	for _, a := range allowed {
 		if role == a {
 			return true

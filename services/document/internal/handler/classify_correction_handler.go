@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -61,7 +60,7 @@ type correctionDTO struct {
 }
 
 func (h *ClassifyCorrectionHandler) correct(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -91,7 +90,7 @@ func (h *ClassifyCorrectionHandler) correct(w http.ResponseWriter, r *http.Reque
 		}
 		in.VersionID = &v
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.CorrectClassification(ctx, in)
 	if err != nil {
 		writeErr(w, r, err)
@@ -101,7 +100,7 @@ func (h *ClassifyCorrectionHandler) correct(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *ClassifyCorrectionHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -110,7 +109,7 @@ func (h *ClassifyCorrectionHandler) list(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, err := h.svc.ListClassificationCorrections(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -124,7 +123,7 @@ func (h *ClassifyCorrectionHandler) list(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ClassifyCorrectionHandler) bulk(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -145,7 +144,7 @@ func (h *ClassifyCorrectionHandler) bulk(w http.ResponseWriter, r *http.Request)
 		}
 		ids = append(ids, id)
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	count, err := h.svc.BulkCorrectClassification(ctx, ids, body.CorrectedCategory, body.Note)
 	if err != nil {
 		writeErr(w, r, err)

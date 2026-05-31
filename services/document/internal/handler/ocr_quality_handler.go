@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -111,7 +110,7 @@ type configPatchOCRBody struct {
 // ---- handlers ------------------------------------------------------------
 
 func (h *OCRQualityHandler) getForDoc(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -120,7 +119,7 @@ func (h *OCRQualityHandler) getForDoc(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	summary, scores, err := h.svc.GetOCRQualityForDocument(ctx, docID)
 	if err != nil {
 		writeErr(w, r, err)
@@ -134,7 +133,7 @@ func (h *OCRQualityHandler) getForDoc(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OCRQualityHandler) review(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -157,7 +156,7 @@ func (h *OCRQualityHandler) review(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > 0 {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	updated, err := h.svc.ReviewOCRQualityPage(ctx, docID, vid, int32(page), body.Note)
 	if err != nil {
 		writeErr(w, r, err)
@@ -167,7 +166,7 @@ func (h *OCRQualityHandler) review(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OCRQualityHandler) queue(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -180,7 +179,7 @@ func (h *OCRQualityHandler) queue(w http.ResponseWriter, r *http.Request) {
 		Limit:       int32(parseInt(q.Get("limit"), 50)),
 		Offset:      int32(parseInt(q.Get("offset"), 0)),
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, total, err := h.svc.ListOCRQualityReviewQueue(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -207,14 +206,14 @@ func (h *OCRQualityHandler) queue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OCRQualityHandler) stats(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	st, err := h.svc.OCRQualityStats(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -229,14 +228,14 @@ func (h *OCRQualityHandler) stats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OCRQualityHandler) getConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin", "compliance_officer") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.GetOCRQualityConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -250,7 +249,7 @@ func (h *OCRQualityHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OCRQualityHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -262,7 +261,7 @@ func (h *OCRQualityHandler) upsertConfig(w http.ResponseWriter, r *http.Request)
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.UpsertOCRQualityConfig(ctx, repository.OCRQualityConfigPatch{
 		Enabled:            body.Enabled,
 		ReviewThreshold:    body.ReviewThreshold,

@@ -162,31 +162,16 @@ func (h *ShareLinksAdminHandler) revokeAll(w http.ResponseWriter, r *http.Reques
 // auth.User(ctx) covers both — SessionAuth populates the same
 // UserInfo regardless of the upstream.
 func (h *ShareLinksAdminHandler) enrich(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
+	// FIX-1 (2026-05-31): the previous header-based fallback trusted
+	// client-supplied X-Auth-Tenant-ID / X-User-ID / X-User-Role,
+	// which Kong never stripped. SessionAuthOptional is now wired at
+	// the rootMux so every authenticated request lands here with
+	// trusted ctx; sessionless requests are rejected outright.
 	u, err := auth.User(r.Context())
 	if err != nil || u.TenantID == uuid.Nil || u.ID == uuid.Nil {
-		// Header-based fallback for legacy Kong path that doesn't run
-		// SessionAuth in front of this service. Pulls only what the
-		// gateway actually injects — role can't come from a header,
-		// so the policy check will deny if the gateway forgot to
-		// inject identity here.
-		tid, terr := uuid.Parse(r.Header.Get("X-Auth-Tenant-ID"))
-		if terr != nil || tid == uuid.Nil {
-			h.writeErr(w, r, vdmserr.ErrUnauthorized)
-			return nil, false
-		}
-		uid, uerr := uuid.Parse(r.Header.Get("X-User-ID"))
-		if uerr != nil || uid == uuid.Nil {
-			h.writeErr(w, r, vdmserr.ErrUnauthorized)
-			return nil, false
-		}
-		ctx := auth.WithUser(r.Context(), auth.UserInfo{
-			TenantID: tid,
-			ID:       uid,
-			Role:     r.Header.Get("X-User-Role"),
-		})
-		return ctx, true
+		h.writeErr(w, r, vdmserr.ErrUnauthorized)
+		return nil, false
 	}
-	// Already populated by SessionAuth — pass through.
 	return r.Context(), true
 }
 

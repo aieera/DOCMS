@@ -338,33 +338,17 @@ func extractUploadID(storageKey string) string {
 // outbound builds a gRPC-outgoing context carrying the tenant + user
 // identity. The storage service's TenantInterceptor reads x-tenant-id.
 func (p *StorageProxy) outbound(r *http.Request) (context.Context, context.CancelFunc) {
-	// Tenant + user come from ctx (populated by SessionAuth middleware
-	// on the proxy mount). The previous header-based path assumed an
-	// upstream Kong plugin populated X-Tenant-ID / X-User-ID; in dev
-	// (Vite proxy in host mode) that plugin isn't in the path so the
-	// headers were always empty and InitiateUpload failed with
-	// INVALID_ARGUMENT before reaching the bucket.
-	tenantID := r.Header.Get(middleware.TenantHeader)
-	userID := r.Header.Get(userIDHeader)
-	if tenantID == "" {
-		if tid, err := auth.GetTenantID(r.Context()); err == nil && tid != uuid.Nil {
-			tenantID = tid.String()
-		}
-	}
-	if userID == "" {
-		if u, err := auth.User(r.Context()); err == nil && u.ID != uuid.Nil {
-			userID = u.ID.String()
-		}
-	}
-	// Forward role too — storage's ensureUploadPermission stamps it
-	// onto the OPA input.context so Rule 6 (owner/admin allow) fires.
-	// Without this, every authenticated user gets PermissionDenied
-	// even though they're an admin.
-	role := r.Header.Get("X-User-Role")
-	if role == "" {
-		if u, err := auth.User(r.Context()); err == nil {
-			role = u.Role
-		}
+	// FIX-1 (2026-05-31): identity comes EXCLUSIVELY from the
+	// SessionAuth-populated ctx. The previous fallback read tenant/
+	// user/role from inbound headers, which Kong never stripped —
+	// that gave any caller free choice of identity on the upstream
+	// gRPC call. SessionAuthOptional is now wrapped at rootMux so
+	// authenticated requests always carry trusted auth.UserInfo.
+	var tenantID, userID, role string
+	if u, err := auth.User(r.Context()); err == nil {
+		tenantID = u.TenantID.String()
+		userID = u.ID.String()
+		role = u.Role
 	}
 	pairs := []string{
 		middleware.TenantMetadataKey, tenantID,

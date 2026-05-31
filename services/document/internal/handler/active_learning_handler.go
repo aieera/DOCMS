@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/repository"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
@@ -94,7 +93,7 @@ type configDTO struct {
 // ---- handlers -----------------------------------------------------------
 
 func (h *ActiveLearningHandler) listVersions(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -108,7 +107,7 @@ func (h *ActiveLearningHandler) listVersions(w http.ResponseWriter, r *http.Requ
 		Limit:     int32(parseInt(q.Get("limit"), 50)),
 		Offset:    int32(parseInt(q.Get("offset"), 0)),
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	rows, total, err := h.svc.ListModelVersions(ctx, opts)
 	if err != nil {
 		writeErr(w, r, err)
@@ -125,7 +124,7 @@ func (h *ActiveLearningHandler) listVersions(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *ActiveLearningHandler) getVersion(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -137,7 +136,7 @@ func (h *ActiveLearningHandler) getVersion(w http.ResponseWriter, r *http.Reques
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	v, err := h.svc.GetModelVersion(ctx, id)
 	if err != nil {
 		writeErr(w, r, err)
@@ -147,7 +146,7 @@ func (h *ActiveLearningHandler) getVersion(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ActiveLearningHandler) promote(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -159,7 +158,7 @@ func (h *ActiveLearningHandler) promote(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	v, err := h.svc.PromoteModel(ctx, id)
 	if err != nil {
 		writeErr(w, r, err)
@@ -169,7 +168,7 @@ func (h *ActiveLearningHandler) promote(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ActiveLearningHandler) retire(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -181,7 +180,7 @@ func (h *ActiveLearningHandler) retire(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.RetireModel(ctx, id); err != nil {
 		writeErr(w, r, err)
 		return
@@ -190,7 +189,7 @@ func (h *ActiveLearningHandler) retire(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ActiveLearningHandler) retrain(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -201,7 +200,7 @@ func (h *ActiveLearningHandler) retrain(w http.ResponseWriter, r *http.Request) 
 	if r.ContentLength > 0 {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.TriggerRetrain(ctx, body.ModelType); err != nil {
 		writeErr(w, r, err)
 		return
@@ -210,14 +209,14 @@ func (h *ActiveLearningHandler) retrain(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ActiveLearningHandler) exampleStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	st, err := h.svc.TrainingExampleStats(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -240,7 +239,7 @@ func (h *ActiveLearningHandler) exampleStats(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *ActiveLearningHandler) deleteExample(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -252,7 +251,7 @@ func (h *ActiveLearningHandler) deleteExample(w http.ResponseWriter, r *http.Req
 		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if err := h.svc.DeleteTrainingExample(ctx, id); err != nil {
 		writeErr(w, r, err)
 		return
@@ -261,14 +260,14 @@ func (h *ActiveLearningHandler) deleteExample(w http.ResponseWriter, r *http.Req
 }
 
 func (h *ActiveLearningHandler) getConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
 	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.GetActiveLearningConfig(ctx)
 	if err != nil {
 		writeErr(w, r, err)
@@ -282,7 +281,7 @@ func (h *ActiveLearningHandler) getConfig(w http.ResponseWriter, r *http.Request
 }
 
 func (h *ActiveLearningHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -294,7 +293,7 @@ func (h *ActiveLearningHandler) upsertConfig(w http.ResponseWriter, r *http.Requ
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	c, err := h.svc.UpsertActiveLearningConfig(ctx, repository.ActiveLearningConfigPatch{
 		Enabled:                body.Enabled,
 		MinExamplesForRetrain:  body.MinExamplesForRetrain,

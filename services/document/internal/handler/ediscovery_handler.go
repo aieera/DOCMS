@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
 	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
 )
@@ -43,7 +42,7 @@ type ediscoveryExportBody struct {
 }
 
 func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := callers(w, r)
+	_, _, ok := callers(w, r)
 	if !ok {
 		return
 	}
@@ -68,7 +67,7 @@ func (h *EDiscoveryHandler) export(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 
-	ctx := auth.WithUser(r.Context(), auth.UserInfo{TenantID: tenantID, ID: userID, Role: r.Header.Get("X-User-Role")})
+	ctx := r.Context()
 	if _, err := h.svc.ExportForDiscovery(ctx, w, service.DiscoveryExportInput{
 		CaseID:         body.CaseID,
 		CaseName:       body.CaseName,
