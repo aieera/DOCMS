@@ -28,6 +28,7 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/pkg/middleware"
 	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
+	"github.com/vaultdms/vaultdms/services/document/internal/service"
 )
 
 const (
@@ -45,13 +46,19 @@ type StorageProxy struct {
 	// needs blob_id to call CreateVersion, so the proxy looks it up by
 	// (tenant_id, sha256_hash) here. Avoids a proto regen.
 	pool *pgxpool.Pool
+	// svc gates the download path with EnsureCanViewDocument (FIX-2).
+	// Optional — nil disables the check (used by older tests). Prod
+	// wiring in cmd/server/main.go must always pass a non-nil svc.
+	svc *service.DocumentService
 }
 
 // NewStorageProxy returns a proxy bound to the given storage gRPC
 // client. pool may be nil — if so, the complete handler omits
-// content_blob_id from the response.
-func NewStorageProxy(client vaultdmsv1.StorageServiceClient, pool *pgxpool.Pool) *StorageProxy {
-	return &StorageProxy{client: client, pool: pool}
+// content_blob_id from the response. svc may be nil for tests; the
+// production wiring in cmd/server/main.go always passes a non-nil
+// service so the per-document view gate fires.
+func NewStorageProxy(client vaultdmsv1.StorageServiceClient, pool *pgxpool.Pool, svc *service.DocumentService) *StorageProxy {
+	return &StorageProxy{client: client, pool: pool, svc: svc}
 }
 
 // Register mounts the proxy routes on the given ServeMux:
@@ -238,6 +245,23 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]any{"error": "version_id not a uuid"})
 		return
+	}
+	docID, err := uuid.Parse(r.PathValue("document_id"))
+	if err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]any{"error": "document_id not a uuid"})
+		return
+	}
+	// FIX-2 (2026-05-31): per-document view check. The previous
+	// implementation authorized purely by (tenantID, versionID) — any
+	// authenticated tenant member who learned a version UUID pulled
+	// the bytes (or had the server unwrap the DEK on the attacker's
+	// behalf, for envelope-encrypted blobs). EnsureCanViewDocument
+	// fails-closed on policy unavailability.
+	if p.svc != nil {
+		if err := p.svc.EnsureCanViewDocument(r.Context(), docID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
 	}
 	if p.pool == nil {
 		writeProxyJSON(w, http.StatusInternalServerError, map[string]any{"error": "proxy missing db pool"})

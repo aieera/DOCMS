@@ -420,6 +420,50 @@ func (s *DocumentService) requireDocPermission(
 	return doc, nil
 }
 
+// EnsureCanViewDocument is the exported per-document view gate used by
+// the download / decrypt-stream / GetDownloadURL paths (FIX-2). It
+// loads the document for tenant-scope + lifecycle checks, then
+// resolves the caller's effective view permission via
+// summarizeDocumentPermissions and returns:
+//
+//   - nil               — caller may read the bytes
+//   - vdmserr.ErrNotFound — document doesn't exist in this tenant
+//                            (or caller lacks any visibility)
+//   - vdmserr.ErrForbidden — document exists and caller can see it,
+//                            but lacks view (e.g. revoked grant)
+//
+// Returning NotFound for the "cannot see it at all" case avoids
+// leaking existence to enumerators. Forbidden is only returned for
+// cases where existence is already public (the document service's
+// own GetDocument would have returned it).
+func (s *DocumentService) EnsureCanViewDocument(ctx context.Context, docID uuid.UUID) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	var doc *model.Document
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		doc, err = s.repos.Documents.GetByID(ctx, tx, tenantID, docID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if doc == nil {
+		return vdmserr.ErrNotFound
+	}
+	perms, err := s.summarizeDocumentPermissions(ctx, userID, docID, map[string]any{
+		"workspace_id": doc.WorkspaceID.String(),
+	})
+	if err != nil {
+		return err
+	}
+	if !perms.CanView {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
 // summarizeDocumentPermissions issues a single BatchCheckPermission for the
 // 5 canonical actions on a document. One network round-trip per GetDocument.
 //

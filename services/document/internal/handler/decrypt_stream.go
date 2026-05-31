@@ -34,6 +34,7 @@ import (
 	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
 	"github.com/vaultdms/vaultdms/pkg/database"
 	"github.com/vaultdms/vaultdms/pkg/storage"
+	"github.com/vaultdms/vaultdms/services/document/internal/service"
 )
 
 // DecryptStreamHandler exposes a single GET endpoint that decrypts
@@ -44,18 +45,25 @@ type DecryptStreamHandler struct {
 	s3   *storage.S3Client
 	kms  pkgcrypto.KeyManager
 	log  zerolog.Logger
+	// svc gates the stream with EnsureCanViewDocument (FIX-2). Nil
+	// disables the check (legacy tests). Prod wiring in main.go always
+	// passes a non-nil service.
+	svc *service.DocumentService
 }
 
 // NewDecryptStreamHandler wires deps. Either of `s3` or `kms` may be
 // nil — encrypted-blob requests fail with 503 in that case; unencrypted
-// requests still pass through if s3 is set.
+// requests still pass through if s3 is set. svc may be nil for tests;
+// production wiring always passes a non-nil service so the per-
+// document view gate fires.
 func NewDecryptStreamHandler(
 	pool *pgxpool.Pool,
 	s3 *storage.S3Client,
 	kms pkgcrypto.KeyManager,
+	svc *service.DocumentService,
 	log zerolog.Logger,
 ) *DecryptStreamHandler {
-	return &DecryptStreamHandler{pool: pool, s3: s3, kms: kms, log: log}
+	return &DecryptStreamHandler{pool: pool, s3: s3, kms: kms, svc: svc, log: log}
 }
 
 // Register mounts:
@@ -78,6 +86,21 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "version_id not a uuid", http.StatusBadRequest)
 		return
+	}
+	docID, err := uuid.Parse(r.PathValue("document_id"))
+	if err != nil {
+		http.Error(w, "document_id not a uuid", http.StatusBadRequest)
+		return
+	}
+	// FIX-2 (2026-05-31): per-document view check. Previously the
+	// stream loaded blob metadata + unwrapped the DEK for ANY known
+	// (tenantID, versionID) — IDOR with envelope-encryption-as-a-
+	// service for the attacker.
+	if h.svc != nil {
+		if err := h.svc.EnsureCanViewDocument(r.Context(), docID); err != nil {
+			writeErr(w, r, err)
+			return
+		}
 	}
 	if h.s3 == nil {
 		h.log.Error().Msg("decrypt-stream: s3 client not configured")

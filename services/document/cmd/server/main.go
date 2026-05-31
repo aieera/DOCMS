@@ -208,8 +208,11 @@ func main() {
 	shareLinksAdminHandler := handler.NewShareLinksAdminHandler(svc, *log.Z())
 	retentionPolicyHandler := handler.NewRetentionPolicyHandler(pool, svc, *log.Z())
 
-	storageProxy := handler.NewStorageProxy(storageClient, pool)
-	decryptStreamHandler := handler.NewDecryptStreamHandler(pool, s3c, docKMS, *log.Z())
+	// FIX-2 (2026-05-31): both download surfaces now take *svc so they
+	// can call EnsureCanViewDocument before producing presigned URLs
+	// (storageProxy) or streaming decrypted bytes (decryptStreamHandler).
+	storageProxy := handler.NewStorageProxy(storageClient, pool, svc)
+	decryptStreamHandler := handler.NewDecryptStreamHandler(pool, s3c, docKMS, svc, *log.Z())
 
 	// ---- Health ------------------------------------------------------------
 	hs := health.NewServerWithMeta("document", cfg.Region, pool, rdb, nc, s3c)
