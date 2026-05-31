@@ -93,6 +93,46 @@ func (s *Service) GetResourceReaders(ctx context.Context, tenantID uuid.UUID, ki
 				collect(f)
 			}
 		}
+		// FIX-4 follow-up: include folder_grants in the reader set.
+		// Phase 2 added folder_grants (services/document/migrations/
+		// 000061) as the canonical ACL surface for private folders,
+		// but this materialised reader function only knew the legacy
+		// `permissions` table — so every grantee was missing from
+		// search's readable_by and from any other downstream that
+		// uses GetResourceReaders. UNION the rows here so the
+		// materialised set matches what CanAccessFolder enforces at
+		// query time.
+		queryFolderGrant := func(fid uuid.UUID) {
+			rows, err := tx.Query(ctx, `
+				SELECT grantee_type, grantee_id
+				  FROM folder_grants
+				 WHERE tenant_id = $1 AND folder_id = $2
+			`, tenantID, fid)
+			if err != nil {
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var (
+					gtype string
+					gid   uuid.UUID
+				)
+				if err := rows.Scan(&gtype, &gid); err != nil {
+					continue
+				}
+				switch gtype {
+				case "user":
+					seenUsers[gid] = struct{}{}
+				case "group":
+					seenGroups[gid] = struct{}{}
+				}
+			}
+		}
+		if kind == model.ResFolder {
+			queryFolderGrant(id)
+		} else if kind == model.ResDocument && folderID != nil {
+			queryFolderGrant(*folderID)
+		}
 		if (kind == model.ResDocument || kind == model.ResFolder) && workspaceID != nil {
 			if w, err := s.repos.Permissions.ListByResource(ctx, tx, tenantID, model.ResWorkspace, *workspaceID, s.now()); err == nil {
 				collect(w)
