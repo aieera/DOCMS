@@ -369,6 +369,14 @@ func main() {
 
 	// Custom mux to wrap only the share endpoint
 	rootMux := http.NewServeMux()
+	// FIX-10 follow-up: the anonymous bytes endpoint sits in its own
+	// mux and binds the EXACT path so Go 1.22's ServeMux gives it
+	// priority over the /api/v1/shared/ prefix below (longer pattern
+	// wins). Same rate-limiter wraps it so the 10 req/min/IP budget
+	// covers downloads too.
+	shareDownloadMux := http.NewServeMux()
+	handler.NewShareDownloadHandler(pool, s3c, docKMS, svc, *log.Z()).Register(shareDownloadMux)
+	rootMux.Handle("GET /api/v1/shared/{token}/download", shareLimiter(shareDownloadMux))
 	rootMux.Handle("/api/v1/shared/", shareLimiter(gwMux))
 
 	// Storage REST proxy — forwards to the storage gRPC service. The

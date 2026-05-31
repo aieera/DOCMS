@@ -307,18 +307,21 @@ func (s *DocumentService) AccessShareLink(ctx context.Context, in *AccessShareLi
 		return nil, vdmserr.ErrNotFound
 	}
 
-	// FIX-10: previous behaviour returned a deterministic
-	// "/api/v1/shared/{token}/download" URL when the link carried
-	// the "download" permission — but no handler ever existed for
-	// that path. The recipient hit a 404 every time. Until the
-	// anonymous bytes endpoint is built (proper re-validation +
-	// IsActive/ExpiresAt/MaxViews check + stream via storage
-	// proxy), don't return a URL the caller cannot use. The
-	// "download" permission stays in validShareActions for back-
-	// compat with existing rows; it now means "the recipient may
-	// be granted download capability when the endpoint ships".
+	// FIX-10 follow-up: the bytes endpoint now exists (see
+	// services/document/internal/handler/share_download_handler.go),
+	// so when the link carries the "download" capability we again
+	// return a usable URL. Password handling is delegated to
+	// share-download itself — that handler re-validates the link +
+	// re-runs the password check + atomically bumps the view
+	// counter, so the URL is safe to surface in the JSON browse
+	// response without leaking entitlement.
+	downloadURL := ""
+	if hasPermission(link.Permissions, "download") && document.CurrentVersionID != nil {
+		downloadURL = "/api/v1/shared/" + in.Token + "/download"
+	}
 	return &AccessShareLinkResult{
-		Document: document,
+		Document:    document,
+		DownloadURL: downloadURL,
 	}, nil
 }
 
@@ -566,6 +569,167 @@ func generateToken(n int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// ShareDownloadResolution is everything the anonymous bytes handler
+// needs to actually serve the file: blob storage coordinates,
+// encryption metadata, plus the display filename + mime the browser
+// should see. Populated by ResolveShareDownload after the link has
+// been validated AND its view counter atomically bumped — at that
+// point the access is committed; the bytes flow is just plumbing.
+//
+// PasswordRequired is set when the link carries a password and the
+// caller didn't supply one (or supplied the wrong one). The handler
+// renders a 401 in that case so the FE can prompt and retry with
+// ?password= on the next request.
+//
+// FIX-10 follow-up — closes the broken-promise gap from 6fe48f5 by
+// actually serving bytes when the "download" capability is held.
+type ShareDownloadResolution struct {
+	PasswordRequired bool
+
+	TenantID  uuid.UUID
+	DocumentID uuid.UUID
+	VersionID uuid.UUID
+
+	Bucket   string
+	Key      string
+	MimeType string
+	Filename string
+
+	KEKID        string
+	EncryptedDEK []byte
+	DEKNonce     []byte
+}
+
+// ResolveShareDownload is the anonymous bytes path. It mirrors
+// AccessShareLink's link-validation logic — IsActive + ExpiresAt +
+// password + atomic view-count bump — but instead of returning a
+// browse-time AccessShareLinkResult it returns everything a streamer
+// needs to actually fetch + decrypt + send bytes.
+//
+// Returns:
+//
+//	{PasswordRequired:true} when the link has a password and none
+//	  (or the wrong one) was supplied. Handler should reply 401.
+//	vdmserr.ErrNotFound for unknown / inactive / expired / deleted
+//	  links, the doc being soft-deleted, or the version/blob being
+//	  missing. Never leaks existence; "wrong password" maps to
+//	  ErrForbidden so the FE can distinguish.
+//	vdmserr.Conflict("link view limit reached") when the conditional
+//	  view-count UPDATE returns zero rows.
+//	vdmserr.ErrForbidden when the link doesn't carry the "download"
+//	  capability — the AccessShareLink JSON flow returned a 200 with
+//	  no DownloadURL for that case; here we're being explicit.
+func (s *DocumentService) ResolveShareDownload(ctx context.Context, token, password string) (*ShareDownloadResolution, error) {
+	if token == "" {
+		return nil, errInvalidInput("token", "required")
+	}
+	tokenHash := sha256Hex(token)
+
+	var link *model.ShareLink
+	if err := database.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		link, err = s.repos.ShareLinks.GetByTokenHash(ctx, tx, tokenHash)
+		return err
+	}); err != nil {
+		if errors.Is(err, vdmserr.ErrNotFound) || vdmserr.KindOf(err) == vdmserr.KindNotFound {
+			return nil, vdmserr.ErrNotFound
+		}
+		return nil, err
+	}
+	if !link.IsActive {
+		return nil, vdmserr.ErrNotFound
+	}
+	if link.ExpiresAt != nil && time.Now().After(*link.ExpiresAt) {
+		return nil, vdmserr.Conflict("link has expired")
+	}
+	if !hasPermission(link.Permissions, "download") {
+		return nil, vdmserr.ErrForbidden
+	}
+	if link.PasswordHash != "" {
+		if password == "" {
+			return &ShareDownloadResolution{PasswordRequired: true}, nil
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(link.PasswordHash), []byte(password)); err != nil {
+			return nil, vdmserr.ErrForbidden
+		}
+	}
+
+	out := &ShareDownloadResolution{
+		TenantID:   link.TenantID,
+		DocumentID: link.DocumentID,
+	}
+	scoped := auth.SetTenantID(ctx, link.TenantID)
+	err := database.WithTenantTx(scoped, s.pool, link.TenantID, func(tx pgx.Tx) error {
+		// Load the document so we can guard the soft-delete edge and
+		// pick the right CurrentVersionID. AccessShareLink already
+		// does this; the bytes path mirrors it.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, link.TenantID, link.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc == nil || doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if doc.CurrentVersionID == nil {
+			return vdmserr.ErrNotFound
+		}
+		out.VersionID = *doc.CurrentVersionID
+
+		// Atomic view-count gate. The conditional UPDATE returns
+		// (false, nil) when max_views would be exceeded.
+		incremented, err := s.repos.ShareLinks.IncrementViewCount(ctx, tx, link.ID)
+		if err != nil {
+			return err
+		}
+		if !incremented {
+			return vdmserr.Conflict("link view limit reached")
+		}
+
+		// Pull the blob coordinates. Mirror decrypt_stream.go's
+		// preference for version.mime_type over blob.mime_type
+		// (BUG-05) and the shredded_at guard.
+		return tx.QueryRow(ctx, `
+			SELECT b.storage_bucket,
+			       b.storage_key,
+			       COALESCE(NULLIF(v.mime_type, ''), NULLIF(b.mime_type, ''), 'application/octet-stream'),
+			       COALESCE(b.kek_id, ''),
+			       b.encrypted_dek,
+			       b.dek_nonce
+			  FROM document_versions v
+			  JOIN content_blobs b
+			    ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
+			 WHERE v.tenant_id = $1 AND v.id = $2 AND b.shredded_at IS NULL
+		`, link.TenantID, *doc.CurrentVersionID).Scan(
+			&out.Bucket, &out.Key, &out.MimeType,
+			&out.KEKID, &out.EncryptedDEK, &out.DEKNonce,
+		)
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Filename: best-effort. Loaded outside the tx since we just
+	// need the title for Content-Disposition. Tolerate failures.
+	if doc, _ := s.GetDocumentTitleOnly(ctx, link.TenantID, link.DocumentID); doc != "" {
+		out.Filename = doc
+	}
+	return out, nil
+}
+
+// GetDocumentTitleOnly is a minimal-footprint helper that fetches a
+// document's title without permission checks (the caller has already
+// established access — typically via an anonymous share link). Used
+// by ResolveShareDownload for the Content-Disposition filename.
+func (s *DocumentService) GetDocumentTitleOnly(ctx context.Context, tenantID, docID uuid.UUID) (string, error) {
+	var title string
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT title FROM documents WHERE tenant_id = $1 AND id = $2`,
+			tenantID, docID,
+		).Scan(&title)
+	})
+	return title, err
 }
 
 func sha256Hex(s string) string {
