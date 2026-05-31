@@ -69,6 +69,10 @@ func (ix *Indexer) Start(parent context.Context) error {
 		{"dms.permission.changed.v1", ix.onPermissionChanged},
 		{"dms.version.classified.v1", ix.onClassified},
 		{"dms.version.entities_detected.v1", ix.onEntitiesDetected},
+		// FIX-5 follow-up: cascade folder deletes propagate to the
+		// index via the document_ids list in the event payload so
+		// the recipient doesn't need a tree-walk view.
+		{"dms.folder.deleted.v1", ix.onFolderDeleted},
 	}
 
 	for _, s := range subjects {
@@ -172,6 +176,54 @@ func (ix *Indexer) onDocDeleted(msg *nats.Msg) {
 		ix.log.Error().Err(err).Str("document_id", docID).Msg("delete from index failed")
 		_ = msg.Nak()
 		return
+	}
+	_ = msg.Ack()
+}
+
+// onFolderDeleted fans the document-side cascade out to OpenSearch.
+// The document service's SoftDeleteSubtree pre-computed the affected
+// document_ids and shipped them on the event payload (FIX-5 follow-up)
+// so this handler doesn't need a tree-walk view of folders. Each id
+// goes through svc.DeleteDocument independently — same code path as
+// onDocDeleted — and we ack only when every delete succeeds, so a
+// transient OpenSearch hiccup gets redelivered.
+//
+// Restore symmetry is harder: re-indexing a restored doc needs the
+// full source-of-truth payload (title, content, ACL) which lives in
+// Postgres. That's left for a follow-up that adds either a per-doc
+// document.restored.v1 event with full payload, or a search→document
+// re-fetch path.
+func (ix *Indexer) onFolderDeleted(msg *nats.Msg) {
+	data, ok := ix.parseData(msg)
+	if !ok {
+		return
+	}
+	tenantID := strField(data, "tenant_id")
+	if tenantID == "" {
+		// Outbox publisher stamps tenant_id on every CloudEvents
+		// envelope; missing it means a malformed message we'll
+		// never recover.
+		_ = msg.Term()
+		return
+	}
+	docIDs := strSliceField(data, "document_ids")
+	if len(docIDs) == 0 {
+		// Empty subtrees are valid (folder with no docs cascaded)
+		// — nothing to do in the index, ack and move on.
+		_ = msg.Ack()
+		return
+	}
+	ctx, cancel := handlerCtx(ix.parent, msg)
+	defer cancel()
+	for _, id := range docIDs {
+		if id == "" {
+			continue
+		}
+		if err := ix.svc.DeleteDocument(ctx, tenantID, id); err != nil {
+			ix.log.Error().Err(err).Str("document_id", id).Msg("folder cascade: delete from index failed")
+			_ = msg.Nak()
+			return
+		}
 	}
 	_ = msg.Ack()
 }

@@ -191,24 +191,41 @@ func (r *folderRepo) SoftDeleteAllInWorkspace(ctx context.Context, tx pgx.Tx, te
 	return nil
 }
 
+// SubtreeDeleteResult is what SoftDeleteSubtree returns. CohortID
+// groups the rows for cohort-scoped restore. FolderIDs is every
+// folder soft-deleted by this call (including the root). DocumentIDs
+// is every document soft-deleted by this call. Callers (the service
+// layer) use the two id slices to populate the folder.deleted.v1
+// outbox payload so downstream consumers (search) can DeleteByQuery
+// without needing a path-recursive view of the tree.
+//
+// FIX-5 follow-up — required for the search-side delete consumer
+// that previously had no way to know which docs were nuked by a
+// cascade.
+type SubtreeDeleteResult struct {
+	CohortID    uuid.UUID
+	FolderIDs   []uuid.UUID
+	DocumentIDs []uuid.UUID
+}
+
 // SoftDeleteSubtree cascades a folder soft-delete to every descendant
 // folder + every document under that subtree, stamping a single
 // cohort id on all of them so RestoreSubtree can bring them back as
-// one atomic group. Returns the cohort id so the caller can stash it
-// on the outbox event for forensic traceability.
+// one atomic group. Returns the cohort id plus the id slices the
+// caller needs to fan out downstream events (see SubtreeDeleteResult).
 //
 // Uses the folder's ltree path (`<@` "ancestor of or equal to") so
-// arbitrary-depth subtrees are handled in two UPDATEs. Already-
-// deleted rows are skipped (deleted_at IS NULL predicate) so a
-// partial-delete redo is idempotent.
+// arbitrary-depth subtrees are handled in two UPDATE … RETURNING
+// statements. Already-deleted rows are skipped (deleted_at IS NULL
+// predicate) so a partial-delete redo is idempotent.
 //
 // FIX-5 (audit Section 11). The previous DeleteFolder refused non-
 // empty folders outright with no restore path — competing products
 // ship this as table stakes.
-func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (uuid.UUID, error) {
+func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (*SubtreeDeleteResult, error) {
 	cohortID, err := uuid.NewRandom()
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 	var rootPath string
 	if err := tx.QueryRow(ctx, `
@@ -216,15 +233,18 @@ func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID,
 		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`, tenantID, rootID).Scan(&rootPath); err != nil {
 		if err == pgx.ErrNoRows {
-			return uuid.Nil, vdmserr.ErrNotFound
+			return nil, vdmserr.ErrNotFound
 		}
-		return uuid.Nil, mapPgError(err)
+		return nil, mapPgError(err)
 	}
 	// Documents under any folder in this subtree. Run BEFORE the
 	// folder update so the documents.folder_id JOIN still sees live
 	// rows; the deleted_at predicate makes the order moot in practice
 	// but the explicit ordering keeps the intent readable.
-	if _, err := tx.Exec(ctx, `
+	// RETURNING id lets us hand the affected doc ids back to the
+	// caller for downstream fan-out.
+	docIDs := []uuid.UUID{}
+	docRows, err := tx.Query(ctx, `
 		UPDATE documents
 		   SET deleted_at = now(),
 		       deleted_cohort_id = $3,
@@ -237,10 +257,23 @@ func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID,
 		      WHERE tenant_id = $1 AND deleted_at IS NULL
 		        AND path <@ $2::ltree
 		   )
-	`, tenantID, rootPath, cohortID, deletedBy); err != nil {
-		return uuid.Nil, mapPgError(err)
+		RETURNING id
+	`, tenantID, rootPath, cohortID, deletedBy)
+	if err != nil {
+		return nil, mapPgError(err)
 	}
-	if _, err := tx.Exec(ctx, `
+	for docRows.Next() {
+		var id uuid.UUID
+		if err := docRows.Scan(&id); err != nil {
+			docRows.Close()
+			return nil, mapPgError(err)
+		}
+		docIDs = append(docIDs, id)
+	}
+	docRows.Close()
+
+	folderIDs := []uuid.UUID{}
+	folderRows, err := tx.Query(ctx, `
 		UPDATE folders
 		   SET deleted_at = now(),
 		       deleted_cohort_id = $3,
@@ -248,10 +281,25 @@ func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID,
 		       updated_at = now()
 		 WHERE tenant_id = $1 AND deleted_at IS NULL
 		   AND path <@ $2::ltree
-	`, tenantID, rootPath, cohortID, deletedBy); err != nil {
-		return uuid.Nil, mapPgError(err)
+		RETURNING id
+	`, tenantID, rootPath, cohortID, deletedBy)
+	if err != nil {
+		return nil, mapPgError(err)
 	}
-	return cohortID, nil
+	for folderRows.Next() {
+		var id uuid.UUID
+		if err := folderRows.Scan(&id); err != nil {
+			folderRows.Close()
+			return nil, mapPgError(err)
+		}
+		folderIDs = append(folderIDs, id)
+	}
+	folderRows.Close()
+	return &SubtreeDeleteResult{
+		CohortID:    cohortID,
+		FolderIDs:   folderIDs,
+		DocumentIDs: docIDs,
+	}, nil
 }
 
 // RestoreSubtree un-deletes every folder + document that shares the

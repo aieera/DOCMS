@@ -414,15 +414,28 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 		}); err != nil {
 			return err
 		}
-		cohort, err := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, id, userID)
+		result, err := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, id, userID)
 		if err != nil {
 			return err
 		}
+		// FIX-5 follow-up: ship the full affected id lists in the
+		// outbox payload so the search consumer can DeleteByQuery
+		// the right documents without re-walking the tree.
+		folderIDs := make([]string, 0, len(result.FolderIDs))
+		for _, f := range result.FolderIDs {
+			folderIDs = append(folderIDs, f.String())
+		}
+		documentIDs := make([]string, 0, len(result.DocumentIDs))
+		for _, d := range result.DocumentIDs {
+			documentIDs = append(documentIDs, d.String())
+		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.deleted.v1", "folder", id, map[string]any{
-			"folder_id":   id.String(),
+			"folder_id":    id.String(),
 			"workspace_id": cur.WorkspaceID.String(),
-			"cohort_id":   cohort.String(),
-			"deleted_by":  userID.String(),
+			"cohort_id":    result.CohortID.String(),
+			"deleted_by":   userID.String(),
+			"folder_ids":   folderIDs,
+			"document_ids": documentIDs,
 		})
 		if err != nil {
 			return err
