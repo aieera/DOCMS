@@ -280,7 +280,13 @@ func (s *DocumentService) AccessShareLink(ctx context.Context, in *AccessShareLi
 		}
 	}
 
-	// Step 2: load the document under the share link's tenant.
+	// Step 2: load the document under the share link's tenant, then
+	// atomically bump the view counter. FIX-10: IncrementViewCount
+	// now does the max_views check inside the UPDATE — the in-Go
+	// check above is kept for the friendlier error message, but
+	// concurrent accesses that both pass it fall back to the DB-
+	// level constraint here.
+	var incremented bool
 	scoped := auth.SetTenantID(ctx, link.TenantID)
 	err = database.WithTenantTx(scoped, s.pool, link.TenantID, func(tx pgx.Tx) error {
 		var err error
@@ -288,25 +294,31 @@ func (s *DocumentService) AccessShareLink(ctx context.Context, in *AccessShareLi
 		if err != nil {
 			return err
 		}
-		return s.repos.ShareLinks.IncrementViewCount(ctx, tx, link.ID)
+		incremented, err = s.repos.ShareLinks.IncrementViewCount(ctx, tx, link.ID)
+		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+	if !incremented {
+		return nil, vdmserr.Conflict("link view limit reached")
 	}
 	if document.DeletedAt != nil {
 		return nil, vdmserr.ErrNotFound
 	}
 
-	// Download URL: issued by storage service in Phase 6; for now return a
-	// deterministic placeholder the handler can wrap.
-	downloadURL := ""
-	if hasPermission(link.Permissions, "download") && document.CurrentVersionID != nil {
-		downloadURL = "/api/v1/shared/" + in.Token + "/download"
-	}
-
+	// FIX-10: previous behaviour returned a deterministic
+	// "/api/v1/shared/{token}/download" URL when the link carried
+	// the "download" permission — but no handler ever existed for
+	// that path. The recipient hit a 404 every time. Until the
+	// anonymous bytes endpoint is built (proper re-validation +
+	// IsActive/ExpiresAt/MaxViews check + stream via storage
+	// proxy), don't return a URL the caller cannot use. The
+	// "download" permission stays in validShareActions for back-
+	// compat with existing rows; it now means "the recipient may
+	// be granted download capability when the endpoint ships".
 	return &AccessShareLinkResult{
-		Document:    document,
-		DownloadURL: downloadURL,
+		Document: document,
 	}, nil
 }
 

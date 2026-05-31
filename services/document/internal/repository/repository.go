@@ -113,7 +113,11 @@ type ShareLinkRepository interface {
 	ListByTenant(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, onlyActive bool) ([]model.ShareLinkAdmin, error)
 	RevokeAllForDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (int64, error)
 	Deactivate(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
-	IncrementViewCount(ctx context.Context, tx pgx.Tx, id uuid.UUID) error
+	// IncrementViewCount atomically bumps the view counter. Returns
+	// false when max_views would be exceeded — caller should reject
+	// the access. FIX-10 closed the TOCTOU race the previous unconditional
+	// bump invited.
+	IncrementViewCount(ctx context.Context, tx pgx.Tx, id uuid.UUID) (bool, error)
 }
 
 type TagRepository interface {

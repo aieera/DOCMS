@@ -147,15 +147,31 @@ func (r *shareLinkRepo) Deactivate(ctx context.Context, tx pgx.Tx, tenantID, id 
 	return nil
 }
 
-// IncrementViewCount bumps view_count and sets accessed_at. No tenant clause
-// on purpose — the caller has already resolved the link via its token hash,
-// and a rogue tenant cannot forge another tenant's token_hash anyway.
-func (r *shareLinkRepo) IncrementViewCount(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE share_links SET view_count = view_count + 1, accessed_at = now()
-		WHERE id = $1
+// IncrementViewCount bumps view_count + accessed_at, but only when the
+// resulting count would not exceed max_views (when max_views > 0). The
+// conditional is part of the same UPDATE so two concurrent AccessShareLink
+// calls can't both pass an in-Go `view_count >= max_views` check and then
+// both bump (the TOCTOU race the audit flagged at FIX-10).
+//
+// Returns true when the row was incremented, false when the cap was hit
+// (caller should reject with "share link view limit reached"). max_views=0
+// is treated as unlimited, matching the model.
+//
+// No tenant clause on purpose — the caller has already resolved the link
+// via its token hash, and a rogue tenant cannot forge another tenant's
+// token_hash anyway.
+func (r *shareLinkRepo) IncrementViewCount(ctx context.Context, tx pgx.Tx, id uuid.UUID) (bool, error) {
+	ct, err := tx.Exec(ctx, `
+		UPDATE share_links
+		   SET view_count = view_count + 1,
+		       accessed_at = now()
+		 WHERE id = $1
+		   AND (max_views = 0 OR view_count < max_views)
 	`, id)
-	return mapPgError(err)
+	if err != nil {
+		return false, mapPgError(err)
+	}
+	return ct.RowsAffected() > 0, nil
 }
 
 func scanShareLink(r rowScanner) (*model.ShareLink, error) {
