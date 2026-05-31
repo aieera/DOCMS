@@ -1,8 +1,32 @@
 # Disaster Recovery Runbook
 
 **Owner:** Platform / SRE
-**Last rehearsed:** never (see §Rehearsal below)
+**Last rehearsed:** never (see §Rehearsal below — overdue, FIX-8 status)
 **RTO/RPO targets:** see per-store table below
+
+> **FIX-8 status (2026-05-31).** Bucket versioning + automated
+> restore verification have landed:
+>
+> - `deploy/helm/vaultdms/templates/jobs/bucket-init.yaml` — Helm
+>   post-install hook runs `mc version enable` on every content
+>   bucket (optional GOVERNANCE object-lock via
+>   `s3BucketInit.retention.enabled`). Same wiring is in dev
+>   docker-compose `minio-init`.
+> - `deploy/helm/vaultdms/templates/cronjobs/backup-verify.yaml` —
+>   weekly CronJob fetches the latest pg_dump, restores into a
+>   scratch DB, asserts row counts on `documents` /
+>   `document_versions` / `audit_events`. Failure pages oncall.
+>
+> Still deferred (ops cycles, not code):
+>
+> - **Continuous Postgres backup.** Daily pg_dump = ~24h RPO; the
+>   5min RPO claimed below cannot be met without WAL shipping
+>   (pgBackRest / wal-g) or CNPG-operator continuous backup
+>   (`useOperator: true` in values.yaml is configured but gated
+>   off).
+> - **DR rehearsal.** First rehearsal under the new wiring should
+>   commit a `docs/runbooks/dr-rehearsals/YYYY-MM-DD.md` step-by-
+>   step log.
 
 ## Scope
 

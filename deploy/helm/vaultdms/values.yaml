@@ -601,3 +601,35 @@ backup:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 512Mi }
+  # FIX-8 (audit Section 12): restore-verification CronJob. Pulls
+  # the most recent backup from s3Bucket, restores it into a scratch
+  # postgres pod, asserts at least one row in the canonical tables
+  # (documents, versions, audit_events). Failure pages oncall. Runs
+  # once a week so backup-rot is detected within 7 days instead of
+  # at incident time.
+  verify:
+    enabled: true
+    schedule: "0 4 * * 0"  # Sunday 4am
+    minRowCount:
+      documents: 1
+      document_versions: 1
+      audit_events: 1
+
+# FIX-8 (audit Section 12): bucket-init Job. Provisions S3
+# versioning + optional object-lock GOVERNANCE retention on every
+# content-bearing bucket as a Helm post-install hook. Without this
+# the DR runbook's "restore from S3 version history" recovery
+# mechanism is documented but not actually configured — the audit's
+# Section 12 finding.
+s3BucketInit:
+  enabled: true
+  buckets:
+    - dms-us-east-1-hot
+    - dms-us-east-1-warm
+    - dms-us-east-1-previews
+    - dms-quarantine
+  retention:
+    # Off by default — only AWS S3 + MinIO-with-object-lock support
+    # it; legacy clusters need a one-time `mc mb --with-lock` first.
+    enabled: false
+    years: 7

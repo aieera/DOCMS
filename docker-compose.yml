@@ -248,6 +248,15 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    # FIX-8 (audit Section 12). Bucket versioning is enabled below so
+    # deletes are recoverable — DR runbook documents S3 versioning as
+    # the recovery mechanism but the buckets were never versioned in
+    # code. Object-lock GOVERNANCE requires --with-lock at bucket
+    # create time; legacy clusters need a one-time manual recreate.
+    #
+    # Inline comments in `>` folded scalars become shell `#` on a
+    # single line and silently truncate later commands — that's why
+    # the keep-it-comment-free style here.
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 minioadmin minioadmin;
@@ -256,6 +265,10 @@ services:
       mc mb --ignore-existing local/dms-us-east-1-previews;
       mc mb --ignore-existing local/dms-quarantine;
       mc mb --ignore-existing local/health-check;
+      mc version enable local/dms-us-east-1-hot      || true;
+      mc version enable local/dms-us-east-1-warm     || true;
+      mc version enable local/dms-us-east-1-previews || true;
+      mc version enable local/dms-quarantine         || true;
       echo 'bucket provisioning complete';
       "
     restart: "no"
