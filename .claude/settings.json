@@ -232,7 +232,24 @@
       "Bash(cd \"C:\\\\Users\\\\dell\\\\Documents\\\\DOCMS\\\\web\\\\src\" && grep -n \"isAdmin\\\\|role === 'owner'\" routes/_authenticated/workspaces/'$workspaceId'/index.tsx)",
       "Read(//c/Users/dell/Documents/DOCMS/routes/_authenticated/workspaces/$workspaceId/**)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/en/folders.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/ar/folders.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/en/common.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/ar/common.json','utf8'\\)\\);console.log\\('OK'\\)\")",
-      "Bash(curl -s -b \"session=$\\(docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -tAc 'SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1' \\)\" \"http://localhost:3000/api/v1/admin/users?limit=5\" -H \"Cookie: $\\(cat ~/.cookies \\)\")"
+      "Bash(curl -s -b \"session=$\\(docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -tAc 'SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1' \\)\" \"http://localhost:3000/api/v1/admin/users?limit=5\" -H \"Cookie: $\\(cat ~/.cookies \\)\")",
+      "Bash(findstr /i \"trash delete soft folder\")",
+      "Read(//c/Users/dell/Documents/DOCMS/services/auth/internal/handler/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/services/auth/internal/service/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/services/storage/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/services/storage/internal/service/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/services/storage/internal/handler/**)",
+      "Read(//c/Users/dell/Documents/DOCMS/pkg/middleware/**)",
+      "Bash(docker inspect *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -H \"X-Gateway-Signature: $\\(grep VAULTDMS_GATEWAY_SECRET .env)",
+      "Bash(curl -s -o /dev/null -w \"via vite \\(3000\\): %{http_code}\\\\n\" \"http://localhost:3000/api/v1/shared/bogus-token/download\")",
+      "Bash(curl -s -o /dev/null -w \"via kong \\(8189\\): %{http_code}\\\\n\" \"http://localhost:8189/api/v1/shared/bogus-token/download\")",
+      "Bash(cd \"c:/Users/dell/Documents/DOCMS\" && wc -l web/src/routes/_authenticated/trash.tsx web/src/routes/shared.\\\\$token.tsx web/src/api/shareLinks.ts 2>&1)",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "Bash(xargs tail -10)",
+      "Bash(cd \"c:/Users/dell/Documents/DOCMS\" && grep -nE \"useUpload|currentFolderId|invalidateQueries.*folders|child_folder_count|document_count\" web/src/routes/_authenticated/workspaces/\\\\$workspaceId/index.tsx | head -15)"
     ],
     "additionalDirectories": [
       "C:\\Users\\dell"
