@@ -198,6 +198,17 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           setStatus(id, 'completed')
           toast.success(`${file.name} — deduplicated, no upload needed`)
           await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+        // BUG: folder card counts went stale after upload. The folders
+        // list query carries per-folder document_count + child_folder_count
+        // and was never invalidated, so the card grid kept showing "00
+        // items" until a manual reload. Also refresh the current-folder
+        // detail (breadcrumb count) and the workspace summary at the
+        // top of the page.
+        await qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
+        await qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
+        if (folderId) {
+          await qc.invalidateQueries({ queryKey: ['folder', folderId] })
+        }
           onComplete?.(file, doc.id)
           continue
         }
@@ -229,6 +240,17 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
         await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+        // BUG: folder card counts went stale after upload. The folders
+        // list query carries per-folder document_count + child_folder_count
+        // and was never invalidated, so the card grid kept showing "00
+        // items" until a manual reload. Also refresh the current-folder
+        // detail (breadcrumb count) and the workspace summary at the
+        // top of the page.
+        await qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
+        await qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
+        if (folderId) {
+          await qc.invalidateQueries({ queryKey: ['folder', folderId] })
+        }
         onComplete?.(file, doc.id)
 
         // ADR 0102 — record the filing decision for the training
