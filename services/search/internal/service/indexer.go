@@ -477,6 +477,14 @@ func (ix *Indexer) parseData(msg *nats.Msg) (map[string]any, bool) {
 	if !ok {
 		data = envelope
 	}
+	// Outbox-published events carry tenant_id at the envelope root as
+	// the CloudEvents `tenantid` extension, not inside data. Hoist it
+	// so handlers can read it the same way regardless of publisher.
+	if _, present := data["tenant_id"]; !present {
+		if tid, ok := envelope["tenantid"].(string); ok && tid != "" {
+			data["tenant_id"] = tid
+		}
+	}
 	return data, true
 }
 
