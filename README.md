@@ -35,10 +35,29 @@ vaultdms/
     signature/
     billing/
     connector/
+  web/                # React/Vite frontend
   scripts/            # DB init, seeders, tooling
+  docs/               # Architecture, ADRs, API spec, integration guides
   .github/workflows/  # CI + release
   docker-compose.yml  # Local dev: all dependencies + services
 ```
+
+## API & integrations
+
+VaultDMS exposes a versioned REST API (`/api/v1/*`) plus HMAC-signed webhooks for
+external systems (ERP, iPaaS, custom integrations) to push documents and receive
+domain events.
+
+- **API contract:** [`docs/api/openapi.yaml`](docs/api/openapi.yaml) — rendered via Redoc on
+  the published API site; versioning policy in [`docs/api/SEMVER_POLICY.md`](docs/api/SEMVER_POLICY.md).
+- **API integration guide:** [`docs/api/INTEGRATION_GUIDE.md`](docs/api/INTEGRATION_GUIDE.md) —
+  auth (API keys + scopes), idempotency, pagination, webhooks + signature verification.
+- **ERP integration guide:** [`docs/integrations/erp-integration.md`](docs/integrations/erp-integration.md) —
+  end-to-end worked example: ingest flow, webhook subscription, reconcile, deep links.
+
+Authentication is either a session cookie (web UI) or a Bearer API key
+(`Authorization: Bearer vdms_…`) for service-to-service calls; keys are tenant-scoped and
+scope-gated. Webhook subscriptions and API keys are managed under `/admin/*` in the web UI.
 
 ## Quickstart
 

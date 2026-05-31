@@ -45,6 +45,7 @@ jobs:
           cp proto/gen/openapi/vaultdms.swagger.json _site/swagger.json
           cp docs/api/SEMVER_POLICY.md       _site/SEMVER_POLICY.md
           cp docs/api/CHANGELOG.md           _site/CHANGELOG.md
+          cp docs/api/INTEGRATION_GUIDE.md   _site/INTEGRATION_GUIDE.md
           # Single-file Redoc renderer loading the YAML above.
           cat > _site/index.html <<'HTML'
           <!doctype html>
@@ -54,9 +55,19 @@ jobs:
             <title>VaultDMS API v1.0</title>
             <meta name="viewport" content="width=device-width, initial-scale=1"/>
             <link rel="icon" href="data:,"/>
-            <style>body{margin:0;font-family:system-ui}</style>
+            <style>
+              body{margin:0;font-family:system-ui}
+              .vd-bar{position:fixed;top:8px;right:12px;z-index:10;font-size:13px}
+              .vd-bar a{margin-left:14px;color:#2563eb;text-decoration:none}
+              .vd-bar a:hover{text-decoration:underline}
+            </style>
           </head>
           <body>
+            <div class="vd-bar">
+              <a href="INTEGRATION_GUIDE.md">Integration guide</a>
+              <a href="CHANGELOG.md">Changelog</a>
+              <a href="SEMVER_POLICY.md">Versioning</a>
+            </div>
             <redoc spec-url="openapi.yaml"></redoc>
             <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
           </body>
