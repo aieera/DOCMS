@@ -240,7 +240,15 @@ type BatchUpdateMetadataResult struct {
 // ---- Validation helpers ---------------------------------------------------
 
 var (
-	folderNameRE   = regexp.MustCompile(`^[A-Za-z0-9 _\-]{1,255}$`)
+	// folderNameRE — display name for folders. Previously
+	// `[A-Za-z0-9 _-]` only, which rejected legitimate enterprise
+	// names like "Q3 2025 (Final)" or "ABC Corp. & Co." Relaxed to a
+	// denylist: forbid path-separator + filesystem-reserved + control
+	// chars; allow everything else including Unicode + common
+	// punctuation. The ltree path label is generated separately by
+	// ltreeLabel() which slugs to [A-Za-z0-9_] regardless, so the
+	// display value never escapes into ltree semantics.
+	folderNameRE   = regexp.MustCompile(`^[^/\\:*?"<>|\x00-\x1F]{1,255}$`)
 	tagNameRE      = regexp.MustCompile(`^[A-Za-z0-9_\-]{1,64}$`)
 	hexColorRE     = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 	allowedRegions = map[string]struct{}{
@@ -269,7 +277,7 @@ func validateDescription(d string) error {
 
 func validateFolderName(name string) error {
 	if !folderNameRE.MatchString(name) {
-		return vdmserr.Validation("name", "must be 1..255 chars [A-Za-z0-9 _-]")
+		return vdmserr.Validation("name", `must be 1..255 chars; cannot contain / \ : * ? " < > | or control chars`)
 	}
 	return nil
 }
