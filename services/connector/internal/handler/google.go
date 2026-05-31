@@ -22,8 +22,8 @@ type putGoogleConfigBody struct {
 }
 
 func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := actorFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -41,7 +41,7 @@ func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) disconnectGoogle(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return

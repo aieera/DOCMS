@@ -10,9 +10,23 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/audit/internal/model"
 	"github.com/vaultdms/vaultdms/services/audit/internal/service"
 )
+
+// tenantFromCtx reads the trusted tenant id off the request context.
+// SessionAuth (wired in cmd/server/main.go for FIX-1) is responsible
+// for populating it from the session cookie; returns "" when absent,
+// which the caller treats as a 400. FIX-1 follow-up — header reads
+// are no longer trusted because Kong now strips them.
+func tenantFromCtx(r *http.Request) string {
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil {
+		return ""
+	}
+	return tid.String()
+}
 
 // Handler holds HTTP route handlers.
 type Handler struct {
@@ -37,7 +51,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -76,7 +90,7 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -97,7 +111,7 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) verifyIntegrity(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -115,7 +129,7 @@ type subjectBody struct {
 }
 
 func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	var body subjectBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")
@@ -130,7 +144,7 @@ func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	var body subjectBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")

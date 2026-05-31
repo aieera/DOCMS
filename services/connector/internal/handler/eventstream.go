@@ -52,8 +52,8 @@ type issueTokenBody struct {
 }
 
 func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	actorID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	actorID := actorFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
 		return
@@ -73,7 +73,7 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *EventStreamHandler) listTokens(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	list, err := h.svc.ListTokens(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -83,7 +83,7 @@ func (h *EventStreamHandler) listTokens(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	if err := h.svc.RevokeToken(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -95,7 +95,7 @@ func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request)
 // ---- Live tail (SSE) ------------------------------------------------------
 
 func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
 		return

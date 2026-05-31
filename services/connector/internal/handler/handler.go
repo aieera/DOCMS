@@ -8,8 +8,29 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/connector/internal/service"
 )
+
+// tenantFromCtx + actorFromCtx — FIX-1 follow-up. SessionAuth
+// populates auth.UserInfo on ctx from the session cookie; these
+// helpers read the trusted values instead of the X-Auth-Tenant-ID /
+// X-User-ID headers Kong now strips at the edge.
+func tenantFromCtx(r *http.Request) string {
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil {
+		return ""
+	}
+	return tid.String()
+}
+
+func actorFromCtx(r *http.Request) string {
+	uid, err := auth.GetUserID(r.Context())
+	if err != nil {
+		return ""
+	}
+	return uid.String()
+}
 
 // Handler holds HTTP route handlers.
 type Handler struct {
@@ -65,8 +86,8 @@ type createWebhookBody struct {
 }
 
 func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := actorFromCtx(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
 		return
@@ -86,7 +107,7 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	list, err := h.svc.ListWebhooks(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -96,7 +117,7 @@ func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	if err := h.svc.DeleteWebhook(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -106,7 +127,7 @@ func (h *Handler) deleteWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getDeliveryLog(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	log, err := h.svc.GetDeliveryLog(r.Context(), tenantID, id, 50)
 	if err != nil {
@@ -155,7 +176,7 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -174,7 +195,7 @@ func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) testWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -193,7 +214,7 @@ func (h *Handler) testWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	deliveryID := r.PathValue("deliveryId")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -214,7 +235,7 @@ func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {
 // ---- Connectors -----------------------------------------------------------
 
 func (h *Handler) listConnectors(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	list, err := h.svc.ListConnectors(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -224,7 +245,7 @@ func (h *Handler) listConnectors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getConnector(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusUnauthorized, "tenant required")
 		return
@@ -245,7 +266,7 @@ func (h *Handler) getConnector(w http.ResponseWriter, r *http.Request) {
 // getAuthURL returns the vendor consent URL the browser should be
 // redirected to. Tenant must have saved client credentials first.
 func (h *Handler) getAuthURL(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return

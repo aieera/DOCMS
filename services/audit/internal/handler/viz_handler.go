@@ -18,7 +18,7 @@ import (
 )
 
 func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return

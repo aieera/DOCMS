@@ -103,7 +103,11 @@ func main() {
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
 	// §3.1 / B2.3 — reject unsigned traffic. See pkg/middleware/gatewaysig.go.
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
+	// FIX-1 follow-up: Kong now strips X-Auth-Tenant-ID + X-User-*
+	// at the edge, so audit handlers must read identity from the
+	// SessionAuth-populated ctx instead of headers. SessionAuthOptional
+	// lets sessionless paths (none today on audit) keep working.
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -32,7 +32,7 @@ func (h *EmailHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *EmailHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	out, err := h.svc.ListConfigs(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -42,8 +42,8 @@ func (h *EmailHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EmailHandler) create(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	actorID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	actorID := actorFromCtx(r)
 	var body email.CreateConfigInput
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -58,7 +58,7 @@ func (h *EmailHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EmailHandler) patch(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	var body email.PatchConfigInput
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -74,7 +74,7 @@ func (h *EmailHandler) patch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EmailHandler) delete(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	if err := h.svc.DeleteConfig(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -84,7 +84,7 @@ func (h *EmailHandler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EmailHandler) runNow(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	n, err := h.svc.RunOnce(r.Context(), tenantID, id)
 	if err != nil {
@@ -95,7 +95,7 @@ func (h *EmailHandler) runNow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EmailHandler) stats(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	id := r.PathValue("id")
 	stats, err := h.svc.GetStats(r.Context(), tenantID, id)
 	if err != nil {

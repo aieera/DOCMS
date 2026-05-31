@@ -34,8 +34,8 @@ type putM365ConfigBody struct {
 }
 
 func (h *Handler) putM365Config(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := tenantFromCtx(r)
+	userID := actorFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -53,7 +53,7 @@ func (h *Handler) putM365Config(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) m365AuthURL(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -69,7 +69,7 @@ func (h *Handler) m365AuthURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) disconnectM365(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -83,7 +83,7 @@ func (h *Handler) disconnectM365(w http.ResponseWriter, r *http.Request) {
 
 // listM365Sites — GET /api/v1/connectors/m365/sites[?acting_as=<user>]
 func (h *Handler) listM365Sites(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -99,7 +99,7 @@ func (h *Handler) listM365Sites(w http.ResponseWriter, r *http.Request) {
 // listM365DriveItems — GET /api/v1/connectors/m365/drives/{drive_id}/items
 //                       [?folder_id=<id>][&acting_as=<user>]
 func (h *Handler) listM365DriveItems(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := tenantFromCtx(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
