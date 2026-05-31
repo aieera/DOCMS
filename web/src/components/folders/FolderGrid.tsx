@@ -24,6 +24,7 @@ import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -333,6 +334,7 @@ function RenameFolderDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('rename_dialog.title')}</DialogTitle>
+          <DialogDescription>{t('rename_dialog.name_label')}</DialogDescription>
         </DialogHeader>
         <Input
           value={name}
