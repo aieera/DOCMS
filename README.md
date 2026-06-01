@@ -204,6 +204,6 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 
 ## License
 
-**Proprietary — © 2026 VaultDMS. All rights reserved.** This software is
+**Proprietary — © 2026 Raabyt. All rights reserved.** This software (VaultDMS) is
 licensed, not sold; unauthorized use, copying, or distribution is prohibited.
 See [LICENSE](LICENSE).
