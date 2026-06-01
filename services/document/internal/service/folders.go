@@ -181,7 +181,27 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 		// folders pass through for full members; grantee-only callers
 		// see no shared folders at all (their entry was the grant,
 		// not workspace membership).
+		//
+		// Private folders go through a single batch access check
+		// instead of N round-trips. Group grants are honored (the
+		// previous per-row loop passed nil for userGroups, which
+		// silently hid group-only entitlements).
 		isAdmin := s.callerIsTenantAdmin(ctx)
+		var privateIDs []uuid.UUID
+		for i := range raw {
+			if raw[i].Visibility != model.FolderShared {
+				privateIDs = append(privateIDs, raw[i].ID)
+			}
+		}
+		var accessible map[uuid.UUID]bool
+		if len(privateIDs) > 0 && !isAdmin {
+			groups := auth.GetUserGroups(ctx)
+			a, cerr := s.repos.Folders.FilterAccessibleFolderIDs(ctx, tx, tenantID, privateIDs, userID, groups)
+			if cerr != nil {
+				return cerr
+			}
+			accessible = a
+		}
 		filtered := raw[:0]
 		for i := range raw {
 			if raw[i].Visibility == model.FolderShared {
@@ -190,11 +210,7 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 				}
 				continue
 			}
-			ok, cerr := s.repos.Folders.CanAccessFolder(ctx, tx, tenantID, raw[i].ID, userID, nil, isAdmin)
-			if cerr != nil {
-				return cerr
-			}
-			if ok {
+			if isAdmin || accessible[raw[i].ID] {
 				filtered = append(filtered, raw[i])
 			}
 		}

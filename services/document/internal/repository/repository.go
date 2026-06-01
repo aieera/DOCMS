@@ -91,6 +91,11 @@ type FolderRepository interface {
 	AddGrant(ctx context.Context, tx pgx.Tx, g *model.FolderGrant) error
 	RemoveGrant(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID, granteeType string, granteeID uuid.UUID) error
 	CanAccessFolder(ctx context.Context, tx pgx.Tx, tenantID, folderID, userID uuid.UUID, userGroups []uuid.UUID, isAdmin bool) (bool, error)
+	// FilterAccessibleFolderIDs returns the subset of `folderIDs` the
+	// caller can access. Batch version of CanAccessFolder — single
+	// round-trip instead of N. Folder rows assumed live (deleted_at IS
+	// NULL). isAdmin short-circuits at the call site.
+	FilterAccessibleFolderIDs(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, folderIDs []uuid.UUID, userID uuid.UUID, userGroups []uuid.UUID) (map[uuid.UUID]bool, error)
 	// ListSharedWithUser returns folders the caller has been granted
 	// access to (directly or via a group) but does NOT own. Used by
 	// the cross-workspace "Shared with me" view. Owner exclusion is

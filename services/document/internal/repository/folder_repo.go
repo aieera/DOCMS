@@ -495,6 +495,58 @@ func (r *folderRepo) CanAccessFolder(
 	return exists, nil
 }
 
+// FilterAccessibleFolderIDs is the batch form of CanAccessFolder.
+// One query for the whole input set instead of N. Returns a map keyed
+// by folder_id where true means "accessible to user". Folders absent
+// from the map (e.g. deleted, or not in the input) are implicitly
+// inaccessible. Skips the isAdmin short-circuit — caller must do that.
+//
+// SQL union covers all four "yes" cases:
+//   1. visibility = 'shared'
+//   2. owner_id = userID
+//   3. folder_grants row for the user directly
+//   4. folder_grants row for any of the user's groups
+func (r *folderRepo) FilterAccessibleFolderIDs(
+	ctx context.Context, tx pgx.Tx,
+	tenantID uuid.UUID, folderIDs []uuid.UUID,
+	userID uuid.UUID, userGroups []uuid.UUID,
+) (map[uuid.UUID]bool, error) {
+	out := make(map[uuid.UUID]bool, len(folderIDs))
+	if len(folderIDs) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT f.id
+		  FROM folders f
+		 WHERE f.tenant_id = $1
+		   AND f.id = ANY($2::uuid[])
+		   AND f.deleted_at IS NULL
+		   AND (
+		         f.visibility = 'shared'
+		      OR f.owner_id = $3
+		      OR EXISTS (
+		           SELECT 1 FROM folder_grants fg
+		            WHERE fg.tenant_id = f.tenant_id
+		              AND fg.folder_id = f.id
+		              AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $3)
+		                OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($4::uuid[])))
+		         )
+		       )
+	`, tenantID, uuidSlice(folderIDs), userID, uuidSlice(userGroups))
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // ListSharedWithUser returns the cross-workspace "shared with me"
 // list — folders the caller has been granted access to (directly or
 // via a group) but does NOT own. Owner exclusion is what makes this
