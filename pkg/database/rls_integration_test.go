@@ -38,7 +38,11 @@ func TestRLS_DocumentsAreTenantScoped(t *testing.T) {
 	// seed the organizations rows via the superuser pool (no RLS on orgs),
 	// then do every tenant-scoped write/read through a pool that connects
 	// as `dms_app` (NOBYPASSRLS) so FORCE ROW LEVEL SECURITY is honored.
-	superPool, err := database.NewPool(ctx, dsn, database.DefaultPoolConfig())
+	// Superuser pool deliberately has BYPASSRLS — opt out of the
+	// posture check so NewPool doesn't refuse to construct it.
+	superCfg := database.DefaultPoolConfig()
+	superCfg.SkipRLSPostureCheck = true
+	superPool, err := database.NewPool(ctx, dsn, superCfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { superPool.Close() })
 

@@ -53,7 +53,11 @@ func setup(t *testing.T) *harness {
 
 	require.NoError(t, database.RunMigrations(dsn, "../../services/document/migrations"))
 
-	pool, err := database.NewPool(ctx, dsn, database.DefaultPoolConfig())
+	// testcontainer Postgres runs as a BYPASSRLS superuser — opt out
+	// of the posture check so NewPool succeeds.
+	cfg := database.DefaultPoolConfig()
+	cfg.SkipRLSPostureCheck = true
+	pool, err := database.NewPool(ctx, dsn, cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { pool.Close() })
 

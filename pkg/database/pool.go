@@ -20,6 +20,14 @@ type PoolConfig struct {
 	MaxConnIdleTime time.Duration
 	HealthCheck     time.Duration
 	ConnectTimeout  time.Duration
+	// SkipRLSPostureCheck disables the automatic AssertRLSPosture call
+	// NewPool runs after Ping. Default is false (check enabled). Set
+	// true only for pools that intentionally connect as a BYPASSRLS
+	// role (test fixtures, migration tooling, ops scripts). Production
+	// service code should never set this — leaving the check on is
+	// what guarantees a new service can't silently boot with the
+	// wrong role.
+	SkipRLSPostureCheck bool
 }
 
 // DefaultPoolConfig returns sane production defaults.
@@ -76,6 +84,17 @@ func NewPool(ctx context.Context, databaseURL string, cfg PoolConfig) (*pgxpool.
 	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
+	}
+
+	// Auto-assert RLS posture so a new service can't silently boot as
+	// a BYPASSRLS role. Tests / migration tooling that legitimately
+	// need BYPASSRLS opt out via cfg.SkipRLSPostureCheck=true OR set
+	// VAULTDMS_ALLOW_BYPASS_RLS=1 in the environment.
+	if !cfg.SkipRLSPostureCheck {
+		if err := AssertRLSPosture(pingCtx, pool); err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
 	return pool, nil
 }

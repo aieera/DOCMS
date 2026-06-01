@@ -59,9 +59,6 @@ func main() {
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
 	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
-	if err := database.AssertRLSPosture(ctx, pool); err != nil {
-		log.Fatal(ctx).Err(err).Msg("rls posture")
-	}
 
 	nc, js, err := events.ConnectNATS(cfg.NATSURL)
 	if err != nil {
