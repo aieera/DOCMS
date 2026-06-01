@@ -280,28 +280,26 @@ func (s *DocumentService) AccessShareLink(ctx context.Context, in *AccessShareLi
 		}
 	}
 
-	// Step 2: load the document under the share link's tenant, then
-	// atomically bump the view counter. FIX-10: IncrementViewCount
-	// now does the max_views check inside the UPDATE — the in-Go
-	// check above is kept for the friendlier error message, but
-	// concurrent accesses that both pass it fall back to the DB-
-	// level constraint here.
-	var incremented bool
+	// Step 2: load the document under the share link's tenant. We do
+	// NOT bump the view counter here — a metadata browse is not content
+	// access. The counter is bumped at content access (the bytes
+	// endpoint, ResolveShareDownload). The pre-check above (link
+	// .ViewCount >= link.MaxViews) still applies, so once the cap is
+	// hit no further browse leaks metadata either.
+	//
+	// Rationale (audit follow-up): previously this path AND the
+	// download path each bumped, so one "open + download" session
+	// counted as two views — half the link's stated capacity. Tracking
+	// at the bytes site only ("1 download = 1 view") matches user
+	// intent for max_views.
 	scoped := auth.SetTenantID(ctx, link.TenantID)
 	err = database.WithTenantTx(scoped, s.pool, link.TenantID, func(tx pgx.Tx) error {
 		var err error
 		document, err = s.repos.Documents.GetByID(ctx, tx, link.TenantID, link.DocumentID)
-		if err != nil {
-			return err
-		}
-		incremented, err = s.repos.ShareLinks.IncrementViewCount(ctx, tx, link.ID)
 		return err
 	})
 	if err != nil {
 		return nil, err
-	}
-	if !incremented {
-		return nil, vdmserr.Conflict("link view limit reached")
 	}
 	if document.DeletedAt != nil {
 		return nil, vdmserr.ErrNotFound
