@@ -385,6 +385,28 @@ services:
       retries: 10
       start_period: 20s
     restart: unless-stopped
+    # Tagged for the autoheal sidecar: when the data-plane healthcheck above
+    # flips this container to "unhealthy" (the Kong timer-ng wedge), autoheal
+    # restarts it — Docker does NOT restart on unhealthy by itself.
+    labels:
+      autoheal: "true"
+
+  # Watchdog that restarts any container labelled `autoheal=true` once Docker
+  # reports it unhealthy. Label-scoped so ONLY the gateway is auto-restarted
+  # (its healthcheck genuinely detects a data-plane wedge; the other services'
+  # healthchecks aren't wired for that, so we don't want them flapping-restarted).
+  # Needs the Docker socket to issue the restart (privileged — dev convenience).
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    container_name: vaultdms-autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: "10"          # check every 10s
+      AUTOHEAL_START_PERIOD: "30"      # grace before monitoring a just-started container
+      AUTOHEAL_DEFAULT_STOP_TIMEOUT: "15"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   qdrant:
     image: qdrant/qdrant:v1.7.4
