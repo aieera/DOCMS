@@ -373,8 +373,13 @@ services:
     ports:
       - "8080:8080"   # public proxy
       - "8100:8100"   # /metrics + /status (prometheus)
+    # `kong health` only checks that worker PROCESSES are alive — it stays
+    # green even when Kong's data plane wedges (timer-ng crash) and the proxy
+    # returns empty replies, which is exactly the recurring "ports return 000
+    # but container is healthy" failure. Probe the actual status listener over
+    # HTTP via resty (the image has no curl/wget) so a wedge is detected.
     healthcheck:
-      test: ["CMD", "kong", "health"]
+      test: ["CMD", "resty", "-e", "local s=ngx.socket.tcp(); s:settimeout(3000); local ok=s:connect('127.0.0.1',8100); if not ok then os.exit(1) end; local c=string.char(13,10); s:send('GET /status HTTP/1.0'..c..'Host: localhost'..c..c); local l=s:receive('*l'); s:close(); if l and l:find(' 200') then os.exit(0) else os.exit(1) end"]
       interval: 10s
       timeout: 5s
       retries: 10
