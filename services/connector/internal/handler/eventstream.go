@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
 )
 
@@ -52,8 +53,8 @@ type issueTokenBody struct {
 }
 
 func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
-	actorID := actorFromCtx(r)
+	tenantID := auth.TenantIDString(r)
+	actorID := auth.UserIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
 		return
@@ -73,7 +74,7 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *EventStreamHandler) listTokens(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	list, err := h.svc.ListTokens(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -83,7 +84,7 @@ func (h *EventStreamHandler) listTokens(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if err := h.svc.RevokeToken(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -95,7 +96,7 @@ func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request)
 // ---- Live tail (SSE) ------------------------------------------------------
 
 func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
 		return

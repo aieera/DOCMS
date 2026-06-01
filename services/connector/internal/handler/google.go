@@ -14,6 +14,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/vaultdms/vaultdms/pkg/auth"
 )
 
 type putGoogleConfigBody struct {
@@ -22,8 +24,8 @@ type putGoogleConfigBody struct {
 }
 
 func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
-	userID := actorFromCtx(r)
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -41,7 +43,7 @@ func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) disconnectGoogle(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/connector/internal/intake"
 )
 
@@ -27,7 +28,7 @@ func (h *IntakeHandler) Register(mux *http.ServeMux) {
 }
 
 func (h *IntakeHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	out, err := h.svc.ListFolders(r.Context(), tenantID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -37,8 +38,8 @@ func (h *IntakeHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IntakeHandler) create(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
-	actorID := actorFromCtx(r)
+	tenantID := auth.TenantIDString(r)
+	actorID := auth.UserIDString(r)
 	var body intake.CreateInput
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -53,7 +54,7 @@ func (h *IntakeHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IntakeHandler) patch(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	var body intake.PatchInput
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -69,7 +70,7 @@ func (h *IntakeHandler) patch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IntakeHandler) delete(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if err := h.svc.DeleteFolder(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -79,7 +80,7 @@ func (h *IntakeHandler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IntakeHandler) scanNow(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if err := h.svc.ScanNow(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -89,7 +90,7 @@ func (h *IntakeHandler) scanNow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *IntakeHandler) recent(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	out, err := h.svc.RecentFiles(r.Context(), tenantID, id)
 	if err != nil {

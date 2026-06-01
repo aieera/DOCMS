@@ -15,10 +15,12 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/vaultdms/vaultdms/pkg/auth"
 )
 
 func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenantFromCtx(r)
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return

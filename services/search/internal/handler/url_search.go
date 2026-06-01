@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vaultdms/vaultdms/pkg/auth"
 	"github.com/vaultdms/vaultdms/services/search/internal/model"
 )
 
@@ -137,8 +138,8 @@ func ensureDateTime(s string) string {
 func parseSearchRequestFromURL(r *http.Request) *model.SearchRequest {
 	q := r.URL.Query()
 
-	tenantID := tenantFromCtx(r)
-	userID := userFromCtx(r)
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	groups := splitHeader(r.Header.Get("X-Group-IDs"))
 
 	// share_token via header is the production shape (gateway-injected
