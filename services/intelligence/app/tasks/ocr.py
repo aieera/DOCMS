@@ -26,6 +26,7 @@ from app.config import settings
 from app.db.pool import get_pool
 from app.dedupe import mark_completed, mark_failed, publish_dlq
 from app.events.publisher import publish_cloudevent
+from app.storage.envelope import EnvelopeError, decrypt_blob
 from app.metrics import (
     ocr_documents_total,
     ocr_duration_seconds,
@@ -262,6 +263,75 @@ def _scrub_nonfinite(v):
     return v
 
 
+async def _fetch_blob_crypto(tenant_id: str, content_blob_id: str) -> dict | None:
+    """Pull envelope-encryption metadata for a blob.
+
+    Returns None when content_blob_id is empty/missing. Returns a dict
+    with keys 'encrypted_dek', 'dek_nonce', 'kek_id' otherwise — those
+    fields are populated for envelope-encrypted blobs and absent
+    (NULL) for plaintext blobs. Caller checks for non-empty
+    encrypted_dek before decrypting.
+    """
+    if not content_blob_id:
+        return None
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)",
+                tenant_id,
+            )
+            row = await conn.fetchrow(
+                """
+                SELECT encrypted_dek, dek_nonce, kek_id
+                  FROM content_blobs
+                 WHERE tenant_id = $1 AND id = $2
+                """,
+                tenant_id, content_blob_id,
+            )
+            if row is None:
+                return None
+            return {
+                "encrypted_dek": bytes(row["encrypted_dek"]) if row["encrypted_dek"] else b"",
+                "dek_nonce":     bytes(row["dek_nonce"])     if row["dek_nonce"]     else b"",
+                "kek_id":        row["kek_id"] or "",
+            }
+
+
+def _decrypt_src_if_envelope(src: str, tenant_id: str, content_blob_id: str) -> None:
+    """If the blob is envelope-encrypted, replace `src` bytes with plaintext.
+
+    Looks up content_blobs for encrypted_dek/dek_nonce/kek_id; if all
+    three are populated, decrypts the file in-place. Plaintext blobs
+    are left untouched. On crypto failure raises TerminalOCRError
+    with reason='decrypt_error' so the task DLQs without retry burn
+    (the bytes / key won't be different on retry).
+
+    Mirrors decrypt_stream.go's full-buffer model — AES-GCM tag
+    can only be verified after all ciphertext is read.
+    """
+    crypto = asyncio.run(_fetch_blob_crypto(tenant_id, content_blob_id))
+    if not crypto or not crypto["encrypted_dek"]:
+        # Plaintext blob — leave src untouched.
+        return
+    try:
+        with open(src, "rb") as fh:
+            ciphertext = fh.read()
+        plaintext = decrypt_blob(
+            ciphertext,
+            crypto["dek_nonce"],
+            crypto["encrypted_dek"],
+            crypto["kek_id"],
+        )
+        with open(src, "wb") as fh:
+            fh.write(plaintext)
+    except EnvelopeError as exc:
+        raise TerminalOCRError(
+            "decrypt_error",
+            f"envelope decrypt failed for blob {content_blob_id}: {exc}",
+        ) from exc
+
+
 async def _persist_pages(tenant_id: str, version_id: str, pages: list[dict], language: str) -> None:
     """Write every page to ocr_results inside one RLS-scoped transaction.
 
@@ -453,38 +523,19 @@ def process_ocr(
         ocr_documents_total.labels(status="skipped").inc()
         return {"status": "skipped", "reason": f"mime {mime_type} not OCR-able"}
 
-    # ─────────────────────────────────────────────────────────────────────
-    # KNOWN ARCHITECTURAL GAP — envelope-encrypted blobs.
-    #
-    # This task downloads `storage_bucket/storage_key` directly and hands
-    # the bytes to mupdf / PIL. When the blob is envelope-encrypted (DEK
-    # wrapped by tenant KEK, see services/document/internal/handler/
-    # decrypt_stream.go), those bytes are ciphertext — mupdf raises
-    # FileDataError and the doc never gets OCR'd. Audit query against
-    # acme tenant showed 78/78 encrypted blobs failed vs 20/51 plaintext
-    # succeeded.
-    #
-    # Proper fix is a 3-side coordinated change:
-    #   1. document service: include encrypted_dek / dek_nonce / kek_id
-    #      in VersionUploadedPayload (services/document/internal/model/
-    #      events.go).
-    #   2. intelligence nats_consumer: extract those fields and forward
-    #      via apply_async kwargs (services/intelligence/app/
-    #      nats_consumer.py).
-    #   3. this task: when DEK present, unwrap via KMS + AES-GCM
-    #      decrypt the downloaded bytes before writing `src`. Mirror
-    #      pkg/crypto/envelope.go semantics in Python.
-    #
-    # Until then, _safe_fitz_open classifies the failure as
-    # parse_error → DLQ on first attempt (no 3-retry burn). Operators
-    # see clean reason codes in ocr_processed_events.last_error.
-    # ─────────────────────────────────────────────────────────────────────
+    # Envelope-encrypted blobs are decrypted in-place after download.
+    # _decrypt_src_if_envelope looks up content_blobs for the wrapped
+    # DEK + nonce + kek_id and, when present, replaces `src` with
+    # plaintext. Plaintext blobs (no wrapped DEK) pass through. Local
+    # KEK mode only — Vault prod path is a TODO and would call the
+    # document service's /decrypt-stream endpoint instead.
 
     t_start = time.perf_counter()
     workdir = tempfile.mkdtemp(prefix="ocr-")
     src = os.path.join(workdir, "source")
     try:
         _s3().download_file(storage_bucket, storage_key, src)
+        _decrypt_src_if_envelope(src, tenant_id, content_blob_id)
 
         if mime_type == "application/pdf":
             # force_engine="surya" bypasses the pymupdf fast path so the

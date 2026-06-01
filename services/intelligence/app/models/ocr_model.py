@@ -36,12 +36,23 @@ def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
     boxes = []
     confidences = []
     for line in page.text_lines:
-        text_lines.append(line.text)
-        confidences.append(line.confidence)
+        # Defensive: Surya sometimes emits TextLine rows with a
+        # degenerate bbox (empty list, fewer than 4 coords, or None)
+        # for low-confidence detections. The straight `line.bbox[0]`
+        # access used to raise IndexError and crash the whole page
+        # — drop the line instead. line.text may also be None on a
+        # rejected detection; coerce to "" so the join below is safe.
+        bbox = getattr(line, "bbox", None) or []
+        if len(bbox) < 4:
+            continue
+        text = getattr(line, "text", "") or ""
+        conf = getattr(line, "confidence", 0.0)
+        text_lines.append(text)
+        confidences.append(conf)
         boxes.append({
-            "x1": line.bbox[0], "y1": line.bbox[1],
-            "x2": line.bbox[2], "y2": line.bbox[3],
-            "text": line.text, "confidence": line.confidence,
+            "x1": bbox[0], "y1": bbox[1],
+            "x2": bbox[2], "y2": bbox[3],
+            "text": text, "confidence": conf,
         })
     avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
     return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}
