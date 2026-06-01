@@ -11,6 +11,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/shadcn/badge'
 import { DataTable } from '@/components/ui/DataTable'
 import { useAPIKeys, useCreateAPIKey, useRevokeAPIKey } from '@/hooks/useSecurity'
 import type { APIKeyIssued } from '@/api/security'
@@ -23,6 +24,7 @@ interface APIKeyRow {
   created_at: string
   last_used_at?: string | null
   expires_at?: string | null
+  revoked_at?: string | null
 }
 
 function ApiKeysPage() {
@@ -71,13 +73,27 @@ function ApiKeysPage() {
     { accessorKey: 'last_used_at', header: 'Last used', cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.last_used_at ? formatRelativeTime(row.original.last_used_at) : '—'}</span> },
     { accessorKey: 'expires_at', header: 'Expires', cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.expires_at ? formatRelativeTime(row.original.expires_at) : 'Never'}</span> },
     {
+      id: 'status',
+      header: 'Status',
+      cell: ({ row }) => {
+        const k = row.original
+        if (k.revoked_at) return <Badge variant="destructive">Revoked</Badge>
+        if (k.expires_at && new Date(k.expires_at).getTime() < Date.now()) {
+          return <Badge variant="secondary">Expired</Badge>
+        }
+        return <Badge variant="default">Active</Badge>
+      },
+    },
+    {
       id: 'actions',
       header: '',
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <Button variant="ghost" size="sm" onClick={() => setRevokeId(row.original.key_id)} aria-label="Revoke">
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          {!row.original.revoked_at && (
+            <Button variant="ghost" size="sm" onClick={() => setRevokeId(row.original.key_id)} aria-label="Revoke">
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
       ),
     },
