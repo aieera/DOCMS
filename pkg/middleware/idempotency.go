@@ -34,6 +34,9 @@ const (
 	// Cap on cached response size. Larger successful responses still return
 	// to the caller; they just aren't stored (so a replay re-executes).
 	maxStoredBodyBytes = 1 << 20 // 1 MiB
+	// Cap on the client-supplied key length. Bounds storage/abuse from a
+	// caller (authenticated, but still) sending pathologically long keys.
+	maxKeyLen = 200
 )
 
 // Idempotency returns middleware backed by the idempotency_keys table.
@@ -43,6 +46,14 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			key := r.Header.Get(idempotencyHeader)
 			if key == "" || isSafeMethod(r.Method) {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if len(key) > maxKeyLen {
+				writeJSON(w, http.StatusBadRequest, map[string]any{
+					"type":           "IDEMPOTENCY_KEY_TOO_LONG",
+					"message":        "Idempotency-Key must be at most 200 characters",
+					"correlation_id": auth.GetCorrelationID(r.Context()),
+				})
 				return
 			}
 			tenantID, err := auth.GetTenantID(r.Context())
@@ -60,6 +71,8 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				existState  string
 				existStatus int
 				existBody   []byte
+				existMethod string
+				existPath   string
 			)
 			rerr := database.WithTenantTx(r.Context(), pool, tenantID, func(tx pgx.Tx) error {
 				tag, e := tx.Exec(r.Context(), `
@@ -75,10 +88,10 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 					return nil
 				}
 				return tx.QueryRow(r.Context(), `
-					SELECT status, COALESCE(response_status, 0), response_body
+					SELECT status, COALESCE(response_status, 0), response_body, request_method, request_path
 					FROM idempotency_keys
 					WHERE tenant_id = $1 AND idempotency_key = $2`,
-					tenantID, key).Scan(&existState, &existStatus, &existBody)
+					tenantID, key).Scan(&existState, &existStatus, &existBody, &existMethod, &existPath)
 			})
 			if rerr != nil {
 				// Fail safe: do NOT pass through (that risks a duplicate write).
@@ -93,6 +106,17 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			// 2. Not owned — replay or in-flight.
 			if !owned {
+				// Reusing one key for a different request must NOT replay the
+				// original response — that would be silently wrong. The stored
+				// method/path identify the original request; mismatch → 422.
+				if existMethod != r.Method || existPath != r.URL.Path {
+					writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+						"type":           "IDEMPOTENCY_KEY_REUSED",
+						"message":        "Idempotency-Key was already used for a different request",
+						"correlation_id": auth.GetCorrelationID(r.Context()),
+					})
+					return
+				}
 				if existState == "completed" {
 					w.Header().Set(idempotencyReplayedHeader, "true")
 					w.Header().Set("Content-Type", "application/json")
