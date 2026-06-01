@@ -65,7 +65,7 @@ def _s3():
 
 
 def _extract_text_pdf(path: str) -> list[dict]:
-    doc = fitz.open(path)
+    doc = _safe_fitz_open(path)
     pages = []
     for i, page in enumerate(doc):
         t0 = time.perf_counter()
@@ -154,8 +154,40 @@ def _pymupdf_word_boxes(page, page_text: str) -> list[dict]:
 _GARBAGE_CTRL_THRESHOLD = 0.30
 
 
+class TerminalOCRError(Exception):
+    """Raised for failures we KNOW won't succeed on retry — bytes that
+    aren't actually parseable (encrypted blob, corrupted upload, wrong
+    mime). The task handler short-circuits autoretry and routes to DLQ
+    on the first occurrence, saving compute and giving operators a
+    clean failure signal in ocr_processed_events.last_error.
+    """
+    def __init__(self, reason: str, msg: str):
+        super().__init__(msg)
+        self.reason = reason
+
+
+def _safe_fitz_open(path: str):
+    """fitz.open with our terminal-error classification. Raises
+    TerminalOCRError(reason='parse_error') when the bytes aren't
+    parseable by mupdf.
+
+    Common cause: the storage blob is envelope-encrypted (AES-GCM
+    wrapped by per-tenant KEK) and the OCR worker doesn't decrypt
+    before passing to mupdf. See TODO at the top of process_ocr.
+    """
+    try:
+        return fitz.open(path)
+    except fitz.FileDataError as exc:
+        size = os.path.getsize(path) if os.path.exists(path) else -1
+        raise TerminalOCRError(
+            "parse_error",
+            f"mupdf cannot open '{path}' (size={size}B): {exc}. "
+            "Likely an envelope-encrypted blob, partial upload, or wrong mime."
+        ) from exc
+
+
 def _pdf_has_text(path: str) -> bool:
-    doc = fitz.open(path)
+    doc = _safe_fitz_open(path)
     try:
         for page in doc:
             txt = page.get_text().strip()
@@ -170,7 +202,7 @@ def _pdf_has_text(path: str) -> bool:
 
 
 def _ocr_pdf_pages(path: str) -> list[dict]:
-    doc = fitz.open(path)
+    doc = _safe_fitz_open(path)
     pages = []
     for i, page in enumerate(doc):
         pix = page.get_pixmap(dpi=150)
@@ -352,8 +384,12 @@ def _jittered_backoff(attempt: int) -> float:
 def _classify_error(exc: Exception) -> str:
     """Map Python exceptions to a DLQ reason label. Kept small and
     stable because the labels drive Grafana panels + alerts."""
+    if isinstance(exc, TerminalOCRError):
+        return exc.reason
     name = type(exc).__name__
     msg = str(exc).lower()
+    if "filedataerror" in name.lower() or "fzerror" in name.lower():
+        return "parse_error"
     if "timeout" in name.lower() or "timeout" in msg:
         return "timeout"
     if "s3" in msg or "boto" in name.lower() or "nosuchkey" in msg:
@@ -370,6 +406,11 @@ def _classify_error(exc: Exception) -> str:
     bind=True,
     acks_late=True,           # don't ACK Celery broker until task finishes
     autoretry_for=(Exception,),
+    # Bytes-not-parseable failures (TerminalOCRError) bypass autoretry —
+    # they will never succeed on a retry. Listed in `throws` so Celery
+    # logs them as expected without traceback noise; the manual handler
+    # below still publishes to DLQ + ledger.
+    throws=(TerminalOCRError,),
     retry_kwargs={"max_retries": 3},
     retry_backoff=True,
     retry_backoff_max=60,
@@ -411,6 +452,33 @@ def process_ocr(
     if mime_type not in OCR_MIMES:
         ocr_documents_total.labels(status="skipped").inc()
         return {"status": "skipped", "reason": f"mime {mime_type} not OCR-able"}
+
+    # ─────────────────────────────────────────────────────────────────────
+    # KNOWN ARCHITECTURAL GAP — envelope-encrypted blobs.
+    #
+    # This task downloads `storage_bucket/storage_key` directly and hands
+    # the bytes to mupdf / PIL. When the blob is envelope-encrypted (DEK
+    # wrapped by tenant KEK, see services/document/internal/handler/
+    # decrypt_stream.go), those bytes are ciphertext — mupdf raises
+    # FileDataError and the doc never gets OCR'd. Audit query against
+    # acme tenant showed 78/78 encrypted blobs failed vs 20/51 plaintext
+    # succeeded.
+    #
+    # Proper fix is a 3-side coordinated change:
+    #   1. document service: include encrypted_dek / dek_nonce / kek_id
+    #      in VersionUploadedPayload (services/document/internal/model/
+    #      events.go).
+    #   2. intelligence nats_consumer: extract those fields and forward
+    #      via apply_async kwargs (services/intelligence/app/
+    #      nats_consumer.py).
+    #   3. this task: when DEK present, unwrap via KMS + AES-GCM
+    #      decrypt the downloaded bytes before writing `src`. Mirror
+    #      pkg/crypto/envelope.go semantics in Python.
+    #
+    # Until then, _safe_fitz_open classifies the failure as
+    # parse_error → DLQ on first attempt (no 3-retry burn). Operators
+    # see clean reason codes in ocr_processed_events.last_error.
+    # ─────────────────────────────────────────────────────────────────────
 
     t_start = time.perf_counter()
     workdir = tempfile.mkdtemp(prefix="ocr-")
@@ -509,7 +577,15 @@ def process_ocr(
         # Celery re-raises on retry; this branch also runs on the
         # FINAL attempt (self.request.retries == max_retries). Detect
         # terminality and route to DLQ.
-        is_terminal = self.request.retries >= settings.ocr_max_retries
+        #
+        # TerminalOCRError short-circuits the retry budget entirely:
+        # parse_error etc. won't succeed on retry, so DLQ immediately
+        # rather than burning 3 attempts. The `throws` tuple on the
+        # task decorator also tells Celery to log without traceback.
+        is_terminal = (
+            isinstance(exc, TerminalOCRError)
+            or self.request.retries >= settings.ocr_max_retries
+        )
         if is_terminal:
             reason = _classify_error(exc)
             ocr_documents_total.labels(status="failed").inc()
