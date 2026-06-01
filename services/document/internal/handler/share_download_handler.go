@@ -25,6 +25,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,6 +36,14 @@ import (
 	"github.com/vaultdms/vaultdms/pkg/storage"
 	"github.com/vaultdms/vaultdms/services/document/internal/service"
 )
+
+// Hard cap on ciphertext we'll buffer for in-memory GCM decrypt on the
+// anonymous share endpoint. AES-GCM in the stdlib is single-tag whole-blob,
+// so we can't stream-decrypt without re-architecting the encrypt path. Cap
+// keeps the OOM surface bounded — large legitimate shares should use
+// authenticated sessions where the streaming decrypt path has identity
+// gating (rate-limit per user, not per IP). Overridable via env for ops.
+const defaultShareDecryptMaxBytes int64 = 100 << 20 // 100 MiB
 
 type ShareDownloadHandler struct {
 	pool *pgxpool.Pool
@@ -146,10 +155,30 @@ func (h *ShareDownloadHandler) download(w http.ResponseWriter, r *http.Request) 
 			plainDEK[i] = 0
 		}
 	}()
-	ciphertext, err := io.ReadAll(obj)
+	// LimitReader caps at maxBytes+1 so we can detect oversize without
+	// reading the entire stream. Anything past the cap is rejected with
+	// 413 — the user should request access via an authenticated session
+	// instead of the anonymous share path.
+	maxBytes := defaultShareDecryptMaxBytes
+	if v := os.Getenv("VAULTDMS_SHARE_DECRYPT_MAX_BYTES"); v != "" {
+		if n, perr := strconv.ParseInt(v, 10, 64); perr == nil && n > 0 {
+			maxBytes = n
+		}
+	}
+	ciphertext, err := io.ReadAll(io.LimitReader(obj, maxBytes+1))
 	if err != nil {
 		h.log.Error().Err(err).Msg("share-download: ciphertext read failed")
 		http.Error(w, "ciphertext read failed", http.StatusBadGateway)
+		return
+	}
+	if int64(len(ciphertext)) > maxBytes {
+		h.log.Warn().
+			Int64("max_bytes", maxBytes).
+			Str("bucket", resolution.Bucket).Str("key", resolution.Key).
+			Msg("share-download: ciphertext exceeds anonymous decrypt cap")
+		http.Error(w,
+			"file too large for anonymous share download; request access via signed-in session",
+			http.StatusRequestEntityTooLarge)
 		return
 	}
 	plaintext, err := pkgcrypto.DecryptData(ciphertext, resolution.DEKNonce, plainDEK)
