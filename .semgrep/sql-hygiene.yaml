@@ -1,0 +1,65 @@
+# VaultDMS — SQL hygiene rules.
+#
+# Two footguns to catch:
+#
+# 1. `SELECT *` in string literals.
+#    - Adding a column silently changes every query's shape. Scanners
+#      targeting specific columns start returning junk or panic on
+#      count-mismatch. ALL queries must list columns explicitly.
+#    - Allowed only in tests (fixture setup) and migrations (where
+#      column counts are pinned by the migration itself).
+#
+# 2. `fmt.Sprintf` composing SQL text.
+#    - Parameterised queries go through pgx's `$1/$2/...` placeholders
+#      which bind through the wire protocol — no interpolation, no
+#      injection. `fmt.Sprintf("...WHERE id = %s", id)` is SQL
+#      injection bait even if `id` is "safe today".
+#    - A small, defensible exception is dynamic table/column names
+#      where parameters don't apply (e.g. "ORDER BY "+col). Those
+#      call sites should use an explicit allow-list or pgx's
+#      identifier quoting (pgx.Identifier{...}.Sanitize()). Flagged
+#      here so reviewers see them.
+
+rules:
+  - id: vaultdms-no-select-star-in-sql-string
+    languages: [go]
+    severity: WARNING
+    message: >-
+      `SELECT *` in a SQL string couples every consumer to the
+      table's column order. List the columns explicitly. Exception:
+      migrations and test fixtures (excluded below).
+    paths:
+      include:
+        - services/**/*.go
+        - pkg/**/*.go
+      exclude:
+        - "**/*_test.go"
+        - services/*/migrations/**
+    pattern-regex: |
+      "SELECT\s+\*
+
+  - id: vaultdms-no-sprintf-for-sql
+    languages: [go]
+    severity: ERROR
+    message: >-
+      fmt.Sprintf used to build SQL text → SQL injection risk. Use
+      parameterised queries (pgx `$1/$2/...`). For dynamic table /
+      column names the correct tool is pgx.Identifier{...}.Sanitize()
+      or a compile-time allow-list.
+    paths:
+      include:
+        - services/**/*.go
+        - pkg/**/*.go
+      exclude:
+        - "**/*_test.go"
+    pattern-either:
+      - pattern: |
+          fmt.Sprintf("...SELECT...", ...)
+      - pattern: |
+          fmt.Sprintf("...INSERT...", ...)
+      - pattern: |
+          fmt.Sprintf("...UPDATE...", ...)
+      - pattern: |
+          fmt.Sprintf("...DELETE...", ...)
+      - pattern: |
+          fmt.Sprintf("...WHERE...", ...)

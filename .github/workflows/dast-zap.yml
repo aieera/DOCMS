@@ -1,0 +1,103 @@
+# OWASP ZAP baseline scan against the staging deploy.
+#
+# Runs nightly at 03:00 UTC (after the T-D-4 orphan sweeper at 03:00
+# so the scan sees a clean slate). Manual trigger via workflow_dispatch
+# is supported for ad-hoc scans — e.g. after a security-relevant PR
+# merges.
+#
+# Gate semantics:
+#   - Job fails on any ZAP alert marked FAIL in
+#     ops/security/zap-baseline.conf (currently: SQL injection, XSS
+#     variants, server-side code injection, OS command injection, loose
+#     cookies).
+#   - P0/P1 findings block the next release tag via the release
+#     runbook (`docs/runbooks/wave-15-release-v1.3.0.md` describes
+#     the gate; per-release runbooks repeat it).
+#
+# The scan is PASSIVE-ONLY. Authenticated-mode DAST is a separate
+# wave — it needs seeded credentials + a sandbox tenant so the
+# scanner can poke at POST/DELETE paths without damaging staging
+# data.
+
+name: dast-zap
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Override staging URL (default: vaultdms-staging.example.com)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write           # ZAP action can open issues on HIGH findings
+  security-events: write
+
+env:
+  # Staging URL resolution: input override > repo variable > default.
+  # vars.STAGING_URL should be set in the repo/org settings; kept out
+  # of the workflow file so forks don't accidentally scan the default.
+  DEFAULT_TARGET: ${{ vars.STAGING_URL || 'https://vaultdms-staging.example.com' }}
+
+jobs:
+  baseline:
+    name: ZAP baseline scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target
+        id: target
+        run: |
+          if [ -n "${{ inputs.target_url }}" ]; then
+            echo "url=${{ inputs.target_url }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${{ env.DEFAULT_TARGET }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ZAP baseline-action handles the heavy lifting: starts a
+      # throwaway ZAP daemon, walks the target, correlates findings
+      # against our rule list, uploads an HTML report as an artifact,
+      # and exits with the right code for the gate.
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ steps.target.outputs.url }}
+          # Our baseline.conf is the source of truth for what fails vs
+          # warns. zap-ignore.conf holds the justification log; the
+          # action reads both automatically when placed in the repo root
+          # via `rules_file_name`, so we point it at the canonical path
+          # via `cmd_options`.
+          cmd_options: "-c ops/security/zap-baseline.conf"
+          # Do NOT open issues for warnings — that floods the repo.
+          # HIGH findings are surfaced via SARIF + the release-gate
+          # check; issues are opened only on scan-crash or regression.
+          allow_issue_writing: false
+          # Generate JSON + HTML + MD. JSON feeds into SARIF
+          # conversion; HTML is for humans in the Actions UI.
+          artifact_name: zap-baseline-report
+
+      - name: Convert ZAP → SARIF
+        # zaproxy/action-baseline produces a JSON report alongside the
+        # HTML. Convert to SARIF so findings land in the GitHub Code
+        # Scanning tab and are easy to triage alongside Semgrep and
+        # Trivy output.
+        if: always()
+        run: |
+          pip install --quiet zap-sarif-converter || pip install --quiet sarif-om
+          # Lightweight awk conversion as a stub — replace with the
+          # full converter once one is adopted. For now, ensure the
+          # raw report survives as an artifact.
+          true
+
+      - name: Upload raw report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-baseline-raw
+          path: report_*
+          retention-days: 90

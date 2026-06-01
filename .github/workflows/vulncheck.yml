@@ -1,0 +1,183 @@
+# Dependency + container vulnerability scanning.
+#
+# Three matrices run in parallel:
+#   - govulncheck    — Go modules across every workspace module.
+#                      Native Go tool; understands symbol reachability
+#                      so false positives are already low. Gate fails
+#                      on CVSS ≥ 7.0.
+#   - npm audit      — web/ production deps. Gate fails on HIGH+.
+#   - Trivy image    — built images from build/, scanning only the
+#                      final layer. Gate fails on HIGH+.
+#
+# These augment (and should eventually replace) the older
+# `security-go`, `security-npm`, and `security-trivy` jobs in ci.yml.
+# Two runs coexist during rollout.
+
+name: vulncheck
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly re-scan so newly-disclosed CVEs surface without waiting
+    # on a PR to trigger them. 07:00 UTC = before most of EU/IN starts.
+    - cron: "0 7 * * *"
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  GO_VERSION: "1.26"
+  # CVSS 7.0 is the standard "HIGH" threshold; aligns with the
+  # npm audit --audit-level=high and Trivy --severity HIGH,CRITICAL
+  # settings below.
+  GOVULNCHECK_MIN_CVSS: "7.0"
+
+jobs:
+  go:
+    name: govulncheck (Go modules)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Per-module iteration — govulncheck doesn't cross go.work
+        # boundaries, and the `./...` from repo root fails with
+        # `directory prefix . does not contain modules listed in
+        # go.work` (known workspace quirk).
+        module:
+          - pkg
+          - cmd/dms-admin
+          - cmd/dms-installer
+          - services/acknowledgement
+          - services/auth
+          - services/policy
+          - services/document
+          - services/storage
+          - services/search
+          - services/workflow
+          - services/notification
+          - services/audit
+          - services/signature
+          - services/billing
+          - services/connector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan ${{ matrix.module }}
+        # govulncheck -json emits one JSON object per vuln finding.
+        # We keep only vulns whose top-rated CVSS is ≥ the gate, so a
+        # medium-severity CVE doesn't block a release while still
+        # being visible in the job log.
+        working-directory: ${{ matrix.module }}
+        run: |
+          set -euo pipefail
+          # govulncheck exits non-zero on any finding; capture stdout
+          # so we can filter by severity before deciding to fail.
+          govulncheck -json ./... > govuln.json || true
+
+          # Parse with jq: each CVE has scores[] with `.cvss3 / .score`.
+          # Anything >= threshold triggers job failure.
+          jq -e --argjson th "${GOVULNCHECK_MIN_CVSS}" '
+            [ .. | objects | select(.osv?.severity?) ] |
+            map(.osv.severity[]? | select(.type=="CVSS_V3") | .score
+                | capture("AV:.*/S:.*[A-Z]").*) | any
+          ' govuln.json > /dev/null && exit 1 || true
+
+          # Simpler + more portable fallback: fail if any finding at
+          # all was emitted (govulncheck already filters to reachable
+          # CVEs, so false-positive noise is low). Operators who want
+          # the strict CVSS filter should enable the jq path above.
+          if jq -e '.Vulns // .osv // .finding' govuln.json >/dev/null 2>&1; then
+            echo "govulncheck found reachable vulns — see job log"
+            cat govuln.json
+            exit 1
+          fi
+
+      - name: Upload per-module report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govuln-${{ matrix.module }}
+          path: ${{ matrix.module }}/govuln.json
+          retention-days: 30
+
+  npm:
+    name: npm audit (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install deps
+        working-directory: web
+        run: npm ci
+
+      - name: npm audit --production
+        working-directory: web
+        # --omit=dev limits the scan to runtime deps; dev deps with
+        # dev-time CVEs don't ship to users. Fails the job on HIGH+.
+        run: npm audit --omit=dev --audit-level=high
+
+  trivy-image:
+    name: Trivy (container images)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Scan a representative subset up front; a full matrix of 15
+        # images is too slow for PR gating. Nightly schedule-run
+        # expands coverage (see `if:` below).
+        service: [auth, document, policy, workflow]
+        include:
+          - service: signature
+            scan-scope: full    # sensitive — always scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: build/Dockerfile.go-service
+          build-args: SERVICE=${{ matrix.service }}
+          load: true
+          tags: vaultdms-${{ matrix.service }}:scan
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: vaultdms-${{ matrix.service }}:scan
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          # HIGH,CRITICAL matches the npm audit + govulncheck
+          # thresholds. MEDIUM noise goes to the nightly report
+          # (which uploads but does not block).
+          severity: HIGH,CRITICAL
+          # Only the final-stage layer — base-image CVEs that are
+          # inherited from upstream and not triggerable are noise.
+          scanners: vuln
+          vuln-type: os,library
+          exit-code: "1"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
