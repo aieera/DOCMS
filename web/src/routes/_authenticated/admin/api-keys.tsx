@@ -27,6 +27,19 @@ interface APIKeyRow {
   revoked_at?: string | null
 }
 
+// Mirrors model.ValidScopes() in services/auth. The ERP integration needs
+// documents:read, documents:write, upload, and integrations:read.
+const AVAILABLE_SCOPES = [
+  'documents:read',
+  'documents:write',
+  'upload',
+  'search:read',
+  'integrations:read',
+  'integrations:write',
+  'webhooks:manage',
+]
+const DEFAULT_SCOPES = ['documents:read', 'documents:write']
+
 function ApiKeysPage() {
   const { data: keys, isLoading } = useAPIKeys()
   const createMut = useCreateAPIKey()
@@ -35,6 +48,7 @@ function ApiKeysPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [expiresDays, setExpiresDays] = useState('90')
+  const [scopes, setScopes] = useState<string[]>(DEFAULT_SCOPES)
   const [issued, setIssued] = useState<APIKeyIssued | null>(null)
   const [revokeId, setRevokeId] = useState<string | null>(null)
 
@@ -42,13 +56,16 @@ function ApiKeysPage() {
     if (!name.trim()) {
       toast.error('Name is required'); return
     }
+    if (scopes.length === 0) {
+      toast.error('Select at least one scope'); return
+    }
     try {
       const k = await createMut.mutateAsync({
         name: name.trim(),
-        scopes: ['documents:read', 'documents:write'],
+        scopes,
         expires_in_days: Number(expiresDays) || 90,
       })
-      setIssued(k); setName('')
+      setIssued(k); setName(''); setScopes(DEFAULT_SCOPES)
     } catch {
       toast.error('Failed to create API key')
     }
@@ -174,6 +191,31 @@ function ApiKeysPage() {
               value={expiresDays}
               onChange={(e) => setExpiresDays(e.target.value)}
             />
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium">Scopes</span>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_SCOPES.map((s) => {
+                  const on = scopes.includes(s)
+                  return (
+                    <Button
+                      key={s}
+                      type="button"
+                      size="sm"
+                      variant={on ? 'default' : 'outline'}
+                      onClick={() => setScopes((cur) => on ? cur.filter((x) => x !== s) : [...cur, s])}
+                    >
+                      {s}
+                    </Button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                ERP integration needs <code className="font-mono">documents:read</code>,{' '}
+                <code className="font-mono">documents:write</code>,{' '}
+                <code className="font-mono">upload</code>, and{' '}
+                <code className="font-mono">integrations:read</code>.
+              </p>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button type="submit" loading={createMut.isPending}>Create key</Button>

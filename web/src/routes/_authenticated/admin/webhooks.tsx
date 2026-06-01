@@ -29,6 +29,7 @@ const EVENT_PRESETS = [
   'dms.document.created.v1',
   'dms.document.updated.v1',
   'dms.document.deleted.v1',
+  'dms.document.state_changed.v1',
   'dms.version.uploaded.v1',
   'dms.review.approved.v1',
   'dms.review.rejected.v1',
