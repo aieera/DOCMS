@@ -54,10 +54,17 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: >
+        Session/user bearer token (JWT) issued by /auth/login. Used by
+        interactive clients.
     apiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
+      type: http
+      scheme: bearer
+      description: >
+        Service-to-service VaultDMS API key. Send as
+        `Authorization: Bearer vdms_…` (NOT an X-API-Key header). Keys are
+        tenant-scoped and scope-gated — e.g. documents:read, documents:write,
+        upload, integrations:read.
 
   parameters:
     tenantId:

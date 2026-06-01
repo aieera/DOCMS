@@ -67,10 +67,13 @@ API_KEY=$(echo "$KEY_RESP" | jq -r '.api_key')
 KEY_ID=$(echo "$KEY_RESP" | jq -r '.key_id')
 
 # ── 0.2.d sanity check the key works ───────────────────────────────────
-# API keys authenticate ONLY on the iPaaS trigger surface
-# (/api/v1/integrations/triggers/*, scope integrations:read) — the main
-# documents/workspaces REST routes are session-cookie auth and reject
-# Bearer keys. This GET is read-only and returns `[]` for a fresh tenant.
+# API keys authenticate on the iPaaS trigger surface
+# (/api/v1/integrations/triggers/*, scope integrations:read) AND, via the
+# SessionOrAPIKey dual-auth middleware, on the ERP ingest routes
+# (POST /documents, /documents/{id}/versions, GET/POST
+# /workspaces/{id}/folders, and the /storage/uploads/* flow) — each gated
+# by its own scope. We probe the trigger surface here because it's
+# read-only and returns `[]` for a fresh tenant (no side effects).
 echo "→ verifying key…"
 HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' \
   -H "Authorization: Bearer ${API_KEY}" \

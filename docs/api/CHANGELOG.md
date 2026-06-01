@@ -38,6 +38,11 @@ first customer pin.
 - `API-Version: 1.0.0` (stamped by `pkg/middleware.APIVersion`)
 - `X-Correlation-ID` (echoed or generated)
 
+### Changed
+- Corrected the `apiKeyAuth` security scheme in `openapi.yaml`: API keys are
+  sent as `Authorization: Bearer vdms_…` (HTTP bearer), not an `X-API-Key`
+  header. Documentation/spec fix only — the runtime behaviour is unchanged.
+
 ### Deprecated
 _None in 1.0.0._
 
