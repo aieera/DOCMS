@@ -81,6 +81,75 @@ func (r *Repository) Insert(ctx context.Context, e *model.AuditEvent) error {
 	})
 }
 
+// BatchInsert appends N events in a single transaction. All events
+// MUST share the same tenant (the function asserts and errors out
+// otherwise) because WithTenantTx sets a single app.current_tenant
+// GUC for the tx and RLS would reject inserts that don't match.
+//
+// Hash chain: caller is responsible for pre-computing previous_hash /
+// event_hash links — the repo just persists. Because IngestEvent
+// holds a per-tenant Redis lock around the hash-chain computation,
+// the caller can safely pre-compute a chained batch before calling
+// here.
+//
+// Use this on the high-volume consumer path (NATS subscriber that
+// pulls batches). Per-tx overhead drops by a factor of N: one
+// connection acquire, one BEGIN, one SET LOCAL app.current_tenant,
+// N INSERTs, one COMMIT — versus N of each in the per-row Insert.
+func (r *Repository) BatchInsert(ctx context.Context, events []*model.AuditEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tenantStr := events[0].TenantID
+	tenantUUID, err := uuid.Parse(tenantStr)
+	if err != nil {
+		return fmt.Errorf("audit batch insert: tenant_id[0] not a uuid: %w", err)
+	}
+	for i, e := range events {
+		if e.TenantID != tenantStr {
+			return fmt.Errorf("audit batch insert: mixed tenants (event[0]=%s, event[%d]=%s); split per-tenant before calling",
+				tenantStr, i, e.TenantID)
+		}
+	}
+	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		batch := &pgx.Batch{}
+		for _, e := range events {
+			var resourceID any
+			if e.ResourceID != "" {
+				resourceID = e.ResourceID
+			}
+			actorType := "system"
+			if e.Actor != "" {
+				actorType = "user"
+			}
+			batch.Queue(`
+				INSERT INTO audit_events (
+					id, tenant_id, event_hash, previous_hash,
+					actor, actor_id, actor_name, actor_type,
+					action, resource_type, resource_id, resource_title,
+					details, ip_address, user_agent, source_event, created_at
+				) VALUES (
+					$1, $2, $3, $4,
+					$5, NULLIF($5, '')::uuid, $6, $7,
+					$8, NULLIF($9, ''), $10, NULLIF($11, ''),
+					$12, NULLIF($13, '')::inet, NULLIF($14, ''), NULLIF($15, ''), $16
+				)`,
+				e.ID, e.TenantID, e.EventHash, e.PreviousHash,
+				e.Actor, e.ActorName, actorType,
+				e.Action, e.ResourceType, resourceID, e.ResourceTitle,
+				e.Details, e.IPAddress, e.UserAgent, e.SourceEvent, e.CreatedAt)
+		}
+		br := tx.SendBatch(ctx, batch)
+		defer func() { _ = br.Close() }()
+		for i := range events {
+			if _, err := br.Exec(); err != nil {
+				return fmt.Errorf("audit batch insert row %d: %w", i, err)
+			}
+		}
+		return nil
+	})
+}
+
 // GetLastHash returns the most recent event_hash for a tenant.
 func (r *Repository) GetLastHash(ctx context.Context, tenantID string) (string, error) {
 	var hash string
