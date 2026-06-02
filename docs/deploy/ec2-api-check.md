@@ -65,7 +65,13 @@ sudo usermod -aG docker ubuntu && newgrp docker     # run docker without sudo
 # golang-migrate (seed.sh needs it to apply the document migrations)
 curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz \
   | sudo tar -xz -C /usr/local/bin migrate
-migrate -version && docker --version
+
+# Go toolchain — scripts/seed.sh runs `go run ./scripts/seed` to insert
+# the admin user. ~120 MB; only used during the one-shot seed.
+curl -fsSL https://go.dev/dl/go1.23.4.linux-amd64.tar.gz | sudo tar -xz -C /usr/local
+sudo ln -sf /usr/local/go/bin/go /usr/local/bin/go
+
+migrate -version && docker --version && go version
 ```
 
 ---

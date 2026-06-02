@@ -29,6 +29,16 @@ if ! command -v migrate >/dev/null; then
   curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.17.1/migrate.linux-amd64.tar.gz \
     | tar -xz -C /usr/local/bin migrate
 fi
+# seed.sh runs `go run ./scripts/seed` to insert the admin user. The
+# prebuilt images bring the services but not a Go toolchain, so we
+# install one here. ~120MB; only used once.
+if ! command -v go >/dev/null; then
+  GO_VERSION="${GO_VERSION:-1.23.4}"
+  curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+    | tar -xz -C /usr/local
+  ln -sf /usr/local/go/bin/go /usr/local/bin/go
+fi
+go version
 
 # ---- 2. .env with fresh secrets (only if missing) --------------------------
 if [ ! -f "$ENV_FILE" ] || ! grep -q VAULTDMS_GATEWAY_SECRET "$ENV_FILE"; then
