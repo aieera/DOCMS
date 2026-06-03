@@ -42,7 +42,7 @@ jobs:
           # source customers browse; the buf-generated swagger JSON
           # is linked for programmatic consumers (codegen).
           cp docs/api/openapi.yaml           _site/openapi.yaml
-          cp proto/gen/openapi/vaultdms.swagger.json _site/swagger.json
+          cp proto/gen/openapi/sedoc.swagger.json _site/swagger.json
           cp docs/api/SEMVER_POLICY.md       _site/SEMVER_POLICY.md
           cp docs/api/CHANGELOG.md           _site/CHANGELOG.md
           cp docs/api/INTEGRATION_GUIDE.md   _site/INTEGRATION_GUIDE.md

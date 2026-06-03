@@ -27,7 +27,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/middleware"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
@@ -39,7 +39,7 @@ const (
 // StorageProxy forwards upload/download REST requests to the storage
 // service over gRPC.
 type StorageProxy struct {
-	client vaultdmsv1.StorageServiceClient
+	client sedocv1.StorageServiceClient
 	// pool is used for the post-CompleteUpload content_blob_id lookup.
 	// Storage's CompleteUpload response doesn't carry the blob_id (the
 	// proto wasn't designed for it; events publish it). The frontend
@@ -57,7 +57,7 @@ type StorageProxy struct {
 // content_blob_id from the response. svc may be nil for tests; the
 // production wiring in cmd/server/main.go always passes a non-nil
 // service so the per-document view gate fires.
-func NewStorageProxy(client vaultdmsv1.StorageServiceClient, pool *pgxpool.Pool, svc *service.DocumentService) *StorageProxy {
+func NewStorageProxy(client sedocv1.StorageServiceClient, pool *pgxpool.Pool, svc *service.DocumentService) *StorageProxy {
 	return &StorageProxy{client: client, pool: pool, svc: svc}
 }
 
@@ -143,7 +143,7 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	if checksum == "" {
 		checksum = in.SHA256Hash
 	}
-	resp, err := p.client.InitiateUpload(ctx, &vaultdmsv1.InitiateUploadRequest{
+	resp, err := p.client.InitiateUpload(ctx, &sedocv1.InitiateUploadRequest{
 		RegionPin:      in.RegionPin,
 		Filename:       in.Filename,
 		MimeType:       in.MimeType,
@@ -183,7 +183,7 @@ func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := p.outbound(r)
 	defer cancel()
-	resp, err := p.client.CompleteUpload(ctx, &vaultdmsv1.CompleteUploadRequest{
+	resp, err := p.client.CompleteUpload(ctx, &sedocv1.CompleteUploadRequest{
 		UploadId:       r.PathValue("upload_id"),
 		ChecksumSha256: checksum,
 		SizeBytes:      in.SizeBytes,
@@ -218,7 +218,7 @@ func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
 func (p *StorageProxy) abort(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := p.outbound(r)
 	defer cancel()
-	if _, err := p.client.AbortUpload(ctx, &vaultdmsv1.AbortUploadRequest{
+	if _, err := p.client.AbortUpload(ctx, &sedocv1.AbortUploadRequest{
 		UploadId: r.PathValue("upload_id"),
 	}); err != nil {
 		writeGRPCErr(w, r, err)
@@ -303,7 +303,7 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := p.outbound(r)
 	defer cancel()
-	resp, err := p.client.GetDownloadURL(ctx, &vaultdmsv1.GetDownloadURLRequest{
+	resp, err := p.client.GetDownloadURL(ctx, &sedocv1.GetDownloadURLRequest{
 		DocumentId: uploadID,
 		VersionId:  r.PathValue("version_id"),
 	})

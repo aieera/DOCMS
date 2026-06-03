@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package sedoc.v1;
+
+import "google/protobuf/timestamp.proto";
+import "sedoc/v1/common.proto";
+
+option go_package = "github.com/aieera/sedoc/proto/gen/go/sedoc/v1;sedocv1";
+
+// NotificationService delivers email, in-app, webhook, and (optionally) SMS
+// notifications. Templates are tenant-scoped; user preferences gate delivery.
+service NotificationService {
+  rpc Send         (SendRequest)         returns (SendResponse);
+  rpc SendBatch    (SendBatchRequest)    returns (SendBatchResponse);
+
+  rpc CreateTemplate (CreateTemplateRequest) returns (Template);
+  rpc UpdateTemplate (UpdateTemplateRequest) returns (Template);
+  rpc GetTemplate    (GetTemplateRequest)    returns (Template);
+  rpc ListTemplates  (ListTemplatesRequest)  returns (ListTemplatesResponse);
+
+  rpc GetPreferences    (GetPreferencesRequest)    returns (Preferences);
+  rpc UpdatePreferences (UpdatePreferencesRequest) returns (Preferences);
+
+  rpc ListDeliveries (ListDeliveriesRequest) returns (ListDeliveriesResponse);
+
+  rpc RegisterWebhook (RegisterWebhookRequest) returns (Webhook);
+  rpc DeleteWebhook   (DeleteWebhookRequest)   returns (DeleteWebhookResponse);
+  rpc ListWebhooks    (ListWebhooksRequest)    returns (ListWebhooksResponse);
+}
+
+enum Channel {
+  CHANNEL_UNSPECIFIED = 0;
+  CHANNEL_EMAIL       = 1;
+  CHANNEL_INAPP       = 2;
+  CHANNEL_WEBHOOK     = 3;
+  CHANNEL_SMS         = 4;
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_QUEUED      = 1;
+  DELIVERY_STATUS_SENT        = 2;
+  DELIVERY_STATUS_FAILED      = 3;
+  DELIVERY_STATUS_BOUNCED     = 4;
+  DELIVERY_STATUS_SUPPRESSED  = 5;
+}
+
+message Template {
+  string    id            = 1;
+  string    tenant_id     = 2;
+  string    code          = 3; // stable key, e.g. "doc.shared"
+  Channel   channel       = 4;
+  string    subject       = 5;
+  string    body          = 6; // handlebars-style
+  string    locale        = 7; // e.g. "en-US"
+  AuditMeta audit         = 8;
+}
+
+message Preferences {
+  string              user_id       = 1;
+  map<string, bool>   channel_by_code = 2; // "doc.shared:email" -> true
+  bool                digest_daily  = 3;
+  string              quiet_hours_start = 4; // "22:00"
+  string              quiet_hours_end   = 5; // "07:00"
+}
+
+message Delivery {
+  string                    id          = 1;
+  string                    tenant_id   = 2;
+  string                    template_code = 3;
+  Channel                   channel     = 4;
+  string                    recipient   = 5; // email / phone / webhook-id
+  DeliveryStatus            status      = 6;
+  int32                     attempts    = 7;
+  string                    last_error  = 8;
+  google.protobuf.Timestamp sent_at     = 9;
+}
+
+message Webhook {
+  string                    id         = 1;
+  string                    tenant_id  = 2;
+  string                    url        = 3;
+  string                    secret_prefix = 4; // first 8 of shared HMAC secret
+  repeated string           event_types = 5;
+  bool                      enabled    = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// ---- Requests / responses --------------------------------------------------
+
+message SendRequest {
+  string              template_code = 1;
+  repeated string     recipient_user_ids = 2;
+  repeated string     recipient_emails   = 3;
+  map<string, string> variables     = 4;
+  Channel             force_channel = 5; // 0 = follow user preferences
+}
+message SendResponse      { repeated string delivery_ids = 1; }
+message SendBatchRequest  { repeated SendRequest requests = 1; }
+message SendBatchResponse { repeated SendResponse responses = 1; }
+
+message CreateTemplateRequest {
+  string  code    = 1;
+  Channel channel = 2;
+  string  subject = 3;
+  string  body    = 4;
+  string  locale  = 5;
+}
+message UpdateTemplateRequest {
+  string  id      = 1;
+  string  subject = 2;
+  string  body    = 3;
+  repeated string update_mask = 4;
+}
+message GetTemplateRequest    { string id = 1; }
+message ListTemplatesRequest  { PageRequest page = 1; Channel channel = 2; }
+message ListTemplatesResponse { repeated Template templates = 1; PageResponse page = 2; }
+
+message GetPreferencesRequest    { string user_id = 1; }
+message UpdatePreferencesRequest {
+  string            user_id       = 1;
+  map<string, bool> channel_by_code = 2;
+  bool              digest_daily  = 3;
+  string            quiet_hours_start = 4;
+  string            quiet_hours_end   = 5;
+}
+
+message ListDeliveriesRequest {
+  string         template_code = 1;
+  string         recipient     = 2;
+  DeliveryStatus status        = 3;
+  PageRequest    page          = 4;
+}
+message ListDeliveriesResponse { repeated Delivery deliveries = 1; PageResponse page = 2; }
+
+message RegisterWebhookRequest { string url = 1; repeated string event_types = 2; }
+message DeleteWebhookRequest   { string id = 1; }
+message DeleteWebhookResponse  { bool deleted = 1; }
+message ListWebhooksRequest    { PageRequest page = 1; }
+message ListWebhooksResponse   { repeated Webhook webhooks = 1; PageResponse page = 2; }

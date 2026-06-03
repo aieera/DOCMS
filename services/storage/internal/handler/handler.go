@@ -1,4 +1,4 @@
-// Package handler implements vaultdmsv1.StorageServiceServer.
+// Package handler implements sedocv1.StorageServiceServer.
 package handler
 
 import (
@@ -11,7 +11,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/storage/internal/model"
 	"github.com/aieera/sedoc/services/storage/internal/service"
 )
@@ -43,7 +43,7 @@ func scopeFromMetadata(ctx context.Context) (*uuid.UUID, *uuid.UUID, *uuid.UUID)
 
 // Handler is the gRPC boundary.
 type Handler struct {
-	vaultdmsv1.UnimplementedStorageServiceServer
+	sedocv1.UnimplementedStorageServiceServer
 	svc *service.Service
 }
 
@@ -51,7 +51,7 @@ type Handler struct {
 func New(svc *service.Service) *Handler { return &Handler{svc: svc} }
 
 // InitiateUpload maps the proto to a service call.
-func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUploadRequest) (*vaultdmsv1.InitiateUploadResponse, error) {
+func (h *Handler) InitiateUpload(ctx context.Context, req *sedocv1.InitiateUploadRequest) (*sedocv1.InitiateUploadResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
@@ -79,7 +79,7 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUp
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.InitiateUploadResponse{
+	return &sedocv1.InitiateUploadResponse{
 		UploadId:         res.UploadID.String(),
 		PresignedPutUrl:  res.PresignedPutURL,
 		StorageBucket:    res.StorageBucket,
@@ -90,7 +90,7 @@ func (h *Handler) InitiateUpload(ctx context.Context, req *vaultdmsv1.InitiateUp
 }
 
 // CompleteUpload finalizes the upload (incl. ClamAV scan).
-func (h *Handler) CompleteUpload(ctx context.Context, req *vaultdmsv1.CompleteUploadRequest) (*vaultdmsv1.CompleteUploadResponse, error) {
+func (h *Handler) CompleteUpload(ctx context.Context, req *sedocv1.CompleteUploadRequest) (*sedocv1.CompleteUploadResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
@@ -108,7 +108,7 @@ func (h *Handler) CompleteUpload(ctx context.Context, req *vaultdmsv1.CompleteUp
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.CompleteUploadResponse{
+	return &sedocv1.CompleteUploadResponse{
 		StorageBucket:  res.StorageBucket,
 		StorageKey:     res.StorageKey,
 		SizeBytes:      res.SizeBytes,
@@ -119,7 +119,7 @@ func (h *Handler) CompleteUpload(ctx context.Context, req *vaultdmsv1.CompleteUp
 }
 
 // AbortUpload cancels an in-flight upload.
-func (h *Handler) AbortUpload(ctx context.Context, req *vaultdmsv1.AbortUploadRequest) (*vaultdmsv1.AbortUploadResponse, error) {
+func (h *Handler) AbortUpload(ctx context.Context, req *sedocv1.AbortUploadRequest) (*sedocv1.AbortUploadResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
@@ -131,11 +131,11 @@ func (h *Handler) AbortUpload(ctx context.Context, req *vaultdmsv1.AbortUploadRe
 	if err := h.svc.AbortUpload(ctx, tenantID, id); err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.AbortUploadResponse{Aborted: true}, nil
+	return &sedocv1.AbortUploadResponse{Aborted: true}, nil
 }
 
 // GetDownloadURL returns a presigned GET.
-func (h *Handler) GetDownloadURL(ctx context.Context, req *vaultdmsv1.GetDownloadURLRequest) (*vaultdmsv1.GetDownloadURLResponse, error) {
+func (h *Handler) GetDownloadURL(ctx context.Context, req *sedocv1.GetDownloadURLRequest) (*sedocv1.GetDownloadURLResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
@@ -153,14 +153,14 @@ func (h *Handler) GetDownloadURL(ctx context.Context, req *vaultdmsv1.GetDownloa
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.GetDownloadURLResponse{
+	return &sedocv1.GetDownloadURLResponse{
 		Url:       url,
 		ExpiresAt: timestamppb.New(expiresAt),
 	}, nil
 }
 
 // GetScanStatus returns the most recent scan outcome.
-func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStatusRequest) (*vaultdmsv1.ScanStatus, error) {
+func (h *Handler) GetScanStatus(ctx context.Context, req *sedocv1.GetScanStatusRequest) (*sedocv1.ScanStatus, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(vdmserr.ErrUnauthorized)
@@ -173,7 +173,7 @@ func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStat
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.ScanStatus{
+	return &sedocv1.ScanStatus{
 		UploadId:  rec.UploadID.String(),
 		Result:    protoScanResult(rec.Result),
 		Signature: rec.Signature,
@@ -183,30 +183,30 @@ func (h *Handler) GetScanStatus(ctx context.Context, req *vaultdmsv1.GetScanStat
 
 // ---- enum mappers --------------------------------------------------------
 
-func protoScanResult(r model.ScanResult) vaultdmsv1.ScanResult {
+func protoScanResult(r model.ScanResult) sedocv1.ScanResult {
 	switch r {
 	case model.ScanClean:
-		return vaultdmsv1.ScanResult_SCAN_RESULT_CLEAN
+		return sedocv1.ScanResult_SCAN_RESULT_CLEAN
 	case model.ScanInfected:
-		return vaultdmsv1.ScanResult_SCAN_RESULT_INFECTED
+		return sedocv1.ScanResult_SCAN_RESULT_INFECTED
 	case model.ScanPending:
-		return vaultdmsv1.ScanResult_SCAN_RESULT_PENDING
+		return sedocv1.ScanResult_SCAN_RESULT_PENDING
 	case model.ScanError:
-		return vaultdmsv1.ScanResult_SCAN_RESULT_ERROR
+		return sedocv1.ScanResult_SCAN_RESULT_ERROR
 	}
-	return vaultdmsv1.ScanResult_SCAN_RESULT_UNSPECIFIED
+	return sedocv1.ScanResult_SCAN_RESULT_UNSPECIFIED
 }
 
-func protoTier(t string) vaultdmsv1.StorageTier {
+func protoTier(t string) sedocv1.StorageTier {
 	switch t {
 	case "hot":
-		return vaultdmsv1.StorageTier_STORAGE_TIER_HOT
+		return sedocv1.StorageTier_STORAGE_TIER_HOT
 	case "warm":
-		return vaultdmsv1.StorageTier_STORAGE_TIER_WARM
+		return sedocv1.StorageTier_STORAGE_TIER_WARM
 	case "cold":
-		return vaultdmsv1.StorageTier_STORAGE_TIER_COLD
+		return sedocv1.StorageTier_STORAGE_TIER_COLD
 	case "quarantine":
-		return vaultdmsv1.StorageTier_STORAGE_TIER_QUARANTINE
+		return sedocv1.StorageTier_STORAGE_TIER_QUARANTINE
 	}
-	return vaultdmsv1.StorageTier_STORAGE_TIER_UNSPECIFIED
+	return sedocv1.StorageTier_STORAGE_TIER_UNSPECIFIED
 }

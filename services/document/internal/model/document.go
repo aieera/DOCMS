@@ -1,5 +1,5 @@
 // Package model holds the document service's internal domain types.
-// These are distinct from the wire types in vaultdmsv1 — mappers translate
+// These are distinct from the wire types in sedocv1 — mappers translate
 // between them at the handler boundary.
 package model
 

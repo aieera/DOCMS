@@ -28,7 +28,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/storage"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 )
@@ -37,8 +37,8 @@ import (
 // Declaring it as a local interface lets tests inject a mock without spinning
 // up a real gRPC server.
 type PermissionChecker interface {
-	CheckPermission(ctx context.Context, in *vaultdmsv1.CheckPermissionRequest, opts ...grpc.CallOption) (*vaultdmsv1.CheckPermissionResponse, error)
-	BatchCheckPermission(ctx context.Context, in *vaultdmsv1.BatchCheckPermissionRequest, opts ...grpc.CallOption) (*vaultdmsv1.BatchCheckPermissionResponse, error)
+	CheckPermission(ctx context.Context, in *sedocv1.CheckPermissionRequest, opts ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error)
+	BatchCheckPermission(ctx context.Context, in *sedocv1.BatchCheckPermissionRequest, opts ...grpc.CallOption) (*sedocv1.BatchCheckPermissionResponse, error)
 }
 
 // DocumentPermissions is the 5-axis permission summary returned alongside a
@@ -364,7 +364,7 @@ func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID,
 		}
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
-	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
+	resp, err := s.policy.CheckPermission(ctx, &sedocv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    userID.String(),
 		Action:       action,
@@ -494,9 +494,9 @@ func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, user
 		return nil, fmt.Errorf("build context struct: %w", err)
 	}
 	actions := []string{"view", "edit", "delete", "share", "admin"}
-	checks := make([]*vaultdmsv1.CheckPermissionRequest, 0, len(actions))
+	checks := make([]*sedocv1.CheckPermissionRequest, 0, len(actions))
 	for _, a := range actions {
-		checks = append(checks, &vaultdmsv1.CheckPermissionRequest{
+		checks = append(checks, &sedocv1.CheckPermissionRequest{
 			SubjectType:  "user",
 			SubjectId:    userID.String(),
 			Action:       a,
@@ -516,7 +516,7 @@ func (s *DocumentService) summarizeDocumentPermissions(ctx context.Context, user
 		pairs = append(pairs, "x-user-role", role)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
-	resp, err := s.policy.BatchCheckPermission(ctx, &vaultdmsv1.BatchCheckPermissionRequest{Checks: checks})
+	resp, err := s.policy.BatchCheckPermission(ctx, &sedocv1.BatchCheckPermissionRequest{Checks: checks})
 	if err != nil {
 		s.log.Warn().Err(err).Msg("policy batch check unavailable; returning zero-permission summary")
 		return &DocumentPermissions{}, nil

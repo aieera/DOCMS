@@ -9,13 +9,13 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aieera/sedoc/pkg/database"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 // ExportOptions narrows what BulkExport returns. WorkspaceID is
 // only honored for document + folder kinds.
 type ExportOptions struct {
-	Resource    vaultdmsv1.BulkResourceKind
+	Resource    sedocv1.BulkResourceKind
 	From        time.Time
 	To          time.Time
 	WorkspaceID uuid.UUID
@@ -33,7 +33,7 @@ type ExportOptions struct {
 // User + Group exports are intentionally NOT implemented here:
 // those rows live in auth's DB. A future iteration will dial
 // auth's ListUsers / ListGroups RPCs and remap the rows.
-func (s *Service) Export(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, sink func(*vaultdmsv1.BulkExportResponse) error) error {
+func (s *Service) Export(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, sink func(*sedocv1.BulkExportResponse) error) error {
 	pageSize := opts.PageSize
 	if pageSize <= 0 {
 		pageSize = 500
@@ -43,14 +43,14 @@ func (s *Service) Export(ctx context.Context, tenantID uuid.UUID, opts ExportOpt
 	}
 
 	switch opts.Resource {
-	case vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_WORKSPACE:
+	case sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_WORKSPACE:
 		return s.exportWorkspaces(ctx, tenantID, opts, pageSize, sink)
-	case vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_FOLDER:
+	case sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_FOLDER:
 		return s.exportFolders(ctx, tenantID, opts, pageSize, sink)
-	case vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_DOCUMENT:
+	case sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_DOCUMENT:
 		return s.exportDocuments(ctx, tenantID, opts, pageSize, sink)
-	case vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_USER,
-		vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_GROUP:
+	case sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_USER,
+		sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_GROUP:
 		return fmt.Errorf("user / group export not yet implemented; use auth ListUsers / ListGroups directly")
 	default:
 		return fmt.Errorf("unsupported resource kind: %s", opts.Resource)
@@ -66,12 +66,12 @@ func (s *Service) Export(ctx context.Context, tenantID uuid.UUID, opts ExportOpt
 // exported rows include the originating tenant's natural key when
 // the row was originally bulk-imported (otherwise external_id is
 // empty — clients use internal_id as the fallback key).
-func (s *Service) exportWorkspaces(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*vaultdmsv1.BulkExportResponse) error) error {
+func (s *Service) exportWorkspaces(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*sedocv1.BulkExportResponse) error) error {
 	cursorTime := opts.From
 	cursorID := uuid.Nil
 	pageIdx := int32(0)
 	for {
-		var batch []*vaultdmsv1.BulkItem
+		var batch []*sedocv1.BulkItem
 		var lastTime time.Time
 		var lastID uuid.UUID
 		err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
@@ -101,9 +101,9 @@ func (s *Service) exportWorkspaces(ctx context.Context, tenantID uuid.UUID, opts
 				if err := rows.Scan(&id, &name, &desc, &region, &createdAt, &ext); err != nil {
 					return err
 				}
-				batch = append(batch, &vaultdmsv1.BulkItem{
-					Resource: &vaultdmsv1.BulkItem_Workspace{
-						Workspace: &vaultdmsv1.BulkWorkspace{
+				batch = append(batch, &sedocv1.BulkItem{
+					Resource: &sedocv1.BulkItem_Workspace{
+						Workspace: &sedocv1.BulkWorkspace{
 							ExternalId: ext, Name: name, Description: desc, RegionPin: region,
 						},
 					},
@@ -117,7 +117,7 @@ func (s *Service) exportWorkspaces(ctx context.Context, tenantID uuid.UUID, opts
 			return err
 		}
 		hasMore := int32(len(batch)) == pageSize
-		if err := sink(&vaultdmsv1.BulkExportResponse{
+		if err := sink(&sedocv1.BulkExportResponse{
 			Items: batch, HasMore: hasMore, PageIndex: pageIdx,
 		}); err != nil {
 			return err
@@ -130,12 +130,12 @@ func (s *Service) exportWorkspaces(ctx context.Context, tenantID uuid.UUID, opts
 	}
 }
 
-func (s *Service) exportFolders(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*vaultdmsv1.BulkExportResponse) error) error {
+func (s *Service) exportFolders(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*sedocv1.BulkExportResponse) error) error {
 	cursorTime := opts.From
 	cursorID := uuid.Nil
 	pageIdx := int32(0)
 	for {
-		var batch []*vaultdmsv1.BulkItem
+		var batch []*sedocv1.BulkItem
 		var lastTime time.Time
 		var lastID uuid.UUID
 		err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
@@ -172,9 +172,9 @@ func (s *Service) exportFolders(ctx context.Context, tenantID uuid.UUID, opts Ex
 					return err
 				}
 				_ = parentID
-				batch = append(batch, &vaultdmsv1.BulkItem{
-					Resource: &vaultdmsv1.BulkItem_Folder{
-						Folder: &vaultdmsv1.BulkFolder{
+				batch = append(batch, &sedocv1.BulkItem{
+					Resource: &sedocv1.BulkItem_Folder{
+						Folder: &sedocv1.BulkFolder{
 							ExternalId: fxt, WorkspaceExternalId: wxt, ParentExternalId: pxt, Name: name,
 						},
 					},
@@ -188,7 +188,7 @@ func (s *Service) exportFolders(ctx context.Context, tenantID uuid.UUID, opts Ex
 			return err
 		}
 		hasMore := int32(len(batch)) == pageSize
-		if err := sink(&vaultdmsv1.BulkExportResponse{Items: batch, HasMore: hasMore, PageIndex: pageIdx}); err != nil {
+		if err := sink(&sedocv1.BulkExportResponse{Items: batch, HasMore: hasMore, PageIndex: pageIdx}); err != nil {
 			return err
 		}
 		if !hasMore {
@@ -199,12 +199,12 @@ func (s *Service) exportFolders(ctx context.Context, tenantID uuid.UUID, opts Ex
 	}
 }
 
-func (s *Service) exportDocuments(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*vaultdmsv1.BulkExportResponse) error) error {
+func (s *Service) exportDocuments(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, pageSize int32, sink func(*sedocv1.BulkExportResponse) error) error {
 	cursorTime := opts.From
 	cursorID := uuid.Nil
 	pageIdx := int32(0)
 	for {
-		var batch []*vaultdmsv1.BulkItem
+		var batch []*sedocv1.BulkItem
 		var lastTime time.Time
 		var lastID uuid.UUID
 		err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
@@ -241,9 +241,9 @@ func (s *Service) exportDocuments(ctx context.Context, tenantID uuid.UUID, opts 
 				if err := rows.Scan(&id, &wsID, &folderID, &title, &desc, &tags, &region, &createdAt, &dxt, &wxt, &fxt); err != nil {
 					return err
 				}
-				batch = append(batch, &vaultdmsv1.BulkItem{
-					Resource: &vaultdmsv1.BulkItem_Document{
-						Document: &vaultdmsv1.BulkDocument{
+				batch = append(batch, &sedocv1.BulkItem{
+					Resource: &sedocv1.BulkItem_Document{
+						Document: &sedocv1.BulkDocument{
 							ExternalId: dxt, WorkspaceExternalId: wxt, FolderExternalId: fxt,
 							Title: title, Description: desc, Tags: tags, RegionPin: region,
 						},
@@ -258,7 +258,7 @@ func (s *Service) exportDocuments(ctx context.Context, tenantID uuid.UUID, opts 
 			return err
 		}
 		hasMore := int32(len(batch)) == pageSize
-		if err := sink(&vaultdmsv1.BulkExportResponse{Items: batch, HasMore: hasMore, PageIndex: pageIdx}); err != nil {
+		if err := sink(&sedocv1.BulkExportResponse{Items: batch, HasMore: hasMore, PageIndex: pageIdx}); err != nil {
 			return err
 		}
 		if !hasMore {

@@ -10,12 +10,12 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/aieera/sedoc/pkg/auth"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 // GRPCServer adapts Service to the BulkService gRPC interface.
 type GRPCServer struct {
-	vaultdmsv1.UnimplementedBulkServiceServer
+	sedocv1.UnimplementedBulkServiceServer
 	svc *Service
 }
 
@@ -25,7 +25,7 @@ func NewGRPCServer(svc *Service) *GRPCServer { return &GRPCServer{svc: svc} }
 // each one, and acks with per-item Results. Backpressure is the
 // stream's own — we don't read the next request until we've sent
 // the previous response.
-func (g *GRPCServer) BulkImport(stream vaultdmsv1.BulkService_BulkImportServer) error {
+func (g *GRPCServer) BulkImport(stream sedocv1.BulkService_BulkImportServer) error {
 	tenantID, err := callerTenantUUID(stream.Context())
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
@@ -50,7 +50,7 @@ func (g *GRPCServer) BulkImport(stream vaultdmsv1.BulkService_BulkImportServer) 
 
 // BulkExport server-streams pages of matching records. Stops when
 // the underlying iterator finds no more rows.
-func (g *GRPCServer) BulkExport(req *vaultdmsv1.BulkExportRequest, stream vaultdmsv1.BulkService_BulkExportServer) error {
+func (g *GRPCServer) BulkExport(req *sedocv1.BulkExportRequest, stream sedocv1.BulkService_BulkExportServer) error {
 	tenantID, err := callerTenantUUID(stream.Context())
 	if err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
@@ -70,7 +70,7 @@ func (g *GRPCServer) BulkExport(req *vaultdmsv1.BulkExportRequest, stream vaultd
 	if t := req.GetTo(); t != nil && t.IsValid() {
 		opts.To = t.AsTime()
 	}
-	return g.svc.Export(stream.Context(), tenantID, opts, func(page *vaultdmsv1.BulkExportResponse) error {
+	return g.svc.Export(stream.Context(), tenantID, opts, func(page *sedocv1.BulkExportResponse) error {
 		return stream.Send(page)
 	})
 }

@@ -29,4 +29,4 @@ plugins:
     out: gen/openapi
     opt:
       - allow_merge=true
-      - merge_file_name=vaultdms
+      - merge_file_name=sedoc

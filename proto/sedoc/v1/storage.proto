@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package sedoc.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/aieera/sedoc/proto/gen/go/sedoc/v1;sedocv1";
+
+// StorageService owns physical object storage: upload orchestration, virus
+// scanning, lifecycle (hot -> warm), and signed download URLs. Business
+// identity (documents/versions) lives in DocumentService.
+service StorageService {
+  rpc InitiateUpload (InitiateUploadRequest) returns (InitiateUploadResponse);
+  rpc CompleteUpload (CompleteUploadRequest) returns (CompleteUploadResponse);
+  rpc AbortUpload    (AbortUploadRequest)    returns (AbortUploadResponse);
+
+  rpc GetDownloadURL (GetDownloadURLRequest) returns (GetDownloadURLResponse);
+  rpc GetPreviewURL  (GetPreviewURLRequest)  returns (GetPreviewURLResponse);
+
+  rpc GetScanStatus    (GetScanStatusRequest)    returns (ScanStatus);
+  rpc RequestLifecycle (RequestLifecycleRequest) returns (LifecycleJob);
+}
+
+enum StorageTier {
+  STORAGE_TIER_UNSPECIFIED = 0;
+  STORAGE_TIER_HOT         = 1;
+  STORAGE_TIER_WARM        = 2;
+  STORAGE_TIER_COLD        = 3;
+  STORAGE_TIER_QUARANTINE  = 4;
+}
+
+enum ScanResult {
+  SCAN_RESULT_UNSPECIFIED = 0;
+  SCAN_RESULT_CLEAN       = 1;
+  SCAN_RESULT_INFECTED    = 2;
+  SCAN_RESULT_ERROR       = 3;
+  SCAN_RESULT_PENDING     = 4;
+}
+
+message InitiateUploadRequest {
+  string region_pin      = 1;
+  string filename        = 2;
+  string mime_type       = 3;
+  int64  size_bytes      = 4;
+  string checksum_sha256 = 5; // optional; verified on CompleteUpload if provided
+}
+
+message InitiateUploadResponse {
+  string                    upload_id        = 1;
+  string                    presigned_put_url = 2;
+  string                    storage_bucket   = 3;
+  string                    storage_key      = 4;
+  google.protobuf.Timestamp expires_at       = 5;
+  map<string, string>       required_headers = 6;
+}
+
+message CompleteUploadRequest {
+  string upload_id       = 1;
+  string checksum_sha256 = 2;
+  int64  size_bytes      = 3;
+}
+message CompleteUploadResponse {
+  string                    storage_bucket = 1;
+  string                    storage_key    = 2;
+  int64                     size_bytes     = 3;
+  string                    checksum_sha256 = 4;
+  ScanResult                scan_result    = 5; // PENDING if async scan pipeline not done
+  StorageTier               tier           = 6;
+}
+
+message AbortUploadRequest  { string upload_id = 1; }
+message AbortUploadResponse { bool aborted = 1; }
+
+message GetDownloadURLRequest {
+  string document_id = 1;
+  string version_id  = 2; // optional; defaults to current
+  int32  expiry_secs = 3; // max 3600
+}
+message GetDownloadURLResponse {
+  string                    url        = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message GetPreviewURLRequest {
+  string document_id = 1;
+  string version_id  = 2;
+  int32  page        = 3; // 1-based page for multi-page docs
+  int32  expiry_secs = 4;
+}
+message GetPreviewURLResponse {
+  string                    url        = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  bool                      available  = 3; // false if preview still generating
+}
+
+message GetScanStatusRequest { string upload_id = 1; }
+
+message ScanStatus {
+  string                    upload_id = 1;
+  ScanResult                result    = 2;
+  string                    signature = 3; // e.g. "Eicar-Test-Signature"
+  google.protobuf.Timestamp scanned_at = 4;
+}
+
+message RequestLifecycleRequest {
+  string      document_id  = 1;
+  StorageTier target_tier  = 2;
+  string      reason       = 3;
+}
+
+message LifecycleJob {
+  string                    id          = 1;
+  string                    document_id = 2;
+  StorageTier               from_tier   = 3;
+  StorageTier               to_tier     = 4;
+  string                    status      = 5; // queued | running | done | failed
+  google.protobuf.Timestamp created_at  = 6;
+  google.protobuf.Timestamp completed_at = 7;
+}

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -61,74 +61,74 @@ func mapToStruct(m map[string]any) (*structpb.Struct, error) {
 
 // ---- Region / lifecycle enums --------------------------------------------
 
-func regionToString(r vaultdmsv1.RegionPin) string {
+func regionToString(r sedocv1.RegionPin) string {
 	switch r {
-	case vaultdmsv1.RegionPin_REGION_PIN_US_EAST_1:
+	case sedocv1.RegionPin_REGION_PIN_US_EAST_1:
 		return "us-east-1"
-	case vaultdmsv1.RegionPin_REGION_PIN_EU_WEST_1:
+	case sedocv1.RegionPin_REGION_PIN_EU_WEST_1:
 		return "eu-west-1"
-	case vaultdmsv1.RegionPin_REGION_PIN_ME_SOUTH_1:
+	case sedocv1.RegionPin_REGION_PIN_ME_SOUTH_1:
 		return "me-south-1"
-	case vaultdmsv1.RegionPin_REGION_PIN_AP_SOUTHEAST_1:
+	case sedocv1.RegionPin_REGION_PIN_AP_SOUTHEAST_1:
 		return "ap-southeast-1"
 	}
 	return ""
 }
 
-func regionToProto(r string) vaultdmsv1.RegionPin {
+func regionToProto(r string) sedocv1.RegionPin {
 	switch r {
 	case "us-east-1":
-		return vaultdmsv1.RegionPin_REGION_PIN_US_EAST_1
+		return sedocv1.RegionPin_REGION_PIN_US_EAST_1
 	case "eu-west-1":
-		return vaultdmsv1.RegionPin_REGION_PIN_EU_WEST_1
+		return sedocv1.RegionPin_REGION_PIN_EU_WEST_1
 	case "me-south-1":
-		return vaultdmsv1.RegionPin_REGION_PIN_ME_SOUTH_1
+		return sedocv1.RegionPin_REGION_PIN_ME_SOUTH_1
 	case "ap-southeast-1":
-		return vaultdmsv1.RegionPin_REGION_PIN_AP_SOUTHEAST_1
+		return sedocv1.RegionPin_REGION_PIN_AP_SOUTHEAST_1
 	}
-	return vaultdmsv1.RegionPin_REGION_PIN_UNSPECIFIED
+	return sedocv1.RegionPin_REGION_PIN_UNSPECIFIED
 }
 
-func lifecycleStateToProto(s model.LifecycleState) vaultdmsv1.LifecycleState {
+func lifecycleStateToProto(s model.LifecycleState) sedocv1.LifecycleState {
 	switch s {
 	case model.StateDraft:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_DRAFT
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_DRAFT
 	case model.StateInReview:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_IN_REVIEW
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_IN_REVIEW
 	case model.StateActive:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_ACTIVE
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_ACTIVE
 	case model.StateSuperseded:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_SUPERSEDED
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_SUPERSEDED
 	case model.StateRetained:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_RETAINED
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_RETAINED
 	case model.StateArchived:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_ARCHIVED
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_ARCHIVED
 	case model.StateDisposed:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_DISPOSED
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_DISPOSED
 	case model.StateLegalHold:
-		return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_LEGAL_HOLD
+		return sedocv1.LifecycleState_LIFECYCLE_STATE_LEGAL_HOLD
 	}
-	return vaultdmsv1.LifecycleState_LIFECYCLE_STATE_UNSPECIFIED
+	return sedocv1.LifecycleState_LIFECYCLE_STATE_UNSPECIFIED
 }
 
-func lifecycleStateFromProto(s vaultdmsv1.LifecycleState) *model.LifecycleState {
+func lifecycleStateFromProto(s sedocv1.LifecycleState) *model.LifecycleState {
 	var out model.LifecycleState
 	switch s {
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_DRAFT:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_DRAFT:
 		out = model.StateDraft
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_IN_REVIEW:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_IN_REVIEW:
 		out = model.StateInReview
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_ACTIVE:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_ACTIVE:
 		out = model.StateActive
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_SUPERSEDED:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_SUPERSEDED:
 		out = model.StateSuperseded
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_RETAINED:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_RETAINED:
 		out = model.StateRetained
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_ARCHIVED:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_ARCHIVED:
 		out = model.StateArchived
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_DISPOSED:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_DISPOSED:
 		out = model.StateDisposed
-	case vaultdmsv1.LifecycleState_LIFECYCLE_STATE_LEGAL_HOLD:
+	case sedocv1.LifecycleState_LIFECYCLE_STATE_LEGAL_HOLD:
 		out = model.StateLegalHold
 	default:
 		return nil
@@ -136,35 +136,35 @@ func lifecycleStateFromProto(s vaultdmsv1.LifecycleState) *model.LifecycleState 
 	return &out
 }
 
-func lifecycleActionFromProto(a vaultdmsv1.LifecycleAction) (model.LifecycleAction, error) {
+func lifecycleActionFromProto(a sedocv1.LifecycleAction) (model.LifecycleAction, error) {
 	switch a {
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_SUBMIT_FOR_REVIEW:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_SUBMIT_FOR_REVIEW:
 		return model.ActionSubmitForReview, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_APPROVE:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_APPROVE:
 		return model.ActionApprove, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_REJECT:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_REJECT:
 		return model.ActionReject, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_SUPERSEDE:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_SUPERSEDE:
 		return model.ActionSupersede, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_ARCHIVE:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_ARCHIVE:
 		return model.ActionArchive, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_DISPOSE:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_DISPOSE:
 		return model.ActionDispose, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_APPLY_HOLD:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_APPLY_HOLD:
 		return model.ActionApplyHold, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_RELEASE_HOLD:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_RELEASE_HOLD:
 		return model.ActionReleaseHold, nil
-	case vaultdmsv1.LifecycleAction_LIFECYCLE_ACTION_RESTORE:
+	case sedocv1.LifecycleAction_LIFECYCLE_ACTION_RESTORE:
 		return model.ActionRestore, nil
 	}
 	return "", vdmserr.Validation("", "unsupported lifecycle action")
 }
 
-func sortOrderFromProto(o vaultdmsv1.SortOrder) string {
+func sortOrderFromProto(o sedocv1.SortOrder) string {
 	switch o {
-	case vaultdmsv1.SortOrder_SORT_ORDER_ASC:
+	case sedocv1.SortOrder_SORT_ORDER_ASC:
 		return "asc"
-	case vaultdmsv1.SortOrder_SORT_ORDER_DESC:
+	case sedocv1.SortOrder_SORT_ORDER_DESC:
 		return "desc"
 	}
 	return "desc"
@@ -172,12 +172,12 @@ func sortOrderFromProto(o vaultdmsv1.SortOrder) string {
 
 // ---- Document -------------------------------------------------------------
 
-func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdmsv1.Document {
+func documentToProto(d *model.Document, p *service.DocumentPermissions) *sedocv1.Document {
 	if d == nil {
 		return nil
 	}
 	meta, _ := mapToStruct(d.CustomMetadata)
-	out := &vaultdmsv1.Document{
+	out := &sedocv1.Document{
 		Id:                       d.ID.String(),
 		TenantId:                 d.TenantID.String(),
 		WorkspaceId:              d.WorkspaceID.String(),
@@ -202,7 +202,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdm
 		out.CurrentVersionId = d.CurrentVersionID.String()
 	}
 	if d.WorkflowInstance != nil {
-		out.WorkflowInstance = &vaultdmsv1.DocumentWorkflowInstance{
+		out.WorkflowInstance = &sedocv1.DocumentWorkflowInstance{
 			Id:             d.WorkflowInstance.ID.String(),
 			DefinitionId:   d.WorkflowInstance.DefinitionID.String(),
 			DefinitionName: d.WorkflowInstance.DefinitionName,
@@ -212,7 +212,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdm
 		}
 	}
 	if p != nil {
-		out.Permissions = &vaultdmsv1.DocumentPermissions{
+		out.Permissions = &sedocv1.DocumentPermissions{
 			CanView:   p.CanView,
 			CanEdit:   p.CanEdit,
 			CanDelete: p.CanDelete,
@@ -225,7 +225,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *vaultdm
 
 // ---- Folder ---------------------------------------------------------------
 
-func folderToProto(f *model.Folder) *vaultdmsv1.Folder {
+func folderToProto(f *model.Folder) *sedocv1.Folder {
 	if f == nil {
 		return nil
 	}
@@ -233,7 +233,7 @@ func folderToProto(f *model.Folder) *vaultdmsv1.Folder {
 	if visibility == "" {
 		visibility = string(model.FolderShared)
 	}
-	out := &vaultdmsv1.Folder{
+	out := &sedocv1.Folder{
 		Id:               f.ID.String(),
 		TenantId:         f.TenantID.String(),
 		WorkspaceId:      f.WorkspaceID.String(),
@@ -256,11 +256,11 @@ func folderToProto(f *model.Folder) *vaultdmsv1.Folder {
 	return out
 }
 
-func folderGrantToProto(g *model.FolderGrant) *vaultdmsv1.FolderGrant {
+func folderGrantToProto(g *model.FolderGrant) *sedocv1.FolderGrant {
 	if g == nil {
 		return nil
 	}
-	out := &vaultdmsv1.FolderGrant{
+	out := &sedocv1.FolderGrant{
 		Id:          g.ID.String(),
 		FolderId:    g.FolderID.String(),
 		GranteeType: g.GranteeType,
@@ -275,11 +275,11 @@ func folderGrantToProto(g *model.FolderGrant) *vaultdmsv1.FolderGrant {
 
 // ---- Version --------------------------------------------------------------
 
-func versionToProto(v *model.Version) *vaultdmsv1.Version {
+func versionToProto(v *model.Version) *sedocv1.Version {
 	if v == nil {
 		return nil
 	}
-	return &vaultdmsv1.Version{
+	return &sedocv1.Version{
 		Id:            v.ID.String(),
 		DocumentId:    v.DocumentID.String(),
 		VersionNumber: int32(v.VersionNumber),
@@ -296,11 +296,11 @@ func versionToProto(v *model.Version) *vaultdmsv1.Version {
 
 // ---- Share link -----------------------------------------------------------
 
-func shareLinkToProto(l *model.ShareLink, publicBaseURL string) *vaultdmsv1.ShareLink {
+func shareLinkToProto(l *model.ShareLink, publicBaseURL string) *sedocv1.ShareLink {
 	if l == nil {
 		return nil
 	}
-	out := &vaultdmsv1.ShareLink{
+	out := &sedocv1.ShareLink{
 		Id:                l.ID.String(),
 		DocumentId:        l.DocumentID.String(),
 		Token:             l.Token, // plaintext only on create — caller must not return hash
@@ -320,11 +320,11 @@ func shareLinkToProto(l *model.ShareLink, publicBaseURL string) *vaultdmsv1.Shar
 
 // ---- Tag ------------------------------------------------------------------
 
-func tagToProto(t *model.Tag) *vaultdmsv1.Tag {
+func tagToProto(t *model.Tag) *sedocv1.Tag {
 	if t == nil {
 		return nil
 	}
-	return &vaultdmsv1.Tag{
+	return &sedocv1.Tag{
 		Id:            t.ID.String(),
 		Name:          t.Name,
 		Color:         t.Color,

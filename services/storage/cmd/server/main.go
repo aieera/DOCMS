@@ -26,7 +26,7 @@ import (
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/storage/internal/handler"
 	"github.com/aieera/sedoc/services/storage/internal/repository"
 	"github.com/aieera/sedoc/services/storage/internal/scanner"
@@ -99,7 +99,7 @@ func main() {
 	// warning and the service runs with the deny-all fallback — every
 	// InitiateUpload permission check then returns Forbidden until Policy
 	// is reachable.
-	var policyClient vaultdmsv1.PolicyServiceClient
+	var policyClient sedocv1.PolicyServiceClient
 	policyConn, perr := grpc.DialContext(ctx, cfg.PolicyServiceAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -109,7 +109,7 @@ func main() {
 		log.Warn(ctx).Err(perr).Str("addr", cfg.PolicyServiceAddr).
 			Msg("policy service unreachable at startup; uploads will be denied until it comes up")
 	} else {
-		policyClient = vaultdmsv1.NewPolicyServiceClient(policyConn)
+		policyClient = sedocv1.NewPolicyServiceClient(policyConn)
 		defer func() { _ = policyConn.Close() }()
 	}
 
@@ -185,7 +185,7 @@ func main() {
 		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
-	vaultdmsv1.RegisterStorageServiceServer(grpcSrv, handler.New(svc))
+	sedocv1.RegisterStorageServiceServer(grpcSrv, handler.New(svc))
 
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {

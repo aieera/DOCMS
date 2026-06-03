@@ -22,7 +22,7 @@ import (
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	pcache "github.com/aieera/sedoc/services/policy/internal/cache"
 	"github.com/aieera/sedoc/services/policy/internal/handler"
 	"github.com/aieera/sedoc/services/policy/internal/opa"
@@ -99,7 +99,7 @@ func main() {
 		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
-	vaultdmsv1.RegisterPolicyServiceServer(grpcSrv, handler.New(svc))
+	sedocv1.RegisterPolicyServiceServer(grpcSrv, handler.New(svc))
 
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {

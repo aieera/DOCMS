@@ -11,12 +11,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
-func (h *Handler) CreateWorkspace(ctx context.Context, req *vaultdmsv1.CreateWorkspaceRequest) (*vaultdmsv1.Workspace, error) {
+func (h *Handler) CreateWorkspace(ctx context.Context, req *sedocv1.CreateWorkspaceRequest) (*sedocv1.Workspace, error) {
 	w, err := h.svc.CreateWorkspace(ctx, &service.CreateWorkspaceInput{
 		Name:        req.GetName(),
 		Description: req.GetDescription(),
@@ -28,7 +28,7 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *vaultdmsv1.CreateWor
 	return workspaceToProto(w), nil
 }
 
-func (h *Handler) GetWorkspace(ctx context.Context, req *vaultdmsv1.GetWorkspaceRequest) (*vaultdmsv1.Workspace, error) {
+func (h *Handler) GetWorkspace(ctx context.Context, req *sedocv1.GetWorkspaceRequest) (*sedocv1.Workspace, error) {
 	id, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -40,19 +40,19 @@ func (h *Handler) GetWorkspace(ctx context.Context, req *vaultdmsv1.GetWorkspace
 	return workspaceToProto(w), nil
 }
 
-func (h *Handler) ListWorkspaces(ctx context.Context, _ *vaultdmsv1.ListWorkspacesRequest) (*vaultdmsv1.ListWorkspacesResponse, error) {
+func (h *Handler) ListWorkspaces(ctx context.Context, _ *sedocv1.ListWorkspacesRequest) (*sedocv1.ListWorkspacesResponse, error) {
 	ws, err := h.svc.ListWorkspaces(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListWorkspacesResponse{Workspaces: make([]*vaultdmsv1.Workspace, 0, len(ws))}
+	out := &sedocv1.ListWorkspacesResponse{Workspaces: make([]*sedocv1.Workspace, 0, len(ws))}
 	for i := range ws {
 		out.Workspaces = append(out.Workspaces, workspaceToProto(&ws[i]))
 	}
 	return out, nil
 }
 
-func (h *Handler) UpdateWorkspace(ctx context.Context, req *vaultdmsv1.UpdateWorkspaceRequest) (*vaultdmsv1.Workspace, error) {
+func (h *Handler) UpdateWorkspace(ctx context.Context, req *sedocv1.UpdateWorkspaceRequest) (*sedocv1.Workspace, error) {
 	id, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -68,7 +68,7 @@ func (h *Handler) UpdateWorkspace(ctx context.Context, req *vaultdmsv1.UpdateWor
 	return workspaceToProto(w), nil
 }
 
-func (h *Handler) DeleteWorkspace(ctx context.Context, req *vaultdmsv1.DeleteWorkspaceRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteWorkspace(ctx context.Context, req *sedocv1.DeleteWorkspaceRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -79,11 +79,11 @@ func (h *Handler) DeleteWorkspace(ctx context.Context, req *vaultdmsv1.DeleteWor
 	return &emptypb.Empty{}, nil
 }
 
-func workspaceToProto(w *model.Workspace) *vaultdmsv1.Workspace {
+func workspaceToProto(w *model.Workspace) *sedocv1.Workspace {
 	if w == nil {
 		return nil
 	}
-	out := &vaultdmsv1.Workspace{
+	out := &sedocv1.Workspace{
 		Id:            w.ID.String(),
 		TenantId:      w.TenantID.String(),
 		Name:          w.Name,

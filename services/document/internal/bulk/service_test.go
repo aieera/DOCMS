@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 // DigestItems should be deterministic across runs and stable to
@@ -14,9 +14,9 @@ import (
 // input → distinct output. The bulk service uses this to detect a
 // request_id collision where the items don't match.
 func TestDigestItems_DeterministicAndDistinguishing(t *testing.T) {
-	items := []*vaultdmsv1.BulkItem{{
-		Resource: &vaultdmsv1.BulkItem_Workspace{
-			Workspace: &vaultdmsv1.BulkWorkspace{ExternalId: "W-1", Name: "Legal"},
+	items := []*sedocv1.BulkItem{{
+		Resource: &sedocv1.BulkItem_Workspace{
+			Workspace: &sedocv1.BulkWorkspace{ExternalId: "W-1", Name: "Legal"},
 		},
 	}}
 	a := DigestItems(items)
@@ -27,9 +27,9 @@ func TestDigestItems_DeterministicAndDistinguishing(t *testing.T) {
 	if a != b {
 		t.Fatalf("digest not deterministic: %s vs %s", a, b)
 	}
-	other := []*vaultdmsv1.BulkItem{{
-		Resource: &vaultdmsv1.BulkItem_Workspace{
-			Workspace: &vaultdmsv1.BulkWorkspace{ExternalId: "W-2", Name: "Finance"},
+	other := []*sedocv1.BulkItem{{
+		Resource: &sedocv1.BulkItem_Workspace{
+			Workspace: &sedocv1.BulkWorkspace{ExternalId: "W-2", Name: "Finance"},
 		},
 	}}
 	if DigestItems(other) == a {

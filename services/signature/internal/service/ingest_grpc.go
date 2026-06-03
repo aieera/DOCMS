@@ -30,14 +30,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"google.golang.org/grpc/metadata"
 )
 
 // GRPCIngestClient is the production IngestSignedClient.
 type GRPCIngestClient struct {
-	storage  vaultdmsv1.StorageServiceClient
-	document vaultdmsv1.DocumentServiceClient
+	storage  sedocv1.StorageServiceClient
+	document sedocv1.DocumentServiceClient
 	pool     *pgxpool.Pool
 	http     *http.Client
 }
@@ -45,7 +45,7 @@ type GRPCIngestClient struct {
 // NewGRPCIngestClient wires the production hand-off. nil clients →
 // any call returns "ingest not configured", which the service-layer
 // caller treats as a soft failure.
-func NewGRPCIngestClient(storage vaultdmsv1.StorageServiceClient, document vaultdmsv1.DocumentServiceClient, pool *pgxpool.Pool) *GRPCIngestClient {
+func NewGRPCIngestClient(storage sedocv1.StorageServiceClient, document sedocv1.DocumentServiceClient, pool *pgxpool.Pool) *GRPCIngestClient {
 	return &GRPCIngestClient{
 		storage: storage, document: document, pool: pool,
 		http: &http.Client{Timeout: 60 * time.Second},
@@ -61,7 +61,7 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	size := int64(len(in.Bytes))
 	mdCtx := withTenantMetadata(ctx, in.TenantID, in.UserID)
 
-	init, err := c.storage.InitiateUpload(mdCtx, &vaultdmsv1.InitiateUploadRequest{
+	init, err := c.storage.InitiateUpload(mdCtx, &sedocv1.InitiateUploadRequest{
 		RegionPin:      in.RegionPin,
 		Filename:       in.Filename,
 		MimeType:       in.MimeType,
@@ -87,7 +87,7 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 		return nil, fmt.Errorf("storage put: %w", err)
 	}
 
-	if _, err := c.storage.CompleteUpload(mdCtx, &vaultdmsv1.CompleteUploadRequest{
+	if _, err := c.storage.CompleteUpload(mdCtx, &sedocv1.CompleteUploadRequest{
 		UploadId:       init.GetUploadId(),
 		ChecksumSha256: sha,
 		SizeBytes:      size,
@@ -128,7 +128,7 @@ func (c *GRPCIngestClient) CreateVersionFromBlob(ctx context.Context, in CreateV
 		return "", errors.New("ingest: document gRPC client not configured")
 	}
 	mdCtx := withTenantMetadata(ctx, in.TenantID, in.UserID)
-	v, err := c.document.CreateVersion(mdCtx, &vaultdmsv1.CreateVersionRequest{
+	v, err := c.document.CreateVersion(mdCtx, &sedocv1.CreateVersionRequest{
 		DocumentId:    in.DocumentID,
 		ContentBlobId: in.ContentBlobID,
 		ChangeSummary: in.ChangeSummary,

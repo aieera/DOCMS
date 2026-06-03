@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 
 	"github.com/aieera/sedoc/pkg/config"
 	"github.com/aieera/sedoc/pkg/database"
@@ -96,8 +96,8 @@ func main() {
 	documentConn := dialServiceOpt(ctx, log, "document", cfg.DocumentServiceAddr)
 	if storageConn != nil && documentConn != nil {
 		ingestClient := service.NewGRPCIngestClient(
-			vaultdmsv1.NewStorageServiceClient(storageConn),
-			vaultdmsv1.NewDocumentServiceClient(documentConn),
+			sedocv1.NewStorageServiceClient(storageConn),
+			sedocv1.NewDocumentServiceClient(documentConn),
 			pool,
 		)
 		svc.AddIngest(ingestClient)

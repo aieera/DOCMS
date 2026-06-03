@@ -35,7 +35,7 @@ import (
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/handler"
@@ -113,9 +113,9 @@ func main() {
 		log.Warn(ctx).Err(err).Str("addr", cfg.PolicyServiceAddr).
 			Msg("policy service unreachable at startup; service will deny on checks until reachable")
 	}
-	var policyClient vaultdmsv1.PolicyServiceClient
+	var policyClient sedocv1.PolicyServiceClient
 	if policyConn != nil {
-		policyClient = vaultdmsv1.NewPolicyServiceClient(policyConn)
+		policyClient = sedocv1.NewPolicyServiceClient(policyConn)
 		defer func() { _ = policyConn.Close() }()
 	} else {
 		policyClient = denyAllPolicyClient{}
@@ -134,9 +134,9 @@ func main() {
 		log.Warn(ctx).Err(err).Str("addr", cfg.StorageServiceAddr).
 			Msg("storage service unreachable at startup; proxy will 503 until reachable")
 	}
-	var storageClient vaultdmsv1.StorageServiceClient
+	var storageClient sedocv1.StorageServiceClient
 	if storageConn != nil {
-		storageClient = vaultdmsv1.NewStorageServiceClient(storageConn)
+		storageClient = sedocv1.NewStorageServiceClient(storageConn)
 		defer func() { _ = storageConn.Close() }()
 	}
 
@@ -240,21 +240,21 @@ func main() {
 		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
-	vaultdmsv1.RegisterDocumentServiceServer(grpcSrv, docHandler)
+	sedocv1.RegisterDocumentServiceServer(grpcSrv, docHandler)
 
 	// ADR 0075 — bulk import + export. Lives in the document service
 	// because workspaces, folders, and documents are document-owned.
 	// User + group bulk dispatches outbound to auth via the auth gRPC
 	// client (nil-safe — when authConn is nil those rows return
 	// "auth service not configured" without aborting the batch).
-	var authClient vaultdmsv1.AuthServiceClient
+	var authClient sedocv1.AuthServiceClient
 	if authConn := dialAuthOpt(ctx, log, cfg.AuthServiceAddr); authConn != nil {
-		authClient = vaultdmsv1.NewAuthServiceClient(authConn)
+		authClient = sedocv1.NewAuthServiceClient(authConn)
 		defer func() { _ = authConn.Close() }()
 	}
 	bulkRepo := bulk.NewRepo(pool)
 	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
-	vaultdmsv1.RegisterBulkServiceServer(grpcSrv, bulk.NewGRPCServer(bulkSvc))
+	sedocv1.RegisterBulkServiceServer(grpcSrv, bulk.NewGRPCServer(bulkSvc))
 	bulkHTTP := bulk.NewHTTPHandler(bulkSvc, *log.Z())
 
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
@@ -354,7 +354,7 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("gateway dial")
 	}
 	defer func() { _ = gwConn.Close() }()
-	if err := vaultdmsv1.RegisterDocumentServiceHandler(ctx, gwMux, gwConn); err != nil {
+	if err := sedocv1.RegisterDocumentServiceHandler(ctx, gwMux, gwConn); err != nil {
 		log.Fatal(ctx).Err(err).Msg("gateway register")
 	}
 
@@ -1088,14 +1088,14 @@ func main() {
 // dependency is available.
 type denyAllPolicyClient struct{}
 
-func (denyAllPolicyClient) CheckPermission(ctx context.Context, in *vaultdmsv1.CheckPermissionRequest, _ ...grpc.CallOption) (*vaultdmsv1.CheckPermissionResponse, error) {
-	return &vaultdmsv1.CheckPermissionResponse{Allowed: false, Reason: "policy service unavailable"}, nil
+func (denyAllPolicyClient) CheckPermission(ctx context.Context, in *sedocv1.CheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error) {
+	return &sedocv1.CheckPermissionResponse{Allowed: false, Reason: "policy service unavailable"}, nil
 }
 
-func (denyAllPolicyClient) BatchCheckPermission(ctx context.Context, in *vaultdmsv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*vaultdmsv1.BatchCheckPermissionResponse, error) {
-	out := &vaultdmsv1.BatchCheckPermissionResponse{Results: make([]*vaultdmsv1.CheckPermissionResponse, 0, len(in.GetChecks()))}
+func (denyAllPolicyClient) BatchCheckPermission(ctx context.Context, in *sedocv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.BatchCheckPermissionResponse, error) {
+	out := &sedocv1.BatchCheckPermissionResponse{Results: make([]*sedocv1.CheckPermissionResponse, 0, len(in.GetChecks()))}
 	for range in.GetChecks() {
-		out.Results = append(out.Results, &vaultdmsv1.CheckPermissionResponse{Allowed: false, Reason: "policy service unavailable"})
+		out.Results = append(out.Results, &sedocv1.CheckPermissionResponse{Allowed: false, Reason: "policy service unavailable"})
 	}
 	return out, nil
 }

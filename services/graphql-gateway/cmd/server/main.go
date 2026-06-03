@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 
 	"github.com/aieera/sedoc/pkg/config"
 	"github.com/aieera/sedoc/pkg/health"
@@ -92,23 +92,23 @@ func main() {
 		return conn
 	}
 	if c := dial("document", cfg.DocumentServiceAddr); c != nil {
-		clients.Document = vaultdmsv1.NewDocumentServiceClient(c)
+		clients.Document = sedocv1.NewDocumentServiceClient(c)
 		defer func() { _ = c.Close() }()
 	}
 	if c := dial("workflow", cfg.WorkflowServiceAddr); c != nil {
-		clients.Workflow = vaultdmsv1.NewWorkflowServiceClient(c)
+		clients.Workflow = sedocv1.NewWorkflowServiceClient(c)
 		defer func() { _ = c.Close() }()
 	}
 	if c := dial("collaboration", cfg.CollaborationServiceAddr); c != nil {
-		clients.Collaboration = vaultdmsv1.NewCollaborationServiceClient(c)
+		clients.Collaboration = sedocv1.NewCollaborationServiceClient(c)
 		defer func() { _ = c.Close() }()
 	}
 	if c := dial("policy", cfg.PolicyServiceAddr); c != nil {
-		clients.Policy = vaultdmsv1.NewPolicyServiceClient(c)
+		clients.Policy = sedocv1.NewPolicyServiceClient(c)
 		defer func() { _ = c.Close() }()
 	}
 	if c := dial("audit", cfg.AuditServiceAddr); c != nil {
-		clients.Audit = vaultdmsv1.NewAuditServiceClient(c)
+		clients.Audit = sedocv1.NewAuditServiceClient(c)
 		defer func() { _ = c.Close() }()
 	}
 

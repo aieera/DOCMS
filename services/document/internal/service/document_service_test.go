@@ -26,7 +26,7 @@ import (
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/testutil"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -40,13 +40,13 @@ type stubPolicy struct {
 	allow bool
 }
 
-func (s stubPolicy) CheckPermission(_ context.Context, _ *vaultdmsv1.CheckPermissionRequest, _ ...grpc.CallOption) (*vaultdmsv1.CheckPermissionResponse, error) {
-	return &vaultdmsv1.CheckPermissionResponse{Allowed: s.allow}, nil
+func (s stubPolicy) CheckPermission(_ context.Context, _ *sedocv1.CheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error) {
+	return &sedocv1.CheckPermissionResponse{Allowed: s.allow}, nil
 }
-func (s stubPolicy) BatchCheckPermission(_ context.Context, in *vaultdmsv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*vaultdmsv1.BatchCheckPermissionResponse, error) {
-	out := &vaultdmsv1.BatchCheckPermissionResponse{}
+func (s stubPolicy) BatchCheckPermission(_ context.Context, in *sedocv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.BatchCheckPermissionResponse, error) {
+	out := &sedocv1.BatchCheckPermissionResponse{}
 	for range in.GetChecks() {
-		out.Results = append(out.Results, &vaultdmsv1.CheckPermissionResponse{Allowed: s.allow})
+		out.Results = append(out.Results, &sedocv1.CheckPermissionResponse{Allowed: s.allow})
 	}
 	return out, nil
 }

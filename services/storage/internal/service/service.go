@@ -34,7 +34,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/storage"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/storage/internal/model"
 	"github.com/aieera/sedoc/services/storage/internal/repository"
 	"github.com/aieera/sedoc/services/storage/internal/scanner"
@@ -43,7 +43,7 @@ import (
 // PermissionChecker is the subset of policy's gRPC client used here.
 // Declared locally so tests can inject a mock.
 type PermissionChecker interface {
-	CheckPermission(ctx context.Context, in *vaultdmsv1.CheckPermissionRequest, opts ...grpc.CallOption) (*vaultdmsv1.CheckPermissionResponse, error)
+	CheckPermission(ctx context.Context, in *sedocv1.CheckPermissionRequest, opts ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error)
 }
 
 // Service is the storage-service facade. Handlers call into it.
@@ -843,7 +843,7 @@ func (s *Service) ensureUploadPermission(ctx context.Context, in InitiateUploadI
 		pairs = append(pairs, "x-user-role", role)
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
-	resp, err := s.policy.CheckPermission(ctx, &vaultdmsv1.CheckPermissionRequest{
+	resp, err := s.policy.CheckPermission(ctx, &sedocv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    in.UserID.String(),
 		Action:       "edit",

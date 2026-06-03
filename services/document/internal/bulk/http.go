@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
 // HTTPHandler exposes the bulk surface over HTTP NDJSON for the
@@ -78,13 +78,13 @@ func (h *HTTPHandler) handleImport(w http.ResponseWriter, r *http.Request) {
 	scanner := bufio.NewScanner(r.Body)
 	scanner.Buffer(make([]byte, 1<<20), 8<<20) // up to 8 MiB per line for big metadata blobs
 	envelope := requestEnvelope{BatchSize: 100}
-	itemsByRequest := make([]*vaultdmsv1.BulkItem, 0, envelope.BatchSize)
+	itemsByRequest := make([]*sedocv1.BulkItem, 0, envelope.BatchSize)
 
 	flushBatch := func(reqID string) {
 		if len(itemsByRequest) == 0 {
 			return
 		}
-		req := &vaultdmsv1.BulkImportRequest{
+		req := &sedocv1.BulkImportRequest{
 			RequestId: reqID,
 			Items:     itemsByRequest,
 		}
@@ -156,38 +156,38 @@ func batchRequestID(base string, seq int) string {
 	return fmt.Sprintf("%s-%d", base, seq)
 }
 
-func decodeItem(raw importLine) (*vaultdmsv1.BulkItem, error) {
+func decodeItem(raw importLine) (*sedocv1.BulkItem, error) {
 	switch raw.Resource {
 	case "workspace":
-		var w vaultdmsv1.BulkWorkspace
+		var w sedocv1.BulkWorkspace
 		if err := json.Unmarshal(raw.Workspace, &w); err != nil {
 			return nil, fmt.Errorf("workspace decode: %w", err)
 		}
-		return &vaultdmsv1.BulkItem{Resource: &vaultdmsv1.BulkItem_Workspace{Workspace: &w}}, nil
+		return &sedocv1.BulkItem{Resource: &sedocv1.BulkItem_Workspace{Workspace: &w}}, nil
 	case "folder":
-		var f vaultdmsv1.BulkFolder
+		var f sedocv1.BulkFolder
 		if err := json.Unmarshal(raw.Folder, &f); err != nil {
 			return nil, fmt.Errorf("folder decode: %w", err)
 		}
-		return &vaultdmsv1.BulkItem{Resource: &vaultdmsv1.BulkItem_Folder{Folder: &f}}, nil
+		return &sedocv1.BulkItem{Resource: &sedocv1.BulkItem_Folder{Folder: &f}}, nil
 	case "document":
-		var d vaultdmsv1.BulkDocument
+		var d sedocv1.BulkDocument
 		if err := json.Unmarshal(raw.Document, &d); err != nil {
 			return nil, fmt.Errorf("document decode: %w", err)
 		}
-		return &vaultdmsv1.BulkItem{Resource: &vaultdmsv1.BulkItem_Document{Document: &d}}, nil
+		return &sedocv1.BulkItem{Resource: &sedocv1.BulkItem_Document{Document: &d}}, nil
 	case "user":
-		var u vaultdmsv1.BulkUser
+		var u sedocv1.BulkUser
 		if err := json.Unmarshal(raw.User, &u); err != nil {
 			return nil, fmt.Errorf("user decode: %w", err)
 		}
-		return &vaultdmsv1.BulkItem{Resource: &vaultdmsv1.BulkItem_User{User: &u}}, nil
+		return &sedocv1.BulkItem{Resource: &sedocv1.BulkItem_User{User: &u}}, nil
 	case "group":
-		var g vaultdmsv1.BulkGroup
+		var g sedocv1.BulkGroup
 		if err := json.Unmarshal(raw.Group, &g); err != nil {
 			return nil, fmt.Errorf("group decode: %w", err)
 		}
-		return &vaultdmsv1.BulkItem{Resource: &vaultdmsv1.BulkItem_Group{Group: &g}}, nil
+		return &sedocv1.BulkItem{Resource: &sedocv1.BulkItem_Group{Group: &g}}, nil
 	default:
 		return nil, fmt.Errorf("unknown resource %q (expected workspace|folder|document|user|group)", raw.Resource)
 	}
@@ -201,7 +201,7 @@ func (h *HTTPHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 	resource := r.URL.Query().Get("resource")
 	kind := parseResourceKind(resource)
-	if kind == vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_UNSPECIFIED {
+	if kind == sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_UNSPECIFIED {
 		writeErrJSON(w, http.StatusBadRequest, "resource must be one of workspace|folder|document")
 		return
 	}
@@ -219,7 +219,7 @@ func (h *HTTPHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	exErr := h.svc.Export(r.Context(), tenantID, ExportOptions{
 		Resource: kind, WorkspaceID: wsID, From: from, To: to,
-	}, func(page *vaultdmsv1.BulkExportResponse) error {
+	}, func(page *sedocv1.BulkExportResponse) error {
 		for _, item := range page.GetItems() {
 			if err := enc.Encode(item); err != nil {
 				return err
@@ -235,20 +235,20 @@ func (h *HTTPHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func parseResourceKind(s string) vaultdmsv1.BulkResourceKind {
+func parseResourceKind(s string) sedocv1.BulkResourceKind {
 	switch s {
 	case "workspace":
-		return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_WORKSPACE
+		return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_WORKSPACE
 	case "folder":
-		return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_FOLDER
+		return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_FOLDER
 	case "document":
-		return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_DOCUMENT
+		return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_DOCUMENT
 	case "user":
-		return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_USER
+		return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_USER
 	case "group":
-		return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_GROUP
+		return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_GROUP
 	}
-	return vaultdmsv1.BulkResourceKind_BULK_RESOURCE_KIND_UNSPECIFIED
+	return sedocv1.BulkResourceKind_BULK_RESOURCE_KIND_UNSPECIFIED
 }
 
 func (h *HTTPHandler) callerTenant(r *http.Request) (uuid.UUID, error) {

@@ -1,0 +1,435 @@
+syntax = "proto3";
+
+package sedoc.v1;
+
+option go_package = "github.com/aieera/sedoc/proto/gen/go/sedoc/v1;sedocv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "sedoc/v1/common.proto";
+
+message Document {
+  string                    id                       = 1;
+  string                    tenant_id                = 2;
+  string                    workspace_id             = 3;
+  string                    folder_id                = 4;
+  string                    title                    = 5;
+  string                    description              = 6;
+  LifecycleState            lifecycle_state          = 7;
+  RegionPin                 region_pin               = 8;
+  google.protobuf.Struct    custom_metadata          = 9;
+  repeated string           tags                     = 10;
+  string                    current_version_id       = 11;
+  string                    document_class           = 12;
+  float                     classification_confidence = 13;
+  string                    sha256_hash              = 14;
+  int64                     total_size_bytes         = 15;
+  string                    mime_type                = 16;
+  string                    created_by               = 17;
+  google.protobuf.Timestamp created_at               = 18;
+  google.protobuf.Timestamp updated_at               = 19;
+  DocumentPermissions       permissions              = 20;
+  // Denormalised uploader display name. Filled at read time by a
+  // LEFT JOIN against the users table in the document repository.
+  // Empty when the uploader row is missing; frontend uses that as
+  // the signal to render "Deleted user". Soft-deleted users still
+  // carry their display_name on the row so attribution survives
+  // account deletion.
+  string                    created_by_name          = 21;
+  // Active workflow summary, filled at read time by a LEFT JOIN
+  // LATERAL against workflow_instances (status NOT IN ('completed',
+  // 'failed','cancelled')). Absent when the document has no in-
+  // flight workflow. Frontend renders a status pill on the document
+  // card + header.
+  DocumentWorkflowInstance  workflow_instance        = 22;
+}
+
+message DocumentWorkflowInstance {
+  string                    id                  = 1;
+  string                    definition_id       = 2;
+  string                    definition_name     = 3;
+  string                    status              = 4; // pending | running | completed | failed | cancelled
+  int32                     current_step        = 5;
+  google.protobuf.Timestamp started_at          = 6;
+}
+
+message DocumentPermissions {
+  bool can_view   = 1;
+  bool can_edit   = 2;
+  bool can_delete = 3;
+  bool can_share  = 4;
+  bool can_admin  = 5;
+}
+
+message Version {
+  string                    id              = 1;
+  string                    document_id     = 2;
+  int32                     version_number  = 3;
+  string                    content_blob_id = 4;
+  int64                     size_bytes      = 5;
+  string                    mime_type       = 6;
+  string                    sha256_hash     = 7;
+  string                    created_by      = 8;
+  string                    created_by_name = 9;
+  google.protobuf.Timestamp created_at      = 10;
+  string                    change_summary  = 11;
+}
+
+message Workspace {
+  string                    id              = 1;
+  string                    tenant_id       = 2;
+  string                    name            = 3;
+  string                    description     = 4;
+  string                    region_pin      = 5;
+  google.protobuf.Struct    settings        = 6;
+  string                    created_by      = 7;
+  google.protobuf.Timestamp created_at      = 8;
+  google.protobuf.Timestamp updated_at      = 9;
+  int64                     document_count  = 10;
+  int64                     folder_count    = 11;
+  // member_count — workspace_members rows for this workspace. Powers
+  // the "N members" pill on workspace cards. Includes admins, members,
+  // and viewers; folder-grant-only callers are not counted.
+  int64                     member_count    = 12;
+}
+
+message Folder {
+  string                    id                 = 1;
+  string                    tenant_id          = 2;
+  string                    workspace_id       = 3;
+  string                    parent_folder_id   = 4;
+  string                    name               = 5;
+  string                    path               = 6;
+  int32                     depth              = 7;
+  int64                     document_count     = 8;
+  int64                     child_folder_count = 9;
+  string                    created_by         = 10;
+  google.protobuf.Timestamp created_at         = 11;
+  google.protobuf.Timestamp updated_at         = 12;
+  // Phase 2 — visibility + owner. visibility is 'shared' | 'private';
+  // owner_id is populated only for private folders (the access owner)
+  // and stays empty for shared rows.
+  string                    visibility         = 13;
+  string                    owner_id           = 14;
+}
+
+message FolderGrant {
+  string                    id                 = 1;
+  string                    folder_id          = 2;
+  string                    grantee_type       = 3; // 'user' | 'group'
+  string                    grantee_id         = 4;
+  string                    granted_by         = 5;
+  google.protobuf.Timestamp created_at         = 6;
+}
+
+message ShareLink {
+  string                    id                 = 1;
+  string                    document_id        = 2;
+  string                    token              = 3;
+  string                    url                = 4;
+  bool                      password_protected = 5;
+  google.protobuf.Timestamp expires_at         = 6;
+  int32                     max_views          = 7;
+  int32                     view_count         = 8;
+  repeated string           permissions        = 9;
+  bool                      is_active          = 10;
+  google.protobuf.Timestamp created_at         = 11;
+}
+
+message Tag {
+  string id             = 1;
+  string name           = 2;
+  string color          = 3;
+  int64  document_count = 4;
+}
+
+// ---- Requests / responses --------------------------------------------------
+
+message CreateWorkspaceRequest {
+  string name        = 1;
+  string description = 2;
+  string region_pin  = 3;
+}
+message GetWorkspaceRequest    { string workspace_id = 1; }
+message ListWorkspacesRequest  {}
+message ListWorkspacesResponse { repeated Workspace workspaces = 1; }
+message UpdateWorkspaceRequest {
+  string workspace_id = 1;
+  string name         = 2;
+  string description  = 3;
+}
+message DeleteWorkspaceRequest { string workspace_id = 1; }
+
+message CreateFolderRequest {
+  string workspace_id     = 1;
+  string name             = 2;
+  string parent_folder_id = 3;
+  // Phase 2 — optional. Empty defaults to 'shared'.
+  string visibility       = 4;
+}
+message GetFolderRequest { string folder_id = 1; }
+message ListFoldersRequest {
+  string workspace_id     = 1;
+  string parent_folder_id = 2;
+}
+message ListFoldersResponse { repeated Folder folders = 1; }
+message UpdateFolderRequest {
+  string folder_id            = 1;
+  string name                 = 2;
+  string new_parent_folder_id = 3;
+}
+message DeleteFolderRequest { string folder_id = 1; }
+
+// Phase 2 visibility flip + grants.
+message SetFolderVisibilityRequest {
+  string folder_id  = 1;
+  string visibility = 2; // 'shared' | 'private'
+}
+message ListFolderGrantsRequest  { string folder_id = 1; }
+message ListFolderGrantsResponse { repeated FolderGrant grants = 1; }
+message AddFolderGrantRequest {
+  string folder_id    = 1;
+  string grantee_type = 2; // 'user' | 'group'
+  string grantee_id   = 3;
+}
+message RemoveFolderGrantRequest {
+  string folder_id    = 1;
+  string grantee_type = 2;
+  string grantee_id   = 3;
+}
+
+message CreateDocumentRequest {
+  string                 workspace_id    = 1;
+  string                 folder_id       = 2;
+  string                 title           = 3;
+  string                 description     = 4;
+  RegionPin              region_pin      = 5;
+  google.protobuf.Struct custom_metadata = 6;
+  repeated string        tags            = 7;
+}
+message GetDocumentRequest { string document_id = 1; }
+message UpdateDocumentRequest {
+  string                 document_id     = 1;
+  string                 title           = 2;
+  string                 description     = 3;
+  google.protobuf.Struct custom_metadata = 4;
+  repeated string        tags            = 5;
+  bool                   clear_tags      = 6;
+}
+message DeleteDocumentRequest { string document_id = 1; }
+message MoveDocumentRequest {
+  string document_id         = 1;
+  string target_folder_id    = 2;
+  string target_workspace_id = 3;
+}
+// CopyDocument creates a new document row in the target folder pointing
+// at the same content_blob as the source's current version. Shallow:
+// only the current version is brought over; versions / share-links /
+// comments / annotations / OCR stay with the original.
+message CopyDocumentRequest {
+  string document_id         = 1;
+  string target_folder_id    = 2;
+  string target_workspace_id = 3;
+}
+message ListDocumentsRequest {
+  string                    workspace_id     = 1;
+  string                    folder_id        = 2;
+  LifecycleState            lifecycle_state  = 3;
+  string                    document_class   = 4;
+  repeated string           tags             = 5;
+  google.protobuf.Timestamp created_after    = 6;
+  google.protobuf.Timestamp created_before   = 7;
+  string                    query            = 8;
+  string                    sort_by          = 9;
+  SortOrder                 sort_order       = 10;
+  PaginationRequest         pagination       = 11;
+  bool                      include_deleted  = 12;
+}
+message ListDocumentsResponse {
+  repeated Document   documents  = 1;
+  PaginationResponse  pagination = 2;
+}
+
+message CreateVersionRequest {
+  string document_id     = 1;
+  string content_blob_id = 2;
+  string change_summary  = 3;
+}
+message ListVersionsRequest {
+  string            document_id = 1;
+  PaginationRequest pagination  = 2;
+}
+message ListVersionsResponse {
+  repeated Version   versions   = 1;
+  PaginationResponse pagination = 2;
+}
+message RestoreVersionRequest {
+  string document_id = 1;
+  string version_id  = 2;
+  string note        = 3;
+}
+
+message UpdateLifecycleRequest {
+  string          document_id           = 1;
+  LifecycleAction action                = 2;
+  string          reason                = 3;
+  string          hold_name             = 4;
+  string          hold_matter_reference = 5;
+}
+
+message CreateShareLinkRequest {
+  string          document_id      = 1;
+  string          password         = 2;
+  int32           expires_in_hours = 3;
+  int32           max_views        = 4;
+  repeated string permissions      = 5;
+}
+message ListShareLinksRequest  { string document_id = 1; }
+message ListShareLinksResponse { repeated ShareLink share_links = 1; }
+message DeleteShareLinkRequest { string share_link_id = 1; }
+message AccessShareLinkRequest { string token = 1; string password = 2; }
+message AccessShareLinkResponse {
+  Document document           = 1;
+  string   download_url       = 2;
+  bool     password_required  = 3;
+}
+
+message CreateTagRequest { string name = 1; string color = 2; }
+message ListTagsRequest  {}
+message ListTagsResponse { repeated Tag tags = 1; }
+message DeleteTagRequest { string tag_id = 1; }
+
+message BatchUpdateMetadataRequest {
+  repeated string        document_ids     = 1;
+  google.protobuf.Struct metadata_updates = 2;
+}
+message BatchUpdateMetadataResponse {
+  int32           updated_count        = 1;
+  repeated string failed_document_ids  = 2;
+  repeated string failure_reasons      = 3;
+}
+
+message GetMetadataSchemaRequest  {}
+message GetMetadataSchemaResponse { google.protobuf.Struct json_schema = 1; }
+message UpdateMetadataSchemaRequest { google.protobuf.Struct json_schema = 1; }
+
+// ---- Service ---------------------------------------------------------------
+
+service DocumentService {
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace) {
+    option (google.api.http) = { post: "/api/v1/workspaces" body: "*" };
+  }
+  rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace) {
+    option (google.api.http) = { get: "/api/v1/workspaces/{workspace_id}" };
+  }
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse) {
+    option (google.api.http) = { get: "/api/v1/workspaces" };
+  }
+  rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (Workspace) {
+    option (google.api.http) = { patch: "/api/v1/workspaces/{workspace_id}" body: "*" };
+  }
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/workspaces/{workspace_id}" };
+  }
+
+  rpc CreateFolder(CreateFolderRequest) returns (Folder) {
+    option (google.api.http) = { post: "/api/v1/workspaces/{workspace_id}/folders" body: "*" };
+  }
+  rpc GetFolder(GetFolderRequest) returns (Folder) {
+    option (google.api.http) = { get: "/api/v1/folders/{folder_id}" };
+  }
+  rpc ListFolders(ListFoldersRequest) returns (ListFoldersResponse) {
+    option (google.api.http) = { get: "/api/v1/workspaces/{workspace_id}/folders" };
+  }
+  rpc UpdateFolder(UpdateFolderRequest) returns (Folder) {
+    option (google.api.http) = { patch: "/api/v1/folders/{folder_id}" body: "*" };
+  }
+  rpc DeleteFolder(DeleteFolderRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/folders/{folder_id}" };
+  }
+  // Phase 2 — folder visibility + grants.
+  rpc SetFolderVisibility(SetFolderVisibilityRequest) returns (Folder) {
+    option (google.api.http) = { post: "/api/v1/folders/{folder_id}/visibility" body: "*" };
+  }
+  rpc ListFolderGrants(ListFolderGrantsRequest) returns (ListFolderGrantsResponse) {
+    option (google.api.http) = { get: "/api/v1/folders/{folder_id}/grants" };
+  }
+  rpc AddFolderGrant(AddFolderGrantRequest) returns (FolderGrant) {
+    option (google.api.http) = { post: "/api/v1/folders/{folder_id}/grants" body: "*" };
+  }
+  rpc RemoveFolderGrant(RemoveFolderGrantRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/folders/{folder_id}/grants/{grantee_type}/{grantee_id}" };
+  }
+
+  rpc CreateDocument(CreateDocumentRequest) returns (Document) {
+    option (google.api.http) = { post: "/api/v1/documents" body: "*" };
+  }
+  rpc GetDocument(GetDocumentRequest) returns (Document) {
+    option (google.api.http) = { get: "/api/v1/documents/{document_id}" };
+  }
+  rpc UpdateDocument(UpdateDocumentRequest) returns (Document) {
+    option (google.api.http) = { patch: "/api/v1/documents/{document_id}" body: "*" };
+  }
+  rpc DeleteDocument(DeleteDocumentRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/documents/{document_id}" };
+  }
+  rpc MoveDocument(MoveDocumentRequest) returns (Document) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/move" body: "*" };
+  }
+  rpc CopyDocument(CopyDocumentRequest) returns (Document) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/copy" body: "*" };
+  }
+  rpc ListDocuments(ListDocumentsRequest) returns (ListDocumentsResponse) {
+    option (google.api.http) = { get: "/api/v1/workspaces/{workspace_id}/documents" };
+  }
+
+  rpc CreateVersion(CreateVersionRequest) returns (Version) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/versions" body: "*" };
+  }
+  rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse) {
+    option (google.api.http) = { get: "/api/v1/documents/{document_id}/versions" };
+  }
+  rpc RestoreVersion(RestoreVersionRequest) returns (Version) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/versions/{version_id}/restore" body: "*" };
+  }
+
+  rpc UpdateLifecycle(UpdateLifecycleRequest) returns (Document) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/lifecycle" body: "*" };
+  }
+
+  rpc CreateShareLink(CreateShareLinkRequest) returns (ShareLink) {
+    option (google.api.http) = { post: "/api/v1/documents/{document_id}/share-links" body: "*" };
+  }
+  rpc ListShareLinks(ListShareLinksRequest) returns (ListShareLinksResponse) {
+    option (google.api.http) = { get: "/api/v1/documents/{document_id}/share-links" };
+  }
+  rpc DeleteShareLink(DeleteShareLinkRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/share-links/{share_link_id}" };
+  }
+  rpc AccessShareLink(AccessShareLinkRequest) returns (AccessShareLinkResponse) {
+    option (google.api.http) = { post: "/api/v1/shared/{token}" body: "*" };
+  }
+
+  rpc CreateTag(CreateTagRequest) returns (Tag) {
+    option (google.api.http) = { post: "/api/v1/tags" body: "*" };
+  }
+  rpc ListTags(ListTagsRequest) returns (ListTagsResponse) {
+    option (google.api.http) = { get: "/api/v1/tags" };
+  }
+  rpc DeleteTag(DeleteTagRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = { delete: "/api/v1/tags/{tag_id}" };
+  }
+
+  rpc BatchUpdateMetadata(BatchUpdateMetadataRequest) returns (BatchUpdateMetadataResponse) {
+    option (google.api.http) = { post: "/api/v1/documents/batch/metadata" body: "*" };
+  }
+
+  rpc GetMetadataSchema(GetMetadataSchemaRequest) returns (GetMetadataSchemaResponse) {
+    option (google.api.http) = { get: "/api/v1/tenants/metadata-schema" };
+  }
+  rpc UpdateMetadataSchema(UpdateMetadataSchemaRequest) returns (GetMetadataSchemaResponse) {
+    option (google.api.http) = { put: "/api/v1/tenants/metadata-schema" body: "*" };
+  }
+}

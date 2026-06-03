@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/loader"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/model"
 )
@@ -33,11 +33,11 @@ import (
 // that needs a missing client returns ErrNotConfigured and the
 // executor renders the field as null.
 type Clients struct {
-	Document      vaultdmsv1.DocumentServiceClient
-	Workflow      vaultdmsv1.WorkflowServiceClient
-	Collaboration vaultdmsv1.CollaborationServiceClient
-	Policy        vaultdmsv1.PolicyServiceClient
-	Audit         vaultdmsv1.AuditServiceClient
+	Document      sedocv1.DocumentServiceClient
+	Workflow      sedocv1.WorkflowServiceClient
+	Collaboration sedocv1.CollaborationServiceClient
+	Policy        sedocv1.PolicyServiceClient
+	Audit         sedocv1.AuditServiceClient
 }
 
 // Resolver implements exec.Resolvers.
@@ -104,7 +104,7 @@ func (r *Resolver) check(ctx context.Context, action, kind, resourceID string) b
 		return false
 	}
 	id := identityFrom(ctx)
-	resp, err := r.clients.Policy.CheckPermission(r.outboundCtx(ctx), &vaultdmsv1.CheckPermissionRequest{
+	resp, err := r.clients.Policy.CheckPermission(r.outboundCtx(ctx), &sedocv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    id.userID,
 		Action:       action,
@@ -145,7 +145,7 @@ func (r *Resolver) Document(ctx context.Context, id string) (any, error) {
 	if !r.check(ctx, "view", "document", id) {
 		return nil, nil
 	}
-	resp, err := r.clients.Document.GetDocument(r.outboundCtx(ctx), &vaultdmsv1.GetDocumentRequest{DocumentId: id})
+	resp, err := r.clients.Document.GetDocument(r.outboundCtx(ctx), &sedocv1.GetDocumentRequest{DocumentId: id})
 	if err != nil {
 		return nil, err
 	}
@@ -159,9 +159,9 @@ func (r *Resolver) DocumentsByWorkspace(ctx context.Context, workspaceID string,
 	if !r.check(ctx, "view", "workspace", workspaceID) {
 		return &model.Connection[*model.Document]{Nodes: []*model.Document{}}, nil
 	}
-	resp, err := r.clients.Document.ListDocuments(r.outboundCtx(ctx), &vaultdmsv1.ListDocumentsRequest{
+	resp, err := r.clients.Document.ListDocuments(r.outboundCtx(ctx), &sedocv1.ListDocumentsRequest{
 		WorkspaceId: workspaceID,
-		Pagination:  &vaultdmsv1.PaginationRequest{PageSize: int32(limit), PageToken: cursor},
+		Pagination:  &sedocv1.PaginationRequest{PageSize: int32(limit), PageToken: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func (r *Resolver) DocumentsByWorkspace(ctx context.Context, workspaceID string,
 	}, nil
 }
 
-func docToModel(d *vaultdmsv1.Document) *model.Document {
+func docToModel(d *sedocv1.Document) *model.Document {
 	// google.protobuf.Struct → map[string]any via AsMap(); a nil
 	// Struct returns nil so the model's omitempty JSON tag keeps the
 	// field absent rather than serializing a `null`.
@@ -236,9 +236,9 @@ func (r *Resolver) fetchVersions(ctx context.Context, docID string, limit int, c
 	if r.clients.Document == nil {
 		return &model.Connection[*model.Version]{}, nil
 	}
-	resp, err := r.clients.Document.ListVersions(r.outboundCtx(ctx), &vaultdmsv1.ListVersionsRequest{
+	resp, err := r.clients.Document.ListVersions(r.outboundCtx(ctx), &sedocv1.ListVersionsRequest{
 		DocumentId: docID,
-		Pagination: &vaultdmsv1.PaginationRequest{PageSize: int32(limit), PageToken: cursor},
+		Pagination: &sedocv1.PaginationRequest{PageSize: int32(limit), PageToken: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func (r *Resolver) DocumentCurrentVersion(ctx context.Context, parent any) (any,
 	return conn.Nodes[0], nil
 }
 
-func versionToModel(v *vaultdmsv1.Version) *model.Version {
+func versionToModel(v *sedocv1.Version) *model.Version {
 	return &model.Version{
 		ID:            v.GetId(),
 		DocumentID:    v.GetDocumentId(),
@@ -302,10 +302,10 @@ func (r *Resolver) DocumentComments(ctx context.Context, parent any, includeReso
 	if r.clients.Collaboration == nil {
 		return &model.Connection[*model.Comment]{}, nil
 	}
-	resp, err := r.clients.Collaboration.ListComments(r.outboundCtx(ctx), &vaultdmsv1.ListCommentsRequest{
+	resp, err := r.clients.Collaboration.ListComments(r.outboundCtx(ctx), &sedocv1.ListCommentsRequest{
 		DocumentId:      doc.ID,
 		IncludeResolved: includeResolved,
-		Page:            &vaultdmsv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
+		Page:            &sedocv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -335,7 +335,7 @@ func (r *Resolver) DocumentComments(ctx context.Context, parent any, includeReso
 	}, nil
 }
 
-func commentToModel(c *vaultdmsv1.Comment) *model.Comment {
+func commentToModel(c *sedocv1.Comment) *model.Comment {
 	out := &model.Comment{
 		ID:              c.GetId(),
 		DocumentID:      c.GetDocumentId(),
@@ -367,9 +367,9 @@ func (r *Resolver) DocumentAnnotations(ctx context.Context, parent any, limit in
 	if r.clients.Collaboration == nil {
 		return &model.Connection[*model.Annotation]{}, nil
 	}
-	resp, err := r.clients.Collaboration.ListAnnotations(r.outboundCtx(ctx), &vaultdmsv1.ListAnnotationsRequest{
+	resp, err := r.clients.Collaboration.ListAnnotations(r.outboundCtx(ctx), &sedocv1.ListAnnotationsRequest{
 		DocumentId: doc.ID,
-		PageReq:    &vaultdmsv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
+		PageReq:    &sedocv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -401,9 +401,9 @@ func (r *Resolver) DocumentWorkflowInstances(ctx context.Context, parent any, li
 	if r.clients.Workflow == nil {
 		return []*model.WorkflowInstance{}, nil
 	}
-	resp, err := r.clients.Workflow.ListInstances(r.outboundCtx(ctx), &vaultdmsv1.ListInstancesRequest{
+	resp, err := r.clients.Workflow.ListInstances(r.outboundCtx(ctx), &sedocv1.ListInstancesRequest{
 		DocumentId: doc.ID,
-		Page:       &vaultdmsv1.PageRequest{PageSize: int32(limit)},
+		Page:       &sedocv1.PageRequest{PageSize: int32(limit)},
 	})
 	if err != nil {
 		return nil, err
@@ -415,7 +415,7 @@ func (r *Resolver) DocumentWorkflowInstances(ctx context.Context, parent any, li
 	return out, nil
 }
 
-func workflowToModel(w *vaultdmsv1.WorkflowInstance) *model.WorkflowInstance {
+func workflowToModel(w *sedocv1.WorkflowInstance) *model.WorkflowInstance {
 	return &model.WorkflowInstance{
 		ID:           w.GetId(),
 		DefinitionID: w.GetDefinitionId(),
@@ -432,14 +432,14 @@ func (r *Resolver) DocumentPermissions(ctx context.Context, parent any) (any, er
 		return &model.DocumentPermissions{}, nil
 	}
 	id := identityFrom(ctx)
-	checks := []*vaultdmsv1.CheckPermissionRequest{
+	checks := []*sedocv1.CheckPermissionRequest{
 		{SubjectType: "user", SubjectId: id.userID, Action: "view", ResourceType: "document", ResourceId: doc.ID},
 		{SubjectType: "user", SubjectId: id.userID, Action: "edit", ResourceType: "document", ResourceId: doc.ID},
 		{SubjectType: "user", SubjectId: id.userID, Action: "delete", ResourceType: "document", ResourceId: doc.ID},
 		{SubjectType: "user", SubjectId: id.userID, Action: "share", ResourceType: "document", ResourceId: doc.ID},
 		{SubjectType: "user", SubjectId: id.userID, Action: "admin", ResourceType: "document", ResourceId: doc.ID},
 	}
-	resp, err := r.clients.Policy.BatchCheckPermission(r.outboundCtx(ctx), &vaultdmsv1.BatchCheckPermissionRequest{Checks: checks})
+	resp, err := r.clients.Policy.BatchCheckPermission(r.outboundCtx(ctx), &sedocv1.BatchCheckPermissionRequest{Checks: checks})
 	if err != nil {
 		return &model.DocumentPermissions{}, nil
 	}
@@ -465,7 +465,7 @@ func (r *Resolver) WorkflowInstance(ctx context.Context, id string) (any, error)
 	if r.clients.Workflow == nil {
 		return nil, ErrNotConfigured
 	}
-	resp, err := r.clients.Workflow.GetInstance(r.outboundCtx(ctx), &vaultdmsv1.GetInstanceRequest{Id: id})
+	resp, err := r.clients.Workflow.GetInstance(r.outboundCtx(ctx), &sedocv1.GetInstanceRequest{Id: id})
 	if err != nil {
 		return nil, err
 	}
@@ -482,9 +482,9 @@ func (r *Resolver) WorkflowInstancesByDocument(ctx context.Context, documentID s
 	if r.clients.Workflow == nil {
 		return &model.Connection[*model.WorkflowInstance]{}, nil
 	}
-	resp, err := r.clients.Workflow.ListInstances(r.outboundCtx(ctx), &vaultdmsv1.ListInstancesRequest{
+	resp, err := r.clients.Workflow.ListInstances(r.outboundCtx(ctx), &sedocv1.ListInstancesRequest{
 		DocumentId: documentID,
-		Page:       &vaultdmsv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
+		Page:       &sedocv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -508,9 +508,9 @@ func (r *Resolver) WorkflowInstanceTasks(ctx context.Context, parent any) (any, 
 	// pull everything assigned to the current user and intersect.
 	// When a per-instance Tasks endpoint lands, swap to it.
 	id := identityFrom(ctx)
-	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &vaultdmsv1.ListTasksRequest{
+	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &sedocv1.ListTasksRequest{
 		AssigneeId: id.userID,
-		Page:       &vaultdmsv1.PageRequest{PageSize: 100},
+		Page:       &sedocv1.PageRequest{PageSize: 100},
 	})
 	if err != nil {
 		return []*model.Task{}, nil
@@ -540,9 +540,9 @@ func (r *Resolver) TaskByID(ctx context.Context, id string) (any, error) {
 		return nil, ErrNotConfigured
 	}
 	cid := identityFrom(ctx)
-	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &vaultdmsv1.ListTasksRequest{
+	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &sedocv1.ListTasksRequest{
 		AssigneeId: cid.userID,
-		Page:       &vaultdmsv1.PageRequest{PageSize: 200},
+		Page:       &sedocv1.PageRequest{PageSize: 200},
 	})
 	if err != nil {
 		return nil, err
@@ -560,14 +560,14 @@ func (r *Resolver) MyTasks(ctx context.Context, includeCompleted bool, limit int
 		return &model.Connection[*model.Task]{}, nil
 	}
 	id := identityFrom(ctx)
-	status := vaultdmsv1.TaskStatus_TASK_STATUS_UNSPECIFIED
+	status := sedocv1.TaskStatus_TASK_STATUS_UNSPECIFIED
 	if !includeCompleted {
-		status = vaultdmsv1.TaskStatus_TASK_STATUS_PENDING
+		status = sedocv1.TaskStatus_TASK_STATUS_PENDING
 	}
-	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &vaultdmsv1.ListTasksRequest{
+	resp, err := r.clients.Workflow.ListTasks(r.outboundCtx(ctx), &sedocv1.ListTasksRequest{
 		AssigneeId: id.userID,
 		Status:     status,
-		Page:       &vaultdmsv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
+		Page:       &sedocv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	})
 	if err != nil {
 		return nil, err
@@ -590,7 +590,7 @@ func (r *Resolver) TaskWorkflowInstance(ctx context.Context, parent any) (any, e
 	return r.WorkflowInstance(ctx, t.WorkflowInstanceID)
 }
 
-func taskToModel(t *vaultdmsv1.Task) *model.Task {
+func taskToModel(t *sedocv1.Task) *model.Task {
 	return &model.Task{
 		ID:                 t.GetId(),
 		WorkflowInstanceID: t.GetInstanceId(),
@@ -619,10 +619,10 @@ func (r *Resolver) ActivityForDocument(ctx context.Context, documentID string, l
 	// AuditService.Query returns events scoped by resource. We reuse
 	// that for the activity feed; the GraphQL field is a view over
 	// the audit stream filtered to one document.
-	resp, err := r.clients.Audit.Query(r.outboundCtx(ctx), &vaultdmsv1.QueryAuditRequest{
+	resp, err := r.clients.Audit.Query(r.outboundCtx(ctx), &sedocv1.QueryAuditRequest{
 		ResourceKind: "document",
 		ResourceId:   documentID,
-		Page:         &vaultdmsv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
+		Page:         &sedocv1.PageRequest{PageSize: int32(limit), Cursor: cursor},
 	})
 	if err != nil {
 		return nil, err

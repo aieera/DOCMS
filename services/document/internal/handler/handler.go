@@ -8,16 +8,16 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
-// Handler implements vaultdmsv1.DocumentServiceServer. It is a thin
+// Handler implements sedocv1.DocumentServiceServer. It is a thin
 // translation layer: every method maps proto -> domain input, calls
 // service, and maps domain -> proto. Errors flow through ToGRPCError.
 type Handler struct {
-	vaultdmsv1.UnimplementedDocumentServiceServer
+	sedocv1.UnimplementedDocumentServiceServer
 	svc           *service.DocumentService
 	log           zerolog.Logger
 	publicBaseURL string // used to render share-link URLs
@@ -33,7 +33,7 @@ func New(svc *service.DocumentService, log zerolog.Logger, publicBaseURL string)
 
 // ---- Folders --------------------------------------------------------------
 
-func (h *Handler) CreateFolder(ctx context.Context, req *vaultdmsv1.CreateFolderRequest) (*vaultdmsv1.Folder, error) {
+func (h *Handler) CreateFolder(ctx context.Context, req *sedocv1.CreateFolderRequest) (*sedocv1.Folder, error) {
 	ws, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -54,7 +54,7 @@ func (h *Handler) CreateFolder(ctx context.Context, req *vaultdmsv1.CreateFolder
 	return folderToProto(f), nil
 }
 
-func (h *Handler) GetFolder(ctx context.Context, req *vaultdmsv1.GetFolderRequest) (*vaultdmsv1.Folder, error) {
+func (h *Handler) GetFolder(ctx context.Context, req *sedocv1.GetFolderRequest) (*sedocv1.Folder, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -66,7 +66,7 @@ func (h *Handler) GetFolder(ctx context.Context, req *vaultdmsv1.GetFolderReques
 	return folderToProto(f), nil
 }
 
-func (h *Handler) ListFolders(ctx context.Context, req *vaultdmsv1.ListFoldersRequest) (*vaultdmsv1.ListFoldersResponse, error) {
+func (h *Handler) ListFolders(ctx context.Context, req *sedocv1.ListFoldersRequest) (*sedocv1.ListFoldersResponse, error) {
 	ws, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -79,14 +79,14 @@ func (h *Handler) ListFolders(ctx context.Context, req *vaultdmsv1.ListFoldersRe
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListFoldersResponse{Folders: make([]*vaultdmsv1.Folder, 0, len(folders))}
+	out := &sedocv1.ListFoldersResponse{Folders: make([]*sedocv1.Folder, 0, len(folders))}
 	for i := range folders {
 		out.Folders = append(out.Folders, folderToProto(&folders[i]))
 	}
 	return out, nil
 }
 
-func (h *Handler) UpdateFolder(ctx context.Context, req *vaultdmsv1.UpdateFolderRequest) (*vaultdmsv1.Folder, error) {
+func (h *Handler) UpdateFolder(ctx context.Context, req *sedocv1.UpdateFolderRequest) (*sedocv1.Folder, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -110,7 +110,7 @@ func (h *Handler) UpdateFolder(ctx context.Context, req *vaultdmsv1.UpdateFolder
 	return folderToProto(f), nil
 }
 
-func (h *Handler) DeleteFolder(ctx context.Context, req *vaultdmsv1.DeleteFolderRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteFolder(ctx context.Context, req *sedocv1.DeleteFolderRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -124,7 +124,7 @@ func (h *Handler) DeleteFolder(ctx context.Context, req *vaultdmsv1.DeleteFolder
 // SetFolderVisibility flips a folder's visibility between shared and
 // private. Visibility = '' returns InvalidArgument. The service layer
 // enforces owner / admin gating.
-func (h *Handler) SetFolderVisibility(ctx context.Context, req *vaultdmsv1.SetFolderVisibilityRequest) (*vaultdmsv1.Folder, error) {
+func (h *Handler) SetFolderVisibility(ctx context.Context, req *sedocv1.SetFolderVisibilityRequest) (*sedocv1.Folder, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -139,7 +139,7 @@ func (h *Handler) SetFolderVisibility(ctx context.Context, req *vaultdmsv1.SetFo
 	return folderToProto(f), nil
 }
 
-func (h *Handler) ListFolderGrants(ctx context.Context, req *vaultdmsv1.ListFolderGrantsRequest) (*vaultdmsv1.ListFolderGrantsResponse, error) {
+func (h *Handler) ListFolderGrants(ctx context.Context, req *sedocv1.ListFolderGrantsRequest) (*sedocv1.ListFolderGrantsResponse, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -148,14 +148,14 @@ func (h *Handler) ListFolderGrants(ctx context.Context, req *vaultdmsv1.ListFold
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListFolderGrantsResponse{Grants: make([]*vaultdmsv1.FolderGrant, 0, len(grants))}
+	out := &sedocv1.ListFolderGrantsResponse{Grants: make([]*sedocv1.FolderGrant, 0, len(grants))}
 	for i := range grants {
 		out.Grants = append(out.Grants, folderGrantToProto(&grants[i]))
 	}
 	return out, nil
 }
 
-func (h *Handler) AddFolderGrant(ctx context.Context, req *vaultdmsv1.AddFolderGrantRequest) (*vaultdmsv1.FolderGrant, error) {
+func (h *Handler) AddFolderGrant(ctx context.Context, req *sedocv1.AddFolderGrantRequest) (*sedocv1.FolderGrant, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -175,7 +175,7 @@ func (h *Handler) AddFolderGrant(ctx context.Context, req *vaultdmsv1.AddFolderG
 	return folderGrantToProto(g), nil
 }
 
-func (h *Handler) RemoveFolderGrant(ctx context.Context, req *vaultdmsv1.RemoveFolderGrantRequest) (*emptypb.Empty, error) {
+func (h *Handler) RemoveFolderGrant(ctx context.Context, req *sedocv1.RemoveFolderGrantRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -192,7 +192,7 @@ func (h *Handler) RemoveFolderGrant(ctx context.Context, req *vaultdmsv1.RemoveF
 
 // ---- Documents ------------------------------------------------------------
 
-func (h *Handler) CreateDocument(ctx context.Context, req *vaultdmsv1.CreateDocumentRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) CreateDocument(ctx context.Context, req *sedocv1.CreateDocumentRequest) (*sedocv1.Document, error) {
 	ws, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -218,7 +218,7 @@ func (h *Handler) CreateDocument(ctx context.Context, req *vaultdmsv1.CreateDocu
 	return documentToProto(d, nil), nil
 }
 
-func (h *Handler) GetDocument(ctx context.Context, req *vaultdmsv1.GetDocumentRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) GetDocument(ctx context.Context, req *sedocv1.GetDocumentRequest) (*sedocv1.Document, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -230,7 +230,7 @@ func (h *Handler) GetDocument(ctx context.Context, req *vaultdmsv1.GetDocumentRe
 	return documentToProto(d, p), nil
 }
 
-func (h *Handler) UpdateDocument(ctx context.Context, req *vaultdmsv1.UpdateDocumentRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) UpdateDocument(ctx context.Context, req *sedocv1.UpdateDocumentRequest) (*sedocv1.Document, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -258,7 +258,7 @@ func (h *Handler) UpdateDocument(ctx context.Context, req *vaultdmsv1.UpdateDocu
 	return documentToProto(d, nil), nil
 }
 
-func (h *Handler) DeleteDocument(ctx context.Context, req *vaultdmsv1.DeleteDocumentRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteDocument(ctx context.Context, req *sedocv1.DeleteDocumentRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -269,7 +269,7 @@ func (h *Handler) DeleteDocument(ctx context.Context, req *vaultdmsv1.DeleteDocu
 	return &emptypb.Empty{}, nil
 }
 
-func (h *Handler) MoveDocument(ctx context.Context, req *vaultdmsv1.MoveDocumentRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) MoveDocument(ctx context.Context, req *sedocv1.MoveDocumentRequest) (*sedocv1.Document, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -295,7 +295,7 @@ func (h *Handler) MoveDocument(ctx context.Context, req *vaultdmsv1.MoveDocument
 	return documentToProto(d, nil), nil
 }
 
-func (h *Handler) CopyDocument(ctx context.Context, req *vaultdmsv1.CopyDocumentRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) CopyDocument(ctx context.Context, req *sedocv1.CopyDocumentRequest) (*sedocv1.Document, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -321,7 +321,7 @@ func (h *Handler) CopyDocument(ctx context.Context, req *vaultdmsv1.CopyDocument
 	return documentToProto(d, nil), nil
 }
 
-func (h *Handler) ListDocuments(ctx context.Context, req *vaultdmsv1.ListDocumentsRequest) (*vaultdmsv1.ListDocumentsResponse, error) {
+func (h *Handler) ListDocuments(ctx context.Context, req *sedocv1.ListDocumentsRequest) (*sedocv1.ListDocumentsResponse, error) {
 	ws, err := parseUUID("workspace_id", req.GetWorkspaceId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -361,9 +361,9 @@ func (h *Handler) ListDocuments(ctx context.Context, req *vaultdmsv1.ListDocumen
 		return nil, vdmserr.ToGRPCError(err)
 	}
 
-	out := &vaultdmsv1.ListDocumentsResponse{
-		Documents: make([]*vaultdmsv1.Document, 0, len(page.Items)),
-		Pagination: &vaultdmsv1.PaginationResponse{
+	out := &sedocv1.ListDocumentsResponse{
+		Documents: make([]*sedocv1.Document, 0, len(page.Items)),
+		Pagination: &sedocv1.PaginationResponse{
 			NextPageToken: page.NextPageToken,
 			TotalCount:    page.TotalCount,
 		},
@@ -376,7 +376,7 @@ func (h *Handler) ListDocuments(ctx context.Context, req *vaultdmsv1.ListDocumen
 
 // ---- Versions -------------------------------------------------------------
 
-func (h *Handler) CreateVersion(ctx context.Context, req *vaultdmsv1.CreateVersionRequest) (*vaultdmsv1.Version, error) {
+func (h *Handler) CreateVersion(ctx context.Context, req *sedocv1.CreateVersionRequest) (*sedocv1.Version, error) {
 	doc, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -396,7 +396,7 @@ func (h *Handler) CreateVersion(ctx context.Context, req *vaultdmsv1.CreateVersi
 	return versionToProto(v), nil
 }
 
-func (h *Handler) RestoreVersion(ctx context.Context, req *vaultdmsv1.RestoreVersionRequest) (*vaultdmsv1.Version, error) {
+func (h *Handler) RestoreVersion(ctx context.Context, req *sedocv1.RestoreVersionRequest) (*sedocv1.Version, error) {
 	doc, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -412,7 +412,7 @@ func (h *Handler) RestoreVersion(ctx context.Context, req *vaultdmsv1.RestoreVer
 	return versionToProto(v), nil
 }
 
-func (h *Handler) ListVersions(ctx context.Context, req *vaultdmsv1.ListVersionsRequest) (*vaultdmsv1.ListVersionsResponse, error) {
+func (h *Handler) ListVersions(ctx context.Context, req *sedocv1.ListVersionsRequest) (*sedocv1.ListVersionsResponse, error) {
 	doc, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -421,9 +421,9 @@ func (h *Handler) ListVersions(ctx context.Context, req *vaultdmsv1.ListVersions
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListVersionsResponse{
-		Versions: make([]*vaultdmsv1.Version, 0, len(page.Items)),
-		Pagination: &vaultdmsv1.PaginationResponse{
+	out := &sedocv1.ListVersionsResponse{
+		Versions: make([]*sedocv1.Version, 0, len(page.Items)),
+		Pagination: &sedocv1.PaginationResponse{
 			NextPageToken: page.NextPageToken,
 			TotalCount:    page.TotalCount,
 		},
@@ -436,7 +436,7 @@ func (h *Handler) ListVersions(ctx context.Context, req *vaultdmsv1.ListVersions
 
 // ---- Lifecycle ------------------------------------------------------------
 
-func (h *Handler) UpdateLifecycle(ctx context.Context, req *vaultdmsv1.UpdateLifecycleRequest) (*vaultdmsv1.Document, error) {
+func (h *Handler) UpdateLifecycle(ctx context.Context, req *sedocv1.UpdateLifecycleRequest) (*sedocv1.Document, error) {
 	id, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -460,7 +460,7 @@ func (h *Handler) UpdateLifecycle(ctx context.Context, req *vaultdmsv1.UpdateLif
 
 // ---- Share links ----------------------------------------------------------
 
-func (h *Handler) CreateShareLink(ctx context.Context, req *vaultdmsv1.CreateShareLinkRequest) (*vaultdmsv1.ShareLink, error) {
+func (h *Handler) CreateShareLink(ctx context.Context, req *sedocv1.CreateShareLinkRequest) (*sedocv1.ShareLink, error) {
 	doc, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -482,7 +482,7 @@ func (h *Handler) CreateShareLink(ctx context.Context, req *vaultdmsv1.CreateSha
 	return shareLinkToProto(l, h.publicBaseURL), nil
 }
 
-func (h *Handler) ListShareLinks(ctx context.Context, req *vaultdmsv1.ListShareLinksRequest) (*vaultdmsv1.ListShareLinksResponse, error) {
+func (h *Handler) ListShareLinks(ctx context.Context, req *sedocv1.ListShareLinksRequest) (*sedocv1.ListShareLinksResponse, error) {
 	doc, err := parseUUID("document_id", req.GetDocumentId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -491,14 +491,14 @@ func (h *Handler) ListShareLinks(ctx context.Context, req *vaultdmsv1.ListShareL
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListShareLinksResponse{ShareLinks: make([]*vaultdmsv1.ShareLink, 0, len(links))}
+	out := &sedocv1.ListShareLinksResponse{ShareLinks: make([]*sedocv1.ShareLink, 0, len(links))}
 	for i := range links {
 		out.ShareLinks = append(out.ShareLinks, shareLinkToProto(&links[i], h.publicBaseURL))
 	}
 	return out, nil
 }
 
-func (h *Handler) DeleteShareLink(ctx context.Context, req *vaultdmsv1.DeleteShareLinkRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteShareLink(ctx context.Context, req *sedocv1.DeleteShareLinkRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("share_link_id", req.GetShareLinkId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -509,7 +509,7 @@ func (h *Handler) DeleteShareLink(ctx context.Context, req *vaultdmsv1.DeleteSha
 	return &emptypb.Empty{}, nil
 }
 
-func (h *Handler) AccessShareLink(ctx context.Context, req *vaultdmsv1.AccessShareLinkRequest) (*vaultdmsv1.AccessShareLinkResponse, error) {
+func (h *Handler) AccessShareLink(ctx context.Context, req *sedocv1.AccessShareLinkRequest) (*sedocv1.AccessShareLinkResponse, error) {
 	res, err := h.svc.AccessShareLink(ctx, &service.AccessShareLinkInput{
 		Token:    req.GetToken(),
 		Password: req.GetPassword(),
@@ -517,7 +517,7 @@ func (h *Handler) AccessShareLink(ctx context.Context, req *vaultdmsv1.AccessSha
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.AccessShareLinkResponse{PasswordRequired: res.PasswordRequired}
+	out := &sedocv1.AccessShareLinkResponse{PasswordRequired: res.PasswordRequired}
 	if res.Document != nil {
 		out.Document = documentToProto(res.Document, nil)
 	}
@@ -527,7 +527,7 @@ func (h *Handler) AccessShareLink(ctx context.Context, req *vaultdmsv1.AccessSha
 
 // ---- Tags -----------------------------------------------------------------
 
-func (h *Handler) CreateTag(ctx context.Context, req *vaultdmsv1.CreateTagRequest) (*vaultdmsv1.Tag, error) {
+func (h *Handler) CreateTag(ctx context.Context, req *sedocv1.CreateTagRequest) (*sedocv1.Tag, error) {
 	t, err := h.svc.CreateTag(ctx, &service.CreateTagInput{
 		Name:  req.GetName(),
 		Color: req.GetColor(),
@@ -538,19 +538,19 @@ func (h *Handler) CreateTag(ctx context.Context, req *vaultdmsv1.CreateTagReques
 	return tagToProto(t), nil
 }
 
-func (h *Handler) ListTags(ctx context.Context, _ *vaultdmsv1.ListTagsRequest) (*vaultdmsv1.ListTagsResponse, error) {
+func (h *Handler) ListTags(ctx context.Context, _ *sedocv1.ListTagsRequest) (*sedocv1.ListTagsResponse, error) {
 	tags, err := h.svc.ListTags(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.ListTagsResponse{Tags: make([]*vaultdmsv1.Tag, 0, len(tags))}
+	out := &sedocv1.ListTagsResponse{Tags: make([]*sedocv1.Tag, 0, len(tags))}
 	for i := range tags {
 		out.Tags = append(out.Tags, tagToProto(&tags[i]))
 	}
 	return out, nil
 }
 
-func (h *Handler) DeleteTag(ctx context.Context, req *vaultdmsv1.DeleteTagRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteTag(ctx context.Context, req *sedocv1.DeleteTagRequest) (*emptypb.Empty, error) {
 	id, err := parseUUID("tag_id", req.GetTagId())
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -563,7 +563,7 @@ func (h *Handler) DeleteTag(ctx context.Context, req *vaultdmsv1.DeleteTagReques
 
 // ---- Batch ----------------------------------------------------------------
 
-func (h *Handler) BatchUpdateMetadata(ctx context.Context, req *vaultdmsv1.BatchUpdateMetadataRequest) (*vaultdmsv1.BatchUpdateMetadataResponse, error) {
+func (h *Handler) BatchUpdateMetadata(ctx context.Context, req *sedocv1.BatchUpdateMetadataRequest) (*sedocv1.BatchUpdateMetadataResponse, error) {
 	in := &service.BatchUpdateMetadataInput{
 		MetadataUpdates: structToMap(req.GetMetadataUpdates()),
 	}
@@ -579,7 +579,7 @@ func (h *Handler) BatchUpdateMetadata(ctx context.Context, req *vaultdmsv1.Batch
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.BatchUpdateMetadataResponse{
+	out := &sedocv1.BatchUpdateMetadataResponse{
 		UpdatedCount:      int32(res.UpdatedCount),
 		FailureReasons:    res.FailureReasons,
 		FailedDocumentIds: make([]string, 0, len(res.FailedDocumentIDs)),
@@ -592,7 +592,7 @@ func (h *Handler) BatchUpdateMetadata(ctx context.Context, req *vaultdmsv1.Batch
 
 // ---- Metadata schema ------------------------------------------------------
 
-func (h *Handler) GetMetadataSchema(ctx context.Context, _ *vaultdmsv1.GetMetadataSchemaRequest) (*vaultdmsv1.GetMetadataSchemaResponse, error) {
+func (h *Handler) GetMetadataSchema(ctx context.Context, _ *sedocv1.GetMetadataSchemaRequest) (*sedocv1.GetMetadataSchemaResponse, error) {
 	m, err := h.svc.GetMetadataSchema(ctx)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -601,10 +601,10 @@ func (h *Handler) GetMetadataSchema(ctx context.Context, _ *vaultdmsv1.GetMetada
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.GetMetadataSchemaResponse{JsonSchema: s}, nil
+	return &sedocv1.GetMetadataSchemaResponse{JsonSchema: s}, nil
 }
 
-func (h *Handler) UpdateMetadataSchema(ctx context.Context, req *vaultdmsv1.UpdateMetadataSchemaRequest) (*vaultdmsv1.GetMetadataSchemaResponse, error) {
+func (h *Handler) UpdateMetadataSchema(ctx context.Context, req *sedocv1.UpdateMetadataSchemaRequest) (*sedocv1.GetMetadataSchemaResponse, error) {
 	m, err := h.svc.UpdateMetadataSchema(ctx, structToMap(req.GetJsonSchema()))
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
@@ -613,5 +613,5 @@ func (h *Handler) UpdateMetadataSchema(ctx context.Context, req *vaultdmsv1.Upda
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.GetMetadataSchemaResponse{JsonSchema: s}, nil
+	return &sedocv1.GetMetadataSchemaResponse{JsonSchema: s}, nil
 }

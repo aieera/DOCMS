@@ -12,13 +12,13 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/policy/internal/service"
 )
 
-// Handler implements vaultdmsv1.PolicyServiceServer.
+// Handler implements sedocv1.PolicyServiceServer.
 type Handler struct {
-	vaultdmsv1.UnimplementedPolicyServiceServer
+	sedocv1.UnimplementedPolicyServiceServer
 	svc *service.Service
 }
 
@@ -28,7 +28,7 @@ func New(svc *service.Service) *Handler { return &Handler{svc: svc} }
 // CheckPermission is the hot path. Tenant is pulled from the gRPC metadata
 // by the TenantInterceptor in main.go; the proto carries only principal +
 // resource + action + ABAC context.
-func (h *Handler) CheckPermission(ctx context.Context, req *vaultdmsv1.CheckPermissionRequest) (*vaultdmsv1.CheckPermissionResponse, error) {
+func (h *Handler) CheckPermission(ctx context.Context, req *sedocv1.CheckPermissionRequest) (*sedocv1.CheckPermissionResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "tenant required")
@@ -38,14 +38,14 @@ func (h *Handler) CheckPermission(ctx context.Context, req *vaultdmsv1.CheckPerm
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	return &vaultdmsv1.CheckPermissionResponse{
+	return &sedocv1.CheckPermissionResponse{
 		Allowed: res.Allowed,
 		Reason:  res.Reason,
 	}, nil
 }
 
 // BatchCheckPermission runs up to 50 checks in parallel.
-func (h *Handler) BatchCheckPermission(ctx context.Context, req *vaultdmsv1.BatchCheckPermissionRequest) (*vaultdmsv1.BatchCheckPermissionResponse, error) {
+func (h *Handler) BatchCheckPermission(ctx context.Context, req *sedocv1.BatchCheckPermissionRequest) (*sedocv1.BatchCheckPermissionResponse, error) {
 	tenantID, err := auth.GetTenantID(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "tenant required")
@@ -58,11 +58,11 @@ func (h *Handler) BatchCheckPermission(ctx context.Context, req *vaultdmsv1.Batc
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &vaultdmsv1.BatchCheckPermissionResponse{
-		Results: make([]*vaultdmsv1.CheckPermissionResponse, len(results)),
+	out := &sedocv1.BatchCheckPermissionResponse{
+		Results: make([]*sedocv1.CheckPermissionResponse, len(results)),
 	}
 	for i, r := range results {
-		out.Results[i] = &vaultdmsv1.CheckPermissionResponse{
+		out.Results[i] = &sedocv1.CheckPermissionResponse{
 			Allowed: r.Allowed,
 			Reason:  r.Reason,
 		}
@@ -72,7 +72,7 @@ func (h *Handler) BatchCheckPermission(ctx context.Context, req *vaultdmsv1.Batc
 
 // ---- proto → service mapping ---------------------------------------------
 
-func toServiceCheckInput(tenantID uuid.UUID, req *vaultdmsv1.CheckPermissionRequest) service.CheckInput {
+func toServiceCheckInput(tenantID uuid.UUID, req *sedocv1.CheckPermissionRequest) service.CheckInput {
 	return service.CheckInput{
 		TenantID:     tenantID,
 		SubjectType:  req.GetSubjectType(),

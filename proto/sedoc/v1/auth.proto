@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package sedoc.v1;
+
+import "google/protobuf/timestamp.proto";
+import "sedoc/v1/common.proto";
+
+option go_package = "github.com/aieera/sedoc/proto/gen/go/sedoc/v1;sedocv1";
+
+// AuthService handles tenants, users, groups, sessions, and API keys.
+// Authorization decisions live in PolicyService.
+service AuthService {
+  rpc CreateTenant (CreateTenantRequest) returns (Tenant);
+  rpc GetTenant    (GetTenantRequest)    returns (Tenant);
+  rpc UpdateTenant (UpdateTenantRequest) returns (Tenant);
+
+  rpc CreateUser (CreateUserRequest) returns (User);
+  rpc GetUser    (GetUserRequest)    returns (User);
+  rpc UpdateUser (UpdateUserRequest) returns (User);
+  rpc DisableUser(DisableUserRequest) returns (User);
+  rpc ListUsers  (ListUsersRequest)  returns (ListUsersResponse);
+
+  rpc CreateGroup  (CreateGroupRequest)  returns (Group);
+  rpc AddMember    (AddMemberRequest)    returns (Group);
+  rpc RemoveMember (RemoveMemberRequest) returns (Group);
+  rpc ListGroups   (ListGroupsRequest)   returns (ListGroupsResponse);
+
+  rpc Login          (LoginRequest)          returns (Session);
+  rpc RefreshSession (RefreshSessionRequest) returns (Session);
+  rpc Logout         (LogoutRequest)         returns (LogoutResponse);
+
+  rpc IssueAPIKey  (IssueAPIKeyRequest)  returns (APIKey);
+  rpc RevokeAPIKey (RevokeAPIKeyRequest) returns (RevokeAPIKeyResponse);
+  rpc ListAPIKeys  (ListAPIKeysRequest)  returns (ListAPIKeysResponse);
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE      = 1;
+  USER_STATUS_INVITED     = 2;
+  USER_STATUS_DISABLED    = 3;
+}
+
+message Tenant {
+  string                    id         = 1;
+  string                    slug       = 2;
+  string                    name       = 3;
+  string                    region_pin = 4;
+  string                    plan_code  = 5; // free | team | business | enterprise
+  map<string, string>       settings   = 6;
+  AuditMeta                 audit      = 7;
+}
+
+message User {
+  string          id         = 1;
+  string          tenant_id  = 2;
+  string          email      = 3;
+  string          full_name  = 4;
+  string          role       = 5; // owner | admin | member | viewer
+  repeated string group_ids  = 6;
+  UserStatus      status     = 7;
+  AuditMeta       audit      = 8;
+  google.protobuf.Timestamp last_login_at = 9;
+}
+
+message Group {
+  string          id          = 1;
+  string          tenant_id   = 2;
+  string          name        = 3;
+  string          description = 4;
+  repeated string member_ids  = 5;
+  AuditMeta       audit       = 6;
+}
+
+message Session {
+  string                    access_token  = 1;
+  string                    refresh_token = 2;
+  google.protobuf.Timestamp expires_at    = 3;
+  string                    user_id       = 4;
+  string                    tenant_id     = 5;
+}
+
+message APIKey {
+  string                    id         = 1;
+  string                    tenant_id  = 2;
+  string                    name       = 3;
+  string                    prefix     = 4; // first 8 chars, safe to display
+  string                    plaintext  = 5; // returned ONLY on issue; never stored
+  repeated string           scopes     = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp last_used_at = 9;
+}
+
+// ---- Requests / responses --------------------------------------------------
+
+message CreateTenantRequest {
+  string              slug       = 1;
+  string              name       = 2;
+  string              region_pin = 3;
+  string              plan_code  = 4;
+  map<string, string> settings   = 5;
+}
+message GetTenantRequest { string id = 1; }
+message UpdateTenantRequest {
+  string              id         = 1;
+  string              name       = 2;
+  string              plan_code  = 3;
+  map<string, string> settings   = 4;
+  repeated string     update_mask = 5;
+}
+
+message CreateUserRequest {
+  string          email     = 1;
+  string          full_name = 2;
+  string          role      = 3;
+  repeated string group_ids = 4;
+  bool            send_invite = 5;
+}
+message GetUserRequest     { string id = 1; }
+message DisableUserRequest { string id = 1; string reason = 2; }
+message UpdateUserRequest {
+  string          id         = 1;
+  string          full_name  = 2;
+  string          role       = 3;
+  repeated string group_ids  = 4;
+  repeated string update_mask = 5;
+}
+message ListUsersRequest   { PageRequest page = 1; string query = 2; UserStatus status = 3; }
+message ListUsersResponse  { repeated User users = 1; PageResponse page = 2; }
+
+message CreateGroupRequest  { string name = 1; string description = 2; }
+message AddMemberRequest    { string group_id = 1; string user_id = 2; }
+message RemoveMemberRequest { string group_id = 1; string user_id = 2; }
+message ListGroupsRequest   { PageRequest page = 1; }
+message ListGroupsResponse  { repeated Group groups = 1; PageResponse page = 2; }
+
+message LoginRequest          { string email = 1; string password = 2; string tenant_slug = 3; string mfa_code = 4; }
+message RefreshSessionRequest { string refresh_token = 1; }
+message LogoutRequest         { string refresh_token = 1; }
+message LogoutResponse        { bool revoked = 1; }
+
+message IssueAPIKeyRequest  {
+  string                    name       = 1;
+  repeated string           scopes     = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+message RevokeAPIKeyRequest  { string id = 1; }
+message RevokeAPIKeyResponse { bool revoked = 1; }
+message ListAPIKeysRequest   { PageRequest page = 1; }
+message ListAPIKeysResponse  { repeated APIKey keys = 1; PageResponse page = 2; }

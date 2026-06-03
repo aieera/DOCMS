@@ -14,7 +14,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
-	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 )
@@ -26,11 +26,11 @@ type Service struct {
 	pool       *pgxpool.Pool
 	repos      *repository.Repositories
 	bulkRepo   *Repo
-	authClient vaultdmsv1.AuthServiceClient // optional; nil → user/group bulk returns ErrNotConfigured
+	authClient sedocv1.AuthServiceClient // optional; nil → user/group bulk returns ErrNotConfigured
 	log        zerolog.Logger
 }
 
-func NewService(pool *pgxpool.Pool, repos *repository.Repositories, bulkRepo *Repo, authClient vaultdmsv1.AuthServiceClient, log zerolog.Logger) *Service {
+func NewService(pool *pgxpool.Pool, repos *repository.Repositories, bulkRepo *Repo, authClient sedocv1.AuthServiceClient, log zerolog.Logger) *Service {
 	return &Service{pool: pool, repos: repos, bulkRepo: bulkRepo, authClient: authClient, log: log}
 }
 
@@ -39,7 +39,7 @@ func NewService(pool *pgxpool.Pool, repos *repository.Repositories, bulkRepo *Re
 // persist for replay. Items that fail individually don't fail the
 // whole batch — the caller surfaces success_count / failure_count
 // to the client.
-func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *vaultdmsv1.BulkImportRequest) (*vaultdmsv1.BulkImportResponse, error) {
+func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *sedocv1.BulkImportRequest) (*sedocv1.BulkImportResponse, error) {
 	requestID, err := uuid.Parse(req.GetRequestId())
 	if err != nil {
 		return nil, fmt.Errorf("request_id: %w", err)
@@ -54,7 +54,7 @@ func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *vau
 		if existing.ItemsDigest != digest {
 			return nil, FmtDigestMismatch(requestID)
 		}
-		var cached vaultdmsv1.BulkImportResponse
+		var cached sedocv1.BulkImportResponse
 		if len(existing.ResponseJSON) > 0 {
 			_ = json.Unmarshal(existing.ResponseJSON, &cached)
 		}
@@ -64,7 +64,7 @@ func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *vau
 		return &cached, nil
 	}
 
-	results := make([]*vaultdmsv1.BulkItemResult, 0, len(req.GetItems()))
+	results := make([]*sedocv1.BulkItemResult, 0, len(req.GetItems()))
 	successCount, failureCount := 0, 0
 	for _, item := range req.GetItems() {
 		res := s.processOne(ctx, tenantID, item)
@@ -76,7 +76,7 @@ func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *vau
 		results = append(results, res)
 	}
 
-	resp := &vaultdmsv1.BulkImportResponse{
+	resp := &sedocv1.BulkImportResponse{
 		RequestId: req.GetRequestId(),
 		Results:   results,
 	}
@@ -105,31 +105,31 @@ func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *vau
 // processOne dispatches one BulkItem to the right per-resource
 // handler. Lives outside the loop body so each item gets its own
 // transaction — a single bad row doesn't roll back its peers.
-func (s *Service) processOne(ctx context.Context, tenantID uuid.UUID, item *vaultdmsv1.BulkItem) *vaultdmsv1.BulkItemResult {
+func (s *Service) processOne(ctx context.Context, tenantID uuid.UUID, item *sedocv1.BulkItem) *sedocv1.BulkItemResult {
 	switch v := item.GetResource().(type) {
-	case *vaultdmsv1.BulkItem_Workspace:
+	case *sedocv1.BulkItem_Workspace:
 		return s.processWorkspace(ctx, tenantID, v.Workspace)
-	case *vaultdmsv1.BulkItem_Folder:
+	case *sedocv1.BulkItem_Folder:
 		return s.processFolder(ctx, tenantID, v.Folder)
-	case *vaultdmsv1.BulkItem_Document:
+	case *sedocv1.BulkItem_Document:
 		return s.processDocument(ctx, tenantID, v.Document)
-	case *vaultdmsv1.BulkItem_User:
+	case *sedocv1.BulkItem_User:
 		return s.processUser(ctx, tenantID, v.User)
-	case *vaultdmsv1.BulkItem_Group:
+	case *sedocv1.BulkItem_Group:
 		return s.processGroup(ctx, tenantID, v.Group)
 	default:
-		return &vaultdmsv1.BulkItemResult{Success: false, Error: "unknown resource kind"}
+		return &sedocv1.BulkItemResult{Success: false, Error: "unknown resource kind"}
 	}
 }
 
 // ---- Per-resource processors --------------------------------------------
 
-func (s *Service) processWorkspace(ctx context.Context, tenantID uuid.UUID, w *vaultdmsv1.BulkWorkspace) *vaultdmsv1.BulkItemResult {
+func (s *Service) processWorkspace(ctx context.Context, tenantID uuid.UUID, w *sedocv1.BulkWorkspace) *sedocv1.BulkItemResult {
 	if w.GetExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: "external_id required"}
+		return &sedocv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: "external_id required"}
 	}
 	if strings.TrimSpace(w.GetName()) == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: "name required"}
+		return &sedocv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: "name required"}
 	}
 	userID := callerUserID(ctx)
 
@@ -184,24 +184,24 @@ func (s *Service) processWorkspace(ctx context.Context, tenantID uuid.UUID, w *v
 		return s.bulkRepo.RecordExternal(ctx, tx, tenantID, ResourceWorkspace, w.GetExternalId(), id)
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: w.GetExternalId(), Success: false, Error: err.Error()}
 	}
-	return &vaultdmsv1.BulkItemResult{
+	return &sedocv1.BulkItemResult{
 		ExternalId: w.GetExternalId(),
 		Success:    true,
 		InternalId: internalID.String(),
 	}
 }
 
-func (s *Service) processFolder(ctx context.Context, tenantID uuid.UUID, f *vaultdmsv1.BulkFolder) *vaultdmsv1.BulkItemResult {
+func (s *Service) processFolder(ctx context.Context, tenantID uuid.UUID, f *sedocv1.BulkFolder) *sedocv1.BulkItemResult {
 	if f.GetExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{Success: false, Error: "external_id required"}
+		return &sedocv1.BulkItemResult{Success: false, Error: "external_id required"}
 	}
 	if strings.TrimSpace(f.GetName()) == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: "name required"}
+		return &sedocv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: "name required"}
 	}
 	if f.GetWorkspaceExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: "workspace_external_id required"}
+		return &sedocv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: "workspace_external_id required"}
 	}
 	userID := callerUserID(ctx)
 
@@ -264,20 +264,20 @@ func (s *Service) processFolder(ctx context.Context, tenantID uuid.UUID, f *vaul
 		return s.bulkRepo.RecordExternal(ctx, tx, tenantID, ResourceFolder, f.GetExternalId(), id)
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: false, Error: err.Error()}
 	}
-	return &vaultdmsv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: true, InternalId: internalID.String()}
+	return &sedocv1.BulkItemResult{ExternalId: f.GetExternalId(), Success: true, InternalId: internalID.String()}
 }
 
-func (s *Service) processDocument(ctx context.Context, tenantID uuid.UUID, d *vaultdmsv1.BulkDocument) *vaultdmsv1.BulkItemResult {
+func (s *Service) processDocument(ctx context.Context, tenantID uuid.UUID, d *sedocv1.BulkDocument) *sedocv1.BulkItemResult {
 	if d.GetExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{Success: false, Error: "external_id required"}
+		return &sedocv1.BulkItemResult{Success: false, Error: "external_id required"}
 	}
 	if strings.TrimSpace(d.GetTitle()) == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: "title required"}
+		return &sedocv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: "title required"}
 	}
 	if d.GetWorkspaceExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: "workspace_external_id required"}
+		return &sedocv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: "workspace_external_id required"}
 	}
 	userID := callerUserID(ctx)
 
@@ -348,24 +348,24 @@ func (s *Service) processDocument(ctx context.Context, tenantID uuid.UUID, d *va
 		return s.bulkRepo.RecordExternal(ctx, tx, tenantID, ResourceDocument, d.GetExternalId(), id)
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: false, Error: err.Error()}
 	}
-	return &vaultdmsv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: true, InternalId: internalID.String()}
+	return &sedocv1.BulkItemResult{ExternalId: d.GetExternalId(), Success: true, InternalId: internalID.String()}
 }
 
 // processUser + processGroup dispatch outbound to the auth service
 // via gRPC. The bulk_external_id_map row lives in document's DB so
 // the cross-reference resolution stays uniform; auth doesn't need
 // to know about bulk.
-func (s *Service) processUser(ctx context.Context, tenantID uuid.UUID, u *vaultdmsv1.BulkUser) *vaultdmsv1.BulkItemResult {
+func (s *Service) processUser(ctx context.Context, tenantID uuid.UUID, u *sedocv1.BulkUser) *sedocv1.BulkItemResult {
 	if u.GetExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{Success: false, Error: "external_id required"}
+		return &sedocv1.BulkItemResult{Success: false, Error: "external_id required"}
 	}
 	if u.GetEmail() == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "email required"}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "email required"}
 	}
 	if s.authClient == nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "auth service not configured"}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "auth service not configured"}
 	}
 	// Idempotent fast path.
 	var existing uuid.UUID
@@ -375,40 +375,40 @@ func (s *Service) processUser(ctx context.Context, tenantID uuid.UUID, u *vaultd
 		return err
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: err.Error()}
 	}
 	if existing != uuid.Nil {
-		return &vaultdmsv1.BulkItemResult{
+		return &sedocv1.BulkItemResult{
 			ExternalId: u.GetExternalId(), Success: true, InternalId: existing.String(), Skipped: true,
 		}
 	}
-	resp, err := s.authClient.CreateUser(ctx, &vaultdmsv1.CreateUserRequest{
+	resp, err := s.authClient.CreateUser(ctx, &sedocv1.CreateUserRequest{
 		Email: u.GetEmail(), FullName: u.GetDisplayName(), Role: u.GetRole(),
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: err.Error()}
 	}
 	internalID, perr := uuid.Parse(resp.GetId())
 	if perr != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "auth returned bad uuid: " + resp.GetId()}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: "auth returned bad uuid: " + resp.GetId()}
 	}
 	if rerr := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		return s.bulkRepo.RecordExternal(ctx, tx, tenantID, ResourceUser, u.GetExternalId(), internalID)
 	}); rerr != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: rerr.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: false, Error: rerr.Error()}
 	}
-	return &vaultdmsv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: true, InternalId: internalID.String()}
+	return &sedocv1.BulkItemResult{ExternalId: u.GetExternalId(), Success: true, InternalId: internalID.String()}
 }
 
-func (s *Service) processGroup(ctx context.Context, tenantID uuid.UUID, g *vaultdmsv1.BulkGroup) *vaultdmsv1.BulkItemResult {
+func (s *Service) processGroup(ctx context.Context, tenantID uuid.UUID, g *sedocv1.BulkGroup) *sedocv1.BulkItemResult {
 	if g.GetExternalId() == "" {
-		return &vaultdmsv1.BulkItemResult{Success: false, Error: "external_id required"}
+		return &sedocv1.BulkItemResult{Success: false, Error: "external_id required"}
 	}
 	if strings.TrimSpace(g.GetName()) == "" {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "name required"}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "name required"}
 	}
 	if s.authClient == nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "auth service not configured"}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "auth service not configured"}
 	}
 	var existing uuid.UUID
 	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
@@ -416,29 +416,29 @@ func (s *Service) processGroup(ctx context.Context, tenantID uuid.UUID, g *vault
 		existing = id
 		return err
 	}); err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: err.Error()}
 	}
 	if existing != uuid.Nil {
-		return &vaultdmsv1.BulkItemResult{
+		return &sedocv1.BulkItemResult{
 			ExternalId: g.GetExternalId(), Success: true, InternalId: existing.String(), Skipped: true,
 		}
 	}
-	resp, err := s.authClient.CreateGroup(ctx, &vaultdmsv1.CreateGroupRequest{
+	resp, err := s.authClient.CreateGroup(ctx, &sedocv1.CreateGroupRequest{
 		Name: g.GetName(), Description: g.GetDescription(),
 	})
 	if err != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: err.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: err.Error()}
 	}
 	internalID, perr := uuid.Parse(resp.GetId())
 	if perr != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "auth returned bad uuid: " + resp.GetId()}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: "auth returned bad uuid: " + resp.GetId()}
 	}
 	if rerr := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		return s.bulkRepo.RecordExternal(ctx, tx, tenantID, ResourceGroup, g.GetExternalId(), internalID)
 	}); rerr != nil {
-		return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: rerr.Error()}
+		return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: false, Error: rerr.Error()}
 	}
-	return &vaultdmsv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: true, InternalId: internalID.String()}
+	return &sedocv1.BulkItemResult{ExternalId: g.GetExternalId(), Success: true, InternalId: internalID.String()}
 }
 
 // ---- Helpers ----------------------------------------------------------------
