@@ -206,7 +206,7 @@ $COMPOSE up -d postgres redis nats minio minio-init opensearch qdrant temporal c
 
 # 6.3 Migrate the shared schema + seed the admin user
 #     (document service's initial migration creates the shared 45-table schema)
-DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
   ./scripts/seed.sh
 
 # 6.4 Start all application services + workers + gateway
@@ -376,7 +376,7 @@ $COMPOSE logs -f gateway document auth intelligence-worker
 ```bash
 export SEDOC_IMAGE_TAG=main      # or a pinned release tag
 $COMPOSE pull && $COMPOSE up -d
-DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" ./scripts/seed.sh  # apply new migrations
+DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" ./scripts/seed.sh  # apply new migrations
 cd web && npm ci && npm run build && cd .. && sudo cp -r web/dist/* /var/www/vaultdms/
 ```
 

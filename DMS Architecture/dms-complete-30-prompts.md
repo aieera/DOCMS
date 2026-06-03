@@ -459,15 +459,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: vaultdms
-      POSTGRES_USER: vaultdms
+      POSTGRES_DB: sedoc
+      POSTGRES_USER: sedoc
       POSTGRES_PASSWORD: devpassword
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vaultdms"]
+      test: ["CMD-SHELL", "pg_isready -U sedoc"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -528,7 +528,7 @@ services:
     environment:
       - DB=postgresql
       - DB_PORT=5432
-      - POSTGRES_USER=vaultdms
+      - POSTGRES_USER=sedoc
       - POSTGRES_PWD=devpassword
       - POSTGRES_SEEDS=postgres
     ports: ["7233:7233"]
@@ -565,7 +565,7 @@ CREATE EXTENSION IF NOT EXISTS "ltree";
 -- Create application roles
 CREATE ROLE dms_app LOGIN PASSWORD 'devpassword';
 CREATE ROLE dms_readonly LOGIN PASSWORD 'devpassword';
-GRANT CONNECT ON DATABASE vaultdms TO dms_app, dms_readonly;
+GRANT CONNECT ON DATABASE sedoc TO dms_app, dms_readonly;
 ```
 
 Makefile targets:

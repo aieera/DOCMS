@@ -28,7 +28,7 @@ Resumability:
   is non-optional.
 
 Usage:
-    export DATABASE_URL='postgresql://user:pass@host:5432/vaultdms_loadtest'
+    export DATABASE_URL='postgresql://user:pass@host:5432/sedoc_loadtest'
     export SEDOC_LOAD_SEED_OK=1
     python tests/load/seed.py \
         --tenants 100 \

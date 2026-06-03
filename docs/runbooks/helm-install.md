@@ -203,7 +203,7 @@ operator's service name AND disables the Bitnami subchart.
 ```bash
 # Take a fresh full dump of the running Bitnami cluster
 kubectl exec -n vaultdms vaultdms-postgresql-0 -- \
-  pg_dump -U vaultdms -Fc vaultdms > /tmp/vaultdms-pre-migrate.dump
+  pg_dump -U sedoc -Fc vaultdms > /tmp/vaultdms-pre-migrate.dump
 
 # Verify the dump
 ls -lh /tmp/vaultdms-pre-migrate.dump  # should be >0 bytes
@@ -245,13 +245,13 @@ kubectl cp /tmp/vaultdms-pre-migrate.dump vaultdms/${PRIMARY##pod/}:/tmp/dump
 
 # Restore (this drops + recreates the vaultdms DB inside the cluster)
 kubectl exec -n vaultdms $PRIMARY -- \
-  pg_restore -U vaultdms -d vaultdms --clean --if-exists /tmp/dump
+  pg_restore -U sedoc -d sedoc --clean --if-exists /tmp/dump
 
 # Verify row counts match
 kubectl exec -n vaultdms vaultdms-postgresql-0 -- \
-  psql -U vaultdms -d vaultdms -c "SELECT count(*) FROM documents;"
+  psql -U sedoc -d sedoc -c "SELECT count(*) FROM documents;"
 kubectl exec -n vaultdms $PRIMARY -- \
-  psql -U vaultdms -d vaultdms -c "SELECT count(*) FROM documents;"
+  psql -U sedoc -d sedoc -c "SELECT count(*) FROM documents;"
 # numbers MUST match
 ```
 

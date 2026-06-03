@@ -381,14 +381,14 @@ restart.
 
 ```bash
 # How many invoices flowed into DMS today?
-docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -c "
+docker exec vaultdms-postgres psql -U sedoc -d sedoc -c "
   SELECT COUNT(*) FROM documents
    WHERE tenant_id = '<TENANT_ID>'
      AND custom_metadata->>'erp_entity_type' = 'invoice'
      AND created_at > current_date;"
 
 # Are any sync rows failing repeatedly?
-docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -c "
+docker exec vaultdms-postgres psql -U sedoc -d sedoc -c "
   -- run against ERP MySQL, not DMS Postgres:
   SELECT entity_type, entity_id, attempts, last_error
     FROM dms_sync_log
@@ -396,7 +396,7 @@ docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -c "
    ORDER BY updated_at DESC LIMIT 20;"
 
 # When did the last successful webhook delivery happen?
-docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -c "
+docker exec vaultdms-postgres psql -U sedoc -d sedoc -c "
   SELECT subject, MAX(delivered_at) FROM webhook_deliveries
    WHERE tenant_id = '<TENANT_ID>' AND status_code BETWEEN 200 AND 299
    GROUP BY subject;"

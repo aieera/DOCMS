@@ -12,7 +12,7 @@ x-go-env: &go-env
   # rejects any request that doesn't carry a matching X-Gateway-Signature.
   # Must be identical to the gateway's SEDOC_GATEWAY_SECRET.
   SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
-  SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+  SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
   # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
   # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset
   # so pkg/database.AssertRLSPosture refuses to boot under an
@@ -144,15 +144,15 @@ services:
     image: postgres:16-alpine
     container_name: sedoc-postgres
     environment:
-      POSTGRES_DB: vaultdms
-      POSTGRES_USER: vaultdms
+      POSTGRES_DB: sedoc
+      POSTGRES_USER: sedoc
       POSTGRES_PASSWORD: devpassword
     ports: ["15432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vaultdms"]
+      test: ["CMD-SHELL", "pg_isready -U sedoc"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -427,7 +427,7 @@ services:
     environment:
       - DB=postgres12
       - DB_PORT=5432
-      - POSTGRES_USER=vaultdms
+      - POSTGRES_USER=sedoc
       - POSTGRES_PWD=devpassword
       - POSTGRES_SEEDS=postgres
     ports: ["7233:7233"]
@@ -495,7 +495,7 @@ services:
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
       SEDOC_NATS_URL: "nats://nats:4222"
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
-      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
     ports: ["8083:8083"]
     depends_on:
@@ -522,7 +522,7 @@ services:
       dockerfile: Dockerfile
     container_name: sedoc-intelligence
     environment:
-      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
@@ -570,7 +570,7 @@ services:
       - "intelligence,intelligence-ocr,intelligence-embed,intelligence-rag"
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
-      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
@@ -629,7 +629,7 @@ services:
       - "intelligence,intelligence-embed,intelligence-rag"
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
-      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
       SEDOC_S3_ENDPOINT: "http://minio:9000"

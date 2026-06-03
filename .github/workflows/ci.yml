@@ -62,12 +62,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: vaultdms
+          POSTGRES_USER: sedoc
           POSTGRES_PASSWORD: devpassword
-          POSTGRES_DB: vaultdms
+          POSTGRES_DB: sedoc
         ports: ["5432:5432"]
         options: >-
-          --health-cmd="pg_isready -U vaultdms"
+          --health-cmd="pg_isready -U sedoc"
           --health-interval=5s --health-timeout=5s --health-retries=10
       redis:
         image: redis:7-alpine
@@ -85,7 +85,7 @@ jobs:
           cache: true
       - name: Go tests
         env:
-          DATABASE_URL: postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
+          DATABASE_URL: postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable
           REDIS_URL: localhost:6379
           NATS_URL: nats://localhost:4222
         run: go test -race -timeout 10m -coverprofile=coverage.txt ./...
@@ -118,12 +118,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: vaultdms
+          POSTGRES_USER: sedoc
           POSTGRES_PASSWORD: devpassword
-          POSTGRES_DB: vaultdms
+          POSTGRES_DB: sedoc
         ports: ["5432:5432"]
         options: >-
-          --health-cmd="pg_isready -U vaultdms"
+          --health-cmd="pg_isready -U sedoc"
           --health-interval=5s --health-timeout=5s --health-retries=10
       redis:
         image: redis:7-alpine
@@ -164,7 +164,7 @@ jobs:
         run: go vet ./pkg/testharness/...
       - name: Integration tests
         env:
-          DATABASE_URL: postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
+          DATABASE_URL: postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable
           REDIS_URL: localhost:6379
           NATS_URL: nats://localhost:4222
           OPENSEARCH_URL: http://localhost:9200
@@ -224,17 +224,17 @@ jobs:
         run: |
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
           "$(go env GOPATH)/bin/migrate" \
-            -database "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+            -database "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
             -path services/document/migrations up
 
       - name: Seed default tenant + admin
         run: |
-          DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+          DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
             go run ./scripts/seed
 
       - name: Build + start backend services (background)
         env:
-          SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+          SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
           SEDOC_REDIS_URL: "localhost:6379"
           SEDOC_NATS_URL: "nats://localhost:4222"
           SEDOC_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="

@@ -3,7 +3,7 @@
 # print login instructions. Idempotent: re-running is safe.
 set -euo pipefail
 
-DB_URL="${DATABASE_URL:-postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable}"
+DB_URL="${DATABASE_URL:-postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable}"
 
 echo "Waiting for Postgres..."
 if command -v pg_isready >/dev/null 2>&1; then

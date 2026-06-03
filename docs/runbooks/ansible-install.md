@@ -231,7 +231,7 @@ scp db01.internal:/var/backups/vaultdms-20260518.dump /tmp/
 # On a fresh DB host (or after a wipe)
 ansible-playbook -i inventories/prod.ini playbooks/postgres.yml
 scp /tmp/vaultdms-20260518.dump db01.internal:/tmp/
-ansible db -a "sudo -u postgres pg_restore -d vaultdms --clean --if-exists /tmp/vaultdms-20260518.dump"
+ansible db -a "sudo -u postgres pg_restore -d sedoc --clean --if-exists /tmp/vaultdms-20260518.dump"
 ```
 
 This is **NOT** a full DR strategy — there's no PITR, no offsite

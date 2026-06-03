@@ -18,7 +18,7 @@ VERSION         ?= $(shell git describe --tags --always --dirty 2>/dev/null || e
 COMMIT          ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-DATABASE_URL    ?= postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable
+DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable
 
 SERVICES := document storage search auth policy workflow notification audit signature billing connector
 

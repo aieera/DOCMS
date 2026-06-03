@@ -10,7 +10,7 @@ docker compose -f deploy/docker-compose.integration.yml up -d
 
 # Export the addresses the harness reads. The compose file binds
 # everything on localhost with fixed ports.
-export DATABASE_URL='postgres://vaultdms:devpassword@localhost:5432/vaultdms_test?sslmode=disable'
+export DATABASE_URL='postgres://sedoc:devpassword@localhost:5432/sedoc_test?sslmode=disable'
 export REDIS_URL='localhost:6379'
 export NATS_URL='nats://localhost:4222'
 export OPENSEARCH_URL='http://localhost:9200'

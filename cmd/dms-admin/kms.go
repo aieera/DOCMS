@@ -176,7 +176,7 @@ func kmsRotate(args []string) {
 func mustPool() *pgxpool.Pool {
 	url := envOrDefault("SEDOC_DATABASE_URL",
 		envOrDefault("DATABASE_URL",
-			"postgres://vaultdms:devpassword@localhost:15432/vaultdms?sslmode=disable"))
+			"postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable"))
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
 		fatal("db connect: %v", err)

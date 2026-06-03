@@ -18,7 +18,7 @@ const DATABASE_URL =
   process.env.SEDOC_DATABASE_URL ||
   process.env.VAULTDMS_DATABASE_URL ||
   process.env.DATABASE_URL ||
-  'postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable'
+  'postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable'
 
 // Lazily-init pool. If pg is unreachable at startup the service still
 // boots and serves CRDT traffic — just without persistence. Logs the

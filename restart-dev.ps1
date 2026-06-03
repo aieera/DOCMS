@@ -67,7 +67,7 @@ foreach ($s in $svcs) {
     $env:SEDOC_GRPC_PORT      = "$($port + 1000)"
     $env:SEDOC_HEALTH_PORT    = "$($port + 2000)"
     $env:SEDOC_GATEWAY_SECRET = $gatewaySecret
-    $env:SEDOC_DATABASE_URL   = "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+    $env:SEDOC_DATABASE_URL   = "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
     $env:SEDOC_REDIS_URL      = "localhost:6379"
     $env:SEDOC_NATS_URL       = "nats://localhost:4222"
     $env:SEDOC_LOCAL_KEK      = "dev-32-byte-kek-not-for-production!!"

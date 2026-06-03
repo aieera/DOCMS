@@ -11,12 +11,12 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: vaultdms
+      POSTGRES_USER: sedoc
       POSTGRES_PASSWORD: devpassword
-      POSTGRES_DB: vaultdms_test
+      POSTGRES_DB: sedoc_test
     ports: ["5432:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vaultdms"]
+      test: ["CMD-SHELL", "pg_isready -U sedoc"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -72,7 +72,7 @@ services:
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: vaultdms
+      POSTGRES_USER: sedoc
       POSTGRES_PWD: devpassword
       POSTGRES_SEEDS: postgres
     ports: ["7233:7233"]

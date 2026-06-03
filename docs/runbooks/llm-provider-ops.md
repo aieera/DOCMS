@@ -85,7 +85,7 @@ CLI fallback (when the UI is unavailable):
 
 ```sh
 docker exec -e PGPASSWORD=devpassword vaultdms-postgres \
-  psql -U vaultdms -d vaultdms <<SQL
+  psql -U sedoc -d sedoc <<SQL
 SELECT set_config('app.current_tenant', '<tenant-id>', true);
 INSERT INTO tenant_llm_config (tenant_id, provider, model, api_key_encrypted, api_key_set_at)
 VALUES ('<tenant-id>', 'anthropic', 'anthropic/claude-haiku-4-5', '<base64-AESGCM>', now())

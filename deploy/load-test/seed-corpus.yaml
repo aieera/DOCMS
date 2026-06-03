@@ -9,7 +9,7 @@
 #
 # Apply protocol:
 #   1. kubectl create secret generic loadtest-seeder \
-#        --from-literal=database-url="postgresql://seeder:PASS@vaultdms-postgres-rw.vaultdms.svc:5432/vaultdms_loadtest" \
+#        --from-literal=database-url="postgresql://seeder:PASS@vaultdms-postgres-rw.vaultdms.svc:5432/sedoc_loadtest" \
 #        --namespace=vaultdms
 #      (database name MUST contain "loadtest" — seed.py refuses otherwise.)
 #   2. kubectl apply -f deploy/load-test/seed-corpus.yaml

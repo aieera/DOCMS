@@ -645,7 +645,7 @@ for pair in auth:8081 policy:8082 document:8083 storage:8084 \
 done
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000
 ./dms-admin.exe nats list                                    # 20 streams
-docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -c "\dt"   # 57 tables
+docker exec vaultdms-postgres psql -U sedoc -d sedoc -c "\dt"   # 57 tables
 cat .run/services.pids
 for svc in auth policy document storage search audit workflow notification \
            signature billing connector; do

@@ -131,7 +131,7 @@ docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml pull $CORE
 docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d postgres redis nats minio
 
 # Migrate + seed (document migrations + admin user). Uses the host migrate + psql.
-DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" \
+DATABASE_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable" \
   ./scripts/seed.sh
 
 # Now start the services + gateway

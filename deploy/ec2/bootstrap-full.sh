@@ -31,7 +31,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 ENV_FILE="$REPO_ROOT/.env"
 IMAGE_TAG="${SEDOC_IMAGE_TAG:-main}"
-DB_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+DB_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
 WEB_ROOT="/var/www/vaultdms"
 
 INFRA="postgres redis nats minio minio-init opensearch qdrant temporal clamav"

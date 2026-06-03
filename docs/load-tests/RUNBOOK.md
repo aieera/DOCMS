@@ -100,7 +100,7 @@ kubectl cp vaultdms/$(kubectl get pod -n vaultdms \
 #      Pre-req: a seeder-scoped Postgres DSN whose database name
 #      contains "loadtest" (seed.py refuses otherwise):
 kubectl create secret generic loadtest-seeder \
-  --from-literal=database-url="postgresql://seeder:${PG_PASS}@vaultdms-postgres-rw.vaultdms.svc:5432/vaultdms_loadtest" \
+  --from-literal=database-url="postgresql://seeder:${PG_PASS}@vaultdms-postgres-rw.vaultdms.svc:5432/sedoc_loadtest" \
   --namespace=vaultdms
 
 kubectl apply  -f deploy/load-test/seed-corpus.yaml

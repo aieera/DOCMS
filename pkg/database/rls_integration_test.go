@@ -168,7 +168,7 @@ type docRow struct {
 }
 
 // rewriteDSNUser swaps the userinfo of a libpq DSN. testcontainers hands
-// us `postgres://vaultdms:devpassword@host:port/db?...` — we want the same
+// us `postgres://sedoc:devpassword@host:port/db?...` — we want the same
 // DSN with `dms_app:devpassword` so the pool connects without BYPASSRLS.
 func rewriteDSNUser(dsn, user, pass string) string {
 	u, err := url.Parse(dsn)

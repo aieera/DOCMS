@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = False
     s3_region: str = "us-east-1"
 
-    database_url: str = "postgresql://vaultdms:secret@postgres:5432/vaultdms"
+    database_url: str = "postgresql://sedoc:secret@postgres:5432/sedoc"
 
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "dms_vectors"

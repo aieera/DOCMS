@@ -14,7 +14,7 @@ cd "$REPO_ROOT"
 ENV_FILE="$REPO_ROOT/.env"
 IMAGE_TAG="${SEDOC_IMAGE_TAG:-main}"
 CORE="postgres redis nats minio auth policy storage document gateway"
-DB_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+DB_URL="postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 

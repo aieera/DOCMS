@@ -40,7 +40,7 @@ func main() {
 
 func rotateSecrets() {
 	ctx := context.Background()
-	dbURL := envOrDefault("DATABASE_URL", "postgresql://vaultdms:devpassword@localhost:5432/vaultdms")
+	dbURL := envOrDefault("DATABASE_URL", "postgresql://sedoc:devpassword@localhost:5432/sedoc")
 	redisAddr := envOrDefault("REDIS_URL", "localhost:6379")
 
 	pool, err := pgxpool.New(ctx, dbURL)
