@@ -18,7 +18,7 @@ services/signature-signer/
 ├── build.gradle.kts            # Gradle build with DSS 5.12.x + grpc-java
 ├── settings.gradle.kts
 ├── Dockerfile                  # distroless JRE 17 image (~180 MB)
-├── src/main/java/io/vaultdms/signer/
+├── src/main/java/io/sedoc/signer/
 │   ├── SignerServer.java       # gRPC server bootstrap
 │   ├── SignerService.java      # impl of the generated gRPC stub (PAdES logic)
 │   └── KeystoreAdapter.java    # mTLS for the gRPC channel
@@ -31,7 +31,7 @@ services/signature-signer/
 ```bash
 cd services/signature-signer
 ./gradlew build        # produces build/libs/signer-all.jar (~35 MB fat jar)
-docker build -t vaultdms-signer .
+docker build -t sedoc-signer .
 ```
 
 ## Run (dev)
@@ -39,7 +39,7 @@ docker build -t vaultdms-signer .
 ```bash
 docker run --rm -p 6060:6060 \
   -e SIGNER_TSA_URL=https://freetsa.org/tsr \
-  vaultdms-signer
+  sedoc-signer
 ```
 
 Go signature service dials `localhost:6060` (configurable via

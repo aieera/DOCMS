@@ -1,4 +1,4 @@
-package io.vaultdms.signer;
+package io.sedoc.signer;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;

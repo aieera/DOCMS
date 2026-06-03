@@ -1,12 +1,12 @@
-package io.vaultdms.signer;
+package io.sedoc.signer;
 
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
-import io.vaultdms.signer.grpc.SignRequest;
-import io.vaultdms.signer.grpc.SignResponse;
-import io.vaultdms.signer.grpc.SignerServiceGrpc;
-import io.vaultdms.signer.grpc.VerifyRequest;
-import io.vaultdms.signer.grpc.VerifyResponse;
+import io.sedoc.signer.grpc.SignRequest;
+import io.sedoc.signer.grpc.SignResponse;
+import io.sedoc.signer.grpc.SignerServiceGrpc;
+import io.sedoc.signer.grpc.VerifyRequest;
+import io.sedoc.signer.grpc.VerifyResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

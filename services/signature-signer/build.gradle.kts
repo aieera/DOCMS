@@ -19,7 +19,7 @@ plugins {
     id("com.google.protobuf") version "0.9.4"
 }
 
-group = "io.vaultdms"
+group = "io.sedoc"
 version = "0.1.0"
 
 java {
@@ -62,7 +62,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("io.vaultdms.signer.SignerServer")
+    mainClass.set("io.sedoc.signer.SignerServer")
 }
 
 // Proto generation — signer.proto compiles to Java stubs that
@@ -101,7 +101,7 @@ tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJ
     archiveClassifier.set("all")
     mergeServiceFiles()
     manifest {
-        attributes["Main-Class"] = "io.vaultdms.signer.SignerServer"
+        attributes["Main-Class"] = "io.sedoc.signer.SignerServer"
     }
 }
 
