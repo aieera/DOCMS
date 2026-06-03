@@ -44,10 +44,10 @@ NATS consumers:
 
 Uses its own `pydantic-settings`-based config (`app/config.py`):
 
-- `VAULTDMS_DATABASE_URL`, `_NATS_URL`, `_QDRANT_URL`, `_CELERY_BROKER_URL`
-- `VAULTDMS_S3_ENDPOINT`, `_S3_ACCESS_KEY`, `_S3_SECRET_KEY`
-- `VAULTDMS_DEFAULT_LLM_MODEL` (default `gpt-4o-mini`)
-- `VAULTDMS_OCR_CONFIDENCE_THRESHOLD` (default 0.7)
+- `SEDOC_DATABASE_URL`, `_NATS_URL`, `_QDRANT_URL`, `_CELERY_BROKER_URL`
+- `SEDOC_S3_ENDPOINT`, `_S3_ACCESS_KEY`, `_S3_SECRET_KEY`
+- `SEDOC_DEFAULT_LLM_MODEL` (default `gpt-4o-mini`)
+- `SEDOC_OCR_CONFIDENCE_THRESHOLD` (default 0.7)
 
 ## Running locally
 

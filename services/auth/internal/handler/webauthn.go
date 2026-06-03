@@ -236,7 +236,7 @@ func (h *Handler) writeWebAuthnError(w http.ResponseWriter, r *http.Request, err
 	switch {
 	case errors.Is(err, service.ErrWebAuthnNotImplemented):
 		h.writeJSON(w, http.StatusNotImplemented, map[string]string{
-			"error": "passkey support not configured on this deploy (set VAULTDMS_WEBAUTHN_RPID)",
+			"error": "passkey support not configured on this deploy (set SEDOC_WEBAUTHN_RPID)",
 		})
 	case errors.Is(err, service.ErrInvalidSession):
 		h.writeJSON(w, http.StatusBadRequest, map[string]string{

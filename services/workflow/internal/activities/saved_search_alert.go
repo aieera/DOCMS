@@ -143,7 +143,7 @@ func (a *Activities) RunSavedSearchAlert(ctx context.Context, in RunSavedSearchI
 	// Workflow service runs in the same trust zone as search; the
 	// gateway-secret round-trip is just satisfying the search
 	// middleware.
-	req.Header.Set("X-Gateway-Signature", os.Getenv("VAULTDMS_GATEWAY_SECRET"))
+	req.Header.Set("X-Gateway-Signature", os.Getenv("SEDOC_GATEWAY_SECRET"))
 	req.Header.Set("X-Auth-Tenant-ID", in.TenantID)
 	req.Header.Set("X-User-ID", in.OwnerUserID)
 	if len(in.OwnerGroupIDs) > 0 {

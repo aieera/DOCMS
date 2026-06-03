@@ -31,7 +31,7 @@ import (
 // ESignConfig is what main.go wires up at boot.
 type ESignConfig struct {
 	// SealingKey is the 32-byte AES-256 key used to seal access +
-	// refresh tokens at rest. Derived from VAULTDMS_LOCAL_KEK.
+	// refresh tokens at rest. Derived from SEDOC_LOCAL_KEK.
 	SealingKey []byte
 	// OAuthByProvider holds the per-provider authorize/token URLs +
 	// client creds + redirect_uri. The HMACSecret on each is the

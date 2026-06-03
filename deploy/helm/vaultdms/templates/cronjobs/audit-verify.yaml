@@ -7,10 +7,10 @@ the p0-platform-emergency alert in deploy/monitoring/alerts/tiered-
 alerts.yml pages on-call within seconds.
 
 Runs against the internal ClusterIP of the audit service (port
-VAULTDMS_HEALTH_PORT bound inside the pod) — bypasses the gateway so
+SEDOC_HEALTH_PORT bound inside the pod) — bypasses the gateway so
 the daily check isn't rate-limited. Tenant iteration is done by a
 minimal awk/jq over the tenants list; the operator installs
-`VAULTDMS_INTERNAL_API_KEY` as a Kubernetes Secret with the same
+`SEDOC_INTERNAL_API_KEY` as a Kubernetes Secret with the same
 value wired into the audit service.
 */ -}}
 {{- if .Values.auditVerify.enabled | default true }}

@@ -13,11 +13,11 @@
 services:
   auth:
     environment:
-      VAULTDMS_WEBAUTHN_RPID:         "localhost"
-      VAULTDMS_WEBAUTHN_DISPLAY_NAME: "VaultDMS (dev)"
-      VAULTDMS_WEBAUTHN_ORIGINS:      "http://localhost:3000,http://localhost:8080"
+      SEDOC_WEBAUTHN_RPID:         "localhost"
+      SEDOC_WEBAUTHN_DISPLAY_NAME: "VaultDMS (dev)"
+      SEDOC_WEBAUTHN_ORIGINS:      "http://localhost:3000,http://localhost:8080"
       # HMAC secret for the begin/finish session token. Falls back to
       # the gateway secret if unset; the override sets it anyway so a
       # rotation of the gateway secret doesn't invalidate in-flight
       # registrations.
-      VAULTDMS_WEBAUTHN_HMAC_SECRET:  "dev-only-webauthn-hmac-rotate-in-prod"
+      SEDOC_WEBAUTHN_HMAC_SECRET:  "dev-only-webauthn-hmac-rotate-in-prod"

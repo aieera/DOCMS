@@ -27,7 +27,7 @@ import (
 // ErrSMSDisabled is returned when SMSSender is asked to send but no
 // credentials are configured AND DevStub is false. The login flow
 // degrades to "method unavailable" rather than crashing.
-var ErrSMSDisabled = errors.New("sms: not configured (set VAULTDMS_TWILIO_* env vars)")
+var ErrSMSDisabled = errors.New("sms: not configured (set SEDOC_TWILIO_* env vars)")
 
 // SMSConfig is the static config for the platform Twilio account.
 // Tenants using their own Twilio subaccount override these via the

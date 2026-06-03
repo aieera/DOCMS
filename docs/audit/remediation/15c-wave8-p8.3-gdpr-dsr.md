@@ -101,7 +101,7 @@ rootMux.Handle("/api/v1/privacy/", middleware.CorrelationHTTP(privacyMux))
 
 Temporal client connection is **best-effort**: if Temporal is down at
 boot, requests still persist with status `pending`; an operator can
-redispatch manually. `VAULTDMS_DSR_ANONYMIZE_SALT` is read from env
+redispatch manually. `SEDOC_DSR_ANONYMIZE_SALT` is read from env
 with a dev fallback.
 
 ### Admin UI

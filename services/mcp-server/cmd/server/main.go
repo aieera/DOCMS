@@ -58,7 +58,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	nc, js, err := events.ConnectNATS(cfg.NATSURL)
 	if err != nil {
@@ -82,7 +82,7 @@ func main() {
 		DocumentBaseURL:     envOr("DOCUMENT_BASE_URL", "http://document:8080"),
 		WorkflowBaseURL:     envOr("WORKFLOW_BASE_URL", "http://workflow:8080"),
 		IntelligenceBaseURL: envOr("INTELLIGENCE_BASE_URL", "http://intelligence:8080"),
-		GatewaySecret:       os.Getenv("VAULTDMS_GATEWAY_SECRET"),
+		GatewaySecret:       os.Getenv("SEDOC_GATEWAY_SECRET"),
 		HTTP:                &http.Client{Timeout: 30 * time.Second},
 	}
 	for _, t := range tools.All(toolCfg) {

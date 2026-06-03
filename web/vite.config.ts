@@ -8,7 +8,7 @@ import path from 'path'
 // (make run-all) we bypass Kong, so the Vite proxy must add the
 // header itself — otherwise every backend 401s via
 // pkg/middleware.RequireGatewaySignature. The value MUST match
-// VAULTDMS_GATEWAY_SECRET exported by scripts/run-all-services.sh.
+// SEDOC_GATEWAY_SECRET exported by scripts/run-all-services.sh.
 //
 // SECURITY (BUG-C1): no hardcoded fallback. The previous default
 // `dev-only-gateway-secret-rotate-in-prod` was the literal string
@@ -19,10 +19,10 @@ import path from 'path'
 // missing. Production builds (`vite build`) skip the check since the
 // proxy doesn't run there.
 function requireGatewaySecret(): string {
-  const v = process.env.VAULTDMS_GATEWAY_SECRET
+  const v = process.env.SEDOC_GATEWAY_SECRET
   if (!v || v.trim() === '') {
     throw new Error(
-      '\nVAULTDMS_GATEWAY_SECRET is required for the Vite dev proxy.\n' +
+      '\nSEDOC_GATEWAY_SECRET is required for the Vite dev proxy.\n' +
         '  → Copy web/.env.example to web/.env.local and fill it in.\n' +
         '  → Generate a fresh value with: openssl rand -hex 32\n' +
         '  → Use the SAME value in scripts/run-all-services.sh.\n',

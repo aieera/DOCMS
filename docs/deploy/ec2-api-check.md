@@ -90,9 +90,9 @@ Create/edit `.env` with **fresh** secrets (do NOT reuse dev defaults):
 ```bash
 cat >> .env <<EOF
 # --- generated secrets (unique per deploy) ---
-VAULTDMS_GATEWAY_SECRET=$(openssl rand -hex 32)
-VAULTDMS_LOCAL_KEK=$(openssl rand -hex 32)
-VAULTDMS_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
+SEDOC_GATEWAY_SECRET=$(openssl rand -hex 32)
+SEDOC_LOCAL_KEK=$(openssl rand -hex 32)
+SEDOC_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
 
 # --- seed admin: CHANGE from the dev default ---
 SEED_ADMIN_EMAIL=admin@acme.local
@@ -102,11 +102,11 @@ SEED_TENANT_SLUG=acme
 # --- presigned URLs must point at the PUBLIC host, not localhost ---
 # Use your domain (preferred) or the EC2 public IP. Needed for the upload flow
 # (initiate/complete hand back URLs the client must reach).
-VAULTDMS_S3_PUBLIC_BASE=<your-domain-or-EC2_PUBLIC_IP>:9000
+SEDOC_S3_PUBLIC_BASE=<your-domain-or-EC2_PUBLIC_IP>:9000
 
 # Dev posture (quick test). For real prod, connect as the dms_app NOBYPASSRLS
 # role and REMOVE this line.
-VAULTDMS_ALLOW_BYPASS_RLS=1
+SEDOC_ALLOW_BYPASS_RLS=1
 EOF
 
 # print the generated admin password ONCE and save it somewhere safe
@@ -114,7 +114,7 @@ grep SEED_ADMIN_PASSWORD .env
 ```
 
 > If you expose MinIO (`:9000`) for the upload flow, add `9000` to the security
-> group (your IP / ERP IP only) and keep `VAULTDMS_S3_PUBLIC_BASE` matching the
+> group (your IP / ERP IP only) and keep `SEDOC_S3_PUBLIC_BASE` matching the
 > reachable host. For auth/metadata/folder/trigger API checks you can skip this.
 
 ---
@@ -122,7 +122,7 @@ grep SEED_ADMIN_PASSWORD .env
 ## 5. Bring up the core stack (prebuilt images)
 
 ```bash
-export VAULTDMS_IMAGE_TAG=main   # or pin: sha-<short> / a release tag
+export SEDOC_IMAGE_TAG=main   # or pin: sha-<short> / a release tag
 
 CORE="postgres redis nats minio auth policy storage document gateway"
 
@@ -205,7 +205,7 @@ In the ERP's **External APIs → DMS** settings:
 ## 9. Security & teardown
 
 - **Change the seed password** (done in §4) and keep the security group locked to known IPs.
-- This runs `VAULTDMS_ALLOW_BYPASS_RLS=1` (dev). For anything beyond a private test, switch to the `dms_app` NOBYPASSRLS role and remove that flag.
+- This runs `SEDOC_ALLOW_BYPASS_RLS=1` (dev). For anything beyond a private test, switch to the `dms_app` NOBYPASSRLS role and remove that flag.
 - **Cost**: t3.medium ≈ $30/mo + 30 GB gp3 ≈ $2.4/mo. Stop/terminate the instance when you're done testing.
 - Logs: `docker compose logs -f gateway document auth`.
 - Tear down: `docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml down` (add `-v` to wipe data).

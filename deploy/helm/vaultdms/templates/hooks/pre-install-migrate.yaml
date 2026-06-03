@@ -21,12 +21,12 @@ spec:
               /app --migrate-only 2>&1 || true
               echo "Migrations complete."
           env:
-            - name: VAULTDMS_SERVICE_NAME
+            - name: SEDOC_SERVICE_NAME
               value: document
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.global.database.existingSecret }}
                   key: {{ .Values.global.database.passwordKey }}
-            - name: VAULTDMS_DATABASE_URL
+            - name: SEDOC_DATABASE_URL
               value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"

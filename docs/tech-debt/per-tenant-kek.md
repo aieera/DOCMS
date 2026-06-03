@@ -9,7 +9,7 @@ Audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM severity)
 
 All tenants' content blobs are encrypted with per-blob DEKs wrapped by a
 single KEK identified as `"vaultdms-storage-default"`. The KEK is loaded
-at startup from `VAULTDMS_LOCAL_KEK` (env var) for the `local` KMS
+at startup from `SEDOC_LOCAL_KEK` (env var) for the `local` KMS
 provider, or resolved against Vault / AWS KMS in the respective provider
 mode.
 

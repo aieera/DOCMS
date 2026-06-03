@@ -56,7 +56,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -71,7 +71,7 @@ func main() {
 	svc := service.New(service.Config{Repo: repo, Logger: *log.Z()})
 
 	// Native connector wiring (ADR 0089). Sealing key and state-HMAC
-	// secret are both derived from VAULTDMS_LOCAL_KEK with distinct
+	// secret are both derived from SEDOC_LOCAL_KEK with distinct
 	// domain prefixes so a dump can't substitute one for the other.
 	connSeal := deriveKey("vaultdms.connector.config.seal.v1:" + cfg.LocalKEK)
 	connHMAC := deriveKey("vaultdms.connector.oauth.hmac.v1:" + cfg.LocalKEK)
@@ -98,12 +98,12 @@ func main() {
 	// the per-tenant account JWTs handed back at token-issuance time;
 	// empty means dev mode (ephemeral operator, JWTs minted but the
 	// dev NATS server doesn't verify them — same shape as the
-	// VAULTDMS_LOCAL_KEK convention).
+	// SEDOC_LOCAL_KEK convention).
 	esSvc, err := eventstream.New(eventstream.Config{
 		Pool:         pool,
 		JS:           js,
 		Logger:       *log.Z(),
-		OperatorSeed: os.Getenv("VAULTDMS_NATS_OPERATOR_SEED"),
+		OperatorSeed: os.Getenv("SEDOC_NATS_OPERATOR_SEED"),
 	})
 	if err != nil {
 		log.Fatal(ctx).Err(err).Msg("eventstream init")

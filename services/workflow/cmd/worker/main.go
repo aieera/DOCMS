@@ -9,7 +9,7 @@
 // all activities, block on `InterruptCh`.
 //
 // Taskqueue is `vaultdms-default` (configurable via
-// VAULTDMS_WORKFLOW_TASK_QUEUE). Namespace is `vaultdms` per ADR
+// SEDOC_WORKFLOW_TASK_QUEUE). Namespace is `vaultdms` per ADR
 // 0023.
 package main
 
@@ -73,7 +73,7 @@ func main() {
 	// serve every other workflow, and EmitSavedSearchMatch returns a
 	// typed error when JS is nil.
 	var js nats.JetStreamContext
-	if natsURL := os.Getenv("VAULTDMS_NATS_URL"); natsURL != "" {
+	if natsURL := os.Getenv("SEDOC_NATS_URL"); natsURL != "" {
 		nc, nerr := nats.Connect(natsURL, nats.Name(serviceName))
 		if nerr != nil {
 			log.Warn(ctx).Err(nerr).Msg("nats connect; alert events will fail until restored")
@@ -98,7 +98,7 @@ func main() {
 	}
 	defer tc.Close()
 
-	queue := os.Getenv("VAULTDMS_WORKFLOW_TASK_QUEUE")
+	queue := os.Getenv("SEDOC_WORKFLOW_TASK_QUEUE")
 	if queue == "" {
 		queue = defaultQueue
 	}
@@ -110,9 +110,9 @@ func main() {
 		Redis:  rdb,
 		// Wave 12.4: cross-service erase targets. Empty = soft no-op.
 		ServiceURLs: map[string]string{
-			"search":    os.Getenv("VAULTDMS_SEARCH_URL"),
-			"qdrant":    os.Getenv("VAULTDMS_QDRANT_URL"),
-			"connector": os.Getenv("VAULTDMS_CONNECTOR_URL"),
+			"search":    os.Getenv("SEDOC_SEARCH_URL"),
+			"qdrant":    os.Getenv("SEDOC_QDRANT_URL"),
+			"connector": os.Getenv("SEDOC_CONNECTOR_URL"),
 		},
 		JS:  js,
 		Log: *log.Z(),

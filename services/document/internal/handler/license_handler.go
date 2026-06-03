@@ -62,7 +62,7 @@ func (h *LicenseHandler) get(w http.ResponseWriter, r *http.Request) {
 		resp.Status = string(license.StatusUnlicensedDev)
 		resp.GraceDays = 30
 		resp.EnforcementMsg = "Running unlicensed. No license JWT loaded; every feature implicitly enabled. " +
-			"Set VAULTDMS_LICENSE_JWT (or place a license at /etc/vaultdms/license.jwt) to activate enforcement. " +
+			"Set SEDOC_LICENSE_JWT (or place a license at /etc/vaultdms/license.jwt) to activate enforcement. " +
 			"See ADR 0095 for the design plan."
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
@@ -101,7 +101,7 @@ func (h *LicenseHandler) get(w http.ResponseWriter, r *http.Request) {
 			"Renew before the grace window ends."
 	case license.StatusExpired:
 		resp.EnforcementMsg = "License expired past the grace window. Services will refuse to start " +
-			"when VAULTDMS_REQUIRE_LICENSE=true. Contact BD ops for a new license."
+			"when SEDOC_REQUIRE_LICENSE=true. Contact BD ops for a new license."
 	}
 
 	// seats_used is intentionally omitted in this phase — counting active

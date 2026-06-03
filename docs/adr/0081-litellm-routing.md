@@ -50,7 +50,7 @@ PR #43 and lives on `feat/llm-routing`.
 | `base_url` | Optional override for self-hosted endpoints (vLLM, Azure, gateways). |
 | `rate_limit_rpm` | Sliding-window per-minute cap; 0 disables. |
 | `daily_budget_usd` | Soft cost cap; breach emits an event and the gateway short-circuits. 0 disables. |
-| `air_gapped` | Forces `vllm_local`-only routing for this tenant regardless of the deploy-time `VAULTDMS_AIR_GAPPED` flag. |
+| `air_gapped` | Forces `vllm_local`-only routing for this tenant regardless of the deploy-time `SEDOC_AIR_GAPPED` flag. |
 
 `llm_circuit_breaker_state` (one row per (tenant, provider)) records
 breaker state across replicas. The gateway also keeps an in-process
@@ -104,7 +104,7 @@ DB row + cached in-process for hot-path latency.
 ### Air-gapped enforcement
 
 Two layers:
-- Deploy-time env `VAULTDMS_AIR_GAPPED=1` forces every tenant's
+- Deploy-time env `SEDOC_AIR_GAPPED=1` forces every tenant's
   effective `air_gapped=true` and is the on-prem default.
 - Per-tenant `air_gapped=true` lets a single tenant in a
   multi-tenant deploy pin to local vLLM only.

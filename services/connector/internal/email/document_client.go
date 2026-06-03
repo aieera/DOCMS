@@ -26,15 +26,15 @@ type DocumentClient struct {
 
 // NewDocumentClient configures the client from env. baseURL defaults to
 // the in-network DNS name; gatewaySecret comes from
-// VAULTDMS_GATEWAY_SECRET (same env every service reads).
+// SEDOC_GATEWAY_SECRET (same env every service reads).
 func NewDocumentClient() *DocumentClient {
-	base := os.Getenv("VAULTDMS_DOCUMENT_HTTP_URL")
+	base := os.Getenv("SEDOC_DOCUMENT_HTTP_URL")
 	if base == "" {
 		base = "http://document:8080"
 	}
 	return &DocumentClient{
 		baseURL:       base,
-		gatewaySecret: os.Getenv("VAULTDMS_GATEWAY_SECRET"),
+		gatewaySecret: os.Getenv("SEDOC_GATEWAY_SECRET"),
 		hc:            &http.Client{Timeout: 30 * time.Second},
 	}
 }

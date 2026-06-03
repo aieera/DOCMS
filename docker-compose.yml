@@ -10,53 +10,53 @@ name: vaultdms-dev
 x-go-env: &go-env
   # §3.1 / B2.2 — shared secret; pkg/middleware.RequireGatewaySignature
   # rejects any request that doesn't carry a matching X-Gateway-Signature.
-  # Must be identical to the gateway's VAULTDMS_GATEWAY_SECRET.
-  VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
-  VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+  # Must be identical to the gateway's SEDOC_GATEWAY_SECRET.
+  SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+  SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
   # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
   # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset
   # so pkg/database.AssertRLSPosture refuses to boot under an
   # accidentally-elevated role.
-  VAULTDMS_ALLOW_BYPASS_RLS: "1"
-  VAULTDMS_REDIS_URL:    "redis:6379"
-  VAULTDMS_NATS_URL:     "nats://nats:4222"
-  VAULTDMS_HEALTH_PORT:  "8081"
-  VAULTDMS_HTTP_PORT:    "8080"
-  VAULTDMS_GRPC_PORT:    "9090"
-  VAULTDMS_S3_ENDPOINT:  "http://minio:9000"
+  SEDOC_ALLOW_BYPASS_RLS: "1"
+  SEDOC_REDIS_URL:    "redis:6379"
+  SEDOC_NATS_URL:     "nats://nats:4222"
+  SEDOC_HEALTH_PORT:  "8081"
+  SEDOC_HTTP_PORT:    "8080"
+  SEDOC_GRPC_PORT:    "9090"
+  SEDOC_S3_ENDPOINT:  "http://minio:9000"
   # Browser-reachable address. Storage service signs presigned URLs
   # against this so the Host header matches in dev (browser can't
   # resolve "minio:9000" — that's docker-internal DNS). In prod set
   # to whatever the customer's browser hits, usually equal to the
   # internal endpoint (e.g. "s3.amazonaws.com").
-  VAULTDMS_S3_PUBLIC_BASE: "localhost:9000"
-  VAULTDMS_S3_ACCESS_KEY: "minioadmin"
-  VAULTDMS_S3_SECRET_KEY: "minioadmin"
-  VAULTDMS_OPENSEARCH_URL: "http://opensearch:9200"
-  VAULTDMS_QDRANT_URL:   "http://qdrant:6333"
-  VAULTDMS_TEMPORAL_ADDR: "temporal:7233"
+  SEDOC_S3_PUBLIC_BASE: "localhost:9000"
+  SEDOC_S3_ACCESS_KEY: "minioadmin"
+  SEDOC_S3_SECRET_KEY: "minioadmin"
+  SEDOC_OPENSEARCH_URL: "http://opensearch:9200"
+  SEDOC_QDRANT_URL:   "http://qdrant:6333"
+  SEDOC_TEMPORAL_ADDR: "temporal:7233"
   # §7.1 / D6 part 2 — search service's dense-vector path. Both must
   # be set for hybrid/semantic mode to activate; otherwise Search()
   # degrades to lexical and logs a notice.
-  VAULTDMS_INTELLIGENCE_EMBED_URL: "http://intelligence:8080/internal/v1/embed-query"
-  VAULTDMS_QDRANT_COLLECTION: "vaultdms_chunks"
+  SEDOC_INTELLIGENCE_EMBED_URL: "http://intelligence:8080/internal/v1/embed-query"
+  SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
   # §10.3 / E6 — OnlyOffice integration
-  VAULTDMS_ONLYOFFICE_URL: "http://onlyoffice"  # in-cluster DNS
-  VAULTDMS_ONLYOFFICE_PUBLIC_URL: "http://localhost:8195"  # what the browser sees
-  VAULTDMS_ONLYOFFICE_JWT: "${VAULTDMS_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
+  SEDOC_ONLYOFFICE_URL: "http://onlyoffice"  # in-cluster DNS
+  SEDOC_ONLYOFFICE_PUBLIC_URL: "http://localhost:8195"  # what the browser sees
+  SEDOC_ONLYOFFICE_JWT: "${SEDOC_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
-  VAULTDMS_ENV:          "development"
+  SEDOC_ENV:          "development"
   # ADR 0110 — cluster region. Echoed in /healthz so the Residency
   # admin page can confirm which region a service is serving. Without
   # this set, every /healthz reports `"region":"unknown"` and the
   # admin UI shows a "Cluster region unknown" warning banner.
   # Override per regional cluster via deploy/regions/<name>.yaml.
-  VAULTDMS_REGION_ID:    "${VAULTDMS_REGION_ID:-us-east-1}"
+  SEDOC_REGION_ID:    "${SEDOC_REGION_ID:-us-east-1}"
   # ADR 0078 — small-secret AES-256 KEK shared with the intelligence
   # worker for per-tenant LLM key encrypt/decrypt. Same key the auth
   # service uses for MFA secrets.
-  VAULTDMS_LOCAL_KEK:    "${VAULTDMS_LOCAL_KEK:-}"
+  SEDOC_LOCAL_KEK:    "${SEDOC_LOCAL_KEK:-}"
   # ADR 0022 envelope encryption-at-rest. Storage auto-enables it
   # whenever a KMS is wired, but the OCR / preview / intelligence
   # workers download raw S3 bytes via boto3 and have no decrypt
@@ -65,67 +65,67 @@ x-go-env: &go-env
   # grows a GetObjectBytes RPC that decrypts before streaming
   # (queued for the next storage wave). Prod sets this true via
   # Helm.
-  VAULTDMS_STORAGE_ENCRYPT_AT_REST: "${VAULTDMS_STORAGE_ENCRYPT_AT_REST:-false}"
+  SEDOC_STORAGE_ENCRYPT_AT_REST: "${SEDOC_STORAGE_ENCRYPT_AT_REST:-false}"
   # ClamAV INSTREAM scans in dev compose take 5–7s per upload —
   # enough that the FE looks hung. Skip in dev. Prod sets this
   # false (or unset) via Helm so every upload is scanned.
-  VAULTDMS_STORAGE_SKIP_VIRUS_SCAN: "${VAULTDMS_STORAGE_SKIP_VIRUS_SCAN:-true}"
+  SEDOC_STORAGE_SKIP_VIRUS_SCAN: "${SEDOC_STORAGE_SKIP_VIRUS_SCAN:-true}"
   # ADR 0071 — eSign provider credentials. The supported path is
   # per-tenant configuration from /admin/integrations (saved sealed in
-  # esign_provider_configs). VAULTDMS_ESIGN_DOCUSIGN_* / *_ADOBE_SIGN_*
+  # esign_provider_configs). SEDOC_ESIGN_DOCUSIGN_* / *_ADOBE_SIGN_*
   # envs remain as an optional deployment-wide fallback for shared
   # tenant setups; leave unset for per-tenant-only mode.
   #
   # Compose only forwards env vars listed in this map (the .env file
   # alone provides variable substitution, NOT auto-forwarding). Each
   # entry defaults to "" so an unset .env stays a no-op.
-  VAULTDMS_ESIGN_STATE_HMAC:           "${VAULTDMS_ESIGN_STATE_HMAC:-}"
-  VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID:     "${VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID:-}"
-  VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET: "${VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET:-}"
-  VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL: "${VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL:-}"
-  VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL:     "${VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL:-}"
-  VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI:  "${VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI:-}"
-  VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID:     "${VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID:-}"
-  VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET: "${VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET:-}"
-  VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL: "${VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL:-}"
-  VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL:     "${VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL:-}"
-  VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI:  "${VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI:-}"
+  SEDOC_ESIGN_STATE_HMAC:           "${SEDOC_ESIGN_STATE_HMAC:-}"
+  SEDOC_ESIGN_DOCUSIGN_CLIENT_ID:     "${SEDOC_ESIGN_DOCUSIGN_CLIENT_ID:-}"
+  SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET: "${SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET:-}"
+  SEDOC_ESIGN_DOCUSIGN_AUTHORIZE_URL: "${SEDOC_ESIGN_DOCUSIGN_AUTHORIZE_URL:-}"
+  SEDOC_ESIGN_DOCUSIGN_TOKEN_URL:     "${SEDOC_ESIGN_DOCUSIGN_TOKEN_URL:-}"
+  SEDOC_ESIGN_DOCUSIGN_REDIRECT_URI:  "${SEDOC_ESIGN_DOCUSIGN_REDIRECT_URI:-}"
+  SEDOC_ESIGN_ADOBE_SIGN_CLIENT_ID:     "${SEDOC_ESIGN_ADOBE_SIGN_CLIENT_ID:-}"
+  SEDOC_ESIGN_ADOBE_SIGN_CLIENT_SECRET: "${SEDOC_ESIGN_ADOBE_SIGN_CLIENT_SECRET:-}"
+  SEDOC_ESIGN_ADOBE_SIGN_AUTHORIZE_URL: "${SEDOC_ESIGN_ADOBE_SIGN_AUTHORIZE_URL:-}"
+  SEDOC_ESIGN_ADOBE_SIGN_TOKEN_URL:     "${SEDOC_ESIGN_ADOBE_SIGN_TOKEN_URL:-}"
+  SEDOC_ESIGN_ADOBE_SIGN_REDIRECT_URI:  "${SEDOC_ESIGN_ADOBE_SIGN_REDIRECT_URI:-}"
 
   # Twilio (SMS MFA) — auth service. Env-mode is the deployment-wide
   # fallback; per-tenant rows in tenant_twilio_configs win when present.
-  VAULTDMS_TWILIO_ACCOUNT_SID: "${VAULTDMS_TWILIO_ACCOUNT_SID:-}"
-  VAULTDMS_TWILIO_AUTH_TOKEN:  "${VAULTDMS_TWILIO_AUTH_TOKEN:-}"
-  VAULTDMS_TWILIO_VERIFY_SID:  "${VAULTDMS_TWILIO_VERIFY_SID:-}"
+  SEDOC_TWILIO_ACCOUNT_SID: "${SEDOC_TWILIO_ACCOUNT_SID:-}"
+  SEDOC_TWILIO_AUTH_TOKEN:  "${SEDOC_TWILIO_AUTH_TOKEN:-}"
+  SEDOC_TWILIO_VERIFY_SID:  "${SEDOC_TWILIO_VERIFY_SID:-}"
 
   # SMTP (transactional + email OTP) — auth + notification services.
   # Same per-tenant precedence as Twilio (tenant_smtp_configs wins).
-  # Both VAULTDMS_SMTP_USER (auth) and VAULTDMS_SMTP_USERNAME
+  # Both SEDOC_SMTP_USER (auth) and SEDOC_SMTP_USERNAME
   # (notification) exist until pkg/config is unified.
-  VAULTDMS_SMTP_HOST:     "${VAULTDMS_SMTP_HOST:-}"
-  VAULTDMS_SMTP_PORT:     "${VAULTDMS_SMTP_PORT:-587}"
-  VAULTDMS_SMTP_USER:     "${VAULTDMS_SMTP_USER:-}"
-  VAULTDMS_SMTP_USERNAME: "${VAULTDMS_SMTP_USERNAME:-}"
-  VAULTDMS_SMTP_PASSWORD: "${VAULTDMS_SMTP_PASSWORD:-}"
+  SEDOC_SMTP_HOST:     "${SEDOC_SMTP_HOST:-}"
+  SEDOC_SMTP_PORT:     "${SEDOC_SMTP_PORT:-587}"
+  SEDOC_SMTP_USER:     "${SEDOC_SMTP_USER:-}"
+  SEDOC_SMTP_USERNAME: "${SEDOC_SMTP_USERNAME:-}"
+  SEDOC_SMTP_PASSWORD: "${SEDOC_SMTP_PASSWORD:-}"
 
   # ADR 0095 — license JWT. Empty = unlicensed_dev_mode (every feature
   # implicitly enabled, today's behavior). Set via .env or directly to
   # an RS256-signed token minted by cmd/license-gen with the matching
   # private key. Verified at startup + hourly against the public key
   # embedded in pkg/license/dev_pubkey.go.
-  VAULTDMS_LICENSE_JWT:    "${VAULTDMS_LICENSE_JWT:-}"
-  # VAULTDMS_REQUIRE_LICENSE=true upgrades absent-license to a fatal
+  SEDOC_LICENSE_JWT:    "${SEDOC_LICENSE_JWT:-}"
+  # SEDOC_REQUIRE_LICENSE=true upgrades absent-license to a fatal
   # startup error (prod posture). Leave unset in dev.
-  VAULTDMS_REQUIRE_LICENSE: "${VAULTDMS_REQUIRE_LICENSE:-}"
-  VAULTDMS_SMTP_FROM:     "${VAULTDMS_SMTP_FROM:-noreply@vaultdms.local}"
-  VAULTDMS_SMTP_STARTTLS: "${VAULTDMS_SMTP_STARTTLS:-true}"
+  SEDOC_REQUIRE_LICENSE: "${SEDOC_REQUIRE_LICENSE:-}"
+  SEDOC_SMTP_FROM:     "${SEDOC_SMTP_FROM:-noreply@vaultdms.local}"
+  SEDOC_SMTP_STARTTLS: "${SEDOC_SMTP_STARTTLS:-true}"
 
   # WebAuthn / Passkeys — auth service. Service still returns 501
   # until the go-webauthn wiring lands, but env propagation goes in
   # now so deploys don't have to round-trip compose later.
-  VAULTDMS_WEBAUTHN_RPID:         "${VAULTDMS_WEBAUTHN_RPID:-}"
-  VAULTDMS_WEBAUTHN_ORIGINS:      "${VAULTDMS_WEBAUTHN_ORIGINS:-}"
-  VAULTDMS_WEBAUTHN_DISPLAY_NAME: "${VAULTDMS_WEBAUTHN_DISPLAY_NAME:-VaultDMS}"
-  VAULTDMS_WEBAUTHN_HMAC_SECRET:  "${VAULTDMS_WEBAUTHN_HMAC_SECRET:-}"
+  SEDOC_WEBAUTHN_RPID:         "${SEDOC_WEBAUTHN_RPID:-}"
+  SEDOC_WEBAUTHN_ORIGINS:      "${SEDOC_WEBAUTHN_ORIGINS:-}"
+  SEDOC_WEBAUTHN_DISPLAY_NAME: "${SEDOC_WEBAUTHN_DISPLAY_NAME:-VaultDMS}"
+  SEDOC_WEBAUTHN_HMAC_SECRET:  "${SEDOC_WEBAUTHN_HMAC_SECRET:-}"
 
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }
@@ -302,7 +302,7 @@ services:
     environment:
       domain: "document\\:8080|localhost\\:8080|host\\.docker\\.internal\\:8080"
       username: "admin"
-      password: "${VAULTDMS_COLLABORA_ADMIN_PASSWORD:-dev-only-rotate-in-prod}"
+      password: "${SEDOC_COLLABORA_ADMIN_PASSWORD:-dev-only-rotate-in-prod}"
       extra_params: "--o:ssl.enable=false --o:ssl.termination=true --o:storage.wopi.alias_groups.group[1].host=document"
     ports: ["9980:9980"]
     cap_add: ["MKNOD"]
@@ -321,7 +321,7 @@ services:
     container_name: vaultdms-onlyoffice
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: "${VAULTDMS_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
+      JWT_SECRET: "${SEDOC_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
       JWT_HEADER: "Authorization"
       JWT_IN_BODY: "true"
     ports: ["8195:80"]
@@ -344,7 +344,7 @@ services:
     container_name: vaultdms-gateway
     # Render kong.yaml with the gateway secret at boot (Kong's DBless
     # loader does not template env vars). entrypoint.sh substitutes
-    # ${VAULTDMS_GATEWAY_SECRET} into /tmp/kong.resolved.yaml, then
+    # ${SEDOC_GATEWAY_SECRET} into /tmp/kong.resolved.yaml, then
     # delegates to Kong's stock entrypoint.
     entrypoint: ["/bin/sh", "/kong/declarative/entrypoint.sh"]
     environment:
@@ -366,8 +366,8 @@ services:
       KONG_PROXY_LISTEN: "0.0.0.0:8080"
       # §3.1 / B2.2 — shared secret injected into every forwarded
       # request as X-Gateway-Signature. kong.yaml references it as
-      # `${VAULTDMS_GATEWAY_SECRET}`; Kong env-substitutes at boot.
-      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+      # `${SEDOC_GATEWAY_SECRET}`; Kong env-substitutes at boot.
+      SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
     volumes:
       - ./deploy/gateway:/kong/declarative:ro
     ports:
@@ -493,10 +493,10 @@ services:
       REDIS_URL: "redis://redis:6379"
       AUTH_SERVICE_URL: "http://auth:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
-      VAULTDMS_NATS_URL: "nats://nats:4222"
+      SEDOC_NATS_URL: "nats://nats:4222"
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
-      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
-      VAULTDMS_GATEWAY_SECRET: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
     ports: ["8083:8083"]
     depends_on:
       redis:    { condition: service_healthy }
@@ -522,10 +522,10 @@ services:
       dockerfile: Dockerfile
     container_name: vaultdms-intelligence
     environment:
-      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
-      VAULTDMS_NATS_URL: "nats://nats:4222"
-      VAULTDMS_QDRANT_URL: "http://qdrant:6333"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_QDRANT_URL: "http://qdrant:6333"
+      SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3 credentials. The NATS consumer runs in this container
       # and may fetch the blob before enqueueing the Celery task; the
       # task itself runs in vaultdms-intelligence-worker. Both need
@@ -535,10 +535,10 @@ services:
       AWS_DEFAULT_REGION: "us-east-1"
       # ADR 0078 — opt-in LLM NER. The per-tenant key is now stored
       # encrypted in ner_config (set via /admin/intelligence/ner-config);
-      # the worker decrypts using VAULTDMS_LOCAL_KEK. The plain
+      # the worker decrypts using SEDOC_LOCAL_KEK. The plain
       # ANTHROPIC_API_KEY / OPENAI_API_KEY env vars are still honored
       # by litellm as a fallback if no per-tenant key is configured.
-      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     ports: ["8194:8080"]
@@ -569,11 +569,11 @@ services:
       - "-Q"
       - "intelligence,intelligence-ocr,intelligence-embed,intelligence-rag"
     environment:
-      VAULTDMS_CELERY_BROKER_URL: "redis://redis:6379/1"
-      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
-      VAULTDMS_NATS_URL: "nats://nats:4222"
-      VAULTDMS_QDRANT_URL: "http://qdrant:6333"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
+      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_QDRANT_URL: "http://qdrant:6333"
+      SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3/botocore credentials for the OCR worker to download
       # blobs. Use AWS_* names (boto3 reads these directly without
       # any VaultDMS-side glue). In compose dev these are MinIO's
@@ -583,7 +583,7 @@ services:
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
       # ADR 0078 LLM NER — see the intelligence service block above.
-      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     depends_on:
@@ -628,15 +628,15 @@ services:
       - "-Q"
       - "intelligence,intelligence-embed,intelligence-rag"
     environment:
-      VAULTDMS_CELERY_BROKER_URL: "redis://redis:6379/1"
-      VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
-      VAULTDMS_NATS_URL: "nats://nats:4222"
-      VAULTDMS_QDRANT_URL: "http://qdrant:6333"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_CELERY_BROKER_URL: "redis://redis:6379/1"
+      SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable"
+      SEDOC_NATS_URL: "nats://nats:4222"
+      SEDOC_QDRANT_URL: "http://qdrant:6333"
+      SEDOC_S3_ENDPOINT: "http://minio:9000"
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
       AWS_DEFAULT_REGION: "us-east-1"
-      VAULTDMS_LOCAL_KEK: "${VAULTDMS_LOCAL_KEK:-}"
+      SEDOC_LOCAL_KEK: "${SEDOC_LOCAL_KEK:-}"
       ANTHROPIC_API_KEY:  "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY:     "${OPENAI_API_KEY:-}"
     depends_on:
@@ -664,8 +664,8 @@ services:
       - "-Q"
       - "preview,preview-video"
     environment:
-      VAULTDMS_CELERY_BROKER_URL: "redis://redis:6379/2"
-      VAULTDMS_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_CELERY_BROKER_URL: "redis://redis:6379/2"
+      SEDOC_S3_ENDPOINT: "http://minio:9000"
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:

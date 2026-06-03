@@ -26,7 +26,7 @@ make setup
 `make setup` runs four steps in sequence:
 
 1. **`make gen-env`** — generates `.env` from `.env.example` with fresh random secrets
-   (`VAULTDMS_LOCAL_KEK`, `VAULTDMS_INTERNAL_API_KEY`, `SESSION_COOKIE_SECRET`).
+   (`SEDOC_LOCAL_KEK`, `SEDOC_INTERNAL_API_KEY`, `SESSION_COOKIE_SECRET`).
    Refuses to overwrite an existing `.env`.
 2. **`make up`** — `docker compose up -d` + waits for every container's healthcheck to pass.
 3. **`make migrate`** — runs `migrate up` against the document service migrations
@@ -97,8 +97,8 @@ make reset       # destroy everything and start fresh (DANGER: wipes local data)
   Never use this setup flow in production.
 - Production MUST:
   - Set `SEED_ADMIN_PASSWORD` to a random value (or skip seeding entirely and provision the first admin via `dms-admin`)
-  - Set `VAULTDMS_ENVIRONMENT=prod` so `config.Validate()` rejects missing required secrets
-    (`VAULTDMS_PUBLIC_URL`, `VAULTDMS_LOCAL_KEK` when `kms_provider=local`, etc.)
+  - Set `SEDOC_ENVIRONMENT=prod` so `config.Validate()` rejects missing required secrets
+    (`SEDOC_PUBLIC_URL`, `SEDOC_LOCAL_KEK` when `kms_provider=local`, etc.)
   - Source real secrets from Vault / AWS Secrets Manager / Kubernetes Secrets — never from `.env`
 - `.env` is gitignored. Verify with `git check-ignore .env` before committing anything.
 

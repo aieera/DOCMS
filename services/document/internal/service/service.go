@@ -78,7 +78,7 @@ func (s *DocumentService) SetS3Client(c *storage.S3Client) { s.s3 = c }
 
 // SetLocalKEK installs the AES-256 key used to encrypt/decrypt small
 // per-tenant secrets stored in the document DB (currently the LLM API
-// key in ner_config). Loaded from VAULTDMS_LOCAL_KEK in main.go; nil
+// key in ner_config). Loaded from SEDOC_LOCAL_KEK in main.go; nil
 // or wrong size means encrypt-requiring endpoints fail with a clear
 // 500 instead of silently storing plaintext.
 func (s *DocumentService) SetLocalKEK(kek []byte) { s.localKEK = kek }

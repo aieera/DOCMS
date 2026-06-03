@@ -194,7 +194,7 @@ func parseWOPIToken(secret, token string) (*WOPIClaims, error) {
 // claim (defense-in-depth; the editor shouldn't be able to read
 // file B with a token for file A).
 func (h *WOPIHandler) authenticate(w http.ResponseWriter, r *http.Request) *WOPIClaims {
-	secret := os.Getenv("VAULTDMS_WOPI_SECRET")
+	secret := os.Getenv("SEDOC_WOPI_SECRET")
 	if secret == "" {
 		http.Error(w, "wopi disabled", http.StatusServiceUnavailable)
 		return nil
@@ -517,7 +517,7 @@ type discoveryAction struct {
 // discovery serves the XML map editors use to learn which WOPI
 // host action URLs we expose for which file extensions.
 func (h *WOPIHandler) discovery(w http.ResponseWriter, r *http.Request) {
-	publicBase := os.Getenv("VAULTDMS_PUBLIC_URL")
+	publicBase := os.Getenv("SEDOC_PUBLIC_URL")
 	if publicBase == "" {
 		publicBase = "http://localhost:8080"
 	}

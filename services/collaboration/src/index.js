@@ -9,7 +9,7 @@ import { attachYjs } from './yjs-server.js';
 const PORT = parseInt(process.env.WS_PORT || '8083', 10);
 const HEARTBEAT_INTERVAL = 30_000;
 const PONG_TIMEOUT = 10_000;
-const NATS_URL = process.env.VAULTDMS_NATS_URL || process.env.NATS_URL || 'nats://nats:4222';
+const NATS_URL = process.env.SEDOC_NATS_URL || process.env.VAULTDMS_NATS_URL || process.env.NATS_URL || 'nats://nats:4222';
 
 const redisSub = createClient();
 const redisPub = createClient();

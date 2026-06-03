@@ -46,7 +46,7 @@ NATS publishes (via outbox):
 
 ## Configuration
 
-`VAULTDMS_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`, `_LOCAL_KEK`
+`SEDOC_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`, `_LOCAL_KEK`
 (base64 32-byte KEK for MFA secrets), `_PUBLIC_URL` (for SSO
 redirects + share links), `SESSION_COOKIE_SECRET`, `_HTTP_PORT`
 (default 8080).
@@ -57,7 +57,7 @@ redirects + share links), `SESSION_COOKIE_SECRET`, `_HTTP_PORT`
 make setup       # full stack
 # or, host-only:
 make up
-( cd services/auth && VAULTDMS_HTTP_PORT=8081 go run ./cmd/server )
+( cd services/auth && SEDOC_HTTP_PORT=8081 go run ./cmd/server )
 ```
 
 ## Testing
@@ -88,5 +88,5 @@ Helm: `deploy/helm/vaultdms/templates/auth/` (full 6-resource set).
 no-ops when no tenant is on ctx (remediation 04b live-run).
 
 **MFA setup fails with "KEK unavailable"**
-— `VAULTDMS_LOCAL_KEK` not set and no KMS configured. Generate:
+— `SEDOC_LOCAL_KEK` not set and no KMS configured. Generate:
 `openssl rand -base64 32`.

@@ -197,7 +197,7 @@ function ResidencyBanner({
         <div>
           <p className="font-medium text-amber-900 dark:text-amber-200">Cluster region unknown</p>
           <p className="text-xs text-amber-800 dark:text-amber-300">
-            <code>/healthz</code> did not return a region. Confirm the service was started with <code>VAULTDMS_REGION_ID</code>.
+            <code>/healthz</code> did not return a region. Confirm the service was started with <code>SEDOC_REGION_ID</code>.
           </p>
         </div>
       </div>

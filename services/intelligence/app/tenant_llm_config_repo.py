@@ -117,7 +117,7 @@ async def upsert_config(
     else:
         encrypted = encrypt_tenant_secret(api_key_plaintext)
         if encrypted is None:
-            raise RuntimeError("VAULTDMS_LOCAL_KEK not configured; refusing to store plaintext")
+            raise RuntimeError("SEDOC_LOCAL_KEK not configured; refusing to store plaintext")
         api_key_encrypted_param = encrypted
 
     pool = await get_pool()

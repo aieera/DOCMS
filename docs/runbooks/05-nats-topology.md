@@ -19,7 +19,7 @@
 | LEGACY_EVENTS | `dms.sharelink.>`, `dms.folder.>`, `dms.intelligence.>`, `dms.rotation.>` | 168h | LEGACY_EVENTS_DLQ |
 
 Config per stream: `Retention=Limits`, `Discard=Old`, `Duplicates=2m`,
-`Storage=File`, `Replicas=${VAULTDMS_NATS_REPLICAS:-1}` (set to 3 in prod).
+`Storage=File`, `Replicas=${SEDOC_NATS_REPLICAS:-1}` (set to 3 in prod).
 
 DLQ subjects follow `dms.dlq.<stream_name_lower>.>`.
 

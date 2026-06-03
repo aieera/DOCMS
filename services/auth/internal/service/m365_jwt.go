@@ -7,9 +7,9 @@
 //   1. Has a valid RS256 signature against the issuing tenant's JWKS
 //      (handled by go-oidc, which caches keys + handles rollover).
 //   2. Has `aud` equal to the configured VaultDMS Entra application
-//      ID (VAULTDMS_M365_AUDIENCE).
+//      ID (SEDOC_M365_AUDIENCE).
 //   3. Has `tid` on the allow-list of Entra directories that VaultDMS
-//      accepts (VAULTDMS_M365_ALLOWED_TIDS, CSV).
+//      accepts (SEDOC_M365_ALLOWED_TIDS, CSV).
 //   4. Has unexpired `exp` / valid `nbf` (go-oidc enforces these).
 //
 // We surface the *verified* `tid` + `oid` claims (not the unverified
@@ -38,8 +38,8 @@ import (
 // M365 environment variables. Read once at New() time so tests can
 // swap them without touching the host env.
 const (
-	envM365Audience    = "VAULTDMS_M365_AUDIENCE"
-	envM365AllowedTIDs = "VAULTDMS_M365_ALLOWED_TIDS"
+	envM365Audience    = "SEDOC_M365_AUDIENCE"
+	envM365AllowedTIDs = "SEDOC_M365_ALLOWED_TIDS"
 )
 
 // VerifiedEntraIdentity is the result of a successful JWT validation.

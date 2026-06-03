@@ -31,7 +31,7 @@ import (
 	"github.com/aieera/sedoc/services/signature/internal/repository"
 )
 
-// QESConfig is set by main from VAULTDMS_QES_* envs.
+// QESConfig is set by main from SEDOC_QES_* envs.
 type QESConfig struct {
 	// Clients holds the resolved TSP adapters keyed by Provider.
 	// Empty map → QES is feature-flagged off; service returns

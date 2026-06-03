@@ -102,8 +102,8 @@ Per-service env overrides go in `vaultdms_service_extra_env`:
   vars:
     vaultdms_service_name: storage
     vaultdms_service_extra_env:
-      VAULTDMS_S3_ACCESS_KEY: "{{ vault_minio_access_key }}"
-      VAULTDMS_S3_SECRET_KEY: "{{ vault_minio_secret_key }}"
+      SEDOC_S3_ACCESS_KEY: "{{ vault_minio_access_key }}"
+      SEDOC_S3_SECRET_KEY: "{{ vault_minio_secret_key }}"
 ```
 
 ## Upgrades

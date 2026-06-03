@@ -34,13 +34,13 @@ that the collaboration / WS service subscribes to for push.
 
 ## Configuration
 
-Standard DB/Redis/NATS URLs, `VAULTDMS_HTTP_PORT`.
+Standard DB/Redis/NATS URLs, `SEDOC_HTTP_PORT`.
 
 ## Running locally
 
 ```bash
 make up
-( cd services/notification && VAULTDMS_HTTP_PORT=8086 go run ./cmd/server )
+( cd services/notification && SEDOC_HTTP_PORT=8086 go run ./cmd/server )
 ```
 
 ## Testing

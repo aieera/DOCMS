@@ -210,7 +210,7 @@ historical rows.
 
 Rollback: drop the new column + table. Workers tolerate the
 absence of the table (gated by feature flag
-`VAULTDMS_PROCESSING_FAILURE_TRACKING=true`). Existing UI keeps
+`SEDOC_PROCESSING_FAILURE_TRACKING=true`). Existing UI keeps
 working — no surface depends on the new state until Phase 3 ships.
 
 ## What changes if you do nothing

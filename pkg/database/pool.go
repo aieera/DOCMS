@@ -89,7 +89,7 @@ func NewPool(ctx context.Context, databaseURL string, cfg PoolConfig) (*pgxpool.
 	// Auto-assert RLS posture so a new service can't silently boot as
 	// a BYPASSRLS role. Tests / migration tooling that legitimately
 	// need BYPASSRLS opt out via cfg.SkipRLSPostureCheck=true OR set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in the environment.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in the environment.
 	if !cfg.SkipRLSPostureCheck {
 		if err := AssertRLSPosture(pingCtx, pool); err != nil {
 			pool.Close()

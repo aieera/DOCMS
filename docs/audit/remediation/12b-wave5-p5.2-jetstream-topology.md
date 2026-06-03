@@ -33,7 +33,7 @@ USER_EVENTS  3 msgs, 1965 bytes  ← previously-dropped invite/suspend/mfa-reset
   rewrote `DefaultStreams` to the 10-stream topology. Added
   `BootstrapReport`, `buildPrimaryConfig`, `buildDLQConfig`, subject-drift
   detection. Made `EnsureStreams` return a diff report for observability.
-  Replicas now come from `VAULTDMS_NATS_REPLICAS` (default 1 for dev).
+  Replicas now come from `SEDOC_NATS_REPLICAS` (default 1 for dev).
 - [pkg/events/publisher_test.go](../../../pkg/events/publisher_test.go)
   **new** — three tests: every known subject has a stream,
   no duplicate names, no subject overlap. These are the canaries that
@@ -96,7 +96,7 @@ incident.
   AddStream/UpdateStream, which is sufficient.
 - **`Replicas=3` default** — controlled via env var; dev defaults to 1
   because single-node NATS can't satisfy 3. Set
-  `VAULTDMS_NATS_REPLICAS=3` in prod Helm values.
+  `SEDOC_NATS_REPLICAS=3` in prod Helm values.
 
 ## The surprise
 

@@ -11,7 +11,7 @@ it with:
 
 - **Dedupe table** `ocr_processed_events (tenant_id, event_id)` with 14-day
   retention. Redeliveries on `completed` events are dropped silently.
-- **Per-tenant semaphore** capped at `VAULTDMS_OCR_PER_TENANT_CAP`
+- **Per-tenant semaphore** capped at `SEDOC_OCR_PER_TENANT_CAP`
   (default 8). Prevents one tenant from starving others on a single
   pod.
 - **acks_late** Celery setting so a worker crash mid-run triggers a
@@ -87,7 +87,7 @@ are idle:
 ```bash
 # Bump cap for that tenant (until we ship per-tenant overrides).
 # Global cap via:
-VAULTDMS_OCR_PER_TENANT_CAP=16
+SEDOC_OCR_PER_TENANT_CAP=16
 # Restart consumer pods.
 ```
 

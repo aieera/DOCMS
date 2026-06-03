@@ -59,7 +59,7 @@ Rotation is **non-destructive**:
   (re-wrap CLI deferred to Wave 6 follow-up; until then, manually
   re-upload affected objects or flag for scheduled rotation).
 - Scheduled: every 90 days for HIPAA / SOC 2 compliance.
-- Master-secret rotation: `VAULTDMS_LOCAL_KEK` rotated (dev/on-prem)
+- Master-secret rotation: `SEDOC_LOCAL_KEK` rotated (dev/on-prem)
   also invalidates every derived tenant KEK. Never rotate the master
   without first running `kms rewrap --all` (Wave 6 follow-up).
 
@@ -74,7 +74,7 @@ Full derivation strategy + alternatives considered: [0022-per-tenant-kek-derivat
 Three possibilities, in order of likelihood:
 1. `content_blobs.kek_id` value drifted from what was used at write
    time (bug; file a P0).
-2. `VAULTDMS_LOCAL_KEK` master secret on the reading node differs from
+2. `SEDOC_LOCAL_KEK` master secret on the reading node differs from
    the writing node. Check Kubernetes Secret `vaultdms-master-kek`
    parity across pods.
 3. An AWS KMS / Vault outage — the KeyManager implementation can

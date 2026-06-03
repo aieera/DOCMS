@@ -75,10 +75,10 @@ type LocalKeyManager struct {
 // sneaks into a production deploy.
 func NewLocalKeyManager(kekBase64 string, warnFn func(msg string)) (*LocalKeyManager, error) {
 	if kekBase64 == "" {
-		kekBase64 = os.Getenv("VAULTDMS_LOCAL_KEK")
+		kekBase64 = os.Getenv("SEDOC_LOCAL_KEK")
 	}
 	if kekBase64 == "" {
-		return nil, fmt.Errorf("LocalKeyManager: VAULTDMS_LOCAL_KEK not set")
+		return nil, fmt.Errorf("LocalKeyManager: SEDOC_LOCAL_KEK not set")
 	}
 	master, err := base64.StdEncoding.DecodeString(kekBase64)
 	if err != nil {

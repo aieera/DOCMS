@@ -6,7 +6,7 @@ Wave 9 Prompt 9.2.
 
 - Go service `services/signature` owns envelope state, Temporal
   workflow dispatch, REST / gRPC surface.
-- Signer selected by `VAULTDMS_SIGNER` env:
+- Signer selected by `SEDOC_SIGNER` env:
   - `mock` (default) — Go, in-process, **not** PAdES-valid. Dev /
     CI only.
   - `dss` — gRPC client to the Java DSS sidecar (ADR 0025).
@@ -17,7 +17,7 @@ Wave 9 Prompt 9.2.
 ### Starting a test signing flow locally
 
 ```bash
-VAULTDMS_SIGNER=mock go run ./services/signature/cmd/server/
+SEDOC_SIGNER=mock go run ./services/signature/cmd/server/
 ```
 
 Submit an envelope:
@@ -53,7 +53,7 @@ signer should show "Signature is valid" with an LTV tick.
   PDFs unaffected.
 - **Action**:
   1. `curl -I <TSA_URL>` from a signer pod — is it DNS? TLS? 5xx?
-  2. If the TSA is down, failover by overriding `VAULTDMS_TSA_URL`
+  2. If the TSA is down, failover by overriding `SEDOC_TSA_URL`
      to the secondary (DigiCert if FreeTSA is primary, or vice
      versa). Bounce the sidecar pods: `kubectl rollout restart
      deployment/signature-signer -n vaultdms`.
@@ -100,7 +100,7 @@ signer should show "Signature is valid" with an LTV tick.
   2. Confirm OCSP / CRL URLs in the issuing chain are reachable
      from the sidecar pod (`curl -I <ocsp_url>`).
   3. If OCSP is consistently unreachable, fall back to CRL
-     (`VAULTDMS_LTV_PREFER=crl`).
+     (`SEDOC_LTV_PREFER=crl`).
   4. For already-signed PDFs: re-sign with a second cosigner using
      B-LT to append the missing DSS dictionary.
 

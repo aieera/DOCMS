@@ -160,7 +160,7 @@ func (h *ShareDownloadHandler) download(w http.ResponseWriter, r *http.Request) 
 	// 413 — the user should request access via an authenticated session
 	// instead of the anonymous share path.
 	maxBytes := defaultShareDecryptMaxBytes
-	if v := os.Getenv("VAULTDMS_SHARE_DECRYPT_MAX_BYTES"); v != "" {
+	if v := os.Getenv("SEDOC_SHARE_DECRYPT_MAX_BYTES"); v != "" {
 		if n, perr := strconv.ParseInt(v, 10, 64); perr == nil && n > 0 {
 			maxBytes = n
 		}

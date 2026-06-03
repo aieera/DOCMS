@@ -23,7 +23,7 @@ spec:
               containerPort: {{ .Values.preview.apiPort | default 8080 }}
           env:
             {{- include "vaultdms.commonEnv" (dict "Values" .Values) | nindent 12 }}
-            - name: VAULTDMS_CELERY_BROKER_URL
+            - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
           livenessProbe:
             httpGet: { path: /healthz, port: http }
@@ -70,7 +70,7 @@ spec:
             - {{ .Values.preview.celery.queues | default "preview" | quote }}
           env:
             {{- include "vaultdms.commonEnv" (dict "Values" .Values) | nindent 12 }}
-            - name: VAULTDMS_CELERY_BROKER_URL
+            - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/2"
           resources:
             {{- toYaml .Values.preview.celery.resources | nindent 12 }}

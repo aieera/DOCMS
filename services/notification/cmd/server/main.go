@@ -50,7 +50,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -65,7 +65,7 @@ func main() {
 
 	// Wave 12.1: SMTP transactional email sender. Empty host → sender
 	// reports Enabled()=false and service falls back to the pre-existing
-	// "would send email" log line. Configure via VAULTDMS_SMTP_* envs.
+	// "would send email" log line. Configure via SEDOC_SMTP_* envs.
 	smtpSender := service.NewSMTPSender(service.SMTPConfig{
 		Host:     cfg.SMTPHost,
 		Port:     cfg.SMTPPort,

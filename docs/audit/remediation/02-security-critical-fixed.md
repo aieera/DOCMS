@@ -240,7 +240,7 @@ Same pattern:
 `services/storage/cmd/server/main.go:136`:
 
 ```go
-PublicUploadBase: os.Getenv("VAULTDMS_S3_PUBLIC_BASE"),
+PublicUploadBase: os.Getenv("SEDOC_S3_PUBLIC_BASE"),
 // TODO(per-tenant-kek): Single KEK across all tenants. Finding k in
 // docs/audit/04-antipatterns.md; target design + migration plan in
 // docs/tech-debt/per-tenant-kek.md.

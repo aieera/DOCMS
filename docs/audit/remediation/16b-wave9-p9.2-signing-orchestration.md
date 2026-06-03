@@ -56,7 +56,7 @@ Clearly marked in the package doc as dev/CI only.
 
 [services/signature/internal/signer/dss_sidecar.go](../../../services/signature/internal/signer/dss_sidecar.go)
 — gRPC client stub. Returns `ErrNotConfigured` today so a
-production deployment with `VAULTDMS_SIGNER=dss` and no sidecar
+production deployment with `SEDOC_SIGNER=dss` and no sidecar
 fails at first request (loud) rather than silently fallbacking to
 mock (quietly ships invalid PDFs). Shape is forward-compatible with
 the Wave 9.2b proto.
@@ -64,7 +64,7 @@ the Wave 9.2b proto.
 ### Factory
 
 [services/signature/internal/signer/factory.go](../../../services/signature/internal/signer/factory.go)
-— `FromEnv(sidecarAddr)` reads `VAULTDMS_SIGNER` ∈ `{mock, dss}`.
+— `FromEnv(sidecarAddr)` reads `SEDOC_SIGNER` ∈ `{mock, dss}`.
 Unknown values error at boot.
 
 ### Tests

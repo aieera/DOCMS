@@ -75,20 +75,20 @@ type WebAuthnConfig struct {
 	RPOrigins []string
 }
 
-// LoadWebAuthnConfigFromEnv reads VAULTDMS_WEBAUTHN_* env vars and
+// LoadWebAuthnConfigFromEnv reads SEDOC_WEBAUTHN_* env vars and
 // returns a config (or nil when not configured).
 func LoadWebAuthnConfigFromEnv() *WebAuthnConfig {
-	rpID := strings.TrimSpace(os.Getenv("VAULTDMS_WEBAUTHN_RPID"))
+	rpID := strings.TrimSpace(os.Getenv("SEDOC_WEBAUTHN_RPID"))
 	if rpID == "" {
 		return nil
 	}
-	originsCSV := os.Getenv("VAULTDMS_WEBAUTHN_ORIGINS")
+	originsCSV := os.Getenv("SEDOC_WEBAUTHN_ORIGINS")
 	if originsCSV == "" {
 		originsCSV = "https://" + rpID
 	}
 	cfg := &WebAuthnConfig{
 		RPID:          rpID,
-		RPDisplayName: envOr("VAULTDMS_WEBAUTHN_DISPLAY_NAME", "VaultDMS"),
+		RPDisplayName: envOr("SEDOC_WEBAUTHN_DISPLAY_NAME", "VaultDMS"),
 	}
 	for _, raw := range strings.Split(originsCSV, ",") {
 		o := strings.TrimSpace(raw)
@@ -134,12 +134,12 @@ type SessionEnvelope struct {
 // hmacSecret returns the HMAC key from env. Falls back to the
 // shared gateway secret — same trust zone, guaranteed set.
 func hmacSecret() ([]byte, error) {
-	v := strings.TrimSpace(os.Getenv("VAULTDMS_WEBAUTHN_HMAC_SECRET"))
+	v := strings.TrimSpace(os.Getenv("SEDOC_WEBAUTHN_HMAC_SECRET"))
 	if v == "" {
-		v = strings.TrimSpace(os.Getenv("VAULTDMS_GATEWAY_SECRET"))
+		v = strings.TrimSpace(os.Getenv("SEDOC_GATEWAY_SECRET"))
 	}
 	if v == "" {
-		return nil, errors.New("VAULTDMS_WEBAUTHN_HMAC_SECRET (or VAULTDMS_GATEWAY_SECRET) not set")
+		return nil, errors.New("SEDOC_WEBAUTHN_HMAC_SECRET (or SEDOC_GATEWAY_SECRET) not set")
 	}
 	return []byte(v), nil
 }

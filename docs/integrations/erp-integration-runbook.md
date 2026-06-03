@@ -159,7 +159,7 @@ POST /api/dms-sync/<entity_type>/<entity_id>/resync
 
 **Symptom:** `docker compose ps` shows `vaultdms-clamav (unhealthy)`, but new
 documents are still landing.
-**Impact:** None in dev (`VAULTDMS_STORAGE_SKIP_VIRUS_SCAN=true`). In prod, this
+**Impact:** None in dev (`SEDOC_STORAGE_SKIP_VIRUS_SCAN=true`). In prod, this
 is a healthcheck-script bug — the daemon itself is fine if `SelfCheck: Database
 status OK.` appears in `docker logs vaultdms-clamav`.
 

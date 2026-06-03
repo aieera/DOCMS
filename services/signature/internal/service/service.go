@@ -29,7 +29,7 @@ type Service struct {
 	s3     *storage.S3Client
 	log    zerolog.Logger
 	// qes is the optional ADR 0070 wiring. nil → QES routes return
-	// "not configured". main.go calls AddQES() when VAULTDMS_QES_*
+	// "not configured". main.go calls AddQES() when SEDOC_QES_*
 	// envs resolve to at least one TSP adapter.
 	qes *QESConfig
 	// esign is the optional ADR 0071 wiring for DocuSign/Adobe Sign.

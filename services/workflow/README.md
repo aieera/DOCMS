@@ -41,7 +41,7 @@ Outbox publishes:
 
 ## Configuration
 
-`VAULTDMS_DATABASE_URL`, `_NATS_URL`, `TEMPORAL_ADDR` (default
+`SEDOC_DATABASE_URL`, `_NATS_URL`, `TEMPORAL_ADDR` (default
 `temporal-frontend:7233`), `_HTTP_PORT`.
 
 ## Running locally

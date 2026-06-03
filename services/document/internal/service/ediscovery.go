@@ -25,7 +25,7 @@ import (
 //                           per-document SHA-256 (of the version's
 //                           content), created_at, current state.
 //   - manifest.json.sig   — HMAC-SHA256 signature over manifest.json
-//                           using VAULTDMS_EDISCOVERY_SIGNING_KEY (or
+//                           using SEDOC_EDISCOVERY_SIGNING_KEY (or
 //                           the gateway secret if unset) — gives the
 //                           auditor proof the bundle wasn't mutated.
 //   - doc-<uuid>.json     — metadata blob per document. Binary
@@ -188,13 +188,13 @@ func writeZipEntry(zw *zip.Writer, name string, data []byte) error {
 }
 
 func ediscoverySigningKey() string {
-	if k := os.Getenv("VAULTDMS_EDISCOVERY_SIGNING_KEY"); k != "" {
+	if k := os.Getenv("SEDOC_EDISCOVERY_SIGNING_KEY"); k != "" {
 		return k
 	}
 	// Fall back to the gateway secret so dev works out of the box
 	// with a single env var. Production MUST set a dedicated key
 	// (documented in H1 SOC 2 evidence runbook).
-	return os.Getenv("VAULTDMS_GATEWAY_SECRET")
+	return os.Getenv("SEDOC_GATEWAY_SECRET")
 }
 
 func hmacSign(data []byte, key string) (string, error) {

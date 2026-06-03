@@ -2,7 +2,7 @@
 //
 // A license is an RS256-signed JWT minted by the license-gen tool (held
 // by BD ops). Every service loads its license at startup from
-// VAULTDMS_LICENSE_JWT (env) or /etc/vaultdms/license.jwt (file),
+// SEDOC_LICENSE_JWT (env) or /etc/vaultdms/license.jwt (file),
 // verifies against the bundled public key, and caches the parsed claims.
 // A background goroutine re-validates every hour so expiry transitions
 // (active → grace → expired) take effect without a restart.
@@ -62,7 +62,7 @@ const (
 	StatusGrace Status = "grace"
 
 	// StatusExpired — expired more than GraceDays ago. Services
-	// refuse to start with this status when VAULTDMS_REQUIRE_LICENSE=true.
+	// refuse to start with this status when SEDOC_REQUIRE_LICENSE=true.
 	StatusExpired Status = "expired"
 )
 

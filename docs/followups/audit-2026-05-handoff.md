@@ -492,7 +492,7 @@ mcp-server, but **no entry for intelligence**.
 Add an `intelligence` service entry mirroring the existing service
 shape (look at `audit` or `notification` for the template). Upstream
 URL is `http://intelligence:8081` per the
-`docker-compose.yml` env (intelligence's `VAULTDMS_HTTP_PORT=8080`
+`docker-compose.yml` env (intelligence's `SEDOC_HTTP_PORT=8080`
 inside the container — but check whether Kong's other services use
 `:8080` or `:8081`; the rest of the kong.yaml currently routes to
 `:8081` for every Go service via a convention that may or may not

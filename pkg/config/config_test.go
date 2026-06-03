@@ -28,7 +28,7 @@ func TestValidate_ProdRequiresPublicURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("prod without PublicURL should fail")
 	}
-	if !strings.Contains(err.Error(), "VAULTDMS_PUBLIC_URL") {
+	if !strings.Contains(err.Error(), "SEDOC_PUBLIC_URL") {
 		t.Errorf("error should mention the missing var: %v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestValidate_ProdRequiresLocalKEKWhenKMSLocal(t *testing.T) {
 	if err == nil {
 		t.Fatal("prod + kms_provider=local + empty LocalKEK must fail")
 	}
-	if !strings.Contains(err.Error(), "VAULTDMS_LOCAL_KEK") {
+	if !strings.Contains(err.Error(), "SEDOC_LOCAL_KEK") {
 		t.Errorf("error should mention the missing var: %v", err)
 	}
 }
@@ -58,10 +58,10 @@ func TestValidate_ProdListsAllMissingVars(t *testing.T) {
 		t.Fatal("want failure")
 	}
 	// Both PublicURL and LocalKEK missing → error string lists both.
-	if !strings.Contains(err.Error(), "VAULTDMS_PUBLIC_URL") {
+	if !strings.Contains(err.Error(), "SEDOC_PUBLIC_URL") {
 		t.Errorf("missing PublicURL not reported: %v", err)
 	}
-	if !strings.Contains(err.Error(), "VAULTDMS_LOCAL_KEK") {
+	if !strings.Contains(err.Error(), "SEDOC_LOCAL_KEK") {
 		t.Errorf("missing LocalKEK not reported: %v", err)
 	}
 }
@@ -94,10 +94,10 @@ func TestRequireSecret_AcceptsNonEmptyInProd(t *testing.T) {
 // ---- Load ----------------------------------------------------------------
 
 func TestLoad_DefaultsApplied(t *testing.T) {
-	// Clear any VAULTDMS_ env noise via the subtest.
-	t.Setenv("VAULTDMS_DATABASE_URL", "postgres://u:p@h:1/d")
-	t.Setenv("VAULTDMS_REDIS_URL", "localhost:6379")
-	t.Setenv("VAULTDMS_NATS_URL", "nats://localhost:4222")
+	// Clear any SEDOC_ env noise via the subtest.
+	t.Setenv("SEDOC_DATABASE_URL", "postgres://u:p@h:1/d")
+	t.Setenv("SEDOC_REDIS_URL", "localhost:6379")
+	t.Setenv("SEDOC_NATS_URL", "nats://localhost:4222")
 
 	cfg, err := Load("test-service")
 	if err != nil {
@@ -128,19 +128,19 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 }
 
 func TestLoad_RejectsMissingRequired(t *testing.T) {
-	// No VAULTDMS_DATABASE_URL set — validator must reject.
-	t.Setenv("VAULTDMS_DATABASE_URL", "")
-	t.Setenv("VAULTDMS_REDIS_URL", "localhost:6379")
-	t.Setenv("VAULTDMS_NATS_URL", "nats://localhost:4222")
+	// No SEDOC_DATABASE_URL set — validator must reject.
+	t.Setenv("SEDOC_DATABASE_URL", "")
+	t.Setenv("SEDOC_REDIS_URL", "localhost:6379")
+	t.Setenv("SEDOC_NATS_URL", "nats://localhost:4222")
 	if _, err := Load("svc"); err == nil {
 		t.Fatal("missing DATABASE_URL should fail Load's validator")
 	}
 }
 
 func TestLoad_NonVaultdmsPrefixesBind(t *testing.T) {
-	t.Setenv("VAULTDMS_DATABASE_URL", "postgres://u:p@h:1/d")
-	t.Setenv("VAULTDMS_REDIS_URL", "r")
-	t.Setenv("VAULTDMS_NATS_URL", "n")
+	t.Setenv("SEDOC_DATABASE_URL", "postgres://u:p@h:1/d")
+	t.Setenv("SEDOC_REDIS_URL", "r")
+	t.Setenv("SEDOC_NATS_URL", "n")
 	t.Setenv("POLICY_SERVICE_ADDR", "my-policy:9000")
 	t.Setenv("OPENSEARCH_URL", "http://my-os:9200")
 

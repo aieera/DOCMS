@@ -175,11 +175,11 @@ type BootstrapReport struct {
 	DLQ     []string // DLQ streams touched
 }
 
-// streamReplicas reads VAULTDMS_NATS_REPLICAS (default 1 for dev).
+// streamReplicas reads SEDOC_NATS_REPLICAS (default 1 for dev).
 // Prod clusters should set 3; setting > cluster peer count will cause
 // AddStream to fail — intentional, forces correct capacity planning.
 func streamReplicas() int {
-	if v := os.Getenv("VAULTDMS_NATS_REPLICAS"); v != "" {
+	if v := os.Getenv("SEDOC_NATS_REPLICAS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 5 {
 			return n
 		}

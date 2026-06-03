@@ -452,14 +452,14 @@ Status legend: ✅ Shipped · 🟡 Partial · ⬜ Planned · ❌ Blocked
 - **REST endpoints per service** (from subagent walk of `Register`/`Handle` calls): auth (~22), policy (~4), document (via gRPC-gateway + proxy, ~10), storage (gRPC only), search (~5), audit (~5), workflow (~7), notification (~5), signature (~6), billing (~7), connector (~8). Total **~79 REST routes** — count is approximate.
 - **OpenAPI spec:** [docs/api/openapi.yaml](../api/openapi.yaml) exists, version 3.1.0, 16 top-level path groups. Per subagent note, the spec framework is defined but endpoint coverage appears incomplete (truncated paths); **currency versus code not verified this session**.
 - **gRPC services:** 14 proto files under `proto/vaultdms/v1/`, defining **13 services and 129 RPCs** (per subagent). Generated stubs at `proto/gen/go/` — [docs/STATE_OF_THE_PROJECT.md:61](../STATE_OF_THE_PROJECT.md#L61) claims `buf generate` has been run; subagent's `00-summary.md` citation says "proto codegen never ran" — **conflicting evidence, unverified**.
-- **Public vs internal:** `/api/v1/*` = user-facing (session auth); `/internal/v1/*` = service-to-service (X-API-Key from `VAULTDMS_INTERNAL_API_KEY`); `/scim/v2/*` = IdP-facing; `/stripe/webhook` = Stripe-only (signature verification).
+- **Public vs internal:** `/api/v1/*` = user-facing (session auth); `/internal/v1/*` = service-to-service (X-API-Key from `SEDOC_INTERNAL_API_KEY`); `/scim/v2/*` = IdP-facing; `/stripe/webhook` = Stripe-only (signature verification).
 - **Authentication mechanisms:** Session cookie (signed with `SESSION_COOKIE_SECRET`), API key (`X-API-Key`), JWT (validated by `pkg/auth`), Stripe webhook signature, HMAC for outbound webhooks.
 
 ---
 
 ## 12. Security & Compliance Posture
 
-- **Secrets management:** `.env` file (gitignored per `.gitignore`); `scripts/gen-dev-env.sh` generates random per-deployment secrets. `VAULTDMS_LOCAL_KEK` is a development-only base64 key; production uses Vault / AWS KMS via `pkg/crypto` abstractions.
+- **Secrets management:** `.env` file (gitignored per `.gitignore`); `scripts/gen-dev-env.sh` generates random per-deployment secrets. `SEDOC_LOCAL_KEK` is a development-only base64 key; production uses Vault / AWS KMS via `pkg/crypto` abstractions.
 - **Encryption at rest:** envelope encryption per blob (DEK), KEK claimed per-tenant but currently **shared** — explicit blocker ([docs/STATE_OF_THE_PROJECT.md:42](../STATE_OF_THE_PROJECT.md#L42)).
 - **Encryption in transit:** TLS claimed for inter-service (mTLS for `signature-signer` Java sidecar per subagent); local dev runs cleartext. **Unverified in production posture.**
 - **Row-Level Security:** Enabled + FORCED on at least `outbox`, `subscriptions`, `usage_records`, `audit_events` (verified via `\d` this session). Tenant isolation enforced via `current_setting('app.current_tenant')`.

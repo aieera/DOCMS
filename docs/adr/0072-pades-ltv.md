@@ -61,7 +61,7 @@ The verifier is a `*Verifier` with `Validate(ctx, pdfBytes) → Report`.
 The Signer interface in `services/signature/internal/signer` swaps
 its `Verify` body to delegate to this package; the marker-based
 mock stays for the in-process dev path but is gated behind
-`VAULTDMS_SIGNER=mock`.
+`SEDOC_SIGNER=mock`.
 
 ### Parser
 
@@ -131,8 +131,8 @@ Acrobat does.
 ### TSA
 
 Tenants configure a TSA URL + optional client cert via
-`VAULTDMS_PADES_TSA_URL_<tenant>` (or the default
-`VAULTDMS_PADES_TSA_URL` for the system-wide value). On Embed:
+`SEDOC_PADES_TSA_URL_<tenant>` (or the default
+`SEDOC_PADES_TSA_URL` for the system-wide value). On Embed:
 
 1. Hash the existing signature's CMS bytes (the signature, not the
    signed document — that's how PAdES-B-T chains).

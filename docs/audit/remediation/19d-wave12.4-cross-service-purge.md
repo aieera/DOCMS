@@ -50,8 +50,8 @@ middleware on the service boundary.
 `Activities.ServiceURLs map[string]string` added to
 [activities.go](../../../services/workflow/internal/activities/activities.go)
 and populated in both worker + server main via env vars:
-`VAULTDMS_SEARCH_URL`, `VAULTDMS_QDRANT_URL`,
-`VAULTDMS_CONNECTOR_URL`. Empty → soft no-op.
+`SEDOC_SEARCH_URL`, `SEDOC_QDRANT_URL`,
+`SEDOC_CONNECTOR_URL`. Empty → soft no-op.
 
 ### EraseWorkflow fan-out
 

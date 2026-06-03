@@ -19,7 +19,7 @@ column with one of two backends, picked at runtime:
 | When... | Backend | Ciphertext shape |
 |---------|---------|------------------|
 | `VAULT_ADDR` + `VAULT_TOKEN` + `VAULT_TRANSIT_KEY` all set | Vault Transit — KEK material lives **inside Vault**; every encrypt/decrypt round-trips to `/v1/transit/{op}/{key}` | `vault:v1:...` |
-| `VAULTDMS_LOCAL_KEK` set, Vault not | In-process AES-256-GCM | base64(`nonce` + `ct` + `tag`) |
+| `SEDOC_LOCAL_KEK` set, Vault not | In-process AES-256-GCM | base64(`nonce` + `ct` + `tag`) |
 | neither | encrypt returns None → admin PUT 503s | n/a |
 
 Decrypt detects which scheme produced a row by prefix and dispatches
@@ -47,7 +47,7 @@ VAULT_ADDR=https://vault.internal:8200
 VAULT_TOKEN=<token from step 2>
 VAULT_TRANSIT_KEY=vaultdms-tenant-secrets
 
-# 4. KEEP VAULTDMS_LOCAL_KEK set during the rollout window so the
+# 4. KEEP SEDOC_LOCAL_KEK set during the rollout window so the
 #    decrypt fallback path can still read rows written before
 #    Vault Transit was enabled. Drop it only after every existing
 #    row has been re-encrypted (admin re-paste of each api_key, OR
@@ -61,7 +61,7 @@ under the new backend.
 ### Vault outage behavior
 
 When Vault is configured but unreachable:
-- **Encrypt**: falls back to local AES-GCM if `VAULTDMS_LOCAL_KEK` is
+- **Encrypt**: falls back to local AES-GCM if `SEDOC_LOCAL_KEK` is
   also set. The new row's ciphertext lacks the `vault:` prefix and
   decrypts via the local path going forward (mixed-mode is fine).
   If neither backend is available the PUT 503s — admin sees the
@@ -79,7 +79,7 @@ When Vault is configured but unreachable:
 Admin UI: `/admin/tenant/ai`. The key is write-only — once saved, the
 GET endpoint only ever returns `key_set: true` and `key_set_at`.
 Plaintext leaves the browser exactly once, encrypted at rest with
-the deploy's `VAULTDMS_LOCAL_KEK` (or Vault transit in cloud).
+the deploy's `SEDOC_LOCAL_KEK` (or Vault transit in cloud).
 
 CLI fallback (when the UI is unavailable):
 
@@ -119,7 +119,7 @@ old provider's model id to keep cross-provider failover.
 
 ### Air-gapped enforcement
 
-- Deploy-time: set `VAULTDMS_AIR_GAPPED=1` in the intelligence
+- Deploy-time: set `SEDOC_AIR_GAPPED=1` in the intelligence
   service's env. Forces every tenant to `vllm_local` only — overrides
   per-tenant `air_gapped=false`.
 - Per-tenant: PATCH `air_gapped: true` to pin a single tenant to

@@ -9,7 +9,7 @@ package signer
 //   - validation errors return ErrInvalidRequest
 //   - MockSigner.Sign is deterministic in shape (append marker)
 //   - MockSigner.Verify round-trips every marker back into SignatureInfo
-//   - Factory rejects unknown VAULTDMS_SIGNER values
+//   - Factory rejects unknown SEDOC_SIGNER values
 //   - DSSSidecarSigner returns ErrNotConfigured per package doc
 
 import (
@@ -91,13 +91,13 @@ func TestMockSigner_VerifyRoundTripsMultipleSigners(t *testing.T) {
 }
 
 func TestFactory_RejectsUnknown(t *testing.T) {
-	t.Setenv("VAULTDMS_SIGNER", "whoknows")
+	t.Setenv("SEDOC_SIGNER", "whoknows")
 	_, err := FromEnv("")
 	require.Error(t, err)
 }
 
 func TestFactory_DefaultsToMock(t *testing.T) {
-	_ = os.Unsetenv("VAULTDMS_SIGNER")
+	_ = os.Unsetenv("SEDOC_SIGNER")
 	s, err := FromEnv("")
 	require.NoError(t, err)
 	_, ok := s.(*MockSigner)

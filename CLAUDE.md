@@ -78,7 +78,7 @@ Read `docs/architecture.md` for the full picture. The non-obvious load-bearing p
 
 **Tenant isolation = Postgres RLS + `NOBYPASSRLS` app role.** Every tenant table has `tenant_id UUID` as the first PK column. All queries must run inside `database.WithTenantTx(tenantID, ...)`, which opens a tx and issues `SET LOCAL app.current_tenant`. The app DB user cannot bypass RLS, so a buggy query that omits the tenant predicate fails-closed (0 rows) rather than leaking. NATS consumers must re-establish the tenant context from the message envelope before any DB work.
 
-**Per-blob envelope encryption.** Each blob has a DEK wrapped by a per-tenant KEK (Vault or AWS KMS in prod, `VAULTDMS_LOCAL_KEK` in dev). Crypto-shredding by dropping the KEK is the deletion mechanism — keep this in mind when touching storage.
+**Per-blob envelope encryption.** Each blob has a DEK wrapped by a per-tenant KEK (Vault or AWS KMS in prod, `SEDOC_LOCAL_KEK` in dev). Crypto-shredding by dropping the KEK is the deletion mechanism — keep this in mind when touching storage.
 
 **Service layout convention.** Each Go service follows `cmd/server` (entrypoint) + `internal/{handler,service,repository,model,...}` + `migrations/`. The `document` service is the reference implementation — copy its layering when scaffolding a new service. The `pkg/` module holds the shared libraries (config, logger, middleware, database, tenant, events, crypto, validation, errors, metrics, tracing, health).
 

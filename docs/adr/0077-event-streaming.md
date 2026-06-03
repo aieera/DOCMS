@@ -69,7 +69,7 @@ NATS [decentralized auth](https://docs.nats.io/running-a-nats-service/configurat
 is the production target. The shape:
 
 - **Operator** key (`vaultdms-op`) — stored in the platform vault as
-  the seed `O_VAULTDMS_OPERATOR_SEED`. Signs accounts.
+  the seed `O_SEDOC_OPERATOR_SEED`. Signs accounts.
 - **Platform account** (`PLATFORM`) — where every `dms.*` subject
   is published. Existing services connect with the platform
   account creds.
@@ -92,7 +92,7 @@ HTTP without re-provisioning.
 ### Server-side switch (deploy-time)
 
 Switching the dev compose `nats:` service from no-auth to operator
-mode is staged behind `VAULTDMS_NATS_OPERATOR_MODE=true`. When set,
+mode is staged behind `SEDOC_NATS_OPERATOR_MODE=true`. When set,
 `docker/nats/server.conf` is mounted, containing:
 
 ```

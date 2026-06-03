@@ -126,7 +126,7 @@ generation, retry / locale localization, and SS7 fraud mitigation.
 Per-tenant Twilio credentials in `tenant_secrets` (encrypted under
 the tenant KEK) so a tenant can BYO their own subaccount; default
 deployment uses the platform Twilio account from
-`VAULTDMS_TWILIO_*` env vars.
+`SEDOC_TWILIO_*` env vars.
 
 ### Push (backend-only for now)
 

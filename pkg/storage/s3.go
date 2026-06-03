@@ -121,7 +121,7 @@ func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, 
 }
 
 // stripScheme tolerates "http://host:port" / "https://host:port" /
-// trailing-slash inputs because operators set VAULTDMS_S3_ENDPOINT
+// trailing-slash inputs because operators set SEDOC_S3_ENDPOINT
 // with full URLs in compose; minio.New wants bare "host:port".
 func stripScheme(s string) string {
 	s = strings.TrimPrefix(strings.TrimPrefix(s, "https://"), "http://")

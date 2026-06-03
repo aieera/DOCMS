@@ -110,26 +110,26 @@ externalSecrets:
   secrets:
     vaultdms-platform-secrets:
       data:
-        - secretKey: VAULTDMS_LOCAL_KEK
+        - secretKey: SEDOC_LOCAL_KEK
           remoteKey: secret/data/vaultdms/local-kek
           property: value
-        - secretKey: VAULTDMS_GATEWAY_SECRET
+        - secretKey: SEDOC_GATEWAY_SECRET
           remoteKey: secret/data/vaultdms/gateway-secret
           property: value
-        - secretKey: VAULTDMS_INTERNAL_API_KEY
+        - secretKey: SEDOC_INTERNAL_API_KEY
           remoteKey: secret/data/vaultdms/internal-api-key
           property: value
     vaultdms-esign-secrets:
       data:
-        - secretKey: VAULTDMS_ESIGN_STATE_HMAC
+        - secretKey: SEDOC_ESIGN_STATE_HMAC
           remoteKey: secret/data/vaultdms/esign-state-hmac
           property: value
-        - secretKey: VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET
+        - secretKey: SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET
           remoteKey: secret/data/vaultdms/esign-docusign-client-secret
           property: value
     vaultdms-twilio-secrets:
       data:
-        - secretKey: VAULTDMS_TWILIO_AUTH_TOKEN
+        - secretKey: SEDOC_TWILIO_AUTH_TOKEN
           remoteKey: secret/data/vaultdms/twilio-auth-token
           property: value
     vaultdms-stripe-secrets:
@@ -177,7 +177,7 @@ gateway:
   # Operator creates the Secret out of band (`kubectl create secret
   # generic vaultdms-gateway --from-literal=shared-secret=$(openssl
   # rand -base64 48)`). The same Secret is mounted into every backend
-  # Deployment as env VAULTDMS_GATEWAY_SECRET so that
+  # Deployment as env SEDOC_GATEWAY_SECRET so that
   # pkg/middleware.RequireGatewaySignature accepts the traffic.
   secret:
     name: vaultdms-gateway
@@ -428,7 +428,7 @@ intelligence:
     maxReplicas: 8
     targetCPU: 70
   env:
-    VAULTDMS_DEFAULT_LLM_MODEL: gpt-4o-mini
+    SEDOC_DEFAULT_LLM_MODEL: gpt-4o-mini
   celery:
     replicas: 2
     queues: intelligence,intelligence-ocr,intelligence-embed,intelligence-rag

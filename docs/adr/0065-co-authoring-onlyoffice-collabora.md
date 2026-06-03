@@ -60,7 +60,7 @@ configured, OnlyOffice-native otherwise.
 
 WOPI uses a per-session `access_token` query parameter. The host
 issues it in the iframe URL and the editor echoes it back on every
-WOPI call. We HMAC-sign the token with `VAULTDMS_WOPI_SECRET`:
+WOPI call. We HMAC-sign the token with `SEDOC_WOPI_SECRET`:
 
 ```
 access_token = HMAC-SHA256(secret, tenant_id + "|" + user_id + "|" + version_id + "|" + expires_at)

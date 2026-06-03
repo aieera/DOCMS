@@ -59,7 +59,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -141,7 +141,7 @@ func main() {
 	// Each adapter only initializes when its required creds are
 	// present; missing creds → the provider is silently absent from
 	// the resolution map and StartQES rejects requests for it. The
-	// mock adapter only joins when VAULTDMS_QES_MOCK_OK is set
+	// mock adapter only joins when SEDOC_QES_MOCK_OK is set
 	// (CI + e2e — never prod).
 	tspClients := map[tsp.Provider]tsp.TSPClient{}
 	if cfg.QESSwisscomBaseURL != "" {
@@ -359,7 +359,7 @@ func deriveSealingKey(kek string) []byte {
 }
 
 // deriveESignHMAC seeds the OAuth state HMAC. Prefers the explicit
-// VAULTDMS_ESIGN_STATE_HMAC env (hex); falls back to a KEK-derived
+// SEDOC_ESIGN_STATE_HMAC env (hex); falls back to a KEK-derived
 // value so a fresh boot still has integrity-checked state.
 func deriveESignHMAC(explicit, kek string) []byte {
 	if explicit != "" {

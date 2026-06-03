@@ -63,7 +63,7 @@ func NewWithWriter(w io.Writer, serviceName, serviceVersion, level string) *Logg
 		Logger()
 
 	l := &Logger{zl: zl}
-	if os.Getenv("VAULTDMS_ENVIRONMENT") == "prod" {
+	if os.Getenv("SEDOC_ENVIRONMENT") == "prod" {
 		l.debugSampleRate = 0.01 // 1% sampling in production
 	}
 	return l
@@ -114,7 +114,7 @@ func (l *Logger) Error(ctx context.Context) *zerolog.Event {
 	return l.withCtx(ctx, l.zl.Error())
 }
 
-// Debug logs at debug level. In prod (VAULTDMS_ENVIRONMENT=prod), debug
+// Debug logs at debug level. In prod (SEDOC_ENVIRONMENT=prod), debug
 // lines are sampled at 1% to avoid flooding log aggregators.
 func (l *Logger) Debug(ctx context.Context) *zerolog.Event {
 	if l.debugSampleRate > 0 && rand.Float64() > l.debugSampleRate {

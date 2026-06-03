@@ -1,6 +1,6 @@
 """AES-256-GCM tenant-secret decrypt — wire-format compat with
 services/document/internal/service/ner_service.go::encryptTenantSecret
-(base64(nonce || ciphertext+tag) under VAULTDMS_LOCAL_KEK)."""
+(base64(nonce || ciphertext+tag) under SEDOC_LOCAL_KEK)."""
 from __future__ import annotations
 
 import base64
@@ -10,7 +10,7 @@ import pytest
 
 
 def _set_kek(monkeypatch, key_bytes: bytes) -> None:
-    monkeypatch.setenv("VAULTDMS_LOCAL_KEK", base64.b64encode(key_bytes).decode())
+    monkeypatch.setenv("SEDOC_LOCAL_KEK", base64.b64encode(key_bytes).decode())
 
 
 def _encrypt_like_go(plain: str, kek: bytes) -> str:
@@ -31,20 +31,20 @@ def test_decrypt_roundtrip(monkeypatch):
 
 
 def test_decrypt_missing_kek_returns_none(monkeypatch):
-    monkeypatch.delenv("VAULTDMS_LOCAL_KEK", raising=False)
+    monkeypatch.delenv("SEDOC_LOCAL_KEK", raising=False)
     from app.secrets import decrypt_tenant_secret
     # Even with valid-looking input, no KEK = no decrypt.
     assert decrypt_tenant_secret(base64.b64encode(b"x" * 50).decode()) is None
 
 
 def test_decrypt_garbage_kek_returns_none(monkeypatch):
-    monkeypatch.setenv("VAULTDMS_LOCAL_KEK", "not-base64!!!")
+    monkeypatch.setenv("SEDOC_LOCAL_KEK", "not-base64!!!")
     from app.secrets import decrypt_tenant_secret
     assert decrypt_tenant_secret(_encrypt_like_go("x", b"\x00" * 32)) is None
 
 
 def test_decrypt_wrong_size_kek_returns_none(monkeypatch):
-    monkeypatch.setenv("VAULTDMS_LOCAL_KEK", base64.b64encode(b"\x00" * 16).decode())
+    monkeypatch.setenv("SEDOC_LOCAL_KEK", base64.b64encode(b"\x00" * 16).decode())
     from app.secrets import decrypt_tenant_secret
     assert decrypt_tenant_secret(_encrypt_like_go("x", b"\x00" * 32)) is None
 

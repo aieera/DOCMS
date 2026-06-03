@@ -43,7 +43,7 @@ docker run --rm -p 6060:6060 \
 ```
 
 Go signature service dials `localhost:6060` (configurable via
-`VAULTDMS_SIGNER_SIDECAR_ADDR`). The Go side's
+`SEDOC_SIGNER_SIDECAR_ADDR`). The Go side's
 `DSSSidecarSigner` shell (Wave 9.2) handles the gRPC client
 wiring.
 
@@ -77,5 +77,5 @@ The Go-side `DSSSidecarSigner.Sign` shell in
 returns `ErrNotConfigured`. It gets its real body (proto
 generation + `grpc.Dial` + request/response mapping) in
 Wave 12.9b too. The two flips ship together so the Go service's
-`VAULTDMS_SIGNER=dss` codepath either works end-to-end or fails
+`SEDOC_SIGNER=dss` codepath either works end-to-end or fails
 fast (`ErrNotConfigured`).

@@ -47,7 +47,7 @@ NATS consumers (durable):
 
 ## Configuration
 
-From `pkg/config` (prefix `VAULTDMS_`):
+From `pkg/config` (prefix `SEDOC_`):
 
 - `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`
 - `DATABASE_URL`, `REDIS_URL`, `NATS_URL`

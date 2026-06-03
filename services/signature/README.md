@@ -46,7 +46,7 @@ Standard DB/Redis/NATS. No signature-specific env.
 
 ```bash
 make up
-( cd services/signature && VAULTDMS_HTTP_PORT=8087 go run ./cmd/server )
+( cd services/signature && SEDOC_HTTP_PORT=8087 go run ./cmd/server )
 ```
 
 ## Testing

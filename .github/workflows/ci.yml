@@ -234,17 +234,17 @@ jobs:
 
       - name: Build + start backend services (background)
         env:
-          VAULTDMS_DATABASE_URL: "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
-          VAULTDMS_REDIS_URL: "localhost:6379"
-          VAULTDMS_NATS_URL: "nats://localhost:4222"
-          VAULTDMS_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
+          SEDOC_DATABASE_URL: "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+          SEDOC_REDIS_URL: "localhost:6379"
+          SEDOC_NATS_URL: "nats://localhost:4222"
+          SEDOC_LOCAL_KEK: "VGldDII3wEwUIpzaQ5Oqhg+OCqF3BrgVCSMn3nn6nSY="
           SESSION_COOKIE_SECRET: "MZAQnIFxYrZb3Lfe8HttmuzCR2sNvsR4TOTKU1qsrRY="
-          VAULTDMS_INTERNAL_API_KEY: "984c200bb8a05911e8a1081c92f4a0893a189b2d6ea3517a7459b4a2e8ab814c"
+          SEDOC_INTERNAL_API_KEY: "984c200bb8a05911e8a1081c92f4a0893a189b2d6ea3517a7459b4a2e8ab814c"
         run: |
           mkdir -p .run
           for svc_port in "auth:8081" "policy:8082" "billing:8083"; do
             svc="${svc_port%%:*}"; port="${svc_port##*:}"
-            VAULTDMS_HTTP_PORT="$port" \
+            SEDOC_HTTP_PORT="$port" \
               bash -c "cd services/$svc && go run ./cmd/server" > ".run/$svc.log" 2>&1 &
             echo $! > ".run/$svc.pid"
           done

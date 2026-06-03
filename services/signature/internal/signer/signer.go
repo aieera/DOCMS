@@ -17,8 +17,8 @@
 // the **DSSSidecarSigner** gRPC client shell. The sidecar itself —
 // the Gradle/Java project that actually produces B-LT PDFs — lands
 // in Wave 9.2b, a dedicated follow-up prompt. Until then, setting
-// `VAULTDMS_SIGNER=dss` will return a not-configured error at boot;
-// `VAULTDMS_SIGNER=mock` (the default) keeps tests and dev green.
+// `SEDOC_SIGNER=dss` will return a not-configured error at boot;
+// `SEDOC_SIGNER=mock` (the default) keeps tests and dev green.
 package signer
 
 import (

@@ -56,10 +56,10 @@ type Service struct {
 	webauthn repository.WebAuthnRepository
 	outbox   *database.OutboxRepository
 	kms      crypto.KeyManager // used to wrap MFA secrets; falls back if nil
-	localKek []byte            // non-nil in dev with VAULTDMS_LOCAL_KEK set
+	localKek []byte            // non-nil in dev with SEDOC_LOCAL_KEK set
 	// WebAuthnLib is the *webauthn.WebAuthn instance, opaque to the
 	// rest of the service. Wired by webauthn.go when the
-	// VAULTDMS_WEBAUTHN_RPID env var is present; nil otherwise
+	// SEDOC_WEBAUTHN_RPID env var is present; nil otherwise
 	// (handlers return ErrWebAuthnNotImplemented in that case).
 	WebAuthnLib any
 	// ldap is the optional LDAP/AD bundle (ADR 0062). Zero value
@@ -81,8 +81,8 @@ type Service struct {
 	log      zerolog.Logger
 	now      func() time.Time
 	// m365 holds the verifier for the Outlook/Word add-in token
-	// exchange. Configured via env (VAULTDMS_M365_AUDIENCE +
-	// VAULTDMS_M365_ALLOWED_TIDS). When unset, ExchangeM365Token
+	// exchange. Configured via env (SEDOC_M365_AUDIENCE +
+	// SEDOC_M365_ALLOWED_TIDS). When unset, ExchangeM365Token
 	// refuses to run rather than falling back to the pre-audit
 	// Graph-only flow that allowed cross-tenant takeover.
 	m365 *m365Verifier

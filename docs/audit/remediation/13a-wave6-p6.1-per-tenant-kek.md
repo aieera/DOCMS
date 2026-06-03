@@ -78,7 +78,7 @@ preserves the alias used at write time.
 [docs/adr/0022-per-tenant-kek-derivation.md](../../adr/0022-per-tenant-kek-derivation.md)
 
 Three deployment modes covered:
-- Dev/CI: HKDF derivation from `VAULTDMS_LOCAL_KEK`.
+- Dev/CI: HKDF derivation from `SEDOC_LOCAL_KEK`.
 - On-prem: same (no cloud KMS required).
 - SaaS: alias resolution via `VaultKeyManager` / `AWSKMSKeyManager`
   (stubs today; Wave 6 follow-up).

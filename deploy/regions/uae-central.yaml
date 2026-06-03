@@ -14,7 +14,7 @@
 #
 #   * All AWS-backed resources (S3, RDS, OpenSearch, KMS) are
 #     pinned to me-central-1.
-#   * Every Go service starts with VAULTDMS_REGION_ID=uae-central,
+#   * Every Go service starts with SEDOC_REGION_ID=uae-central,
 #     which feeds pkg/middleware.EnforceRegion + the billing
 #     provisioner residency guard.
 #   * Egress NetworkPolicy denies outbound to any non-UAE AWS
@@ -33,7 +33,7 @@
 #     guidance but isn't a substitute for the auditor sign-off.
 
 global:
-  # Stamped into every service's VAULTDMS_REGION_ID env. Matches the
+  # Stamped into every service's SEDOC_REGION_ID env. Matches the
   # value the middleware compares against. MUST NOT contain the AWS
   # region literally (we treat the residency boundary as a logical
   # label so a future Bahrain failover doesn't break tenant rows).
@@ -147,7 +147,7 @@ global:
 # Per-service overrides — env var + resource-tagging.
 # ----------------------------------------------------------------------------
 #
-# Every Go service reads VAULTDMS_REGION_ID at boot (pkg/config.
+# Every Go service reads SEDOC_REGION_ID at boot (pkg/config.
 # Config.Region). The chart's `goServiceDeployment` macro stamps the
 # env from global.region, so we don't need a per-service `env:`
 # block here; this section is for service-specific tweaks the UAE
@@ -159,12 +159,12 @@ services:
       # Belt + suspenders — region middleware reads cfg.Region but
       # we also stamp the explicit name so a misconfigured Helm
       # render is visible in kubectl describe.
-      - name:  VAULTDMS_REGION_ID
+      - name:  SEDOC_REGION_ID
         value: uae-central
 
   storage:
     env:
-      - name:  VAULTDMS_REGION_ID
+      - name:  SEDOC_REGION_ID
         value: uae-central
       # S3 SDK reads this — defense in depth so a stale role-arn
       # can't accidentally write to a non-UAE bucket.
@@ -173,13 +173,13 @@ services:
 
   billing:
     env:
-      - name:  VAULTDMS_REGION_ID
+      - name:  SEDOC_REGION_ID
         value: uae-central
       # ADR 0110 — billing-provisioner residency guard reads this
       # to refuse cross-region Stripe webhooks. The clusterRegion
       # field on NewWithRegion(cfg.Region, …) ultimately resolves
       # here.
-      - name:  VAULTDMS_RESIDENCY_STRICT
+      - name:  SEDOC_RESIDENCY_STRICT
         value: "true"
 
 # Tenant defaults — every org provisioned by THIS cluster gets

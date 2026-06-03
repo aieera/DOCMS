@@ -44,7 +44,7 @@ See Appendix for the full enumerated table; shipped inline with this report was 
 ### Key auth variations
 - **Session cookie (`dms_session`)**: auth `/api/v1/auth/*` authenticated routes, billing `/api/v1/admin/settings`, policy (via middleware).
 - **CSRF token (`dms_csrf` cookie → X-CSRF-Token header)**: required on every mutating auth/billing request.
-- **X-API-Key**: billing `/internal/v1/*` (value from `VAULTDMS_INTERNAL_API_KEY`), connector `/internal/v1/connectors/*`, search `/internal/v1/search/*`.
+- **X-API-Key**: billing `/internal/v1/*` (value from `SEDOC_INTERNAL_API_KEY`), connector `/internal/v1/connectors/*`, search `/internal/v1/search/*`.
 - **SCIM Bearer token**: `/scim/v2/*` — per-tenant bearer, not the session.
 - **Raw X-Tenant-ID / X-User-ID headers**: audit, notification, signature, workflow, search. **Assumes upstream gateway has already authenticated the caller** — dangerous if exposed directly.
 - **Public** (no auth): `/api/v1/auth/{register,login,mfa/verify,mfa/recovery}`, `/api/v1/auth/saml/*`, `/api/v1/auth/oidc/*`, `/api/v1/privacy/verify/request-token`, `/api/v1/shared/{token}`.

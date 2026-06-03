@@ -49,7 +49,7 @@ spec:
             # §3.1 / B2.2 — gateway-signature shared secret. Sourced
             # from the vaultdms-gateway Secret; MUST match the value
             # wired into every backend Deployment as the same env var.
-            - name: VAULTDMS_GATEWAY_SECRET
+            - name: SEDOC_GATEWAY_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.gateway.secret.name | default "vaultdms-gateway" }}

@@ -84,8 +84,8 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 	// control set `mail` to a victim's address and impersonate them.
 	// We now require:
 	//   * Signature verified against the issuing directory's JWKS
-	//   * `aud` == VAULTDMS_M365_AUDIENCE
-	//   * `tid` in VAULTDMS_M365_ALLOWED_TIDS allow-list
+	//   * `aud` == SEDOC_M365_AUDIENCE
+	//   * `tid` in SEDOC_M365_ALLOWED_TIDS allow-list
 	//   * `exp` / `nbf` within tolerance
 	// Graph /me is NO LONGER called. The verified email comes from
 	// the JWT's `email`/`preferred_username` claim, which Microsoft

@@ -66,7 +66,7 @@
 
 # logrotate config covering /var/log/vaultdms/*.log. Each service writes
 # its stdout/stderr through systemd's journal, but Go services that log
-# to a file (via VAULTDMS_LOG_FILE) get rotated by this config.
+# to a file (via SEDOC_LOG_FILE) get rotated by this config.
 - name: Install logrotate config
   ansible.builtin.copy:
     dest: /etc/logrotate.d/vaultdms

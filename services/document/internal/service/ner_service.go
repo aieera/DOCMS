@@ -361,7 +361,7 @@ func (s *DocumentService) ClearLLMAPIKey(ctx context.Context) error {
 // (services/intelligence/app/secrets.py).
 func (s *DocumentService) encryptTenantSecret(plain string) (string, error) {
 	if len(s.localKEK) != crypto.DEKSize {
-		return "", vdmserr.Internal("local KEK not configured (set VAULTDMS_LOCAL_KEK)")
+		return "", vdmserr.Internal("local KEK not configured (set SEDOC_LOCAL_KEK)")
 	}
 	ct, nonce, err := crypto.EncryptData([]byte(plain), s.localKEK)
 	if err != nil {

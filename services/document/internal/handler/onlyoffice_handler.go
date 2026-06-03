@@ -9,7 +9,7 @@
 //	       happy; full download-new-version flow is a follow-up.
 //
 // Security:
-//   - Config JSON is signed with HS256 using VAULTDMS_ONLYOFFICE_JWT.
+//   - Config JSON is signed with HS256 using SEDOC_ONLYOFFICE_JWT.
 //     OnlyOffice Document Server is configured with the same secret
 //     (JWT_ENABLED=true) and refuses requests whose token signature
 //     doesn't match — this is the only thing preventing an attacker
@@ -96,12 +96,12 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := os.Getenv("VAULTDMS_ONLYOFFICE_JWT")
+	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
 	if secret == "" {
 		writeErr(w, r, vdmserr.Internal("onlyoffice not configured"))
 		return
 	}
-	publicBase := os.Getenv("VAULTDMS_PUBLIC_URL")
+	publicBase := os.Getenv("SEDOC_PUBLIC_URL")
 	if publicBase == "" {
 		publicBase = "http://localhost:8080"
 	}

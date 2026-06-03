@@ -40,7 +40,7 @@ const GatewaySignatureHeader = "X-Gateway-Signature"
 // (gateway) followed by the backends; 60s overlap is acceptable because
 // the middleware tolerates both old and new during rotation — see
 // RequireGatewaySignatureWithSecrets.
-const GatewaySignatureEnv = "VAULTDMS_GATEWAY_SECRET"
+const GatewaySignatureEnv = "SEDOC_GATEWAY_SECRET"
 
 // GatewaySignaturePrevEnv is the optional previous-secret env var read
 // alongside GatewaySignatureEnv. When set, requests carrying EITHER value
@@ -58,12 +58,12 @@ const GatewaySignatureEnv = "VAULTDMS_GATEWAY_SECRET"
 //
 // Empty / unset means "no previous secret"; the middleware then only
 // accepts GatewaySignatureEnv.
-const GatewaySignaturePrevEnv = "VAULTDMS_GATEWAY_SECRET_PREV"
+const GatewaySignaturePrevEnv = "SEDOC_GATEWAY_SECRET_PREV"
 
 // RequireGatewaySignature returns middleware that rejects any request
 // whose X-Gateway-Signature header does not match the configured shared
 // secret. The active secret is read at startup from
-// VAULTDMS_GATEWAY_SECRET; if VAULTDMS_GATEWAY_SECRET_PREV is also set,
+// SEDOC_GATEWAY_SECRET; if SEDOC_GATEWAY_SECRET_PREV is also set,
 // that value is accepted in parallel so secret rotation can run with no
 // downtime. A missing active secret panics at startup — we do NOT allow
 // a service to accept unsigned traffic by accident.

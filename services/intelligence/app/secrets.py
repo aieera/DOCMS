@@ -10,7 +10,7 @@ and decrypt only at LLM-call time. Two backends, picked at runtime:
       `vault:v1:...` so decrypt routes back to Vault by prefix.
       Production-cloud default.
 
-  Local AES-256-GCM (VAULTDMS_LOCAL_KEK set, Vault not):
+  Local AES-256-GCM (SEDOC_LOCAL_KEK set, Vault not):
       In-process encryption with a 32-byte AES key from env.
       Wire-compatible with services/document's ner_service.go and
       auth's mfa.go — same nonce-prepended layout, same base64.
@@ -40,13 +40,13 @@ KEY_SIZE = 32    # AES-256
 
 
 def _load_kek() -> Optional[bytes]:
-    raw = os.environ.get("VAULTDMS_LOCAL_KEK", "").strip()
+    raw = os.environ.get("SEDOC_LOCAL_KEK", "").strip()
     if not raw:
         return None
     try:
         kek = base64.b64decode(raw)
     except (ValueError, TypeError) as e:
-        log.warning("secrets: VAULTDMS_LOCAL_KEK base64 decode failed: %s", e)
+        log.warning("secrets: SEDOC_LOCAL_KEK base64 decode failed: %s", e)
         return None
     if len(kek) != KEY_SIZE:
         log.warning("secrets: KEK is %d bytes, expected %d", len(kek), KEY_SIZE)

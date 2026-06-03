@@ -18,7 +18,7 @@ import (
 
 // Provisioner orchestrates tenant creation.
 //
-// ADR 0110 — `clusterRegion` is the VAULTDMS_REGION_ID of the
+// ADR 0110 — `clusterRegion` is the SEDOC_REGION_ID of the
 // billing service's cluster. Provision() refuses to create a tenant
 // whose requested data_residency_region doesn't match — a UAE
 // tenant must be provisioned by the UAE cluster's billing service,
@@ -42,7 +42,7 @@ func New(repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log
 }
 
 // NewWithRegion is the production constructor since ADR 0110.
-// `clusterRegion` is the running cluster's VAULTDMS_REGION_ID;
+// `clusterRegion` is the running cluster's SEDOC_REGION_ID;
 // `req.Region` is checked against it before the tenant is created.
 func NewWithRegion(clusterRegion string, repo *repository.Repository, pool *pgxpool.Pool, rdb *redis.Client, log zerolog.Logger) *Provisioner {
 	return &Provisioner{

@@ -209,7 +209,7 @@ func printReport(r *events.BootstrapReport) {
 }
 
 func mustConnectJetStream() (nats.JetStreamContext, *nats.Conn) {
-	url := envOrDefault("VAULTDMS_NATS_URL", envOrDefault("NATS_URL", "nats://localhost:4222"))
+	url := envOrDefault("SEDOC_NATS_URL", envOrDefault("NATS_URL", "nats://localhost:4222"))
 	nc, err := nats.Connect(url, nats.Name("dms-admin"), nats.Timeout(5*time.Second))
 	if err != nil {
 		fatal("nats connect %s: %v", url, err)
@@ -222,7 +222,7 @@ func mustConnectJetStream() (nats.JetStreamContext, *nats.Conn) {
 }
 
 func tryRedis() *redis.Client {
-	addr := envOrDefault("VAULTDMS_REDIS_URL", envOrDefault("REDIS_URL", ""))
+	addr := envOrDefault("SEDOC_REDIS_URL", envOrDefault("REDIS_URL", ""))
 	if addr == "" {
 		return nil
 	}

@@ -54,7 +54,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -79,9 +79,9 @@ func main() {
 		Redis:  rdb,
 		// Wave 12.4: cross-service erase targets. Empty = soft no-op.
 		ServiceURLs: map[string]string{
-			"search":    os.Getenv("VAULTDMS_SEARCH_URL"),
-			"qdrant":    os.Getenv("VAULTDMS_QDRANT_URL"),
-			"connector": os.Getenv("VAULTDMS_CONNECTOR_URL"),
+			"search":    os.Getenv("SEDOC_SEARCH_URL"),
+			"qdrant":    os.Getenv("SEDOC_QDRANT_URL"),
+			"connector": os.Getenv("SEDOC_CONNECTOR_URL"),
 		},
 		Log: *log.Z(),
 	}

@@ -32,8 +32,8 @@ global:
 
 intelligence:
   env:
-    VAULTDMS_DEFAULT_LLM_MODEL: "ollama/llama3"
-    VAULTDMS_LLM_BASE_URL: "http://ollama.internal:11434"
+    SEDOC_DEFAULT_LLM_MODEL: "ollama/llama3"
+    SEDOC_LLM_BASE_URL: "http://ollama.internal:11434"
   celery:
     resources:
       requests: { cpu: "2", memory: "4Gi" }
@@ -42,9 +42,9 @@ intelligence:
 # Disable external telemetry
 notification:
   env:
-    VAULTDMS_SMTP_HOST: "smtp.internal.corp"
-    VAULTDMS_SMTP_PORT: "25"
-    VAULTDMS_SMTP_TLS: "false"
+    SEDOC_SMTP_HOST: "smtp.internal.corp"
+    SEDOC_SMTP_PORT: "25"
+    SEDOC_SMTP_TLS: "false"
 
 backup:
   s3Bucket: dms-onprem-backups

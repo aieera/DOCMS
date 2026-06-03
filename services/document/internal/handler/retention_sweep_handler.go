@@ -2,7 +2,7 @@
 // the vaultdms-retention CronJob. Not publicly routable; path
 // prefix is /internal/ and the gateway's routes.yaml omits it.
 //
-// Auth: VAULTDMS_INTERNAL_API_KEY in Authorization header. The
+// Auth: SEDOC_INTERNAL_API_KEY in Authorization header. The
 // CronJob template reads the same key from a Kubernetes Secret.
 package handler
 
@@ -75,7 +75,7 @@ func (h *RetentionSweepHandler) sweep(w http.ResponseWriter, r *http.Request) {
 // callers (path IS unguessable anyway — /internal/ isn't in the
 // gateway's allowlist).
 func checkInternalKey(r *http.Request) bool {
-	want := os.Getenv("VAULTDMS_INTERNAL_API_KEY")
+	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
 	if want == "" {
 		return false
 	}

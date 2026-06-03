@@ -30,12 +30,12 @@ Adopt the same per-tenant config model we built for eSign providers
 
 1. **One DB row per `(tenant_id, connector_type)`** in `connector_configs`.
    `config_encrypted` carries vendor `client_id` + `client_secret`
-   sealed with a per-deployment key derived from `VAULTDMS_LOCAL_KEK`.
+   sealed with a per-deployment key derived from `SEDOC_LOCAL_KEK`.
    `oauth_tokens_encrypted` carries the access + refresh tokens.
 2. **HMAC-signed state** binds an OAuth round-trip to
    `(tenant_id, connector_type)`. Same format as the eSign callback:
    `<tenantID>.<connector>.<hmac>`. The state HMAC secret is derived
-   from `VAULTDMS_LOCAL_KEK` with a different domain prefix so a leak
+   from `SEDOC_LOCAL_KEK` with a different domain prefix so a leak
    of one key family cannot impersonate the other.
 3. **One unified OAuth callback** at
    `GET /api/v1/connectors/oauth/callback` instead of one per provider.

@@ -57,7 +57,7 @@ func newWOPIHarness(t *testing.T) (*WOPIHandler, *miniredis.Miniredis, *WOPIClai
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 
 	secret := "test-wopi-secret"
-	t.Setenv("VAULTDMS_WOPI_SECRET", secret)
+	t.Setenv("SEDOC_WOPI_SECRET", secret)
 
 	c := &WOPIClaims{
 		TenantID:  uuid.New(),
@@ -273,7 +273,7 @@ func TestAudit_TwoUsers_BothTracked(t *testing.T) {
 	defer rdb.Close()
 
 	secret := "test-secret"
-	t.Setenv("VAULTDMS_WOPI_SECRET", secret)
+	t.Setenv("SEDOC_WOPI_SECRET", secret)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()

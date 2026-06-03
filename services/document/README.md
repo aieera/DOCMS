@@ -36,7 +36,7 @@ NATS publishes (via outbox): `dms.document.created.v1`,
 
 ## Configuration
 
-`VAULTDMS_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
+`SEDOC_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
 `POLICY_SERVICE_ADDR` (default `policy:9090`), `_HTTP_PORT`,
 `_GRPC_PORT`, `_HEALTH_PORT`.
 

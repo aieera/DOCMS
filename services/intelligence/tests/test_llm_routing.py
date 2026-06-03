@@ -166,9 +166,9 @@ def test_air_gapped_allows_vllm_local():
 
 
 def test_air_gapped_global_env_overrides_per_tenant_false(monkeypatch):
-    """VAULTDMS_AIR_GAPPED=1 forces air-gapped for every tenant
+    """SEDOC_AIR_GAPPED=1 forces air-gapped for every tenant
     regardless of the per-tenant flag — the on-prem default."""
-    monkeypatch.setenv("VAULTDMS_AIR_GAPPED", "1")
+    monkeypatch.setenv("SEDOC_AIR_GAPPED", "1")
     config = {
         "provider": "anthropic", "model": "anthropic/claude-haiku-4-5",
         "fallback_model": "", "api_key": "sk-x",

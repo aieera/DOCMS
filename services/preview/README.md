@@ -32,9 +32,9 @@ NATS consumer: `dms.version.uploaded.v1` → Celery task enqueue.
 
 ## Configuration
 
-- `VAULTDMS_CELERY_BROKER_URL` (`redis://…/2`)
-- `VAULTDMS_S3_ENDPOINT`, `_S3_ACCESS_KEY`, `_S3_SECRET_KEY`
-- `VAULTDMS_DATABASE_URL`
+- `SEDOC_CELERY_BROKER_URL` (`redis://…/2`)
+- `SEDOC_S3_ENDPOINT`, `_S3_ACCESS_KEY`, `_S3_SECRET_KEY`
+- `SEDOC_DATABASE_URL`
 
 ## Running locally
 

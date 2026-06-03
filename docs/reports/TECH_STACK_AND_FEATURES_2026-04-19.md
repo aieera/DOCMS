@@ -44,7 +44,7 @@ Status legend: ✅ Shipped and working · 🟡 Partially built / wired but gated
 |---|---|---|---|
 | API gateway (§3.1: "Kong/Envoy") | Kong/Envoy for rate-limiting, AuthN, routing, TLS term | ❌ **No gateway deployed.** In dev, Vite proxy routes. In prod, the [deploy/helm/vaultdms/](../../deploy/helm/vaultdms/) chart defines a generic `ingress.yaml`. Blueprint service decomposition assumes a gateway; at least 5 services (audit/notification/workflow/signature/search) trust raw `X-Tenant-ID` headers because they expect to be behind one. | ❌ Architectural gap — see Risk #1 in §4 |
 | Antivirus scanning | (§5.x implied in storage flow) | ClamAV INSTREAM on port 3310, wired into storage service | ✅ |
-| Key management (§8.5) | AWS KMS / HashiCorp Vault abstraction | `pkg/crypto` abstraction exists with Local/Vault/AWS KMS providers. **Dev uses `VAULTDMS_LOCAL_KEK`.** Blueprint calls for per-tenant KEK; today a **single shared KEK** is used — [docs/STATE_OF_THE_PROJECT.md:42](../STATE_OF_THE_PROJECT.md#L42). | 🟡 Abstraction ✅, per-tenant rotation ❌ |
+| Key management (§8.5) | AWS KMS / HashiCorp Vault abstraction | `pkg/crypto` abstraction exists with Local/Vault/AWS KMS providers. **Dev uses `SEDOC_LOCAL_KEK`.** Blueprint calls for per-tenant KEK; today a **single shared KEK** is used — [docs/STATE_OF_THE_PROJECT.md:42](../STATE_OF_THE_PROJECT.md#L42). | 🟡 Abstraction ✅, per-tenant rotation ❌ |
 | DLP (§8.7) | PII/PHI detection on ingest | Code at [pkg/dlp/](../../pkg/dlp/) (stub regex patterns) | 🟡 |
 | Identity providers | SAML, OIDC, SCIM 2.0 | Auth service ships all three endpoints; SAML uses `math/rand` for X.509 serial — known defect | 🟡 |
 | LLM routing (§6.9) | Vendor-neutral abstraction: OpenAI/Anthropic/Bedrock/local | `LiteLLM` referenced in intelligence service; provider routing plumbed but intelligence service itself not running | 🟡 |
@@ -62,7 +62,7 @@ Status legend: ✅ Shipped and working · 🟡 Partially built / wired but gated
 | pkg/ | Purpose | Notes |
 |---|---|---|
 | `pkg/auth` | Session validation, JWT, bearer extraction | Used by all Go services |
-| `pkg/config` | Viper + `VAULTDMS_*` env prefix | 11 services depend on it |
+| `pkg/config` | Viper + `SEDOC_*` env prefix | 11 services depend on it |
 | `pkg/crypto` | KEK/DEK wrapping, AES-GCM | Local/Vault/KMS providers |
 | `pkg/database` | pgx pooling, RLS tenant ctx, outbox publisher | Used by every service with DB |
 | `pkg/events` | NATS JetStream helpers, `DefaultStreams` topology | Central source of truth for stream subjects |

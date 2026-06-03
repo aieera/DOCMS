@@ -82,7 +82,7 @@ func TestWOPIToken_ExpiredRejected(t *testing.T) {
 
 func TestWOPIToken_PathMismatchRejected(t *testing.T) {
 	secret := "test-secret"
-	t.Setenv("VAULTDMS_WOPI_SECRET", secret)
+	t.Setenv("SEDOC_WOPI_SECRET", secret)
 	c := WOPIClaims{TenantID: uuid.New(), UserID: uuid.New(), FileID: uuid.New(), ExpiresAt: time.Now().Add(time.Hour)}
 	tok := IssueWOPIToken(secret, c)
 
@@ -103,7 +103,7 @@ func TestWOPIToken_PathMismatchRejected(t *testing.T) {
 }
 
 func TestWOPIToken_NoEnvSecretReturnsServiceUnavailable(t *testing.T) {
-	t.Setenv("VAULTDMS_WOPI_SECRET", "")
+	t.Setenv("SEDOC_WOPI_SECRET", "")
 	r := httptest.NewRequest("GET", "/wopi/files/x?access_token=anything", nil)
 	w := httptest.NewRecorder()
 	(&WOPIHandler{}).authenticate(w, r)
@@ -113,7 +113,7 @@ func TestWOPIToken_NoEnvSecretReturnsServiceUnavailable(t *testing.T) {
 }
 
 func TestDiscovery_ContainsAllOfficeMimes(t *testing.T) {
-	t.Setenv("VAULTDMS_PUBLIC_URL", "https://test.example/api")
+	t.Setenv("SEDOC_PUBLIC_URL", "https://test.example/api")
 	r := httptest.NewRequest("GET", "/wopi/hosting/discovery", nil)
 	w := httptest.NewRecorder()
 	(&WOPIHandler{}).discovery(w, r)

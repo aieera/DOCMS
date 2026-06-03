@@ -264,7 +264,7 @@ export function TenantAIPage() {
             <div>
               <div className="text-sm font-medium">Air-gapped (this tenant only)</div>
               <div className="text-xs text-muted-foreground">
-                Force vLLM-only routing. The gateway rejects any external-provider call regardless of model id. Stacks with the deploy-time VAULTDMS_AIR_GAPPED env.
+                Force vLLM-only routing. The gateway rejects any external-provider call regardless of model id. Stacks with the deploy-time SEDOC_AIR_GAPPED env.
               </div>
             </div>
             <input

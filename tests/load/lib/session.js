@@ -18,11 +18,11 @@ import { check } from 'k6';
 import { BASE_URL, TENANTS } from './config.js';
 
 // No hardcoded fallback — see services/collaboration/src/yjs-server.js
-// for the rationale. Load tests must export VAULTDMS_GATEWAY_SECRET to
+// for the rationale. Load tests must export SEDOC_GATEWAY_SECRET to
 // match the env under test; failing here is loud and obvious.
-const GATEWAY_SECRET = __ENV.VAULTDMS_GATEWAY_SECRET;
+const GATEWAY_SECRET = __ENV.SEDOC_GATEWAY_SECRET;
 if (!GATEWAY_SECRET) {
-  throw new Error('VAULTDMS_GATEWAY_SECRET is required for load tests; export it before running k6');
+  throw new Error('SEDOC_GATEWAY_SECRET is required for load tests; export it before running k6');
 }
 
 const BYPASS = __ENV.LOAD_TEST_BYPASS_AUTH === '1';

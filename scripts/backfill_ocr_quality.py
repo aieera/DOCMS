@@ -126,13 +126,13 @@ def main() -> int:
         help="List missing versions without enqueueing.",
     )
     parser.add_argument(
-        "--dsn", default=os.environ.get("VAULTDMS_DB_DSN"),
-        help="Postgres DSN. Falls back to $VAULTDMS_DB_DSN.",
+        "--dsn", default=os.environ.get("SEDOC_DB_DSN"),
+        help="Postgres DSN. Falls back to $SEDOC_DB_DSN.",
     )
     args = parser.parse_args()
 
     if not args.dsn:
-        log.error("Missing --dsn and $VAULTDMS_DB_DSN unset")
+        log.error("Missing --dsn and $SEDOC_DB_DSN unset")
         return 2
 
     import asyncio

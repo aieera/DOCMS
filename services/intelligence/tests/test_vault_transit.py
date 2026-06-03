@@ -31,7 +31,7 @@ def vault_env(monkeypatch):
 def local_kek_env(monkeypatch):
     """A 32-byte zero KEK encoded in base64 — only used to make the
     in-process decrypt path runnable for round-trip tests."""
-    monkeypatch.setenv("VAULTDMS_LOCAL_KEK", base64.b64encode(b"\0" * 32).decode())
+    monkeypatch.setenv("SEDOC_LOCAL_KEK", base64.b64encode(b"\0" * 32).decode())
 
 
 # ---- vault_transit.is_enabled --------------------------------------
@@ -174,7 +174,7 @@ def test_encrypt_falls_back_to_local_when_vault_unreachable(vault_env, local_kek
 def test_encrypt_refuses_when_vault_unreachable_and_no_local_kek(vault_env, monkeypatch):
     """Vault outage AND no local KEK — refuse to write rather than
     silently storing plaintext. The endpoint will 503 the admin."""
-    monkeypatch.delenv("VAULTDMS_LOCAL_KEK", raising=False)
+    monkeypatch.delenv("SEDOC_LOCAL_KEK", raising=False)
     fake_client = mock.MagicMock()
     fake_client.__enter__.return_value = fake_client
     fake_client.__exit__.return_value = False
@@ -235,5 +235,5 @@ def test_decrypt_returns_none_on_missing_prefix_and_no_local_kek(monkeypatch, va
     """A non-vault: blob with no local KEK — the row was written with
     a KEK we no longer have. Fail closed; LLM tier loses the key
     rather than crashing."""
-    monkeypatch.delenv("VAULTDMS_LOCAL_KEK", raising=False)
+    monkeypatch.delenv("SEDOC_LOCAL_KEK", raising=False)
     assert secrets.decrypt_tenant_secret("not-a-vault-blob") is None

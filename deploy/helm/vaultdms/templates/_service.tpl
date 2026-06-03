@@ -47,17 +47,17 @@ spec:
             - name: health
               containerPort: {{ .svc.healthPort | default 8081 }}
           env:
-            - name: VAULTDMS_SERVICE_NAME
+            - name: SEDOC_SERVICE_NAME
               value: {{ .svcName | quote }}
             {{- if .svc.grpcPort }}
-            - name: VAULTDMS_GRPC_PORT
+            - name: SEDOC_GRPC_PORT
               value: {{ .svc.grpcPort | quote }}
             {{- end }}
             {{- if .svc.httpPort }}
-            - name: VAULTDMS_HTTP_PORT
+            - name: SEDOC_HTTP_PORT
               value: {{ .svc.httpPort | quote }}
             {{- end }}
-            - name: VAULTDMS_HEALTH_PORT
+            - name: SEDOC_HEALTH_PORT
               value: {{ .svc.healthPort | default 8081 | quote }}
             {{- include "vaultdms.commonEnv" (dict "Values" .Values) | nindent 12 }}
             {{- range $k, $v := .svc.env }}

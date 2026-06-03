@@ -46,7 +46,7 @@ func TestNewWebAuthnLib_ValidConfig(t *testing.T) {
 func TestPasskeyMethods_NotImplementedWhenLibNil(t *testing.T) {
 	// A Service constructed without WebAuthnLib must return the
 	// sentinel error from every flow method, NOT a panic. Deploy
-	// without VAULTDMS_WEBAUTHN_RPID stays serviceable.
+	// without SEDOC_WEBAUTHN_RPID stays serviceable.
 	s := &Service{} // zero-value; WebAuthnLib nil
 	ctx := context.Background()
 

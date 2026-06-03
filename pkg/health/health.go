@@ -22,7 +22,7 @@ import (
 // load-balancer health-check + the frontend residency banner can
 // confirm which cluster they're talking to. Both are populated from
 // the shared Config struct at boot; if the operator forgot to set
-// VAULTDMS_REGION_ID the value is empty and /healthz reports
+// SEDOC_REGION_ID the value is empty and /healthz reports
 // `"region":"unknown"` — that's an actionable signal, not a silent
 // failure.
 type Server struct {
@@ -50,7 +50,7 @@ func NewServer(pg *pgxpool.Pool, rdb *redis.Client, nc *nats.Conn, s3 *storage.S
 // NewServerWithMeta is the canonical constructor since ADR 0110.
 // `service` is the short name ("document", "auth", …) and `region`
 // is the cluster region pulled from Config.Region (env
-// VAULTDMS_REGION_ID).
+// SEDOC_REGION_ID).
 func NewServerWithMeta(service, region string, pg *pgxpool.Pool, rdb *redis.Client, nc *nats.Conn, s3 *storage.S3Client) *Server {
 	return &Server{pg: pg, rdb: rdb, nats: nc, s3: s3, service: service, region: region}
 }

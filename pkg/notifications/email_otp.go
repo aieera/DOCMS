@@ -105,4 +105,4 @@ func (e *EmailOTPSender) SendCode(ctx context.Context, toEmail, code string) err
 }
 
 // ErrEmailDisabled — caller asked to send but SMTP is not configured.
-var ErrEmailDisabled = errors.New("email: not configured (set VAULTDMS_SMTP_* env vars)")
+var ErrEmailDisabled = errors.New("email: not configured (set SEDOC_SMTP_* env vars)")

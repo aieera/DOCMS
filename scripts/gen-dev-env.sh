@@ -37,10 +37,10 @@ COOKIE=$(openssl rand -base64 32)
 # Escape slashes + ampersands for sed replacement safety.
 esc() { printf '%s' "$1" | sed 's/[\/&]/\\&/g'; }
 
-sed "${SED_I[@]}" "s|^VAULTDMS_LOCAL_KEK=.*|VAULTDMS_LOCAL_KEK=$(esc "$KEK")|"       .env
-sed "${SED_I[@]}" "s|^VAULTDMS_INTERNAL_API_KEY=.*|VAULTDMS_INTERNAL_API_KEY=$INTERNAL|" .env
+sed "${SED_I[@]}" "s|^SEDOC_LOCAL_KEK=.*|SEDOC_LOCAL_KEK=$(esc "$KEK")|"       .env
+sed "${SED_I[@]}" "s|^SEDOC_INTERNAL_API_KEY=.*|SEDOC_INTERNAL_API_KEY=$INTERNAL|" .env
 sed "${SED_I[@]}" "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=$(esc "$COOKIE")|" .env
 
 echo ".env generated with fresh dev secrets."
-echo "  VAULTDMS_LOCAL_KEK, VAULTDMS_INTERNAL_API_KEY, SESSION_COOKIE_SECRET → randomized"
+echo "  SEDOC_LOCAL_KEK, SEDOC_INTERNAL_API_KEY, SESSION_COOKIE_SECRET → randomized"
 echo "  (never commit .env; it is in .gitignore)"

@@ -156,9 +156,9 @@ const AUTH_BASE = process.env.AUTH_SERVICE_URL || 'http://auth:8080'
 // string in the source tree, so anyone with read access could forge
 // gateway-authenticated requests against any deployment that hadn't
 // rotated. Fail fast at startup if the env var is missing.
-const GATEWAY_SECRET = process.env.VAULTDMS_GATEWAY_SECRET
+const GATEWAY_SECRET = process.env.SEDOC_GATEWAY_SECRET || process.env.VAULTDMS_GATEWAY_SECRET
 if (!GATEWAY_SECRET) {
-  console.error('VAULTDMS_GATEWAY_SECRET is required; refusing to start (see web/.env.example)')
+  console.error('SEDOC_GATEWAY_SECRET is required; refusing to start (see web/.env.example)')
   process.exit(1)
 }
 

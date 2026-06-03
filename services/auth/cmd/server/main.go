@@ -68,7 +68,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -79,7 +79,7 @@ func main() {
 	}
 	defer nc.Close()
 
-	// MFA encryption key. In dev we read from VAULTDMS_LOCAL_KEK (base64).
+	// MFA encryption key. In dev we read from SEDOC_LOCAL_KEK (base64).
 	// In prod this gets swapped out for a KMS-backed KeyManager — service
 	// accepts both via Config.KMS / Config.LocalKEK.
 	localKEK, err := loadLocalKEK(cfg.LocalKEK)
@@ -102,7 +102,7 @@ func main() {
 
 	// ADR 0061 — wire the WebAuthn lib instance when env is configured.
 	// Nil falls through to ErrWebAuthnNotImplemented in the handlers,
-	// so a deploy that hasn't set VAULTDMS_WEBAUTHN_RPID gets a clean
+	// so a deploy that hasn't set SEDOC_WEBAUTHN_RPID gets a clean
 	// 501 rather than a 5xx panic.
 	if waCfg := service.LoadWebAuthnConfigFromEnv(); waCfg != nil {
 		wa, err := service.NewWebAuthnLib(waCfg)
@@ -113,7 +113,7 @@ func main() {
 			log.Info(ctx).Str("rpid", waCfg.RPID).Msg("webauthn passkey support enabled")
 		}
 	} else {
-		log.Info(ctx).Msg("webauthn not configured (VAULTDMS_WEBAUTHN_RPID unset); passkey routes will 501")
+		log.Info(ctx).Msg("webauthn not configured (SEDOC_WEBAUTHN_RPID unset); passkey routes will 501")
 	}
 
 	// ---- MFA complete surface (ADR 0063) ---------------------------------
@@ -124,20 +124,20 @@ func main() {
 		log.Info(ctx).Str("dest", dest).Str("code", code).Msg("mfa otp (stub mode)")
 	}
 	smsSender := notifications.NewSMSSender(notifications.SMSConfig{
-		AccountSID:       os.Getenv("VAULTDMS_TWILIO_ACCOUNT_SID"),
-		AuthToken:        os.Getenv("VAULTDMS_TWILIO_AUTH_TOKEN"),
-		VerifyServiceSID: os.Getenv("VAULTDMS_TWILIO_VERIFY_SID"),
-		DevStub:          os.Getenv("VAULTDMS_TWILIO_ACCOUNT_SID") == "",
+		AccountSID:       os.Getenv("SEDOC_TWILIO_ACCOUNT_SID"),
+		AuthToken:        os.Getenv("SEDOC_TWILIO_AUTH_TOKEN"),
+		VerifyServiceSID: os.Getenv("SEDOC_TWILIO_VERIFY_SID"),
+		DevStub:          os.Getenv("SEDOC_TWILIO_ACCOUNT_SID") == "",
 		StubLog:          stubLog,
 	})
 	emailSender := notifications.NewEmailOTPSender(notifications.EmailOTPConfig{
-		Host:          os.Getenv("VAULTDMS_SMTP_HOST"),
+		Host:          os.Getenv("SEDOC_SMTP_HOST"),
 		Port:          587,
-		Username:      os.Getenv("VAULTDMS_SMTP_USER"),
-		Password:      os.Getenv("VAULTDMS_SMTP_PASSWORD"),
-		From:          os.Getenv("VAULTDMS_SMTP_FROM"),
+		Username:      os.Getenv("SEDOC_SMTP_USER"),
+		Password:      os.Getenv("SEDOC_SMTP_PASSWORD"),
+		From:          os.Getenv("SEDOC_SMTP_FROM"),
 		SubjectPrefix: "[VaultDMS]",
-		DevStub:       os.Getenv("VAULTDMS_SMTP_HOST") == "",
+		DevStub:       os.Getenv("SEDOC_SMTP_HOST") == "",
 		StubLog:       stubLog,
 	})
 	svc.SetMFADeps(service.MFADeps{
@@ -295,7 +295,7 @@ func main() {
 // cfg.LocalKEK. Dev/test use only — see pkg/crypto KeyManager for prod.
 func loadLocalKEK(s string) ([]byte, error) {
 	if s == "" {
-		return nil, fmt.Errorf("VAULTDMS_LOCAL_KEK not set")
+		return nil, fmt.Errorf("SEDOC_LOCAL_KEK not set")
 	}
 	k, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {

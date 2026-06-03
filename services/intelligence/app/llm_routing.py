@@ -248,7 +248,7 @@ def _check_budget(tenant_id: str, daily_budget_usd: float) -> None:
 # ---- air-gapped gate ------------------------------------------------
 
 def _air_gapped_globally() -> bool:
-    return os.environ.get("VAULTDMS_AIR_GAPPED", "").strip().lower() in (
+    return os.environ.get("SEDOC_AIR_GAPPED", "").strip().lower() in (
         "1", "true", "yes", "on",
     )
 

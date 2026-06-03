@@ -61,7 +61,7 @@ COPY --from=builder /app /app
 # Dockerfile can't read env at HEALTHCHECK-parse time, so probe the
 # canonical health port set by compose for each service.
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=30s \
-    CMD wget -q -O - "http://localhost:${VAULTDMS_HEALTH_PORT:-8081}/healthz" > /dev/null || exit 1
+    CMD wget -q -O - "http://localhost:${SEDOC_HEALTH_PORT:-8081}/healthz" > /dev/null || exit 1
 
 # HTTP(8180-range), gRPC(9090-range), health(8081-range) — compose
 # remaps each to distinct host ports per services/*.

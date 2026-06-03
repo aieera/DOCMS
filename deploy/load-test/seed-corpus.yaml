@@ -118,7 +118,7 @@ spec:
             - --workers
             - "8"
           env:
-            - name: VAULTDMS_LOAD_SEED_OK
+            - name: SEDOC_LOAD_SEED_OK
               value: "1"
             - name: DATABASE_URL
               valueFrom:

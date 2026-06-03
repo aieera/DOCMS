@@ -94,7 +94,7 @@ func regionFromIndex(name string) string {
 // invoked by callers that already hold a region pin. EnforceRegion
 // is the complementary HTTP middleware — it rejects entire requests
 // whose tenant's primary_region doesn't match the cluster's
-// configured VAULTDMS_REGION_ID before the request reaches a
+// configured SEDOC_REGION_ID before the request reaches a
 // handler. Both layers exist because:
 //
 //   1. Data-layer alone can't stop a tenant request from hitting
@@ -176,7 +176,7 @@ func EnforceRegion(clusterRegion string, resolver RegionResolver, log zerolog.Lo
 	if cluster == "" {
 		// Fail-closed. A service that boots with no region MUST NOT
 		// serve traffic — that's the worst-case residency mistake.
-		panic("middleware.EnforceRegion: cluster region is empty; set VAULTDMS_REGION_ID")
+		panic("middleware.EnforceRegion: cluster region is empty; set SEDOC_REGION_ID")
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

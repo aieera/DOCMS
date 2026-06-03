@@ -94,13 +94,13 @@ New package `pkg/license`:
 - `pkg/license/validator.go` — verifies signature with the bundled public key
   (no network), checks `exp`, returns parsed claims or an error.
 - `pkg/middleware/RequireLicense.go` — startup hook that loads the license
-  JWT from `VAULTDMS_LICENSE_JWT` env or `/etc/vaultdms/license.jwt` file,
+  JWT from `SEDOC_LICENSE_JWT` env or `/etc/vaultdms/license.jwt` file,
   validates, caches claims, and re-validates every hour from a background
   goroutine.
 - Failure modes:
   - **No license loaded** → service starts in `unlicensed_dev_mode` (today's
     state). Allowed in dev / on-prem evaluation; blocked in prod via a
-    `VAULTDMS_REQUIRE_LICENSE=true` env knob.
+    `SEDOC_REQUIRE_LICENSE=true` env knob.
   - **Signature invalid / tampered** → service refuses to start. Fail-closed.
   - **Expired ≤ grace_days ago** → degraded mode (read-only). Writes return
     `423 Locked` with a body pointing at the renewal flow.

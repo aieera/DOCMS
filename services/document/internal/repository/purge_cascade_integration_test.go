@@ -35,7 +35,7 @@ import (
 
 func mustOpenPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	dsn := os.Getenv("VAULTDMS_TEST_DATABASE_URL")
+	dsn := os.Getenv("SEDOC_TEST_DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://vaultdms:devpassword@localhost:15432/vaultdms?sslmode=disable"
 	}

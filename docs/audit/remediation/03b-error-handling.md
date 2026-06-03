@@ -59,7 +59,7 @@ helpers.
 | `services/auth/internal/sso/saml.go:346` | `errors.New("idp metadata URL/XML missing from tenant config")` | `vdmserr.Validation("", …)` |
 | `services/auth/internal/sso/saml.go:409` | `errors.New("empty root")` | `vdmserr.Validation("", "empty root")` |
 | `services/auth/internal/sso/oidc.go:263` | `errors.New("oidc config missing issuer_url/client_id/client_secret")` | `vdmserr.Validation("", …)` |
-| `services/auth/cmd/server/main.go:197` | `errors.New("VAULTDMS_LOCAL_KEK not set")` | `fmt.Errorf("VAULTDMS_LOCAL_KEK not set")` |
+| `services/auth/cmd/server/main.go:197` | `errors.New("SEDOC_LOCAL_KEK not set")` | `fmt.Errorf("SEDOC_LOCAL_KEK not set")` |
 | `services/document/internal/handler/mappers.go:161` | `errors.New("unsupported lifecycle action")` | `vdmserr.Validation("", …)` |
 | `services/storage/internal/scanner/clamav.go:139` | `errors.New("clamav unparseable response: " + resp)` | `vdmserr.Internal("clamav unparseable response: " + resp)` |
 
@@ -75,7 +75,7 @@ Three files had their `"errors"` import removed after the last use went away
   (MFA setup is then disabled). Switching to Fatal would be a behavior
   change for an already-shipped boot path. The minimal fix that honors
   "no `errors.New`" while preserving observable behavior is
-  `fmt.Errorf("VAULTDMS_LOCAL_KEK not set")` — the return value and the
+  `fmt.Errorf("SEDOC_LOCAL_KEK not set")` — the return value and the
   caller's warn-and-continue stay identical.
 - **`clamav.go`** — `Internal(...)` sends the `resp` string to logs but
   the HTTP/gRPC layer scrubs the message to `"internal error"`, so no

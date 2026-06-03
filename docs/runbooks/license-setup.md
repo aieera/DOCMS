@@ -21,7 +21,7 @@ Companion to [ADR 0095](../adr/0095-license-enforcement.md) which covers the des
 
 # Activate
 JWT=$(cat /tmp/license.jwt)
-echo "VAULTDMS_LICENSE_JWT=$JWT" >> .env
+echo "SEDOC_LICENSE_JWT=$JWT" >> .env
 docker compose up -d document
 
 # Verify — refresh /admin/tenant/license in the browser. Should show
@@ -99,8 +99,8 @@ Append to `.env` so docker-compose forwards it:
 ```bash
 JWT=$(cat /path/to/license.jwt)
 # remove any old entry first
-grep -v "^VAULTDMS_LICENSE_JWT=" .env > .env.tmp && mv .env.tmp .env
-echo "VAULTDMS_LICENSE_JWT=$JWT" >> .env
+grep -v "^SEDOC_LICENSE_JWT=" .env > .env.tmp && mv .env.tmp .env
+echo "SEDOC_LICENSE_JWT=$JWT" >> .env
 ```
 
 Alternative for production: drop the JWT at `/etc/vaultdms/license.jwt` inside the container (mounted via a Helm Secret).
@@ -112,7 +112,7 @@ docker compose up -d document
 ```
 
 At startup the container:
-1. Reads `VAULTDMS_LICENSE_JWT` (or falls back to `/etc/vaultdms/license.jwt`).
+1. Reads `SEDOC_LICENSE_JWT` (or falls back to `/etc/vaultdms/license.jwt`).
 2. Verifies the RS256 signature against the public key in `pkg/license/dev_pubkey.go`.
 3. Caches the parsed claims for `license.Current()` callers.
 4. Spawns a background goroutine that re-verifies every hour.
@@ -132,7 +132,7 @@ If the JWT is invalid or expired past the grace window, the container exits with
 For deployments where running unlicensed is a misconfiguration:
 
 ```bash
-echo "VAULTDMS_REQUIRE_LICENSE=true" >> .env
+echo "SEDOC_REQUIRE_LICENSE=true" >> .env
 ```
 
 With this flag, **no license loaded = service refuses to start.** This protects against a misconfigured prod deploy silently running unlicensed.
@@ -146,7 +146,7 @@ Mint a new license, swap the env var, restart:
 ```bash
 ./cmd/license-gen/license-gen.exe --expires 2028-04-19 ...other flags... --out new.jwt
 JWT=$(cat new.jwt)
-sed -i "s|^VAULTDMS_LICENSE_JWT=.*|VAULTDMS_LICENSE_JWT=$JWT|" .env
+sed -i "s|^SEDOC_LICENSE_JWT=.*|SEDOC_LICENSE_JWT=$JWT|" .env
 docker compose up -d document
 ```
 
@@ -162,7 +162,7 @@ Heavy operation — requires rebuilding every service.
 2. Replace the constant in `pkg/license/dev_pubkey.go` with the contents of `new.pub.pem`.
 3. Re-mint every active license with `--key new.priv.pem`.
 4. Rebuild and roll all services: `docker compose up -d --build`.
-5. Update each tenant's `VAULTDMS_LICENSE_JWT` to the newly-signed JWT.
+5. Update each tenant's `SEDOC_LICENSE_JWT` to the newly-signed JWT.
 
 Until step 5 completes, services run on the new key and reject old licenses — coordinate the rollout so customers aren't locked out.
 
@@ -175,7 +175,7 @@ In prod, the private key lives in BD ops' vault (HashiCorp Vault or 1Password), 
 There is no online revocation list. If you need to invalidate a license before its `exp`:
 
 1. Mint a new license for the same tenant with `--expires` set to today.
-2. Swap the customer's `VAULTDMS_LICENSE_JWT` to the new one. They drop into the grace state immediately.
+2. Swap the customer's `SEDOC_LICENSE_JWT` to the new one. They drop into the grace state immediately.
 3. After 30 days (default grace), they're locked out.
 
 For instant lockout, rotate the signing key (heavy — see above).
@@ -205,7 +205,7 @@ To wire a new service:
 
 3. Rebuild that service: `docker compose up -d --build <name>`.
 
-That's the entire integration. The shared env block in `docker-compose.yml` already forwards `VAULTDMS_LICENSE_JWT` to every Go service, so no per-service env changes are needed.
+That's the entire integration. The shared env block in `docker-compose.yml` already forwards `SEDOC_LICENSE_JWT` to every Go service, so no per-service env changes are needed.
 
 The pattern is identical for all 13 remaining services. See [services/document/cmd/server/main.go](../../services/document/cmd/server/main.go) for the reference.
 
@@ -250,7 +250,7 @@ if !license.Current().AllowsRegion("eu-west-1")    { ... }
 | `/admin/tenant/license` page shows real claims | ✅ working |
 | Page shows "active" / "grace" / "expired" / "unlicensed_dev_mode" honestly | ✅ working |
 | Wrong/tampered JWT → document refuses to start | ✅ working |
-| `VAULTDMS_REQUIRE_LICENSE=true` blocks startup if absent | ✅ working |
+| `SEDOC_REQUIRE_LICENSE=true` blocks startup if absent | ✅ working |
 | Expiry beyond grace window → fatal at startup | ✅ working |
 | Auth, search, intel, signature, etc. validate license | ❌ not wired (see "Wiring" section above) |
 | Grace mode blocks writes with HTTP 423 | ❌ not wired (validator returns `StatusGrace` correctly; write-gate middleware not built) |
@@ -269,10 +269,10 @@ These gaps are tracked as Phase 2-5 work in [ADR 0095 § Phased rollout](../adr/
 
 ```bash
 # Confirm the JWT is in .env
-grep VAULTDMS_LICENSE_JWT .env | head -c 80; echo "..."
+grep SEDOC_LICENSE_JWT .env | head -c 80; echo "..."
 
 # Confirm the JWT made it into the container
-docker exec vaultdms-document env | grep VAULTDMS_LICENSE_JWT | head -c 80; echo "..."
+docker exec vaultdms-document env | grep SEDOC_LICENSE_JWT | head -c 80; echo "..."
 
 # Check startup logs for the license confirmation
 docker logs vaultdms-document 2>&1 | grep -i license

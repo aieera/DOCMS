@@ -1,6 +1,6 @@
 // Package signer factory — env-driven wiring for the signer impl.
 //
-// VAULTDMS_SIGNER controls which implementation the signature
+// SEDOC_SIGNER controls which implementation the signature
 // service instantiates:
 //
 //	mock (default) — MockSigner, deterministic, not PAdES-valid.
@@ -19,11 +19,11 @@ import (
 	"os"
 )
 
-// FromEnv constructs a Signer based on VAULTDMS_SIGNER. sidecarAddr
+// FromEnv constructs a Signer based on SEDOC_SIGNER. sidecarAddr
 // is the gRPC endpoint for the DSS sidecar; ignored when the mock
 // is selected.
 func FromEnv(sidecarAddr string) (Signer, error) {
-	kind := os.Getenv("VAULTDMS_SIGNER")
+	kind := os.Getenv("SEDOC_SIGNER")
 	if kind == "" {
 		kind = "mock"
 	}
@@ -36,6 +36,6 @@ func FromEnv(sidecarAddr string) (Signer, error) {
 		// ErrNotConfigured.
 		return NewDSSSidecarSigner(sidecarAddr), nil
 	default:
-		return nil, fmt.Errorf("VAULTDMS_SIGNER=%q: must be mock or dss", kind)
+		return nil, fmt.Errorf("SEDOC_SIGNER=%q: must be mock or dss", kind)
 	}
 }

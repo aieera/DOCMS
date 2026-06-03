@@ -44,7 +44,7 @@ VaultDMS is a multi-tenant enterprise Document Management System with strong com
 ## Storage
 - **Object store**: MinIO in dev, S3 in prod
 - **Bucket layout**: one bucket per tier (hot/warm/cold) with tenant-prefixed keys
-- **Encryption**: Per-blob DEK wrapped by per-tenant KEK (Vault/AWS KMS in prod, `VAULTDMS_LOCAL_KEK` in dev). **Note**: Per-tenant KEK derivation is tracked as tech debt — currently a single dev KEK serves all tenants.
+- **Encryption**: Per-blob DEK wrapped by per-tenant KEK (Vault/AWS KMS in prod, `SEDOC_LOCAL_KEK` in dev). **Note**: Per-tenant KEK derivation is tracked as tech debt — currently a single dev KEK serves all tenants.
 
 ## Auth
 - **Primary**: HttpOnly session cookie (`dms_session`), SHA-256 hashed in `sessions` table
@@ -133,24 +133,24 @@ DOCMS/
 ## Env variables (names only)
 
 ### Required core
-- `VAULTDMS_DATABASE_URL` — Postgres connection string
-- `VAULTDMS_REDIS_URL` — Redis address (cache + rate limits)
-- `VAULTDMS_NATS_URL` — NATS JetStream URL (event backbone)
-- `VAULTDMS_GATEWAY_SECRET` — Kong↔backend shared secret
-- `VAULTDMS_LOCAL_KEK` — Base64 32-byte KEK for dev/local KMS
+- `SEDOC_DATABASE_URL` — Postgres connection string
+- `SEDOC_REDIS_URL` — Redis address (cache + rate limits)
+- `SEDOC_NATS_URL` — NATS JetStream URL (event backbone)
+- `SEDOC_GATEWAY_SECRET` — Kong↔backend shared secret
+- `SEDOC_LOCAL_KEK` — Base64 32-byte KEK for dev/local KMS
 
 ### Optional / per-service
-- Server ports: `VAULTDMS_HTTP_PORT`, `VAULTDMS_GRPC_PORT`, `VAULTDMS_HEALTH_PORT`
-- Storage: `VAULTDMS_S3_ENDPOINT`, `_ACCESS_KEY`, `_SECRET_KEY`, `_PUBLIC_BASE`, `VAULTDMS_MINIO_*` (aliases), `VAULTDMS_STORAGE_ENCRYPT_AT_REST`, `VAULTDMS_STORAGE_SKIP_VIRUS_SCAN`
-- Auth: `VAULTDMS_WEBAUTHN_RPID`, `_ORIGINS`, `_DISPLAY_NAME`, `_HMAC_SECRET`
-- KMS: `VAULTDMS_KMS_PROVIDER` (`local`|`vault`|`aws`)
-- eSign env-mode (deployment-wide fallback; per-tenant DB row wins): `VAULTDMS_ESIGN_DOCUSIGN_*` (5 vars), `VAULTDMS_ESIGN_ADOBE_SIGN_*` (5 vars), `VAULTDMS_ESIGN_STATE_HMAC`
-- QES TSP: `VAULTDMS_QES_SWISSCOM_*`, `VAULTDMS_QES_INTESI_*`, `VAULTDMS_QES_INFOCERT_*`, `VAULTDMS_QES_MOCK_OK`
-- Twilio (env-mode fallback; per-tenant `tenant_twilio_configs` wins): `VAULTDMS_TWILIO_ACCOUNT_SID`, `_AUTH_TOKEN`, `_VERIFY_SID`
-- SMTP (env-mode fallback; per-tenant `tenant_smtp_configs` wins): `VAULTDMS_SMTP_HOST`, `_PORT`, `_USER`, `_USERNAME` (duplicate — see tech debt), `_PASSWORD`, `_FROM`, `_STARTTLS`
-- Billing: `STRIPE_WEBHOOK_SECRET`, `VAULTDMS_INTERNAL_API_KEY`
-- Intel: `VAULTDMS_QDRANT_URL`, `_COLLECTION`, `VAULTDMS_INTELLIGENCE_EMBED_URL`, `VAULTDMS_ONLYOFFICE_*` (3 vars), LLM provider keys
-- Misc: `VAULTDMS_PUBLIC_URL`, `VAULTDMS_ENV`, `VAULTDMS_DEFAULT_RATE_LIMIT_PER_MIN`
+- Server ports: `SEDOC_HTTP_PORT`, `SEDOC_GRPC_PORT`, `SEDOC_HEALTH_PORT`
+- Storage: `SEDOC_S3_ENDPOINT`, `_ACCESS_KEY`, `_SECRET_KEY`, `_PUBLIC_BASE`, `SEDOC_MINIO_*` (aliases), `SEDOC_STORAGE_ENCRYPT_AT_REST`, `SEDOC_STORAGE_SKIP_VIRUS_SCAN`
+- Auth: `SEDOC_WEBAUTHN_RPID`, `_ORIGINS`, `_DISPLAY_NAME`, `_HMAC_SECRET`
+- KMS: `SEDOC_KMS_PROVIDER` (`local`|`vault`|`aws`)
+- eSign env-mode (deployment-wide fallback; per-tenant DB row wins): `SEDOC_ESIGN_DOCUSIGN_*` (5 vars), `SEDOC_ESIGN_ADOBE_SIGN_*` (5 vars), `SEDOC_ESIGN_STATE_HMAC`
+- QES TSP: `SEDOC_QES_SWISSCOM_*`, `SEDOC_QES_INTESI_*`, `SEDOC_QES_INFOCERT_*`, `SEDOC_QES_MOCK_OK`
+- Twilio (env-mode fallback; per-tenant `tenant_twilio_configs` wins): `SEDOC_TWILIO_ACCOUNT_SID`, `_AUTH_TOKEN`, `_VERIFY_SID`
+- SMTP (env-mode fallback; per-tenant `tenant_smtp_configs` wins): `SEDOC_SMTP_HOST`, `_PORT`, `_USER`, `_USERNAME` (duplicate — see tech debt), `_PASSWORD`, `_FROM`, `_STARTTLS`
+- Billing: `STRIPE_WEBHOOK_SECRET`, `SEDOC_INTERNAL_API_KEY`
+- Intel: `SEDOC_QDRANT_URL`, `_COLLECTION`, `SEDOC_INTELLIGENCE_EMBED_URL`, `SEDOC_ONLYOFFICE_*` (3 vars), LLM provider keys
+- Misc: `SEDOC_PUBLIC_URL`, `SEDOC_ENV`, `SEDOC_DEFAULT_RATE_LIMIT_PER_MIN`
 
 ### Inter-service addresses
 `POLICY_SERVICE_ADDR`, `STORAGE_SERVICE_ADDR`, `DOCUMENT_SERVICE_ADDR`, `WORKFLOW_SERVICE_ADDR`, `COLLABORATION_SERVICE_ADDR`, `AUDIT_SERVICE_ADDR`, `AUTH_SERVICE_ADDR`, `CLAMAV_ADDR`, `TEMPORAL_ADDR`, `OPENSEARCH_URL`
@@ -169,8 +169,8 @@ DOCMS/
 ## Missing / unset env variables I can detect
 
 - The `.env` file on this dev box has DocuSign credentials but the `AUTHORIZE_URL` points at the **REST API host** (`demo.docusign.net`) instead of the **OAuth identity host** (`account-d.docusign.com`). This was flagged earlier in the session.
-- `VAULTDMS_TWILIO_*`, `VAULTDMS_SMTP_*`, `VAULTDMS_WEBAUTHN_*` blocks have been added to `docker-compose.yml`'s `x-go-env` anchor with defaults of `""` — they remain empty in `.env`, so SMS MFA / email / passkeys fall back to stub/log mode.
-- `VAULTDMS_ESIGN_ADOBE_SIGN_*` not set (only DocuSign is configured).
+- `SEDOC_TWILIO_*`, `SEDOC_SMTP_*`, `SEDOC_WEBAUTHN_*` blocks have been added to `docker-compose.yml`'s `x-go-env` anchor with defaults of `""` — they remain empty in `.env`, so SMS MFA / email / passkeys fall back to stub/log mode.
+- `SEDOC_ESIGN_ADOBE_SIGN_*` not set (only DocuSign is configured).
 
 ---
 
@@ -654,7 +654,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 | Connector `/connectors/{provider}` masked errors as 404 | ✅ Hardened to distinguish 401/500/404 |
 | DocuSign OAuth callback rejected with "provider, code, state required" — vendors don't send `?provider=`; provider must ride inside state | ✅ Fixed state format `<tenantID>.<provider>.<hmac>` |
 | DocuSign token row had empty `account_id` + `base_uri` (no userinfo call after token exchange) — would have blocked actual Send | ✅ Added `FetchAccountInfo` in `pkg/esign/oauth.go` |
-| `docker-compose.yml` `x-go-env` anchor didn't propagate `VAULTDMS_ESIGN_*` / `_TWILIO_*` / `_SMTP_*` / `_WEBAUTHN_*` envs to containers | ✅ Added all four blocks |
+| `docker-compose.yml` `x-go-env` anchor didn't propagate `SEDOC_ESIGN_*` / `_TWILIO_*` / `_SMTP_*` / `_WEBAUTHN_*` envs to containers | ✅ Added all four blocks |
 | Reload-race: authStore empty on hard refresh → first batch of requests went out without `X-Auth-Tenant-ID` headers | ✅ Earlier session — `ensureHydrated()` interceptor |
 | WebAuthn methods return 501 | 🔴 Still stubbed |
 | MCP server tool handlers return `{"status":"ok"}` placeholders | 🔴 Still stubbed |
@@ -670,7 +670,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 - **Vector search query** — half-built (ingest writes Qdrant, search doesn't read it). `services/search/internal/service/service.go:87`.
 - **WebAuthn service methods** — 501 stubs in `services/auth/internal/service/webauthn.go`.
 - **MCP server** — stub tool implementations.
-- **`VAULTDMS_SMTP_USER` vs `VAULTDMS_SMTP_USERNAME` inconsistency** — auth reads `USER`, notification reads `USERNAME`. Both should converge. Flagged in `.env` template.
+- **`SEDOC_SMTP_USER` vs `SEDOC_SMTP_USERNAME` inconsistency** — auth reads `USER`, notification reads `USERNAME`. Both should converge. Flagged in `.env` template.
 - **i18n** — no library, English hardcoded everywhere.
 
 ## Introduced/uncovered this session
@@ -694,7 +694,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 | Size limit on uploads | ✅ Enforced | `cfg.MaxUploadSize` per-service; storage's single-PUT ceiling (multipart pending) |
 | Rate limiting | 🟡 Partial | `pkg/middleware/ratelimit.go` (token-bucket, Redis-backed) applied to `/auth/*` routes; **NOT applied to iPaaS trigger endpoints** (gap) |
 | CORS config | 🟡 Visibility gap | No `cors` package import found in services; relies on Kong gateway config (`deploy/gateway/kong.yaml` — not inspected this audit) |
-| Secrets in env (not hardcoded) | ✅ Clean | No password/token literals in source. The previously-shipped fallback `dev-only-gateway-secret-rotate-in-prod` was removed across compose / scripts / Node services 2026-05-21; `VAULTDMS_GATEWAY_SECRET` must now be explicitly exported (Vite dev proxy, compose, run-all-services.sh, restart-dev.ps1, yjs-server.js, and k6 load tests all fail-fast if unset). |
+| Secrets in env (not hardcoded) | ✅ Clean | No password/token literals in source. The previously-shipped fallback `dev-only-gateway-secret-rotate-in-prod` was removed across compose / scripts / Node services 2026-05-21; `SEDOC_GATEWAY_SECRET` must now be explicitly exported (Vite dev proxy, compose, run-all-services.sh, restart-dev.ps1, yjs-server.js, and k6 load tests all fail-fast if unset). |
 | SQL injection protection | ✅ Enforced | All repos use parameterized `$1, $2` queries via pgx. Zero string-concat in WHERE clauses spotted. |
 | XSS protection | ✅ Enforced | React's auto-escaping; no `dangerouslySetInnerHTML` usage outside of intentional PDF/preview content |
 | CSRF protection | ✅ Enforced | `pkg/middleware/csrf.go` double-submit cookie pattern on every mutating session-cookie route. API-key callers exempt by design. |
@@ -716,7 +716,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 6. **Add Salesforce + M365 connector wrappers** — provider classes already exist; ~2h each to add the Save/Start/Callback service methods + frontend modal. **M**
 7. **Per-tenant KEK derivation** for blob encryption. Tracked at `docs/tech-debt/per-tenant-kek.md`; storage's TODO points at line 137. Crypto-shredding by KEK delete becomes truly per-tenant. **L**
 8. **Add tests to zero-coverage services** — collaboration, intelligence (pytest), preview, signature-signer. **L**
-9. **Fix `VAULTDMS_SMTP_USER` / `_USERNAME` inconsistency** — converge on one name across `pkg/config/config.go` and `services/auth/cmd/server/main.go`. **S**
+9. **Fix `SEDOC_SMTP_USER` / `_USERNAME` inconsistency** — converge on one name across `pkg/config/config.go` and `services/auth/cmd/server/main.go`. **S**
 10. **Drive/Gmail import + sync health dashboard** — once Drive works, add a "Connectors" tab admin page showing per-vendor sync status + error rate + last poll. **M**
 
 ---
@@ -728,7 +728,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 3. **Connector roadmap priority.** Of the 7 remaining §12.4 connectors, which one matters first? Customer signal vs internal pet-feature isn't clear from the codebase.
 4. **WebAuthn finishing.** Is this a "ship in v0.6" feature or a "future quarter" item? Env vars exist but the service is 501.
 5. **MCP server scope.** Is the stub a placeholder for real LLM-agent integration (Claude Desktop, Cursor)? If so, what's the use case?
-6. **Mock signer in production.** `signer/factory.go` defaults to mock when `VAULTDMS_SIGNER` is unset. Should startup fail-loudly in prod (require explicit `VAULTDMS_SIGNER=dss`) to prevent accidentally shipping the mock?
+6. **Mock signer in production.** `signer/factory.go` defaults to mock when `SEDOC_SIGNER` is unset. Should startup fail-loudly in prod (require explicit `SEDOC_SIGNER=dss`) to prevent accidentally shipping the mock?
 7. **CORS configuration.** Is Kong supplying CORS headers, or do we need explicit per-service config? I couldn't inspect `deploy/gateway/kong.yaml` in this audit.
 8. **Per-tenant KEK migration plan.** Once the per-tenant derivation lands, what's the strategy for re-keying existing blobs sealed with the single dev KEK?
 9. **iPaaS rate limiting policy.** What rate is acceptable? Zapier polls every 1-15 min by default. Make can poll faster. Need a baseline (e.g. 60/min per key).

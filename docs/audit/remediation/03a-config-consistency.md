@@ -24,18 +24,18 @@ All 14 Go modules build clean. All existing tests pass.
 
 | Field | Env var | Default | Prod-required |
 |-------|---------|---------|---------------|
-| `PublicURL` | `VAULTDMS_PUBLIC_URL` | *none* | **YES** |
+| `PublicURL` | `SEDOC_PUBLIC_URL` | *none* | **YES** |
 | `PolicyServiceAddr` | `POLICY_SERVICE_ADDR` (non-prefixed) | `policy:9090` | no |
-| `S3PublicBase` | `VAULTDMS_S3_PUBLIC_BASE` | *empty* | no |
-| `InternalAPIKey` | `VAULTDMS_INTERNAL_API_KEY` | *none* | conditional (billing) |
+| `S3PublicBase` | `SEDOC_S3_PUBLIC_BASE` | *empty* | no |
+| `InternalAPIKey` | `SEDOC_INTERNAL_API_KEY` | *none* | conditional (billing) |
 | `StripeWebhookSecret` | `STRIPE_WEBHOOK_SECRET` (non-prefixed) | *none* | conditional (billing) |
 
 ### Renamed fields (same semantics, updated env var names per spec)
 
 | Old → New | Old env → New env |
 |-----------|-------------------|
-| `ClamAVAddress` → `ClamAVAddr` | `VAULTDMS_CLAMAV_ADDRESS` → `CLAMAV_ADDR` |
-| `TemporalAddress` → `TemporalAddr` | `VAULTDMS_TEMPORAL_ADDRESS` → `TEMPORAL_ADDR` |
+| `ClamAVAddress` → `ClamAVAddr` | `SEDOC_CLAMAV_ADDRESS` → `CLAMAV_ADDR` |
+| `TemporalAddress` → `TemporalAddr` | `SEDOC_TEMPORAL_ADDRESS` → `TEMPORAL_ADDR` |
 
 Non-VAULTDMS env bindings added explicitly via `viper.BindEnv()`:
 ```go
@@ -55,10 +55,10 @@ func (c *Config) Validate() error {
     }
     var missing []string
     if c.PublicURL == "" {
-        missing = append(missing, "VAULTDMS_PUBLIC_URL")
+        missing = append(missing, "SEDOC_PUBLIC_URL")
     }
     if c.LocalKEK == "" && c.KMSProvider == "local" {
-        missing = append(missing, "VAULTDMS_LOCAL_KEK (kms_provider=local)")
+        missing = append(missing, "SEDOC_LOCAL_KEK (kms_provider=local)")
     }
     if len(missing) > 0 {
         return fmt.Errorf("config: missing required prod env vars: %s", strings.Join(missing, ", "))
@@ -88,16 +88,16 @@ Secrets (`LocalKEK`, `InternalAPIKey`, `StripeWebhookSecret`, `PublicURL`) inten
 
 | # | File | Line | Before | After |
 |---|------|------|--------|-------|
-| 1 | `services/auth/cmd/server/main.go` | 117 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | `cfg.PublicURL` |
-| 2 | `services/auth/cmd/server/main.go` | 131 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | `cfg.PublicURL` |
-| 3 | `services/auth/cmd/server/main.go` | 138 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | `cfg.PublicURL` |
-| 4 | `services/auth/cmd/server/main.go` | 196 | `os.Getenv("VAULTDMS_LOCAL_KEK")` inside `loadLocalKEK()` | `loadLocalKEK(cfg.LocalKEK)` |
+| 1 | `services/auth/cmd/server/main.go` | 117 | `os.Getenv("SEDOC_PUBLIC_URL")` | `cfg.PublicURL` |
+| 2 | `services/auth/cmd/server/main.go` | 131 | `os.Getenv("SEDOC_PUBLIC_URL")` | `cfg.PublicURL` |
+| 3 | `services/auth/cmd/server/main.go` | 138 | `os.Getenv("SEDOC_PUBLIC_URL")` | `cfg.PublicURL` |
+| 4 | `services/auth/cmd/server/main.go` | 196 | `os.Getenv("SEDOC_LOCAL_KEK")` inside `loadLocalKEK()` | `loadLocalKEK(cfg.LocalKEK)` |
 | 5 | `services/document/cmd/server/main.go` | 81 | `os.Getenv("POLICY_SERVICE_ADDR")` | `cfg.PolicyServiceAddr` |
-| 6 | `services/document/cmd/server/main.go` | 105 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | `cfg.PublicURL` |
+| 6 | `services/document/cmd/server/main.go` | 105 | `os.Getenv("SEDOC_PUBLIC_URL")` | `cfg.PublicURL` |
 | 7 | `services/storage/cmd/server/main.go` | 84 | `os.Getenv("POLICY_SERVICE_ADDR")` | `cfg.PolicyServiceAddr` |
-| 8 | `services/storage/cmd/server/main.go` | 108 | `os.Getenv("VAULTDMS_LOCAL_KEK")` | `cfg.LocalKEK` |
-| 9 | `services/storage/cmd/server/main.go` | 136 | `os.Getenv("VAULTDMS_S3_PUBLIC_BASE")` | `cfg.S3PublicBase` |
-| 10 | `services/billing/internal/handler/handler.go` | 29 | `os.Getenv("VAULTDMS_INTERNAL_API_KEY")` | constructor param `apiKey`, sourced from `cfg.InternalAPIKey` in main.go |
+| 8 | `services/storage/cmd/server/main.go` | 108 | `os.Getenv("SEDOC_LOCAL_KEK")` | `cfg.LocalKEK` |
+| 9 | `services/storage/cmd/server/main.go` | 136 | `os.Getenv("SEDOC_S3_PUBLIC_BASE")` | `cfg.S3PublicBase` |
+| 10 | `services/billing/internal/handler/handler.go` | 29 | `os.Getenv("SEDOC_INTERNAL_API_KEY")` | constructor param `apiKey`, sourced from `cfg.InternalAPIKey` in main.go |
 | 11 | `services/billing/internal/stripe/webhook.go` | 37 | `os.Getenv("STRIPE_WEBHOOK_SECRET")` | constructor param `webhookSecret`, sourced from `cfg.StripeWebhookSecret` in main.go |
 
 ### Constructor signature changes (billing)
@@ -132,7 +132,7 @@ func NewWebhookHandler(repo *repository.Repository, rdb *redis.Client, log zerol
 
 ### `.env.example`
 
-Updated to use the new non-prefixed env vars and added the 5 new VAULTDMS_-prefixed ones:
+Updated to use the new non-prefixed env vars and added the 5 new SEDOC_-prefixed ones:
 
 ```diff
 -TEMPORAL_ADDRESS=temporal:7233
@@ -141,10 +141,10 @@ Updated to use the new non-prefixed env vars and added the 5 new VAULTDMS_-prefi
 +TEMPORAL_ADDR=temporal:7233
 +CLAMAV_ADDR=clamav:3310
 +POLICY_SERVICE_ADDR=policy:9090
-+VAULTDMS_LOCAL_KEK=
-+VAULTDMS_PUBLIC_URL=
-+VAULTDMS_S3_PUBLIC_BASE=
-+VAULTDMS_INTERNAL_API_KEY=
++SEDOC_LOCAL_KEK=
++SEDOC_PUBLIC_URL=
++SEDOC_S3_PUBLIC_BASE=
++SEDOC_INTERNAL_API_KEY=
 +STRIPE_WEBHOOK_SECRET=
 ```
 
@@ -171,15 +171,15 @@ billing:
 ### Helm `_helpers.tpl`
 
 The `vaultdms.commonEnv` helper (injected into every Go service's deployment) now emits:
-- `OPENSEARCH_URL` (was `VAULTDMS_OPENSEARCH_URL`)
-- `TEMPORAL_ADDR` (was `VAULTDMS_TEMPORAL_ADDRESS`)
+- `OPENSEARCH_URL` (was `SEDOC_OPENSEARCH_URL`)
+- `TEMPORAL_ADDR` (was `SEDOC_TEMPORAL_ADDRESS`)
 - `CLAMAV_ADDR` (new)
 - `POLICY_SERVICE_ADDR` (new)
-- `VAULTDMS_PUBLIC_URL` (new)
-- `VAULTDMS_S3_PUBLIC_BASE` (new)
-- `VAULTDMS_LOCAL_KEK` (new, via `secretKeyRef` with `optional: true`)
+- `SEDOC_PUBLIC_URL` (new)
+- `SEDOC_S3_PUBLIC_BASE` (new)
+- `SEDOC_LOCAL_KEK` (new, via `secretKeyRef` with `optional: true`)
 
-Plus a new `vaultdms.billingEnv` helper pulling `VAULTDMS_INTERNAL_API_KEY` + `STRIPE_WEBHOOK_SECRET` from a K8s Secret. Billing deployment template should include it; other services should not.
+Plus a new `vaultdms.billingEnv` helper pulling `SEDOC_INTERNAL_API_KEY` + `STRIPE_WEBHOOK_SECRET` from a K8s Secret. Billing deployment template should include it; other services should not.
 
 ### `values-onprem.yaml`
 
@@ -214,7 +214,7 @@ billing.existingSecret: vaultdms-billing-secrets-onprem
 | File | Change |
 |------|--------|
 | `pkg/config/config.go` | Added 5 new fields, renamed 2 (ClamAVAddress→ClamAVAddr, TemporalAddress→TemporalAddr), added `Validate()` + `RequireSecret()`, explicit `BindEnv` for non-prefixed env vars, new defaults |
-| `services/auth/cmd/server/main.go` | 3× `os.Getenv("VAULTDMS_PUBLIC_URL")` → `cfg.PublicURL`; `loadLocalKEK()` now takes key string from `cfg.LocalKEK` |
+| `services/auth/cmd/server/main.go` | 3× `os.Getenv("SEDOC_PUBLIC_URL")` → `cfg.PublicURL`; `loadLocalKEK()` now takes key string from `cfg.LocalKEK` |
 | `services/document/cmd/server/main.go` | Policy addr + public URL from cfg; removed `localhost:9091` fallback |
 | `services/storage/cmd/server/main.go` | Policy addr, LocalKEK, S3PublicBase, ClamAV addr from cfg; removed 3 hardcoded fallbacks |
 | `services/search/cmd/server/main.go` | OpenSearch URL directly from cfg; removed default fallback |

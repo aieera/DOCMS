@@ -37,14 +37,14 @@ REST (session-authed, via `pkg/middleware.SessionAuth`):
 
 ## Configuration
 
-`VAULTDMS_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
+`SEDOC_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
 `_GRPC_PORT` (9090), `_HTTP_PORT` (8080).
 
 ## Running locally
 
 ```bash
 make up
-( cd services/policy && VAULTDMS_HTTP_PORT=8082 VAULTDMS_GRPC_PORT=9082 go run ./cmd/server )
+( cd services/policy && SEDOC_HTTP_PORT=8082 SEDOC_GRPC_PORT=9082 go run ./cmd/server )
 ```
 
 ## Testing

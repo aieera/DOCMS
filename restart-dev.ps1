@@ -44,15 +44,15 @@ foreach ($s in $svcs) {
 Write-Host "  all binaries built into .\bin" -ForegroundColor Green
 
 Write-Host "==> 4. Starting services as background jobs..." -ForegroundColor Cyan
-# No hardcoded fallback for VAULTDMS_GATEWAY_SECRET — the previous default
+# No hardcoded fallback for SEDOC_GATEWAY_SECRET — the previous default
 # was a globally-known string in the source tree and any deployment that
 # inherited it was forge-able. Require the caller to export it.
-if (-not $env:VAULTDMS_GATEWAY_SECRET) {
-  Write-Host "VAULTDMS_GATEWAY_SECRET is required. Generate one and export it before running this script:" -ForegroundColor Red
-  Write-Host "  `$env:VAULTDMS_GATEWAY_SECRET = (openssl rand -hex 32)" -ForegroundColor Yellow
+if (-not $env:SEDOC_GATEWAY_SECRET) {
+  Write-Host "SEDOC_GATEWAY_SECRET is required. Generate one and export it before running this script:" -ForegroundColor Red
+  Write-Host "  `$env:SEDOC_GATEWAY_SECRET = (openssl rand -hex 32)" -ForegroundColor Yellow
   exit 1
 }
-$GatewaySecret = $env:VAULTDMS_GATEWAY_SECRET
+$GatewaySecret = $env:SEDOC_GATEWAY_SECRET
 $portMap = @{
   "auth"=8180; "policy"=8181; "document"=8182; "search"=8184; "audit"=8185
   "workflow"=8186; "notification"=8187; "signature"=8188; "storage"=8189
@@ -63,15 +63,15 @@ foreach ($s in $svcs) {
   Start-Job -Name $s -ArgumentList $s, $port, $PSScriptRoot, $GatewaySecret -ScriptBlock {
     param($svc, $port, $root, $gatewaySecret)
     Set-Location $root
-    $env:VAULTDMS_HTTP_PORT      = "$port"
-    $env:VAULTDMS_GRPC_PORT      = "$($port + 1000)"
-    $env:VAULTDMS_HEALTH_PORT    = "$($port + 2000)"
-    $env:VAULTDMS_GATEWAY_SECRET = $gatewaySecret
-    $env:VAULTDMS_DATABASE_URL   = "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
-    $env:VAULTDMS_REDIS_URL      = "localhost:6379"
-    $env:VAULTDMS_NATS_URL       = "nats://localhost:4222"
-    $env:VAULTDMS_LOCAL_KEK      = "dev-32-byte-kek-not-for-production!!"
-    $env:VAULTDMS_PUBLIC_URL     = "http://localhost:3000"
+    $env:SEDOC_HTTP_PORT      = "$port"
+    $env:SEDOC_GRPC_PORT      = "$($port + 1000)"
+    $env:SEDOC_HEALTH_PORT    = "$($port + 2000)"
+    $env:SEDOC_GATEWAY_SECRET = $gatewaySecret
+    $env:SEDOC_DATABASE_URL   = "postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
+    $env:SEDOC_REDIS_URL      = "localhost:6379"
+    $env:SEDOC_NATS_URL       = "nats://localhost:4222"
+    $env:SEDOC_LOCAL_KEK      = "dev-32-byte-kek-not-for-production!!"
+    $env:SEDOC_PUBLIC_URL     = "http://localhost:3000"
     & ".\bin\$svc.exe"
   } | Out-Null
   Write-Host "  $s started on :$port"

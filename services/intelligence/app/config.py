@@ -1,9 +1,17 @@
 from __future__ import annotations
+import os as _os
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Back-compat: the env prefix was renamed VAULTDMS_ -> SEDOC_. Mirror any
+# legacy VAULTDMS_* vars onto their SEDOC_* names when unset so pre-rename
+# environments keep working. Remove once everything injects SEDOC_* directly.
+for _k, _v in list(_os.environ.items()):
+    if _k.startswith("VAULTDMS_"):
+        _os.environ.setdefault("SEDOC_" + _k[len("VAULTDMS_"):], _v)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="VAULTDMS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SEDOC_", env_file=".env", extra="ignore")
 
     service_name: str = "intelligence"
     service_version: str = "dev"
@@ -39,7 +47,7 @@ class Settings(BaseSettings):
 
     # Default model used by RAG (Doc Q&A) and other litellm-routed paths
     # when no per-tenant override exists in Redis (llm_config:{tenant_id}).
-    # Pydantic-settings reads VAULTDMS_DEFAULT_LLM_MODEL from env, so an
+    # Pydantic-settings reads SEDOC_DEFAULT_LLM_MODEL from env, so an
     # operator can override per-deployment without touching code.
     #
     # The "anthropic/" prefix forces litellm to use the Messages API

@@ -62,7 +62,7 @@ CREATE TABLE tenant_llm_config (
     -- Air-gapped mode forces vllm_local routing only — the gateway
     -- rejects any call that would hit an external provider, even if
     -- model/api_key are set. Mirrors the deploy-time
-    -- VAULTDMS_AIR_GAPPED env at per-tenant granularity for
+    -- SEDOC_AIR_GAPPED env at per-tenant granularity for
     -- multi-tenant on-prem installs.
     air_gapped             BOOLEAN      NOT NULL DEFAULT FALSE,
 

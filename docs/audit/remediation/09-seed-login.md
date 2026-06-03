@@ -43,7 +43,7 @@ $ make setup
 | `scripts/seed.sh` | Wait for Postgres → run migrations → invoke Go seed → print login banner |
 | `scripts/seed/main.go` | Go program that upserts org + admin user + everyone group + workspace + root folder. Idempotent. |
 | `scripts/seed/go.mod` | New module (pgx + bcrypt) |
-| `scripts/gen-dev-env.sh` | Copies `.env.example` → `.env`, fills `VAULTDMS_LOCAL_KEK` / `VAULTDMS_INTERNAL_API_KEY` / `SESSION_COOKIE_SECRET` with `openssl rand`. Refuses to overwrite existing `.env`. |
+| `scripts/gen-dev-env.sh` | Copies `.env.example` → `.env`, fills `SEDOC_LOCAL_KEK` / `SEDOC_INTERNAL_API_KEY` / `SESSION_COOKIE_SECRET` with `openssl rand`. Refuses to overwrite existing `.env`. |
 | `scripts/wait-for-health.sh` | Polls `docker compose ps` until all services are healthy (jq if present, awk fallback) |
 | `scripts/run-all-services.sh` | Optional helper: runs all 11 Go services in the background for host-side development |
 | `SETUP.md` | Dev-facing setup guide with prerequisites, troubleshooting, security warnings |
@@ -53,7 +53,7 @@ $ make setup
 | File | Change |
 |------|--------|
 | `go.work` | Added `./scripts/seed` to the `use` block |
-| `.env.example` | Added `SESSION_COOKIE_SECRET`, 5 `SEED_*` seed vars, defaulted `VAULTDMS_PUBLIC_URL=http://localhost:8080` |
+| `.env.example` | Added `SESSION_COOKIE_SECRET`, 5 `SEED_*` seed vars, defaulted `SEDOC_PUBLIC_URL=http://localhost:8080` |
 | `Makefile` | New targets: `setup`, `gen-env`, `up`, `migrate`, `seed` (replaced stub), `run-all`, `stop-all`, `run-web`, `reset` |
 
 ---
@@ -95,7 +95,7 @@ Steps (all idempotent; all tenant-scoped rows run inside one transaction with
 
 - Default password is documented as **public knowledge** in SETUP.md and the seed output.
 - The seed program reads the password from `SEED_ADMIN_PASSWORD` env var; nothing is hardcoded in any Go source.
-- `config.Validate()` (from remediation 03a) rejects missing `VAULTDMS_LOCAL_KEK` / `VAULTDMS_PUBLIC_URL` when `VAULTDMS_ENVIRONMENT=prod`, so running this seed flow against a prod-configured service fails fast.
+- `config.Validate()` (from remediation 03a) rejects missing `SEDOC_LOCAL_KEK` / `SEDOC_PUBLIC_URL` when `SEDOC_ENVIRONMENT=prod`, so running this seed flow against a prod-configured service fails fast.
 - `.env` is confirmed gitignored (`.env` + `.env.*`).
 - `scripts/gen-dev-env.sh` refuses to overwrite an existing `.env`.
 

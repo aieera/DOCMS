@@ -32,7 +32,7 @@ column. That topology has three pieces:
 ## What ships now
 
 - **`pkg/middleware.EnforceRegion`** + `PgxRegionResolver`. The
-  middleware reads the cluster's `VAULTDMS_REGION_ID` at boot,
+  middleware reads the cluster's `SEDOC_REGION_ID` at boot,
   resolves each request's tenant→primary_region, and returns
   **451 Unavailable For Legal Reasons** when they disagree. The
   resolver caches in-process per tenant — `primary_region` is

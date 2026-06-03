@@ -14,7 +14,7 @@
 #   preflight            # prints a line per subject, exits 1 on any miss
 #
 # Requirements: dms-admin binary at repo root, NATS reachable at
-# $VAULTDMS_NATS_URL (or nats://localhost:4222 by default).
+# $SEDOC_NATS_URL (or nats://localhost:4222 by default).
 
 set -euo pipefail
 

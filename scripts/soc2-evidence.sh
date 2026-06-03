@@ -8,7 +8,7 @@
 #
 # Required env:
 #   DATABASE_URL              — Postgres DSN (read-only user preferred)
-#   VAULTDMS_EVIDENCE_SIGNING_KEY — HMAC key for manifest signature
+#   SEDOC_EVIDENCE_SIGNING_KEY — HMAC key for manifest signature
 # Optional env:
 #   S3_BUCKET                 — cold-storage upload destination
 #   S3_ENDPOINT               — custom S3 endpoint (MinIO on-prem)
@@ -28,8 +28,8 @@
 # omission.
 set -euo pipefail
 
-if [ -z "${VAULTDMS_EVIDENCE_SIGNING_KEY:-}" ]; then
-  echo "VAULTDMS_EVIDENCE_SIGNING_KEY required" >&2
+if [ -z "${SEDOC_EVIDENCE_SIGNING_KEY:-}" ]; then
+  echo "SEDOC_EVIDENCE_SIGNING_KEY required" >&2
   exit 2
 fi
 
@@ -129,7 +129,7 @@ note "writing manifest"
 } > "$BUNDLE/MANIFEST.json"
 
 # HMAC-SHA256 signature of the manifest.
-SIG="$(openssl dgst -sha256 -hmac "$VAULTDMS_EVIDENCE_SIGNING_KEY" -hex \
+SIG="$(openssl dgst -sha256 -hmac "$SEDOC_EVIDENCE_SIGNING_KEY" -hex \
         < "$BUNDLE/MANIFEST.json" | awk '{print $2}')"
 echo -n "$SIG" > "$BUNDLE/MANIFEST.sig"
 

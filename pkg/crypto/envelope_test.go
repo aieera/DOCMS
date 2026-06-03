@@ -178,7 +178,7 @@ func TestLocalKM_KEKSwapFailsDecrypt(t *testing.T) {
 func TestNewLocalKeyManager_Validation(t *testing.T) {
 	if _, err := NewLocalKeyManager("", nil); err == nil {
 		// Guard against accidentally reading a stale env var in tests.
-		t.Skip("skipping: VAULTDMS_LOCAL_KEK set in env")
+		t.Skip("skipping: SEDOC_LOCAL_KEK set in env")
 	}
 
 	// Non-base64 garbage.

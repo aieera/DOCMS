@@ -53,7 +53,7 @@ EARLY_STOPPING_PATIENCE = 2
 
 # MinIO bucket where model artifacts live. Each version writes
 # multiple files into models/{tenant}/{model_type}/{version}/.
-MODELS_BUCKET_ENV = "VAULTDMS_MODELS_BUCKET"
+MODELS_BUCKET_ENV = "SEDOC_MODELS_BUCKET"
 DEFAULT_MODELS_BUCKET = "vaultdms-models"
 
 

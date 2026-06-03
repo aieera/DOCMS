@@ -36,11 +36,11 @@ gRPC:
 
 ## Configuration
 
-- `VAULTDMS_MINIO_ENDPOINT` / `_S3_*`
+- `SEDOC_MINIO_ENDPOINT` / `_S3_*`
 - `CLAMAV_ADDR` (default `clamav:3310`)
 - `POLICY_SERVICE_ADDR`
-- `VAULTDMS_LOCAL_KEK` (base64 32 bytes, when KMS=local)
-- `VAULTDMS_KMS_PROVIDER` (`local | vault | aws`)
+- `SEDOC_LOCAL_KEK` (base64 32 bytes, when KMS=local)
+- `SEDOC_KMS_PROVIDER` (`local | vault | aws`)
 
 ## Running locally
 

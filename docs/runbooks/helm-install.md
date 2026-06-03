@@ -334,7 +334,7 @@ kubectl get externalsecret -n vaultdms
 # STATUS column should show SecretSynced=True for each row
 
 kubectl get secret vaultdms-platform-secrets -n vaultdms -o yaml | \
-  grep VAULTDMS_LOCAL_KEK   # should be present (base64-encoded)
+  grep SEDOC_LOCAL_KEK   # should be present (base64-encoded)
 ```
 
 ---

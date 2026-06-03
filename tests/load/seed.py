@@ -17,7 +17,7 @@ Why a Python seeder and not a Go binary?
 - One file > pulling in protobuf-generated types from 11 services.
 
 Safety:
-- Refuses to run unless VAULTDMS_LOAD_SEED_OK=1 is set AND the DSN's
+- Refuses to run unless SEDOC_LOAD_SEED_OK=1 is set AND the DSN's
   database name contains "loadtest". Prevents anyone running this
   against a non-loadtest cluster by accident.
 
@@ -29,7 +29,7 @@ Resumability:
 
 Usage:
     export DATABASE_URL='postgresql://user:pass@host:5432/vaultdms_loadtest'
-    export VAULTDMS_LOAD_SEED_OK=1
+    export SEDOC_LOAD_SEED_OK=1
     python tests/load/seed.py \
         --tenants 100 \
         --docs-per-tenant 1000000 \
@@ -165,9 +165,9 @@ def parse_args() -> Args:
 
 def safety_check(dsn: str) -> None:
     """Refuse to run unless the operator promised this is a load-test cluster."""
-    if os.environ.get("VAULTDMS_LOAD_SEED_OK") != "1":
+    if os.environ.get("SEDOC_LOAD_SEED_OK") != "1":
         print(
-            "Refusing to seed without VAULTDMS_LOAD_SEED_OK=1. "
+            "Refusing to seed without SEDOC_LOAD_SEED_OK=1. "
             "This script writes ~100M rows; set the env var to confirm.",
             file=sys.stderr,
         )

@@ -6,14 +6,14 @@ React 18 + TanStack Router + TanStack Query + Vite 5 + TypeScript.
 
 ```bash
 cp .env.example .env.local
-# Open .env.local and fill in VAULTDMS_GATEWAY_SECRET. Generate a
+# Open .env.local and fill in SEDOC_GATEWAY_SECRET. Generate a
 # fresh value with: openssl rand -hex 32
 # Use the SAME value in scripts/run-all-services.sh.
 npm install
 npm run dev
 ```
 
-The Vite dev server refuses to start if `VAULTDMS_GATEWAY_SECRET` is
+The Vite dev server refuses to start if `SEDOC_GATEWAY_SECRET` is
 unset — the Go services require it on every request via
 `pkg/middleware.RequireGatewaySignature`. See [`vite.config.ts`](./vite.config.ts).
 

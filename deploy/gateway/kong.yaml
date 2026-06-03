@@ -25,19 +25,19 @@ plugins:
   # §3.1 / B2.2 — gateway-signature injection. Every forwarded request
   # carries X-Gateway-Signature = shared secret. Backends verify via
   # pkg/middleware.RequireGatewaySignature and reject unsigned traffic.
-  # The literal `${VAULTDMS_GATEWAY_SECRET}` is substituted by Kong at
+  # The literal `${SEDOC_GATEWAY_SECRET}` is substituted by Kong at
   # boot from the env of the same name (compose + Helm both inject it).
   - name: request-transformer
     config:
       add:
         headers:
-          - "X-Gateway-Signature:${VAULTDMS_GATEWAY_SECRET}"
+          - "X-Gateway-Signature:${SEDOC_GATEWAY_SECRET}"
       # `replace` ensures a client-supplied header is overwritten, not
       # merged. A malicious client cannot smuggle a fake signature
       # through the gateway.
       replace:
         headers:
-          - "X-Gateway-Signature:${VAULTDMS_GATEWAY_SECRET}"
+          - "X-Gateway-Signature:${SEDOC_GATEWAY_SECRET}"
       # FIX-1 (2026-05-31) defense-in-depth — strip any inbound
       # X-User-*/X-Auth-Tenant-ID headers before forwarding. The
       # backend now reads these values exclusively from the

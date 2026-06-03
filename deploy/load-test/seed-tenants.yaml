@@ -18,7 +18,7 @@
 # Idempotent: re-applying does not recreate the Job (immutable spec
 # error). To re-run, delete first: `kubectl delete job/create-loadtest-tenants`.
 #
-# Safety: VAULTDMS_LOAD_SEED_OK=1 is set explicitly here. The script
+# Safety: SEDOC_LOAD_SEED_OK=1 is set explicitly here. The script
 # refuses without it. Don't apply this manifest against a non-loadtest
 # cluster — the load-test IAM policy keyed on the
 # vaultdms_environment_class=loadtest tag is your second-line defence.
@@ -121,7 +121,7 @@ spec:
           command: ["/bin/bash"]
           args: ["/app/scripts/create-loadtest-tenants.sh"]
           env:
-            - name: VAULTDMS_LOAD_SEED_OK
+            - name: SEDOC_LOAD_SEED_OK
               value: "1"
             - name: BILLING_URL
               value: http://vaultdms-billing.vaultdms.svc.cluster.local:8080

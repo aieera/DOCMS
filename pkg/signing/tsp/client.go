@@ -177,7 +177,7 @@ var (
 )
 
 // Config is the union of every adapter's settings. The service
-// builds one from VAULTDMS_QES_* envs at boot and hands the right
+// builds one from SEDOC_QES_* envs at boot and hands the right
 // slice to each adapter's New function. Empty fields → adapter
 // returns ErrNotConfigured on any call.
 type Config struct {

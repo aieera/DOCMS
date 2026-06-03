@@ -20,11 +20,11 @@ type State struct {
 var global = &State{}
 
 // Init parses the bundled public key and loads the license (if any) from
-// VAULTDMS_LICENSE_JWT env or /etc/vaultdms/license.jwt file. Returns an
+// SEDOC_LICENSE_JWT env or /etc/vaultdms/license.jwt file. Returns an
 // error only when a license IS present but invalid. Absent license is
 // not an error — the service runs in StatusUnlicensedDev.
 //
-// VAULTDMS_REQUIRE_LICENSE=true upgrades absent-license to an error,
+// SEDOC_REQUIRE_LICENSE=true upgrades absent-license to an error,
 // for production deployments where running unlicensed is a misconfig.
 func Init() error {
 	pub, err := ParsePublicKeyPEM(DevPublicKeyPEM)
@@ -33,7 +33,7 @@ func Init() error {
 	}
 	global.pubKey = pub
 
-	token := os.Getenv("VAULTDMS_LICENSE_JWT")
+	token := os.Getenv("SEDOC_LICENSE_JWT")
 	if token == "" {
 		// fallback: read from file
 		if b, err := os.ReadFile("/etc/vaultdms/license.jwt"); err == nil {
@@ -41,10 +41,10 @@ func Init() error {
 		}
 	}
 	if token == "" {
-		if os.Getenv("VAULTDMS_REQUIRE_LICENSE") == "true" {
+		if os.Getenv("SEDOC_REQUIRE_LICENSE") == "true" {
 			return os.ErrNotExist
 		}
-		slog.Info("license: running unlicensed_dev_mode (no VAULTDMS_LICENSE_JWT)")
+		slog.Info("license: running unlicensed_dev_mode (no SEDOC_LICENSE_JWT)")
 		return nil
 	}
 

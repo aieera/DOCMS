@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ type Config struct {
 
 	// PublicURL is the externally reachable base URL of the platform
 	// (e.g. https://app.vaultdms.io). Used by auth SSO redirect builders
-	// and document sharing URLs. Env: VAULTDMS_PUBLIC_URL.
+	// and document sharing URLs. Env: SEDOC_PUBLIC_URL.
 	PublicURL string `mapstructure:"public_url"`
 
 	// PolicyServiceAddr is the gRPC address of the policy service used
@@ -96,12 +97,12 @@ type Config struct {
 
 	// S3PublicBase optionally overrides the S3 endpoint host in
 	// presigned URLs when the service is behind a reverse proxy.
-	// Env: VAULTDMS_S3_PUBLIC_BASE.
+	// Env: SEDOC_S3_PUBLIC_BASE.
 	S3PublicBase string `mapstructure:"s3_public_base"`
 
 	// InternalAPIKey protects internal administrative endpoints
 	// (currently the billing service /internal/v1 routes). Callers
-	// present it in the X-API-Key header. Env: VAULTDMS_INTERNAL_API_KEY.
+	// present it in the X-API-Key header. Env: SEDOC_INTERNAL_API_KEY.
 	InternalAPIKey string `mapstructure:"internal_api_key"`
 
 	// StripeWebhookSecret is the whsec_... secret used to verify
@@ -114,7 +115,7 @@ type Config struct {
 	// the notification service uses for transactional emails
 	// (DSR verification token, invite, password reset). Empty host
 	// disables email sending — the service logs the would-be email
-	// and continues. Env: VAULTDMS_SMTP_*.
+	// and continues. Env: SEDOC_SMTP_*.
 	SMTPHost     string `mapstructure:"smtp_host"`
 	SMTPPort     int    `mapstructure:"smtp_port"`
 	SMTPUsername string `mapstructure:"smtp_username"`
@@ -170,12 +171,37 @@ type Config struct {
 	ESignStateHMAC string `mapstructure:"esign_state_hmac"`
 }
 
-// Load reads configuration from (in order): env vars (VAULTDMS_* prefix),
+// Load reads configuration from (in order): env vars (SEDOC_* prefix),
 // a config.yaml in the service working dir, and defaults. It validates the
 // result and returns a populated Config or a descriptive error.
+// mirrorLegacyEnv copies any VAULTDMS_*-prefixed environment variables to
+// their SEDOC_* equivalents when the new name is unset. The project renamed
+// its env prefix VAULTDMS_ -> SEDOC_; this shim keeps pre-rename .env files and
+// already-deployed environments working through the transition. It is safe to
+// remove once every environment injects SEDOC_* directly.
+func mirrorLegacyEnv() {
+	const oldPrefix, newPrefix = "VAULTDMS_", "SEDOC_"
+	for _, kv := range os.Environ() {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		key := kv[:eq]
+		if !strings.HasPrefix(key, oldPrefix) {
+			continue
+		}
+		newKey := newPrefix + strings.TrimPrefix(key, oldPrefix)
+		if _, ok := os.LookupEnv(newKey); !ok {
+			_ = os.Setenv(newKey, kv[eq+1:])
+		}
+	}
+}
+
 func Load(serviceName string) (*Config, error) {
+	mirrorLegacyEnv()
+
 	v := viper.New()
-	v.SetEnvPrefix("VAULTDMS")
+	v.SetEnvPrefix("SEDOC")
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
@@ -183,7 +209,7 @@ func Load(serviceName string) (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
-	v.AddConfigPath("/etc/vaultdms")
+	v.AddConfigPath("/etc/sedoc")
 
 	setDefaults(v, serviceName)
 
@@ -206,42 +232,42 @@ func Load(serviceName string) (*Config, error) {
 	// to viper (via SetDefault, Get, or an explicit BindEnv). The required
 	// infra URLs are not defaulted (we want a clean startup failure when
 	// they are missing), so bind them explicitly here.
-	_ = v.BindEnv("database_url", "VAULTDMS_DATABASE_URL")
-	_ = v.BindEnv("redis_url", "VAULTDMS_REDIS_URL")
-	_ = v.BindEnv("redis_password", "VAULTDMS_REDIS_PASSWORD")
-	_ = v.BindEnv("nats_url", "VAULTDMS_NATS_URL")
-	_ = v.BindEnv("http_port", "VAULTDMS_HTTP_PORT")
-	_ = v.BindEnv("grpc_port", "VAULTDMS_GRPC_PORT")
-	_ = v.BindEnv("health_port", "VAULTDMS_HEALTH_PORT")
+	_ = v.BindEnv("database_url", "SEDOC_DATABASE_URL")
+	_ = v.BindEnv("redis_url", "SEDOC_REDIS_URL")
+	_ = v.BindEnv("redis_password", "SEDOC_REDIS_PASSWORD")
+	_ = v.BindEnv("nats_url", "SEDOC_NATS_URL")
+	_ = v.BindEnv("http_port", "SEDOC_HTTP_PORT")
+	_ = v.BindEnv("grpc_port", "SEDOC_GRPC_PORT")
+	_ = v.BindEnv("health_port", "SEDOC_HEALTH_PORT")
 	// Per CLAUDE.md the S3-vs-MinIO naming sweep moved compose to
-	// VAULTDMS_S3_*; the struct fields kept their MinIO* names. Bind
+	// SEDOC_S3_*; the struct fields kept their MinIO* names. Bind
 	// both spellings so either env wins (S3_* preferred — that's what
 	// compose ships today). Without this the storage service starts
 	// with cfg.MinIOEndpoint == "" and crashes at minio.New.
-	_ = v.BindEnv("minio_endpoint", "VAULTDMS_S3_ENDPOINT", "VAULTDMS_MINIO_ENDPOINT")
-	_ = v.BindEnv("minio_access_key", "VAULTDMS_S3_ACCESS_KEY", "VAULTDMS_MINIO_ACCESS_KEY")
-	_ = v.BindEnv("minio_secret_key", "VAULTDMS_S3_SECRET_KEY", "VAULTDMS_MINIO_SECRET_KEY")
-	_ = v.BindEnv("local_kek", "VAULTDMS_LOCAL_KEK")
-	_ = v.BindEnv("public_url", "VAULTDMS_PUBLIC_URL")
-	_ = v.BindEnv("internal_api_key", "VAULTDMS_INTERNAL_API_KEY")
-	_ = v.BindEnv("s3_public_base", "VAULTDMS_S3_PUBLIC_BASE")
+	_ = v.BindEnv("minio_endpoint", "SEDOC_S3_ENDPOINT", "SEDOC_MINIO_ENDPOINT")
+	_ = v.BindEnv("minio_access_key", "SEDOC_S3_ACCESS_KEY", "SEDOC_MINIO_ACCESS_KEY")
+	_ = v.BindEnv("minio_secret_key", "SEDOC_S3_SECRET_KEY", "SEDOC_MINIO_SECRET_KEY")
+	_ = v.BindEnv("local_kek", "SEDOC_LOCAL_KEK")
+	_ = v.BindEnv("public_url", "SEDOC_PUBLIC_URL")
+	_ = v.BindEnv("internal_api_key", "SEDOC_INTERNAL_API_KEY")
+	_ = v.BindEnv("s3_public_base", "SEDOC_S3_PUBLIC_BASE")
 
 	// ADR 0071 — eSign connector envs. AutomaticEnv() only reads keys
 	// viper already knows about; without these explicit binds a
-	// Helm-supplied VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID never lands.
+	// Helm-supplied SEDOC_ESIGN_DOCUSIGN_CLIENT_ID never lands.
 	// Per-tenant DB credentials are the primary path; these envs are
 	// the optional deployment-wide fallback.
-	_ = v.BindEnv("esign_state_hmac", "VAULTDMS_ESIGN_STATE_HMAC")
-	_ = v.BindEnv("esign_docusign_client_id", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID")
-	_ = v.BindEnv("esign_docusign_client_secret", "VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET")
-	_ = v.BindEnv("esign_docusign_authorize_url", "VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL")
-	_ = v.BindEnv("esign_docusign_token_url", "VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL")
-	_ = v.BindEnv("esign_docusign_redirect_uri", "VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI")
-	_ = v.BindEnv("esign_adobe_sign_client_id", "VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID")
-	_ = v.BindEnv("esign_adobe_sign_client_secret", "VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET")
-	_ = v.BindEnv("esign_adobe_sign_authorize_url", "VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL")
-	_ = v.BindEnv("esign_adobe_sign_token_url", "VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL")
-	_ = v.BindEnv("esign_adobe_sign_redirect_uri", "VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI")
+	_ = v.BindEnv("esign_state_hmac", "SEDOC_ESIGN_STATE_HMAC")
+	_ = v.BindEnv("esign_docusign_client_id", "SEDOC_ESIGN_DOCUSIGN_CLIENT_ID")
+	_ = v.BindEnv("esign_docusign_client_secret", "SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET")
+	_ = v.BindEnv("esign_docusign_authorize_url", "SEDOC_ESIGN_DOCUSIGN_AUTHORIZE_URL")
+	_ = v.BindEnv("esign_docusign_token_url", "SEDOC_ESIGN_DOCUSIGN_TOKEN_URL")
+	_ = v.BindEnv("esign_docusign_redirect_uri", "SEDOC_ESIGN_DOCUSIGN_REDIRECT_URI")
+	_ = v.BindEnv("esign_adobe_sign_client_id", "SEDOC_ESIGN_ADOBE_SIGN_CLIENT_ID")
+	_ = v.BindEnv("esign_adobe_sign_client_secret", "SEDOC_ESIGN_ADOBE_SIGN_CLIENT_SECRET")
+	_ = v.BindEnv("esign_adobe_sign_authorize_url", "SEDOC_ESIGN_ADOBE_SIGN_AUTHORIZE_URL")
+	_ = v.BindEnv("esign_adobe_sign_token_url", "SEDOC_ESIGN_ADOBE_SIGN_TOKEN_URL")
+	_ = v.BindEnv("esign_adobe_sign_redirect_uri", "SEDOC_ESIGN_ADOBE_SIGN_REDIRECT_URI")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -275,10 +301,10 @@ func (c *Config) Validate() error {
 	}
 	var missing []string
 	if c.PublicURL == "" {
-		missing = append(missing, "VAULTDMS_PUBLIC_URL")
+		missing = append(missing, "SEDOC_PUBLIC_URL")
 	}
 	if c.LocalKEK == "" && c.KMSProvider == "local" {
-		missing = append(missing, "VAULTDMS_LOCAL_KEK (kms_provider=local)")
+		missing = append(missing, "SEDOC_LOCAL_KEK (kms_provider=local)")
 	}
 	// StripeWebhookSecret + InternalAPIKey are only required for services
 	// that actually use them. Callers that need them should check cfg

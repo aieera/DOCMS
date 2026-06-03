@@ -59,7 +59,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -89,9 +89,9 @@ func main() {
 	// both env vars are set (dev without intelligence running leaves
 	// them empty, and hybrid mode degrades to lexical).
 	var vecClient *vector.Client
-	if embedURL, qdrantURL := os.Getenv("VAULTDMS_INTELLIGENCE_EMBED_URL"),
-		os.Getenv("VAULTDMS_QDRANT_URL"); embedURL != "" && qdrantURL != "" {
-		coll := os.Getenv("VAULTDMS_QDRANT_COLLECTION")
+	if embedURL, qdrantURL := os.Getenv("SEDOC_INTELLIGENCE_EMBED_URL"),
+		os.Getenv("SEDOC_QDRANT_URL"); embedURL != "" && qdrantURL != "" {
+		coll := os.Getenv("SEDOC_QDRANT_COLLECTION")
 		if coll == "" {
 			coll = "vaultdms_chunks"
 		}

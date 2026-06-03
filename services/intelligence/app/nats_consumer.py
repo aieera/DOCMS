@@ -54,7 +54,7 @@ OCR_MIMES = {
 }
 
 # Default per-tenant concurrency cap — 8 parallel OCR tasks per tenant.
-# Overridable via VAULTDMS_OCR_PER_TENANT_CAP.
+# Overridable via SEDOC_OCR_PER_TENANT_CAP.
 DEFAULT_PER_TENANT_CAP = 8
 
 

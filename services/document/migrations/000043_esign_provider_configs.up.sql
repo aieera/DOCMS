@@ -1,7 +1,7 @@
 -- Per-tenant DocuSign / Adobe Sign OAuth client credentials.
 --
 -- Before this: provider client_id / client_secret lived in env vars
--- (VAULTDMS_ESIGN_DOCUSIGN_* / *_ADOBE_SIGN_*) — one set for the whole
+-- (SEDOC_ESIGN_DOCUSIGN_* / *_ADOBE_SIGN_*) — one set for the whole
 -- deployment. Multi-tenant DMS needs each tenant to register their own
 -- integration app with the vendor, so creds are per (tenant, provider).
 --

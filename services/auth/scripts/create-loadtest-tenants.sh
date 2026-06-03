@@ -13,7 +13,7 @@
 # services/billing/internal/provisioner/provisioner.go).
 #
 # Safety:
-#   - Refuses to run unless VAULTDMS_LOAD_SEED_OK=1 — same guard the
+#   - Refuses to run unless SEDOC_LOAD_SEED_OK=1 — same guard the
 #     seed.py corpus loader uses, so one missed env var blocks both
 #     destructive bootstrap paths.
 #   - Tenant names hard-coded to "loadtest-NNN" so the cleanup query
@@ -36,8 +36,8 @@
 
 set -euo pipefail
 
-if [[ "${VAULTDMS_LOAD_SEED_OK:-}" != "1" ]]; then
-  echo "Refusing: VAULTDMS_LOAD_SEED_OK must be 1." >&2
+if [[ "${SEDOC_LOAD_SEED_OK:-}" != "1" ]]; then
+  echo "Refusing: SEDOC_LOAD_SEED_OK must be 1." >&2
   echo "This script is destructive — it creates real org rows + admin users." >&2
   exit 1
 fi

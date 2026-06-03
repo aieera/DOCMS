@@ -1,7 +1,7 @@
 # How-to: Switch eSign from mock to real DocuSign / Adobe Sign
 
 Mock mode is the dev default (ADR 0071, set via
-`VAULTDMS_ESIGN_MOCK_OK=true` in `docker-compose.yml`). To connect a
+`SEDOC_ESIGN_MOCK_OK=true` in `docker-compose.yml`). To connect a
 real DocuSign or Adobe Sign tenant, you need OAuth credentials from
 the vendor portal and four env vars per provider.
 
@@ -38,24 +38,24 @@ the vendor portal and four env vars per provider.
 
 ```bash
 # Turn mock off (real providers take over)
-VAULTDMS_ESIGN_MOCK_OK=false
+SEDOC_ESIGN_MOCK_OK=false
 
 # DocuSign — fill ALL six to enable; leave them empty to disable
-VAULTDMS_ESIGN_DOCUSIGN_CLIENT_ID=your-integration-key
-VAULTDMS_ESIGN_DOCUSIGN_CLIENT_SECRET=your-secret-key
-VAULTDMS_ESIGN_DOCUSIGN_AUTHORIZE_URL=https://account-d.docusign.com/oauth/auth
-VAULTDMS_ESIGN_DOCUSIGN_TOKEN_URL=https://account-d.docusign.com/oauth/token
-VAULTDMS_ESIGN_DOCUSIGN_REDIRECT_URI=http://localhost:3000/api/v1/signatures/esign/oauth/callback
+SEDOC_ESIGN_DOCUSIGN_CLIENT_ID=your-integration-key
+SEDOC_ESIGN_DOCUSIGN_CLIENT_SECRET=your-secret-key
+SEDOC_ESIGN_DOCUSIGN_AUTHORIZE_URL=https://account-d.docusign.com/oauth/auth
+SEDOC_ESIGN_DOCUSIGN_TOKEN_URL=https://account-d.docusign.com/oauth/token
+SEDOC_ESIGN_DOCUSIGN_REDIRECT_URI=http://localhost:3000/api/v1/signatures/esign/oauth/callback
 
 # Adobe Sign — same pattern
-VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_ID=your-client-id
-VAULTDMS_ESIGN_ADOBE_SIGN_CLIENT_SECRET=your-client-secret
-VAULTDMS_ESIGN_ADOBE_SIGN_AUTHORIZE_URL=https://secure.na1.adobesign.com/public/oauth/v2
-VAULTDMS_ESIGN_ADOBE_SIGN_TOKEN_URL=https://secure.na1.adobesign.com/oauth/v2/token
-VAULTDMS_ESIGN_ADOBE_SIGN_REDIRECT_URI=http://localhost:3000/api/v1/signatures/esign/oauth/callback
+SEDOC_ESIGN_ADOBE_SIGN_CLIENT_ID=your-client-id
+SEDOC_ESIGN_ADOBE_SIGN_CLIENT_SECRET=your-client-secret
+SEDOC_ESIGN_ADOBE_SIGN_AUTHORIZE_URL=https://secure.na1.adobesign.com/public/oauth/v2
+SEDOC_ESIGN_ADOBE_SIGN_TOKEN_URL=https://secure.na1.adobesign.com/oauth/v2/token
+SEDOC_ESIGN_ADOBE_SIGN_REDIRECT_URI=http://localhost:3000/api/v1/signatures/esign/oauth/callback
 
 # Required for state-HMAC signing. Random 32 bytes hex. Rotate yearly.
-VAULTDMS_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
+SEDOC_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
 ```
 
 You only fill the providers you actually use — the empty one stays
@@ -88,7 +88,7 @@ The signature service:
 1. Verifies the HMAC-signed `state` matches the requesting tenant.
 2. Exchanges the auth code for `access_token` + `refresh_token`.
 3. Seals both with the per-deploy SealingKey (derived from
-   `VAULTDMS_LOCAL_KEK`).
+   `SEDOC_LOCAL_KEK`).
 4. Inserts/upserts a row in `esign_oauth_tokens`.
 5. 303s back to `/admin/integrations?connected=docusign` so the UI
    updates immediately.
@@ -120,7 +120,7 @@ Each authenticates itself with a different mechanism that doesn't
 depend on the gateway:
 
 - **OAuth callback** — the `state` parameter is HMAC-signed with
-  `VAULTDMS_ESIGN_STATE_HMAC`. Tampered state fails the verify and
+  `SEDOC_ESIGN_STATE_HMAC`. Tampered state fails the verify and
   the callback returns 400 before any token exchange.
 - **Vendor webhooks** — DocuSign's HMAC header + Adobe Sign's
   webhook signature, both checked inside the webhook handler
@@ -132,12 +132,12 @@ still upstream of the middleware and signs the request anyway.
 
 ## Production checklist
 
-- [ ] `VAULTDMS_ESIGN_MOCK_OK=false`
+- [ ] `SEDOC_ESIGN_MOCK_OK=false`
 - [ ] Production OAuth URLs (`account.docusign.com`, not `-d.`)
 - [ ] Redirect URI matches the public deploy URL exactly, including
       protocol and port
-- [ ] `VAULTDMS_ESIGN_STATE_HMAC` set to a 32-byte random value
-- [ ] `VAULTDMS_LOCAL_KEK` set (sealing key for tokens at rest)
+- [ ] `SEDOC_ESIGN_STATE_HMAC` set to a 32-byte random value
+- [ ] `SEDOC_LOCAL_KEK` set (sealing key for tokens at rest)
 - [ ] Webhook URL registered in vendor portal:
       `https://your-domain.com/api/v1/signatures/esign/webhook/{provider}/{tenant}`
 - [ ] `signature` service deployment env carries the variables

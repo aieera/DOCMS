@@ -36,7 +36,7 @@ partial unique index.
 Each KeyManager implementation resolves the alias differently:
 
 - **LocalKeyManager (dev/CI):** derives the tenant KEK as
-  `HKDF-SHA256(VAULTDMS_LOCAL_KEK, salt="kek/"+alias, info="vaultdms/v1", L=32)`.
+  `HKDF-SHA256(SEDOC_LOCAL_KEK, salt="kek/"+alias, info="vaultdms/v1", L=32)`.
   HKDF guarantees that knowing one tenant's KEK does not help recover
   another's. The master secret never leaves memory; it is not persisted
   and not reachable from SQL.
@@ -71,7 +71,7 @@ live alias.
   alias.
 
 **Harder**
-- The master secret `VAULTDMS_LOCAL_KEK` becomes load-bearing: losing
+- The master secret `SEDOC_LOCAL_KEK` becomes load-bearing: losing
   it makes every tenant's objects unrecoverable in dev/on-prem mode.
   Operators must rotate via explicit `dms-admin secrets rotate` and
   run the lazy re-wrap after — Wave 6 follow-up.

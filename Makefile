@@ -128,7 +128,7 @@ docker-up: ## Start local dev infrastructure
 	$(COMPOSE) up -d
 
 .PHONY: docker-up-prebuilt
-docker-up-prebuilt: ## Start the full stack using pre-built images from ghcr.io (set VAULTDMS_IMAGE_TAG to pin a version)
+docker-up-prebuilt: ## Start the full stack using pre-built images from ghcr.io (set SEDOC_IMAGE_TAG to pin a version)
 	$(COMPOSE) -f docker-compose.yml -f docker-compose.prebuilt.yml pull
 	$(COMPOSE) -f docker-compose.yml -f docker-compose.prebuilt.yml up -d
 	./scripts/wait-for-health.sh

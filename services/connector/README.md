@@ -44,7 +44,7 @@ OAuth client credentials live in `connector_configs` rows.
 
 ```bash
 make up
-( cd services/connector && VAULTDMS_HTTP_PORT=8084 go run ./cmd/server )
+( cd services/connector && SEDOC_HTTP_PORT=8084 go run ./cmd/server )
 ```
 
 ## Testing

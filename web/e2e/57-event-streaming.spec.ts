@@ -101,7 +101,7 @@ test.describe('Journey 57 — Event streaming admin', () => {
     await page.getByTestId('sample-lang-js').click()
     await expect(page.getByText('@nats-io/nats-core')).toBeVisible()
     await page.getByTestId('sample-lang-curl').click()
-    await expect(page.getByText('VAULTDMS_EVENT_TOKEN')).toBeVisible()
+    await expect(page.getByText('SEDOC_EVENT_TOKEN')).toBeVisible()
     await page.getByTestId('sample-lang-go').click()
     await expect(page.getByText('nats.UserCredentials')).toBeVisible()
 

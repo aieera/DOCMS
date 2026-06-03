@@ -150,10 +150,10 @@ PUBLIC_HOST=dms.yourdomain.com        # or the Elastic IP
 cat >> .env <<EOF
 
 # ===== generated per-deploy secrets =====
-VAULTDMS_GATEWAY_SECRET=$(openssl rand -hex 32)
-VAULTDMS_LOCAL_KEK=$(openssl rand -hex 32)
-VAULTDMS_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
-VAULTDMS_ONLYOFFICE_JWT=$(openssl rand -hex 32)
+SEDOC_GATEWAY_SECRET=$(openssl rand -hex 32)
+SEDOC_LOCAL_KEK=$(openssl rand -hex 32)
+SEDOC_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
+SEDOC_ONLYOFFICE_JWT=$(openssl rand -hex 32)
 
 # ===== seed admin (CHANGE from dev default) =====
 SEED_ADMIN_EMAIL=admin@yourco.com
@@ -161,15 +161,15 @@ SEED_ADMIN_PASSWORD=$(openssl rand -base64 18)
 SEED_TENANT_SLUG=yourco
 
 # ===== presigned URLs must resolve from the browser/ERP =====
-VAULTDMS_S3_PUBLIC_BASE=${PUBLIC_HOST}
+SEDOC_S3_PUBLIC_BASE=${PUBLIC_HOST}
 
 # ===== image tag =====
-VAULTDMS_IMAGE_TAG=main
+SEDOC_IMAGE_TAG=main
 
 # ===== posture =====
 # Test posture only. For production, connect as the dms_app NOBYPASSRLS role
 # and DELETE this line (see §11).
-VAULTDMS_ALLOW_BYPASS_RLS=1
+SEDOC_ALLOW_BYPASS_RLS=1
 EOF
 
 grep SEED_ADMIN_PASSWORD .env    # save this once
@@ -178,8 +178,8 @@ grep SEED_ADMIN_PASSWORD .env    # save this once
 **Object storage choice:**
 - **Self-hosted MinIO (default, in this stack)** — nothing else to set; blobs live in the
   `miniodata` volume. Back it up (§11).
-- **Real AWS S3** — copy from `.env.aws.example` instead: set `VAULTDMS_S3_ENDPOINT`,
-  `VAULTDMS_S3_REGION`, `S3_ADDRESSING_STYLE=virtual`, and either an IAM key pair or (better)
+- **Real AWS S3** — copy from `.env.aws.example` instead: set `SEDOC_S3_ENDPOINT`,
+  `SEDOC_S3_REGION`, `S3_ADDRESSING_STYLE=virtual`, and either an IAM key pair or (better)
   an **instance role** (leave key/secret blank). Then you can skip the `minio` container.
 
 **LLM provider (for Q&A / NER LLM / summarize / translation):** the intelligence worker
@@ -195,7 +195,7 @@ classification, embeddings, and search all work **without** an external LLM.
 Use the prebuilt overlay so nothing builds from source:
 
 ```bash
-export VAULTDMS_IMAGE_TAG=main
+export SEDOC_IMAGE_TAG=main
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml"
 
 # 6.1 Pull everything
@@ -303,7 +303,7 @@ Caddy fetches a Let's Encrypt cert automatically. Your product is now at
 `https://dms.yourdomain.com`. Log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
 
 > If you enabled OnlyOffice, also expose `:8195` (SG → your IP) and set
-> `VAULTDMS_ONLYOFFICE_PUBLIC_URL` to a host the browser can reach.
+> `SEDOC_ONLYOFFICE_PUBLIC_URL` to a host the browser can reach.
 
 ---
 
@@ -328,13 +328,13 @@ This single-box test posture is **not** production. To harden:
 
 | Area | Test posture (this guide) | Production |
 |---|---|---|
-| **RLS** | `VAULTDMS_ALLOW_BYPASS_RLS=1` | Remove it; connect as the `dms_app` `NOBYPASSRLS` role so a missing tenant predicate fails closed |
+| **RLS** | `SEDOC_ALLOW_BYPASS_RLS=1` | Remove it; connect as the `dms_app` `NOBYPASSRLS` role so a missing tenant predicate fails closed |
 | **Database** | container Postgres | **RDS Postgres 16** (Multi-AZ, automated backups, PITR) |
 | **Search** | container OpenSearch | **Amazon OpenSearch Service** |
 | **Cache/sessions** | container Redis | **ElastiCache Redis** |
 | **Blobs** | container MinIO | **S3** with versioning + bucket policy + SSE; instance role, no static keys |
 | **Events** | single NATS | NATS cluster (3 replicas) or managed |
-| **Keys** | `VAULTDMS_LOCAL_KEK` (HKDF) | **AWS KMS / Vault** per-tenant, per-region KEK; rotate every 90 days |
+| **Keys** | `SEDOC_LOCAL_KEK` (HKDF) | **AWS KMS / Vault** per-tenant, per-region KEK; rotate every 90 days |
 | **Secrets** | `.env` on disk | **AWS Secrets Manager / SSM Parameter Store**, loaded at boot |
 | **Ingress** | Caddy on the box | **ALB + ACM cert + WAF**; private subnets for app/data |
 | **Compute** | one EC2, compose | **EKS + Helm chart** (`deploy/helm/vaultdms`), HPA + PDB per service |
@@ -369,12 +369,12 @@ $COMPOSE logs -f gateway document auth intelligence-worker
   logs and the DLQ subjects (`dms.dlq.intel_events.*`); the processing-failure surface
   (ADR 0115) exposes these in the admin UI.
 - **OpenSearch won't start:** confirm `vm.max_map_count=262144` (§3).
-- **Upload "completes" but client can't fetch the blob:** `VAULTDMS_S3_PUBLIC_BASE` must be
+- **Upload "completes" but client can't fetch the blob:** `SEDOC_S3_PUBLIC_BASE` must be
   the reachable public host (§5), not `localhost`.
 
 **Update to a new build**
 ```bash
-export VAULTDMS_IMAGE_TAG=main      # or a pinned release tag
+export SEDOC_IMAGE_TAG=main      # or a pinned release tag
 $COMPOSE pull && $COMPOSE up -d
 DATABASE_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable" ./scripts/seed.sh  # apply new migrations
 cd web && npm ci && npm run build && cd .. && sudo cp -r web/dist/* /var/www/vaultdms/
@@ -410,7 +410,7 @@ sudo bash deploy/ec2/bootstrap-full.sh
 sudo PUBLIC_HOST=dms.yourdomain.com ENABLE_ONLYOFFICE=1 bash deploy/ec2/bootstrap-full.sh
 ```
 
-Knobs: `PUBLIC_HOST`, `VAULTDMS_IMAGE_TAG`, `ENABLE_ONLYOFFICE=1`, `SKIP_WEB=1`,
+Knobs: `PUBLIC_HOST`, `SEDOC_IMAGE_TAG`, `ENABLE_ONLYOFFICE=1`, `SKIP_WEB=1`,
 `SKIP_CADDY=1`. It prints the generated admin password once — save it.
 
 > For the *minimal API-core* only (9 containers, ~$30/mo), use `deploy/ec2/bootstrap.sh`

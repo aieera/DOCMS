@@ -23,9 +23,9 @@ spec:
               containerPort: 8080
           env:
             {{- include "vaultdms.commonEnv" (dict "Values" .Values) | nindent 12 }}
-            - name: VAULTDMS_CELERY_BROKER_URL
+            - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
-            - name: VAULTDMS_QDRANT_URL
+            - name: SEDOC_QDRANT_URL
               value: {{ .Values.global.qdrant.url | quote }}
             {{- range $k, $v := .Values.intelligence.env }}
             - name: {{ $k }}
@@ -68,9 +68,9 @@ spec:
           command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "-Q", {{ .Values.intelligence.celery.queues | default "intelligence" | quote }}]
           env:
             {{- include "vaultdms.commonEnv" (dict "Values" .Values) | nindent 12 }}
-            - name: VAULTDMS_CELERY_BROKER_URL
+            - name: SEDOC_CELERY_BROKER_URL
               value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
-            - name: VAULTDMS_QDRANT_URL
+            - name: SEDOC_QDRANT_URL
               value: {{ .Values.global.qdrant.url | quote }}
             {{- range $k, $v := .Values.intelligence.env }}
             - name: {{ $k }}

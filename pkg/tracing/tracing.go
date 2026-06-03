@@ -39,7 +39,7 @@ func Init(ctx context.Context, serviceName, version string) (func(context.Contex
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(serviceName),
 			semconv.ServiceVersionKey.String(version),
-			attribute.String("deployment.environment", os.Getenv("VAULTDMS_ENVIRONMENT")),
+			attribute.String("deployment.environment", os.Getenv("SEDOC_ENVIRONMENT")),
 		),
 	)
 

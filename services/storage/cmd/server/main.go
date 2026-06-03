@@ -57,7 +57,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7 follow-up: RLS posture gate. Refuses to start when the
 	// connection role unexpectedly has BYPASSRLS; set
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 in dev to opt in.
+	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
@@ -82,14 +82,14 @@ func main() {
 		log.Fatal(ctx).Err(err).Msg("s3 connect")
 	}
 
-	// VAULTDMS_STORAGE_SKIP_VIRUS_SCAN=true bypasses the ClamAV scan
+	// SEDOC_STORAGE_SKIP_VIRUS_SCAN=true bypasses the ClamAV scan
 	// on the upload-complete path. ClamAV in dev compose takes 5–7s
 	// per scan even for tiny PDFs — long enough that the FE looks
 	// hung. Skipping in dev is safe because the bytes never leave
 	// the local stack; prod always leaves this false.
 	var scannerClient *scanner.Client
 	if parseSkipVirusScan() {
-		log.Info(ctx).Msg("virus scan disabled (VAULTDMS_STORAGE_SKIP_VIRUS_SCAN=true)")
+		log.Info(ctx).Msg("virus scan disabled (SEDOC_STORAGE_SKIP_VIRUS_SCAN=true)")
 	} else {
 		scannerClient = scanner.New(cfg.ClamAVAddr, 2*time.Minute)
 	}
@@ -114,7 +114,7 @@ func main() {
 	}
 
 	// ---- Envelope encryption KeyManager -----------------------------------
-	// Dev path: LocalKeyManager reads VAULTDMS_LOCAL_KEK (base64 32-byte AES
+	// Dev path: LocalKeyManager reads SEDOC_LOCAL_KEK (base64 32-byte AES
 	// key). Prod should swap for pkgcrypto.VaultKeyManager or AWSKMS. If
 	// LocalKEK is unset, encryption is disabled — bucket-level SSE-AES256
 	// still provides at-rest encryption but there's no per-tenant KEK
@@ -130,7 +130,7 @@ func main() {
 			km = lkm
 		}
 	} else {
-		log.Warn(ctx).Msg("VAULTDMS_LOCAL_KEK not set; envelope encryption disabled")
+		log.Warn(ctx).Msg("SEDOC_LOCAL_KEK not set; envelope encryption disabled")
 	}
 
 	// ---- Service ----------------------------------------------------------
@@ -149,7 +149,7 @@ func main() {
 		DefaultRegion:    cfg.Region,
 		QuarantineBucket: "dms-quarantine",
 		PublicUploadBase: cfg.S3PublicBase,
-		// Encryption-at-rest is gated by VAULTDMS_STORAGE_ENCRYPT_AT_REST.
+		// Encryption-at-rest is gated by SEDOC_STORAGE_ENCRYPT_AT_REST.
 		// Defaults to true when KMS is wired (per ADR 0022), but dev
 		// compose explicitly sets it false because the OCR/preview/
 		// intelligence pipelines fetch raw S3 bytes (boto3) and don't
@@ -223,12 +223,12 @@ func main() {
 	_ = http.ListenAndServe // retained for future /metrics wiring
 }
 
-// parseEncryptAtRest reads VAULTDMS_STORAGE_ENCRYPT_AT_REST. Returns
+// parseEncryptAtRest reads SEDOC_STORAGE_ENCRYPT_AT_REST. Returns
 // the explicit value when set, otherwise the historical default
 // ("true when KMS is wired"). Three accepted truth values are
 // 1 / true / yes (case-insensitive); anything else counts as false.
 func parseEncryptAtRest(kmsWired bool) bool {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv("VAULTDMS_STORAGE_ENCRYPT_AT_REST")))
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SEDOC_STORAGE_ENCRYPT_AT_REST")))
 	if raw == "" {
 		return kmsWired
 	}
@@ -239,11 +239,11 @@ func parseEncryptAtRest(kmsWired bool) bool {
 	return false
 }
 
-// parseSkipVirusScan reads VAULTDMS_STORAGE_SKIP_VIRUS_SCAN. Defaults
+// parseSkipVirusScan reads SEDOC_STORAGE_SKIP_VIRUS_SCAN. Defaults
 // to false (scan stays on). Truthy values bypass the ClamAV step on
 // CompleteUpload — meant for dev where the scan adds 5–7s per upload.
 func parseSkipVirusScan() bool {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv("VAULTDMS_STORAGE_SKIP_VIRUS_SCAN")))
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SEDOC_STORAGE_SKIP_VIRUS_SCAN")))
 	switch raw {
 	case "1", "true", "yes", "on":
 		return true

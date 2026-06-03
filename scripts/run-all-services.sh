@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Dev helper: start every Go service locally in the background, tailing
 # logs to tmpfile per service. Each service gets its own GRPC_PORT and
-# HEALTH_PORT since viper reads a single global VAULTDMS_GRPC_PORT /
-# VAULTDMS_HEALTH_PORT — collisions otherwise.
+# HEALTH_PORT since viper reads a single global SEDOC_GRPC_PORT /
+# SEDOC_HEALTH_PORT — collisions otherwise.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -30,7 +30,7 @@ mkdir -p .run
 PID_FILE=.run/services.pids
 : > "$PID_FILE"
 
-# service:grpc_port:health_port:http_port — viper reads global VAULTDMS_*_PORT
+# service:grpc_port:health_port:http_port — viper reads global SEDOC_*_PORT
 # env vars, so each service gets its own triple. HTTP ports (8180+) are
 # distinct from health ports (8081+) so the two muxes don't collide.
 # Frontend Vite proxy routes /api/* → these HTTP ports (see web/vite.config.ts).
@@ -47,7 +47,7 @@ service_specs=(
   "billing:9099:8090:8189"
   "connector:9100:8091:8190"
   # graphql-gateway is HTTP-only — it doesn't bind a gRPC listener,
-  # but pkg/config still validates VAULTDMS_GRPC_PORT (`gt=0,lt=65536`)
+  # but pkg/config still validates SEDOC_GRPC_PORT (`gt=0,lt=65536`)
   # at boot, so we pass a distinct unused port (9101) rather than 0.
   # http_port 8191 matches the docker-compose mapping; the Vite proxy
   # routes /api/v1/graphql there in host mode.
@@ -75,8 +75,8 @@ export AUTH_SERVICE_ADDR="localhost:9090"
 # read access could forge gateway-authenticated requests against any
 # deployment that hadn't rotated. Generate a fresh value with
 # `openssl rand -hex 32` and export it in your shell (or .env).
-: "${VAULTDMS_GATEWAY_SECRET:?VAULTDMS_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
-export VAULTDMS_GATEWAY_SECRET
+: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+export SEDOC_GATEWAY_SECRET
 
 echo "Starting ${#service_specs[@]} services..."
 for spec in "${service_specs[@]}"; do
@@ -84,9 +84,9 @@ for spec in "${service_specs[@]}"; do
   log=".run/$svc.log"
   (
     cd "services/$svc" \
-      && VAULTDMS_GRPC_PORT="$grpc_port" \
-         VAULTDMS_HEALTH_PORT="$health_port" \
-         VAULTDMS_HTTP_PORT="$http_port" \
+      && SEDOC_GRPC_PORT="$grpc_port" \
+         SEDOC_HEALTH_PORT="$health_port" \
+         SEDOC_HTTP_PORT="$http_port" \
          go run ./cmd/server > "../../$log" 2>&1
   ) &
   echo "$!:$svc" >> "$PID_FILE"

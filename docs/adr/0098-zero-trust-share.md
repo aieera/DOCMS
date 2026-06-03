@@ -181,7 +181,7 @@ Both RLS'd on `app.current_tenant`. The token's public ID is a UUIDv7
                             ◄────── encrypted PNG bytes + key-id
                                                                  (Phase 1: encryption
                                                                   is feature-flagged
-                                                                  via VAULTDMS_ZT_ENCRYPT_TILES)
+                                                                  via SEDOC_ZT_ENCRYPT_TILES)
 ```
 
 Phase 1 ships unencrypted tiles by default with the encryption code

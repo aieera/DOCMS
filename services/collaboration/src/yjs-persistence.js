@@ -15,6 +15,7 @@ const FLUSH_EVERY = 25         // updates between snapshot writes
 const KEEP_SNAPSHOTS = 5       // most recent per (tenant, doc); older ones GC'd
 
 const DATABASE_URL =
+  process.env.SEDOC_DATABASE_URL ||
   process.env.VAULTDMS_DATABASE_URL ||
   process.env.DATABASE_URL ||
   'postgres://vaultdms:devpassword@postgres:5432/vaultdms?sslmode=disable'

@@ -403,11 +403,11 @@ for await (const m of sub) {
 }`,
   curl: `# Polling fallback — works through firewalls that block long-lived NATS.
 curl -s 'https://api.vaultdms.io/api/v1/events?since=2026-05-13T00:00:00Z&limit=100' \\
-  -H "Authorization: Bearer $VAULTDMS_EVENT_TOKEN" | jq
+  -H "Authorization: Bearer $SEDOC_EVENT_TOKEN" | jq
 
 # Resume from the cursor on next call:
 curl -s 'https://api.vaultdms.io/api/v1/events?cursor=seq:1234&limit=100' \\
-  -H "Authorization: Bearer $VAULTDMS_EVENT_TOKEN" | jq`,
+  -H "Authorization: Bearer $SEDOC_EVENT_TOKEN" | jq`,
 } as const
 
 // The route is a redirect alias into the canonical

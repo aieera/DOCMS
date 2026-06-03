@@ -6,8 +6,8 @@
 // /wopi/* on our behalf.
 //
 // Provider selection:
-//   - VAULTDMS_COAUTH_PROVIDER (env): "onlyoffice" | "collabora" | "disabled"
-//   - VAULTDMS_COAUTH_URL (env): base URL of the editor
+//   - SEDOC_COAUTH_PROVIDER (env): "onlyoffice" | "collabora" | "disabled"
+//   - SEDOC_COAUTH_URL (env): base URL of the editor
 // Per-tenant overrides land later via a tenant_settings row; today
 // it's deploy-wide.
 package handler
@@ -66,7 +66,7 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	provider := strings.ToLower(strings.TrimSpace(os.Getenv("VAULTDMS_COAUTH_PROVIDER")))
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("SEDOC_COAUTH_PROVIDER")))
 	if provider == "" {
 		provider = "disabled"
 	}
@@ -75,19 +75,19 @@ func (h *CoauthStartHandler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	editorBase := strings.TrimRight(os.Getenv("VAULTDMS_COAUTH_URL"), "/")
+	editorBase := strings.TrimRight(os.Getenv("SEDOC_COAUTH_URL"), "/")
 	if editorBase == "" {
-		writeErr(w, r, vdmserr.Internal("VAULTDMS_COAUTH_URL not set"))
+		writeErr(w, r, vdmserr.Internal("SEDOC_COAUTH_URL not set"))
 		return
 	}
 
-	secret := os.Getenv("VAULTDMS_WOPI_SECRET")
+	secret := os.Getenv("SEDOC_WOPI_SECRET")
 	if secret == "" {
-		writeErr(w, r, vdmserr.Internal("VAULTDMS_WOPI_SECRET not set"))
+		writeErr(w, r, vdmserr.Internal("SEDOC_WOPI_SECRET not set"))
 		return
 	}
 
-	publicBase := os.Getenv("VAULTDMS_PUBLIC_URL")
+	publicBase := os.Getenv("SEDOC_PUBLIC_URL")
 	if publicBase == "" {
 		publicBase = "http://localhost:8080"
 	}

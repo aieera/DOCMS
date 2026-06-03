@@ -324,7 +324,7 @@ app.post('/webhooks/vaultdms', express.raw({ type: 'application/json' }), (req, 
   const ts  = req.header('X-DMS-Timestamp') || ''
   if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(401).end()
   const expected = 'sha256=' + crypto
-    .createHmac('sha256', process.env.VAULTDMS_WEBHOOK_SECRET)
+    .createHmac('sha256', process.env.SEDOC_WEBHOOK_SECRET)
     .update(ts + '.' + req.body.toString('utf8'))
     .digest('hex')
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return res.status(401).end()
@@ -334,7 +334,7 @@ app.post('/webhooks/vaultdms', express.raw({ type: 'application/json' }), (req, 
 import hmac, hashlib, time
 from fastapi import FastAPI, Header, HTTPException, Request
 
-SECRET = os.environ['VAULTDMS_WEBHOOK_SECRET'].encode()
+SECRET = os.environ['SEDOC_WEBHOOK_SECRET'].encode()
 
 @app.post('/webhooks/vaultdms')
 async def hook(req: Request,
@@ -365,7 +365,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "stale", 401); return
     }
     body, _ := io.ReadAll(r.Body)
-    mac := hmac.New(sha256.New, []byte(os.Getenv("VAULTDMS_WEBHOOK_SECRET")))
+    mac := hmac.New(sha256.New, []byte(os.Getenv("SEDOC_WEBHOOK_SECRET")))
     mac.Write([]byte(strconv.FormatInt(ts, 10) + "."))
     mac.Write(body)
     expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
@@ -383,14 +383,14 @@ def verify
   sig = request.headers['X-DMS-Signature']
   return head :unauthorized if (Time.now.to_i - ts.to_i).abs > 300
   body = request.raw_post
-  expected = 'sha256=' + OpenSSL::HMAC.hexdigest('SHA256', ENV['VAULTDMS_WEBHOOK_SECRET'], "#{ts}.#{body}")
+  expected = 'sha256=' + OpenSSL::HMAC.hexdigest('SHA256', ENV['SEDOC_WEBHOOK_SECRET'], "#{ts}.#{body}")
   return head :unauthorized unless Rack::Utils.secure_compare(expected, sig)
   head :no_content
 end`,
   curl: `# Manual verification with curl + openssl
 # (replay this with a captured X-DMS-Timestamp + body)
 TS="$X_DMS_TIMESTAMP"
-SECRET="$VAULTDMS_WEBHOOK_SECRET"
+SECRET="$SEDOC_WEBHOOK_SECRET"
 BODY="$(cat payload.json)"
 
 EXPECTED="sha256=$(printf '%s.%s' "$TS" "$BODY" \\

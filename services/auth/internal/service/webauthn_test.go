@@ -14,7 +14,7 @@ import (
 )
 
 func TestWebAuthn_RoundTripsEnvelope(t *testing.T) {
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "test-secret-of-sufficient-length-32b")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "test-secret-of-sufficient-length-32b")
 
 	orig := SessionEnvelope{
 		UserID:   "u-1",
@@ -40,7 +40,7 @@ func TestWebAuthn_FlowCheckRejectsCrossFlowReuse(t *testing.T) {
 	// "login" — otherwise an attacker who steals a registration
 	// session token could complete a login it wasn't authorized
 	// for.
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "test-secret")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "test-secret")
 	tok, _ := WrapSession(SessionEnvelope{
 		UserID:   "u-1",
 		Flow:     "register",
@@ -53,7 +53,7 @@ func TestWebAuthn_FlowCheckRejectsCrossFlowReuse(t *testing.T) {
 }
 
 func TestWebAuthn_TamperedHMACRejected(t *testing.T) {
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "test-secret")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "test-secret")
 	tok, _ := WrapSession(SessionEnvelope{
 		UserID:   "u-1",
 		Flow:     "register",
@@ -72,18 +72,18 @@ func TestWebAuthn_TamperedHMACRejected(t *testing.T) {
 
 func TestWebAuthn_DifferentSecretRejects(t *testing.T) {
 	// A token wrapped with secret-A must NOT verify under secret-B.
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "secret-A")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "secret-A")
 	tok, _ := WrapSession(SessionEnvelope{
 		UserID: "u-1", Flow: "register", IssuedAt: time.Now().Unix(),
 	})
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "secret-B")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "secret-B")
 	if _, err := UnwrapSession(tok, "register"); err != ErrInvalidSession {
 		t.Errorf("token from different secret should fail; got %v", err)
 	}
 }
 
 func TestWebAuthn_ExpiredTokenRejected(t *testing.T) {
-	t.Setenv("VAULTDMS_WEBAUTHN_HMAC_SECRET", "test-secret")
+	t.Setenv("SEDOC_WEBAUTHN_HMAC_SECRET", "test-secret")
 	// Wrap with an issued_at far in the past — older than
 	// SessionTokenTTL.
 	tok, _ := WrapSession(SessionEnvelope{
@@ -97,15 +97,15 @@ func TestWebAuthn_ExpiredTokenRejected(t *testing.T) {
 }
 
 func TestWebAuthn_LoadConfig_ReturnsNilWhenRPIDMissing(t *testing.T) {
-	t.Setenv("VAULTDMS_WEBAUTHN_RPID", "")
+	t.Setenv("SEDOC_WEBAUTHN_RPID", "")
 	if cfg := LoadWebAuthnConfigFromEnv(); cfg != nil {
 		t.Errorf("expected nil config when RPID missing; got %+v", cfg)
 	}
 }
 
 func TestWebAuthn_LoadConfig_DefaultOriginsToHTTPSRPID(t *testing.T) {
-	t.Setenv("VAULTDMS_WEBAUTHN_RPID", "vaultdms.example.com")
-	t.Setenv("VAULTDMS_WEBAUTHN_ORIGINS", "")
+	t.Setenv("SEDOC_WEBAUTHN_RPID", "vaultdms.example.com")
+	t.Setenv("SEDOC_WEBAUTHN_ORIGINS", "")
 	cfg := LoadWebAuthnConfigFromEnv()
 	if cfg == nil {
 		t.Fatal("expected config")

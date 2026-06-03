@@ -10,26 +10,26 @@ import (
 	"github.com/aieera/sedoc/pkg/crypto"
 )
 
-// keyFromEnv reads VAULTDMS_LOCAL_KEK (a base64-encoded 32-byte key) or, if
-// absent, derives one by SHA-256ing whatever's in VAULTDMS_GATEWAY_SECRET
+// keyFromEnv reads SEDOC_LOCAL_KEK (a base64-encoded 32-byte key) or, if
+// absent, derives one by SHA-256ing whatever's in SEDOC_GATEWAY_SECRET
 // — the dev-shape fallback so a fresh checkout doesn't need an extra env
 // var to bring email ingestion up. Production deploys MUST set
-// VAULTDMS_LOCAL_KEK explicitly; the absence of an explicit KEK in prod is
+// SEDOC_LOCAL_KEK explicitly; the absence of an explicit KEK in prod is
 // caught by the same config-validation that the rest of the platform uses.
 func keyFromEnv() ([]byte, error) {
-	if raw := os.Getenv("VAULTDMS_LOCAL_KEK"); raw != "" {
+	if raw := os.Getenv("SEDOC_LOCAL_KEK"); raw != "" {
 		b, err := base64.StdEncoding.DecodeString(raw)
 		if err != nil {
-			return nil, fmt.Errorf("VAULTDMS_LOCAL_KEK decode: %w", err)
+			return nil, fmt.Errorf("SEDOC_LOCAL_KEK decode: %w", err)
 		}
 		if len(b) != crypto.DEKSize {
-			return nil, fmt.Errorf("VAULTDMS_LOCAL_KEK must decode to %d bytes, got %d", crypto.DEKSize, len(b))
+			return nil, fmt.Errorf("SEDOC_LOCAL_KEK must decode to %d bytes, got %d", crypto.DEKSize, len(b))
 		}
 		return b, nil
 	}
-	fallback := os.Getenv("VAULTDMS_GATEWAY_SECRET")
+	fallback := os.Getenv("SEDOC_GATEWAY_SECRET")
 	if fallback == "" {
-		return nil, errors.New("no encryption key: set VAULTDMS_LOCAL_KEK")
+		return nil, errors.New("no encryption key: set SEDOC_LOCAL_KEK")
 	}
 	h := sha256.Sum256([]byte(fallback))
 	return h[:], nil

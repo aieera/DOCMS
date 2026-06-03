@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS tenant_event_tokens (
 
     -- NATS half — operator-signed user JWT + nkey seed for direct NATS
     -- subscription. Only meaningful once the deploy switches to operator
-    -- mode (VAULTDMS_NATS_OPERATOR_MODE=true); pre-issued tokens still
+    -- mode (SEDOC_NATS_OPERATOR_MODE=true); pre-issued tokens still
     -- become valid the moment the server rotates.
     nats_account_id      TEXT,
     nats_user_jwt        TEXT,

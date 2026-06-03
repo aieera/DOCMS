@@ -60,12 +60,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// ADR 0095 — license validation. Init reads VAULTDMS_LICENSE_JWT (or
+	// ADR 0095 — license validation. Init reads SEDOC_LICENSE_JWT (or
 	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
 	// public key bundled in pkg/license/dev_pubkey.go, and caches the
 	// parsed claims for license.Current() readers. Absent license is OK
 	// (unlicensed_dev_mode); only a *present but invalid* license is fatal,
-	// unless VAULTDMS_REQUIRE_LICENSE=true escalates absence to fatal too.
+	// unless SEDOC_REQUIRE_LICENSE=true escalates absence to fatal too.
 	if err := license.Init(); err != nil {
 		log.Fatal(ctx).Err(err).Msg("license init")
 	}
@@ -80,7 +80,7 @@ func main() {
 	defer pool.Close()
 	// FIX-7: refuse to boot under an unexpected RLS posture. Prod
 	// connects as dms_app (NOBYPASSRLS); dev sets
-	// VAULTDMS_ALLOW_BYPASS_RLS=1 to opt into the superuser
+	// SEDOC_ALLOW_BYPASS_RLS=1 to opt into the superuser
 	// connection. Either drift produces a clear startup error rather
 	// than the silent zero-row Inserts that motivated the audit.
 
@@ -146,16 +146,16 @@ func main() {
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
 	svc.SetEnvironment(cfg.Environment)
-	// ADR 0078 — base64-decode VAULTDMS_LOCAL_KEK so the NER api-key
+	// ADR 0078 — base64-decode SEDOC_LOCAL_KEK so the NER api-key
 	// Set/Clear endpoints can encrypt with AES-256-GCM. Same key the
 	// auth service uses for MFA secrets and the intelligence worker
 	// uses to decrypt the per-tenant LLM key. Empty / wrong-size KEK
 	// leaves the path disabled — Set returns 500 with a clear error.
-	if kekB64 := os.Getenv("VAULTDMS_LOCAL_KEK"); kekB64 != "" {
+	if kekB64 := os.Getenv("SEDOC_LOCAL_KEK"); kekB64 != "" {
 		if kek, err := base64.StdEncoding.DecodeString(kekB64); err == nil {
 			svc.SetLocalKEK(kek)
 		} else {
-			log.Warn(ctx).Err(err).Msg("VAULTDMS_LOCAL_KEK base64 decode failed; tenant secrets disabled")
+			log.Warn(ctx).Err(err).Msg("SEDOC_LOCAL_KEK base64 decode failed; tenant secrets disabled")
 		}
 	}
 	// Admin Trash purge needs the S3 client to delete blob bytes
@@ -169,7 +169,7 @@ func main() {
 	// downloads of envelope-encrypted blobs return plaintext. Nil leaves
 	// decrypt-stream working only for unencrypted blobs.
 	var docKMS pkgcrypto.KeyManager
-	if kekB64 := os.Getenv("VAULTDMS_LOCAL_KEK"); kekB64 != "" {
+	if kekB64 := os.Getenv("SEDOC_LOCAL_KEK"); kekB64 != "" {
 		if lkm, kerr := pkgcrypto.NewLocalKeyManager(kekB64, func(msg string) {
 			log.Warn(ctx).Msg(msg)
 		}); kerr != nil {
@@ -200,7 +200,7 @@ func main() {
 				Msg("temporal unreachable; DSR requests will queue as pending")
 		}
 	}
-	dsrSalt := os.Getenv("VAULTDMS_DSR_ANONYMIZE_SALT")
+	dsrSalt := os.Getenv("SEDOC_DSR_ANONYMIZE_SALT")
 	if dsrSalt == "" {
 		// Deterministic per-tenant-deployment fallback so anonymize still
 		// works in dev. Prod must set the env var.
@@ -646,8 +646,8 @@ func main() {
 	// ADR 0098 — zero-trust view-only share. Admin routes require
 	// SessionAuth; recipient routes (/api/v1/zt/{token}/*) are public
 	// — the token IS the auth. Pepper is part of cfg so it can rotate
-	// without rebuilding (env: VAULTDMS_ZT_TOKEN_PEPPER).
-	ztPepper := []byte(os.Getenv("VAULTDMS_ZT_TOKEN_PEPPER"))
+	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER).
+	ztPepper := []byte(os.Getenv("SEDOC_ZT_TOKEN_PEPPER"))
 	if len(ztPepper) == 0 {
 		ztPepper = []byte("dev-only-zt-pepper-rotate-in-prod")
 	}

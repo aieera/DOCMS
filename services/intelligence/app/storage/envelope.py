@@ -11,7 +11,7 @@ Format invariants we replicate:
   * wrapped_dek layout: nonce(12) || gcm_ciphertext(48) = 60 bytes total
     (32-byte DEK + 16-byte GCM tag, AES-GCM with KEK)
   * KEK derivation: HKDF-SHA256(
-        ikm  = base64-decoded VAULTDMS_LOCAL_KEK,
+        ikm  = base64-decoded SEDOC_LOCAL_KEK,
         salt = b"vaultdms/kek/" + kek_id.encode(),
         info = b"vaultdms/kek/v1",
         length=32,
@@ -50,21 +50,21 @@ _master_cache: bytes | None = None
 
 
 def _master_key() -> bytes:
-    """Read VAULTDMS_LOCAL_KEK once. base64-decoded, must yield 32 bytes."""
+    """Read SEDOC_LOCAL_KEK once. base64-decoded, must yield 32 bytes."""
     global _master_cache
     with _master_lock:
         if _master_cache is not None:
             return _master_cache
-        raw = os.environ.get("VAULTDMS_LOCAL_KEK", "")
+        raw = os.environ.get("SEDOC_LOCAL_KEK", "")
         if not raw:
-            raise EnvelopeError("VAULTDMS_LOCAL_KEK not set on intelligence-worker")
+            raise EnvelopeError("SEDOC_LOCAL_KEK not set on intelligence-worker")
         try:
             decoded = base64.b64decode(raw, validate=True)
         except (base64.binascii.Error, ValueError) as exc:
-            raise EnvelopeError(f"VAULTDMS_LOCAL_KEK not valid base64: {exc}") from exc
+            raise EnvelopeError(f"SEDOC_LOCAL_KEK not valid base64: {exc}") from exc
         if len(decoded) != 32:
             raise EnvelopeError(
-                f"VAULTDMS_LOCAL_KEK must decode to 32 bytes, got {len(decoded)}"
+                f"SEDOC_LOCAL_KEK must decode to 32 bytes, got {len(decoded)}"
             )
         _master_cache = decoded
         return decoded

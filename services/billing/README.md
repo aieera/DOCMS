@@ -35,7 +35,7 @@ REST:
 
 ## Configuration
 
-`VAULTDMS_INTERNAL_API_KEY` (required for `/internal/v1`),
+`SEDOC_INTERNAL_API_KEY` (required for `/internal/v1`),
 `STRIPE_WEBHOOK_SECRET` (required in prod when billing active),
 standard DB/Redis/NATS URLs.
 
@@ -43,7 +43,7 @@ standard DB/Redis/NATS URLs.
 
 ```bash
 make up
-( cd services/billing && VAULTDMS_HTTP_PORT=8083 go run ./cmd/server )
+( cd services/billing && SEDOC_HTTP_PORT=8083 go run ./cmd/server )
 ```
 
 ## Testing

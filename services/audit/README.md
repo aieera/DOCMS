@@ -33,7 +33,7 @@ NATS: consumer only — `dms.>` with durable name `audit-all`.
 
 ## Configuration
 
-`VAULTDMS_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
+`SEDOC_DATABASE_URL`, `_REDIS_URL`, `_NATS_URL`,
 `_HTTP_PORT` (8080), `_HEALTH_PORT` (8081). Service has no gRPC.
 
 ## Running locally

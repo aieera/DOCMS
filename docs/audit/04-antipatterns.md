@@ -101,7 +101,7 @@ Every finding cites file:line. Grep patterns run against entire Go codebase.
 
 ### k. Shared/hardcoded encryption keys
 
-**0 hardcoded key material found.** KEK loaded from env var (`VAULTDMS_LOCAL_KEK`). Per-tenant KEK isolation via `TenantKEKID` field — but currently all tenants use the same default KEK ID (`"vaultdms-storage-default"` at `services/storage/cmd/server/main.go:137`).
+**0 hardcoded key material found.** KEK loaded from env var (`SEDOC_LOCAL_KEK`). Per-tenant KEK isolation via `TenantKEKID` field — but currently all tenants use the same default KEK ID (`"vaultdms-storage-default"` at `services/storage/cmd/server/main.go:137`).
 
 **QUESTION:** Single KEK across tenants is a design gap flagged for human review. Per-tenant KEK lookup is documented as a follow-up in the code.
 

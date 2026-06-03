@@ -12,7 +12,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 ENV_FILE="$REPO_ROOT/.env"
-IMAGE_TAG="${VAULTDMS_IMAGE_TAG:-main}"
+IMAGE_TAG="${SEDOC_IMAGE_TAG:-main}"
 CORE="postgres redis nats minio auth policy storage document gateway"
 DB_URL="postgres://vaultdms:devpassword@localhost:5432/vaultdms?sslmode=disable"
 
@@ -41,26 +41,26 @@ fi
 go version
 
 # ---- 2. .env with fresh secrets (only if missing) --------------------------
-if [ ! -f "$ENV_FILE" ] || ! grep -q VAULTDMS_GATEWAY_SECRET "$ENV_FILE"; then
+if [ ! -f "$ENV_FILE" ] || ! grep -q SEDOC_GATEWAY_SECRET "$ENV_FILE"; then
   log "Generating .env with fresh secrets"
   PUBLIC_HOST="${PUBLIC_HOST:-$(curl -fsS http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo localhost)}"
   ADMIN_PW="$(openssl rand -base64 18)"
   cat >> "$ENV_FILE" <<EOF
-VAULTDMS_GATEWAY_SECRET=$(openssl rand -hex 32)
-VAULTDMS_LOCAL_KEK=$(openssl rand -hex 32)
-VAULTDMS_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
+SEDOC_GATEWAY_SECRET=$(openssl rand -hex 32)
+SEDOC_LOCAL_KEK=$(openssl rand -hex 32)
+SEDOC_ESIGN_STATE_HMAC=$(openssl rand -hex 32)
 SEED_ADMIN_EMAIL=admin@acme.local
 SEED_ADMIN_PASSWORD=${ADMIN_PW}
 SEED_TENANT_SLUG=acme
-VAULTDMS_S3_PUBLIC_BASE=${PUBLIC_HOST}:9000
-VAULTDMS_ALLOW_BYPASS_RLS=1
+SEDOC_S3_PUBLIC_BASE=${PUBLIC_HOST}:9000
+SEDOC_ALLOW_BYPASS_RLS=1
 EOF
   echo ">>> SEED ADMIN PASSWORD: ${ADMIN_PW}  (save this now)"
 else
   log ".env already has secrets — leaving it untouched"
 fi
 
-export VAULTDMS_IMAGE_TAG="$IMAGE_TAG"
+export SEDOC_IMAGE_TAG="$IMAGE_TAG"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml"
 
 # ---- 3. pull + start infra -------------------------------------------------

@@ -18,16 +18,16 @@ Every service uses `config.Load()` but several also call `os.Getenv()` directly,
 
 | # | File | Line | Call | Should be |
 |---|------|------|------|-----------|
-| 1 | services/auth/cmd/server/main.go | 117 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | Add to pkg/config.Config |
-| 2 | services/auth/cmd/server/main.go | 131 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | Same |
-| 3 | services/auth/cmd/server/main.go | 138 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | Same |
-| 4 | services/auth/cmd/server/main.go | 196 | `os.Getenv("VAULTDMS_LOCAL_KEK")` | Already in cfg.LocalKEK |
+| 1 | services/auth/cmd/server/main.go | 117 | `os.Getenv("SEDOC_PUBLIC_URL")` | Add to pkg/config.Config |
+| 2 | services/auth/cmd/server/main.go | 131 | `os.Getenv("SEDOC_PUBLIC_URL")` | Same |
+| 3 | services/auth/cmd/server/main.go | 138 | `os.Getenv("SEDOC_PUBLIC_URL")` | Same |
+| 4 | services/auth/cmd/server/main.go | 196 | `os.Getenv("SEDOC_LOCAL_KEK")` | Already in cfg.LocalKEK |
 | 5 | services/document/cmd/server/main.go | 81 | `os.Getenv("POLICY_SERVICE_ADDR")` | Add to Config |
-| 6 | services/document/cmd/server/main.go | 105 | `os.Getenv("VAULTDMS_PUBLIC_URL")` | Add to Config |
+| 6 | services/document/cmd/server/main.go | 105 | `os.Getenv("SEDOC_PUBLIC_URL")` | Add to Config |
 | 7 | services/storage/cmd/server/main.go | 84 | `os.Getenv("POLICY_SERVICE_ADDR")` | Add to Config |
-| 8 | services/storage/cmd/server/main.go | 108 | `os.Getenv("VAULTDMS_LOCAL_KEK")` | Already in cfg.LocalKEK |
-| 9 | services/storage/cmd/server/main.go | 136 | `os.Getenv("VAULTDMS_S3_PUBLIC_BASE")` | Add to Config |
-| 10 | services/billing/internal/handler/handler.go | 29 | `os.Getenv("VAULTDMS_INTERNAL_API_KEY")` | Add to Config |
+| 8 | services/storage/cmd/server/main.go | 108 | `os.Getenv("SEDOC_LOCAL_KEK")` | Already in cfg.LocalKEK |
+| 9 | services/storage/cmd/server/main.go | 136 | `os.Getenv("SEDOC_S3_PUBLIC_BASE")` | Add to Config |
+| 10 | services/billing/internal/handler/handler.go | 29 | `os.Getenv("SEDOC_INTERNAL_API_KEY")` | Add to Config |
 | 11 | services/billing/internal/stripe/webhook.go | 37 | `os.Getenv("STRIPE_WEBHOOK_SECRET")` | Add to Config |
 
 **Hardcoded fallback addresses (lower severity):**
@@ -56,7 +56,7 @@ Every service uses `config.Load()` but several also call `os.Getenv()` directly,
 | services/auth/internal/sso/saml.go | 341 | `"idp metadata URL/XML missing"` |
 | services/auth/internal/sso/saml.go | 404 | `"empty root"` |
 | services/auth/internal/sso/oidc.go | 263 | `"oidc config missing issuer_url..."` |
-| services/auth/cmd/server/main.go | 198 | `"VAULTDMS_LOCAL_KEK not set"` |
+| services/auth/cmd/server/main.go | 198 | `"SEDOC_LOCAL_KEK not set"` |
 | services/document/internal/handler/mappers.go | 161 | `"unsupported lifecycle action"` |
 | services/storage/internal/scanner/clamav.go | 139 | `"clamav unparseable response"` |
 
