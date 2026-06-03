@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // digestWindow is the per-event-type accumulation window.

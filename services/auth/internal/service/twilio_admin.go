@@ -8,8 +8,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/auth/internal/repository"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
 )
 
 // TwilioConfigPublic is the secret-stripped view returned to the

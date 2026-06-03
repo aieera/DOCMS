@@ -24,21 +24,21 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/pkg/config"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/events"
-	"github.com/vaultdms/vaultdms/pkg/health"
-	"github.com/vaultdms/vaultdms/pkg/logger"
-	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/aieera/sedoc/pkg/config"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/events"
+	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/logger"
+	"github.com/aieera/sedoc/pkg/middleware"
 
-	"github.com/vaultdms/vaultdms/pkg/notifications"
+	"github.com/aieera/sedoc/pkg/notifications"
 
-	"github.com/vaultdms/vaultdms/services/auth/internal/handler"
-	"github.com/vaultdms/vaultdms/services/auth/internal/ldap"
-	"github.com/vaultdms/vaultdms/services/auth/internal/repository"
-	"github.com/vaultdms/vaultdms/services/auth/internal/scim"
-	"github.com/vaultdms/vaultdms/services/auth/internal/service"
-	"github.com/vaultdms/vaultdms/services/auth/internal/sso"
+	"github.com/aieera/sedoc/services/auth/internal/handler"
+	"github.com/aieera/sedoc/services/auth/internal/ldap"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
+	"github.com/aieera/sedoc/services/auth/internal/scim"
+	"github.com/aieera/sedoc/services/auth/internal/service"
+	"github.com/aieera/sedoc/services/auth/internal/sso"
 
 	"math/rand"
 )

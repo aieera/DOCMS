@@ -50,7 +50,7 @@ linters-settings:
     disable:
       - fieldalignment
   goimports:
-    local-prefixes: github.com/vaultdms/vaultdms
+    local-prefixes: github.com/aieera/sedoc
   misspell:
     locale: US
 

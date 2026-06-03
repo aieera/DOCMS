@@ -1,8 +1,10 @@
-module github.com/vaultdms/vaultdms/services/document
+module github.com/aieera/sedoc/services/document
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
+	github.com/aieera/sedoc/proto/gen/go v0.0.0
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
@@ -12,9 +14,8 @@ require (
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
+	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vaultdms/vaultdms/pkg v0.0.0
-	github.com/vaultdms/vaultdms/proto/gen/go v0.0.0
 	go.temporal.io/sdk v1.26.1
 	golang.org/x/crypto v0.50.0
 	google.golang.org/grpc v1.80.0
@@ -52,6 +53,7 @@ require (
 	github.com/go-playground/validator/v10 v10.19.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-migrate/migrate/v4 v4.17.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
@@ -94,7 +96,6 @@ require (
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
-	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -133,6 +134,6 @@ require (
 )
 
 replace (
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
-	github.com/vaultdms/vaultdms/proto/gen/go => ../../proto/gen/go
+	github.com/aieera/sedoc/pkg => ../../pkg
+	github.com/aieera/sedoc/proto/gen/go => ../../proto/gen/go
 )

@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/storage/internal/model"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/storage/internal/model"
 )
 
 // ContentBlobRepo manages the content_blobs table. Deduplication lives here

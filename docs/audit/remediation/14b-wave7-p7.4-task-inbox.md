@@ -86,7 +86,7 @@ index plus `documents(tenant_id, id)` PK. `COALESCE` on
 
 ```
 $ go test ./services/workflow/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/handler  0.178s
+ok  github.com/aieera/sedoc/services/workflow/internal/handler  0.178s
 ```
 
 Frontend type check:

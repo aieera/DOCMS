@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/policy/internal/model"
 )
 
 // ListByResource returns the current active ACL for a resource. Used by the

@@ -26,7 +26,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/connector/internal/providers"
+	"github.com/aieera/sedoc/services/connector/internal/providers"
 )
 
 // ProviderName is the value stored in connector_configs.connector_type

@@ -32,7 +32,7 @@ import (
 	"github.com/nats-io/nkeys"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // parseTenantUUID is a tiny helper so callers can keep passing string

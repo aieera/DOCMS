@@ -25,7 +25,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/activities"
+	"github.com/aieera/sedoc/services/workflow/internal/activities"
 )
 
 // Domain-event subjects used by the retention cron. Kept as constants

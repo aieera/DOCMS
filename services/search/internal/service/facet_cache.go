@@ -16,7 +16,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 const (

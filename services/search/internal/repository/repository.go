@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // Repository manages saved_searches rows.

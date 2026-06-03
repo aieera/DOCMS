@@ -26,9 +26,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	tsplib "github.com/vaultdms/vaultdms/pkg/signing/tsp"
-	"github.com/vaultdms/vaultdms/services/signature/internal/repository"
+	"github.com/aieera/sedoc/pkg/database"
+	tsplib "github.com/aieera/sedoc/pkg/signing/tsp"
+	"github.com/aieera/sedoc/services/signature/internal/repository"
 )
 
 // QESConfig is set by main from VAULTDMS_QES_* envs.

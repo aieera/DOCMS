@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/fusion"
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
-	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
+	"github.com/aieera/sedoc/services/search/internal/fusion"
+	"github.com/aieera/sedoc/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/opensearch"
 )
 
 // ADR 0111 — wall-clock budget for the dense-vector path. The

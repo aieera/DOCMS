@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/signature/internal/model"
-	"github.com/vaultdms/vaultdms/services/signature/internal/service"
+	"github.com/aieera/sedoc/services/signature/internal/model"
+	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
 type Handler struct {

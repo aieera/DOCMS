@@ -25,9 +25,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/validation"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/validation"
 )
 
 // GroupsHandler wires /api/v1/admin/groups/* onto the auth service.

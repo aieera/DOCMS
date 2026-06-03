@@ -35,8 +35,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	mw "github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/aieera/sedoc/pkg/auth"
+	mw "github.com/aieera/sedoc/pkg/middleware"
 )
 
 type fakeResolver struct{ region string }

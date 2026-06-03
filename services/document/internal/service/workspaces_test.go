@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
 func TestWorkspaceIsUserEmpty(t *testing.T) {

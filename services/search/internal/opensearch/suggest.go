@@ -23,7 +23,7 @@ package opensearch
 import (
 	"regexp"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // MaxSuggestLimit caps a single group at this — the UI shows ~10

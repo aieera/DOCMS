@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
-	"github.com/vaultdms/vaultdms/services/connector/internal/providers/m365"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/providers/m365"
 )
 
 // SaveM365Config stores per-tenant Entra app credentials. Sealed via

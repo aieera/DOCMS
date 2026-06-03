@@ -23,9 +23,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // mentionRE matches `@[Display Name](uuid)`. The display label is

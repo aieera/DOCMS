@@ -25,7 +25,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // Source enumerates supported ingestion sources.

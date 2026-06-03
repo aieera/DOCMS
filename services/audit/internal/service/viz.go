@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/audit/internal/repository"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
 )
 
 // Viz returns the aggregated JSON blob for a document. `since` is

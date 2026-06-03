@@ -27,7 +27,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // ResolveSubject returns the user UUID for a given email inside the

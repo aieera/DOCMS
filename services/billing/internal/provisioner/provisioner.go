@@ -11,9 +11,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/tenant"
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
-	"github.com/vaultdms/vaultdms/services/billing/internal/repository"
+	"github.com/aieera/sedoc/pkg/tenant"
+	"github.com/aieera/sedoc/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/repository"
 )
 
 // Provisioner orchestrates tenant creation.

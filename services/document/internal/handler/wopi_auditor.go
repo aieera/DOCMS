@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // outboxWOPIAuditor implements WOPIAuditor by inserting an outbox

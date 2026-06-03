@@ -192,7 +192,7 @@ To wire a new service:
 
 1. Add the pkg/license import to `services/<name>/cmd/server/main.go`:
    ```go
-   import "github.com/vaultdms/vaultdms/pkg/license"
+   import "github.com/aieera/sedoc/pkg/license"
    ```
 
 2. After `logger.New()` and `signal.NotifyContext()`, add the 4-line block:
@@ -216,7 +216,7 @@ The pattern is identical for all 13 remaining services. See [services/document/c
 The `license.Current()` claims are available globally. To gate a feature at a handler boundary:
 
 ```go
-import "github.com/vaultdms/vaultdms/pkg/license"
+import "github.com/aieera/sedoc/pkg/license"
 
 func (h *MyHandler) Create(w http.ResponseWriter, r *http.Request) {
     if !license.Current().HasFeature("esign") {

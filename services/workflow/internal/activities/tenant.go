@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // runTenant parses tenantID, sets `app.current_tenant`, and runs fn

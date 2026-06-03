@@ -56,7 +56,7 @@ repo helpers `RotateSecret` / `GetDelivery` in
 
 ```
 $ go test ./services/connector/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/connector/internal/handler  1.396s
+ok  github.com/aieera/sedoc/services/connector/internal/handler  1.396s
 ```
 
 Frontend `tsc --noEmit` clean.

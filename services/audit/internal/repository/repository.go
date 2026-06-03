@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/audit/internal/model"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/audit/internal/model"
 )
 
 // Repository manages the audit_events table.

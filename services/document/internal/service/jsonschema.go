@@ -9,7 +9,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // schemaCache memoizes compiled JSON-Schemas keyed by the SHA-256 of their

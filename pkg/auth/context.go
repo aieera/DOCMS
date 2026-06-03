@@ -9,7 +9,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	"github.com/vaultdms/vaultdms/pkg/logger"
+	"github.com/aieera/sedoc/pkg/logger"
 )
 
 // ErrMissing is returned by getters when the requested field is not present

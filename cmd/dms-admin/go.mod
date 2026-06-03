@@ -1,15 +1,15 @@
-module github.com/vaultdms/vaultdms/cmd/dms-admin
+module github.com/aieera/sedoc/cmd/dms-admin
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/nats-io/nats.go v1.34.0
 	github.com/redis/go-redis/v9 v9.5.1
-	github.com/vaultdms/vaultdms/pkg v0.0.0
 )
 
-replace github.com/vaultdms/vaultdms/pkg => ../../pkg
+replace github.com/aieera/sedoc/pkg => ../../pkg
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

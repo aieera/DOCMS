@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/logger"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/logger"
 	"google.golang.org/grpc"
 )
 

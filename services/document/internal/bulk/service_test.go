@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
 )
 
 // DigestItems should be deterministic across runs and stable to

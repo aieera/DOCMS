@@ -7,8 +7,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
-	"github.com/vaultdms/vaultdms/services/billing/internal/repository"
+	"github.com/aieera/sedoc/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/repository"
 )
 
 // Meter collects usage per tenant on a schedule.

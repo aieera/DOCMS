@@ -29,10 +29,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/notifications"
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/notifications"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // ---- public types ---------------------------------------------------------

@@ -91,7 +91,7 @@ real adapters.
 
 ```
 $ go test ./pkg/crypto/...
-ok  github.com/vaultdms/vaultdms/pkg/crypto  1.063s
+ok  github.com/aieera/sedoc/pkg/crypto  1.063s
 ```
 
 ## Deferred (logged in out-of-scope.md)

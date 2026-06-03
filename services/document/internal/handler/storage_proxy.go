@@ -23,12 +23,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/pkg/middleware"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/middleware"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 const (

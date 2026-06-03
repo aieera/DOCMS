@@ -7,8 +7,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/service"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/service"
 
 	"errors"
 )

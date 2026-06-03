@@ -6,11 +6,11 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // Handler implements vaultdmsv1.DocumentServiceServer. It is a thin

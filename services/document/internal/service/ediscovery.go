@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
 // §9.5 / G9 — eDiscovery export.

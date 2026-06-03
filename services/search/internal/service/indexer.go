@@ -9,8 +9,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // indexerHandlerTimeout bounds how long a single index mutation can hold a

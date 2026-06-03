@@ -8,9 +8,9 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
-	"github.com/vaultdms/vaultdms/services/billing/internal/service"
-	stripehandler "github.com/vaultdms/vaultdms/services/billing/internal/stripe"
+	"github.com/aieera/sedoc/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/service"
+	stripehandler "github.com/aieera/sedoc/services/billing/internal/stripe"
 )
 
 // Handler holds HTTP route handlers.

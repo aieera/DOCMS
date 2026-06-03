@@ -89,8 +89,8 @@ counts rows across the long-tail tables is Wave 13.1.
 
 ```
 $ go test ./services/workflow/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/handler  (cached)
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  (cached)
+ok  github.com/aieera/sedoc/services/workflow/internal/handler  (cached)
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  (cached)
 ```
 
 ## Deferred (logged in out-of-scope.md)

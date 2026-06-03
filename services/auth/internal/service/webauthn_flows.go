@@ -24,8 +24,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // NewWebAuthnLib constructs the lib instance from a WebAuthnConfig.

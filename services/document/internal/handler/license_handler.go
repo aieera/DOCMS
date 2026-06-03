@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/license"
+	"github.com/aieera/sedoc/pkg/license"
 )
 
 // LicenseHandler exposes GET /api/v1/admin/tenant/license.

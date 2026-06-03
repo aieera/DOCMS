@@ -98,7 +98,7 @@ out calls fail cleanly in tests without derailing.
 
 ```
 $ go test ./services/workflow/internal/workflows/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.332s
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.332s
 ```
 
 Integration testing against real OpenSearch + the search

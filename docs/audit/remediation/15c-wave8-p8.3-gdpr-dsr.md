@@ -128,8 +128,8 @@ Go:
 
 ```
 $ go test ./services/workflow/internal/workflows/... ./services/document/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.423s
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler    0.216s
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.423s
+ok  github.com/aieera/sedoc/services/document/internal/handler    0.216s
 ```
 
 Frontend: `tsc --noEmit` clean.

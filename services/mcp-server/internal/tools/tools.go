@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/mcp"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
 )
 
 // Config bundles the upstream service URLs + the gateway-signature

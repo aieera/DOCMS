@@ -18,7 +18,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/pkg/events"
+	"github.com/aieera/sedoc/pkg/events"
 )
 
 // bootstrapLockKey + bootstrapLockTTL coordinate concurrent service

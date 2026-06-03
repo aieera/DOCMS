@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
-	"github.com/vaultdms/vaultdms/services/connector/internal/providers/google"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/providers/google"
 )
 
 // SetConnectorDeps wires the per-tenant credential paths for native

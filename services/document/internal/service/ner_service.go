@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/crypto"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	"github.com/aieera/sedoc/pkg/crypto"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // allowedEntityTypes is the ADR 0078 taxonomy plus the two legacy

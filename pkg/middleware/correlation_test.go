@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 // Correlation-id propagation is how every log line gets threaded to the

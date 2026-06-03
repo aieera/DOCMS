@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 func ptrUUID(v uuid.UUID) *uuid.UUID { return &v }

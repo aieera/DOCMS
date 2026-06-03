@@ -25,9 +25,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 type OCRHandler struct {

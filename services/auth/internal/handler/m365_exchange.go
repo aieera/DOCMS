@@ -19,7 +19,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/vaultdms/vaultdms/services/auth/internal/service"
+	"github.com/aieera/sedoc/services/auth/internal/service"
 )
 
 type m365ExchangeReq struct {

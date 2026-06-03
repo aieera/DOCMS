@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 func TestValidTaskPriority(t *testing.T) {

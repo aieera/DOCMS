@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // RegisterPrefs mounts the new preference surface alongside the

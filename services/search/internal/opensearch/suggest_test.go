@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 func TestBuildSuggestQuery_HasAllThreeSources(t *testing.T) {

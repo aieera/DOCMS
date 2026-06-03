@@ -120,8 +120,8 @@ compliance tooling).
 
 ```
 $ go test ./services/document/internal/handler/... ./pkg/errors/...
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler  0.333s
-ok  github.com/vaultdms/vaultdms/pkg/errors                          1.727s
+ok  github.com/aieera/sedoc/services/document/internal/handler  0.333s
+ok  github.com/aieera/sedoc/pkg/errors                          1.727s
 ```
 
 Frontend: `tsc --noEmit` clean.

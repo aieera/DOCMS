@@ -97,7 +97,7 @@ role.
 
 ```
 $ go test ./services/document/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler  0.271s
+ok  github.com/aieera/sedoc/services/document/internal/handler  0.271s
 ```
 
 ## 11.3 Dead-code removal — `compliance/retention.go`

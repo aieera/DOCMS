@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // ConfigRepository reads per-tenant SSO configurations. Writes (admin

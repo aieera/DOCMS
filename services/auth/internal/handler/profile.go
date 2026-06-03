@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 type updateLocaleRequest struct {

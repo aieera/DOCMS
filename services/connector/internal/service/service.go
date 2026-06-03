@@ -14,10 +14,10 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
-	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
-	"github.com/vaultdms/vaultdms/services/connector/internal/webhook"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/repository"
+	"github.com/aieera/sedoc/services/connector/internal/webhook"
 )
 
 // Service is the connector facade.

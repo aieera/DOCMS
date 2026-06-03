@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/connector/internal/eventstream"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/eventstream"
 )
 
 // EventStreamHandler wires ADR-0077 HTTP routes onto the connector

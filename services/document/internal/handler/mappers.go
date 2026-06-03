@@ -9,10 +9,10 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // ---- UUID helpers ---------------------------------------------------------

@@ -7,7 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/model"
 )
 
 // The residency guard fires BEFORE any DB call — confirmed by passing

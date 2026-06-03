@@ -23,13 +23,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/testutil"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/testutil"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/service"
 
 	"github.com/rs/zerolog"
 )

@@ -100,7 +100,7 @@ DSR).
 
 ```
 $ go test ./services/workflow/internal/workflows/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.202s
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.202s
 ```
 
 Frontend `tsc --noEmit` clean.

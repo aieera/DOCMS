@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 // OutboxEvent is the minimal shape of an `outbox` row. The fields are

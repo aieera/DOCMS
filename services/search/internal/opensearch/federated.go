@@ -12,7 +12,7 @@
 package opensearch
 
 import (
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // BuildFederatedSearchQuery produces the OS body for the cross-tenant

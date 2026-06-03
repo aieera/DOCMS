@@ -36,8 +36,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // DSRVerifyHandler mounts /api/v1/privacy/verify/* routes.

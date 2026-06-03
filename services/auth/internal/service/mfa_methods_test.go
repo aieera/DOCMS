@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 func TestMethodStrength_ADROrdering(t *testing.T) {

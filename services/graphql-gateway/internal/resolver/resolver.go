@@ -23,9 +23,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/loader"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/model"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/loader"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/model"
 )
 
 // Clients is the upstream gRPC fan-out the resolvers depend on.

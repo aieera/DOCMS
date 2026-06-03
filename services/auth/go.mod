@@ -1,21 +1,22 @@
-module github.com/vaultdms/vaultdms/services/auth
+module github.com/aieera/sedoc/services/auth
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
 	github.com/beevik/etree v1.3.0
 	github.com/coreos/go-oidc/v3 v3.9.0
 	github.com/crewjam/saml v0.4.14
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-ldap/ldap/v3 v3.4.13
 	github.com/go-webauthn/webauthn v0.17.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/pquerna/otp v1.4.0
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vaultdms/vaultdms/pkg v0.0.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/oauth2 v0.36.0
 )
@@ -41,7 +42,6 @@ require (
 	github.com/go-webauthn/x v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-migrate/migrate/v4 v4.17.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -103,6 +103,6 @@ require (
 )
 
 replace (
+	github.com/aieera/sedoc/pkg => ../../pkg
 	github.com/docker/docker => github.com/moby/moby v26.1.5+incompatible
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
 )

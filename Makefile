@@ -66,7 +66,7 @@ lint: ## Run golangci-lint across the workspace
 .PHONY: fmt
 fmt: ## Format Go code
 	$(GO) fmt ./...
-	@command -v goimports >/dev/null && goimports -w -local github.com/vaultdms/vaultdms . || true
+	@command -v goimports >/dev/null && goimports -w -local github.com/aieera/sedoc . || true
 
 .PHONY: tidy
 tidy: ## Run go mod tidy in every service module

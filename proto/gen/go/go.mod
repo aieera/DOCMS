@@ -1,4 +1,4 @@
-module github.com/vaultdms/vaultdms/proto/gen/go
+module github.com/aieera/sedoc/proto/gen/go
 
 go 1.25.0
 

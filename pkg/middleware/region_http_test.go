@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 // stubResolver lets us return a hard-coded region (or an error) from

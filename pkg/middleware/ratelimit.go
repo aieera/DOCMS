@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 // RateLimiter is a token-bucket rate limiter backed by Redis. Keys are of

@@ -65,7 +65,7 @@ all four mutating methods.
 
 ```
 $ go test ./pkg/middleware/...
-ok  github.com/vaultdms/vaultdms/pkg/middleware   0.185s
+ok  github.com/aieera/sedoc/pkg/middleware   0.185s
 ```
 
 ## DoD — § 1.4 audit

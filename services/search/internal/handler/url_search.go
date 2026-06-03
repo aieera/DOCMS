@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // filterKeyToFilters routes a single `filter=key:value` pair into

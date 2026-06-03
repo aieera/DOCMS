@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // Result captures the outcome of one scan.

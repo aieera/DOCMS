@@ -14,8 +14,8 @@ import (
 	gostripe "github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/webhook"
 
-	"github.com/vaultdms/vaultdms/pkg/tenant"
-	"github.com/vaultdms/vaultdms/services/billing/internal/repository"
+	"github.com/aieera/sedoc/pkg/tenant"
+	"github.com/aieera/sedoc/services/billing/internal/repository"
 )
 
 // WebhookHandler processes Stripe webhook events.

@@ -12,10 +12,10 @@ import (
 	"github.com/rs/zerolog"
 	"go.temporal.io/sdk/client"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/repository"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/workflows"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/repository"
+	"github.com/aieera/sedoc/services/workflow/internal/workflows"
 )
 
 // ErrNotFound is the access-denial / missing-row sentinel exposed to

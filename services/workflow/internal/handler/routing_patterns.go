@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/repository"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/service"
+	"github.com/aieera/sedoc/services/workflow/internal/repository"
+	"github.com/aieera/sedoc/services/workflow/internal/service"
 )
 
 // RegisterRoutingPatterns mounts the new routes alongside the

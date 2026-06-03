@@ -5,7 +5,7 @@ package vaultdms.v1;
 import "google/protobuf/timestamp.proto";
 import "vaultdms/v1/common.proto";
 
-option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+option go_package = "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1;vaultdmsv1";
 
 // CollaborationService covers comments, share links, real-time presence,
 // and co-annotation on documents.

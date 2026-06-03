@@ -18,8 +18,8 @@ import (
 
 	"github.com/google/uuid"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 type FolderRestoreHandler struct {

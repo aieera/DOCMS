@@ -42,8 +42,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/connector/internal/email"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/connector/internal/email"
 )
 
 // Folder is what the admin REST surface returns for one watched dir.

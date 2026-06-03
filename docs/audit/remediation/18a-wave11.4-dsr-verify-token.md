@@ -69,9 +69,9 @@ verification fails.
 
 ```
 $ go test ./services/document/internal/handler/... ./services/workflow/...
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler  0.191s
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/handler  (cached)
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.218s
+ok  github.com/aieera/sedoc/services/document/internal/handler  0.191s
+ok  github.com/aieera/sedoc/services/workflow/internal/handler  (cached)
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.218s
 ```
 
 Frontend `tsc --noEmit` clean.

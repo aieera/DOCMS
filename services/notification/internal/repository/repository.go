@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // Repository manages the notifications + notification_preferences tables.

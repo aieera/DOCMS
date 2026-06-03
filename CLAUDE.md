@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository
 
-VaultDMS — multi-tenant enterprise Document Management System. 11 Go microservices (`services/*`), 2 Python workers (intelligence, preview), 1 Node service (collaboration), and a React/Vite web frontend (`web/`). Go modules are stitched with `go.work`; protobufs in `proto/` are the source of truth for service APIs and generate into `proto/gen/go`.
+VaultDMS — multi-tenant enterprise Document Management System.
+
+- **13 Go microservices** in `services/*` (audit, auth, billing, connector, document, graphql-gateway, mcp-server, notification, policy, search, signature, storage, workflow) — these are exactly the modules listed in `go.work`.
+- **2 Python workers**: `services/intelligence` (OCR/AI) and `services/preview` (rendering).
+- **1 Node service**: `services/collaboration` (Yjs, on :8083).
+- **1 JVM signer**: `services/signature-signer` (Kotlin/Gradle, PDF signing) — companion to the Go `signature` service.
+- **Clients/edges**: `web/` (React/Vite), `extension/` (browser), `addins/{outlook,word}` (Office add-ins, ADR 0112/0113), `mobile/`.
+- **Go tooling binaries** in `cmd/`: `dms-admin`, `dms-installer`, `license-gen`.
+
+Not every directory under `services/` is a Go module — only the 13 above are in `go.work`; the Python/Node/JVM services build via their own toolchains and Dockerfiles. Protobufs in `proto/` are the source of truth for service APIs and generate into `proto/gen/go`.
 
 ## Common commands
 
@@ -39,10 +48,15 @@ make setup            # gen-env → docker up → migrate → seed (one-shot onb
 make docker-up        # build-from-source compose stack
 make docker-up-prebuilt   # pull ghcr.io/aieera/docms images instead (much faster)
 ./scripts/wait-for-healthy.sh
-make run-all          # run the 11 Go services on the host (must `docker compose stop` them first; ports collide otherwise)
+make wake             # recover from a Docker/WSL restart: up + verify + restart dead-port containers
+make run-all          # run the Go services on the host (must `docker compose stop` them first; ports collide otherwise)
 make stop-all
 make reset            # DANGER: docker down -v + rerun setup
 ```
+
+After a Docker Desktop / WSL restart, host ports frequently return `000` or cross-wire (one service answering on another's port). `make wake` is the fix — batch-restarts the API-fronting containers; prefer it over manual `docker restart`.
+
+Load & security testing: `make security-check` (gosec + govulncheck), `make load-test` and the `load-*` targets (doc-crud, search, upload, mixed, isolation, chaos) — a full real campaign is expensive (cloud-scoped), so confirm scope before running beyond the local smoke checks.
 
 Frontend (`cd web`):
 

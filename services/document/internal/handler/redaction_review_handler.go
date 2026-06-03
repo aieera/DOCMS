@@ -14,10 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 type RedactionReviewHandler struct {

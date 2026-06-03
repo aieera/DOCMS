@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	vdmsauth "github.com/vaultdms/vaultdms/pkg/auth"
+	vdmsauth "github.com/aieera/sedoc/pkg/auth"
 )
 
 // StepUpRequiredHeader — set on the 401 response so the client

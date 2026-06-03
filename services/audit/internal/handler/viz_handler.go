@@ -16,7 +16,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {

@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/pkg/auth"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
 )
 
 // GRPCServer adapts Service to the BulkService gRPC interface.

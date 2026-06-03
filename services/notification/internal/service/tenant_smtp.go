@@ -7,8 +7,8 @@ package service
 import (
 	"context"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/notification/internal/repository"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/notification/internal/repository"
 )
 
 // SetTenantSMTPDeps wires the per-tenant SMTP lookup. notifRepo is

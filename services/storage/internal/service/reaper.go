@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/storage"
-	"github.com/vaultdms/vaultdms/services/storage/internal/repository"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
 
 // BlobReaper periodically sweeps content_blobs rows with reference_count=0

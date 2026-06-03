@@ -18,7 +18,7 @@ Optional for Python services:
 ## First-time setup
 
 ```bash
-git clone https://github.com/vaultdms/vaultdms.git
+git clone https://github.com/aieera/sedoc.git
 cd vaultdms
 make setup
 ```

@@ -29,15 +29,15 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/storage"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/storage/internal/model"
-	"github.com/vaultdms/vaultdms/services/storage/internal/repository"
-	"github.com/vaultdms/vaultdms/services/storage/internal/scanner"
+	"github.com/aieera/sedoc/pkg/auth"
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/storage"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/storage/internal/model"
+	"github.com/aieera/sedoc/services/storage/internal/repository"
+	"github.com/aieera/sedoc/services/storage/internal/scanner"
 )
 
 // PermissionChecker is the subset of policy's gRPC client used here.

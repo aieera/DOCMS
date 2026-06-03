@@ -1,4 +1,4 @@
-module github.com/vaultdms/vaultdms/pkg
+module github.com/aieera/sedoc/pkg
 
 go 1.25.0
 

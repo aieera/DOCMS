@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
 )
 
 // stubRepo is a minimal fake that implements just the methods the

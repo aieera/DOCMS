@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 func ptrFloat32A(v float32) *float32 { return &v }

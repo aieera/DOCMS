@@ -12,7 +12,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/activities"
+	"github.com/aieera/sedoc/services/workflow/internal/activities"
 )
 
 type dsrStub struct {

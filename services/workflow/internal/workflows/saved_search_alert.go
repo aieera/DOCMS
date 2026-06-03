@@ -21,7 +21,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/activities"
+	"github.com/aieera/sedoc/services/workflow/internal/activities"
 )
 
 // SavedSearchAlertInput identifies which saved search to evaluate.

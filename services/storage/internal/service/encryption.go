@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/vaultdms/vaultdms/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/crypto"
 )
 
 // envelopeResult carries the outputs of a single file encryption operation.

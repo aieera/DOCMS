@@ -1,12 +1,12 @@
-module github.com/vaultdms/vaultdms/services/graphql-gateway
+module github.com/aieera/sedoc/services/graphql-gateway
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
+	github.com/aieera/sedoc/proto/gen/go v0.0.0
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
-	github.com/vaultdms/vaultdms/pkg v0.0.0
-	github.com/vaultdms/vaultdms/proto/gen/go v0.0.0
 	github.com/vektah/gqlparser/v2 v2.5.20
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
@@ -24,8 +24,11 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.19.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/golang-migrate/migrate/v4 v4.17.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
@@ -34,6 +37,7 @@ require (
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -72,6 +76,6 @@ require (
 )
 
 replace (
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
-	github.com/vaultdms/vaultdms/proto/gen/go => ../../proto/gen/go
+	github.com/aieera/sedoc/pkg => ../../pkg
+	github.com/aieera/sedoc/proto/gen/go => ../../proto/gen/go
 )

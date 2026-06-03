@@ -12,10 +12,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
-	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
-	"github.com/vaultdms/vaultdms/services/search/internal/repository"
-	"github.com/vaultdms/vaultdms/services/search/internal/vector"
+	"github.com/aieera/sedoc/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/opensearch"
+	"github.com/aieera/sedoc/services/search/internal/repository"
+	"github.com/aieera/sedoc/services/search/internal/vector"
 )
 
 const (

@@ -28,13 +28,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/events"
-	"github.com/vaultdms/vaultdms/pkg/testutil"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/events"
+	"github.com/aieera/sedoc/pkg/testutil"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // ---------------------------------------------------------------------------

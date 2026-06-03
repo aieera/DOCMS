@@ -106,7 +106,7 @@ activity dispatch lines up:
 
 ```
 $ go test ./services/workflow/internal/workflows/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.246s
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.246s
 ```
 
 ### Runbook

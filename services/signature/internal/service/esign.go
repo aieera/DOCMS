@@ -23,9 +23,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/signature/internal/repository"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/signature/internal/repository"
 )
 
 // ESignConfig is what main.go wires up at boot.

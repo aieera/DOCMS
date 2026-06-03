@@ -9,11 +9,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
-	"github.com/vaultdms/vaultdms/services/storage/internal/model"
-	"github.com/vaultdms/vaultdms/services/storage/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
+	"github.com/aieera/sedoc/services/storage/internal/model"
+	"github.com/aieera/sedoc/services/storage/internal/service"
 )
 
 // scopeFromMetadata pulls the upload-permission scope keys

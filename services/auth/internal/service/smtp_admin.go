@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/auth/internal/repository"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
 )
 
 type SMTPConfigPublic struct {

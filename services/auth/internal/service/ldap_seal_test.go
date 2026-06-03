@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/vaultdms/vaultdms/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/crypto"
 )
 
 func TestSealBindPassword_Roundtrip(t *testing.T) {

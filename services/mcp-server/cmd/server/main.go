@@ -25,16 +25,16 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/pkg/config"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/events"
-	"github.com/vaultdms/vaultdms/pkg/health"
-	"github.com/vaultdms/vaultdms/pkg/logger"
-	"github.com/vaultdms/vaultdms/pkg/middleware"
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/handler"
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/mcp"
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/tools"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/config"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/events"
+	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/logger"
+	"github.com/aieera/sedoc/pkg/middleware"
+	"github.com/aieera/sedoc/services/mcp-server/internal/handler"
+	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
+	"github.com/aieera/sedoc/services/mcp-server/internal/tools"
 )
 
 const serviceName = "mcp-server"

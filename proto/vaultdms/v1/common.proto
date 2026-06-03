@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package vaultdms.v1;
 
-option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+option go_package = "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1;vaultdmsv1";
 
 import "google/protobuf/timestamp.proto";
 

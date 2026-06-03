@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vaultdms/vaultdms/services/signature/internal/service"
+	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
 func (h *Handler) RegisterInPerson(mux *http.ServeMux) {

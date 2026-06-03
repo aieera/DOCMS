@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 func TestBuildSearchQuery_AlwaysIncludesReadableByFilter(t *testing.T) {

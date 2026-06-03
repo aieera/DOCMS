@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/testsuite"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
 )
 
 // recordingActivities is a stub that records every call so tests can

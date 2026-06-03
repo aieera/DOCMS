@@ -19,11 +19,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/policy/internal/cache"
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
-	"github.com/vaultdms/vaultdms/services/policy/internal/opa"
-	"github.com/vaultdms/vaultdms/services/policy/internal/repository"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/policy/internal/cache"
+	"github.com/aieera/sedoc/services/policy/internal/model"
+	"github.com/aieera/sedoc/services/policy/internal/opa"
+	"github.com/aieera/sedoc/services/policy/internal/repository"
 )
 
 // Service exposes all policy operations. Stateless apart from handles.

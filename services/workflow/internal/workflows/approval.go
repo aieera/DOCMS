@@ -8,7 +8,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
 )
 
 const StepCompletedSignal = "step_completed"

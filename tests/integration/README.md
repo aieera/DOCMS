@@ -65,7 +65,7 @@ import (
     "testing"
     "time"
     "github.com/stretchr/testify/require"
-    "github.com/vaultdms/vaultdms/pkg/testharness"
+    "github.com/aieera/sedoc/pkg/testharness"
 )
 
 func TestFoo_RoundTrip(t *testing.T) {

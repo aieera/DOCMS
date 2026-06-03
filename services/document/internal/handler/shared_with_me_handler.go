@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // SharedWithMeHandler exposes the "shared with me" surface.

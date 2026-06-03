@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/services/signature/internal/service"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
 // RegisterESign mounts the connector routes.

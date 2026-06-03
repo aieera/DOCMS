@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 func TestValidateEmail(t *testing.T) {

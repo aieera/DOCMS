@@ -4,7 +4,7 @@ package vaultdms.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1;vaultdmsv1";
+option go_package = "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1;vaultdmsv1";
 
 // IntelligenceService exposes AI-powered operations: summarization,
 // extraction, Q&A, embeddings, OCR. Long-running tasks return a job ID.

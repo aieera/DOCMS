@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 func makeReq(tenant, user string, groups []string, q string, tags []string) *model.SearchRequest {

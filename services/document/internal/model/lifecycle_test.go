@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
 // TestValidateTransition is an exhaustive table of every (from, action) pair

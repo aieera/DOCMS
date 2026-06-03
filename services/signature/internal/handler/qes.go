@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"net/http"
 
-	tsplib "github.com/vaultdms/vaultdms/pkg/signing/tsp"
-	"github.com/vaultdms/vaultdms/services/signature/internal/service"
+	tsplib "github.com/aieera/sedoc/pkg/signing/tsp"
+	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
 // RegisterQES mounts the QES routes alongside the existing

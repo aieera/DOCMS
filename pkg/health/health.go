@@ -13,7 +13,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	"github.com/vaultdms/vaultdms/pkg/storage"
+	"github.com/aieera/sedoc/pkg/storage"
 )
 
 // Server bundles the dependency handles required by /readyz.

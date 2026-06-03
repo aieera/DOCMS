@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/logger"
+	"github.com/aieera/sedoc/pkg/logger"
 	"google.golang.org/grpc"
 )
 

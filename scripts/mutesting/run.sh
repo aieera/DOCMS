@@ -26,9 +26,9 @@ set -euo pipefail
 
 THRESHOLD="${THRESHOLD:-70}"   # minimum score % to pass
 PACKAGES=(
-    "github.com/vaultdms/vaultdms/services/auth/internal/service/..."
-    "github.com/vaultdms/vaultdms/services/policy/internal/opa/..."
-    "github.com/vaultdms/vaultdms/services/storage/internal/service/..."
+    "github.com/aieera/sedoc/services/auth/internal/service/..."
+    "github.com/aieera/sedoc/services/policy/internal/opa/..."
+    "github.com/aieera/sedoc/services/storage/internal/service/..."
 )
 
 if ! command -v go-mutesting >/dev/null 2>&1; then

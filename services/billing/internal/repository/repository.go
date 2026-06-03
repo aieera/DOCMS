@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/model"
 )
 
 type Repository struct{ pool *pgxpool.Pool }

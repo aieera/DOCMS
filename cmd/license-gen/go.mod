@@ -1,4 +1,4 @@
-module github.com/vaultdms/vaultdms/cmd/license-gen
+module github.com/aieera/sedoc/cmd/license-gen
 
 go 1.25.0
 

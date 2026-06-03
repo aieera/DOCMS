@@ -11,9 +11,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
-	"github.com/vaultdms/vaultdms/pkg/notifications"
-	"github.com/vaultdms/vaultdms/services/auth/internal/repository"
+	"github.com/aieera/sedoc/pkg/esign"
+	"github.com/aieera/sedoc/pkg/notifications"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
 )
 
 // SetNotifRepo wires the auth repository so the service can read the

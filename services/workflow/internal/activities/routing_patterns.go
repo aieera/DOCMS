@@ -33,7 +33,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/open-policy-agent/opa/rego"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // AssigneeResolution is the result of ResolveAssignee. When

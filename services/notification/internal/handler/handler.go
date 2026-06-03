@@ -9,8 +9,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
-	"github.com/vaultdms/vaultdms/services/notification/internal/service"
+	"github.com/aieera/sedoc/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/service"
 )
 
 // Handler holds HTTP route handlers.

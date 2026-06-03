@@ -7,8 +7,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	vdmsmw "github.com/vaultdms/vaultdms/pkg/middleware"
-	"github.com/vaultdms/vaultdms/services/auth/internal/scim"
+	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
+	"github.com/aieera/sedoc/services/auth/internal/scim"
 )
 
 // Router wires all auth HTTP routes. Public routes (register, login, MFA

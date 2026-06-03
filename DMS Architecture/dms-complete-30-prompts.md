@@ -430,7 +430,7 @@ internal/service/   — Business logic layer
 internal/repository/ — Database access (pgx queries)
 internal/model/     — Domain models (Go structs)
 migrations/         — SQL migration files (golang-migrate format: 000001_name.up.sql / .down.sql)
-go.mod              — Module: github.com/vaultdms/vaultdms/services/{name}
+go.mod              — Module: github.com/aieera/sedoc/services/{name}
 Dockerfile:
 ```dockerfile
 # Build stage

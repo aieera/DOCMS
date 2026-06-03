@@ -77,7 +77,7 @@ constructs the sender from config and wires it into the service.
 
 ```
 $ go test ./services/notification/...
-ok  github.com/vaultdms/vaultdms/services/notification/internal/service  4.648s
+ok  github.com/aieera/sedoc/services/notification/internal/service  4.648s
 ```
 
 ## DoD

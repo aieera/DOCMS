@@ -31,7 +31,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/model"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/model"
 )
 
 type ctxKey struct{}

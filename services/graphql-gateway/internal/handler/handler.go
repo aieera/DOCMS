@@ -16,10 +16,10 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/exec"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/loader"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/persisted"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/resolver"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/exec"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/loader"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/persisted"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/resolver"
 )
 
 // Config bundles the dependencies the handler needs at boot.

@@ -25,7 +25,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/mcp"
+	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
 )
 
 // session is one open SSE connection. The outbox channel is what the

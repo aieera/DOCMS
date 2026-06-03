@@ -1,4 +1,4 @@
-module github.com/vaultdms/vaultdms/scripts/seed
+module github.com/aieera/sedoc/scripts/seed
 
 go 1.25.0
 

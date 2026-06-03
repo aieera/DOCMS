@@ -17,8 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
 )
 
 // Repository manages workflow tables.

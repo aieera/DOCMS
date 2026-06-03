@@ -11,9 +11,9 @@ import (
 
 	"go.temporal.io/sdk/client"
 
-	"github.com/vaultdms/vaultdms/services/workflow/internal/model"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/repository"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/workflows"
+	"github.com/aieera/sedoc/services/workflow/internal/model"
+	"github.com/aieera/sedoc/services/workflow/internal/repository"
+	"github.com/aieera/sedoc/services/workflow/internal/workflows"
 )
 
 // ErrRecallTooLate — recall called after at least one approver has

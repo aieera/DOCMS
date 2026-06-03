@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/model"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/model"
 )
 
 // stubResolvers is a minimal Resolvers implementation for the

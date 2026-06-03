@@ -17,9 +17,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/audit/internal/model"
-	"github.com/vaultdms/vaultdms/services/audit/internal/repository"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/audit/internal/model"
+	"github.com/aieera/sedoc/services/audit/internal/repository"
 )
 
 // Service is the audit service facade.

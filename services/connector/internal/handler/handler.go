@@ -8,8 +8,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/connector/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/service"
 )
 
 // Handler holds HTTP route handlers.

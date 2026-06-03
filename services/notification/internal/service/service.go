@@ -12,9 +12,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
-	"github.com/vaultdms/vaultdms/services/notification/internal/repository"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/repository"
 )
 
 // Service is the notification facade.

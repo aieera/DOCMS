@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
-	"github.com/vaultdms/vaultdms/services/policy/internal/opa"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/policy/internal/model"
+	"github.com/aieera/sedoc/services/policy/internal/opa"
 )
 
 // CheckInput is the public input type. Handlers map the proto into this.

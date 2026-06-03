@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 func TestValidateReactivableStatus(t *testing.T) {

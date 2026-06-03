@@ -24,10 +24,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmsmw "github.com/vaultdms/vaultdms/pkg/middleware"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/compliance"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/compliance"
 )
 
 // HoldsHandler mounts legal-hold endpoints on a ServeMux.

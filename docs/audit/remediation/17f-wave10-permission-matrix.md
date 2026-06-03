@@ -56,7 +56,7 @@ alongside the existing `/api/v1/permissions/*` routes.
 
 ```
 $ go test ./services/policy/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/policy/internal/handler  0.176s
+ok  github.com/aieera/sedoc/services/policy/internal/handler  0.176s
 ```
 
 ### Frontend

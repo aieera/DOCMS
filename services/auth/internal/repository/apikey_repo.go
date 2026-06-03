@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // APIKeyRepository manages the api_keys table. key_hash is globally unique

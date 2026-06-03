@@ -31,10 +31,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/storage"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // Hard cap on ciphertext we'll buffer for in-memory GCM decrypt on the

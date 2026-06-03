@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 func TestResolveFacet_SymbolicNamesMapToIndexedFields(t *testing.T) {

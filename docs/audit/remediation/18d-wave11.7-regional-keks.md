@@ -81,7 +81,7 @@ so this file doesn't pull in `strings` for two operations.
 
 ```
 $ go test ./pkg/crypto/...
-ok  github.com/vaultdms/vaultdms/pkg/crypto  2.025s
+ok  github.com/aieera/sedoc/pkg/crypto  2.025s
 ```
 
 ## DoD — Wave 8.4 deferral

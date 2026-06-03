@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/model"
 )
 
 // graphBaseURL is the Microsoft Graph v1.0 root. We deliberately

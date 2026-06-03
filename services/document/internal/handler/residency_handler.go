@@ -24,8 +24,8 @@ import (
 	"github.com/rs/zerolog"
 	"go.temporal.io/sdk/client"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 const residencyTaskQueue = "vaultdms-default"

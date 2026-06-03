@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vaultdms/vaultdms/pkg/events"
+	"github.com/aieera/sedoc/pkg/events"
 )
 
 // natsCheck verifies that every subject passed on argv is covered by at

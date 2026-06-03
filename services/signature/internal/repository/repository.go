@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/services/signature/internal/model"
+	"github.com/aieera/sedoc/services/signature/internal/model"
 )
 
 // Querier is the common slice of pgx.Tx and *pgxpool.Pool the repository

@@ -149,7 +149,7 @@ $ grep -rn 'fmt.Errorf.*: %[vs]' services/ pkg/
 
 $ go test ./pkg/errors/... -v
 ... 50 subtests, all PASS
-ok  	github.com/vaultdms/vaultdms/pkg/errors	1.232s
+ok  	github.com/aieera/sedoc/pkg/errors	1.232s
 
 $ go build ./... (every workspace module)
 clean

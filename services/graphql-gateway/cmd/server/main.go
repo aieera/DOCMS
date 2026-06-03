@@ -21,18 +21,18 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	vaultdmsv1 "github.com/vaultdms/vaultdms/proto/gen/go/vaultdms/v1"
+	vaultdmsv1 "github.com/aieera/sedoc/proto/gen/go/vaultdms/v1"
 
-	"github.com/vaultdms/vaultdms/pkg/config"
-	"github.com/vaultdms/vaultdms/pkg/health"
-	"github.com/vaultdms/vaultdms/pkg/logger"
-	"github.com/vaultdms/vaultdms/pkg/middleware"
+	"github.com/aieera/sedoc/pkg/config"
+	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/logger"
+	"github.com/aieera/sedoc/pkg/middleware"
 
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/exec"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/handler"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/loader"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/persisted"
-	"github.com/vaultdms/vaultdms/services/graphql-gateway/internal/resolver"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/exec"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/handler"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/loader"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/persisted"
+	"github.com/aieera/sedoc/services/graphql-gateway/internal/resolver"
 )
 
 const serviceName = "graphql-gateway"

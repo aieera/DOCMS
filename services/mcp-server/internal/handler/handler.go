@@ -29,7 +29,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/mcp-server/internal/mcp"
+	"github.com/aieera/sedoc/services/mcp-server/internal/mcp"
 )
 
 type Handler struct {

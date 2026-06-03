@@ -8,8 +8,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
-	"github.com/vaultdms/vaultdms/services/billing/internal/repository"
+	"github.com/aieera/sedoc/services/billing/internal/model"
+	"github.com/aieera/sedoc/services/billing/internal/repository"
 )
 
 const (

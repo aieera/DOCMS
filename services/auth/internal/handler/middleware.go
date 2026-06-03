@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // AuthMiddleware validates a session token OR API key and populates the

@@ -25,9 +25,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/events"
-	"github.com/vaultdms/vaultdms/pkg/testutil"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/events"
+	"github.com/aieera/sedoc/pkg/testutil"
 )
 
 type harness struct {

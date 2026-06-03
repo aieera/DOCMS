@@ -92,7 +92,7 @@ crypto tests green:
 
 ```
 $ go test ./pkg/crypto/...
-ok  github.com/vaultdms/vaultdms/pkg/crypto   0.556s
+ok  github.com/aieera/sedoc/pkg/crypto   0.556s
 ```
 
 New test coverage:

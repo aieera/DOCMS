@@ -86,7 +86,7 @@ ok: no context.Background() in NATS-handling code paths
 
 ```
 $ go test -run HandlerCtx ./services/search/internal/service/...
-ok  github.com/vaultdms/vaultdms/services/search/internal/service  0.172s
+ok  github.com/aieera/sedoc/services/search/internal/service  0.172s
 ```
 
 ## Why it was 4 not 14

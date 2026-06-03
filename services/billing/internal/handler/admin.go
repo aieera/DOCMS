@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/billing/internal/model"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/billing/internal/model"
 )
 
 // RegisterAdmin mounts the /api/v1/admin/settings routes on the supplied

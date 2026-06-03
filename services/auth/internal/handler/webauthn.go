@@ -23,8 +23,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
-	"github.com/vaultdms/vaultdms/services/auth/internal/service"
+	"github.com/aieera/sedoc/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/service"
 )
 
 // ---- Registration begin --------------------------------------------

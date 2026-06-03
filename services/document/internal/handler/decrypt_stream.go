@@ -30,11 +30,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	pkgcrypto "github.com/vaultdms/vaultdms/pkg/crypto"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/storage"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // DecryptStreamHandler exposes a single GET endpoint that decrypts

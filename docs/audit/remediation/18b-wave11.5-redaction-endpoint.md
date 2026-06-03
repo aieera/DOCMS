@@ -74,7 +74,7 @@ and mounts it next to the retention-policy admin mux.
 
 ```
 $ go test ./services/document/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler  0.442s
+ok  github.com/aieera/sedoc/services/document/internal/handler  0.442s
 ```
 
 ## DoD — spec §7.2 redaction invariant

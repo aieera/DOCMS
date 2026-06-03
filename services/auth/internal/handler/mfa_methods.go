@@ -28,9 +28,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/pkg/notifications"
-	"github.com/vaultdms/vaultdms/services/auth/internal/service"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/notifications"
+	"github.com/aieera/sedoc/services/auth/internal/service"
 )
 
 // ---- Public, mfa-session-token gated -------------------------------------

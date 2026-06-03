@@ -1,16 +1,16 @@
-module github.com/vaultdms/vaultdms/services/storage
+module github.com/aieera/sedoc/services/storage
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
+	github.com/aieera/sedoc/proto/gen/go v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/h2non/filetype v1.1.3
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vaultdms/vaultdms/pkg v0.0.0
-	github.com/vaultdms/vaultdms/proto/gen/go v0.0.0
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -79,6 +79,6 @@ require (
 )
 
 replace (
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
-	github.com/vaultdms/vaultdms/proto/gen/go => ../../proto/gen/go
+	github.com/aieera/sedoc/pkg => ../../pkg
+	github.com/aieera/sedoc/proto/gen/go => ../../proto/gen/go
 )

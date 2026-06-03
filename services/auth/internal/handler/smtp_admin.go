@@ -5,7 +5,7 @@ package handler
 import (
 	"net/http"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 type putSMTPBody struct {

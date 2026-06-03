@@ -44,7 +44,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/signing/tsp"
+	"github.com/aieera/sedoc/pkg/signing/tsp"
 )
 
 // ----- Intesi ------------------------------------------------------

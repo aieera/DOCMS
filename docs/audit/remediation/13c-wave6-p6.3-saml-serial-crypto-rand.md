@@ -74,7 +74,7 @@ Three tests:
 
 ```
 $ go test -run 'GenerateSerial|SelfSignedSP_Produces' ./services/auth/internal/sso/...
-ok  github.com/vaultdms/vaultdms/services/auth/internal/sso   1.323s
+ok  github.com/aieera/sedoc/services/auth/internal/sso   1.323s
 ```
 
 ## Why the statistical bound is 70% and not "≥127 bits for all"

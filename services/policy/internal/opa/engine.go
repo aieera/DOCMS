@@ -13,7 +13,7 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 	"github.com/open-policy-agent/opa/storage/inmem"
 
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
+	"github.com/aieera/sedoc/services/policy/internal/model"
 )
 
 //go:embed policy.rego

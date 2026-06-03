@@ -81,7 +81,7 @@ Signature so the dev/embedded worker matches the standalone one.
 
 ```
 $ go test -run ReviewWorkflow ./services/workflow/internal/workflows/...
-ok  github.com/vaultdms/vaultdms/services/workflow/internal/workflows  0.204s
+ok  github.com/aieera/sedoc/services/workflow/internal/workflows  0.204s
 ```
 
 Full Temporal replay tests (final.md § 6.3 DoD) require exported

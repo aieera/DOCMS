@@ -15,11 +15,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/storage"
-	"github.com/vaultdms/vaultdms/services/signature/internal/model"
-	"github.com/vaultdms/vaultdms/services/signature/internal/pades"
-	"github.com/vaultdms/vaultdms/services/signature/internal/repository"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/signature/internal/model"
+	"github.com/aieera/sedoc/services/signature/internal/pades"
+	"github.com/aieera/sedoc/services/signature/internal/repository"
 )
 
 type Service struct {

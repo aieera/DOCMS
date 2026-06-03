@@ -12,8 +12,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
-	"github.com/vaultdms/vaultdms/services/connector/internal/providers"
+	"github.com/aieera/sedoc/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/providers"
 )
 
 // Connector implements Salesforce integration.

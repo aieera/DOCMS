@@ -74,7 +74,7 @@ Unknown values error at boot.
 
 ```
 $ go test ./services/signature/internal/signer/...
-ok  github.com/vaultdms/vaultdms/services/signature/internal/signer  0.774s
+ok  github.com/aieera/sedoc/services/signature/internal/signer  0.774s
 ```
 
 Covers:

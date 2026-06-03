@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 func ptrJSONC(s string) *json.RawMessage {

@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
 // SessionRepository manages the sessions table. Reads by token_hash DO NOT

@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
+	"github.com/aieera/sedoc/services/policy/internal/model"
 )
 
 // compiles once; reused across tests.

@@ -26,11 +26,11 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 
-	"github.com/vaultdms/vaultdms/pkg/config"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	"github.com/vaultdms/vaultdms/pkg/logger"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/activities"
-	"github.com/vaultdms/vaultdms/services/workflow/internal/workflows"
+	"github.com/aieera/sedoc/pkg/config"
+	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/logger"
+	"github.com/aieera/sedoc/services/workflow/internal/activities"
+	"github.com/aieera/sedoc/services/workflow/internal/workflows"
 )
 
 const (

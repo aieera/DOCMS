@@ -18,8 +18,8 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/services/connector/internal/model"
-	"github.com/vaultdms/vaultdms/services/connector/internal/repository"
+	"github.com/aieera/sedoc/services/connector/internal/model"
+	"github.com/aieera/sedoc/services/connector/internal/repository"
 )
 
 // DeliveryWorker polls for pending deliveries and sends them.

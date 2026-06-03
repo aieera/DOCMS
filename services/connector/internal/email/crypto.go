@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vaultdms/vaultdms/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/crypto"
 )
 
 // keyFromEnv reads VAULTDMS_LOCAL_KEK (a base64-encoded 32-byte key) or, if

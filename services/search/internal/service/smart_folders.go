@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 // ListSmartFolders proxies to the repository. Workspace membership is

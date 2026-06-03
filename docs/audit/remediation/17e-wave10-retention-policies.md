@@ -57,7 +57,7 @@ under a dedicated mux at `/api/v1/admin/retention-policies[/]`.
 
 ```
 $ go test ./services/document/internal/handler/...
-ok  github.com/vaultdms/vaultdms/services/document/internal/handler  0.141s
+ok  github.com/aieera/sedoc/services/document/internal/handler  0.141s
 ```
 
 ### Frontend

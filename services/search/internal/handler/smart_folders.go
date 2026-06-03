@@ -17,7 +17,7 @@ import (
 	"net/http"
 	"strings"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 func (h *Handler) listSmartFolders(w http.ResponseWriter, r *http.Request) {

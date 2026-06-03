@@ -78,7 +78,7 @@ integration suite.
 
 ```
 $ go test ./services/storage/...
-ok  github.com/vaultdms/vaultdms/services/storage/internal/service  0.335s
+ok  github.com/aieera/sedoc/services/storage/internal/service  0.335s
 ```
 
 ## DoD

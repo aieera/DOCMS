@@ -26,12 +26,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/vaultdms/vaultdms/pkg/crypto"
-	"github.com/vaultdms/vaultdms/pkg/database"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/auth/internal/ldap"
-	"github.com/vaultdms/vaultdms/services/auth/internal/model"
-	"github.com/vaultdms/vaultdms/services/auth/internal/repository"
+	"github.com/aieera/sedoc/pkg/crypto"
+	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/auth/internal/ldap"
+	"github.com/aieera/sedoc/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/repository"
 )
 
 // LDAPDeps is the optional bundle of LDAP-specific dependencies.

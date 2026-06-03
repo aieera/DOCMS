@@ -11,10 +11,10 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
-	"github.com/vaultdms/vaultdms/services/search/internal/repository"
-	"github.com/vaultdms/vaultdms/services/search/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/repository"
+	"github.com/aieera/sedoc/services/search/internal/service"
 )
 
 // Handler holds HTTP route handlers for the search service.

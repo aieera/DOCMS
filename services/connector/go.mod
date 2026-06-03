@@ -1,9 +1,12 @@
-module github.com/vaultdms/vaultdms/services/connector
+module github.com/aieera/sedoc/services/connector
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/nats-io/jwt/v2 v2.8.1
@@ -11,7 +14,6 @@ require (
 	github.com/nats-io/nkeys v0.4.15
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
-	github.com/vaultdms/vaultdms/pkg v0.0.0
 	google.golang.org/grpc v1.80.0
 )
 
@@ -22,7 +24,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emersion/go-message v0.18.2 // indirect
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
-	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -78,6 +79,6 @@ require (
 )
 
 replace (
+	github.com/aieera/sedoc/pkg => ../../pkg
 	github.com/docker/docker => github.com/moby/moby v26.1.5+incompatible
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
 )

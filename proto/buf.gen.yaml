@@ -6,7 +6,7 @@ managed:
     - module: buf.build/grpc-ecosystem/grpc-gateway
   override:
     - file_option: go_package_prefix
-      value: github.com/vaultdms/vaultdms/proto/gen/go
+      value: github.com/aieera/sedoc/proto/gen/go
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.33.0
     out: gen/go

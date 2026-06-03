@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 func TestInDNDWindow(t *testing.T) {

@@ -16,9 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/document/internal/model"
-	"github.com/vaultdms/vaultdms/services/document/internal/service"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // AnnotationsHandler wires the four annotation routes onto a mux.

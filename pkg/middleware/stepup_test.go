@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	vdmsauth "github.com/vaultdms/vaultdms/pkg/auth"
+	vdmsauth "github.com/aieera/sedoc/pkg/auth"
 )
 
 // stub handler that signals it ran.

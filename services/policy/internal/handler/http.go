@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/vaultdms/vaultdms/pkg/auth"
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
-	"github.com/vaultdms/vaultdms/services/policy/internal/model"
-	"github.com/vaultdms/vaultdms/services/policy/internal/service"
+	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/policy/internal/model"
+	"github.com/aieera/sedoc/services/policy/internal/service"
 )
 
 // HTTPHandler is the REST face of the policy service. It never exposes raw

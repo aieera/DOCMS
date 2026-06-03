@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vaultdms/vaultdms/services/search/internal/model"
-	"github.com/vaultdms/vaultdms/services/search/internal/opensearch"
-	"github.com/vaultdms/vaultdms/services/search/internal/repository"
+	"github.com/aieera/sedoc/services/search/internal/model"
+	"github.com/aieera/sedoc/services/search/internal/opensearch"
+	"github.com/aieera/sedoc/services/search/internal/repository"
 )
 
 // FederatedDailyLimit is the per-admin per-UTC-day cap.

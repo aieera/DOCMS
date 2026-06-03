@@ -55,7 +55,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
+	"github.com/aieera/sedoc/pkg/esign"
 )
 
 // ----- DocuSign ----------------------------------------------------

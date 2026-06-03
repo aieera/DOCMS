@@ -31,7 +31,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	vdmserr "github.com/vaultdms/vaultdms/pkg/errors"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
 // OnlyOfficeHandler mounts the E6 endpoints.

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultdms/vaultdms/pkg/esign"
+	"github.com/aieera/sedoc/pkg/esign"
 )
 
 // ----- OAuth state HMAC -------------------------------------------

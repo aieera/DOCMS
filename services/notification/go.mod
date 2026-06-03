@@ -1,15 +1,15 @@
-module github.com/vaultdms/vaultdms/services/notification
+module github.com/aieera/sedoc/services/notification
 
 go 1.25.0
 
 require (
+	github.com/aieera/sedoc/pkg v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/nats-io/nats.go v1.34.0
 	github.com/redis/go-redis/v9 v9.5.1
 	github.com/rs/zerolog v1.32.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vaultdms/vaultdms/pkg v0.0.0
 	google.golang.org/grpc v1.80.0
 )
 
@@ -77,6 +77,6 @@ require (
 )
 
 replace (
+	github.com/aieera/sedoc/pkg => ../../pkg
 	github.com/docker/docker => github.com/moby/moby v26.1.5+incompatible
-	github.com/vaultdms/vaultdms/pkg => ../../pkg
 )

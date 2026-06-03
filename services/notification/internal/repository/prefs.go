@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vaultdms/vaultdms/services/notification/internal/model"
+	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // ListMatrix returns every cell saved for (tenant, user). Empty slice
