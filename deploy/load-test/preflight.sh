@@ -180,7 +180,7 @@ fi
 # ----- 5. Helm chart -------------------------------------------------
 step "5/5 Helm chart"
 
-chart_dir="$(cd "$(dirname "$0")"/../helm/vaultdms 2>/dev/null && pwd || true)"
+chart_dir="$(cd "$(dirname "$0")"/../helm/sedoc 2>/dev/null && pwd || true)"
 if [[ -d "$chart_dir" && -f "$chart_dir/Chart.yaml" ]]; then
   ver=$(grep '^version:' "$chart_dir/Chart.yaml" | awk '{print $2}')
   ok "Chart present: $chart_dir (version $ver)"
@@ -190,7 +190,7 @@ if [[ -d "$chart_dir" && -f "$chart_dir/Chart.yaml" ]]; then
     warn "helm lint reports issues — run 'helm lint $chart_dir' to see"
   fi
 else
-  fail "Helm chart not found at deploy/helm/vaultdms/"
+  fail "Helm chart not found at deploy/helm/sedoc/"
   fail "Without the chart, RUNBOOK §1.4 (Helm install) can't proceed."
 fi
 

@@ -70,7 +70,7 @@ go test ./services/search/...
 
 ## Deployment
 
-Helm: `deploy/helm/vaultdms/templates/search/` — full 6-resource set
+Helm: `deploy/helm/sedoc/templates/search/` — full 6-resource set
 (deployment, service, hpa, pdb, networkpolicy, servicemonitor).
 
 ## Metrics

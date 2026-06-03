@@ -13,7 +13,7 @@ DOCMS/
 ├── .github/workflows/         # CI: ci.yml, release.yml
 ├── cmd/dms-admin/             # Admin CLI (secrets rotation)
 ├── deploy/
-│   ├── helm/vaultdms/         # 69 Helm template files
+│   ├── helm/sedoc/         # 69 Helm template files
 │   └── monitoring/
 │       ├── alerts/            # Prometheus rules (1 file)
 │       └── dashboards/        # Grafana JSON (6 files)

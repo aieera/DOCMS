@@ -1,6 +1,6 @@
 # Helm install / upgrade / rollback runbook
 
-*ADR 0092 — SeDoc Helm chart at `deploy/helm/vaultdms/`.*
+*ADR 0092 — SeDoc Helm chart at `deploy/helm/sedoc/`.*
 
 This runbook is the operational companion to the chart. Three audiences:
 
@@ -59,7 +59,7 @@ kubectl label namespace vaultdms \
 OR let the chart create + label it for you:
 
 ```bash
-helm install vaultdms deploy/helm/vaultdms \
+helm install vaultdms deploy/helm/sedoc \
   --namespace vaultdms --create-namespace \
   --set global.podSecurity.createNamespace=true
 ```
@@ -67,7 +67,7 @@ helm install vaultdms deploy/helm/vaultdms \
 ### 2. Pull subchart dependencies
 
 ```bash
-cd deploy/helm/vaultdms
+cd deploy/helm/sedoc
 helm dependency update
 ls charts/  # should show postgresql-*.tgz, redis-*.tgz, etc.
 ```
@@ -84,7 +84,7 @@ kubectl -n vaultdms create secret generic vaultdms-postgres-credentials \
 ### 4. Install
 
 ```bash
-helm install vaultdms deploy/helm/vaultdms \
+helm install vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --set global.domain=dms.example.com \
   --set global.tlsSecretName=vaultdms-tls \
@@ -137,18 +137,18 @@ EOF
 
 ```bash
 git pull
-cd deploy/helm/vaultdms
+cd deploy/helm/sedoc
 helm dependency update
 
 # Dry-run renders the diff so you see what's about to land
-helm upgrade vaultdms deploy/helm/vaultdms \
+helm upgrade vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --reuse-values \
   --set global.imageTag=$(git describe --tags --always) \
   --dry-run --debug | head -200
 
 # Actual upgrade
-helm upgrade vaultdms deploy/helm/vaultdms \
+helm upgrade vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --reuse-values \
   --set global.imageTag=$(git describe --tags --always) \
@@ -222,7 +222,7 @@ kubectl get crd clusters.postgresql.cnpg.io >/dev/null || {
 }
 
 # Render the Cluster spec
-helm upgrade vaultdms deploy/helm/vaultdms \
+helm upgrade vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --reuse-values \
   --set postgresql.useOperator=true \
@@ -259,7 +259,7 @@ kubectl exec -n vaultdms $PRIMARY -- \
 
 ```bash
 # Update the app's DB host + disable Bitnami in one helm upgrade
-helm upgrade vaultdms deploy/helm/vaultdms \
+helm upgrade vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --reuse-values \
   --set postgresql.useOperator=true \
@@ -319,7 +319,7 @@ vault kv put secret/vaultdms/gateway-secret value="$(openssl rand -hex 32)"
 # … etc.
 
 # 3. helm upgrade with ESO enabled
-helm upgrade vaultdms deploy/helm/vaultdms \
+helm upgrade vaultdms deploy/helm/sedoc \
   --namespace vaultdms \
   --reuse-values \
   --set externalSecrets.enabled=true \

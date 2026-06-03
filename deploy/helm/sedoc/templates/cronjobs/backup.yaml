@@ -1,0 +1,61 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sedoc-backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  FILENAME="sedoc-${TIMESTAMP}.sql.gz"
+                  echo "Starting backup: ${FILENAME}"
+                  pg_dump "${DATABASE_URL}" | gzip > /tmp/${FILENAME}
+                  # Upload to S3 using presigned URL or aws cli
+                  apk add --no-cache aws-cli 2>/dev/null || true
+                  aws s3 cp /tmp/${FILENAME} s3://{{ .Values.backup.s3Bucket }}/${FILENAME} \
+                    --endpoint-url {{ .Values.global.s3.endpoint }}
+                  echo "Backup uploaded: s3://{{ .Values.backup.s3Bucket }}/${FILENAME}"
+                  # Prune old backups
+                  aws s3 ls s3://{{ .Values.backup.s3Bucket }}/ \
+                    --endpoint-url {{ .Values.global.s3.endpoint }} | \
+                    sort | head -n -{{ .Values.backup.retention }} | \
+                    awk '{print $4}' | \
+                    xargs -I{} aws s3 rm s3://{{ .Values.backup.s3Bucket }}/{} \
+                      --endpoint-url {{ .Values.global.s3.endpoint }} 2>/dev/null || true
+                  echo "Backup complete."
+              env:
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.database.existingSecret }}
+                      key: {{ .Values.global.database.passwordKey }}
+                - name: DATABASE_URL
+                  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.s3.accessKeySecret }}
+                      key: {{ .Values.global.s3.accessKeyKey }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.s3.accessKeySecret }}
+                      key: {{ .Values.global.s3.secretKeyKey }}
+                - name: AWS_DEFAULT_REGION
+                  value: {{ .Values.global.s3.region }}
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+{{- end }}

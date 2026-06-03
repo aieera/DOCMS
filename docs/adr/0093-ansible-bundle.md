@@ -11,7 +11,7 @@ counterpart to the Helm chart. The playbook entry's "ADR 0084"
 reference is stale (taken by grouped-autocomplete-suggester since
 search work). This ADR is **0093**.
 
-The Helm chart at `deploy/helm/vaultdms/` (ADR 0092) covers customers
+The Helm chart at `deploy/helm/sedoc/` (ADR 0092) covers customers
 who run Kubernetes. The Ansible bundle covers everyone else:
 on-prem deployments to RHEL 8/9 or Ubuntu 22.04/24.04 VMs, regulated
 environments where K8s isn't approved, and small-scale single-host
@@ -39,7 +39,7 @@ they can pattern-match against.
   provisioning, `ALTER ROLE NOBYPASSRLS` to keep the multi-tenant RLS
   invariant honest (CLAUDE.md), daily `pg_dump` cron. Idempotent
   across RHEL 8/9 + Ubuntu 22.04/24.04.
-- **`vaultdms-service`** role: templated systemd-unit installer
+- **`sedoc-service`** role: templated systemd-unit installer
   reusable for all 14 Go services. Atomic binary swap (`.new` →
   `cmp -s` → `mv`) so rolling upgrades either succeed or leave the
   prior binary untouched. Restart-on-failure with start-limit-burst
@@ -61,7 +61,7 @@ they can pattern-match against.
 | Item | Why deferred |
 |---|---|
 | Roles for **Redis, OpenSearch, NATS, MinIO, Temporal, ClamAV** | Each is 3-5 days of authorship + testing. `postgres` is the worked example demonstrating the pattern (PGDG repo for both OS families, idempotent initdb, template-rendered config, `community.postgresql` for provisioning, daily backup cron). Apply the same shape per role. |
-| Per-service playbook blocks for the **other 13 Go services** | One-line additions to `site.yml` per service. The `vaultdms-service` role accepts service name + ports as vars; expanding `site.yml` is repetitive but mechanical. |
+| Per-service playbook blocks for the **other 13 Go services** | One-line additions to `site.yml` per service. The `sedoc-service` role accepts service name + ports as vars; expanding `site.yml` is repetitive but mechanical. |
 | **Certificate provisioning** (Let's Encrypt + acme.sh, or org-CA) | Org-specific policy decision. Bundle is OS-installer; cert lifecycle usually owned by a separate ops surface. |
 | **Production backup role** (pg_dump → S3 + retention + restore drill + MinIO mirror + OpenSearch snapshot repo + NATS JetStream state snapshot) | Today's cron entry covers the local-disk daily dump only. Proper offsite backup is its own 2-day workstream. |
 | **Gateway drain/re-attach hooks** in `upgrade.yml` | Requires Kong DBless config in `deploy/gateway/kong.yaml` to grow opt-in drain semantics first. Without it, rolling upgrade still works but in-flight requests on the host being swapped will fail. |
@@ -87,7 +87,7 @@ intersection: `hosts: app:&signature-hosts`.
 
 ### Single templated service role, not 14 roles
 
-The `vaultdms-service` role takes `vaultdms_service_name` as a
+The `sedoc-service` role takes `vaultdms_service_name` as a
 variable. All 14 Go services share the same install shape (download
 binary → render `.env` → render unit → start). Service-specific
 config flows through `vaultdms_service_extra_env`. This is the same
@@ -128,7 +128,7 @@ runtime via `community.hashi_vault.vault_kv2_get`).
 
 ### Upgrade: atomic binary swap + `/healthz` gate
 
-The `vaultdms-service` role downloads to `<bin>.new`, `cmp -s`-checks
+The `sedoc-service` role downloads to `<bin>.new`, `cmp -s`-checks
 against the live binary, and only `mv`s if they differ. The
 `upgrade.yml` playbook drives this with `serial: 1` and a 30 × 2 s
 `/healthz` post-check; if health doesn't recover, the playbook fails
@@ -153,7 +153,7 @@ playbook as a TODO; needs gateway-side support.
 | `deploy/ansible/playbooks/upgrade.yml` | Rolling upgrade, `serial: 1` |
 | `deploy/ansible/roles/common/tasks/main.yml` | User, paths, firewall, logrotate |
 | `deploy/ansible/roles/postgres/{tasks,handlers,templates,defaults,meta}` | Full Postgres role |
-| `deploy/ansible/roles/vaultdms-service/{tasks,handlers,templates,defaults,meta}` | Templated Go-service installer |
+| `deploy/ansible/roles/sedoc-service/{tasks,handlers,templates,defaults,meta}` | Templated Go-service installer |
 | `deploy/ansible/README.md` | Operator-facing quickstart |
 | `docs/runbooks/ansible-install.md` | Runbook |
 

@@ -1,3 +1,0 @@
-{{- if .Values.search.enabled }}
-{{- include "vaultdms.goServiceMonitor" (dict "svcName" "search" "svc" .Values.search "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

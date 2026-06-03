@@ -340,13 +340,13 @@ jobs:
       - name: Build test images
         run: |
           for svc in document auth policy storage search audit workflow notification signature billing; do
-            docker build -t vaultdms-${svc}:test -f services/${svc}/Dockerfile . || true
+            docker build -t sedoc-${svc}:test -f services/${svc}/Dockerfile . || true
           done
       - name: Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: "vaultdms-document:test"
+          image-ref: "sedoc-document:test"
           severity: "HIGH,CRITICAL"
           exit-code: "1"
           format: table

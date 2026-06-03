@@ -57,7 +57,7 @@ make test-signature
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/signature/` — full 6-resource set.
+`deploy/helm/sedoc/templates/signature/` — full 6-resource set.
 HPA disabled by default (low-volume service).
 
 ## Metrics

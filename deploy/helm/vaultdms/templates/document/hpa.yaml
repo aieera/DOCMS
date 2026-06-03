@@ -1,3 +1,0 @@
-{{- if .Values.document.enabled }}
-{{- include "vaultdms.goServiceHPA" (dict "svcName" "document" "svc" .Values.document "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

@@ -105,7 +105,7 @@ spec:
           # by build/Dockerfile.load-seeder (see commented block
           # below for the equivalent ConfigMap-mount variant if you
           # don't want to bake an image).
-          image: ghcr.io/vaultdms/load-seeder:1.0.0
+          image: ghcr.io/aieera/sedoc/load-seeder:1.0.0
           imagePullPolicy: IfNotPresent
           command: ["python", "/app/seed.py"]
           args:

@@ -42,7 +42,7 @@ Status legend: ✅ Shipped and working · 🟡 Partially built / wired but gated
 
 | Component | Blueprint | On disk / running | Match? |
 |---|---|---|---|
-| API gateway (§3.1: "Kong/Envoy") | Kong/Envoy for rate-limiting, AuthN, routing, TLS term | ❌ **No gateway deployed.** In dev, Vite proxy routes. In prod, the [deploy/helm/vaultdms/](../../deploy/helm/vaultdms/) chart defines a generic `ingress.yaml`. Blueprint service decomposition assumes a gateway; at least 5 services (audit/notification/workflow/signature/search) trust raw `X-Tenant-ID` headers because they expect to be behind one. | ❌ Architectural gap — see Risk #1 in §4 |
+| API gateway (§3.1: "Kong/Envoy") | Kong/Envoy for rate-limiting, AuthN, routing, TLS term | ❌ **No gateway deployed.** In dev, Vite proxy routes. In prod, the [deploy/helm/sedoc/](../../deploy/helm/sedoc/) chart defines a generic `ingress.yaml`. Blueprint service decomposition assumes a gateway; at least 5 services (audit/notification/workflow/signature/search) trust raw `X-Tenant-ID` headers because they expect to be behind one. | ❌ Architectural gap — see Risk #1 in §4 |
 | Antivirus scanning | (§5.x implied in storage flow) | ClamAV INSTREAM on port 3310, wired into storage service | ✅ |
 | Key management (§8.5) | AWS KMS / HashiCorp Vault abstraction | `pkg/crypto` abstraction exists with Local/Vault/AWS KMS providers. **Dev uses `SEDOC_LOCAL_KEK`.** Blueprint calls for per-tenant KEK; today a **single shared KEK** is used — [docs/STATE_OF_THE_PROJECT.md:42](../STATE_OF_THE_PROJECT.md#L42). | 🟡 Abstraction ✅, per-tenant rotation ❌ |
 | DLP (§8.7) | PII/PHI detection on ingest | Code at [pkg/dlp/](../../pkg/dlp/) (stub regex patterns) | 🟡 |
@@ -86,8 +86,8 @@ Blueprint §1.2 gives **three north-star differentiators**. Measuring each:
 
 | Deployment target | Blueprint § | Status | Evidence |
 |---|---|---|---|
-| SaaS (AWS/GCP/Azure) | 14.x | 🟡 Plumbed | Helm chart at [deploy/helm/vaultdms/](../../deploy/helm/vaultdms/) (~91 templates). **Unverified end-to-end on any cloud.** |
-| On-prem Kubernetes | 13.x | 🟡 Plumbed | `deploy/helm/vaultdms/values-onprem.yaml`. Unverified. |
+| SaaS (AWS/GCP/Azure) | 14.x | 🟡 Plumbed | Helm chart at [deploy/helm/sedoc/](../../deploy/helm/sedoc/) (~91 templates). **Unverified end-to-end on any cloud.** |
+| On-prem Kubernetes | 13.x | 🟡 Plumbed | `deploy/helm/sedoc/values-onprem.yaml`. Unverified. |
 | Air-gapped (SCIF) | 13.6 | 🟡 Plumbed | `values-airgapped.yaml` + [scripts/airgap/](../../scripts/airgap/). Unverified. |
 | Docker Compose (dev) | — | ✅ | `docker compose up -d` brings up all 9 infra containers healthy this session |
 

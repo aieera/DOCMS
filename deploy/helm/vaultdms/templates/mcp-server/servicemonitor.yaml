@@ -1,3 +1,0 @@
-{{- if .Values.mcpServer.enabled }}
-{{- include "vaultdms.goServiceMonitor" (dict "svcName" "mcp-server" "svc" .Values.mcpServer "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

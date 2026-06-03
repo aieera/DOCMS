@@ -51,7 +51,7 @@ go test ./services/audit/...
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/audit/` — full 6-resource set (used
+`deploy/helm/sedoc/templates/audit/` — full 6-resource set (used
 as the reference template for every other Go service).
 
 ## Metrics

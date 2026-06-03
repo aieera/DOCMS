@@ -1,0 +1,17 @@
+{{- if and .Values.web.enabled (.Values.web.serviceMonitor).enabled }}
+# The web bundle is static nginx; a /metrics path needs the nginx-prometheus
+# exporter sidecar. Disabled by default — flip `web.serviceMonitor.enabled`
+# to `true` in values once that sidecar is wired.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sedoc-web
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+{{- end }}

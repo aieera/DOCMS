@@ -55,7 +55,7 @@ go test ./services/policy/...  # includes opa engine tests
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/policy/` — full 6-resource set.
+`deploy/helm/sedoc/templates/policy/` — full 6-resource set.
 
 ## Metrics
 

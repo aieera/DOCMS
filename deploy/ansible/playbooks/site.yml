@@ -62,7 +62,7 @@
   become: true
   tags: [app, document]
   roles:
-    - role: vaultdms-service
+    - role: sedoc-service
       vars:
         vaultdms_service_name: document
         vaultdms_service_grpc_port: 9090

@@ -77,7 +77,7 @@ Blocks all of §14.3 (Rate Limiting), §20 (Threat Model — gateway is every th
 
 | Task | § | Deliverable | Acceptance |
 |---|---|---|---|
-| B1. Deploy Kong (or Envoy — blueprint says either) in the Helm chart and docker-compose | 3.1, 14.3 | `deploy/helm/vaultdms/templates/gateway/` + compose service | Gateway container healthy; all ingress goes through it. |
+| B1. Deploy Kong (or Envoy — blueprint says either) in the Helm chart and docker-compose | 3.1, 14.3 | `deploy/helm/sedoc/templates/gateway/` + compose service | Gateway container healthy; all ingress goes through it. |
 | B2. Route all public REST through the gateway: terminate TLS, auth, rate-limit, correlation-id, route to backend services | 3.1 | Gateway config | Audit/notification/workflow/signature/search no longer directly exposed. Handler-level session validation added as defense in depth. |
 | B3. Replace the Vite dev proxy with a single target pointing at the gateway | — | [web/vite.config.ts](../../web/vite.config.ts) | One-line proxy entry again: `/api → localhost:<gateway-port>`. |
 | B4. Rate-limit policies per [§14.3 table 1](../../DMS%20Architecture/dms-blueprint.md) (auth, doc ops, search, upload) | 14.3 | Gateway policies | k6 load test: 429s at documented thresholds. |

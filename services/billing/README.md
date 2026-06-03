@@ -54,7 +54,7 @@ make test-billing
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/billing/` — full 6-resource set.
+`deploy/helm/sedoc/templates/billing/` — full 6-resource set.
 
 ## Metrics
 

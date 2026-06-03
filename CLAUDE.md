@@ -46,7 +46,7 @@ Local stack:
 ```
 make setup            # gen-env → docker up → migrate → seed (one-shot onboarding)
 make docker-up        # build-from-source compose stack
-make docker-up-prebuilt   # pull ghcr.io/aieera/docms images instead (much faster)
+make docker-up-prebuilt   # pull ghcr.io/aieera/sedoc images instead (much faster)
 ./scripts/wait-for-healthy.sh
 make wake             # recover from a Docker/WSL restart: up + verify + restart dead-port containers
 make run-all          # run the Go services on the host (must `docker compose stop` them first; ports collide otherwise)

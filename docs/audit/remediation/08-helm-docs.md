@@ -62,7 +62,7 @@ follow-up pass that adds `volumeClaimTemplates` + the values knob.
 ### Chart-wide tests
 
 ```
-$ helm lint deploy/helm/vaultdms
+$ helm lint deploy/helm/sedoc
 ==> Linting //charts/vaultdms
 [INFO] Chart.yaml: icon is recommended
 [WARNING] chart directory is missing these dependencies: postgresql,redis,opensearch,nats,qdrant,temporal
@@ -75,11 +75,11 @@ charts; the warning just tells us `helm dependency build` hasn't run
 yet. In CI that step runs before every lint / template invocation.
 
 ```
-$ helm dependency build deploy/helm/vaultdms
+$ helm dependency build deploy/helm/sedoc
 Saving 6 charts
-$ helm template vdms deploy/helm/vaultdms (default) → 3435 lines, 97 resources rendered clean
-$ helm template vdms deploy/helm/vaultdms -f values-onprem.yaml → 3445 lines, clean
-$ helm template vdms deploy/helm/vaultdms -f values-airgapped.yaml → 3477 lines, clean
+$ helm template vdms deploy/helm/sedoc (default) → 3435 lines, 97 resources rendered clean
+$ helm template vdms deploy/helm/sedoc -f values-onprem.yaml → 3445 lines, clean
+$ helm template vdms deploy/helm/sedoc -f values-airgapped.yaml → 3477 lines, clean
 ```
 
 Resource breakdown (default values):
@@ -210,7 +210,7 @@ from "why this exists" to "the specific pass that introduced it".
 
 | Check | Result |
 |---|---|
-| `helm lint deploy/helm/vaultdms` | exit 0 (1 known-benign subchart warning) |
+| `helm lint deploy/helm/sedoc` | exit 0 (1 known-benign subchart warning) |
 | `helm template … -f values.yaml` | 97 resources, 0 errors |
 | `helm template … -f values-onprem.yaml` | clean |
 | `helm template … -f values-airgapped.yaml` | clean |

@@ -3,7 +3,7 @@ package service
 import "github.com/prometheus/client_golang/prometheus"
 
 // §8.8 / G8 — chain-integrity metrics. The daily CronJob in
-// deploy/helm/vaultdms/templates/cronjobs/audit-verify.yaml POSTs
+// deploy/helm/sedoc/templates/cronjobs/audit-verify.yaml POSTs
 // /api/v1/audit/verify-integrity; VerifyIntegrity() bumps these
 // counters so alertmanager's tiered rules can fire a P0 on any
 // chain break.

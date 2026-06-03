@@ -1,0 +1,59 @@
+{{- /*
+§9.6 / H1 — nightly SOC 2 evidence bundle.
+
+Runs scripts/soc2-evidence.sh in an alpine container with psql + aws
+cli available. Outputs a signed tar.gz to the evidence S3 bucket.
+The audit trail the auditor asks for across CC1-CC9 rolls up to this
+directory + the signatures.
+*/ -}}
+{{- if .Values.soc2Evidence.enabled | default true }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sedoc-soc2-evidence
+spec:
+  schedule: {{ .Values.soc2Evidence.schedule | default "30 4 * * *" | quote }}  # 04:30 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800   # keep pod 7 days for debug
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: soc2
+              # Multi-arch alpine + everything the script touches.
+              image: alpine:3.19
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.global.database.existingSecret }}
+                      key: database-url
+                - name: SEDOC_EVIDENCE_SIGNING_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.soc2Evidence.secret.name | default "sedoc-evidence" }}
+                      key: signing-key
+                - name: PROMETHEUS_URL
+                  value: {{ .Values.soc2Evidence.prometheusURL | default "http://prometheus-server" | quote }}
+                - name: S3_BUCKET
+                  value: {{ .Values.soc2Evidence.bucket | quote }}
+                - name: S3_ENDPOINT
+                  value: {{ .Values.global.s3.endpoint | quote }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  apk add --no-cache bash postgresql-client aws-cli curl git openssl
+                  # Script is baked into the image via ConfigMap mount;
+                  # values.yaml wires the mount in a follow-up slice.
+                  # For now, pull from the repo over HTTPS.
+                  wget -q {{ .Values.soc2Evidence.scriptURL | default "https://raw.githubusercontent.com/aieera/DOCMS/main/scripts/soc2-evidence.sh" | quote }} \
+                    -O /tmp/soc2-evidence.sh
+                  chmod +x /tmp/soc2-evidence.sh
+                  exec /tmp/soc2-evidence.sh
+{{- end }}

@@ -1,6 +1,6 @@
 # ADR 0092 — Helm chart for on-prem distribution (§13.1)
 
-**Status:** Accepted. Chart at `deploy/helm/vaultdms/` is the supported
+**Status:** Accepted. Chart at `deploy/helm/sedoc/` is the supported
 primary on-prem distribution mechanism.
 
 **Date:** 2026-05-18
@@ -153,35 +153,35 @@ is true. Defaults: CPU target 70%, min=2, max=8.
 
 | Path | Purpose |
 |---|---|
-| `deploy/helm/vaultdms/templates/mcp-server/*.yaml` (6) | mcp-server subchart templates |
-| `deploy/helm/vaultdms/templates/_service.tpl` | PSS-restricted securityContext on every Go pod |
-| `deploy/helm/vaultdms/templates/namespace.yaml` | Optional namespace with PSS labels |
-| `deploy/helm/vaultdms/templates/externalsecrets.yaml` | ExternalSecret resources gated on opt-in |
-| `deploy/helm/vaultdms/templates/postgres-cluster.yaml` | CloudNativePG Cluster CR gated on opt-in |
-| `deploy/helm/vaultdms/Chart.yaml` | Adds cloudnative-pg conditional dep |
-| `deploy/helm/vaultdms/values.yaml` | mcpServer block, podSecurity, externalSecrets, postgresql.useOperator + operator subblock |
-| `deploy/helm/vaultdms/templates/{intelligence,collaboration,preview,web}/deployment.yaml` | Tightened securityContext on non-Go services |
+| `deploy/helm/sedoc/templates/mcp-server/*.yaml` (6) | mcp-server subchart templates |
+| `deploy/helm/sedoc/templates/_service.tpl` | PSS-restricted securityContext on every Go pod |
+| `deploy/helm/sedoc/templates/namespace.yaml` | Optional namespace with PSS labels |
+| `deploy/helm/sedoc/templates/externalsecrets.yaml` | ExternalSecret resources gated on opt-in |
+| `deploy/helm/sedoc/templates/postgres-cluster.yaml` | CloudNativePG Cluster CR gated on opt-in |
+| `deploy/helm/sedoc/Chart.yaml` | Adds cloudnative-pg conditional dep |
+| `deploy/helm/sedoc/values.yaml` | mcpServer block, podSecurity, externalSecrets, postgresql.useOperator + operator subblock |
+| `deploy/helm/sedoc/templates/{intelligence,collaboration,preview,web}/deployment.yaml` | Tightened securityContext on non-Go services |
 | `docs/runbooks/helm-install.md` | Install / upgrade / rollback / migrate procedures |
 
 ## Acceptance
 
 ```bash
 # Lint passes
-helm lint deploy/helm/vaultdms
+helm lint deploy/helm/sedoc
 
 # Templates render to valid k8s YAML
-helm template vaultdms deploy/helm/vaultdms > /tmp/rendered.yaml
+helm template vaultdms deploy/helm/sedoc > /tmp/rendered.yaml
 kubectl apply --dry-run=client -f /tmp/rendered.yaml
 
 # Per-service rendering works
-helm template vaultdms deploy/helm/vaultdms --show-only templates/mcp-server/deployment.yaml
+helm template vaultdms deploy/helm/sedoc --show-only templates/mcp-server/deployment.yaml
 
 # Operator path renders only when opted in
-helm template vaultdms deploy/helm/vaultdms --set postgresql.useOperator=true \
+helm template vaultdms deploy/helm/sedoc --set postgresql.useOperator=true \
   --show-only templates/postgres-cluster.yaml | head -5
 # (returns Cluster CR; without --set returns nothing)
 
 # ExternalSecrets renders only when enabled
-helm template vaultdms deploy/helm/vaultdms --set externalSecrets.enabled=true \
+helm template vaultdms deploy/helm/sedoc --set externalSecrets.enabled=true \
   --show-only templates/externalsecrets.yaml | head -5
 ```

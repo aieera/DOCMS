@@ -1,0 +1,76 @@
+{{- /*
+FIX-8 (audit Section 12): provision S3 versioning + object-lock on
+every content bucket. Helm post-install hook so versioning is on
+before the document service writes its first blob — re-running the
+chart upgrade is a no-op since `mc version enable` is idempotent.
+
+In dev (MinIO) docker-compose's minio-init does the same thing in
+the docker-compose.yml. This template covers prod (managed S3 /
+self-hosted MinIO) where the bucket lifecycle is owned by Helm.
+
+If your S3 provider supports object-lock (AWS S3, MinIO with
+--with-lock buckets), the optional retention.enabled flag turns on
+GOVERNANCE-mode retention so blobs under legal hold or retention
+policy can't be overwritten until the window expires. Off by
+default because not every S3 implementation supports it.
+*/ -}}
+{{- if .Values.s3BucketInit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sedoc-s3-bucket-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bucket-init
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "Configuring S3 alias..."
+              mc alias set s3 "${S3_ENDPOINT}" "${S3_ACCESS_KEY}" "${S3_SECRET_KEY}"
+              for bucket in {{ range .Values.s3BucketInit.buckets }}{{ . }} {{ end }}; do
+                echo "Ensuring bucket exists: $bucket"
+                mc mb --ignore-existing "s3/$bucket" || true
+                echo "Enabling versioning: $bucket"
+                mc version enable "s3/$bucket" || true
+                {{- if .Values.s3BucketInit.retention.enabled }}
+                # Object-lock GOVERNANCE retention. Bucket MUST have
+                # been created with --with-lock for this to succeed;
+                # the mb above is best-effort so a one-time manual
+                # `mc mb --with-lock s3/$bucket` may be required on
+                # legacy clusters.
+                echo "Setting default GOVERNANCE retention {{ .Values.s3BucketInit.retention.years }}y: $bucket"
+                mc retention set --default GOVERNANCE {{ .Values.s3BucketInit.retention.years }}y "s3/$bucket" || true
+                {{- end }}
+              done
+              echo "Bucket init complete."
+          env:
+            - name: S3_ENDPOINT
+              value: {{ .Values.global.s3.endpoint | quote }}
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.accessKeyKey }}
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.s3.accessKeySecret }}
+                  key: {{ .Values.global.s3.secretKeyKey }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+{{- end }}

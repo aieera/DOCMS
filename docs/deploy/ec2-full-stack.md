@@ -2,7 +2,7 @@
 
 Stand up **all of SeDoc** — every service, the AI/OCR pipeline, search, workflows,
 e-sign, collaboration, and the web UI — on a single EC2 instance using prebuilt images
-(`ghcr.io/aieera/docms/*`), then point a domain at it with HTTPS.
+(`ghcr.io/aieera/sedoc/*`), then point a domain at it with HTTPS.
 
 > **Two postures, pick one up front:**
 > - **A — Full-stack on one box (this guide's default).** Fastest way to run *everything*.
@@ -10,7 +10,7 @@ e-sign, collaboration, and the web UI — on a single EC2 instance using prebuil
 >   single-tenant install. ~32 GB instance, ~$250–300/mo.
 > - **B — Production-hardened (see §11).** Managed RDS + OpenSearch Service + ElastiCache +
 >   real S3 + the `dms_app` `NOBYPASSRLS` role, behind an ALB. Use the **Helm chart**
->   (`deploy/helm/vaultdms`) on EKS for HA. This single-EC2 guide is the on-ramp, not the
+>   (`deploy/helm/sedoc`) on EKS for HA. This single-EC2 guide is the on-ramp, not the
 >   end state.
 >
 > The companion **minimal API-core** guide (`docs/deploy/ec2-api-check.md`, 9 containers,
@@ -22,7 +22,7 @@ e-sign, collaboration, and the web UI — on a single EC2 instance using prebuil
 
 - **Build:** Waves 5–14 structurally complete; Intelligence features 01–10 shipped. The
   product is at the *Production-Ready SaaS → Feature-Complete* gates.
-- **Images:** every service publishes to `ghcr.io/aieera/docms/<svc>` on merge to `main`
+- **Images:** every service publishes to `ghcr.io/aieera/sedoc/<svc>` on merge to `main`
   (tags: `main`, `sha-<short>`, release tags). No source build needed on the box.
 - **Known caveats to deploy around** (none block bring-up; see §12 Troubleshooting):
   - graphql-gateway uses a startup-only gRPC dial and a stale `collaboration:9090` address
@@ -337,7 +337,7 @@ This single-box test posture is **not** production. To harden:
 | **Keys** | `SEDOC_LOCAL_KEK` (HKDF) | **AWS KMS / Vault** per-tenant, per-region KEK; rotate every 90 days |
 | **Secrets** | `.env` on disk | **AWS Secrets Manager / SSM Parameter Store**, loaded at boot |
 | **Ingress** | Caddy on the box | **ALB + ACM cert + WAF**; private subnets for app/data |
-| **Compute** | one EC2, compose | **EKS + Helm chart** (`deploy/helm/vaultdms`), HPA + PDB per service |
+| **Compute** | one EC2, compose | **EKS + Helm chart** (`deploy/helm/sedoc`), HPA + PDB per service |
 | **Backups** | none | RDS snapshots, S3 versioning, OpenSearch snapshots, Postgres `pg_dump` cron |
 | **Observability** | `docker logs` | Prometheus (`/metrics` :8081) + Grafana (`deploy/monitoring/`) + OTEL → Tempo |
 | **Residency** | single region | Per-region KEK masters + `region_pin` (ADR 0026/0110); `deploy/regions/` |

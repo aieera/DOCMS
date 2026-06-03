@@ -7,7 +7,7 @@ and a post-mortem template.
 
 This directory is the operator-facing half; the litmus /
 chaos-mesh CRDs themselves live under
-`deploy/helm/vaultdms/templates/chaos/` (Wave 13.3b — not yet
+`deploy/helm/sedoc/templates/chaos/` (Wave 13.3b — not yet
 shipped).
 
 ## Scenarios
@@ -44,12 +44,12 @@ when chaos-mesh is actually deployed (Wave 13.3b).
 less docs/chaos/scenarios/01-pod-kill.md
 
 # 2. Apply the chaos-mesh CRD that matches.
-kubectl apply -f deploy/helm/vaultdms/templates/chaos/pod-kill.yaml
+kubectl apply -f deploy/helm/sedoc/templates/chaos/pod-kill.yaml
 
 # 3. Watch the Grafana panel named in § "Verification."
 
 # 4. Stop the experiment.
-kubectl delete -f deploy/helm/vaultdms/templates/chaos/pod-kill.yaml
+kubectl delete -f deploy/helm/sedoc/templates/chaos/pod-kill.yaml
 
 # 5. Write the post-mortem: copy post-mortem-TEMPLATE.md, fill,
 #    commit under docs/chaos/runs/YYYY-MM-DD-<scenario>.md.

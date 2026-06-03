@@ -1,0 +1,32 @@
+{{- if and .Values.collaboration.enabled .Values.collaboration.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sedoc-collaboration
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sedoc-collaboration
+  # Collaboration is stateful (WebSocket sessions are sticky-routed
+  # via ingress cookie affinity). Keep max low to avoid aggressive
+  # scale-up thrash that would drop live connections.
+  minReplicas: {{ .Values.collaboration.hpa.minReplicas | default 2 }}
+  maxReplicas: {{ .Values.collaboration.hpa.maxReplicas | default 5 }}
+  behavior:
+    scaleDown:
+      # WebSocket sessions live up to 30 min. A 5-minute scale-down
+      # stabilization window avoids evicting pods mid-session.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.collaboration.hpa.targetCPU | default 70 }}
+{{- end }}

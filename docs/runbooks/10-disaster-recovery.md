@@ -7,12 +7,12 @@
 > **FIX-8 status (2026-05-31).** Bucket versioning + automated
 > restore verification have landed:
 >
-> - `deploy/helm/vaultdms/templates/jobs/bucket-init.yaml` — Helm
+> - `deploy/helm/sedoc/templates/jobs/bucket-init.yaml` — Helm
 >   post-install hook runs `mc version enable` on every content
 >   bucket (optional GOVERNANCE object-lock via
 >   `s3BucketInit.retention.enabled`). Same wiring is in dev
 >   docker-compose `minio-init`.
-> - `deploy/helm/vaultdms/templates/cronjobs/backup-verify.yaml` —
+> - `deploy/helm/sedoc/templates/cronjobs/backup-verify.yaml` —
 >   weekly CronJob fetches the latest pg_dump, restores into a
 >   scratch DB, asserts row counts on `documents` /
 >   `document_versions` / `audit_events`. Failure pages oncall.

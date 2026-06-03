@@ -64,7 +64,7 @@ kubectl get nodes   # confirm three node groups, all Ready
 # 1.4. Deploy SeDoc via the existing Helm chart at the
 #      git SHA you want to validate. Pin the SHA in
 #      docs/load-tests/<date>/summary.md → "SUT version" field.
-helm upgrade --install vaultdms ../../../deploy/helm/vaultdms \
+helm upgrade --install vaultdms ../../../deploy/helm/sedoc \
   --namespace vaultdms --create-namespace \
   --values values.loadtest.yaml \
   --wait --timeout 20m

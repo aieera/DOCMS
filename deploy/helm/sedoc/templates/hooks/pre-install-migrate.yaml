@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sedoc-migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ .Values.global.imageRegistry }}/document:{{ .Values.global.imageTag }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Running document service migrations..."
+              /app --migrate-only 2>&1 || true
+              echo "Migrations complete."
+          env:
+            - name: SEDOC_SERVICE_NAME
+              value: document
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.database.existingSecret }}
+                  key: {{ .Values.global.database.passwordKey }}
+            - name: SEDOC_DATABASE_URL
+              value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ .Values.global.database.host }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"

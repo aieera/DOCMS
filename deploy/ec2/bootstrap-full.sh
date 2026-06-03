@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap the COMPLETE SeDoc product on a fresh Ubuntu EC2 instance,
-# using prebuilt images from ghcr.io/aieera/docms. Brings up the full stack
+# using prebuilt images from ghcr.io/aieera/sedoc. Brings up the full stack
 # (data plane + search/vectors + workflow + AV + all services/workers +
 # gateway), builds & serves the web UI, and fronts it with Caddy.
 #
@@ -8,7 +8,7 @@
 # only stands up the minimal API core). It runs the DEV / test posture
 # (SEDOC_ALLOW_BYPASS_RLS=1, container Postgres/OpenSearch/MinIO) — good
 # for a demo / pilot / UAT, NOT production. For production use the Helm chart
-# (deploy/helm/vaultdms) + managed RDS/OpenSearch/S3. See
+# (deploy/helm/sedoc) + managed RDS/OpenSearch/S3. See
 # docs/deploy/ec2-full-stack.md §11.
 #
 # Usage (from the repo root, on the VM):

@@ -1,3 +1,0 @@
-{{- if .Values.audit.enabled }}
-{{- include "vaultdms.goServiceNetworkPolicy" (dict "svcName" "audit" "svc" .Values.audit "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

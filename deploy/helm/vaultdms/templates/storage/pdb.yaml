@@ -1,3 +1,0 @@
-{{- if .Values.storage.enabled }}
-{{- include "vaultdms.goServicePDB" (dict "svcName" "storage" "svc" .Values.storage "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

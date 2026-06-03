@@ -1,0 +1,48 @@
+============================================================
+ SeDoc {{ .Chart.Version }} has been deployed!
+============================================================
+
+Access the application:
+{{- if .Values.ingress.enabled }}
+  Web UI:     https://{{ .Values.global.domain }}
+  API:        https://{{ .Values.global.domain }}/api/v1
+  WebSocket:  wss://{{ .Values.global.domain }}/ws
+{{- else }}
+  kubectl port-forward svc/sedoc-web {{ .Values.web.port }}:{{ .Values.web.port }}
+  Then open: http://localhost:{{ .Values.web.port }}
+{{- end }}
+
+Default admin credentials:
+  Email:    admin@vaultdms.local
+  Password: ChangeMe123!
+  ** CHANGE THIS IMMEDIATELY **
+
+Quick verification:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl logs -l app.kubernetes.io/name=auth --tail=20
+
+Health checks:
+  curl https://{{ .Values.global.domain }}/api/v1/auth/healthz
+
+Useful commands:
+  # Scale a service
+  kubectl scale deployment sedoc-document --replicas=3
+
+  # View logs
+  kubectl logs -f deployment/sedoc-document
+
+  # Run database migration manually
+  kubectl create job --from=job/sedoc-migrate sedoc-migrate-manual
+
+  # Trigger backup manually
+  kubectl create job --from=cronjob/sedoc-backup sedoc-backup-manual
+
+Infrastructure:
+  PostgreSQL:  {{ .Values.global.database.host }}:{{ .Values.global.database.port }}
+  Redis:       {{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}
+  NATS:        {{ .Values.global.nats.url }}
+  OpenSearch:  {{ .Values.global.opensearch.url }}
+  S3:          {{ .Values.global.s3.endpoint }}
+
+For documentation: https://docs.vaultdms.io
+============================================================

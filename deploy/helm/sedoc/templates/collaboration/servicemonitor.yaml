@@ -1,0 +1,17 @@
+{{- if .Values.collaboration.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sedoc-collaboration
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: collaboration
+  endpoints:
+    # Node WS service exposes /metrics on the same port as ws; scrape
+    # the HTTP GET path. The Prometheus client lib in the Node service
+    # answers both upgrade (101) and plain GET (200 metrics).
+    - port: ws
+      path: /metrics
+      interval: 30s
+{{- end }}

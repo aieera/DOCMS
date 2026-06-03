@@ -62,7 +62,7 @@ scope-gated. Webhook subscriptions and API keys are managed under `/admin/*` in 
 ## Quickstart
 
 ```bash
-# 1a. Fast path: pull pre-built images from ghcr.io/aieera/docms
+# 1a. Fast path: pull pre-built images from ghcr.io/aieera/sedoc
 #     (populated on every merge to main by .github/workflows/images.yml).
 #     ~2 minutes of pulls vs. ~45 minutes of cold builds.
 make docker-up-prebuilt

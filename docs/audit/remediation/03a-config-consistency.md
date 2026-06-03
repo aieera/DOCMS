@@ -152,7 +152,7 @@ Updated to use the new non-prefixed env vars and added the 5 new SEDOC_-prefixed
 
 **No changes needed.** SeDoc Go services are not declared in compose (the file is infrastructure-only per the comment at line 2: "Services (Go binaries) run on the host during development"). Host processes pick up the new env vars from `.env` via the Makefile targets.
 
-### Helm values (`deploy/helm/vaultdms/values.yaml`)
+### Helm values (`deploy/helm/sedoc/values.yaml`)
 
 Added under `global:`:
 ```yaml
@@ -223,6 +223,6 @@ billing.existingSecret: vaultdms-billing-secrets-onprem
 | `services/billing/internal/stripe/webhook.go` | `NewWebhookHandler()` signature gains `webhookSecret string`; removed `os.Getenv` + `os` import |
 | `services/billing/cmd/server/main.go` | Pass `cfg.StripeWebhookSecret` and `cfg.InternalAPIKey` to constructors |
 | `.env.example` | Added 5 new env vars + renamed 2 |
-| `deploy/helm/vaultdms/values.yaml` | Added 8 new global.* keys |
-| `deploy/helm/vaultdms/values-onprem.yaml` | Added on-prem overrides for 7 keys |
-| `deploy/helm/vaultdms/templates/_helpers.tpl` | Updated commonEnv; added billingEnv helper |
+| `deploy/helm/sedoc/values.yaml` | Added 8 new global.* keys |
+| `deploy/helm/sedoc/values-onprem.yaml` | Added on-prem overrides for 7 keys |
+| `deploy/helm/sedoc/templates/_helpers.tpl` | Updated commonEnv; added billingEnv helper |

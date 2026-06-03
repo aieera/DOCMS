@@ -187,9 +187,9 @@ by your standard infra terraform):
 ```sh
 aws eks update-kubeconfig --region me-central-1 --name vaultdms-uae
 
-helm upgrade --install vaultdms ./deploy/helm/vaultdms \
+helm upgrade --install vaultdms ./deploy/helm/sedoc \
   --namespace vaultdms --create-namespace \
-  --values ./deploy/helm/vaultdms/values.yaml \
+  --values ./deploy/helm/sedoc/values.yaml \
   --values ./deploy/regions/uae-central.yaml \
   --set global.s3.bucketsHotName=dms-me-central-1-hot \
   --wait --timeout 25m

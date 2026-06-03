@@ -58,7 +58,7 @@ go test ./services/storage/...
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/storage/` — full 6-resource set.
+`deploy/helm/sedoc/templates/storage/` — full 6-resource set.
 
 ## Metrics
 

@@ -51,7 +51,7 @@ make test-notification
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/notification/` — full 6-resource set.
+`deploy/helm/sedoc/templates/notification/` — full 6-resource set.
 
 ## Metrics
 

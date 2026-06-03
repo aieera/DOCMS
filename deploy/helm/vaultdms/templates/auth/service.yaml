@@ -1,3 +1,0 @@
-{{- if .Values.auth.enabled }}
-{{- include "vaultdms.goServiceSvc" (dict "svcName" "auth" "svc" .Values.auth "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

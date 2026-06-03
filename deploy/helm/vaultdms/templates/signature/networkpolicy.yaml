@@ -1,3 +1,0 @@
-{{- if .Values.signature.enabled }}
-{{- include "vaultdms.goServiceNetworkPolicy" (dict "svcName" "signature" "svc" .Values.signature "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

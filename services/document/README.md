@@ -58,7 +58,7 @@ go test -tags integration ./services/document/...
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/document/` — full 6-resource set.
+`deploy/helm/sedoc/templates/document/` — full 6-resource set.
 
 ## Metrics
 

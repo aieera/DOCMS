@@ -1,3 +1,0 @@
-{{- if .Values.connector.enabled }}
-{{- include "vaultdms.goServicePDB" (dict "svcName" "connector" "svc" .Values.connector "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

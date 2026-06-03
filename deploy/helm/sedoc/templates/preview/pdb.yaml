@@ -1,0 +1,21 @@
+{{- if .Values.preview.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sedoc-preview-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sedoc-preview-worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-worker
+{{- end }}

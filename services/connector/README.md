@@ -55,7 +55,7 @@ make test-connector
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/connector/` — full 6-resource set.
+`deploy/helm/sedoc/templates/connector/` — full 6-resource set.
 
 ## Metrics
 

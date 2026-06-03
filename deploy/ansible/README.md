@@ -11,7 +11,7 @@ for the full picture. What ships here:
 
 - `common` role (user, paths, firewall, logrotate)
 - `postgres` role (full, idempotent, RHEL 8/9 + Ubuntu 22.04/24.04)
-- `vaultdms-service` role (templated systemd-unit installer reusable
+- `sedoc-service` role (templated systemd-unit installer reusable
   for all 14 Go services)
 - `playbooks/site.yml` umbrella + `postgres.yml` + `document.yml` +
   `upgrade.yml`
@@ -73,7 +73,7 @@ deploy/ansible/
 └── roles/
     ├── common/
     ├── postgres/
-    └── vaultdms-service/   ← templated; reused per service
+    └── sedoc-service/   ← templated; reused per service
 ```
 
 ## Adding a new service
@@ -86,7 +86,7 @@ Each of the 14 Go services follows the same pattern. To add
   hosts: app
   become: true
   roles:
-    - role: vaultdms-service
+    - role: sedoc-service
       vars:
         vaultdms_service_name: signature
         vaultdms_service_http_port: 8080
@@ -98,7 +98,7 @@ Each of the 14 Go services follows the same pattern. To add
 Per-service env overrides go in `vaultdms_service_extra_env`:
 
 ```yaml
-- role: vaultdms-service
+- role: sedoc-service
   vars:
     vaultdms_service_name: storage
     vaultdms_service_extra_env:

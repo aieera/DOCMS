@@ -13,7 +13,7 @@
 # Usage:
 #   VERSION=1.0.0 bash scripts/airgap/build-bundle.sh
 # Produces:
-#   dist/vaultdms-airgap-1.0.0.tar.gz
+#   dist/sedoc-airgap-1.0.0.tar.gz
 #
 # Images are pulled with `docker pull --platform=linux/amd64` — arm64
 # bundles go through the same script with PLATFORM=linux/arm64.
@@ -26,7 +26,7 @@ OUT_DIR="${OUT_DIR:-dist}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-REGISTRY="${REGISTRY:-ghcr.io/vaultdms}"
+REGISTRY="${REGISTRY:-ghcr.io/aieera/sedoc}"
 
 # --- Service images ---
 SERVICES=(
@@ -68,7 +68,7 @@ done
 # --- Chart ---
 echo "=== copying Helm chart ==="
 mkdir -p "$WORK/chart"
-cp -r deploy/helm/vaultdms "$WORK/chart/"
+cp -r deploy/helm/sedoc "$WORK/chart/"
 
 # --- Load script ---
 cat > "$WORK/load.sh" <<'LOADEOF'
@@ -86,7 +86,7 @@ for t in images/*.tar; do
     loaded=$(docker load -i "$t" | awk '/Loaded image/ { print $NF }')
     for img in $loaded; do
         # strip original registry prefix and re-tag to private registry
-        # e.g. ghcr.io/vaultdms/auth:1.0.0 -> registry.customer/vaultdms/auth:1.0.0
+        # e.g. ghcr.io/aieera/sedoc/auth:1.0.0 -> registry.customer/vaultdms/auth:1.0.0
         base=$(echo "$img" | awk -F'/' '{ print $NF }')
         new="${PRIVATE_REGISTRY}/${base}"
         docker tag "$img" "$new"
@@ -107,7 +107,7 @@ cp docs/deploy/airgap-install.md "$WORK/README.md" 2>/dev/null || \
 
 # --- Pack ---
 mkdir -p "$OUT_DIR"
-OUT="$OUT_DIR/vaultdms-airgap-${VERSION}.tar.gz"
+OUT="$OUT_DIR/sedoc-airgap-${VERSION}.tar.gz"
 echo "=== packing $OUT ==="
 tar -czf "$OUT" -C "$WORK" .
 

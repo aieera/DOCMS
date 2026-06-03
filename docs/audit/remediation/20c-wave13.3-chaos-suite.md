@@ -68,7 +68,7 @@ CONDITIONAL / FAIL), Grafana screenshot block, fix-PR table,
 
 ## Deferred (logged in out-of-scope.md)
 
-- **chaos-mesh CRDs** under `deploy/helm/vaultdms/templates/chaos/`.
+- **chaos-mesh CRDs** under `deploy/helm/sedoc/templates/chaos/`.
   Needs the operator installed on staging first. Wave 13.3b.
 - **First drill run** — an SRE runs every scenario at least once,
   commits post-mortems to `docs/chaos/runs/`. Operator activity.

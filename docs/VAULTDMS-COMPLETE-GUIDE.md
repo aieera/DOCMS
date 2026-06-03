@@ -96,7 +96,7 @@ database layer and policy-enforced via OPA.
 | LLM routing | **litellm** (OpenAI / Anthropic / Ollama / on-prem), per-tenant config |
 | Packaging | **Docker Compose** (dev), **Helm** chart, **Ansible** bundle (on-prem/air-gapped) |
 | Observability | **Prometheus** (`/metrics` :8081), **OpenTelemetry** → Tempo, **Grafana** dashboards |
-| CI/CD | GitHub Actions (`.github/workflows`), images → `ghcr.io/aieera/docms` |
+| CI/CD | GitHub Actions (`.github/workflows`), images → `ghcr.io/aieera/sedoc` |
 
 ---
 
@@ -500,7 +500,7 @@ callbacks disabled.
 
 ### Packaging
 - **Docker Compose** — `make docker-up` (build) / `make docker-up-prebuilt` (pull
-  `ghcr.io/aieera/docms`). `docker-compose.{prod,prebuilt,passkeys}.yml` variants.
+  `ghcr.io/aieera/sedoc`). `docker-compose.{prod,prebuilt,passkeys}.yml` variants.
 - **Helm chart** (ADR 0092) — `docs/runbooks/helm-install.md`.
 - **Ansible bundle** (ADR 0093) — `docs/runbooks/ansible-install.md`.
 - **Alternative DB adapters** (ADR 0094) — beyond stock Postgres.

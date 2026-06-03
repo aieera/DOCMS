@@ -77,7 +77,7 @@ pytest tests/test_ocr_pipeline.py -v
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/intelligence/` — deployment (API +
+`deploy/helm/sedoc/templates/intelligence/` — deployment (API +
 worker), service, hpa (API HPA + worker HPA), pdb, networkpolicy,
 servicemonitor. In prod the worker HPA should be driven by queue
 depth via KEDA; CPU is the stopgap.

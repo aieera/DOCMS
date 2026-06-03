@@ -85,7 +85,7 @@
         su {{ vaultdms_user }} {{ vaultdms_group }}
       }
 
-# SELinux / AppArmor: leave enforcing. The vaultdms-service role installs
+# SELinux / AppArmor: leave enforcing. The sedoc-service role installs
 # binaries under /opt/vaultdms which is unconfined by default policies;
 # if your environment has a custom policy, add the appropriate fcontext
 # rule there rather than disabling the MAC system here.

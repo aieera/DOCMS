@@ -1,0 +1,39 @@
+{{- if and .Values.preview.enabled .Values.preview.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sedoc-preview-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sedoc-preview-api
+  minReplicas: {{ .Values.preview.hpa.minReplicas | default 1 }}
+  maxReplicas: {{ .Values.preview.hpa.maxReplicas | default 4 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.preview.hpa.targetCPU | default 70 }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sedoc-preview-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sedoc-preview-worker
+  minReplicas: {{ .Values.preview.celery.replicas | default 2 }}
+  maxReplicas: {{ .Values.preview.hpa.maxReplicas | default 4 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+{{- end }}

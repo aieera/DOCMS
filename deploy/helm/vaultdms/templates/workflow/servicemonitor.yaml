@@ -1,3 +1,0 @@
-{{- if .Values.workflow.enabled }}
-{{- include "vaultdms.goServiceMonitor" (dict "svcName" "workflow" "svc" .Values.workflow "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

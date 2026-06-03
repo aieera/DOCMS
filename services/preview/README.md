@@ -61,7 +61,7 @@ cd services/preview && pytest
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/preview/` — API + worker deployments,
+`deploy/helm/sedoc/templates/preview/` — API + worker deployments,
 service (API only), hpa for both, pdb, networkpolicy, servicemonitor.
 
 ## Metrics

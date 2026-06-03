@@ -96,7 +96,7 @@ The core architecture is sound. Shared packages (`pkg/`) are well-designed — t
 | 7 | 0 frontend test files (107 TS/TSX files untested) | web/src/, mobile/ | F |
 | 8 | 14 service READMEs missing | all services/ | A |
 | 9 | ~26 frontend components missing from spec | workflow designer, search facets, admin dialogs, etc. | A |
-| 10 | Helm templates incomplete for 5 services (billing, collaboration, connector, intelligence, preview) | deploy/helm/vaultdms/templates/ | A |
+| 10 | Helm templates incomplete for 5 services (billing, collaboration, connector, intelligence, preview) | deploy/helm/sedoc/templates/ | A |
 
 ---
 

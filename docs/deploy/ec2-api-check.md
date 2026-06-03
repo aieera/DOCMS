@@ -3,11 +3,11 @@
 Goal: stand up just enough of SeDoc on a single EC2 instance to exercise the
 **REST API** (auth, documents, versions, folders, storage, integrations) and
 webhooks — e.g. for ERP integration testing. Uses **prebuilt images**
-(`ghcr.io/aieera/docms/*`) so there's no source build on the box.
+(`ghcr.io/aieera/sedoc/*`) so there's no source build on the box.
 
 > This is a **test deployment**, not production. It runs the dev RLS-bypass posture
 > and a single-node compose stack. For production use the Helm chart
-> (`deploy/helm/vaultdms`) and a hardened config.
+> (`deploy/helm/sedoc`) and a hardened config.
 
 ---
 

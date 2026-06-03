@@ -1,7 +1,7 @@
 {
   "dashboard": {
     "title": "SeDoc Per-Service Health",
-    "uid": "vaultdms-service-health",
+    "uid": "sedoc-service-health",
     "tags": ["vaultdms"],
     "timezone": "utc",
     "refresh": "30s",

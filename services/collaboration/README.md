@@ -60,7 +60,7 @@ Node tests are not yet in scope.
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/collaboration/` — deployment + hpa
+`deploy/helm/sedoc/templates/collaboration/` — deployment + hpa
 (min 2, max 5 — sticky sessions), pdb, networkpolicy, servicemonitor.
 Scale-down uses a 5-minute stabilization window to avoid dropping
 live sessions mid-edit.

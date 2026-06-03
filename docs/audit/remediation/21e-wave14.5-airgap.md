@@ -10,10 +10,10 @@ offline-mode docs, license gating."
 
 Status pre-wave:
 
-- `deploy/helm/vaultdms/values-airgapped.yaml` exists (72 lines) but
+- `deploy/helm/sedoc/values-airgapped.yaml` exists (72 lines) but
   only flips `imagePullPolicy` + disables telemetry — no bundle
   build, no install runbook, no license flow.
-- `deploy/helm/vaultdms/values-onprem.yaml` exists (50 lines).
+- `deploy/helm/sedoc/values-onprem.yaml` exists (50 lines).
 - No script to produce a loadable image bundle.
 - No customer-facing install docs.
 
@@ -22,7 +22,7 @@ Status pre-wave:
 ### Bundle build script
 
 [scripts/airgap/build-bundle.sh](../../../scripts/airgap/build-bundle.sh)
-— produces `dist/vaultdms-airgap-${VERSION}.tar.gz` containing:
+— produces `dist/sedoc-airgap-${VERSION}.tar.gz` containing:
 
 - All 16 SeDoc service images (`docker save`'d).
 - Seven pinned third-party images (postgres, redis, nats, opensearch,

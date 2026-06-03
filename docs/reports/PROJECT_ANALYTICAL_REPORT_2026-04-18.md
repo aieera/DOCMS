@@ -103,7 +103,7 @@ From [DMS Architecture/dms-blueprint.md](../../DMS%20Architecture/dms-blueprint.
 | Frontend routing | TanStack Router | 1.15 |
 
 **Deployment models (claimed vs. verified):**
-- **SaaS**: claimed + Helm chart present at [deploy/helm/vaultdms/](../../deploy/helm/vaultdms/) (91 templates per subagent inventory). **Unverified** end-to-end.
+- **SaaS**: claimed + Helm chart present at [deploy/helm/sedoc/](../../deploy/helm/sedoc/) (91 templates per subagent inventory). **Unverified** end-to-end.
 - **On-prem**: `values-onprem.yaml` present. **Unverified**.
 - **Air-gapped**: `values-airgapped.yaml` + [scripts/airgap/](../../scripts/airgap/) present. **Unverified**.
 - **Local dev**: ✅ verified — `docker compose up` works and `scripts/run-all-services.sh` launches 11 services on the host.
@@ -478,7 +478,7 @@ Status legend: ✅ Shipped · 🟡 Partial · ⬜ Planned · ❌ Blocked
 - **Logging:** Structured JSON via zerolog ([pkg/logger](../../pkg/logger/)); every log line includes `service`, `version`, `tenant` (when available), `caller`, `time`. Destination is stdout (captured to `.run/<svc>.log` in dev).
 - **Metrics:** Each service mounts Prometheus `/metrics` via `pkg/health` ([pkg/health/health.go:40](../../pkg/health/health.go#L40)). Dashboards under `deploy/monitoring/` — presence noted but contents unverified this session.
 - **Tracing:** OpenTelemetry scaffolding at [pkg/tracing/tracing.go](../../pkg/tracing/tracing.go); reads `OTEL_EXPORTER_OTLP_ENDPOINT`. Exporter not configured in `.env`; traces are not being emitted.
-- **Alerting:** No Alertmanager rules found at root; `deploy/helm/vaultdms/templates/servicemonitor.yaml` present per subagent inventory suggests Prometheus Operator scrape configuration exists. **Unverified.**
+- **Alerting:** No Alertmanager rules found at root; `deploy/helm/sedoc/templates/servicemonitor.yaml` present per subagent inventory suggests Prometheus Operator scrape configuration exists. **Unverified.**
 
 ---
 
@@ -498,7 +498,7 @@ Status legend: ✅ Shipped · 🟡 Partial · ⬜ Planned · ❌ Blocked
 
 - **Build system:** root [Makefile](../../Makefile) has ~46 targets: `build`, `test`, `lint`, `fmt`, `tidy`, `proto-gen`, `migrate-up`, `docker-up/down/logs/build/push`, `run-all`, `run-web`, `setup`, `reset`, `security-check`, `load-*`.
 - **Per-service container images:** Dockerfile in every service dir. Sizes (line count): Go services ~17 lines; document 19; preview 22; signature-signer 21 (Java distroless); collaboration 9 (Node.js). Image bytes: **Unverified** (no `docker images` capture this session).
-- **Helm chart:** `deploy/helm/vaultdms/` with **91 templates** (per subagent) across per-service subdirs + shared (cronjobs/, hooks/, ingress). **3 values files:** `values.yaml`, `values-onprem.yaml`, `values-airgapped.yaml`.
+- **Helm chart:** `deploy/helm/sedoc/` with **91 templates** (per subagent) across per-service subdirs + shared (cronjobs/, hooks/, ingress). **3 values files:** `values.yaml`, `values-onprem.yaml`, `values-airgapped.yaml`.
 - **CI/CD:** `.github/workflows/` — 2 files per subagent (`ci.yml` with lint/build/test/Playwright, `release.yml` for Docker push on tag). **Pipeline run history unverified** (not a git repo).
 - **Deployment targets supported today:** Docker Compose (dev, verified); Kubernetes + Helm (claimed, unverified).
 

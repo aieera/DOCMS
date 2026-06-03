@@ -69,7 +69,7 @@ go test ./services/auth/...
 
 ## Deployment
 
-Helm: `deploy/helm/vaultdms/templates/auth/` (full 6-resource set).
+Helm: `deploy/helm/sedoc/templates/auth/` (full 6-resource set).
 
 ## Metrics
 

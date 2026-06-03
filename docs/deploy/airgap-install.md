@@ -28,7 +28,7 @@ The bundle is a tarball, typically 6–10 GiB depending on variant:
 
 ```bash
 # ~10 GiB for amd64 with all optional services
-sha256sum vaultdms-airgap-1.0.0.tar.gz
+sha256sum sedoc-airgap-1.0.0.tar.gz
 ```
 
 Verify the SHA256 against the value in the release notes. Do not
@@ -39,8 +39,8 @@ trust a bundle whose checksum doesn't match — ask for a fresh one.
 On the workstation:
 
 ```bash
-tar -xzf vaultdms-airgap-1.0.0.tar.gz -C vaultdms-airgap
-cd vaultdms-airgap
+tar -xzf sedoc-airgap-1.0.0.tar.gz -C sedoc-airgap
+cd sedoc-airgap
 PRIVATE_REGISTRY=registry.example.internal/vaultdms bash load.sh
 ```
 
@@ -144,7 +144,7 @@ For customers running in classified environments (gov, defence):
   reports shipped alongside each release (Wave 14.6).
 - FIPS-140-2 mode: set `security.fipsMode: true` in values;
   requires the FIPS-validated Go toolchain bundle (shipped as
-  `vaultdms-airgap-1.0.0-fips.tar.gz`).
+  `sedoc-airgap-1.0.0-fips.tar.gz`).
 
 ## Troubleshooting
 
@@ -169,6 +169,6 @@ supported `tenant_custom_fields` mechanism.
 ## Pointers
 
 - Bundle build: `scripts/airgap/build-bundle.sh`
-- On-prem values: `deploy/helm/vaultdms/values-onprem.yaml`
-- Air-gapped values: `deploy/helm/vaultdms/values-airgapped.yaml`
+- On-prem values: `deploy/helm/sedoc/values-onprem.yaml`
+- Air-gapped values: `deploy/helm/sedoc/values-airgapped.yaml`
 - Support: `support@raabyt.com` (24h turnaround on the enterprise tier)

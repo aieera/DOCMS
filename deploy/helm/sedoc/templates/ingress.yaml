@@ -1,0 +1,107 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vaultdms
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - secretName: {{ .Values.global.tlsSecretName }}
+      hosts:
+        - {{ .Values.global.domain }}
+  rules:
+    - host: {{ .Values.global.domain }}
+      http:
+        paths:
+          # Web frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-web
+                port: { number: {{ .Values.web.port }} }
+          # Auth API
+          - path: /api/v1/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-auth
+                port: { number: 8080 }
+          # Document API
+          - path: /api/v1/documents
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-document
+                port: { number: 8080 }
+          - path: /api/v1/workspaces
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-document
+                port: { number: 8080 }
+          - path: /api/v1/folders
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-document
+                port: { number: 8080 }
+          # Storage API
+          - path: /api/v1/storage
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-storage
+                port: { number: 8080 }
+          # Search API
+          - path: /api/v1/search
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-search
+                port: { number: 8080 }
+          # Audit API
+          - path: /api/v1/audit
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-audit
+                port: { number: 8080 }
+          # Workflow API
+          - path: /api/v1/workflows
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-workflow
+                port: { number: 8080 }
+          # Notification API
+          - path: /api/v1/notifications
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-notification
+                port: { number: 8080 }
+          # Signature API
+          - path: /api/v1/signatures
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-signature
+                port: { number: 8080 }
+          # Intelligence API
+          - path: /api/v1/intelligence
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-intelligence
+                port: { number: 8080 }
+          # WebSocket
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: sedoc-collaboration
+                port: { number: {{ .Values.collaboration.wsPort }} }
+{{- end }}

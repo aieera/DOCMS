@@ -7,7 +7,7 @@
 #     -e vaultdms_release=v1.1.0 \
 #     -e service=document
 #
-# The vaultdms-service role's atomic-binary-swap pattern (download to
+# The sedoc-service role's atomic-binary-swap pattern (download to
 # .new, validate, mv into place, daemon-reload, restart) makes this
 # safe under serial concurrency. The `serial: 1` below means one host
 # at a time so the cluster as a whole keeps serving traffic.
@@ -33,7 +33,7 @@
           the host's in-flight requests fail when its binary is swapped.
 
   roles:
-    - role: vaultdms-service
+    - role: sedoc-service
       vars:
         vaultdms_service_name: "{{ service }}"
         # Ports come from the per-service definitions in site.yml. This

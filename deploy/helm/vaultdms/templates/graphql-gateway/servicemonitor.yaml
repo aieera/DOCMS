@@ -1,3 +1,0 @@
-{{- if (index .Values "graphql-gateway").enabled }}
-{{- include "vaultdms.goServiceMonitor" (dict "svcName" "graphql-gateway" "svc" (index .Values "graphql-gateway") "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

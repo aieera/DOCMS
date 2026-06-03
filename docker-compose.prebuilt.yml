@@ -1,7 +1,7 @@
 # §3.2 — drill-time compose override.
 #
 # Layered over docker-compose.yml to swap `build:` for pre-built
-# images from ghcr.io/aieera/docms. Use for the Phase A / G1 live
+# images from ghcr.io/aieera/sedoc. Use for the Phase A / G1 live
 # drill or any time you want a fast `compose up` without burning
 # 45 minutes on cold Go + spaCy builds.
 #
@@ -18,36 +18,36 @@ name: vaultdms-dev
 services:
   # ---- Go services (11) --------------------------------------------------
   auth:
-    image: ghcr.io/aieera/docms/auth:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/auth:${SEDOC_IMAGE_TAG:-main}
   policy:
-    image: ghcr.io/aieera/docms/policy:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/policy:${SEDOC_IMAGE_TAG:-main}
   document:
-    image: ghcr.io/aieera/docms/document:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/document:${SEDOC_IMAGE_TAG:-main}
   storage:
-    image: ghcr.io/aieera/docms/storage:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/storage:${SEDOC_IMAGE_TAG:-main}
   search:
-    image: ghcr.io/aieera/docms/search:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/search:${SEDOC_IMAGE_TAG:-main}
   audit:
-    image: ghcr.io/aieera/docms/audit:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/audit:${SEDOC_IMAGE_TAG:-main}
   workflow:
-    image: ghcr.io/aieera/docms/workflow:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/workflow:${SEDOC_IMAGE_TAG:-main}
   notification:
-    image: ghcr.io/aieera/docms/notification:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/notification:${SEDOC_IMAGE_TAG:-main}
   signature:
-    image: ghcr.io/aieera/docms/signature:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/signature:${SEDOC_IMAGE_TAG:-main}
   billing:
-    image: ghcr.io/aieera/docms/billing:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/billing:${SEDOC_IMAGE_TAG:-main}
   connector:
-    image: ghcr.io/aieera/docms/connector:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/connector:${SEDOC_IMAGE_TAG:-main}
 
   # ---- Non-Go application services --------------------------------------
   collaboration:
-    image: ghcr.io/aieera/docms/collaboration:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/collaboration:${SEDOC_IMAGE_TAG:-main}
   intelligence:
-    image: ghcr.io/aieera/docms/intelligence:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/intelligence:${SEDOC_IMAGE_TAG:-main}
   intelligence-worker:
     # Worker reuses the intelligence image (same Dockerfile, different CMD
     # supplied by the parent compose file).
-    image: ghcr.io/aieera/docms/intelligence:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/intelligence:${SEDOC_IMAGE_TAG:-main}
   preview-worker:
-    image: ghcr.io/aieera/docms/preview:${SEDOC_IMAGE_TAG:-main}
+    image: ghcr.io/aieera/sedoc/preview:${SEDOC_IMAGE_TAG:-main}

@@ -61,7 +61,7 @@ go test ./services/workflow/...
 
 ## Deployment
 
-`deploy/helm/vaultdms/templates/workflow/` — full 6-resource set.
+`deploy/helm/sedoc/templates/workflow/` — full 6-resource set.
 
 ## Metrics
 

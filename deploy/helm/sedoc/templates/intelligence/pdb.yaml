@@ -1,0 +1,21 @@
+{{- if .Values.intelligence.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sedoc-intelligence-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intelligence-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sedoc-intelligence-worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intelligence-worker
+{{- end }}

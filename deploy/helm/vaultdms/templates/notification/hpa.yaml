@@ -1,3 +1,0 @@
-{{- if .Values.notification.enabled }}
-{{- include "vaultdms.goServiceHPA" (dict "svcName" "notification" "svc" .Values.notification "Values" .Values "Release" .Release "Chart" .Chart) }}
-{{- end }}

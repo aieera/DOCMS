@@ -116,7 +116,7 @@ spec:
           # If the auth image doesn't ship scripts in its build
           # (check build/Dockerfile.go-service), mount it as a
           # ConfigMap instead — see commented block below.
-          image: ghcr.io/vaultdms/auth:1.0.0
+          image: ghcr.io/aieera/sedoc/auth:1.0.0
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash"]
           args: ["/app/scripts/create-loadtest-tenants.sh"]

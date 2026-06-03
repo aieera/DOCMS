@@ -1,0 +1,14 @@
+{{- if .Values.intelligence.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sedoc-intelligence-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intelligence-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+{{- end }}

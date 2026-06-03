@@ -13,7 +13,7 @@ MIGRATE         ?= migrate
 DOCKER          ?= docker
 COMPOSE         ?= docker compose
 
-REGISTRY        ?= ghcr.io/vaultdms
+REGISTRY        ?= ghcr.io/aieera/sedoc
 VERSION         ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT          ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)

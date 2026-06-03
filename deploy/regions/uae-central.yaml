@@ -2,11 +2,11 @@
 # SeDoc — UAE residency overlay (ADR 0110)
 # ============================================================================
 #
-# Apply on TOP of deploy/helm/vaultdms/values.yaml:
+# Apply on TOP of deploy/helm/sedoc/values.yaml:
 #
-#   helm upgrade --install vaultdms ./deploy/helm/vaultdms \
+#   helm upgrade --install sedoc ./deploy/helm/sedoc \
 #     --namespace vaultdms --create-namespace \
-#     --values ./deploy/helm/vaultdms/values.yaml \
+#     --values ./deploy/helm/sedoc/values.yaml \
 #     --values ./deploy/regions/uae-central.yaml \
 #     --wait --timeout 20m
 #

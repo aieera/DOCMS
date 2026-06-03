@@ -1,0 +1,11 @@
+{{- if .Values.collaboration.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sedoc-collaboration
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: collaboration
+{{- end }}

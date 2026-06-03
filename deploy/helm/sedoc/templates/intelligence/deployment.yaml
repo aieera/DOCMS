@@ -1,0 +1,90 @@
+{{- if .Values.intelligence.enabled }}
+---
+# API server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sedoc-intelligence-api
+  labels: { app.kubernetes.io/name: intelligence-api, app.kubernetes.io/instance: {{ .Release.Name }} }
+spec:
+  replicas: {{ .Values.intelligence.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: intelligence-api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: intelligence-api }
+    spec:
+      containers:
+        - name: api
+          image: {{ .Values.global.imageRegistry }}/intelligence:{{ .Values.global.imageTag }}
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            - name: SEDOC_CELERY_BROKER_URL
+              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
+            - name: SEDOC_QDRANT_URL
+              value: {{ .Values.global.qdrant.url | quote }}
+            {{- range $k, $v := .Values.intelligence.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            {{- toYaml .Values.intelligence.resources | nindent 12 }}
+          # PSS restricted (ADR 0092). readOnlyRootFilesystem omitted —
+          # Python needs /tmp writable for pip + HuggingFace caches.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+---
+# Celery worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sedoc-intelligence-worker
+  labels: { app.kubernetes.io/name: intelligence-worker, app.kubernetes.io/instance: {{ .Release.Name }} }
+spec:
+  replicas: {{ .Values.intelligence.celery.replicas | default 2 }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: intelligence-worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: intelligence-worker }
+    spec:
+      containers:
+        - name: worker
+          image: {{ .Values.global.imageRegistry }}/intelligence:{{ .Values.global.imageTag }}
+          command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "-Q", {{ .Values.intelligence.celery.queues | default "intelligence" | quote }}]
+          env:
+            {{- include "sedoc.commonEnv" (dict "Values" .Values) | nindent 12 }}
+            - name: SEDOC_CELERY_BROKER_URL
+              value: "redis://{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}/1"
+            - name: SEDOC_QDRANT_URL
+              value: {{ .Values.global.qdrant.url | quote }}
+            {{- range $k, $v := .Values.intelligence.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.intelligence.celery.resources | nindent 12 }}
+          # PSS restricted (ADR 0092). readOnlyRootFilesystem omitted —
+          # Python needs /tmp writable for pip + HuggingFace caches.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+{{- end }}

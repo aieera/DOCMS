@@ -137,5 +137,5 @@
     user: postgres
     minute: "0"
     hour: "2"
-    job: "pg_dump -Fc -d {{ postgres_db_name }} -f /var/backups/vaultdms-$(date +\\%Y\\%m\\%d).dump"
+    job: "pg_dump -Fc -d {{ postgres_db_name }} -f /var/backups/sedoc-$(date +\\%Y\\%m\\%d).dump"
     state: present

@@ -18,7 +18,7 @@
 
 Pre-GA builds carry `-rc.N` suffix (`1.0.0-rc.1`). Internal builds
 use `+build.<sha>` metadata. Images are tagged with the exact tag
-(e.g. `ghcr.io/vaultdms/auth:1.0.0`); `latest` points to the most
+(e.g. `ghcr.io/aieera/sedoc/auth:1.0.0`); `latest` points to the most
 recent non-rc release.
 
 ## Release cadence
@@ -74,7 +74,7 @@ Verify an image:
 cosign verify \
     --certificate-identity-regexp '^https://github.com/raabyt/vaultdms' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    ghcr.io/vaultdms/auth:1.0.0
+    ghcr.io/aieera/sedoc/auth:1.0.0
 ```
 
 Verify the SBOM attestation:
@@ -83,7 +83,7 @@ Verify the SBOM attestation:
 cosign verify-attestation --type spdxjson \
     --certificate-identity-regexp '^https://github.com/raabyt/vaultdms' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    ghcr.io/vaultdms/auth:1.0.0
+    ghcr.io/aieera/sedoc/auth:1.0.0
 ```
 
 Air-gapped bundles are distributed with the SHA256 published in the

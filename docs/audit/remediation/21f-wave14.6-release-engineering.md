@@ -56,7 +56,7 @@ the one-stop reference:
   security-only.
 - **Signing verification** — `cosign verify` + `cosign
   verify-attestation` commands customers can run against
-  `ghcr.io/vaultdms/*` images.
+  `ghcr.io/aieera/sedoc/*` images.
 - **Release checklist** — pre-tag (CI green, CHANGELOG, OpenAPI
   drift, UPGRADE.md, notes) and post-tag (smoke test, announcement,
   CVE scan).

@@ -1,0 +1,14 @@
+{{- if .Values.preview.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sedoc-preview-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+{{- end }}
