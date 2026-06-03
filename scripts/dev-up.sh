@@ -55,7 +55,7 @@ docker compose up -d "${INFRA_SERVICES[@]}"
 echo "==> waiting for postgres healthy"
 deadline=$(( $(date +%s) + 60 ))
 while :; do
-  status=$(docker inspect --format '{{.State.Health.Status}}' vaultdms-postgres 2>/dev/null || echo "starting")
+  status=$(docker inspect --format '{{.State.Health.Status}}' sedoc-postgres 2>/dev/null || echo "starting")
   if [[ "$status" == "healthy" ]]; then break; fi
   if [[ $(date +%s) -gt $deadline ]]; then
     echo "ERROR: postgres did not become healthy within 60s"

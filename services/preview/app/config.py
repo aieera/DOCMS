@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # --- NATS --------------------------------------------------------------
     nats_url: str = "nats://nats:4222"
-    nats_stream: str = "VAULTDMS"
+    nats_stream: str = "SEDOC"
     nats_consumer_durable: str = "preview-svc"
     nats_subject_uploaded: str = "dms.version.uploaded.v1"
     nats_subject_preview_ready: str = "dms.version.preview_ready.v1"

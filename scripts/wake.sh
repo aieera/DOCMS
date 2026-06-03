@@ -103,7 +103,7 @@ probe_port() {
 warn_stale_images() {
   local stale=()
   for svc in "${!SERVICES[@]}"; do
-    local img="vaultdms-dev-${svc}:latest"
+    local img="sedoc-dev-${svc}:latest"
     if ! docker image inspect "$img" >/dev/null 2>&1; then continue; fi
     local created
     created=$(docker image inspect "$img" --format '{{.Created}}' 2>/dev/null)
@@ -167,11 +167,11 @@ done
 if [ ${#dead[@]} -gt 0 ]; then
   yellow "==> ${#dead[@]} service(s) still unreachable on their host ports:"
   for svc in "${dead[@]}"; do
-    echo "      vaultdms-$svc (:${SERVICES[$svc]})"
+    echo "      sedoc-$svc (:${SERVICES[$svc]})"
   done
   cyan "==> restarting those containers"
   for svc in "${dead[@]}"; do
-    docker restart "vaultdms-$svc" >/dev/null 2>&1 || true
+    docker restart "sedoc-$svc" >/dev/null 2>&1 || true
   done
 
   sleep 8
@@ -185,7 +185,7 @@ if [ ${#dead[@]} -gt 0 ]; then
   if [ ${#still_dead[@]} -gt 0 ]; then
     red "==> ${#still_dead[@]} container(s) STILL unreachable after restart:"
     for svc in "${still_dead[@]}"; do
-      echo "      vaultdms-$svc — try: $DC up -d --force-recreate $svc"
+      echo "      sedoc-$svc — try: $DC up -d --force-recreate $svc"
     done
     echo
     yellow "If a port stays 000 after --force-recreate, the WSL+Docker network proxy is wedged."
@@ -203,7 +203,7 @@ fi
 green "==> all $TOTAL services responding on their host ports"
 echo
 for svc in $(echo "${!SERVICES[@]}" | tr ' ' '\n' | sort); do
-  printf '  ok  vaultdms-%-18s http://localhost:%s\n' "$svc" "${SERVICES[$svc]}"
+  printf '  ok  sedoc-%-18s http://localhost:%s\n' "$svc" "${SERVICES[$svc]}"
 done
 
 echo

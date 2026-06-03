@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     redis_cache_url: str = "redis://redis:6379/3"
 
     nats_url: str = "nats://nats:4222"
-    nats_stream: str = "VAULTDMS"
+    nats_stream: str = "SEDOC"
 
     s3_endpoint: str = "http://minio:9000"
     s3_access_key: str = ""

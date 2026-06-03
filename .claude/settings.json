@@ -232,7 +232,7 @@
       "Bash(cd \"C:\\\\Users\\\\dell\\\\Documents\\\\DOCMS\\\\web\\\\src\" && grep -n \"isAdmin\\\\|role === 'owner'\" routes/_authenticated/workspaces/'$workspaceId'/index.tsx)",
       "Read(//c/Users/dell/Documents/DOCMS/routes/_authenticated/workspaces/$workspaceId/**)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/en/folders.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/ar/folders.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/en/common.json','utf8'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('c:/Users/dell/Documents/DOCMS/web/public/locales/ar/common.json','utf8'\\)\\);console.log\\('OK'\\)\")",
-      "Bash(curl -s -b \"session=$\\(docker exec vaultdms-postgres psql -U vaultdms -d vaultdms -tAc 'SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1' \\)\" \"http://localhost:3000/api/v1/admin/users?limit=5\" -H \"Cookie: $\\(cat ~/.cookies \\)\")",
+      "Bash(curl -s -b \"session=$\\(docker exec sedoc-postgres psql -U vaultdms -d vaultdms -tAc 'SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1' \\)\" \"http://localhost:3000/api/v1/admin/users?limit=5\" -H \"Cookie: $\\(cat ~/.cookies \\)\")",
       "Bash(findstr /i \"trash delete soft folder\")",
       "Read(//c/Users/dell/Documents/DOCMS/services/auth/internal/handler/**)",
       "Read(//c/Users/dell/Documents/DOCMS/services/auth/internal/service/**)",
