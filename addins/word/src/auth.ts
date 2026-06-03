@@ -1,4 +1,4 @@
-// Word add-in → VaultDMS session exchange (ADR 0113).
+// Word add-in → SeDoc session exchange (ADR 0113).
 //
 // Identical contract to addins/outlook/src/auth.ts — same backend
 // endpoint, same error codes, same caching strategy. Duplicated
@@ -72,7 +72,7 @@ function formatOfficeAuthError(e: unknown): string {
     case 13002: return 'Sign-in dialog dismissed — try again.'
     case 13003: return 'Multi-factor authentication required. Sign in to Word with MFA and retry.'
     case 13005: return 'This account isn\'t supported. Use a work or school account.'
-    case 13007: return 'Token request failed — talk to your IT admin about VaultDMS app consent.'
+    case 13007: return 'Token request failed — talk to your IT admin about SeDoc app consent.'
     default:    return `Authentication failed${code ? ` (code ${code})` : ''}.`
   }
 }

@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase A: Missing Items
+# SeDoc Audit — Phase A: Missing Items
 
 **Date:** 2026-04-16
 

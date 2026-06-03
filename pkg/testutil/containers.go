@@ -16,7 +16,7 @@ import (
 // Cleanup returns a function the test should defer.
 type Cleanup func()
 
-// NewPostgresContainer starts an ephemeral Postgres with the VaultDMS
+// NewPostgresContainer starts an ephemeral Postgres with the SeDoc
 // default extensions applied and returns its connection URL.
 func NewPostgresContainer(ctx context.Context) (string, Cleanup, error) {
 	pg, err := postgres.RunContainer(ctx,

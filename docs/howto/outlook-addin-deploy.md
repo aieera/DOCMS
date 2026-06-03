@@ -1,7 +1,7 @@
 # Outlook add-in — deployment runbook (ADR 0112)
 
-Audience: SRE shipping the "Save to VaultDMS" Outlook add-in into a
-production tenant. Pre-reqs: a VaultDMS backend already running
+Audience: SRE shipping the "Save to SeDoc" Outlook add-in into a
+production tenant. Pre-reqs: a SeDoc backend already running
 with the `/api/v1/auth/m365/exchange` + `/api/v1/integrations/m365/ingest-email`
 endpoints (these land in the same release as this add-in), and an
 HTTPS host you can point at static content.
@@ -96,7 +96,7 @@ Three options, pick the one that matches your infra:
 
 ### Option A — Frontend CDN (the simplest)
 
-If the VaultDMS frontend is served from a CDN, drop `dist/` into a
+If the SeDoc frontend is served from a CDN, drop `dist/` into a
 sibling subdirectory (`/outlook-addin/`) and you're done. The
 `Access-Control-Allow-Origin: *` already-set on the frontend bucket
 is what the Office host needs.
@@ -204,7 +204,7 @@ load because the SHA in the filename has changed.
 - **Compose-mode support.** Today the add-in is read-only:
   `<Form xsi:type="ItemRead">` — only available when reading an
   open message. A compose-mode counterpart (`ItemEdit`) lets the
-  user attach a VaultDMS document from inside a new email; that's
+  user attach a SeDoc document from inside a new email; that's
   its own manifest + UI surface and lands when there's a customer
   ask.
 - **Blob upload + OCR + classification.** The ingest endpoint

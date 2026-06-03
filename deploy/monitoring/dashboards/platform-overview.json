@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "VaultDMS Platform Overview",
+    "title": "SeDoc Platform Overview",
     "uid": "vaultdms-overview",
     "tags": ["vaultdms"],
     "timezone": "utc",

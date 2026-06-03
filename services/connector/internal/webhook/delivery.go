@@ -110,7 +110,7 @@ func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) 
 	req.Header.Set("X-DMS-Signature", signature)
 	req.Header.Set("X-DMS-Timestamp", timestamp)
 	req.Header.Set("X-DMS-Event", d.EventType)
-	req.Header.Set("User-Agent", "VaultDMS-Webhook/1.0")
+	req.Header.Set("User-Agent", "SeDoc-Webhook/1.0")
 
 	resp, err := w.hc.Do(req)
 	d.Attempts++

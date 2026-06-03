@@ -137,5 +137,5 @@ encryption, same content addressing as any other blob.
     one-shot artifact (you save it and re-read it); the streaming
     UX from the Q&A panel doesn't add value here.
   * **Translation memory / glossary** — deferred. A per-tenant
-    glossary table where "VaultDMS" always becomes "VaultDMS"
+    glossary table where "SeDoc" always becomes "SeDoc"
     (not "ManoArchivo Documentaria") is the obvious v2.

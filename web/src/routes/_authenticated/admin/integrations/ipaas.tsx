@@ -53,7 +53,7 @@ function IpaasPage() {
     <div className="mx-auto max-w-4xl p-6">
       <PageHeader
         title="iPaaS integrations"
-        description="Connect VaultDMS to Zapier, Make, n8n and other automation platforms. Issue API keys with scoped access, then build your Zap / scenario / workflow in the vendor's developer portal."
+        description="Connect SeDoc to Zapier, Make, n8n and other automation platforms. Issue API keys with scoped access, then build your Zap / scenario / workflow in the vendor's developer portal."
       />
 
       {/* ---- API keys section ------------------------------------------------ */}
@@ -138,7 +138,7 @@ function IpaasPage() {
       <section>
         <h2 className="mb-3 text-lg font-semibold">Getting started</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Build your app on the vendor's developer portal — VaultDMS provides the HTTP surface; the app definition lives on their side.
+          Build your app on the vendor's developer portal — SeDoc provides the HTTP surface; the app definition lives on their side.
         </p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <PortalCard

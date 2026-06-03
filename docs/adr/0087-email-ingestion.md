@@ -9,7 +9,7 @@ mismatch with the prompt is intentional.)
 ## Context
 
 §12.5 of the product blueprint requires customers to be able to pull
-their email into VaultDMS so messages + attachments become first-
+their email into SeDoc so messages + attachments become first-
 class documents alongside everything else they file by hand. Three
 source modalities must be supported:
 
@@ -195,5 +195,5 @@ The current commit moves three of the four functional criteria
 "M365/Gmail ingest") meaningfully forward without claiming green
 on the criteria that require real OAuth + storage blob handling.
 - **Bidirectional sync** (delete a doc → delete the email) —
-  explicitly not in scope. Mail is the source of truth; VaultDMS
+  explicitly not in scope. Mail is the source of truth; SeDoc
   is the archive.

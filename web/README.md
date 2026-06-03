@@ -1,4 +1,4 @@
-# VaultDMS web
+# SeDoc web
 
 React 18 + TanStack Router + TanStack Query + Vite 5 + TypeScript.
 

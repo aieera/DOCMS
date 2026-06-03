@@ -1,6 +1,6 @@
 # Helm install / upgrade / rollback runbook
 
-*ADR 0092 — VaultDMS Helm chart at `deploy/helm/vaultdms/`.*
+*ADR 0092 — SeDoc Helm chart at `deploy/helm/vaultdms/`.*
 
 This runbook is the operational companion to the chart. Three audiences:
 

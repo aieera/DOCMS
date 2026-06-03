@@ -1,4 +1,4 @@
-# VaultDMS Architecture
+# SeDoc Architecture
 
 Enterprise-DMS reference architecture: 14 services, ~12 infra
 components, Postgres RLS for tenant isolation, NATS JetStream as the

@@ -1,5 +1,5 @@
 // Package exec is the v1 hand-rolled GraphQL executor for the
-// VaultDMS read API (ADR 0074).
+// SeDoc read API (ADR 0074).
 //
 // The full gqlgen pipeline is wired (see gqlgen.yml + go:generate
 // directive in cmd/server/main.go) but the runtime today uses a

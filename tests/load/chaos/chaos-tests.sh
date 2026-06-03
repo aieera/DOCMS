@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VaultDMS Chaos Tests — run alongside k6 load tests.
+# SeDoc Chaos Tests — run alongside k6 load tests.
 # Prerequisites: kubectl access to vaultdms namespace, k6 running scenario 06.
 set -euo pipefail
 
@@ -118,7 +118,7 @@ EOF
 # Run all chaos tests
 # ===========================================================================
 main() {
-  log "Starting VaultDMS chaos test suite"
+  log "Starting SeDoc chaos test suite"
   chaos_kill_random_pod
   sleep 10
   chaos_db_failover

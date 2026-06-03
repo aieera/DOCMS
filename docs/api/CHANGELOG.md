@@ -1,4 +1,4 @@
-# VaultDMS API Changelog
+# SeDoc API Changelog
 
 Versioning follows [SEMVER_POLICY.md](./SEMVER_POLICY.md). The whole
 `/api/v1/*` surface shares one semver; per-endpoint versions do not

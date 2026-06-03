@@ -1,9 +1,9 @@
-// Package main boots the VaultDMS auth service.
+// Package main boots the SeDoc auth service.
 //
 // Surface:
 //   - HTTP (chi router): /api/v1/auth/{register, login, logout, mfa/*, sessions/*, api-keys/*}
 //   - Session validation middleware exported via handler.AuthMiddleware
-//     (imported directly by every other VaultDMS service that authenticates
+//     (imported directly by every other SeDoc service that authenticates
 //      requests at the edge)
 //
 // SSO (SAML/OIDC) and SCIM land in follow-up phases A2-A4.
@@ -136,7 +136,7 @@ func main() {
 		Username:      os.Getenv("SEDOC_SMTP_USER"),
 		Password:      os.Getenv("SEDOC_SMTP_PASSWORD"),
 		From:          os.Getenv("SEDOC_SMTP_FROM"),
-		SubjectPrefix: "[VaultDMS]",
+		SubjectPrefix: "[SeDoc]",
 		DevStub:       os.Getenv("SEDOC_SMTP_HOST") == "",
 		StubLog:       stubLog,
 	})

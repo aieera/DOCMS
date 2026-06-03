@@ -134,7 +134,7 @@ function SendForSignaturePage() {
   const removeRecipient = (i: number) => setRecipients((rs) => rs.filter((_, idx) => idx !== i))
 
   const PROVIDER_OPTIONS: { id: SignatureProvider; label: string }[] = [
-    { id: 'internal',    label: 'In-app signature (VaultDMS)' },
+    { id: 'internal',    label: 'In-app signature (SeDoc)' },
     { id: 'docusign',    label: 'Send via DocuSign' },
     { id: 'adobe_sign',  label: 'Send via Adobe Sign' },
   ]

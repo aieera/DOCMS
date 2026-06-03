@@ -1,4 +1,4 @@
-# VaultDMS — local development infrastructure.
+# SeDoc — local development infrastructure.
 # Bring up with `make docker-up`. Services (Go binaries) run on the host during
 # development; this compose file provides only their dependencies.
 
@@ -124,7 +124,7 @@ x-go-env: &go-env
   # now so deploys don't have to round-trip compose later.
   SEDOC_WEBAUTHN_RPID:         "${SEDOC_WEBAUTHN_RPID:-}"
   SEDOC_WEBAUTHN_ORIGINS:      "${SEDOC_WEBAUTHN_ORIGINS:-}"
-  SEDOC_WEBAUTHN_DISPLAY_NAME: "${SEDOC_WEBAUTHN_DISPLAY_NAME:-VaultDMS}"
+  SEDOC_WEBAUTHN_DISPLAY_NAME: "${SEDOC_WEBAUTHN_DISPLAY_NAME:-SeDoc}"
   SEDOC_WEBAUTHN_HMAC_SECRET:  "${SEDOC_WEBAUTHN_HMAC_SECRET:-}"
 
 x-go-depends: &go-depends
@@ -576,7 +576,7 @@ services:
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3/botocore credentials for the OCR worker to download
       # blobs. Use AWS_* names (boto3 reads these directly without
-      # any VaultDMS-side glue). In compose dev these are MinIO's
+      # any SeDoc-side glue). In compose dev these are MinIO's
       # admin creds; in prod each worker should use IRSA / instance
       # role.
       AWS_ACCESS_KEY_ID: "minioadmin"

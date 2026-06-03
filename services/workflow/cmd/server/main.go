@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS workflow service (Temporal-backed).
+// Package main boots the SeDoc workflow service (Temporal-backed).
 package main
 
 import (

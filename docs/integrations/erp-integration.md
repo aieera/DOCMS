@@ -1,7 +1,7 @@
-# VaultDMS ↔ ERP Integration Guide
+# SeDoc ↔ ERP Integration Guide
 
-**Audience:** engineers integrating an external ERP (e.g. Raabyt) with VaultDMS.
-**Scope:** this document describes the **VaultDMS side only** — the API surface the ERP
+**Audience:** engineers integrating an external ERP (e.g. Raabyt) with SeDoc.
+**Scope:** this document describes the **SeDoc side only** — the API surface the ERP
 calls and the webhook contracts it consumes. The ERP-side sync worker, sync log, and UI
 (status panels, admin pages) live in the ERP repository and are out of scope here.
 
@@ -10,13 +10,13 @@ calls and the webhook contracts it consumes. The ERP-side sync worker, sync log,
 ## 1. Architecture — two directions
 
 ```
-                         ┌───────────────────────────── VaultDMS ─────────────────────────────┐
+                         ┌───────────────────────────── SeDoc ─────────────────────────────┐
    ERP (Node/Sequelize)  │                                                                     │
    ──────────────────    │   gateway (Kong) ──► document service ──► storage / policy / …      │
    sync worker  ─────────┼──►  REST + Bearer vdms_ API key   (OUTBOUND: ERP pushes/pulls)      │
                          │                                                                     │
    webhook receiver ◄────┼───  connector service  ◄── NATS JetStream domain events            │
-                         │     (INBOUND: VaultDMS pushes events to the ERP, HMAC-signed)       │
+                         │     (INBOUND: SeDoc pushes events to the ERP, HMAC-signed)       │
                          └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,7 +37,7 @@ delivery worker.
 
 ### 2.1 API keys (outbound, ERP → DMS)
 
-Service-to-service calls use a **Bearer API key** issued per tenant in VaultDMS:
+Service-to-service calls use a **Bearer API key** issued per tenant in SeDoc:
 
 ```
 Authorization: Bearer vdms_<random>
@@ -70,12 +70,12 @@ a key can only ever touch its own tenant's data (Postgres RLS fails closed other
 
 The webhook **management** endpoints (`/api/v1/webhooks…`, §4.1) are part of the admin/web
 surface and authenticate with a session cookie, not an API key. In practice these are driven
-from the VaultDMS admin UI or an authenticated admin session — they create the subscription
+from the SeDoc admin UI or an authenticated admin session — they create the subscription
 the ERP later receives deliveries on.
 
 ### 2.3 Gateway
 
-All outbound calls go through the gateway (Kong) at the tenant's VaultDMS base URL. REST
+All outbound calls go through the gateway (Kong) at the tenant's SeDoc base URL. REST
 upstreams are health-checked and the gateway injects its signature header to the backends;
 the ERP does not need to reproduce that — it only sends the `Authorization: Bearer vdms_…`
 header. (If you run against a service directly, bypassing Kong, you must still send the
@@ -110,7 +110,7 @@ Routes:
 ### 3.2 The ingest flow (push a document)
 
 The ERP sync worker uploads a document in this order. Each ERP entity (invoice, quote,
-sales_order, payment_received) maps to one VaultDMS document.
+sales_order, payment_received) maps to one SeDoc document.
 
 ```
 1. (first time per workspace) ensure folder
@@ -142,7 +142,7 @@ sales_order, payment_received) maps to one VaultDMS document.
         → { version_id, version_number, … }
 ```
 
-After step 5, VaultDMS emits `dms.version.uploaded.v1` (and `dms.document.created.v1` on
+After step 5, SeDoc emits `dms.version.uploaded.v1` (and `dms.document.created.v1` on
 first create). Those events flow back to the ERP via webhooks (§4) — that is how the ERP
 learns the upload landed, rather than trusting the synchronous response alone.
 
@@ -175,14 +175,14 @@ cursor pattern works), capped at 100. Each row includes `id`, `lifecycle_state`,
 For a single document, `GET /api/v1/documents/{document_id}` (scope `documents:read`) returns
 its current `lifecycle_state`.
 
-> **Note — version count.** A VaultDMS document has no `version_count` field (only
+> **Note — version count.** A SeDoc document has no `version_count` field (only
 > `current_version_id`). The ERP must maintain its own count by tallying
 > `dms.version.uploaded.v1` events, or by listing versions. Don't expect to read a count from
 > a single document GET. (See §6.)
 
 ### 3.5 Deep link — "Open in DMS"
 
-The canonical document URL in the VaultDMS web UI is a **path**, not query params:
+The canonical document URL in the SeDoc web UI is a **path**, not query params:
 
 ```
 {DMS_BASE_URL}/workspaces/{workspace_id}/documents/{document_id}
@@ -197,7 +197,7 @@ Build the ERP's "Open in DMS" link with this template. A `?folder=…&doc=…` q
 
 ## 4. Inbound — DMS → ERP Webhooks
 
-VaultDMS pushes domain events to a tenant-registered HTTPS endpoint. The connector service
+SeDoc pushes domain events to a tenant-registered HTTPS endpoint. The connector service
 subscribes to NATS domain events and fans each one out to matching subscriptions
 ([service.go:186](../../services/connector/internal/service/service.go#L186)), then a delivery
 worker POSTs them with retry + dead-lettering
@@ -238,7 +238,7 @@ Each delivery is an HTTP POST to the subscription URL:
 ```
 POST <subscription url>
 Content-Type: application/json
-User-Agent: VaultDMS-Webhook/1.0
+User-Agent: SeDoc-Webhook/1.0
 X-DMS-Event:     <event type, e.g. dms.version.uploaded.v1>
 X-DMS-Timestamp: <unix seconds>
 X-DMS-Signature: sha256=<hex>
@@ -357,10 +357,10 @@ A minimal smoke test exercising both directions:
 
 ---
 
-## 6. Configuring the integration in the VaultDMS web UI
+## 6. Configuring the integration in the SeDoc web UI
 
 Everything above can be driven from the API, but a tenant admin sets most of it up from the
-VaultDMS web admin. For reference, the relevant screens:
+SeDoc web admin. For reference, the relevant screens:
 
 | Screen | Route | What it does |
 |---|---|---|
@@ -371,7 +371,7 @@ VaultDMS web admin. For reference, the relevant screens:
 | **Document (deep-link target)** | `/workspaces/{workspace_id}/documents/{document_id}` ([$documentId.tsx](../../web/src/routes/_authenticated/workspaces/$workspaceId/documents/$documentId.tsx)) | Where an "Open in DMS" link lands (§3.5). |
 
 > The ERP's own status panels / admin sync log (Phase 9) live in the **ERP** web app, not
-> here. These VaultDMS screens are the *provider* side — where the tenant mints the key and
+> here. These SeDoc screens are the *provider* side — where the tenant mints the key and
 > registers the webhook the ERP then uses.
 
 ### Two UI caveats for the full ERP flow
@@ -393,13 +393,13 @@ VaultDMS web admin. For reference, the relevant screens:
 
 ## 7. Known gaps / contract notes for the ERP side
 
-These are fixed in the **ERP repository**, not VaultDMS — but they are contract decisions
-VaultDMS dictates:
+These are fixed in the **ERP repository**, not SeDoc — but they are contract decisions
+SeDoc dictates:
 
 1. **Deep-link template.** Use the path form
    `…/workspaces/{workspace_id}/documents/{document_id}`. The `?folder=&doc=` query form does
-   not resolve in the VaultDMS web UI (§3.5).
-2. **Version count.** There is no single-field version count on a VaultDMS document. The ERP
+   not resolve in the SeDoc web UI (§3.5).
+2. **Version count.** There is no single-field version count on a SeDoc document. The ERP
    must derive it from `dms.version.uploaded.v1` events (or list versions). Don't read it from
    a document GET (§3.4).
 

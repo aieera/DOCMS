@@ -1,4 +1,4 @@
-# VaultDMS Load Test Runner
+# SeDoc Load Test Runner
 # Usage: make <target> [BASE_URL=http://...] [TENANTS=10] [TARGET_VUS=10000]
 #
 # §16 sign-off run:

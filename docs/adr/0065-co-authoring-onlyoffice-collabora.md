@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-VaultDMS already has a partial OnlyOffice integration today
+SeDoc already has a partial OnlyOffice integration today
 ([services/document/internal/handler/onlyoffice_handler.go](../../services/document/internal/handler/onlyoffice_handler.go)):
 
 - `GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config` —

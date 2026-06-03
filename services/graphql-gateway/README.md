@@ -1,6 +1,6 @@
 # GraphQL Gateway (services/graphql-gateway)
 
-Read-only GraphQL surface for the VaultDMS frontend. Implements
+Read-only GraphQL surface for the SeDoc frontend. Implements
 blueprint §12.1 and ADR 0074.
 
 ## What it does

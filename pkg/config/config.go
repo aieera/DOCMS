@@ -65,7 +65,7 @@ type Config struct {
 
 	// PolicyServiceAddr is the gRPC address of the policy service used
 	// by document + storage for authorization checks. Env:
-	// POLICY_SERVICE_ADDR (not VAULTDMS-prefixed). Default: policy:9090.
+	// POLICY_SERVICE_ADDR (not SEDOC-prefixed). Default: policy:9090.
 	PolicyServiceAddr string `mapstructure:"policy_service_addr"`
 
 	// StorageServiceAddr is the gRPC address of the storage service, used
@@ -107,7 +107,7 @@ type Config struct {
 
 	// StripeWebhookSecret is the whsec_... secret used to verify
 	// Stripe webhook signatures. Env: STRIPE_WEBHOOK_SECRET (not
-	// VAULTDMS-prefixed — follows Stripe convention).
+	// SEDOC-prefixed — follows Stripe convention).
 	StripeWebhookSecret string `mapstructure:"stripe_webhook_secret"`
 
 	// ---- SMTP (Wave 12.1) -------------------------------------------------

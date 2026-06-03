@@ -1,4 +1,4 @@
-# VaultDMS — single-node on-prem production compose.
+# SeDoc — single-node on-prem production compose.
 # Differences from dev:
 #   - Secrets come from .env (not checked in)
 #   - Services run as containers from published images
@@ -124,7 +124,7 @@ services:
       resources:
         limits: { cpus: "2", memory: 2g }
 
-  # ---- VaultDMS services -----------------------------------------------------
+  # ---- SeDoc services -----------------------------------------------------
   # Each block is a template; tune image tag + env per environment.
 
   document:

@@ -1,4 +1,4 @@
-// Save to VaultDMS — task pane UI (ADR 0112).
+// Save to SeDoc — task pane UI (ADR 0112).
 //
 // Layout (top to bottom):
 //   * Email summary line (subject + from). Helps the user confirm
@@ -179,7 +179,7 @@ export function TaskPane() {
       <div style={{ padding: 16 }}>
         <MessageBar intent="success">
           <MessageBarBody>
-            <MessageBarTitle>Saved to VaultDMS</MessageBarTitle>
+            <MessageBarTitle>Saved to SeDoc</MessageBarTitle>
             Email + attachments have been queued for ingestion. OCR + classification will run in the background.
           </MessageBarBody>
         </MessageBar>

@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS connector service — webhooks, MCP server,
+// Package main boots the SeDoc connector service — webhooks, MCP server,
 // and OAuth connectors for external systems.
 package main
 

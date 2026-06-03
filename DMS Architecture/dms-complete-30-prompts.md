@@ -111,10 +111,10 @@ Use Claude Artifacts (in claude.ai) to:
 # ████████████████████████████████████████████
 
 ```
-I'm building an enterprise Document Management System (DMS) called "VaultDMS". This is the foundation setup. Create a production-grade Go monorepo with all infrastructure.
+I'm building an enterprise Document Management System (DMS) called "SeDoc". This is the foundation setup. Create a production-grade Go monorepo with all infrastructure.
 
 PROJECT IDENTITY:
-- Name: VaultDMS
+- Name: SeDoc
 - Backend: Go 1.22+ with Go workspaces
 - Frontend: React 18 + TypeScript + Vite
 - Database: PostgreSQL 16
@@ -592,7 +592,7 @@ Generate ALL files. Every file should be complete, compilable, and follow Go bes
 # ████████████████████████████████████████████
 
 ```
-Create the complete PostgreSQL schema for VaultDMS. Generate migration files in services/document/migrations/ using golang-migrate format.
+Create the complete PostgreSQL schema for SeDoc. Generate migration files in services/document/migrations/ using golang-migrate format.
 
 File: 000001_initial_schema.up.sql
 
@@ -845,7 +845,7 @@ Request: { "mfa_session_token": "string", "totp_code": "string" }
   Rate limit: 5 per minute per mfa_session_token
 
 POST /api/v1/auth/mfa/setup (requires authenticated session)
-  1. Generate TOTP secret using totp.Generate(totp.GenerateOpts{Issuer: "VaultDMS", AccountName: user.Email})
+  1. Generate TOTP secret using totp.Generate(totp.GenerateOpts{Issuer: "SeDoc", AccountName: user.Email})
   2. Encrypt the secret (using crypto/aes with a server-side key from config) before storing in mfa_secret_encrypted
   3. Generate 8 recovery codes: each is 8 chars, alphanumeric, uppercase. Hash each with bcrypt cost 10. Store hashes in mfa_recovery_hashes array.
   4. DO NOT enable MFA yet — user must verify a code first
@@ -2032,7 +2032,7 @@ Pipeline:
 7. Build context: concatenate top 5 chunks with source info, max 4000 tokens
 8. If conversation_id: load last 3 turns from conversation_history
 9. LLM call via llm_gateway:
-   system = "You are a document assistant for VaultDMS. Answer based ONLY on the provided documents. If the answer isn't in the documents, say 'I couldn't find this in your documents.' Always cite sources as [Document: title, Page: X]."
+   system = "You are a document assistant for SeDoc. Answer based ONLY on the provided documents. If the answer isn't in the documents, say 'I couldn't find this in your documents.' Always cite sources as [Document: title, Page: X]."
    user = f"Documents:\n{formatted_chunks}\n\nQuestion: {question}"
 10. Parse response: extract [Document: ...] citations, map to document IDs
 11. Store turn in conversation_history table
@@ -2092,7 +2092,7 @@ Write comprehensive tests for all intelligence tasks, RAG pipeline, notification
 # ████████████████████████████████████████████
 
 ```
-Build the complete VaultDMS web application in web/ using React 18, TypeScript 5.3, Vite 5, TanStack Router, TanStack Query v5, Tailwind CSS 3.4, Zustand, and Radix UI primitives.
+Build the complete SeDoc web application in web/ using React 18, TypeScript 5.3, Vite 5, TanStack Router, TanStack Query v5, Tailwind CSS 3.4, Zustand, and Radix UI primitives.
 
 SETUP:
 npm create vite@latest web -- --template react-ts
@@ -2241,7 +2241,7 @@ web/src/
 │   │
 │   └── shared/
 │       ├── ErrorBoundary.tsx  # Catch render errors, show friendly error + retry
-│       ├── LoadingScreen.tsx  # Full-page centered spinner with VaultDMS logo
+│       ├── LoadingScreen.tsx  # Full-page centered spinner with SeDoc logo
 │       ├── ProtectedRoute.tsx # Route guard: check auth, check permission, redirect if denied
 │       └── PageHeader.tsx     # Consistent page header: title, description, action buttons
 │
@@ -2325,7 +2325,7 @@ The design should feel like Linear meets Notion — clean, fast, professional. N
 # ████████████████████████████████████████████
 
 ```
-Build remaining backend services for VaultDMS. Each service follows the standard pattern established in previous prompts.
+Build remaining backend services for SeDoc. Each service follows the standard pattern established in previous prompts.
 
 ═══ WORKFLOW SERVICE (services/workflow/, Go + Temporal SDK) ═══
 
@@ -2395,7 +2395,7 @@ Build ALL services completely. Each with full error handling, logging, tests, an
 # ████████████████████████████████████████████
 
 ```
-Build the remaining infrastructure and platform services for VaultDMS.
+Build the remaining infrastructure and platform services for SeDoc.
 
 ═══ PROMPT 25: HELM CHART (deploy/helm/) ═══
 

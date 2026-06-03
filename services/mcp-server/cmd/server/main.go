@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS MCP server (ADR 0091, §12.8).
+// Package main boots the SeDoc MCP server (ADR 0091, §12.8).
 //
 // Surface:
 //   POST /api/v1/mcp         — single JSON-RPC call (curl + admin Test button)

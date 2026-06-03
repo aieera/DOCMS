@@ -115,7 +115,7 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background">
             <Database className="h-4 w-4" />
           </span>
-          <span className="text-sm font-semibold tracking-tight">VaultDMS</span>
+          <span className="text-sm font-semibold tracking-tight">SeDoc</span>
         </Link>
       )}
       <Button

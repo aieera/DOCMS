@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "VaultDMS Tenant Health (Noisy Neighbor)",
+    "title": "SeDoc Tenant Health (Noisy Neighbor)",
     "uid": "vaultdms-tenant-health",
     "tags": ["vaultdms", "tenant"],
     "refresh": "30s",

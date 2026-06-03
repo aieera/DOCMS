@@ -1,8 +1,8 @@
-# VaultDMS Security Posture — YYYY
+# SeDoc Security Posture — YYYY
 
-This document summarizes VaultDMS's most recent independent security
+This document summarizes SeDoc's most recent independent security
 assessment. It is intended for prospects, customers, and procurement
-teams evaluating VaultDMS.
+teams evaluating SeDoc.
 
 For deeper diligence (SOC 2 report, raw pentest report, DPA), contact
 security@&lt;company&gt;.

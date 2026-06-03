@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS search service.
+// Package main boots the SeDoc search service.
 //
 // Responsibilities:
 //   - Lexical search via OpenSearch (semantic via Qdrant stubbed for Phase 11)

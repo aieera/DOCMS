@@ -1,4 +1,4 @@
--- VaultDMS — initial schema (single atomic migration).
+-- SeDoc — initial schema (single atomic migration).
 --
 -- Security invariants enforced here:
 --   1. Every table except `organizations` has tenant_id UUID NOT NULL as

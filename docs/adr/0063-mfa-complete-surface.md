@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-VaultDMS already supports two MFA factors:
+SeDoc already supports two MFA factors:
 
 - **TOTP** with bcrypt-hashed recovery codes ([services/auth/internal/service/mfa.go](services/auth/internal/service/mfa.go)),
   enrolled via `POST /auth/mfa/setup`+`/confirm`, verified via

@@ -11,7 +11,7 @@ ADR 0025 (library selection) and the `signer.Signer` interface.
 
 Two trust domains collaborate:
 
-1. **VaultDMS signature service (Go)** — owns envelope state, calls
+1. **SeDoc signature service (Go)** — owns envelope state, calls
    the signer per request.
 2. **DSS sidecar (Java)** — produces the PAdES-B-LT bytes. Stateless.
 

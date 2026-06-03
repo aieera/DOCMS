@@ -1,4 +1,4 @@
-# VaultDMS public-route inventory — §3.1 / B2.1.
+# SeDoc public-route inventory — §3.1 / B2.1.
 # Source of truth for `deploy/gateway/kong.yaml`. Every public
 # HTTP/REST route in the codebase MUST appear here. The archtest in
 # pkg/archtest/routes_test.go (B2.1 follow-up) fails the build if any

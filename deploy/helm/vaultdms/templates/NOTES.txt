@@ -1,5 +1,5 @@
 ============================================================
- VaultDMS {{ .Chart.Version }} has been deployed!
+ SeDoc {{ .Chart.Version }} has been deployed!
 ============================================================
 
 Access the application:

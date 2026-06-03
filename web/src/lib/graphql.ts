@@ -1,4 +1,4 @@
-// ADR 0074 — urql client wired to the VaultDMS GraphQL gateway.
+// ADR 0074 — urql client wired to the SeDoc GraphQL gateway.
 //
 // Persisted queries are enforced: every operation submits its
 // SHA-256 hash via the standard APQ extensions envelope. Production

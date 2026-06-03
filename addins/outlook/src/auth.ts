@@ -1,24 +1,24 @@
-// Outlook add-in → VaultDMS session exchange (ADR 0112).
+// Outlook add-in → SeDoc session exchange (ADR 0112).
 //
 // Flow:
 //   1. OfficeRuntime.auth.getAccessToken() returns an Entra ID
-//      JWT scoped to the VaultDMS API app (configured in the
+//      JWT scoped to the SeDoc API app (configured in the
 //      manifest's WebApplicationInfo).
 //   2. We POST that token to /api/v1/auth/m365/exchange. The auth
 //      service validates against Graph /me, finds the matching
-//      VaultDMS user by email, and returns a short-lived session
+//      SeDoc user by email, and returns a short-lived session
 //      token + the resolved user_id.
 //   3. The session token is held in module-scope; every subsequent
 //      API call attaches it as a Bearer header.
 //
 // Why exchange server-side instead of trusting the Entra JWT on
 // every call?
-//   * The auth service is the canonical issuer of VaultDMS sessions.
+//   * The auth service is the canonical issuer of SeDoc sessions.
 //     Treating Entra tokens as session tokens means every backend
 //     would have to learn how to validate Entra JWKS, fetch its
 //     keys, refresh on rotation, etc. — duplication we don't want.
 //   * The exchange step is also where we resolve the multi-tenant
-//     case: VaultDMS may have the same email in N tenants. The
+//     case: SeDoc may have the same email in N tenants. The
 //     exchange returns 409 + a tenant picker payload when that
 //     happens; the UI lets the user choose.
 
@@ -34,7 +34,7 @@ interface ExchangeResponse {
 }
 
 /**
- * Obtain a VaultDMS session by exchanging the user's Entra ID
+ * Obtain a SeDoc session by exchanging the user's Entra ID
  * token. Caches the result for the lifetime of the add-in window
  * — Outlook reopens the taskpane on every message switch, so the
  * cache naturally invalidates between conversations.
@@ -103,7 +103,7 @@ function formatOfficeAuthError(e: unknown): string {
     case 13002: return 'Sign-in dialog dismissed — try again.'
     case 13003: return 'Multi-factor authentication required. Sign in to Outlook with MFA and retry.'
     case 13005: return 'This account isn\'t supported. Use a work or school account.'
-    case 13007: return 'Token request failed — talk to your IT admin about VaultDMS app consent.'
+    case 13007: return 'Token request failed — talk to your IT admin about SeDoc app consent.'
     default:    return `Authentication failed${code ? ` (code ${code})` : ''}.`
   }
 }

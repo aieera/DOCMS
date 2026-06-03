@@ -7,7 +7,7 @@
 ## Context
 
 Blueprint §12.8 calls for a Model Context Protocol server that exposes
-VaultDMS as a tool surface for LLM agents (Claude Desktop, Cursor,
+SeDoc as a tool surface for LLM agents (Claude Desktop, Cursor,
 GitHub Copilot, future internal agents). The playbook listed:
 
 - `services/mcp-server` (new top-level service)

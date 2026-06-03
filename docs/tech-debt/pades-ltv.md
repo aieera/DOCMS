@@ -6,7 +6,7 @@
 ## Original debt
 
 The Wave 9 signer interface shipped with `MockSigner.Verify` — a
-regex over `%VaultDMS-MockSig-` marker blocks — wired in as the
+regex over `%SeDoc-MockSig-` marker blocks — wired in as the
 `/api/v1/signatures/verify` backend. Two production-impact gaps:
 
 1. **Forgeable**: any PDF with the marker text typed in by hand

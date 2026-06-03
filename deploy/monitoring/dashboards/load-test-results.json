@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "VaultDMS Load Test Results",
+    "title": "SeDoc Load Test Results",
     "uid": "vaultdms-loadtest",
     "tags": ["vaultdms", "loadtest"],
     "refresh": "10s",

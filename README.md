@@ -1,4 +1,4 @@
-# VaultDMS
+# SeDoc
 
 Enterprise Document Management System. Multi-tenant, region-aware, policy-enforced.
 
@@ -44,7 +44,7 @@ vaultdms/
 
 ## API & integrations
 
-VaultDMS exposes a versioned REST API (`/api/v1/*`) plus HMAC-signed webhooks for
+SeDoc exposes a versioned REST API (`/api/v1/*`) plus HMAC-signed webhooks for
 external systems (ERP, iPaaS, custom integrations) to push documents and receive
 domain events.
 
@@ -204,6 +204,6 @@ This repository is scaffolded in phases. See `docs/phases.md` for progress.
 
 ## License
 
-**Proprietary — © 2026 Raabyt. All rights reserved.** This software (VaultDMS) is
+**Proprietary — © 2026 Raabyt. All rights reserved.** This software (SeDoc) is
 licensed, not sold; unauthorized use, copying, or distribution is prohibited.
 See [LICENSE](LICENSE).

@@ -65,7 +65,7 @@ func TestSandbox_Intesi_TierA(t *testing.T) {
 	email := mustEnvSandbox(t, "INTESI_SANDBOX_SIGNER_EMAIL")
 	reg, err := c.Register(ctx, tsp.RegisterReq{
 		TenantID: "sandbox-tenant", SignerEmail: email,
-		SignerName: "VaultDMS Sandbox Signer", CountryCode: "IT",
+		SignerName: "SeDoc Sandbox Signer", CountryCode: "IT",
 	})
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -113,7 +113,7 @@ func TestSandbox_InfoCert_TierA(t *testing.T) {
 	email := mustEnvSandbox(t, "INFOCERT_SANDBOX_SIGNER_EMAIL")
 	reg, err := c.Register(ctx, tsp.RegisterReq{
 		TenantID: "sandbox-tenant", SignerEmail: email,
-		SignerName: "VaultDMS Sandbox Signer", CountryCode: "IT",
+		SignerName: "SeDoc Sandbox Signer", CountryCode: "IT",
 	})
 	if err != nil {
 		t.Fatalf("register: %v", err)
@@ -163,7 +163,7 @@ func TestSandbox_Swisscom_TierA(t *testing.T) {
 	email := mustEnvSandbox(t, "SWISSCOM_SANDBOX_SIGNER_EMAIL")
 	if _, err := c.Register(ctx, tsp.RegisterReq{
 		TenantID: "sandbox-tenant", SignerEmail: email,
-		SignerName: "VaultDMS Sandbox Signer", CountryCode: "CH",
+		SignerName: "SeDoc Sandbox Signer", CountryCode: "CH",
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}

@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase A: Inventory
+# SeDoc Audit — Phase A: Inventory
 
 **Date:** 2026-04-16
 **Auditor:** Claude Code automated audit

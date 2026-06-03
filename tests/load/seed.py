@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VaultDMS load-test corpus seeder (ADR 0105 §16).
+SeDoc load-test corpus seeder (ADR 0105 §16).
 
 Generates a 100M-document corpus across 100 tenants with a realistic
 distribution of sizes, MIME types, metadata, and folder hierarchy.

@@ -1,4 +1,4 @@
-# VaultDMS load-test cluster — Terraform skeleton (ADR 0105 §16).
+# SeDoc load-test cluster — Terraform skeleton (ADR 0105 §16).
 #
 # This module provisions an ISOLATED load-test EKS cluster, distinct
 # from prod. The cluster has three node groups:
@@ -10,7 +10,7 @@
 #   - Provision the underlying VPC / subnets / IAM. We expect the
 #     same module the prod terraform uses, but in a separate
 #     environment. See deploy/load-test/terraform/network.tf.example.
-#   - Apply the VaultDMS Helm chart — that's a separate `helm upgrade`
+#   - Apply the SeDoc Helm chart — that's a separate `helm upgrade`
 #     step the runbook spells out, so the chart version is explicit
 #     per campaign rather than baked in here.
 #   - Seed the corpus — see tests/load/seed.py.

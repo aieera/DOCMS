@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS storage service.
+// Package main boots the SeDoc storage service.
 package main
 
 import (

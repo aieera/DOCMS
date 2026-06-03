@@ -69,7 +69,7 @@ function SignPage() {
         signer_email: signer.email,
         signer_name: signer.name,
         document_bytes_b64: b64,
-        reason: 'Signed via VaultDMS',
+        reason: 'Signed via SeDoc',
       })
     },
     onSuccess: (out) => {
@@ -164,7 +164,7 @@ function SignPage() {
             <option value="swisscom">Swisscom (Switzerland)</option>
             <option value="intesi">Intesi Group (Italy / EU)</option>
             <option value="infocert">InfoCert (Italy / EU)</option>
-            <option value="mock">VaultDMS Mock (testing)</option>
+            <option value="mock">SeDoc Mock (testing)</option>
           </select>
           <Button
             onClick={() => startMutation.mutate()}

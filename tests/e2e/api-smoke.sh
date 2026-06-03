@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VaultDMS API-only smoke test. Exercises login → upload → OCR wait →
+# SeDoc API-only smoke test. Exercises login → upload → OCR wait →
 # search → share → logout via curl. No browser, no Node. Exits 0 on
 # success, non-zero with a diagnostic message on the first failure.
 #

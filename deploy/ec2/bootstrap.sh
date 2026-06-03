@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap the VaultDMS *minimal API-core* on a fresh Ubuntu EC2 instance,
+# Bootstrap the SeDoc *minimal API-core* on a fresh Ubuntu EC2 instance,
 # using prebuilt images from ghcr.io/aieera/docms. For API/ERP testing only —
 # NOT production (runs the dev RLS-bypass posture).
 #

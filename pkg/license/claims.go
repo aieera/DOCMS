@@ -1,4 +1,4 @@
-// Package license — JWT-based license validation for VaultDMS (ADR 0095).
+// Package license — JWT-based license validation for SeDoc (ADR 0095).
 //
 // A license is an RS256-signed JWT minted by the license-gen tool (held
 // by BD ops). Every service loads its license at startup from
@@ -36,7 +36,7 @@ type Claims struct {
 	IssuedAt  time.Time `json:"iat"`
 	ExpiresAt time.Time `json:"exp"`
 
-	// VaultDMS-specific claims
+	// SeDoc-specific claims
 	TenantName   string       `json:"tenant_name"`
 	SeatLimit    int          `json:"seat_limit"`
 	FeatureFlags FeatureFlags `json:"feature_flags"`

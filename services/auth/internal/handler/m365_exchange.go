@@ -1,14 +1,14 @@
-// Microsoft 365 → VaultDMS session exchange — HTTP surface (ADR 0112).
+// Microsoft 365 → SeDoc session exchange — HTTP surface (ADR 0112).
 //
 //   POST /api/v1/auth/m365/exchange
 //     Body: { "ms_access_token": "...", "tenant_id": "..." (optional) }
 //     200:  { "vdms_session_token": "...", "user_id": "...", "tenant_id": "..." }
 //     401:  Entra token expired / revoked.
-//     404:  no VaultDMS user with this email.
+//     404:  no SeDoc user with this email.
 //     409:  email exists in N tenants — body lists candidates so
 //           the add-in can prompt the user.
 //
-// The endpoint is intentionally UN-authenticated at the VaultDMS
+// The endpoint is intentionally UN-authenticated at the SeDoc
 // layer — it's the entry point that ESTABLISHES auth. The proof
 // of identity is the Entra token in the body; we validate it via
 // Graph before issuing anything.
@@ -60,14 +60,14 @@ func (h *Handler) ExchangeM365(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrM365NoVDMSUser):
 			h.writeJSON(w, http.StatusNotFound, map[string]string{
-				"error": "no VaultDMS user with this email; ask your VaultDMS admin to invite you",
+				"error": "no SeDoc user with this email; ask your SeDoc admin to invite you",
 			})
 			return
 		}
 		var multi *service.ErrM365MultipleTenants
 		if errors.As(err, &multi) {
 			h.writeJSON(w, http.StatusConflict, m365MultiTenantResp{
-				Error:      "email belongs to multiple VaultDMS tenants; re-call with tenant_id",
+				Error:      "email belongs to multiple SeDoc tenants; re-call with tenant_id",
 				Candidates: multi.Candidates,
 			})
 			return

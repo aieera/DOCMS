@@ -1,6 +1,6 @@
 // Session / auth helpers shared across §16 scenarios.
 //
-// VaultDMS uses cookie-based session auth (dms_session) + a Kong
+// SeDoc uses cookie-based session auth (dms_session) + a Kong
 // gateway signature header (X-Gateway-Signature). For a load run we
 // bypass Kong and hit the services through a single load-balancer
 // vhost, but the gateway signature header is still required by

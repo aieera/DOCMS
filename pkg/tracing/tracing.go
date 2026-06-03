@@ -1,4 +1,4 @@
-// Package tracing provides OpenTelemetry initialization for all VaultDMS
+// Package tracing provides OpenTelemetry initialization for all SeDoc
 // services. Auto-instruments HTTP, gRPC, pgx, and Redis. Custom spans for
 // OPA, S3, LLM, and OCR operations. Exports to OTLP (Tempo/Jaeger).
 //

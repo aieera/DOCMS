@@ -3,7 +3,7 @@
 # search, audit, policy, workflow, notification, billing, connector,
 # graphql-gateway, mcp-server, intelligence-shim).
 #
-# Ports default to the conventional VaultDMS layout but can be
+# Ports default to the conventional SeDoc layout but can be
 # overridden per service in the playbook.
 vaultdms_service_name: ""
 vaultdms_service_grpc_port: 9090

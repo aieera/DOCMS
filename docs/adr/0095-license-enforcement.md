@@ -7,7 +7,7 @@ Related: §13.7 of the blueprint; ADR 0094 (alt-DB adapter design plan, same sco
 
 ## Context
 
-VaultDMS today runs in unlicensed mode. There is no JWT signer, no validator
+SeDoc today runs in unlicensed mode. There is no JWT signer, no validator
 middleware, no seat-counting, no feature-flag gating, no grace-period state
 machine. Every tenant deployment is effectively "developer mode" from the
 license system's perspective. This is fine for the present open dev cycle, but

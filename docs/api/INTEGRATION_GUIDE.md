@@ -1,6 +1,6 @@
-# VaultDMS API — Integration Guide
+# SeDoc API — Integration Guide
 
-A practical guide to integrating an external system with the VaultDMS REST API: how to
+A practical guide to integrating an external system with the SeDoc REST API: how to
 authenticate, push content, and receive events. The full machine-readable contract is the
 [OpenAPI spec](./openapi.yaml); this guide explains how the pieces fit together.
 
@@ -27,7 +27,7 @@ Every response carries:
 | Header | Meaning |
 |---|---|
 | `API-Version` | the API semver that served the request (e.g. `1.0.0`) |
-| `X-Correlation-ID` | request correlation id — echoed if you send one, generated otherwise. **Log it**; it ties your call to VaultDMS server logs for support. |
+| `X-Correlation-ID` | request correlation id — echoed if you send one, generated otherwise. **Log it**; it ties your call to SeDoc server logs for support. |
 
 Breaking changes bump the major version and are recorded in [CHANGELOG.md](./CHANGELOG.md).
 Pin against a major version and watch the changelog.
@@ -36,7 +36,7 @@ Pin against a major version and watch the changelog.
 
 ## 2. Authentication
 
-VaultDMS accepts two credential types. External integrations use **API keys**.
+SeDoc accepts two credential types. External integrations use **API keys**.
 
 ### 2.1 API keys (machine-to-machine)
 
@@ -115,7 +115,7 @@ code, not the message text.
 
 ## 4. Receiving events (webhooks)
 
-VaultDMS pushes domain events to a tenant-registered HTTPS endpoint, HMAC-signed.
+SeDoc pushes domain events to a tenant-registered HTTPS endpoint, HMAC-signed.
 
 ### 4.1 Register a subscription
 
@@ -142,7 +142,7 @@ VaultDMS pushes domain events to a tenant-registered HTTPS endpoint, HMAC-signed
 ```
 POST <your url>
 Content-Type: application/json
-User-Agent: VaultDMS-Webhook/1.0
+User-Agent: SeDoc-Webhook/1.0
 X-DMS-Event:     <event type>
 X-DMS-Timestamp: <unix seconds>
 X-DMS-Signature: sha256=<hex>
@@ -229,15 +229,15 @@ Resolve the target folder first with
 `GET|POST /api/v1/workspaces/{workspace_id}/folders` (scopes `documents:read` /
 `documents:write`). Full request/response field shapes are in [openapi.yaml](./openapi.yaml).
 
-After a successful ingest, VaultDMS emits `dms.document.created.v1` /
+After a successful ingest, SeDoc emits `dms.document.created.v1` /
 `dms.version.uploaded.v1`, which arrive at your webhook (§4) — the durable confirmation that
 the content landed.
 
 ---
 
-## 6. Deep linking into the VaultDMS UI
+## 6. Deep linking into the SeDoc UI
 
-To link a user from your app to the document in the VaultDMS web UI, use the path form:
+To link a user from your app to the document in the SeDoc web UI, use the path form:
 
 ```
 {DMS_BASE_URL}/workspaces/{workspace_id}/documents/{document_id}
@@ -247,7 +247,7 @@ To link a user from your app to the document in the VaultDMS web UI, use the pat
 
 ## 7. Configuring from the web UI
 
-API keys and webhooks can be managed from the VaultDMS admin UI instead of the API:
+API keys and webhooks can be managed from the SeDoc admin UI instead of the API:
 
 | Screen | Route | Purpose |
 |---|---|---|
@@ -270,4 +270,4 @@ Two caveats when setting up from the UI:
 The [ERP integration guide](../integrations/erp-integration.md) walks the full bidirectional
 flow end-to-end (API-key issuance, the 5-step ingest, webhook subscription + HMAC
 verification, reconcile, deep links) for an external ERP pushing invoices/quotes/orders into
-VaultDMS and reflecting their lifecycle + signature status back.
+SeDoc and reflecting their lifecycle + signature status back.

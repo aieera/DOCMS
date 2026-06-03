@@ -2,7 +2,7 @@
 
 **Blueprint §:** 4.1 · **Status:** enforced for every service since §4.1 / A5
 
-Every VaultDMS service owns its own schema-migrations bookkeeping table.
+Every SeDoc service owns its own schema-migrations bookkeeping table.
 Touching service **X**'s migrations must not advance or regress the
 schema version recorded for service **Y**.
 

@@ -35,7 +35,7 @@ type MFASetupResult struct {
 // plaintext for one-time display. MFA remains disabled until ConfirmMFA.
 func (s *Service) SetupMFA(ctx context.Context, tenantID, userID uuid.UUID, userEmail string) (*MFASetupResult, error) {
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "VaultDMS",
+		Issuer:      "SeDoc",
 		AccountName: userEmail,
 	})
 	if err != nil {

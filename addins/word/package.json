@@ -2,7 +2,7 @@
   "name": "vaultdms-word-addin",
   "version": "0.1.0",
   "private": true,
-  "description": "VaultDMS — Open + Save Word add-in (ADR 0113)",
+  "description": "SeDoc — Open + Save Word add-in (ADR 0113)",
   "main": "src/index.tsx",
   "scripts": {
     "dev": "webpack serve --mode=development",

@@ -1,4 +1,4 @@
-// VaultDMS signature-signer — Java sidecar, Wave 12.9.
+// SeDoc signature-signer — Java sidecar, Wave 12.9.
 //
 // Pinned versions:
 //   - DSS 5.12.1 (LGPL-2.1; EU Commission eIDAS reference impl)

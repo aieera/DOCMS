@@ -1,5 +1,5 @@
 // Package logger provides a zerolog-based structured logger used by every
-// VaultDMS service. Every log line includes service name + version, and —
+// SeDoc service. Every log line includes service name + version, and —
 // when the provided context carries them — tenant_id and correlation_id.
 //
 // PII scrubbing helpers are exposed for use in application code when a value

@@ -1,4 +1,4 @@
-# ERP ↔ VaultDMS Integration — Operator Runbook
+# ERP ↔ SeDoc Integration — Operator Runbook
 
 **Audience:** on-call engineers, support, customer success.
 **Purpose:** what to do when the integration breaks, how to verify it's healthy,

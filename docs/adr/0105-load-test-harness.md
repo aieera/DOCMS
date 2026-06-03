@@ -10,7 +10,7 @@ ADR 0071 (e-sign connectors).
 ## Context
 
 §16 of the blueprint sets the following non-negotiable scale numbers
-that a buyer evaluating VaultDMS will ask us to defend:
+that a buyer evaluating SeDoc will ask us to defend:
 
 | Dimension | Target |
 |---|---|

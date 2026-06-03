@@ -1,4 +1,4 @@
-# ADR 0112 — Outlook "Save to VaultDMS" add-in
+# ADR 0112 — Outlook "Save to SeDoc" add-in
 
 Status: Accepted (Phase 1 — UI + SSO + ingest endpoint shipped;
 blob upload + OCR + classification deferred to the version-upload
@@ -8,15 +8,15 @@ Depends on: ADR 0111 (M365 / Graph connector framework).
 
 ## Context
 
-The highest-leverage M365 surface for VaultDMS adoption is "save
-this email to VaultDMS from inside Outlook." It beats every other
+The highest-leverage M365 surface for SeDoc adoption is "save
+this email to SeDoc from inside Outlook." It beats every other
 M365 feature for two reasons:
 
 1. **Daily-use frequency.** Office workers open Outlook all day,
-   every day. A button that says "Save to VaultDMS" right next to
-   "Reply" puts VaultDMS in front of the user constantly.
+   every day. A button that says "Save to SeDoc" right next to
+   "Reply" puts SeDoc in front of the user constantly.
 2. **No context switch.** The user never leaves Outlook. They
-   don't open VaultDMS, navigate to a workspace, choose
+   don't open SeDoc, navigate to a workspace, choose
    "Upload", drag-and-drop an `.eml` export. One click, two
    dropdowns, done.
 
@@ -32,7 +32,7 @@ backend-driven flows. This ADR is the user-driven counterpart.
   - `src/taskpane/TaskPane.tsx` — Fluent UI dropdowns (workspace,
     folder), tag input, "Include attachments" switch, Save button.
   - `src/auth.ts` — exchanges the Entra ID token from
-    `OfficeRuntime.auth.getAccessToken` for a VaultDMS session.
+    `OfficeRuntime.auth.getAccessToken` for a SeDoc session.
   - `src/api.ts` — thin REST client (`listWorkspaces`,
     `listFolders`, `ingestEmail`). 401 clears the session cache
     so the next attempt re-exchanges.
@@ -41,12 +41,12 @@ backend-driven flows. This ADR is the user-driven counterpart.
 - **`services/auth/internal/handler/m365_exchange.go`** +
   **`services/auth/internal/service/m365_exchange.go`** — the
   exchange endpoint. POST `/api/v1/auth/m365/exchange` validates
-  the Entra token via Graph `/me`, looks up VaultDMS users by
-  email, and issues a VaultDMS session token. Returns 404 when
+  the Entra token via Graph `/me`, looks up SeDoc users by
+  email, and issues a SeDoc session token. Returns 404 when
   no user matches and 409 + a tenant-candidate list when the
   email exists in multiple tenants.
 - **`services/document/internal/handler/m365_ingest.go`** — POST
-  `/api/v1/integrations/m365/ingest-email`. Auth: VaultDMS
+  `/api/v1/integrations/m365/ingest-email`. Auth: SeDoc
   session. Creates one parent document for the email + one child
   document per file attachment. Emits a
   `dms.m365.outlook.email.saved.v1` audit event via the outbox
@@ -69,28 +69,28 @@ read serves two purposes:
 - **Validates** the token. Microsoft 401s if it's expired or
   revoked; we surface that 401 to the add-in so it re-acquires.
 - **Resolves the user's email**, which is our lookup key into
-  VaultDMS's users table.
+  SeDoc's users table.
 
 The alternative — parse + verify the JWT in-process — would mean
 plumbing JWKS endpoints + key rotation + per-Entra-tenant
 audience handling into the auth service. The Graph call costs
-~150 ms once per session; we cache the resulting VaultDMS
+~150 ms once per session; we cache the resulting SeDoc
 session for the taskpane's lifetime. Worth it.
 
-### 2. Look up VaultDMS users by email, not by Entra tenant ID
+### 2. Look up SeDoc users by email, not by Entra tenant ID
 
 Two reasons:
 
-- **Customer reality**: many VaultDMS tenants invite users from
+- **Customer reality**: many SeDoc tenants invite users from
   email addresses that aren't in the customer's own Entra
   tenant (contractors, partners, etc.). Mapping Entra tenant ID
-  to VaultDMS tenant ID would block these users.
-- **The same email may exist in multiple VaultDMS tenants** —
+  to SeDoc tenant ID would block these users.
+- **The same email may exist in multiple SeDoc tenants** —
   a contractor working at two customers, the same human's email
-  in two unrelated VaultDMS instances. The exchange returns 409
+  in two unrelated SeDoc instances. The exchange returns 409
   + a candidate list so the add-in can prompt the user.
 
-The 0-match case is "ask your VaultDMS admin to invite you" —
+The 0-match case is "ask your SeDoc admin to invite you" —
 we deliberately don't auto-provision. SCIM (ADR 0062) is the
 right path for org-wide auto-provision.
 
@@ -117,7 +117,7 @@ existing connector-email path simultaneously.
 
 The add-in's WebApplicationInfo declares only what's needed to
 identify the user (`openid`, `profile`, `email`, `User.Read`).
-The bytes the add-in moves to VaultDMS come from
+The bytes the add-in moves to SeDoc come from
 `Office.context.mailbox.item.getAttachmentContentAsync` — an
 Office.js surface that doesn't need Graph scopes because Outlook
 already has the message open. We don't ask the user to consent
@@ -136,7 +136,7 @@ ship XML now; we migrate when mobile + macOS catch up.
 ## What is NOT done (deferrals)
 
 - **Compose-mode counterpart**. The mirror surface that lets you
-  attach a VaultDMS document to a new email. Requires a separate
+  attach a SeDoc document to a new email. Requires a separate
   manifest extension point + a different UI flow (paste a
   document link vs save the message). Lands when there's a
   customer ask.
@@ -175,7 +175,7 @@ npm run build       # dist/ ready for deploy
 # Manual end-to-end (see sideload howto):
 # 1. Sideload the add-in into Outlook.
 # 2. Open a test email.
-# 3. Click Save to VaultDMS.
+# 3. Click Save to SeDoc.
 # 4. Pick workspace + folder, click Save.
 # 5. Verify a row appears in `documents` with email metadata
 #    in custom_metadata, and an outbox row with event_type
@@ -184,10 +184,10 @@ npm run build       # dist/ ready for deploy
 
 ## Open questions deferred
 
-- **Drag-and-drop attachment from VaultDMS into a draft email.**
-  The natural counterpart to "Save to VaultDMS." Office's compose
+- **Drag-and-drop attachment from SeDoc into a draft email.**
+  The natural counterpart to "Save to SeDoc." Office's compose
   surface exposes `Office.context.mailbox.item.addFileAttachmentAsync`;
-  wiring it to a VaultDMS document picker is its own ADR.
+  wiring it to a SeDoc document picker is its own ADR.
 - **Per-tenant manifest customization.** Branding
   (icons, display name, support URL) currently lives in the
   manifest. A tenant who wants their logo would need a separate

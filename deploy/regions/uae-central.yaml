@@ -1,5 +1,5 @@
 # ============================================================================
-# VaultDMS — UAE residency overlay (ADR 0110)
+# SeDoc — UAE residency overlay (ADR 0110)
 # ============================================================================
 #
 # Apply on TOP of deploy/helm/vaultdms/values.yaml:

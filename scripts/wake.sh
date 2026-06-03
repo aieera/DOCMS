@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# scripts/wake.sh — bring the VaultDMS stack back online after a
+# scripts/wake.sh — bring the SeDoc stack back online after a
 # Docker/WSL restart.
 #
 # Handles the three recurring failure modes:

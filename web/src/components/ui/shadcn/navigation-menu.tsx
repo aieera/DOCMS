@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn'
 
 // Canonical shadcn NavigationMenu (Radix). Composition-based —
 // useful for top-level marketing nav with grouped sub-menus
-// (like a megamenu). Most VaultDMS surfaces use the in-app
+// (like a megamenu). Most SeDoc surfaces use the in-app
 // sidebar + topbar pattern instead, but this is here to close
 // the brief.
 

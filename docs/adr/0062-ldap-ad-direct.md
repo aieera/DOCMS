@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-VaultDMS already supports SAML 2.0 and OIDC SSO (ADRs 0040, 0041)
+SeDoc already supports SAML 2.0 and OIDC SSO (ADRs 0040, 0041)
 plus SCIM 2.0 provisioning (ADR 0042). For enterprises that run a
 self-hosted directory but no SSO IdP — common in regulated
 mid-market deployments — those flows don't help: there's nothing

@@ -74,13 +74,13 @@ func TestSandbox_DocuSign_TierA(t *testing.T) {
 	resp, err := c.Send(ctx, esign.SendReq{
 		TenantID: "sandbox-tenant",
 		RequestID: "sandbox-tier-a-" + time.Now().UTC().Format("20060102150405"),
-		Subject: "[VaultDMS Tier A smoke] Please ignore",
-		Message: "Automated VaultDMS sandbox check; no action required.",
+		Subject: "[SeDoc Tier A smoke] Please ignore",
+		Message: "Automated SeDoc sandbox check; no action required.",
 		DocumentName: "smoke.pdf",
 		// Minimal valid PDF — DocuSign rejects empty / non-PDF blobs.
 		DocumentBytes: minimalPDF(),
 		Recipients: []esign.Recipient{{
-			Name:  "VaultDMS Sandbox Recipient",
+			Name:  "SeDoc Sandbox Recipient",
 			Email: mustEnv(t, "DOCUSIGN_SANDBOX_SIGNER_EMAIL"),
 			Order: 1, Role: "signer",
 		}},
@@ -128,11 +128,11 @@ func TestSandbox_DocuSign_TierB_FullCycle(t *testing.T) {
 	resp, err := c.Send(ctx, esign.SendReq{
 		TenantID: "sandbox-tenant",
 		RequestID: "sandbox-tier-b-" + time.Now().UTC().Format("20060102150405"),
-		Subject: "[VaultDMS Tier B full cycle]",
+		Subject: "[SeDoc Tier B full cycle]",
 		DocumentName: "smoke.pdf",
 		DocumentBytes: minimalPDF(),
 		Recipients: []esign.Recipient{{
-			Name:  "VaultDMS Sandbox Recipient",
+			Name:  "SeDoc Sandbox Recipient",
 			Email: mustEnv(t, "DOCUSIGN_SANDBOX_SIGNER_EMAIL"),
 			Order: 1, Role: "signer",
 		}},
@@ -190,12 +190,12 @@ func TestSandbox_AdobeSign_TierA(t *testing.T) {
 	resp, err := c.Send(ctx, esign.SendReq{
 		TenantID: "sandbox-tenant",
 		RequestID: "sandbox-tier-a-" + time.Now().UTC().Format("20060102150405"),
-		Subject: "[VaultDMS Tier A smoke] Please ignore",
-		Message: "Automated VaultDMS sandbox check; no action required.",
+		Subject: "[SeDoc Tier A smoke] Please ignore",
+		Message: "Automated SeDoc sandbox check; no action required.",
 		DocumentName: "smoke.pdf",
 		DocumentBytes: minimalPDF(),
 		Recipients: []esign.Recipient{{
-			Name:  "VaultDMS Sandbox Recipient",
+			Name:  "SeDoc Sandbox Recipient",
 			Email: mustEnv(t, "ADOBESIGN_SANDBOX_SIGNER_EMAIL"),
 			Order: 1, Role: "signer",
 		}},
@@ -242,12 +242,12 @@ func TestSandbox_AdobeSign_TierB_FullCycle(t *testing.T) {
 	resp, err := c.Send(ctx, esign.SendReq{
 		TenantID: "sandbox-tenant",
 		RequestID: "sandbox-tier-b-" + time.Now().UTC().Format("20060102150405"),
-		Subject: "[VaultDMS Tier B full cycle]",
+		Subject: "[SeDoc Tier B full cycle]",
 		DocumentName: "smoke.pdf",
 		DocumentBytes: minimalPDF(),
 		Recipients: []esign.Recipient{{
 			Email: mustEnv(t, "ADOBESIGN_SANDBOX_SIGNER_EMAIL"),
-			Name: "VaultDMS Sandbox Recipient",
+			Name: "SeDoc Sandbox Recipient",
 			Order: 1, Role: "signer",
 		}},
 	})

@@ -32,7 +32,7 @@ spec:
     parameters:
       max_connections: {{ .Values.postgresql.operator.maxConnections | default 200 | quote }}
       shared_buffers: {{ .Values.postgresql.operator.sharedBuffers | default "512MB" | quote }}
-      # RLS-friendly defaults — VaultDMS relies on row-level security,
+      # RLS-friendly defaults — SeDoc relies on row-level security,
       # so the app role MUST be NOBYPASSRLS (set by the post-init job
       # below, not here).
       log_min_duration_statement: "1000"

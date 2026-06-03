@@ -8,7 +8,7 @@ samples per blueprint §12.2)
 ## Context
 
 §12.2 of the product blueprint requires customer-facing webhooks
-so external systems can react to VaultDMS domain events without
+so external systems can react to SeDoc domain events without
 polling. The connector service already implements the bulk of the
 plumbing (subscriptions table, JetStream fan-out, signed delivery,
 retry, DLQ, redeliver). The ADR exists to codify the contract so a
@@ -42,7 +42,7 @@ the headers:
 | `X-DMS-Signature` | `sha256=<hex>` HMAC-SHA256 of `timestamp + "." + body` |
 | `X-DMS-Timestamp` | Unix seconds at send time |
 | `X-DMS-Event` | Event type, e.g. `dms.document.created.v1` |
-| `User-Agent` | `VaultDMS-Webhook/1.0` |
+| `User-Agent` | `SeDoc-Webhook/1.0` |
 
 Customers must reject any request whose timestamp drifts more than
 **5 minutes** from now — this is the replay window. The receiver

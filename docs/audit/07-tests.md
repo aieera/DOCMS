@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase F: Test Coverage
+# SeDoc Audit — Phase F: Test Coverage
 
 **Date:** 2026-04-16
 

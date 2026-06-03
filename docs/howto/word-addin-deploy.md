@@ -1,7 +1,7 @@
 # Word add-in — deployment runbook (ADR 0113)
 
 Audience: SRE shipping the "Open / Save back" Word add-in into a
-production tenant. Pre-reqs: the VaultDMS backend's
+production tenant. Pre-reqs: the SeDoc backend's
 `/api/v1/auth/m365/exchange` + `/api/v1/documents/{id}/versions`
 endpoints already live (they shipped with ADRs 0112 + the
 foundational document service), and an HTTPS host you can point
@@ -18,7 +18,7 @@ publish flow. Differences worth flagging:
 
 - **No Mail scopes**. The Word add-in's `<WebApplicationInfo>`
   asks only for `openid`, `profile`, `email`, `User.Read`. The
-  bytes the add-in moves to/from VaultDMS come from Office.js's
+  bytes the add-in moves to/from SeDoc come from Office.js's
   document-API, not Graph.
 - **Different dev port**. Outlook uses :3001; Word uses :3002 so
   you can run both add-ins simultaneously on the same dev box.
@@ -97,7 +97,7 @@ Same three patterns as the Outlook add-in:
 
 ### Option A — Frontend CDN
 
-Drop `dist/` into a sibling subdirectory of the VaultDMS frontend
+Drop `dist/` into a sibling subdirectory of the SeDoc frontend
 bucket (`/word/`) and you're done. The frontend's
 `Access-Control-Allow-Origin: *` is what Office hosts expect.
 
@@ -180,25 +180,25 @@ actually exists:
 
 - **Word for Web** opens .docx files hosted at supported URLs in
   the SharePoint-style co-authoring engine, hosted by Microsoft.
-  When VaultDMS serves the presigned URL with the right
+  When SeDoc serves the presigned URL with the right
   Content-Type, Word for Web opens it and lets multiple users
   edit simultaneously. Microsoft owns the conflict resolution.
 - **Word desktop** does NOT do live co-authoring against arbitrary
   URLs — it requires SharePoint Online / OneDrive Business with
   the document already living there. For desktop opens via our
-  add-in, the flow is "open → edit → click Save back to VaultDMS"
+  add-in, the flow is "open → edit → click Save back to SeDoc"
   which creates a new version. Conflicts (two users editing in
   parallel) surface as separate versions; the user picks the
   winner via the doc detail page's compare flow (ADR 0101).
 - **The existing collaboration service (`services/collaboration/`)
-  runs the Yjs CRDT path for the VaultDMS native viewer + the
+  runs the Yjs CRDT path for the SeDoc native viewer + the
   OnlyOffice integration (ADR 0096 + ADR 0065).** It does NOT
   participate in the Word for Web SharePoint co-auth — that
   channel is opaque to us.
 
 The honest framing for buyers: **"Live co-authoring on the web,
 version-based collaboration on the desktop."** Both paths land
-in the same VaultDMS document; the merge model differs.
+in the same SeDoc document; the merge model differs.
 
 A future ADR (0113-Phase-2) wires Yjs into Word desktop via a
 Wopi or a custom protocol handler. Not in scope here.

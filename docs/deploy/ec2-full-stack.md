@@ -1,6 +1,6 @@
-# Deploy the COMPLETE VaultDMS stack on AWS EC2
+# Deploy the COMPLETE SeDoc stack on AWS EC2
 
-Stand up **all of VaultDMS** — every service, the AI/OCR pipeline, search, workflows,
+Stand up **all of SeDoc** — every service, the AI/OCR pipeline, search, workflows,
 e-sign, collaboration, and the web UI — on a single EC2 instance using prebuilt images
 (`ghcr.io/aieera/docms/*`), then point a domain at it with HTTPS.
 

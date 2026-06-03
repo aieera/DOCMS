@@ -1,4 +1,4 @@
--- VaultDMS — initial database bootstrap.
+-- SeDoc — initial database bootstrap.
 -- Runs once on first Postgres container start (docker-entrypoint-initdb.d).
 -- Service-specific schema is applied via golang-migrate in each service's
 -- migrations/ directory.

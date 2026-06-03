@@ -1,4 +1,4 @@
-# ADR 0074 — VaultDMS GraphQL Read API.
+# ADR 0074 — SeDoc GraphQL Read API.
 #
 # Read-only by design (mutations stay on REST). Covers the
 # multi-join surface for the document-detail and activity-timeline

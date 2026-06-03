@@ -42,7 +42,7 @@ function showOverlay() {
   if (overlay) return
   overlay = document.createElement('div')
   overlay.id = '__vaultdms_dropzone'
-  overlay.textContent = 'Drop to upload to VaultDMS'
+  overlay.textContent = 'Drop to upload to SeDoc'
   Object.assign(overlay.style, {
     position: 'fixed',
     inset: '24px',

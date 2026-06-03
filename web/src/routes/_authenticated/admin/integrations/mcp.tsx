@@ -62,7 +62,7 @@ export function MCPPage() {
     <div className="mx-auto max-w-4xl p-6">
       <PageHeader
         title="MCP server (LLM agents)"
-        description="Let Claude Desktop, Cursor, GitHub Copilot, and other Model Context Protocol clients call VaultDMS tools (search, get, upload, start workflow). Issue an API key with mcp scopes, then paste the matching snippet into your client's config."
+        description="Let Claude Desktop, Cursor, GitHub Copilot, and other Model Context Protocol clients call SeDoc tools (search, get, upload, start workflow). Issue an API key with mcp scopes, then paste the matching snippet into your client's config."
       />
 
       {/* ---- Server status -------------------------------------------- */}

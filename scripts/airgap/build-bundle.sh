@@ -2,7 +2,7 @@
 # Wave 14.5 — build an offline install bundle for air-gapped deploys.
 #
 # Produces a tarball containing:
-#   - All VaultDMS container images (multi-arch, saved via `docker save`)
+#   - All SeDoc container images (multi-arch, saved via `docker save`)
 #   - All third-party dependency images (postgres, redis, nats,
 #     opensearch, minio, temporal) at their pinned versions
 #   - The Helm chart + values-airgapped.yaml

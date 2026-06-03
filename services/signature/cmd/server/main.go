@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS signature service.
+// Package main boots the SeDoc signature service.
 package main
 
 import (

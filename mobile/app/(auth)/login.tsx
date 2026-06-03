@@ -28,7 +28,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.logo}>VaultDMS</Text>
+      <Text style={styles.logo}>SeDoc</Text>
       <Text style={styles.subtitle}>Sign in to your account</Text>
       <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
       <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />

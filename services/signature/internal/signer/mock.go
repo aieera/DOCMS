@@ -22,8 +22,8 @@ import (
 	"time"
 )
 
-const markerPrefix = "%VaultDMS-MockSig-v1\n"
-const markerSuffix = "%VaultDMS-MockSig-END\n"
+const markerPrefix = "%SeDoc-MockSig-v1\n"
+const markerSuffix = "%SeDoc-MockSig-END\n"
 
 // MockSigner implements Signer without any external dependency.
 // Safe for concurrent use — it holds no mutable state.
@@ -75,7 +75,7 @@ func (m *MockSigner) Sign(ctx context.Context, req Request) (*Response, error) {
 // two matches rather than one run that swallows the inner END+v1
 // lines (both start with `%`, so a greedy match over `%[^\n]*\n`
 // would happily grab them).
-var markerRE = regexp.MustCompile(`%VaultDMS-MockSig-v1\n((?:%[^\n]*\n)+?)%VaultDMS-MockSig-END\n`)
+var markerRE = regexp.MustCompile(`%SeDoc-MockSig-v1\n((?:%[^\n]*\n)+?)%SeDoc-MockSig-END\n`)
 
 // Verify parses out the marker blocks and reports them as signatures.
 // Every MockSigner-produced PDF verifies as valid; a real PDF would

@@ -1,4 +1,4 @@
-// Package metrics provides Prometheus instrumentation for all VaultDMS
+// Package metrics provides Prometheus instrumentation for all SeDoc
 // services. Call Register() once at startup, then use the exported
 // counters/histograms throughout the codebase.
 package metrics

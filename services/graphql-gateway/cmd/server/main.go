@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS GraphQL read gateway (ADR 0074).
+// Package main boots the SeDoc GraphQL read gateway (ADR 0074).
 //
 // Topology: HTTP-only public surface (POST /graphql), gRPC-only
 // upstream surface (document, workflow, collaboration, policy,

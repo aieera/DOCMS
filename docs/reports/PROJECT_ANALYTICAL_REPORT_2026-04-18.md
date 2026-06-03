@@ -2,7 +2,7 @@
 
 **Generated:** 2026-04-18T19:30:59Z (UTC)
 **Git commit:** Data unavailable — working tree is not a git repository (`git rev-parse --short HEAD` → `fatal: not a git repository`). All history/branch/contributor/commit-count claims in this report are marked **Unverified**.
-**Product name:** VaultDMS (codename "DOCMS" on disk)
+**Product name:** SeDoc (codename "DOCMS" on disk)
 **Report author:** automated inventory pass — all live metrics captured this session, no cached values.
 
 ---

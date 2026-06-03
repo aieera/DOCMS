@@ -10,7 +10,7 @@ Closes: tech-debt T-D-7 ("Tier-1 marker validator passing for any PDF")
 PAdES B-LT signer + verifier. To unblock the upstream wave the
 signature service shipped a **MockSigner** + a marker-based
 "Tier-1 smoke validator" — a `regexp.MustCompile` that scans for
-`%VaultDMS-MockSig-` blocks and reports anything matching as
+`%SeDoc-MockSig-` blocks and reports anything matching as
 "signed and valid". That has two problems we're now closing:
 
 1. **Any document with our marker text** verifies as signed —

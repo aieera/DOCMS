@@ -24,7 +24,7 @@ Status pre-wave:
 [scripts/airgap/build-bundle.sh](../../../scripts/airgap/build-bundle.sh)
 — produces `dist/vaultdms-airgap-${VERSION}.tar.gz` containing:
 
-- All 16 VaultDMS service images (`docker save`'d).
+- All 16 SeDoc service images (`docker save`'d).
 - Seven pinned third-party images (postgres, redis, nats, opensearch,
   minio, temporal auto-setup, temporal admin-tools).
 - Full Helm chart.

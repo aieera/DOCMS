@@ -1,4 +1,4 @@
-# VaultDMS Audit — Executive Summary
+# SeDoc Audit — Executive Summary
 
 **Date:** 2026-04-16
 **Auditor:** Claude Code automated audit

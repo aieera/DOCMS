@@ -11,7 +11,7 @@ import (
 
 // AuthMiddleware validates a session token OR API key and populates the
 // request context with UserInfo. This is the single middleware every other
-// VaultDMS service imports from the auth package and chains in front of its
+// SeDoc service imports from the auth package and chains in front of its
 // own handlers.
 //
 // Wire order expected upstream:

@@ -27,7 +27,7 @@ which:
    budget.
 
 `completion`-typed suggester fields are the textbook choice but come
-with two practical drawbacks for VaultDMS:
+with two practical drawbacks for SeDoc:
 
 - **Per-user permission filtering doesn't fit the context model.**
   Completion contexts must be defined at index time and have low

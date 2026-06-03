@@ -82,7 +82,7 @@ release) is the bar for tagging a release `ltv-stable`.
 ## What to do when Tier-2 fails
 
 Tier-1 still gates Verify. If Tier-2 starts failing, signed PDFs
-keep verifying inside VaultDMS but won't satisfy external auditors.
+keep verifying inside SeDoc but won't satisfy external auditors.
 Severity: SEV-3 (no customer outage) → SEV-2 if the broken output
 already shipped to a customer.
 

@@ -19,7 +19,7 @@ type EmailOTPConfig struct {
 	Port     int    // 587
 	Username string
 	Password string
-	From     string // "VaultDMS Security <security@vaultdms.app>"
+	From     string // "SeDoc Security <security@vaultdms.app>"
 	// SubjectPrefix is prepended to every OTP email's subject so
 	// inboxes can route them with a filter.
 	SubjectPrefix string
@@ -69,7 +69,7 @@ func (e *EmailOTPSender) SendCode(ctx context.Context, toEmail, code string) err
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",
 		"",
-		"Your VaultDMS sign-in code is:",
+		"Your SeDoc sign-in code is:",
 		"",
 		"    " + code,
 		"",

@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "VaultDMS Search Performance",
+    "title": "SeDoc Search Performance",
     "uid": "vaultdms-search",
     "tags": ["vaultdms", "search"],
     "refresh": "30s",

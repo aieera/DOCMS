@@ -264,10 +264,10 @@ function LoginPage() {
   return (
     <AuthShell
       title="Welcome back"
-      description="Sign in to continue to your VaultDMS workspace."
+      description="Sign in to continue to your SeDoc workspace."
       footer={
         <>
-          New to VaultDMS?{' '}
+          New to SeDoc?{' '}
           <Link to="/register" className="font-medium text-foreground underline-offset-4 hover:underline">Create an account</Link>
         </>
       }

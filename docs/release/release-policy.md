@@ -1,7 +1,7 @@
 # Release Policy
 
 **Owner:** Release engineering / platform
-**Applies to:** VaultDMS v1.0 onward.
+**Applies to:** SeDoc v1.0 onward.
 
 ## Versioning
 

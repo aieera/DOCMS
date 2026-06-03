@@ -1,6 +1,6 @@
-# VaultDMS — Complete Product & Engineering Guide
+# SeDoc — Complete Product & Engineering Guide
 
-> **VaultDMS** (repo: `aieera/DOCMS`) is a multi-tenant, region-aware, policy-enforced
+> **SeDoc** (repo: `aieera/DOCMS`) is a multi-tenant, region-aware, policy-enforced
 > **enterprise Document Management System**. This document is the single, end-to-end
 > reference: what it is, how it is built, every feature it ships today, the API and
 > event surface, how to run and deploy it, and the roadmap of features we can still add.
@@ -17,7 +17,7 @@
 
 ## Table of contents
 
-1. [What VaultDMS is](#1-what-vaultdms-is)
+1. [What SeDoc is](#1-what-vaultdms-is)
 2. [Technology stack](#2-technology-stack)
 3. [Architecture](#3-architecture)
 4. [Service catalog](#4-service-catalog)
@@ -45,9 +45,9 @@
 
 ---
 
-## 1. What VaultDMS is
+## 1. What SeDoc is
 
-VaultDMS is an enterprise DMS built as a **polyglot microservice platform**:
+SeDoc is an enterprise DMS built as a **polyglot microservice platform**:
 
 - **11 Go microservices** (`services/*`) — the transactional core and edge.
 - **2 Python workers** — `intelligence` (OCR, NER, classification, embeddings, RAG, active

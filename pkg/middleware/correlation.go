@@ -1,4 +1,4 @@
-// Package middleware holds HTTP and gRPC middleware used by every VaultDMS
+// Package middleware holds HTTP and gRPC middleware used by every SeDoc
 // service. Each middleware is provided in both transport flavors; they share
 // the same context keys defined in pkg/logger.
 package middleware

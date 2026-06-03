@@ -1,4 +1,4 @@
-# VaultDMS — State of the Project
+# SeDoc — State of the Project
 
 **Baseline:** 2026-04-17 (post Waves 1–4 of audit remediation).
 **Companion doc:** `DMS Architecture/final.md` — the Enterprise Completion

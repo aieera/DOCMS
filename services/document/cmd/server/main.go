@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS document service — the Phase-5 reference
+// Package main boots the SeDoc document service — the Phase-5 reference
 // implementation. It wires repositories, service, Policy gRPC client, and
 // handler onto a gRPC server, a grpc-gateway REST mux, a dedicated health
 // server, and the transactional outbox publisher.
@@ -437,7 +437,7 @@ func main() {
 	))
 
 	// ADR 0112 — Outlook add-in ingest. Uses session auth (not API
-	// key) because the add-in establishes a VaultDMS session via
+	// key) because the add-in establishes a SeDoc session via
 	// the /auth/m365/exchange endpoint and then attaches it as a
 	// Bearer header on this route.
 	m365IngestMux := http.NewServeMux()
@@ -445,7 +445,7 @@ func main() {
 	// Per-IP rate limit so a compromised Outlook session can't spam
 	// document creation and exhaust tenant storage quota. 60 req/min
 	// is plenty for an honest user (the add-in only POSTs on explicit
-	// "Save to VaultDMS" click).
+	// "Save to SeDoc" click).
 	m365IngestLimiter := middleware.NewIPRateLimiter(60, 60, time.Minute)
 	rootMux.Handle("/api/v1/integrations/m365/", middleware.CorrelationHTTP(
 		m365IngestLimiter(middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(m365IngestMux)),

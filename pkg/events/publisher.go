@@ -1,5 +1,5 @@
 // Package events wraps NATS JetStream with the CloudEvents v1.0 envelope and
-// the VaultDMS stream topology. Services publish via Publisher and consume
+// the SeDoc stream topology. Services publish via Publisher and consume
 // via Subscriber.
 package events
 
@@ -16,7 +16,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// CloudEvent is the v1.0 envelope with the VaultDMS-specific extensions.
+// CloudEvent is the v1.0 envelope with the SeDoc-specific extensions.
 type CloudEvent struct {
 	SpecVersion     string          `json:"specversion"`
 	ID              string          `json:"id"`
@@ -57,7 +57,7 @@ type StreamSpec struct {
 	Subjects []string
 }
 
-// DefaultStreams is the canonical VaultDMS stream topology, per
+// DefaultStreams is the canonical SeDoc stream topology, per
 // `DMS Architecture/final.md` § 4.4 (Wave 5 Prompt 5.2). Subject list
 // and stream names here are the SOURCE OF TRUTH — any new NATS
 // subject introduced anywhere in the codebase must land under one of

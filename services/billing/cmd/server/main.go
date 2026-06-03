@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS billing service: tenant provisioning,
+// Package main boots the SeDoc billing service: tenant provisioning,
 // Stripe webhooks, usage metering, feature flags.
 package main
 

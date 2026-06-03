@@ -17,7 +17,7 @@ import (
 //   - No OAuth round-trip, no per-tenant app install, no scope
 //     negotiation. Tenant admin pastes a Slack-generated webhook URL
 //     into the Notifications settings; that's the entire setup.
-//   - Covers 90% of VaultDMS notification use cases (workflow
+//   - Covers 90% of SeDoc notification use cases (workflow
 //     assigned, share-link viewed, approval required).
 //   - Full Slack app (OAuth + bot scopes + slash commands) is a
 //     separate adapter when we need interactivity (approve/reject

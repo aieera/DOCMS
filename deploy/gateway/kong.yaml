@@ -1,4 +1,4 @@
-# VaultDMS Kong gateway — declarative DBless configuration.
+# SeDoc Kong gateway — declarative DBless configuration.
 # Blueprint §3.1, §8.1, §14.3. Generated to match
 # deploy/gateway/routes.yaml; each entry maps to a route there.
 #

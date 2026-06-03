@@ -1,4 +1,4 @@
-# VaultDMS Bug Fix Report — 2026-05-27
+# SeDoc Bug Fix Report — 2026-05-27
 
 **Branch:** `fix/bug-report-2026-05-27` (off `chore/eslint-flat-config`)
 **Bugs in original report:** 20

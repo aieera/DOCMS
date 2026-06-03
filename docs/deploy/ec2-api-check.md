@@ -1,6 +1,6 @@
-# Deploy VaultDMS (minimal API-core) on AWS EC2 — for API checking
+# Deploy SeDoc (minimal API-core) on AWS EC2 — for API checking
 
-Goal: stand up just enough of VaultDMS on a single EC2 instance to exercise the
+Goal: stand up just enough of SeDoc on a single EC2 instance to exercise the
 **REST API** (auth, documents, versions, folders, storage, integrations) and
 webhooks — e.g. for ERP integration testing. Uses **prebuilt images**
 (`ghcr.io/aieera/docms/*`) so there's no source build on the box.

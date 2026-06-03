@@ -1,5 +1,5 @@
 // Thin REST client. All calls flow through `request()` which
-// attaches the VaultDMS session token from auth.ts and surfaces
+// attaches the SeDoc session token from auth.ts and surfaces
 // 401s by clearing the cache so the next attempt re-exchanges.
 import { API_BASE } from './config'
 import { getSession, clearSession } from './auth'

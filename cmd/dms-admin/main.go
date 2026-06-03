@@ -1,4 +1,4 @@
-// dms-admin is a CLI tool for VaultDMS operations. Currently supports:
+// dms-admin is a CLI tool for SeDoc operations. Currently supports:
 //
 //	dms-admin rotate-secrets   — rotate DB passwords, JWT keys, API keys, KEKs
 //	dms-admin seed             — seed test data
@@ -55,7 +55,7 @@ func rotateSecrets() {
 	dualValidityWindow := 24 * time.Hour
 	now := time.Now().UTC()
 
-	fmt.Println("=== VaultDMS Secrets Rotation ===")
+	fmt.Println("=== SeDoc Secrets Rotation ===")
 	fmt.Printf("Dual-validity window: %s (old keys valid until %s)\n\n", dualValidityWindow, now.Add(dualValidityWindow).Format(time.RFC3339))
 
 	// 1. Rotate JWT signing key.

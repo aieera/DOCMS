@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to VaultDMS are listed here.
+All notable changes to SeDoc are listed here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [SemVer 2.0](https://semver.org/spec/v2.0.0.html).

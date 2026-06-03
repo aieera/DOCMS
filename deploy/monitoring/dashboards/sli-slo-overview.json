@@ -1,6 +1,6 @@
 {
   "__comment": "§15.2 / F3 — one-page dashboard rolling up all 20 blueprint SLIs. Each panel = one SLI, threshold colored against the SLO. PromQL assumes metrics from pkg/health + Kong prometheus plugin + per-service instrumentation. Missing metrics render as 'No data' — use that as a TODO signal, not a bug.",
-  "title": "VaultDMS — SLI / SLO Overview (§15.2)",
+  "title": "SeDoc — SLI / SLO Overview (§15.2)",
   "uid": "vaultdms-sli-slo",
   "version": 1,
   "schemaVersion": 39,

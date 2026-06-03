@@ -30,11 +30,11 @@ interface ProviderDef {
 }
 
 const CATALOG: ProviderDef[] = [
-  { id: 'salesforce',   label: 'Salesforce',    description: 'Sync attachments + ContentDocument between Salesforce and a VaultDMS workspace.' },
-  { id: 'google_drive', label: 'Google Drive',  description: 'Two-way sync between a Drive folder and a VaultDMS workspace.' },
-  { id: 'm365',         label: 'Microsoft 365', description: 'Pull files from SharePoint / OneDrive sites into VaultDMS.' },
-  { id: 'dropbox',      label: 'Dropbox',       description: 'Mirror a Dropbox team folder into a VaultDMS workspace.', comingSoon: true },
-  { id: 'box',          label: 'Box',           description: 'Sync Box folders with VaultDMS, mapping permissions per workspace.', comingSoon: true },
+  { id: 'salesforce',   label: 'Salesforce',    description: 'Sync attachments + ContentDocument between Salesforce and a SeDoc workspace.' },
+  { id: 'google_drive', label: 'Google Drive',  description: 'Two-way sync between a Drive folder and a SeDoc workspace.' },
+  { id: 'm365',         label: 'Microsoft 365', description: 'Pull files from SharePoint / OneDrive sites into SeDoc.' },
+  { id: 'dropbox',      label: 'Dropbox',       description: 'Mirror a Dropbox team folder into a SeDoc workspace.', comingSoon: true },
+  { id: 'box',          label: 'Box',           description: 'Sync Box folders with SeDoc, mapping permissions per workspace.', comingSoon: true },
 ]
 
 interface InstalledConnector {

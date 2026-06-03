@@ -125,7 +125,7 @@ test.describe('Journey 52 — QES signing', () => {
         body: JSON.stringify({
           certificates: [{
             id: 'cert-1', signer_id: SIGNER_ID, provider: 'mock',
-            subject_dn: 'CN=Test,O=VaultDMS', issuer_dn: 'CN=Mock Root',
+            subject_dn: 'CN=Test,O=SeDoc', issuer_dn: 'CN=Mock Root',
             serial_hex: 'aabbcc',
             not_before: new Date().toISOString(),
             not_after: new Date(Date.now() + 365 * 86400_000).toISOString(),

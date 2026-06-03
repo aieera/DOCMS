@@ -63,7 +63,7 @@ func newFixtureChain(t *testing.T, leafNotBefore, leafNotAfter time.Time) *fixtu
 	}
 	issuerTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "VaultDMS Test CA"},
+		Subject:               pkix.Name{CommonName: "SeDoc Test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,

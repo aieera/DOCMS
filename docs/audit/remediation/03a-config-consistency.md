@@ -150,7 +150,7 @@ Updated to use the new non-prefixed env vars and added the 5 new SEDOC_-prefixed
 
 ### `docker-compose.yml`
 
-**No changes needed.** VaultDMS Go services are not declared in compose (the file is infrastructure-only per the comment at line 2: "Services (Go binaries) run on the host during development"). Host processes pick up the new env vars from `.env` via the Makefile targets.
+**No changes needed.** SeDoc Go services are not declared in compose (the file is infrastructure-only per the comment at line 2: "Services (Go binaries) run on the host during development"). Host processes pick up the new env vars from `.env` via the Makefile targets.
 
 ### Helm values (`deploy/helm/vaultdms/values.yaml`)
 

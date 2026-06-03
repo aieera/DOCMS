@@ -209,7 +209,7 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
 function PushSection() {
   return (
     <Section icon={<Bell className="h-5 w-5" />} title="Push notifications"
-      hint="Approve sign-in from the VaultDMS mobile app. The mobile app ships in Phase 11.3.">
+      hint="Approve sign-in from the SeDoc mobile app. The mobile app ships in Phase 11.3.">
       <p className="text-sm text-muted-foreground">
         Once the mobile app is installed and you've signed in there, the device
         will register itself automatically and appear here.

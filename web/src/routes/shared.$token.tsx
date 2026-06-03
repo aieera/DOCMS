@@ -234,7 +234,7 @@ function SharedViewerPage() {
             {downloadHref ? ' Download the file to view it locally.' : ''}
           </p>
         </div>
-        <p className="mt-4 text-center text-xs text-muted-foreground">Shared via VaultDMS</p>
+        <p className="mt-4 text-center text-xs text-muted-foreground">Shared via SeDoc</p>
       </div>
     </div>
   )

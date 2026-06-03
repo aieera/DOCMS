@@ -10,8 +10,8 @@ exchange endpoint this ADR re-uses).
 
 ADR 0112 shipped the Outlook surface — the highest-traffic M365
 integration. Word is the second-highest: users open documents in
-Word for review or editing all day. A "VaultDMS" ribbon tab that
-lets them open a doc straight from VaultDMS — and save the
+Word for review or editing all day. A "SeDoc" ribbon tab that
+lets them open a doc straight from SeDoc — and save the
 edited bytes back as a new version — is the natural follow-up.
 
 The pattern is identical to the Outlook add-in: an Office Web
@@ -32,7 +32,7 @@ The DIFFERENCES from Outlook are:
 ## What ships now (Phase 1)
 
 - **`addins/word/`** — self-contained add-in tree:
-  - `manifest.xml` with a `<CustomTab>` named "VaultDMS" and two
+  - `manifest.xml` with a `<CustomTab>` named "SeDoc" and two
     `<Button>` controls. SSO via `<WebApplicationInfo>` reusing
     the Outlook add-in's Entra app (or a sibling app — operator
     choice; see deploy howto §3).
@@ -76,7 +76,7 @@ trust.
 `getFileAsync(Office.FileType.Compressed)` returns the full
 `.docx` archive as a sliced binary stream. We concat the slices
 (4 MB cap each) into a Uint8Array and PUT that to the storage
-service. The .docx that lands in VaultDMS is byte-identical to
+service. The .docx that lands in SeDoc is byte-identical to
 what a "File → Save As" in Word would produce.
 
 The slice path is more code, but it's the only path that produces
@@ -104,7 +104,7 @@ The alternatives we rejected:
 The Save panel REQUIRES the user to pick a target document. We
 don't offer a "save as a new document" path because:
 - The "new document" flow is already covered by the regular
-  upload UI in the VaultDMS frontend.
+  upload UI in the SeDoc frontend.
 - The add-in's most common use case is "I opened this doc → I
   saved edits to the same doc as a new version." That flow is
   one-click via the CustomProperties hint we stash on Open.
@@ -131,7 +131,7 @@ pick the target again. Acceptable for v1.
 
 The add-in's `<WebApplicationInfo>` asks only for `openid`,
 `profile`, `email`, `User.Read`. The bytes flow through Office.js
-+ VaultDMS's own APIs; we never talk to Graph from the Word
++ SeDoc's own APIs; we never talk to Graph from the Word
 add-in directly. The Outlook add-in took the same posture
 (ADR 0112 § decision 4) — fewer consent prompts for the user,
 fewer attack surfaces if a token leaks.
@@ -143,8 +143,8 @@ connector (ADR 0111), not the add-in's token.
 ### 6. Sharing the SSO endpoint with the Outlook add-in
 
 `/api/v1/auth/m365/exchange` (ADR 0112) accepts an Entra token
-and returns a VaultDMS session — no add-in identifier in the
-request. We reuse it as-is. Both add-ins look up VaultDMS users
+and returns a SeDoc session — no add-in identifier in the
+request. We reuse it as-is. Both add-ins look up SeDoc users
 by email, both surface 409 + a tenant-candidate list when the
 email exists in multiple tenants. One endpoint, two add-ins.
 
@@ -155,7 +155,7 @@ in Word for Web." Here's what actually exists and what we ship:
 
 - **Word for Web** opens .docx files at supported URLs in the
   SharePoint-style co-authoring engine, hosted by Microsoft.
-  When VaultDMS serves the presigned URL with the right
+  When SeDoc serves the presigned URL with the right
   Content-Type, Word for Web opens it AND can do live co-edit
   with other users opening the same URL within the URL's
   validity window. Microsoft owns the conflict resolution.
@@ -166,14 +166,14 @@ in Word for Web." Here's what actually exists and what we ship:
   resolves them via the doc detail page's compare flow
   (ADR 0101).
 - **The existing `services/collaboration/` Yjs CRDT path**
-  (ADR 0096) runs against the VaultDMS native viewer +
+  (ADR 0096) runs against the SeDoc native viewer +
   OnlyOffice. It does NOT participate in the Word for Web
   co-auth — that channel is opaque to us, and Microsoft doesn't
   expose a way to intercept it.
 
 **The honest framing**: "Live co-authoring on the web; version-
 based collaboration on the desktop." Both paths land in the
-same VaultDMS document; the merge model differs by host.
+same SeDoc document; the merge model differs by host.
 
 A future Phase-2 ADR (0113.2 or 0114) wires Yjs into Word
 desktop via a WOPI host or a custom protocol handler. That work
@@ -221,8 +221,8 @@ npm run build       # dist/ ready for deploy
 
 # Manual end-to-end (see sideload howto):
 # 1. Sideload the add-in.
-# 2. Click "Open from VaultDMS" → search → pick a doc.
-# 3. Edit, then click "Save back to VaultDMS".
+# 2. Click "Open from SeDoc" → search → pick a doc.
+# 3. Edit, then click "Save back to SeDoc".
 # 4. Verify a fresh row in `versions` with
 #    change_summary LIKE 'Saved from Microsoft Word add-in%'.
 # 5. Verify `dms.version.uploaded.v1` lands in the outbox.
@@ -235,7 +235,7 @@ npm run build       # dist/ ready for deploy
   (`addins/_common/`) would dedup ~200 LOC, but Office.js typings
   diverge per host and the build glue cost is real. Revisit when
   Excel lands as a third add-in.
-- **A unified Office Add-ins catalog page on the VaultDMS frontend**
+- **A unified Office Add-ins catalog page on the SeDoc frontend**
   that lists all add-ins with one-click sideload instructions.
   Today the howtos live in `docs/howto/`; a self-service page
   inside the product would lower the admin friction.

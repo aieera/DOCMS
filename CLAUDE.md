@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository
 
-VaultDMS — multi-tenant enterprise Document Management System.
+SeDoc — multi-tenant enterprise Document Management System.
 
 - **13 Go microservices** in `services/*` (audit, auth, billing, connector, document, graphql-gateway, mcp-server, notification, policy, search, signature, storage, workflow) — these are exactly the modules listed in `go.work`.
 - **2 Python workers**: `services/intelligence` (OCR/AI) and `services/preview` (rendering).

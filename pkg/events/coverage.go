@@ -66,7 +66,7 @@ func CheckCoverage(subjects []string, streams []StreamSpec) []string {
 	return missing
 }
 
-// PublishedSubjects is the canonical list of subjects the VaultDMS
+// PublishedSubjects is the canonical list of subjects the SeDoc
 // codebase publishes or subscribes to. Every new subject introduced
 // anywhere in the codebase MUST be added here AND covered by a stream
 // in DefaultStreams — the build gate in coverage_test.go enforces both

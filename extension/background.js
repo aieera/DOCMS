@@ -1,4 +1,4 @@
-// VaultDMS extension — background service worker.
+// SeDoc extension — background service worker.
 // ADR 0097 §17.7. Phase 1: OAuth state machine + message bus.
 //
 // Responsibilities:
@@ -246,7 +246,7 @@ async function uploadFile({ name, mimeType, sizeBytes, sha256, bytesBase64 }) {
   await chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon-128.png',
-    title: 'Uploaded to VaultDMS',
+    title: 'Uploaded to SeDoc',
     message: name,
   })
   return { ok: true, documentId: doc.body.id }

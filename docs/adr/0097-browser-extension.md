@@ -7,7 +7,7 @@ ADR 0095 (license enforcement), ADR 0096 (Yjs collab).
 
 ## Context
 
-Power users want VaultDMS reachable from anywhere they're already working: a
+Power users want SeDoc reachable from anywhere they're already working: a
 quick search from any web page, drag-drop upload of files attached to emails,
 "clip this page as a PDF into my workspace." The blueprint §17.7 calls for a
 WebExtensions-API extension shipped to Chrome Web Store, Firefox Add-ons,

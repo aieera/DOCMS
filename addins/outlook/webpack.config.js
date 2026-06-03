@@ -2,7 +2,7 @@
 //
 // Produces three HTML entries under dist/:
 //   * taskpane.html     — the React app shown when the user clicks
-//                          "Save to VaultDMS" in the ribbon.
+//                          "Save to SeDoc" in the ribbon.
 //   * commands.html     — Office's function-file shim. Required by
 //                          the manifest's FunctionFile reference even
 //                          when no UI-less commands are registered.

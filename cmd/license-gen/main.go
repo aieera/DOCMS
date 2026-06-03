@@ -1,4 +1,4 @@
-// license-gen — VaultDMS license JWT signer (ADR 0095).
+// license-gen — SeDoc license JWT signer (ADR 0095).
 //
 // Usage:
 //   license-gen \

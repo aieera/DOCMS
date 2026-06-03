@@ -22,7 +22,7 @@ function NotFoundPage() {
       <p className="text-sm font-mono uppercase tracking-wider text-muted-foreground">404</p>
       <h1 className="text-2xl font-semibold tracking-tight">Page not found</h1>
       <p className="max-w-md text-sm text-muted-foreground">
-        The URL you opened doesn&apos;t match a route in VaultDMS. It may have been moved
+        The URL you opened doesn&apos;t match a route in SeDoc. It may have been moved
         or the link could be stale.
       </p>
       <Link

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "VaultDMS",
+  "name": "SeDoc",
   "version": "0.1.0",
-  "description": "Quick search, drag-drop upload, and web clipping to your VaultDMS workspace.",
+  "description": "Quick search, drag-drop upload, and web clipping to your SeDoc workspace.",
   "icons": {
     "16":  "icons/icon-16.png",
     "48":  "icons/icon-48.png",
@@ -10,7 +10,7 @@
   },
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "VaultDMS",
+    "default_title": "SeDoc",
     "default_icon": {
       "16":  "icons/icon-16.png",
       "48":  "icons/icon-48.png",

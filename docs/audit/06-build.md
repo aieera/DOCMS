@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase E: Build Verification
+# SeDoc Audit — Phase E: Build Verification
 
 **Date:** 2026-04-16
 

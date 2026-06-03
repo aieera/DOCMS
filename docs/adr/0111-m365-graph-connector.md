@@ -160,10 +160,10 @@ cd web && npx tsc --noEmit                # clean
 
 - **Microsoft Information Protection (MIP) sensitivity labels**.
   Graph exposes them via `/me/security/labels`; surfacing them in
-  VaultDMS's metadata is its own ADR.
+  SeDoc's metadata is its own ADR.
 - **Per-drive permission preservation**. Today, copying a file
-  into VaultDMS doesn't replicate SharePoint's share permissions.
-  That's intentional for v1 — VaultDMS has its own permission model
+  into SeDoc doesn't replicate SharePoint's share permissions.
+  That's intentional for v1 — SeDoc has its own permission model
   — but a future "preserve source ACLs" toggle has a real customer
   ask behind it.
 - **Webhook subscriptions**. Graph supports change notifications

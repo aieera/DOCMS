@@ -1,7 +1,7 @@
 galaxy_info:
-  author: VaultDMS
+  author: SeDoc
   description: |
-    Templated installer for any VaultDMS Go service. Downloads the
+    Templated installer for any SeDoc Go service. Downloads the
     versioned binary, writes a systemd unit, and starts it. Pass
     vaultdms_service_name as a role var to pick which service.
   license: proprietary

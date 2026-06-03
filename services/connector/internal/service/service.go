@@ -134,7 +134,7 @@ func (s *Service) SendTestEvent(ctx context.Context, tenantID, subID string) (*m
 		"time":          time.Now().UTC().Format(time.RFC3339Nano),
 		"tenantid":      tenantID,
 		"correlationid": newID(),
-		"data":          map[string]any{"message": "VaultDMS test delivery", "subscription_id": subID},
+		"data":          map[string]any{"message": "SeDoc test delivery", "subscription_id": subID},
 	}
 	payload, _ := json.Marshal(envelope)
 	d := &model.WebhookDelivery{

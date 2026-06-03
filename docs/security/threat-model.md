@@ -1,4 +1,4 @@
-# VaultDMS Threat Model
+# SeDoc Threat Model
 
 **Method:** STRIDE per trust boundary.
 **Scope:** production SaaS deployment. On-prem variant has a smaller

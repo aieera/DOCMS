@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS notification service.
+// Package main boots the SeDoc notification service.
 package main
 
 import (

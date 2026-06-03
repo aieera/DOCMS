@@ -1,6 +1,6 @@
 // Package handler exposes the auth service's HTTP surface (JSON over
 // chi router). A session-validation middleware is also exported for every
-// other VaultDMS service to import.
+// other SeDoc service to import.
 package handler
 
 import (

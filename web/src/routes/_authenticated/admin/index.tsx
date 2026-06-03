@@ -55,7 +55,7 @@ const TENANT_GROUP: SectionGroup = {
 // matching tab on the canonical page.
 const INTEGRATIONS_GROUP: SectionGroup = {
   label: 'Integrations',
-  description: 'Connect VaultDMS to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
+  description: 'Connect SeDoc to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
   sections: [
     { to: '/admin/integrations', icon: Plug, label: 'Integrations', desc: 'eSignature · Connectors · Webhooks · Email · Event streaming · MCP' },
   ],

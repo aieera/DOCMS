@@ -57,7 +57,7 @@ async def _run_consumer(consumer: PreviewConsumer) -> None:
 
 
 app = FastAPI(
-    title="VaultDMS Preview Service",
+    title="SeDoc Preview Service",
     version=settings.service_version,
     lifespan=lifespan,
 )

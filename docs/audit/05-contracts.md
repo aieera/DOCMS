@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase D: Contract Verification
+# SeDoc Audit — Phase D: Contract Verification
 
 **Date:** 2026-04-16
 

@@ -52,7 +52,7 @@ jobs:
           <html lang="en">
           <head>
             <meta charset="utf-8"/>
-            <title>VaultDMS API v1.0</title>
+            <title>SeDoc API v1.0</title>
             <meta name="viewport" content="width=device-width, initial-scale=1"/>
             <link rel="icon" href="data:,"/>
             <style>

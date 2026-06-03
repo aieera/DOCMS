@@ -28,7 +28,7 @@ export function AuthShell({ children, title, description, footer }: AuthShellPro
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background">
                 <Database className="h-4 w-4" />
               </span>
-              <span className="text-sm font-semibold tracking-tight">VaultDMS</span>
+              <span className="text-sm font-semibold tracking-tight">SeDoc</span>
             </Link>
           </header>
           <main className="flex flex-1 items-center justify-center px-6 pb-12 pt-2 lg:px-12 lg:py-12">
@@ -78,7 +78,7 @@ function BrandPane() {
           <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground text-background">
             <Database className="h-5 w-5" />
           </span>
-          <span className="text-base font-semibold tracking-tight">VaultDMS</span>
+          <span className="text-base font-semibold tracking-tight">SeDoc</span>
         </Link>
       </div>
 
@@ -102,7 +102,7 @@ function BrandPane() {
       </div>
 
       <p className="relative text-xs text-muted-foreground">
-        © {new Date().getFullYear()} VaultDMS · {' '}
+        © {new Date().getFullYear()} SeDoc · {' '}
         <a href="#" className="hover:text-foreground">Status</a> · {' '}
         <a href="#" className="hover:text-foreground">Privacy</a> · {' '}
         <a href="#" className="hover:text-foreground">Docs</a>

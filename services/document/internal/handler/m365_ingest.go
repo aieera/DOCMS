@@ -1,7 +1,7 @@
 // Outlook add-in ingest endpoint (ADR 0112).
 //
 //   POST /api/v1/integrations/m365/ingest-email
-//     Auth: VaultDMS session (set up by the upstream auth gateway).
+//     Auth: SeDoc session (set up by the upstream auth gateway).
 //     Body: { subject, from, to[], sent_at, body_html, body_text,
 //             attachments[{name, content_b64, mime_type}],
 //             workspace_id, folder_id, tags?, message_id? }

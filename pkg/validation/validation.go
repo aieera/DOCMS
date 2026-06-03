@@ -1,5 +1,5 @@
 // Package validation provides request struct validation, sanitization, and
-// JSON safety checks. Wraps go-playground/validator with VaultDMS-specific
+// JSON safety checks. Wraps go-playground/validator with SeDoc-specific
 // rules (UUID format, max string length, null byte rejection, JSON depth).
 package validation
 

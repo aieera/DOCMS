@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-VaultDMS already ships PDF-only annotations:
+SeDoc already ships PDF-only annotations:
 
 - Schema: [services/document/migrations/000001_initial_schema.up.sql:465](../../services/document/migrations/000001_initial_schema.up.sql#L465)
   with CHECK `annotation_type IN ('highlight','note','stamp','drawing')`.

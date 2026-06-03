@@ -31,7 +31,7 @@ func TestNewWebAuthnLib_NilConfigReturnsNil(t *testing.T) {
 func TestNewWebAuthnLib_ValidConfig(t *testing.T) {
 	cfg := &WebAuthnConfig{
 		RPID:          "localhost",
-		RPDisplayName: "VaultDMS Test",
+		RPDisplayName: "SeDoc Test",
 		RPOrigins:     []string{"http://localhost:3000"},
 	}
 	wa, err := NewWebAuthnLib(cfg)

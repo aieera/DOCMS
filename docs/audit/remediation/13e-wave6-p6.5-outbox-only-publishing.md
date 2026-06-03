@@ -77,7 +77,7 @@ set: any future PR that introduces a direct NATS publish trips the
 build. Combined with the `TestDefaultStreamsCoverEveryKnownSubject`
 test from Wave 5 Prompt 5.2, the contract is:
 
-> "Every domain event emitted by a VaultDMS service lands in an
+> "Every domain event emitted by a SeDoc service lands in an
 > outbox row in the same SQL transaction as the state change it
 > describes, is drained exactly once by the outbox publisher, and
 > lands on a JetStream subject declared in the canonical topology."

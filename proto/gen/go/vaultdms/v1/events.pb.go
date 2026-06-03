@@ -1,4 +1,4 @@
-// Event schemas for the VaultDMS domain event bus (NATS JetStream).
+// Event schemas for the SeDoc domain event bus (NATS JetStream).
 //
 // Each top-level message is the payload of a single NATS subject. Subjects
 // are versioned via a .vN suffix; a breaking payload change bumps the suffix

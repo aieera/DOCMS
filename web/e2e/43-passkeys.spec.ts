@@ -81,7 +81,7 @@ test.describe('Journey 43 — Passkeys', () => {
           options: {
             publicKey: {
               challenge: 'AAAA',  // 3 zero bytes; just needs to be base64url
-              rp: { id: 'localhost', name: 'VaultDMS' },
+              rp: { id: 'localhost', name: 'SeDoc' },
               user: { id: 'AAAA', name: 'alice@example.com', displayName: 'Alice' },
               pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
               timeout: 60000,

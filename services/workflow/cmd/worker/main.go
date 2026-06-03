@@ -1,4 +1,4 @@
-// Package main boots a standalone Temporal worker for the VaultDMS
+// Package main boots a standalone Temporal worker for the SeDoc
 // workflow service.
 //
 // Wave 7 Prompt 7.1: the existing `cmd/server` binary embeds a worker

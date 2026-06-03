@@ -107,7 +107,7 @@ func loadKongRoutePaths(t *testing.T, path string) []string {
 }
 
 // findRepoRoot walks up from the test binary's directory until it
-// finds go.work, which anchors the VaultDMS monorepo.
+// finds go.work, which anchors the SeDoc monorepo.
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

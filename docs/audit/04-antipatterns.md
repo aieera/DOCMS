@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase C: Anti-Pattern Sweep
+# SeDoc Audit — Phase C: Anti-Pattern Sweep
 
 **Date:** 2026-04-16
 

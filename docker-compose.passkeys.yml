@@ -14,7 +14,7 @@ services:
   auth:
     environment:
       SEDOC_WEBAUTHN_RPID:         "localhost"
-      SEDOC_WEBAUTHN_DISPLAY_NAME: "VaultDMS (dev)"
+      SEDOC_WEBAUTHN_DISPLAY_NAME: "SeDoc (dev)"
       SEDOC_WEBAUTHN_ORIGINS:      "http://localhost:3000,http://localhost:8080"
       # HMAC secret for the begin/finish session token. Falls back to
       # the gateway secret if unset; the override sets it anyway so a

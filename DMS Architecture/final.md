@@ -8,7 +8,7 @@ Guardrail: NO new features — only finish, wire, harden, document, and test wha
 CONFIDENTIAL · ENGINEERING EXECUTION SPEC
  
 0. How to Use This Document
-This document is an executable completion plan — not a feature roadmap. It contains everything an AI coding agent and a human engineering team need to take VaultDMS from its current ~60% functional state to enterprise production-ready, without adding a single new feature.
+This document is an executable completion plan — not a feature roadmap. It contains everything an AI coding agent and a human engineering team need to take SeDoc from its current ~60% functional state to enterprise production-ready, without adding a single new feature.
 0.1 Operating model
 •	Waves 5 through 14 are ordered by dependency. Wave 5 (Event Pipeline) unblocks 70% of the downstream system and MUST complete before any other wave starts integration testing.
 •	Every wave contains: Objective, Preconditions, Prompts, Definition of Done (DoD), Acceptance Tests, and Rollback Plan.
@@ -34,7 +34,7 @@ TESTS:       <how a reviewer can verify locally and in CI>
  
 1. Mission, Guardrails, and Definition of Done
 1.1 Mission
-Take VaultDMS from 'skeleton-strong, muscle-thin' to a pilot-ready, then production-ready, enterprise Document Management System — by completing the unfinished 40% of the 30-prompt plan, not by extending the 30-prompt plan.
+Take SeDoc from 'skeleton-strong, muscle-thin' to a pilot-ready, then production-ready, enterprise Document Management System — by completing the unfinished 40% of the 30-prompt plan, not by extending the 30-prompt plan.
 1.2 Three milestone gates
 Gate	Name	Scope	Exit criteria (abbreviated)
 G1	Pilot-Ready	3–5 customers, single region, no custom workflows, no eSign	Event pipeline end-to-end, OCR + search live, security fixes landed, audit export works
@@ -1020,7 +1020,7 @@ Research (libraries, CVEs, standards)	Web search + web fetch. ADR always records
 Front-end design review	Use the frontend-design skill for every new admin page.
 16.1 Standing prompt preamble
 Every time the agent resumes work on this project, it prepends this preamble to its session:
-You are resuming work on VaultDMS. Read first:
+You are resuming work on SeDoc. Read first:
   1. docs/STATE_OF_THE_PROJECT.md
   2. docs/ENTERPRISE_COMPLETION_PROMPT.md (this document)
   3. docs/backlog/out-of-scope.md
@@ -1071,6 +1071,6 @@ You are not here to be creative. You are here to finish.
 Every wave in this document exists because someone can already see the shape of it in the code. Your job is to complete the shape — not to redesign it.
 When in doubt, prefer the boring, auditable, observable choice. Prefer the change that is easiest to roll back. Prefer the change that produces the clearest Grafana panel. Prefer the change that a senior engineer on vacation can read in three minutes.
 At the end of every wave, ship a short memo to stakeholders: what shipped, what metrics moved, what surprised you, what is next. Treat shipping a memo as part of the wave's DoD.
-When Waves 5 through 14 are green, VaultDMS is no longer a promising skeleton. It is a production enterprise DMS.
+When Waves 5 through 14 are green, SeDoc is no longer a promising skeleton. It is a production enterprise DMS.
 Do the work in that order. Ship each wave. Do not add features.
 — END OF DOCUMENT —

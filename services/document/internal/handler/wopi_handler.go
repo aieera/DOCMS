@@ -2,7 +2,7 @@
 //
 // The protocol Office Online + Collabora + OnlyOffice all speak.
 // Lets one backend serve all three editors without duplicating
-// glue. Today VaultDMS picks one editor per tenant (see
+// glue. Today SeDoc picks one editor per tenant (see
 // tenant_settings.coauth_provider); the WOPI surface stays the
 // same regardless.
 //

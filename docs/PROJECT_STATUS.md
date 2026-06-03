@@ -1,4 +1,4 @@
-# VaultDMS — Project Status
+# SeDoc — Project Status
 
 *Generated 2026-05-18 from a codebase scan. Reflects state of `feat/upload-scan-toggle-progress` branch with uncommitted in-flight work.*
 
@@ -6,7 +6,7 @@
 
 # 1. Project Overview
 
-VaultDMS is a multi-tenant enterprise Document Management System with strong compliance, eSignature, AI, and SaaS-integration surfaces. The platform is a polyglot microservices architecture (12 Go services, 1 Python ML worker, 1 Node co-authoring server, 1 Kotlin/JVM signing sidecar) sitting behind a React+TanStack-Router frontend and a Kong gateway. Documents flow through upload → virus scan → encrypted blob storage (per-tenant KEK envelope) → OCR/NER/classification (Python intelligence pipeline) → indexed in OpenSearch + Qdrant for hybrid search → optionally e-signed via QES/DocuSign/Adobe Sign. Tenant isolation is enforced at the Postgres layer via RLS + `NOBYPASSRLS` app role.
+SeDoc is a multi-tenant enterprise Document Management System with strong compliance, eSignature, AI, and SaaS-integration surfaces. The platform is a polyglot microservices architecture (12 Go services, 1 Python ML worker, 1 Node co-authoring server, 1 Kotlin/JVM signing sidecar) sitting behind a React+TanStack-Router frontend and a Kong gateway. Documents flow through upload → virus scan → encrypted blob storage (per-tenant KEK envelope) → OCR/NER/classification (Python intelligence pipeline) → indexed in OpenSearch + Qdrant for hybrid search → optionally e-signed via QES/DocuSign/Adobe Sign. Tenant isolation is enforced at the Postgres layer via RLS + `NOBYPASSRLS` app role.
 
 **Overall completion (honest estimate): ~75%.** The core platform (auth, documents, storage, search, signature, audit) is feature-complete and tested. The recent surface (per-tenant integration credentials, iPaaS API, native connectors for Google + 6 placeholder vendors, Drive/Gmail import) is partial. Production gaps are concentrated in: zero test coverage on 4 services, per-tenant KEK not yet wired, several "stub" mocks left in production code paths, and 6 of the 7 §12.4 native connectors not built.
 
@@ -724,7 +724,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 # 17. Open Questions
 
 1. **Prod deploy of in-flight features.** Should the four new things on `feat/upload-scan-toggle-progress` ship as a single v0.6, or split into four releases? My recommendation: split.
-2. **Google connector scope.** Drive vs Gmail vs both — and is the goal *import existing files into VaultDMS as documents*, or *two-way sync*? The current code only reads scopes; no write back to Drive is planned.
+2. **Google connector scope.** Drive vs Gmail vs both — and is the goal *import existing files into SeDoc as documents*, or *two-way sync*? The current code only reads scopes; no write back to Drive is planned.
 3. **Connector roadmap priority.** Of the 7 remaining §12.4 connectors, which one matters first? Customer signal vs internal pet-feature isn't clear from the codebase.
 4. **WebAuthn finishing.** Is this a "ship in v0.6" feature or a "future quarter" item? Env vars exist but the service is 501.
 5. **MCP server scope.** Is the stub a placeholder for real LLM-agent integration (Claude Desktop, Cursor)? If so, what's the use case?

@@ -1,11 +1,11 @@
 apiVersion: v2
 name: vaultdms
-description: VaultDMS — Enterprise Document Management System
+description: SeDoc — Enterprise Document Management System
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
 maintainers:
-  - name: VaultDMS Team
+  - name: SeDoc Team
     email: sulthansha@raabyt.com
 
 dependencies:

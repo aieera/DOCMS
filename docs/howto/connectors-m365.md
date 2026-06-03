@@ -1,6 +1,6 @@
 # Microsoft 365 connector setup (ADR 0111)
 
-Audience: tenant admin installing the M365 connector on VaultDMS.
+Audience: tenant admin installing the M365 connector on SeDoc.
 Pre-reqs: an Azure tenant with permission to register apps in
 Microsoft Entra ID (formerly Azure AD). Global Administrator OR
 Application Administrator role on the directory.
@@ -33,7 +33,7 @@ Azure Portal → Microsoft Entra ID → App registrations → New registration
 
 | Field                           | Value                                                                          |
 |---------------------------------|--------------------------------------------------------------------------------|
-| Name                            | `VaultDMS Connector` (any human-readable name)                                 |
+| Name                            | `SeDoc Connector` (any human-readable name)                                 |
 | Supported account types         | Multi-tenant: "Accounts in any organizational directory" — Single-tenant: "Accounts in this organizational directory only" |
 | Redirect URI                    | Skip on this screen; we add it in step 3 once we know the platform deployment URL |
 
@@ -51,7 +51,7 @@ this is the GUID you'll paste into the optional Directory ID field.
 App registration → Authentication → Add a platform → Web
 ```
 
-Paste the redirect URI from the VaultDMS modal's "Authorized
+Paste the redirect URI from the SeDoc modal's "Authorized
 redirect URI" copy-field. Format:
 
 ```
@@ -95,7 +95,7 @@ user consent prompt on first authorize, which most tenant policies
 forbid for production apps.
 
 If your tenant DOES want calendar integration, add the optional
-`Calendars.ReadWrite` separately — the VaultDMS connector treats it
+`Calendars.ReadWrite` separately — the SeDoc connector treats it
 as an opt-in surface.
 
 ---
@@ -108,7 +108,7 @@ App registration → Certificates & secrets → New client secret
 
 | Field        | Value                                                      |
 |--------------|------------------------------------------------------------|
-| Description  | `VaultDMS connector secret`                                |
+| Description  | `SeDoc connector secret`                                |
 | Expires      | 24 months (or your org's max secret lifetime)              |
 
 After clicking **Add**, copy the secret's **Value** column (not the
@@ -116,15 +116,15 @@ Secret ID column — the Secret ID is useless on its own). Entra
 shows the value only once at creation. If you lose it, you'll have
 to create a new secret.
 
-Set a calendar reminder one month before the expiry date — VaultDMS
+Set a calendar reminder one month before the expiry date — SeDoc
 will start logging refresh failures the day the secret expires.
 
 ---
 
-## 6. Connect in VaultDMS
+## 6. Connect in SeDoc
 
 ```
-VaultDMS → Admin → Connectors → Microsoft 365 → Install
+SeDoc → Admin → Connectors → Microsoft 365 → Install
 ```
 
 Paste:
@@ -145,13 +145,13 @@ After the redirect lands you should see:
 
 - The M365 tile shows a green "Installed" badge.
 - `GET /api/v1/connectors/m365/sites` returns a non-empty list of
-  SharePoint sites (your VaultDMS team can curl this from a dev
+  SharePoint sites (your SeDoc team can curl this from a dev
   shell to verify).
 
 If the connect button bounces you back without a redirect to
 Microsoft, the most common causes are:
 
-1. **The redirect URI in Entra doesn't match VaultDMS's.** Double-
+1. **The redirect URI in Entra doesn't match SeDoc's.** Double-
    check the protocol (http vs https) and the trailing slash. The
    modal's copy-field is canonical.
 2. **Admin consent was skipped.** Without admin consent, the
@@ -167,13 +167,13 @@ Microsoft, the most common causes are:
 ## 8. Disconnecting
 
 ```
-VaultDMS → Admin → Connectors → Microsoft 365 → Disconnect
+SeDoc → Admin → Connectors → Microsoft 365 → Disconnect
 ```
 
 Disconnect clears the tenant's OAuth tokens. The Entra app
 registration + saved client credentials stay so the admin can
 re-authorize without re-pasting client_id / secret. To remove the
-credentials too, contact VaultDMS support (no admin UI for this
+credentials too, contact SeDoc support (no admin UI for this
 yet — the workflow is rare enough that we'd rather make it manual).
 
 ---
@@ -189,5 +189,5 @@ yet — the workflow is rare enough that we'd rather make it manual).
   Graph surfaces are wired. ADRs land as customers ask.
 - **Conditional Access compliance** — the connector respects CA
   policies (it's just Graph; CA enforces at the token-grant step),
-  but VaultDMS has no UI for surfacing why a connection failed
+  but SeDoc has no UI for surfacing why a connection failed
   because of CA. Surfacing this is Phase 2.

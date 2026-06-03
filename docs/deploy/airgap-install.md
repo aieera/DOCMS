@@ -1,8 +1,8 @@
 # Air-gapped installation
 
-For environments where the VaultDMS cluster has **no outbound
+For environments where the SeDoc cluster has **no outbound
 internet access**. The bundle produced by
-`scripts/airgap/build-bundle.sh` contains every image VaultDMS
+`scripts/airgap/build-bundle.sh` contains every image SeDoc
 needs; nothing is pulled at install time.
 
 ## What you need
@@ -14,7 +14,7 @@ needs; nothing is pulled at install time.
 - `helm` 3.12+ and `kubectl` configured against the target cluster.
 - A workstation that can `docker load` and `docker push` to the
   private registry. This workstation does not need to reach the
-  VaultDMS cluster directly, but it must reach the registry.
+  SeDoc cluster directly, but it must reach the registry.
 - Storage: at least 200 GiB for Postgres WAL + snapshots, plus
   whatever the object-store needs for documents (rule of thumb:
   2× total document volume).

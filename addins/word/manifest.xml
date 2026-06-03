@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  VaultDMS — Word add-in manifest (ADR 0113).
+  SeDoc — Word add-in manifest (ADR 0113).
 
   Manifest format: legacy XML, xsi:type="TaskPaneApp" (the same
   schema we use for the Outlook add-in). Word Online / desktop /
@@ -22,8 +22,8 @@
                                   to rotate secrets independently.
 
   Two ribbon actions per the prompt:
-    * "Open from VaultDMS" — opens the task pane.
-    * "Save back to VaultDMS" — also opens the task pane.
+    * "Open from SeDoc" — opens the task pane.
+    * "Save back to SeDoc" — also opens the task pane.
   Both reuse the same task pane URL (different ?action= query
   string) so the UI can branch on intent without us shipping two
   separate bundles. A future Phase-2 split into a UI-less
@@ -40,10 +40,10 @@
   <!-- Per-environment GUID — see file header. -->
   <Id>00000000-0000-0000-0000-000000000113</Id>
   <Version>0.1.0.0</Version>
-  <ProviderName>VaultDMS</ProviderName>
+  <ProviderName>SeDoc</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="VaultDMS for Word" />
-  <Description DefaultValue="Open VaultDMS documents in Word and save changes back as new versions." />
+  <DisplayName DefaultValue="SeDoc for Word" />
+  <Description DefaultValue="Open SeDoc documents in Word and save changes back as new versions." />
   <IconUrl              DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-64.png" />
   <HighResolutionIconUrl DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-128.png" />
   <SupportUrl           DefaultValue="https://docs.vaultdms.example.com/word-addin" />
@@ -108,7 +108,7 @@
                     <bt:Image size="80" resid="icon80" />
                   </Icon>
 
-                  <Control xsi:type="Button" id="openFromVaultDMSButton">
+                  <Control xsi:type="Button" id="openFromSeDocButton">
                     <Label resid="openBtnLabel" />
                     <Supertip>
                       <Title resid="openBtnLabel" />
@@ -124,7 +124,7 @@
                     </Action>
                   </Control>
 
-                  <Control xsi:type="Button" id="saveToVaultDMSButton">
+                  <Control xsi:type="Button" id="saveToSeDocButton">
                     <Label resid="saveBtnLabel" />
                     <Supertip>
                       <Title resid="saveBtnLabel" />
@@ -159,14 +159,14 @@
           <bt:Url id="taskpaneSaveURL"   DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html?action=save" />
         </bt:Urls>
         <bt:ShortStrings>
-          <bt:String id="customTabLabel" DefaultValue="VaultDMS" />
-          <bt:String id="groupLabel"     DefaultValue="VaultDMS" />
-          <bt:String id="openBtnLabel"   DefaultValue="Open from VaultDMS" />
-          <bt:String id="saveBtnLabel"   DefaultValue="Save back to VaultDMS" />
+          <bt:String id="customTabLabel" DefaultValue="SeDoc" />
+          <bt:String id="groupLabel"     DefaultValue="SeDoc" />
+          <bt:String id="openBtnLabel"   DefaultValue="Open from SeDoc" />
+          <bt:String id="saveBtnLabel"   DefaultValue="Save back to SeDoc" />
         </bt:ShortStrings>
         <bt:LongStrings>
-          <bt:String id="openBtnDesc" DefaultValue="Search and open a document from VaultDMS into Word." />
-          <bt:String id="saveBtnDesc" DefaultValue="Save the current document back to VaultDMS as a new version." />
+          <bt:String id="openBtnDesc" DefaultValue="Search and open a document from SeDoc into Word." />
+          <bt:String id="saveBtnDesc" DefaultValue="Save the current document back to SeDoc as a new version." />
         </bt:LongStrings>
       </Resources>
     </VersionOverrides>

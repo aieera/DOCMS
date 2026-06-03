@@ -1,10 +1,10 @@
-// Microsoft 365 → VaultDMS session exchange (ADR 0112).
+// Microsoft 365 → SeDoc session exchange (ADR 0112).
 //
 // The Outlook add-in obtains an Entra ID token via
 // OfficeRuntime.auth.getAccessToken and posts it here. We:
 //   1. Call Graph /me with the bearer to verify the token + read
 //      the authenticated user's primary email.
-//   2. Look up VaultDMS users by that email. If exactly one match,
+//   2. Look up SeDoc users by that email. If exactly one match,
 //      issue a session and return its plaintext token. If >1, surface
 //      a 409 with the candidate list so the add-in can prompt.
 //   3. If zero matches, 404. We DO NOT auto-provision — that would
@@ -45,12 +45,12 @@ type M365ExchangeResult struct {
 	Email        string
 }
 
-// ErrM365NoVDMSUser is returned when no VaultDMS user matches the
+// ErrM365NoVDMSUser is returned when no SeDoc user matches the
 // Entra user's email. Handler translates to 404.
-var ErrM365NoVDMSUser = errors.New("m365: no VaultDMS user with this email")
+var ErrM365NoVDMSUser = errors.New("m365: no SeDoc user with this email")
 
 // ErrM365MultipleTenants is returned when the email exists in more
-// than one VaultDMS tenant. Handler translates to 409 + a list.
+// than one SeDoc tenant. Handler translates to 409 + a list.
 type ErrM365MultipleTenants struct {
 	Candidates []M365TenantCandidate
 }
@@ -65,7 +65,7 @@ type M365TenantCandidate struct {
 }
 
 func (e *ErrM365MultipleTenants) Error() string {
-	return fmt.Sprintf("m365: email belongs to %d VaultDMS tenants", len(e.Candidates))
+	return fmt.Sprintf("m365: email belongs to %d SeDoc tenants", len(e.Candidates))
 }
 
 // ExchangeM365Token runs the three-step exchange flow.
@@ -199,7 +199,7 @@ func (s *Service) findUsersByEmailAcrossTenants(ctx context.Context, email, pref
 // JWT (see m365_jwt.go). Microsoft Graph /me's `mail` attribute is
 // not domain-verified cross-tenant, so trusting it allowed account
 // takeover. The verified `email` / `preferred_username` JWT claim
-// now drives the email-based VaultDMS user lookup, and a future
+// now drives the email-based SeDoc user lookup, and a future
 // migration will replace email mapping with a (tid, oid) link
 // table per the recommendation in the audit report.
 

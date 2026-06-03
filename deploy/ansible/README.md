@@ -1,6 +1,6 @@
-# VaultDMS — Ansible bundle
+# SeDoc — Ansible bundle
 
-Bare-metal / VM installer for VaultDMS (ADR 0093, §13.1). The Helm
+Bare-metal / VM installer for SeDoc (ADR 0093, §13.1). The Helm
 chart at [`../helm/`](../helm/) is the supported on-prem path for
 customers with Kubernetes; this Ansible bundle is for everyone else.
 

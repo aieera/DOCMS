@@ -1,6 +1,6 @@
 # UAE residency deployment runbook (ADR 0110)
 
-Audience: SRE deploying VaultDMS for a UAE-residency tenant. Pre-reqs:
+Audience: SRE deploying SeDoc for a UAE-residency tenant. Pre-reqs:
 AWS account in me-central-1, terraform ≥ 1.5, helm ≥ 3.12, kubectl
 + aws-cli configured, the
 `deploy/regions/uae-central.yaml` overlay from this repo.
@@ -63,7 +63,7 @@ multi-region replicas:
 ```sh
 aws kms create-key \
   --region me-central-1 \
-  --description "VaultDMS UAE per-tenant KEK wrapper" \
+  --description "SeDoc UAE per-tenant KEK wrapper" \
   --key-usage ENCRYPT_DECRYPT \
   --key-spec SYMMETRIC_DEFAULT \
   --multi-region false \

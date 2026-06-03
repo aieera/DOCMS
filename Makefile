@@ -1,4 +1,4 @@
-# VaultDMS — root Makefile
+# SeDoc — root Makefile
 # All targets are idempotent and safe to re-run.
 
 SHELL := /usr/bin/env bash

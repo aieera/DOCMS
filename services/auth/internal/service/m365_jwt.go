@@ -1,14 +1,14 @@
 // M365 JWT validation — ADR 0112 + post-audit hardening.
 //
 // Replaces the original "trust Graph /me" path which let any caller
-// with ANY Entra-issued bearer token impersonate any VaultDMS user
+// with ANY Entra-issued bearer token impersonate any SeDoc user
 // whose email happened to match. Now every exchange must produce a
 // JWT that:
 //   1. Has a valid RS256 signature against the issuing tenant's JWKS
 //      (handled by go-oidc, which caches keys + handles rollover).
-//   2. Has `aud` equal to the configured VaultDMS Entra application
+//   2. Has `aud` equal to the configured SeDoc Entra application
 //      ID (SEDOC_M365_AUDIENCE).
-//   3. Has `tid` on the allow-list of Entra directories that VaultDMS
+//   3. Has `tid` on the allow-list of Entra directories that SeDoc
 //      accepts (SEDOC_M365_ALLOWED_TIDS, CSV).
 //   4. Has unexpired `exp` / valid `nbf` (go-oidc enforces these).
 //
@@ -113,7 +113,7 @@ func (v *m365Verifier) verify(ctx context.Context, raw string) (*VerifiedEntraId
 	if _, ok := v.allowedTIDs[tid]; !ok {
 		// Reject BEFORE any network call so an attacker can't probe
 		// Entra discovery for arbitrary tenants.
-		return nil, fmt.Errorf("m365: token issued by Entra tenant %s is not on the VaultDMS allow-list", tid)
+		return nil, fmt.Errorf("m365: token issued by Entra tenant %s is not on the SeDoc allow-list", tid)
 	}
 
 	provider, err := v.providerForTID(ctx, tid)

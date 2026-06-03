@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS policy service (OPA-backed authorization).
+// Package main boots the SeDoc policy service (OPA-backed authorization).
 package main
 
 import (

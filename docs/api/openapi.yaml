@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: VaultDMS API
+  title: SeDoc API
   version: 1.0.0
   description: Enterprise Document Management System
   contact:
@@ -61,7 +61,7 @@ components:
       type: http
       scheme: bearer
       description: >
-        Service-to-service VaultDMS API key. Send as
+        Service-to-service SeDoc API key. Send as
         `Authorization: Bearer vdms_…` (NOT an X-API-Key header). Keys are
         tenant-scoped and scope-gated — e.g. documents:read, documents:write,
         upload, integrations:read.

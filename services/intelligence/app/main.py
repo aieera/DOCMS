@@ -49,7 +49,7 @@ async def _run_consumer(consumer: IntelligenceConsumer):
         log.exception("nats consumer crashed: %s", e)
 
 
-app = FastAPI(title="VaultDMS Intelligence", version=settings.service_version, lifespan=lifespan)
+app = FastAPI(title="SeDoc Intelligence", version=settings.service_version, lifespan=lifespan)
 app.include_router(router)
 app.include_router(internal_router)
 app.include_router(admin_router)

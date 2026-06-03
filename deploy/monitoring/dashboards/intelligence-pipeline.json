@@ -1,6 +1,6 @@
 {
   "dashboard": {
-    "title": "VaultDMS Intelligence Pipeline",
+    "title": "SeDoc Intelligence Pipeline",
     "uid": "vaultdms-intelligence",
     "tags": ["vaultdms", "ai"],
     "refresh": "30s",

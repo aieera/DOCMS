@@ -1,7 +1,7 @@
 - generic [ref=e22]:
   - complementary [ref=e23]:
     - generic [ref=e24]:
-      - generic [ref=e25]: VaultDMS
+      - generic [ref=e25]: SeDoc
       - button "Toggle sidebar" [ref=e26] [cursor=pointer]:
         - img [ref=e27]
     - navigation [ref=e30]:
@@ -44,7 +44,7 @@
       - generic [ref=e118]:
         - generic [ref=e120]:
           - heading "Administration" [level=1] [ref=e121]
-          - paragraph [ref=e122]: Manage your VaultDMS tenant
+          - paragraph [ref=e122]: Manage your SeDoc tenant
         - generic [ref=e123]:
           - link "Users Manage team members" [ref=e124] [cursor=pointer]:
             - /url: /admin/users

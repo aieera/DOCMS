@@ -1,4 +1,4 @@
-// Package errors defines VaultDMS domain errors and the translation rules
+// Package errors defines SeDoc domain errors and the translation rules
 // between them and gRPC / HTTP wire errors. Handlers return domain errors;
 // transport layers call ToGRPCError / ToHTTPError at the edge.
 package errors

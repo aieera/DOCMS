@@ -69,7 +69,7 @@ func (s *Service) emailSenderForTenant(ctx context.Context, tenantID string) (*n
 				Username:      row.Username,
 				Password:      password,
 				From:          row.FromAddr,
-				SubjectPrefix: "[VaultDMS]",
+				SubjectPrefix: "[SeDoc]",
 			}), nil
 		}
 	}

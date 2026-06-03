@@ -110,9 +110,9 @@ func (s *Service) TestSMTPSend(ctx context.Context, tenantID, to string) error {
 	smtpAuth := smtp.PlainAuth("", row.Username, password, row.Host)
 	msg := []byte("From: " + row.FromAddr + "\r\n" +
 		"To: " + to + "\r\n" +
-		"Subject: VaultDMS — SMTP test\r\n" +
+		"Subject: SeDoc — SMTP test\r\n" +
 		"\r\n" +
-		"This message confirms your VaultDMS SMTP credentials work.\r\n")
+		"This message confirms your SeDoc SMTP credentials work.\r\n")
 	if !row.StartTLS {
 		smtpAuth = nil // local relays like MailHog refuse PLAIN AUTH
 	}

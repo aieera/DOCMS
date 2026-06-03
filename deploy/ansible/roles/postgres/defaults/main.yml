@@ -9,7 +9,7 @@ postgres_max_connections: 200
 postgres_shared_buffers: "512MB"
 postgres_log_min_duration_statement: 1000   # log slow queries (ms)
 
-# DB + role + password to provision for the VaultDMS application.
+# DB + role + password to provision for the SeDoc application.
 # postgres_db_password is expected to be supplied via Ansible Vault.
 postgres_db_name: "{{ vaultdms_db_name }}"
 postgres_db_user: "{{ vaultdms_db_user }}"

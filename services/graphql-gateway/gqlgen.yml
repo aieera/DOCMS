@@ -1,4 +1,4 @@
-# gqlgen configuration for the VaultDMS GraphQL gateway.
+# gqlgen configuration for the SeDoc GraphQL gateway.
 #
 # The v1 runtime in this service is a hand-rolled gqlparser-based
 # executor (see internal/exec) that the resolvers bind into. Running

@@ -1,4 +1,4 @@
-# VaultDMS REST API — versioning & deprecation policy
+# SeDoc REST API — versioning & deprecation policy
 
 **Blueprint §:** 12.1 · **Applies from:** `v1.0.0` · **Status:** enforced
 

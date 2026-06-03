@@ -9,7 +9,7 @@ seeder.
 
 A buyer's enterprise-evaluation team will ask:
 
-> "Can VaultDMS handle 100k concurrent users on a 100M-doc tenant,
+> "Can SeDoc handle 100k concurrent users on a 100M-doc tenant,
 > sustained 10k req/s with 50k bursts, p95 API < 200 ms?"
 
 The right answer is "yes, here is the artifact." This runbook produces
@@ -61,7 +61,7 @@ terraform apply plan.tfplan
 $(terraform output -raw kubeconfig_command)
 kubectl get nodes   # confirm three node groups, all Ready
 
-# 1.4. Deploy VaultDMS via the existing Helm chart at the
+# 1.4. Deploy SeDoc via the existing Helm chart at the
 #      git SHA you want to validate. Pin the SHA in
 #      docs/load-tests/<date>/summary.md → "SUT version" field.
 helm upgrade --install vaultdms ../../../deploy/helm/vaultdms \
@@ -160,7 +160,7 @@ mv tests/load/results/protocol-*/* docs/load-tests/$RUN_DATE/raw/
 #      see _template/README.md for the conversion checklist.
 
 # 4.3. Export the Grafana dashboard view as PDF. The url is in
-#      `terraform output -raw grafana_url`; pick the "VaultDMS —
+#      `terraform output -raw grafana_url`; pick the "SeDoc —
 #      Service overview" dashboard, time range = the run window.
 
 # 4.4. Fill in docs/load-tests/$RUN_DATE/summary.md from the

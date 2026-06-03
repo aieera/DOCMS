@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap the COMPLETE VaultDMS product on a fresh Ubuntu EC2 instance,
+# Bootstrap the COMPLETE SeDoc product on a fresh Ubuntu EC2 instance,
 # using prebuilt images from ghcr.io/aieera/docms. Brings up the full stack
 # (data plane + search/vectors + workflow + AV + all services/workers +
 # gateway), builds & serves the web UI, and fronts it with Caddy.

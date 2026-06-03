@@ -1,7 +1,7 @@
 - generic [ref=e22]:
   - complementary [ref=e23]:
     - generic [ref=e24]:
-      - generic [ref=e25]: VaultDMS
+      - generic [ref=e25]: SeDoc
       - button "Toggle sidebar" [ref=e26] [cursor=pointer]:
         - img [ref=e27]
     - navigation [ref=e30]:

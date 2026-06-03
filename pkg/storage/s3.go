@@ -1,4 +1,4 @@
-// Package storage wraps the minio-go S3 client with the surface area VaultDMS
+// Package storage wraps the minio-go S3 client with the surface area SeDoc
 // services need: put/get/delete, presigned URLs, bucket management, and
 // object metadata. It is used for both MinIO (on-prem) and real S3.
 package storage

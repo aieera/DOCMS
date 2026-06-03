@@ -1,6 +1,6 @@
 # License setup — operator runbook
 
-How to mint, install, rotate, and verify VaultDMS license JWTs.
+How to mint, install, rotate, and verify SeDoc license JWTs.
 Companion to [ADR 0095](../adr/0095-license-enforcement.md) which covers the design.
 
 ## TL;DR

@@ -1,4 +1,4 @@
-# VaultDMS Audit — Phase B: Consistency Check
+# SeDoc Audit — Phase B: Consistency Check
 
 **Date:** 2026-04-16
 

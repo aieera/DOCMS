@@ -1,4 +1,4 @@
-// VaultDMS popup. Talks to background.js for everything that needs
+// SeDoc popup. Talks to background.js for everything that needs
 // auth state, the network, or chrome.* privileges the popup itself
 // doesn't hold under MV3's split context.
 const signedOut = document.getElementById('signed-out')

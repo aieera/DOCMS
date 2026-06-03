@@ -3,7 +3,7 @@
 //   ?action=open  → search + recents + open-into-Word
 //   ?action=save  → save the current document as a new version on
 //                    a document the user picks (or, if the document
-//                    was originally opened from VaultDMS, defaults
+//                    was originally opened from SeDoc, defaults
 //                    to that document — we store the source
 //                    document_id in CustomProperties as a hint).
 //
@@ -54,8 +54,8 @@ export function TaskPane() {
   return (
     <div style={{ padding: 16, height: '100%', boxSizing: 'border-box' }}>
       <TabList selectedValue={mode} onTabSelect={(_, d) => setMode(d.value as Mode)}>
-        <Tab value="open">Open from VaultDMS</Tab>
-        <Tab value="save">Save to VaultDMS</Tab>
+        <Tab value="open">Open from SeDoc</Tab>
+        <Tab value="save">Save to SeDoc</Tab>
       </TabList>
       <div style={{ marginTop: 16 }}>
         {mode === 'open' ? <OpenPanel /> : <SavePanel />}
@@ -124,7 +124,7 @@ function OpenPanel() {
       <div style={{ display: 'flex', gap: 8 }}>
         <Input
           value={q}
-          placeholder="Search VaultDMS…"
+          placeholder="Search SeDoc…"
           onChange={(_, d) => setQ(d.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void search() }}
           style={{ flex: 1 }}
@@ -227,7 +227,7 @@ function SavePanel() {
         <MessageBar intent="success">
           <MessageBarBody>
             <MessageBarTitle>New version saved</MessageBarTitle>
-            VaultDMS will OCR + classify the new bytes in the background.
+            SeDoc will OCR + classify the new bytes in the background.
           </MessageBarBody>
         </MessageBar>
         <Button style={{ marginTop: 16 }} onClick={() => { setDone(false); setChangeSummary('') }}>Save another version</Button>
@@ -317,7 +317,7 @@ function readSourceDocumentID(): string | null {
 // is undefined for blank docs and the protocol-handler open
 // doesn't always populate it. We fall back to a timestamped
 // filename, which is fine because the actual filename users see
-// in VaultDMS comes from the version's display metadata, not the
+// in SeDoc comes from the version's display metadata, not the
 // uploaded filename.
 function guessFilename(): string {
   return `vaultdms-${new Date().toISOString().replace(/[:.]/g, '-')}`

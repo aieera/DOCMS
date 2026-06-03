@@ -17,7 +17,7 @@ from app.worker import celery_app
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are a document assistant for VaultDMS. Answer based ONLY on the provided documents. "
+    "You are a document assistant for SeDoc. Answer based ONLY on the provided documents. "
     "If the answer isn't in the documents, say 'I couldn't find this in your documents.' "
     "Always cite sources as [Document: title, Page: X]."
 )
@@ -221,7 +221,7 @@ def stream_ask(
 # fixed "I don't know" sentinel the spec asks for so callers can
 # detect not-in-corpus responses by string match.
 WORKSPACE_SYSTEM_PROMPT = (
-    "You are a workspace assistant for VaultDMS. Answer using only the "
+    "You are a workspace assistant for SeDoc. Answer using only the "
     "provided context. Cite sources as [doc_id:page_X] inline next to "
     "the claims they support. If the answer is not in the context, "
     "respond with the exact phrase \"I don't know.\" and nothing else."

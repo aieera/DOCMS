@@ -1,6 +1,6 @@
 galaxy_info:
-  author: VaultDMS
-  description: PostgreSQL 16 install + VaultDMS DB/role provisioning + RLS-friendly defaults.
+  author: SeDoc
+  description: PostgreSQL 16 install + SeDoc DB/role provisioning + RLS-friendly defaults.
   license: proprietary
   min_ansible_version: "2.15"
   platforms:

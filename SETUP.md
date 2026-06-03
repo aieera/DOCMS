@@ -1,4 +1,4 @@
-# VaultDMS Local Setup
+# SeDoc Local Setup
 
 This guide gets a fresh clone running with a working login in one command.
 
@@ -40,7 +40,7 @@ Once it finishes, you'll see:
 
 ```
 ==========================================
-  VaultDMS is ready.
+  SeDoc is ready.
 
   Web UI:  http://localhost:5173
   API:     http://localhost:8080

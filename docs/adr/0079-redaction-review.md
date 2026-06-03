@@ -5,7 +5,7 @@ Status: Accepted
 
 ## Context
 
-Two redaction surfaces exist in VaultDMS today and they aren't the same
+Two redaction surfaces exist in SeDoc today and they aren't the same
 shape:
 
 1. **Legal-hold ad-hoc redact** ([redaction_handler.go](../../services/document/internal/handler/redaction_handler.go))

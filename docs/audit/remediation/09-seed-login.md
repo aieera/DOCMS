@@ -18,7 +18,7 @@ No working login existed. A developer running `docker compose up` had:
 $ make setup
   …
 ==========================================
-  VaultDMS is ready.
+  SeDoc is ready.
 
   Web UI:  http://localhost:5173
   API:     http://localhost:8080

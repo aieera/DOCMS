@@ -68,7 +68,7 @@ type WebAuthnConfig struct {
 	// from HTTPS; prod must be the public domain.
 	RPID string
 	// RPDisplayName surfaces in the OS authenticator prompt
-	// ("Save passkey for VaultDMS").
+	// ("Save passkey for SeDoc").
 	RPDisplayName string
 	// RPOrigins are the full origins (scheme + port) the lib
 	// accepts in clientDataJSON.
@@ -88,7 +88,7 @@ func LoadWebAuthnConfigFromEnv() *WebAuthnConfig {
 	}
 	cfg := &WebAuthnConfig{
 		RPID:          rpID,
-		RPDisplayName: envOr("SEDOC_WEBAUTHN_DISPLAY_NAME", "VaultDMS"),
+		RPDisplayName: envOr("SEDOC_WEBAUTHN_DISPLAY_NAME", "SeDoc"),
 	}
 	for _, raw := range strings.Split(originsCSV, ",") {
 		o := strings.TrimSpace(raw)

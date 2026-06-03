@@ -9,7 +9,7 @@
 
 GDPR Articles 15 / 17 / 20 grant data subjects (1) the right to
 access their data, (2) the right to erasure, and (3) the right to
-data portability. VaultDMS handles personally-identifying data
+data portability. SeDoc handles personally-identifying data
 (document metadata, uploader identity, audit trails) across ≥14
 services and three stateful stores (Postgres, Qdrant, object
 storage). We need a single contract for how a DSR is expressed,

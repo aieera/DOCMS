@@ -1,4 +1,4 @@
-// Package main boots the VaultDMS audit service (append-only hash-chained log).
+// Package main boots the SeDoc audit service (append-only hash-chained log).
 package main
 
 import (

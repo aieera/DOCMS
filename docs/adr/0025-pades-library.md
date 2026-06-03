@@ -15,7 +15,7 @@ whether it stays Go-native or becomes a JVM sidecar.
 
 Constraints driving the choice:
 
-1. **License.** VaultDMS ships as self-hosted builds to customers.
+1. **License.** SeDoc ships as self-hosted builds to customers.
    AGPL / GPL are forbidden because linking in a customer binary
    makes the customer's own code subject to those terms. LGPL ≤ 2.1
    is acceptable provided the library is consumed unmodified (dynamic

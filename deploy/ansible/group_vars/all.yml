@@ -2,7 +2,7 @@
 # group_vars/<group>.yml or host_vars/<hostname>.yml.
 
 # ----- Versioning -----------------------------------------------------------
-# Which release of VaultDMS to install. The upgrade playbook bumps this.
+# Which release of SeDoc to install. The upgrade playbook bumps this.
 vaultdms_release: "v1.0.0"
 
 # Where the prebuilt Go service binaries come from. Override to point at a

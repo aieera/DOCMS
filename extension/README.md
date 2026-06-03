@@ -1,4 +1,4 @@
-# VaultDMS browser extension
+# SeDoc browser extension
 
 Per ADR 0097 §17.7. Manifest V3, single bundle for Chrome / Edge / Firefox.
 
@@ -35,7 +35,7 @@ to exercise the rest of the extension surface.
 
 1. `chrome://extensions` → enable Developer mode (top right).
 2. Click **Load unpacked** → choose this `extension/` folder.
-3. Pin the VaultDMS icon to the toolbar.
+3. Pin the SeDoc icon to the toolbar.
 4. Open the icon → set the DMS base URL via Options.
 5. Click **Sign in** to start the OAuth flow (requires backend Phase 1.5).
 

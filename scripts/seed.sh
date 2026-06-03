@@ -43,7 +43,7 @@ SEED_SLUG="${SEED_TENANT_SLUG:-acme}"
 
 echo ""
 echo "=========================================="
-echo "  VaultDMS is ready."
+echo "  SeDoc is ready."
 echo ""
 echo "  Web UI:  http://localhost:5173"
 echo "  API:     http://localhost:8080"

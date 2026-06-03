@@ -88,7 +88,7 @@ export function EmailIngestionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Email ingestion"
-        description="Pull email into VaultDMS so every message + attachment is filed as a document. Polling cadence configurable per source."
+        description="Pull email into SeDoc so every message + attachment is filed as a document. Polling cadence configurable per source."
         actions={
           <Button onClick={() => setCreating(true)} data-testid="email-config-new">
             <Plus className="h-4 w-4" /> New config

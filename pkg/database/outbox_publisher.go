@@ -268,7 +268,7 @@ func (p *OutboxPublisher) cleanupOldEvents(ctx context.Context) error {
 	return nil
 }
 
-// cloudEvent is the CloudEvents v1.0 envelope with the VaultDMS tenantid
+// cloudEvent is the CloudEvents v1.0 envelope with the SeDoc tenantid
 // extension. Exported as lowercase (unexported) because it is an
 // implementation detail of the wire format.
 type cloudEvent struct {
@@ -281,7 +281,7 @@ type cloudEvent struct {
 	DataContentType string          `json:"datacontenttype"`
 	TenantID        string          `json:"tenantid,omitempty"`
 	Data            json.RawMessage `json:"data"`
-	// VaultDMS-specific CloudEvents extensions: request-context audit
+	// SeDoc-specific CloudEvents extensions: request-context audit
 	// fields stamped on the outbox row at write time. The audit
 	// consumer reads these as a fallback when the inner data payload
 	// doesn't include actor / IP (i.e. for every emitter that
