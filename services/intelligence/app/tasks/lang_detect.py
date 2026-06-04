@@ -176,12 +176,17 @@ async def _fetch_ocr_text(tenant_id: str, version_id: str) -> str:
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id
             )
+            # ocr_results is per-PAGE (columns: page_number, text_content);
+            # there is no full_text column. Concatenate the pages in order so
+            # detection sees the whole document, not one arbitrary page.
             row = await conn.fetchrow(
                 """
-                SELECT COALESCE(full_text, '') AS full_text
+                SELECT COALESCE(
+                         string_agg(text_content, E'\n' ORDER BY page_number),
+                         ''
+                       ) AS full_text
                   FROM ocr_results
                  WHERE tenant_id = $1 AND version_id = $2
-                 ORDER BY created_at DESC LIMIT 1
                 """,
                 tenant_id, version_id,
             )

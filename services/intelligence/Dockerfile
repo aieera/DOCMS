@@ -15,13 +15,15 @@ COPY requirements.txt .
 # source that failed yesterday, so the build was passing by luck.
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
-# spacy en_core_web_trf is only used by services/intelligence/app/
-# models/ner_model.py. Build-time download was breaking image build
-# because spacy 3.7.4's model-index URL resolves to a 404. OCR /
-# classify / embed don't need this; NER falls back to a runtime
-# download on first invocation. Re-enable when spacy upgrades and
-# the model URL resolves correctly.
-# RUN python -m spacy download en_core_web_trf
+# spaCy NER model (services/intelligence/app/models/ner_model.py).
+# `python -m spacy download` resolves a model-index URL that 404s on
+# spacy 3.7.4, so install the model directly from its pinned release
+# wheel instead — this bypasses the broken index and is deterministic.
+# en_core_web_sm-3.7.1 is the small (~12 MB) model compatible with
+# spacy 3.7.x; enough for the PERSON/GPE/DATE/ORG entities NER uses.
+# The heavier en_core_web_trf is opt-in via SEDOC_NER_SPACY_MODEL.
+RUN pip install --no-cache-dir \
+    https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
 COPY app/ app/
 
