@@ -73,6 +73,12 @@ BEGIN
             ('workflow_instances',         'workflow_instances_tenant_id_document_id_fkey',         '(tenant_id, document_id)')
         ) AS t(table_name, constraint_name, fk_cols)
     LOOP
+        -- Skip tables that don't exist on a clean DB (orphaned refs like
+        -- disposition_candidates that no migration creates). Original
+        -- migration assumed a fully-populated dev DB.
+        IF to_regclass(format('public.%I', rec.table_name)) IS NULL THEN
+            CONTINUE;
+        END IF;
         -- Drop only if it exists in the expected form; tolerate
         -- migrations that may have replaced it differently.
         EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', rec.table_name, rec.constraint_name);
@@ -114,6 +120,9 @@ BEGIN
             ('training_examples',          'training_examples_tenant_id_version_id_fkey',          '(tenant_id, version_id)')
         ) AS t(table_name, constraint_name, fk_cols)
     LOOP
+        IF to_regclass(format('public.%I', rec.table_name)) IS NULL THEN
+            CONTINUE;
+        END IF;
         EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I', rec.table_name, rec.constraint_name);
         EXECUTE format(
             'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY %s REFERENCES document_versions(tenant_id, id) ON DELETE CASCADE',
