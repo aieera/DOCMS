@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { TanStackRouterVite } from '@tanstack/router-vite-plugin'
 import path from 'path'
@@ -43,7 +43,12 @@ function withSig(target: string, secret: string) {
   }
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
+  // Load web/.env.local (and other .env files) into process.env so the
+  // gateway secret + proxy vars can live in .env.local as documented,
+  // not just in the shell. Empty prefix = load every key, not only VITE_*.
+  Object.assign(process.env, loadEnv(mode, process.cwd(), ''))
+
   // Eager startup check: fail `vite dev` immediately if the env var
   // is missing rather than letting the dev server boot and then 500
   // on the first proxy request. `vite build` skips this — production
