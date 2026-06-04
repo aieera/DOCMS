@@ -528,7 +528,7 @@ Component status is uniformly ✅ — no `// TODO` or `// FIXME` comments found 
 
 ## 🟡 In Progress / Partial
 
-- **Native connector — Google Workspace**: OAuth handshake works; **Drive/Gmail import action not yet built** (this session, deferred). Files: `services/connector/internal/providers/google/google.go`, `services/connector/internal/service/google.go`.
+- **Native connector — Google Workspace**: OAuth handshake works. **Drive import action DONE 2026-06-04** — `POST /api/v1/connectors/google/drive/import` lists a Drive folder, downloads each file (Google-native Docs/Sheets/Slides exported to PDF), and runs the full server-side ingest (`internal/ingest/ingest.go`: storage gRPC + in-cluster presigned-PUT dialer + version creation) so imports OCR + embed + become searchable like a browser upload. Frontend: `DriveImportPanel` in the Google connector modal. Ingest pipeline verified E2E (synthetic file → searchable). **Drive-fetch half not live-tested** (no Google account connected in dev). Gmail import still pending.
 - **MCP server** for AI agents: routes exist at `POST /api/v1/mcp`, tool handlers return `{"status":"ok"}` stub. File: `services/connector/internal/mcp/server.go`.
 - **Per-tenant KEK**: code currently uses one deployment-wide KEK; per-tenant derivation tracked in `docs/tech-debt/per-tenant-kek.md`, code TODO at `services/storage/cmd/server/main.go:137`.
 - **DSS sidecar PAdES signer**: shell client compiles but returns `ErrNotConfigured`; mock signer is the runtime default. File: `services/signature/internal/signer/factory.go:34`.

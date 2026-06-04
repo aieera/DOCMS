@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/ingest"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
 	"github.com/aieera/sedoc/services/connector/internal/webhook"
@@ -30,7 +31,15 @@ type Service struct {
 	connSealingKey []byte
 	connHMAC       []byte
 	connRedirect   string
+	// ingest runs the server-side document ingest flow (Drive import,
+	// and later Salesforce/M365 pulls). Nil disables import actions —
+	// SetIngestClient wires it from main.go when storage is reachable.
+	ingest *ingest.Client
 }
+
+// SetIngestClient wires the server-side ingest path used by Drive
+// import. Optional; nil leaves import endpoints returning a 503.
+func (s *Service) SetIngestClient(c *ingest.Client) { s.ingest = c }
 
 // SetWorkerKicker wires the delivery worker's Kick so test-send /
 // redeliver can wake the worker immediately instead of waiting up

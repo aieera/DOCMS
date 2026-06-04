@@ -47,6 +47,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Google-specific for now; SaveGoogleConfig validates the body.
 	mux.HandleFunc("PUT /api/v1/connectors/google/config", h.putGoogleConfig)
 	mux.HandleFunc("POST /api/v1/connectors/google/disconnect", h.disconnectGoogle)
+	mux.HandleFunc("POST /api/v1/connectors/google/drive/import", h.importGoogleDrive)
 	// Microsoft 365 (ADR 0111). The unified /oauth/callback above
 	// dispatches by provider name; no separate callback here.
 	mux.HandleFunc("PUT /api/v1/connectors/m365/config",          h.putM365Config)

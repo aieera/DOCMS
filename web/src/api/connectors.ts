@@ -58,6 +58,30 @@ export async function disconnectGoogle(): Promise<void> {
   await api.post('/connectors/google/disconnect')
 }
 
+export interface DriveImportInput {
+  // Empty drive_folder_id imports the My Drive root.
+  drive_folder_id?: string
+  workspace_id: string
+  folder_id: string
+}
+
+export interface DriveImportResult {
+  imported: number
+  skipped: number
+  failed: number
+  truncated: boolean
+  document_ids: string[]
+  errors?: string[]
+}
+
+// importGoogleDrive pulls files from a Drive folder into a SeDoc folder.
+// Synchronous: the response carries the per-file outcome. Runs as the
+// calling admin (their permissions gate the destination).
+export async function importGoogleDrive(input: DriveImportInput): Promise<DriveImportResult> {
+  const { data } = await api.post<DriveImportResult>('/connectors/google/drive/import', input)
+  return data
+}
+
 // ---- Microsoft 365 (ADR 0111) ----------------------------------
 //
 // Same shape as the Google trio, with the extra `entra_tenant` field

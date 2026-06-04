@@ -13,9 +13,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/connector/internal/service"
 )
 
 type putGoogleConfigBody struct {
@@ -40,6 +42,65 @@ func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sessionToken pulls the caller's SeDoc session token from the request so
+// the ingest path can act AS the user against the document service's
+// SessionOrAPIKey-gated REST surface. Prefers the dms_session cookie
+// (browser); falls back to a Bearer header (API clients).
+func sessionToken(r *http.Request) string {
+	if ck, err := r.Cookie("dms_session"); err == nil && ck.Value != "" {
+		return ck.Value
+	}
+	const p = "Bearer "
+	if h := r.Header.Get("Authorization"); len(h) > len(p) && h[:len(p)] == p {
+		return h[len(p):]
+	}
+	return ""
+}
+
+type importGoogleDriveBody struct {
+	// DriveFolderID is the Google Drive folder to import from. Empty =
+	// "root" (My Drive top level).
+	DriveFolderID string `json:"drive_folder_id"`
+	// WorkspaceID + FolderID are the SeDoc destination.
+	WorkspaceID string `json:"workspace_id"`
+	FolderID    string `json:"folder_id"`
+}
+
+// importGoogleDrive imports the files in a Drive folder into a SeDoc
+// workspace folder. Synchronous: the response carries the per-file
+// outcome. A folder larger than the per-call cap returns truncated=true
+// and the admin re-runs to continue.
+func (h *Handler) importGoogleDrive(w http.ResponseWriter, r *http.Request) {
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "tenant and user required")
+		return
+	}
+	var b importGoogleDriveBody
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if b.WorkspaceID == "" || b.FolderID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and folder_id are required")
+		return
+	}
+	res, err := h.svc.ImportDriveFolder(r.Context(), tenantID, userID, sessionToken(r), b.DriveFolderID, b.WorkspaceID, b.FolderID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrNoTenantTokens):
+			writeError(w, http.StatusConflict, "google drive not connected — click Connect first")
+		case errors.Is(err, service.ErrIngestUnavailable):
+			writeError(w, http.StatusServiceUnavailable, "ingest path unavailable; storage may be down")
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) disconnectGoogle(w http.ResponseWriter, r *http.Request) {

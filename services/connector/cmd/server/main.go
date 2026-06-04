@@ -25,6 +25,7 @@ import (
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/connector/internal/email"
+	"github.com/aieera/sedoc/services/connector/internal/ingest"
 	"github.com/aieera/sedoc/services/connector/internal/eventstream"
 	"github.com/aieera/sedoc/services/connector/internal/handler"
 	"github.com/aieera/sedoc/services/connector/internal/intake"
@@ -80,6 +81,17 @@ func main() {
 		defaultRedirect = "http://localhost:3000/api/v1/connectors/oauth/callback"
 	}
 	svc.SetConnectorDeps(connSeal, connHMAC, defaultRedirect)
+
+	// Server-side ingest path (ADR 0089 Drive import). Dials storage gRPC
+	// + reuses the document REST surface. Non-fatal: if storage is
+	// unreachable at boot the import endpoint returns 503 rather than
+	// taking the whole connector down.
+	if ingestClient, ierr := ingest.New(pool, *log.Z()); ierr != nil {
+		log.Warn(ctx).Err(ierr).Msg("ingest client init failed; drive import will 503")
+	} else {
+		svc.SetIngestClient(ingestClient)
+		defer func() { _ = ingestClient.Close() }()
+	}
 
 	// Start NATS event fanout → webhook deliveries.
 	if err := svc.StartEventFanout(ctx, js); err != nil {

@@ -6,6 +6,7 @@ import { Copy, Check } from 'lucide-react'
 import {
   getGoogleConnector, saveGoogleConfig, getGoogleAuthURL,
 } from '@/api/connectors'
+import { DriveImportPanel } from './DriveImportPanel'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import {
@@ -115,6 +116,12 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
               autoComplete="new-password"
             />
           </div>
+
+          {/* Import surface — appears once a connector row exists (i.e. the
+              tenant has saved credentials + connected). The import call
+              409s if tokens are missing, so showing it on a configured-
+              but-not-yet-authorized connector degrades gracefully. */}
+          {existingQ.data && <DriveImportPanel />}
         </div>
 
         <DialogFooter>
