@@ -45,7 +45,7 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 	// (e.g. a request-level timeout from the gateway).
 	semCtx, cancel := context.WithTimeout(ctx, semanticBudget)
 	defer cancel()
-	raw, err := s.vec.SemanticSearch(semCtx, req.Query, req.TenantID, req.GroupIDs, limit)
+	raw, err := s.vec.SemanticSearch(semCtx, req.Query, req.TenantID, readablePrincipals(req), limit)
 	if err != nil {
 		// ctx.Deadline-exceeded surfaces as a deadline error; both
 		// that and unexpected vector errors get the same caller-
@@ -59,6 +59,29 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 		out = append(out, semanticHit{DocumentID: h.DocumentID, Score: h.Score})
 	}
 	return out, nil
+}
+
+// readablePrincipals builds the principal set the dense-vector path
+// matches against the chunk payload's `readable_by` array. It mirrors
+// the OpenSearch permission filter (opensearch/query.go): a chunk is
+// visible when its readable_by contains the user, ANY of the user's
+// groups, or the synthetic "everyone" group that marks tenant-wide
+// readable documents. The vector payload collapses users + groups +
+// everyone into one `readable_by` field, so the OR-of-clauses on the
+// lexical side becomes a single match-any here.
+//
+// Without "everyone", public documents (readable_by=["everyone"]) were
+// invisible to semantic/hybrid search even though lexical found them —
+// the bug that made hybrid silently degrade to lexical-only for the
+// common "shared with the whole tenant" case.
+func readablePrincipals(req *model.SearchRequest) []string {
+	out := make([]string, 0, len(req.GroupIDs)+2)
+	if req.UserID != "" {
+		out = append(out, req.UserID)
+	}
+	out = append(out, req.GroupIDs...)
+	out = append(out, "everyone")
+	return out
 }
 
 // fuseHits merges OpenSearch BM25 results with semantic hits via

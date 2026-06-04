@@ -532,9 +532,9 @@ Component status is uniformly ✅ — no `// TODO` or `// FIXME` comments found 
 - **MCP server** for AI agents: routes exist at `POST /api/v1/mcp`, tool handlers return `{"status":"ok"}` stub. File: `services/connector/internal/mcp/server.go`.
 - **Per-tenant KEK**: code currently uses one deployment-wide KEK; per-tenant derivation tracked in `docs/tech-debt/per-tenant-kek.md`, code TODO at `services/storage/cmd/server/main.go:137`.
 - **DSS sidecar PAdES signer**: shell client compiles but returns `ErrNotConfigured`; mock signer is the runtime default. File: `services/signature/internal/signer/factory.go:34`.
-- **WebAuthn (passkeys)**: routes wired, env propagation done, but the service methods return 501 — `services/auth/internal/service/webauthn.go` is a stub package.
+- ~~**WebAuthn (passkeys)**: routes wired, env propagation done, but the service methods return 501~~ — **DONE (verified 2026-06-04).** All four flows (`webauthn_flows.go`), repo, 6 routes, lib wiring in `cmd/server/main.go:107`, migration `000027`, and frontend (login + settings UI) are fully implemented. Backend builds clean + service tests pass. Only returns 501 when `SEDOC_WEBAUTHN_RPID` is unset (config/ops, not code).
 - **Workflow signature handler**: `services/workflow/internal/workflows/signature_stub.go` is a placeholder that creates tasks and waits — full PAdES sealing deferred.
-- **Vector search**: `services/search/internal/service/service.go:87` notes the vector path returns an empty list — hybrid mode degrades to lexical-only until Qdrant query side is wired.
+- ~~**Vector search**: vector path returns an empty list — hybrid degrades to lexical-only~~ — **DONE (verified 2026-06-04).** The Go query side (`hybrid.go`/`vector/qdrant.go`/`fusion/rrf.go`), embed endpoint, and ingest were all already implemented; what was broken: (1) the Python `intelligence` containers wrote to collection `dms_vectors` while search read `vaultdms_chunks` (collection mismatch — fixed in compose); (2) the vector permission filter passed only group IDs, so `readable_by:["everyone"]` public docs were invisible (fixed `readablePrincipals` in `hybrid.go` to mirror the lexical "everyone" handling). Verified end-to-end via Playwright: a paraphrase query with no keyword overlap returns the doc via semantic + hybrid. Also wired the `/search` UI to send `search_mode:"hybrid"` (it was hardcoded lexical despite advertising "semantic").
 - **i18n**: no i18n library — all UI text hardcoded English. Single locale.
 
 ## 🔴 Planned / Not Started
@@ -565,7 +565,7 @@ Component status is uniformly ✅ — no `// TODO` or `// FIXME` comments found 
 | **SCIM 2.0 IdPs** (Okta, Azure AD) | User/group sync | ✅ Wired | `services/auth/internal/scim/handler.go` |
 | **LDAP / Active Directory** | Direct bind + sync | ✅ Wired (ADR 0062) | `services/auth/internal/ldap/` |
 | **OpenSearch 2.12** | Lexical + faceted search | ✅ Wired | `services/search/internal/service/` |
-| **Qdrant 1.7** | Vector search | 🟡 Wired for ingest only; query stub | `services/search/internal/service/service.go:87` |
+| **Qdrant 1.7** | Vector search | ✅ Wired both sides (2026-06-04) — ingest + query; semantic/hybrid verified | `services/search/internal/{service/hybrid.go,vector/qdrant.go}` |
 | **MinIO / S3** | Object storage | ✅ Wired | `pkg/storage/`, `services/storage/internal/` |
 | **NATS JetStream 2.10** | Event backbone | ✅ Wired | `pkg/events/`, all services |
 | **Temporal** | Workflow orchestration | ✅ Wired | `services/workflow/cmd/worker/main.go` |
@@ -656,9 +656,11 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 | DocuSign token row had empty `account_id` + `base_uri` (no userinfo call after token exchange) — would have blocked actual Send | ✅ Added `FetchAccountInfo` in `pkg/esign/oauth.go` |
 | `docker-compose.yml` `x-go-env` anchor didn't propagate `SEDOC_ESIGN_*` / `_TWILIO_*` / `_SMTP_*` / `_WEBAUTHN_*` envs to containers | ✅ Added all four blocks |
 | Reload-race: authStore empty on hard refresh → first batch of requests went out without `X-Auth-Tenant-ID` headers | ✅ Earlier session — `ensureHydrated()` interceptor |
-| WebAuthn methods return 501 | 🔴 Still stubbed |
+| WebAuthn methods return 501 | ✅ DONE 2026-06-04 — fully implemented; only 501s when `SEDOC_WEBAUTHN_RPID` unset |
 | MCP server tool handlers return `{"status":"ok"}` placeholders | 🔴 Still stubbed |
-| Vector search returns empty list, hybrid degrades to lexical-only | 🔴 Still stubbed |
+| Vector search returns empty list, hybrid degrades to lexical-only | ✅ DONE 2026-06-04 — collection mismatch + readable_by "everyone" filter fixed; semantic/hybrid verified via Playwright |
+| Uploads 500 on CompleteUpload — `relation "scan_results" does not exist` | ✅ FIXED 2026-06-04 — added missing migration `document/000067_scan_results` |
+| postgres default max_connections=100 saturated by 13 service pools | ✅ FIXED 2026-06-04 — raised to 400 in compose |
 
 ---
 
@@ -668,7 +670,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 - **Per-tenant KEK** — single KEK in dev; per-tenant derivation pending. Tracked in `docs/tech-debt/per-tenant-kek.md`.
 - **DSS sidecar PAdES signing** — `signer/factory.go` defaults to mock; real signer is a shell. Wave 9.2b.
 - **Vector search query** — half-built (ingest writes Qdrant, search doesn't read it). `services/search/internal/service/service.go:87`.
-- **WebAuthn service methods** — 501 stubs in `services/auth/internal/service/webauthn.go`.
+- ~~**WebAuthn service methods** — 501 stubs~~ — DONE 2026-06-04 (fully wired; only 501s when `SEDOC_WEBAUTHN_RPID` unset).
 - **MCP server** — stub tool implementations.
 - **`SEDOC_SMTP_USER` vs `SEDOC_SMTP_USERNAME` inconsistency** — auth reads `USER`, notification reads `USERNAME`. Both should converge. Flagged in `.env` template.
 - **i18n** — no library, English hardcoded everywhere.
@@ -710,9 +712,9 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 
 1. **Commit and split the in-flight branch.** ~25 modified/new files mix 4 distinct features (eSign per-tenant, Twilio/SMTP modals, Google connector, iPaaS surface). Split into 4 PRs before further work. **S**
 2. **Build Google Drive import action** to make the OAuth slice useful. `POST /api/v1/connectors/google/drive/import?folder_id=...` calling `DocumentClient.MaterialiseFile`. **M**
-3. **Wire WebAuthn service methods** with `go-webauthn` library. Routes + env propagation are done; ~150 LOC per method. **M**
+3. ~~**Wire WebAuthn service methods** with `go-webauthn` library.~~ ✅ DONE 2026-06-04 — implemented end-to-end; only remaining step is setting `SEDOC_WEBAUTHN_RPID` per deploy. **M**
 4. **Per-tenant rate limiting** on iPaaS trigger endpoints. Apply existing `pkg/middleware/ratelimit.go` with a `integrations:` group per tenant. **S**
-5. **Vector search query side** — wire Qdrant client into `services/search/internal/service/hybrid.go`. Embedding pipeline already runs on ingest; just need the query lookup. **M**
+5. ~~**Vector search query side**~~ ✅ DONE 2026-06-04 — was already wired; fixed the Qdrant collection mismatch + readable_by "everyone" filter + `/search` UI now requests hybrid. Verified via Playwright. **M**
 6. **Add Salesforce + M365 connector wrappers** — provider classes already exist; ~2h each to add the Save/Start/Callback service methods + frontend modal. **M**
 7. **Per-tenant KEK derivation** for blob encryption. Tracked at `docs/tech-debt/per-tenant-kek.md`; storage's TODO points at line 137. Crypto-shredding by KEK delete becomes truly per-tenant. **L**
 8. **Add tests to zero-coverage services** — collaboration, intelligence (pytest), preview, signature-signer. **L**

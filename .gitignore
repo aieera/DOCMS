@@ -22,6 +22,11 @@ coverage.html
 # proto/vaultdms/v1/*.pb.go
 # proto/vaultdms/v1/*.pb.gw.go
 
+# Frontend build-time generated index (regenerated on every `npm run dev`
+# and `npm run build` via scripts/build-load-test-index.mjs — see web/package.json).
+# Tracking it only produces timestamp churn in every diff.
+web/src/generated/
+
 # Python (intelligence + preview workers)
 __pycache__/
 *.pyc

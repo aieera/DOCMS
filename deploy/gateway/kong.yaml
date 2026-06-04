@@ -110,6 +110,16 @@ services:
       - { name: auth-apikeys,     paths: [/api/v1/auth/api-keys],     strip_path: false }
       - { name: auth-saml,        paths: [/api/v1/auth/saml],         strip_path: false }
       - { name: auth-oidc,        paths: [/api/v1/auth/oidc],         strip_path: false }
+      # ADR 0061 — WebAuthn / passkeys. One prefix covers all 6 subpaths
+      # (registration/{begin,finish}, login/{begin,finish}, credentials,
+      # credentials/{id}). login/* are public + enumerable, so cap the
+      # rate here in addition to the backend's IP limiter.
+      - name: auth-webauthn
+        paths: [/api/v1/auth/webauthn]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 20, hour: 300, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: admin-users,      paths: [/api/v1/admin/users],       strip_path: false }
       - { name: admin-sso,        paths: [/api/v1/admin/sso-configs], strip_path: false }
       - { name: admin-tenants,    paths: [/api/v1/admin/tenants],     strip_path: false }

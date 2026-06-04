@@ -60,12 +60,16 @@ def embed_query_endpoint(body: EmbedQueryRequest):
 
     # Lazy import keeps the router module light at boot.
     from app.models.embedder import embed_single
+    from app.config import settings
 
     vec = embed_single(q)
     return EmbedQueryResponse(
         embedding=list(vec),
         dimension=len(vec),
-        model="bge-m3",
+        # Report the ACTUAL model so query/ingest mismatches are obvious
+        # in logs. embed_single + the ingest embedder both use
+        # settings.embedding_model (all-MiniLM-L6-v2, 384-dim).
+        model=settings.embedding_model,
     )
 
 

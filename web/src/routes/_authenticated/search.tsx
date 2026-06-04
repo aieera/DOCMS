@@ -114,7 +114,13 @@ function SearchPage() {
     if (authors.length) filters.created_by_name = authors
     if (regions.length) filters.region_pin = regions
     if (params.workspace_id) filters.workspace_id = params.workspace_id
-    return { query, facets: facetsToShow, filters, highlight: true }
+    // Hybrid mode fuses BM25 with dense-vector (Qdrant) results so the
+    // page delivers the "Full-text + semantic" search the dashboard
+    // advertises. The backend degrades to lexical-only when the vector
+    // path is unavailable (no embeddings yet, intelligence down), so
+    // this is always safe — worst case it behaves like the old lexical
+    // default.
+    return { query, facets: facetsToShow, filters, highlight: true, search_mode: 'hybrid' }
   }, [
     query, facetsToShow,
     params.tag, params.author, params.classification, params.region_pin,

@@ -83,11 +83,12 @@ func (s *Service) PurgeSubject(ctx context.Context, tenantID, subjectID string) 
 
 // Search executes the query against OpenSearch and (for hybrid /
 // semantic modes) Qdrant, fusing the results per blueprint §7.1.
-// Current implementation: the BM25 path is fully wired; the dense
-// vector path is a stub that returns an empty list until the
-// intelligence-service /internal/v1/embed-query endpoint lands. When
-// the stub returns nothing, hybrid mode degrades to lexical and logs
-// a warning so dashboards can surface the degradation.
+// Both paths are fully wired: the BM25 path always runs; the dense
+// vector path runs when s.vec is configured (SEDOC_INTELLIGENCE_EMBED_URL
+// + SEDOC_QDRANT_URL set) and the query is non-empty. When the vector
+// path errors or returns nothing (no s.vec, embed/Qdrant unreachable,
+// or zero semantic hits), hybrid mode degrades to lexical-only and
+// stamps result.Degraded so dashboards can surface the degradation.
 func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.SearchResult, error) {
 	start := time.Now()
 

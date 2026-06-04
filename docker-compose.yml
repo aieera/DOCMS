@@ -143,6 +143,12 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: sedoc-postgres
+    # Default max_connections=100 is too low: 13 Go services each open a
+    # pgxpool (MinConns=5, MaxConns=50 — see pkg/database/pool.go) plus the
+    # Python asyncpg pools, so the stack idles near the ceiling and bursts
+    # over it ("FATAL: sorry, too many clients already"), which silently
+    # starves freshly-(re)started services of their pool.
+    command: ["postgres", "-c", "max_connections=400"]
     environment:
       POSTGRES_DB: sedoc
       POSTGRES_USER: sedoc
@@ -525,6 +531,12 @@ services:
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
+      # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
+      # = vaultdms_chunks). Without this the Python side falls back to the
+      # config default "dms_vectors" and ingest writes to a different
+      # collection than search queries → semantic search silently returns
+      # nothing and hybrid degrades to lexical-only.
+      SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3 credentials. The NATS consumer runs in this container
       # and may fetch the blob before enqueueing the Celery task; the
@@ -573,6 +585,12 @@ services:
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
+      # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
+      # = vaultdms_chunks). Without this the Python side falls back to the
+      # config default "dms_vectors" and ingest writes to a different
+      # collection than search queries → semantic search silently returns
+      # nothing and hybrid degrades to lexical-only.
+      SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3/botocore credentials for the OCR worker to download
       # blobs. Use AWS_* names (boto3 reads these directly without
@@ -632,6 +650,12 @@ services:
       SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
       SEDOC_NATS_URL: "nats://nats:4222"
       SEDOC_QDRANT_URL: "http://qdrant:6333"
+      # MUST match the search service's SEDOC_QDRANT_COLLECTION (x-go-env,
+      # = vaultdms_chunks). Without this the Python side falls back to the
+      # config default "dms_vectors" and ingest writes to a different
+      # collection than search queries → semantic search silently returns
+      # nothing and hybrid degrades to lexical-only.
+      SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"
