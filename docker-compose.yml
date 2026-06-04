@@ -12,6 +12,13 @@ x-go-env: &go-env
   # rejects any request that doesn't carry a matching X-Gateway-Signature.
   # Must be identical to the gateway's SEDOC_GATEWAY_SECRET.
   SEDOC_GATEWAY_SECRET: "${SEDOC_GATEWAY_SECRET:?SEDOC_GATEWAY_SECRET must be set — see web/.env.example or run: openssl rand -hex 32}"
+  # Shared internal-service secret. Lets autonomous backend workers
+  # (connector email ingestion + watched-folder intake) authenticate to
+  # the document service's SessionOrAPIKey-gated write routes via
+  # X-Internal-Service-Key, acting on behalf of the config owner. Also
+  # used by /internal/v1/retention/sweep. The gateway strips inbound
+  # X-Internal-Service-Key so only in-cluster services can present it.
+  SEDOC_INTERNAL_API_KEY: "${SEDOC_INTERNAL_API_KEY:-dev-internal-service-key-rotate-in-prod}"
   SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
   # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
   # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset

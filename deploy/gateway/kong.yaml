@@ -52,6 +52,13 @@ plugins:
           - "X-User-Name"
           - "X-User-Email"
           - "X-Auth-Tenant-ID"
+          - "X-Tenant-ID"
+          # Internal-service auth (pkg/middleware.SessionOrAPIKey) trusts the
+          # identity headers above ONLY when this secret matches. Strip any
+          # client-supplied value so external callers can never present it —
+          # only in-cluster services (which call backends directly, bypassing
+          # this gateway) can carry it.
+          - "X-Internal-Service-Key"
   - name: prometheus
     config:
       per_consumer: false

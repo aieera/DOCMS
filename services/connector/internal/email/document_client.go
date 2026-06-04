@@ -20,6 +20,7 @@ import (
 type DocumentClient struct {
 	baseURL         string
 	gatewaySecret   string
+	internalKey     string // SEDOC_INTERNAL_API_KEY — internal-service auth
 	hc              *http.Client
 	log             func(format string, args ...any) // optional debug
 }
@@ -35,6 +36,7 @@ func NewDocumentClient() *DocumentClient {
 	return &DocumentClient{
 		baseURL:       base,
 		gatewaySecret: os.Getenv("SEDOC_GATEWAY_SECRET"),
+		internalKey:   os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		hc:            &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -234,6 +236,12 @@ func (c *DocumentClient) createVersion(ctx context.Context, tenantID, actorID, d
 
 func (c *DocumentClient) applyAuth(req *http.Request, tenantID, actorID string) {
 	req.Header.Set("X-Gateway-Signature", c.gatewaySecret)
+	// Internal-service auth: the worker has no user session, so it presents
+	// the shared internal key and the identity it acts as. The document
+	// service's SessionOrAPIKey trusts these headers only when the key
+	// matches (pkg/middleware.SessionOrAPIKey); the gateway strips any
+	// client-supplied X-Internal-Service-Key so this can't be spoofed.
+	req.Header.Set("X-Internal-Service-Key", c.internalKey)
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
 	req.Header.Set("X-Tenant-ID", tenantID)
 	if actorID != "" {
