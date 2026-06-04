@@ -713,7 +713,7 @@ Run by `services/intelligence/app/worker.py`, Celery-style queue consumed off NA
 1. **Commit and split the in-flight branch.** ~25 modified/new files mix 4 distinct features (eSign per-tenant, Twilio/SMTP modals, Google connector, iPaaS surface). Split into 4 PRs before further work. **S**
 2. **Build Google Drive import action** to make the OAuth slice useful. `POST /api/v1/connectors/google/drive/import?folder_id=...` calling `DocumentClient.MaterialiseFile`. **M**
 3. ~~**Wire WebAuthn service methods** with `go-webauthn` library.~~ ✅ DONE 2026-06-04 — implemented end-to-end; only remaining step is setting `SEDOC_WEBAUTHN_RPID` per deploy. **M**
-4. **Per-tenant rate limiting** on iPaaS trigger endpoints. Apply existing `pkg/middleware/ratelimit.go` with a `integrations:` group per tenant. **S**
+4. ~~**Per-tenant rate limiting** on iPaaS trigger endpoints.~~ ✅ DONE 2026-06-05 (commit `369aa9a`) — added `RateLimitPerTenantHTTP` (fail-closed) and wrapped the 3 iPaaS trigger routes + MCP at 60/min/tenant, nested inside APIKeyAuth. The limiter was already per-tenant; this was coverage. Tests + live-verified. **S**
 5. ~~**Vector search query side**~~ ✅ DONE 2026-06-04 — was already wired; fixed the Qdrant collection mismatch + readable_by "everyone" filter + `/search` UI now requests hybrid. Verified via Playwright. **M**
 6. **Add Salesforce + M365 connector wrappers** — provider classes already exist; ~2h each to add the Save/Start/Callback service methods + frontend modal. **M**
 7. **Per-tenant KEK derivation** for blob encryption. Tracked at `docs/tech-debt/per-tenant-kek.md`; storage's TODO points at line 137. Crypto-shredding by KEK delete becomes truly per-tenant. **L**
