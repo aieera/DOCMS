@@ -217,6 +217,62 @@ routes:
     prefix: /api/v1/connectors
     methods: []
     auth: required
+  - service: connector
+    prefix: /api/v1/admin/email-configs
+    methods: []
+    auth: admin
+  - service: connector
+    prefix: /api/v1/admin/event-stream
+    methods: []
+    auth: admin
+  - service: connector
+    prefix: /api/v1/admin/intake
+    methods: []
+    auth: admin
+
+  # ---- route-connectivity fix (2026-06-05) ----------------------------
+  # Served by handlers + proxied in dev (web/vite.config.ts) but had no Kong
+  # route, so they 404'd in prod. Mirrored into kong.yaml the same day.
+  - { service: auth, prefix: /api/v1/admin/ldap, methods: [], auth: admin }
+  - { service: auth, prefix: /api/v1/admin/mfa, methods: [], auth: admin }
+  - { service: auth, prefix: /api/v1/admin/notifications, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/comments, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/threads, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/tags, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/tasks, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/clauses, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/contracts, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/compare, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/folders, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/uploads/predict, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/zt, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/tenants/metadata-schema, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/compliance, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/admin/compliance, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/trash, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/bulk, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/models, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/training-examples, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/active-learning, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/auto-tag-config, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/tag-suggestions, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/ner-config, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/ocr-quality, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/routing-rules, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/smart-routing-config, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/filing-analytics, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/anomalies, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/anomaly-config, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/platform/db-info, methods: [GET], auth: admin }
+  - { service: document, prefix: /api/v1/admin/tenant/license, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/tenant/upload-policy, methods: [], auth: admin }
+  - { service: policy, prefix: /api/v1/permissions, methods: [], auth: required }
+  - { service: billing, prefix: /api/v1/admin/settings, methods: [], auth: admin }
+  - { service: intelligence, prefix: /api/v1/intelligence, methods: [], auth: required }
+  - { service: intelligence, prefix: /api/v1/admin/llm-usage, methods: [], auth: admin }
+  - { service: intelligence, prefix: /api/v1/admin/tenant, methods: [], auth: admin }
+  - { service: graphql-gateway, prefix: /api/v1/graphql, methods: [], auth: required }
+  - { service: mcp-server, prefix: /api/v1/mcp, methods: [], auth: required }
 
   # ---- gateway meta ---------------------------------------------------
   - service: auth            # arbitrary healthy upstream

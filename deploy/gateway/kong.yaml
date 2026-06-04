@@ -123,6 +123,12 @@ services:
       - { name: admin-users,      paths: [/api/v1/admin/users],       strip_path: false }
       - { name: admin-sso,        paths: [/api/v1/admin/sso-configs], strip_path: false }
       - { name: admin-tenants,    paths: [/api/v1/admin/tenants],     strip_path: false }
+      # Route-connectivity fix (2026-06-05): auth-owned admin prefixes that
+      # had no Kong route (worked in dev via the vite /api/v1/admin->:8180
+      # catch-all, 404'd in prod).
+      - { name: admin-ldap,          paths: [/api/v1/admin/ldap],          strip_path: false }
+      - { name: admin-mfa,           paths: [/api/v1/admin/mfa],           strip_path: false }
+      - { name: admin-notifications, paths: [/api/v1/admin/notifications], strip_path: false }
       - { name: scim,             paths: [/api/v1/scim/v2],           strip_path: false }
       - { name: api-v1-health,    paths: [/api/v1/health], methods: [GET], strip_path: true }
 
@@ -140,14 +146,47 @@ services:
       - { name: annotations,        paths: [/api/v1/annotations],              strip_path: false }
       - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
       - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
-      - { name: admin-settings,     paths: [/api/v1/admin/settings],           strip_path: false }
       - { name: admin-share-links,  paths: [/api/v1/admin/share-links],        strip_path: false }
       - { name: admin-groups,       paths: [/api/v1/admin/groups],             strip_path: false }
-      - { name: permissions-matrix, paths: [/api/v1/permissions/matrix], methods: [GET], strip_path: false }
       - { name: compliance-holds,   paths: [/api/v1/compliance/holds],         strip_path: false }
       - { name: privacy-dsr,        paths: [/api/v1/privacy/dsr],              strip_path: false }
       - { name: privacy-verify,     paths: [/api/v1/privacy/verify],           strip_path: false }
       - { name: residency,          paths: [/api/v1/residency],                strip_path: false }
+      # Route-connectivity fix (2026-06-05): these document-service prefixes
+      # were served + proxied in dev (web/vite.config.ts) but had NO Kong
+      # route, so they 404'd in prod. NOTE: admin-settings moved to billing
+      # and permissions-matrix moved to policy below — both were mis-attached
+      # to this (document) upstream and 404'd in prod regardless.
+      - { name: comments,                paths: [/api/v1/comments],                strip_path: false }
+      - { name: threads,                 paths: [/api/v1/threads],                 strip_path: false }
+      - { name: tags,                    paths: [/api/v1/tags],                    strip_path: false }
+      - { name: tasks,                   paths: [/api/v1/tasks],                   strip_path: false }
+      - { name: clauses,                 paths: [/api/v1/clauses],                 strip_path: false }
+      - { name: contracts,               paths: [/api/v1/contracts],               strip_path: false }
+      - { name: compare,                 paths: [/api/v1/compare],                 strip_path: false }
+      - { name: folders,                 paths: [/api/v1/folders],                 strip_path: false }
+      - { name: uploads-predict,         paths: [/api/v1/uploads/predict],         strip_path: false }
+      - { name: zt,                      paths: [/api/v1/zt],                      strip_path: false }
+      - { name: tenants-metadata-schema, paths: [/api/v1/tenants/metadata-schema], strip_path: false }
+      - { name: compliance,              paths: [/api/v1/compliance],              strip_path: false }
+      - { name: admin-compliance,        paths: [/api/v1/admin/compliance],        strip_path: false }
+      - { name: admin-trash,             paths: [/api/v1/admin/trash],             strip_path: false }
+      - { name: admin-bulk,              paths: [/api/v1/admin/bulk],              strip_path: false }
+      - { name: admin-models,            paths: [/api/v1/admin/models],            strip_path: false }
+      - { name: admin-training-examples, paths: [/api/v1/admin/training-examples], strip_path: false }
+      - { name: admin-active-learning,   paths: [/api/v1/admin/active-learning],   strip_path: false }
+      - { name: admin-auto-tag-config,   paths: [/api/v1/admin/auto-tag-config],   strip_path: false }
+      - { name: admin-tag-suggestions,   paths: [/api/v1/admin/tag-suggestions],   strip_path: false }
+      - { name: admin-ner-config,        paths: [/api/v1/admin/ner-config],        strip_path: false }
+      - { name: admin-ocr-quality,       paths: [/api/v1/admin/ocr-quality],       strip_path: false }
+      - { name: admin-routing-rules,     paths: [/api/v1/admin/routing-rules],     strip_path: false }
+      - { name: admin-smart-routing,     paths: [/api/v1/admin/smart-routing-config], strip_path: false }
+      - { name: admin-filing-analytics,  paths: [/api/v1/admin/filing-analytics],  strip_path: false }
+      - { name: admin-anomalies,         paths: [/api/v1/admin/anomalies],         strip_path: false }
+      - { name: admin-anomaly-config,    paths: [/api/v1/admin/anomaly-config],    strip_path: false }
+      - { name: admin-platform-db-info,  paths: [/api/v1/admin/platform/db-info],  strip_path: false }
+      - { name: admin-tenant-license,    paths: [/api/v1/admin/tenant/license],    strip_path: false }
+      - { name: admin-tenant-upload-policy, paths: [/api/v1/admin/tenant/upload-policy], strip_path: false }
       - name: shared
         paths: [/api/v1/shared]
         strip_path: false
@@ -218,3 +257,51 @@ services:
     routes:
       - { name: webhooks,   paths: [/api/v1/webhooks],   strip_path: false }
       - { name: connectors, paths: [/api/v1/connectors], strip_path: false }
+      # Route-connectivity fix (2026-06-05): connector-owned admin subtrees
+      # (ADR 0087/0088) — email ingestion, event streaming, watched-folder
+      # intake. Served by the connector service; previously no Kong route.
+      - { name: connector-email-configs, paths: [/api/v1/admin/email-configs], strip_path: false }
+      - { name: connector-event-stream,  paths: [/api/v1/admin/event-stream],  strip_path: false }
+      - { name: connector-intake,        paths: [/api/v1/admin/intake],        strip_path: false }
+
+  # ===========================================================================
+  # Route-connectivity fix (2026-06-05): upstreams the gateway was missing
+  # entirely. The frontend calls these via the vite per-prefix proxy in dev;
+  # without a Kong service+route they 404 at the gateway in prod.
+  # ===========================================================================
+  - name: policy
+    url: http://policy:8080
+    routes:
+      # All /api/v1/permissions/* (matrix, list, check, grant, revoke) live in
+      # the policy service. The old permissions-matrix route was mis-attached
+      # to the document upstream and 404'd; this prefix covers it correctly.
+      - { name: permissions, paths: [/api/v1/permissions], strip_path: false }
+
+  - name: billing
+    url: http://billing:8080
+    routes:
+      # GET/PUT /api/v1/admin/settings is the billing service (tenant settings).
+      # Was mis-attached to the document upstream in Kong.
+      - { name: admin-settings, paths: [/api/v1/admin/settings], strip_path: false }
+
+  - name: intelligence
+    url: http://intelligence:8080
+    routes:
+      # Python intelligence worker: Doc Q&A, RAG, summarize, redact, translate,
+      # LLM config/usage, per-tenant AI settings. NOTE the more-specific
+      # /api/v1/admin/tenant/{license,upload-policy} routes on the document
+      # upstream win by longest-prefix, so only the tenant AI-settings base
+      # path lands here.
+      - { name: intelligence,    paths: [/api/v1/intelligence],     strip_path: false }
+      - { name: admin-llm-usage, paths: [/api/v1/admin/llm-usage],  strip_path: false }
+      - { name: admin-tenant-ai, paths: [/api/v1/admin/tenant],     strip_path: false }
+
+  - name: graphql-gateway
+    url: http://graphql-gateway:8080
+    routes:
+      - { name: graphql, paths: [/api/v1/graphql], strip_path: false }
+
+  - name: mcp-server
+    url: http://mcp-server:8080
+    routes:
+      - { name: mcp, paths: [/api/v1/mcp], strip_path: false }
