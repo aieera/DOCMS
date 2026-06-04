@@ -144,11 +144,14 @@ func main() {
 	// whitelisted by RequireGatewaySignature.
 	integrationsMux := http.NewServeMux()
 	handler.NewIntegrationTriggersHandler(pool).Register(integrationsMux)
+	// Per-tenant rate limit (ADR 0090) — 60/min/tenant, nested INSIDE
+	// APIKeyAuth so the key's tenant is on ctx. See document main.go.
+	integrationsRL := middleware.NewRateLimiter(rdb, 60)
 	mux.Handle("/api/v1/integrations/triggers/workflows/completed",
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(integrationsMux))
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)))
 	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")

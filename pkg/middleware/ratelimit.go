@@ -97,3 +97,42 @@ func RateLimitHTTP(rl *RateLimiter, group string) func(http.Handler) http.Handle
 		})
 	}
 }
+
+// RateLimitPerTenantHTTP is RateLimitHTTP for routes that are ALWAYS
+// authenticated before they reach here — API-key / iPaaS poll-trigger
+// surfaces (ADR 0090) and the MCP server. It MUST be wrapped by the auth
+// middleware (APIKeyAuth / SessionOrAPIKey) so the tenant the key resolved
+// to is on the context when it runs.
+//
+// Unlike RateLimitHTTP it does NOT no-op when the tenant is absent: on an
+// always-authenticated route a missing tenant can only mean a wiring bug or
+// a bypass attempt, so it fails CLOSED (500) rather than silently disabling
+// the per-tenant quota. Allow() itself still fails OPEN on Redis errors, so a
+// cache blip can't take ERP/iPaaS ingest down — only the per-tenant cap
+// lapses, with Kong's global ceiling as the backstop.
+func RateLimitPerTenantHTTP(rl *RateLimiter, group string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tid, err := auth.GetTenantID(r.Context())
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"type":           "INTERNAL",
+					"message":        "rate limiter requires tenant context",
+					"correlation_id": auth.GetCorrelationID(r.Context()),
+				})
+				return
+			}
+			ok, retry := rl.Allow(r.Context(), tid.String(), group)
+			if !ok {
+				w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())))
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"type":           "RATE_LIMITED",
+					"message":        "rate limit exceeded",
+					"correlation_id": auth.GetCorrelationID(r.Context()),
+				})
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

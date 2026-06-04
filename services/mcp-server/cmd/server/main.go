@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/config"
@@ -100,9 +101,18 @@ func main() {
 		Pool:          pool,
 		RequiredScope: "mcp:read",
 	})
+	// Per-tenant rate limit. MCP keys are programmatic (Claude Desktop /
+	// Cursor / curl); 60/min/tenant caps a tenant's call volume without
+	// per-IP pooling. Nested INSIDE APIKeyAuth so the key's tenant is on
+	// ctx; for SSE this caps connects, not streamed events. Overridable via
+	// redis ratelimit:config:{tenant}:mcp.
+	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+	defer func() { _ = rdb.Close() }()
+	mcpRL := middleware.NewRateLimiter(rdb, 60)
+	mcpLimit := middleware.RateLimitPerTenantHTTP(mcpRL, "mcp")
 	rootMux := http.NewServeMux()
-	rootMux.Handle("/api/v1/mcp", apiAuth(mux))
-	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mux))
+	rootMux.Handle("/api/v1/mcp", apiAuth(mcpLimit(mux)))
+	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mcpLimit(mux)))
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),

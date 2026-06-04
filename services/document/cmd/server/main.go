@@ -429,11 +429,17 @@ func main() {
 	// integrations:read; tenant is stamped on ctx by APIKeyAuth.
 	integrationsMux := http.NewServeMux()
 	handler.NewIntegrationTriggersHandler(pool).Register(integrationsMux)
+	// Per-tenant rate limit (ADR 0090). 60/min/tenant is generous for poll
+	// triggers (Zapier polls every 1-15 min) but caps abusive polling PER
+	// TENANT — not per-IP, so distinct keys behind one NAT can't pool a
+	// budget. Overridable via redis ratelimit:config:{tenant}:integrations.
+	// Nested INSIDE APIKeyAuth so the tenant the key resolved to is on ctx.
+	integrationsRL := middleware.NewRateLimiter(rdb, 60)
 	rootMux.Handle("/api/v1/integrations/triggers/documents", middleware.CorrelationHTTP(
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(integrationsMux),
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)),
 	))
 
 	// ADR 0112 — Outlook add-in ingest. Uses session auth (not API
