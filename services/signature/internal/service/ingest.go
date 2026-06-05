@@ -58,6 +58,10 @@ type PutSignedBlobInput struct {
 	// RegionPin must match the document's region (ADR pin invariant).
 	// Pulled from documents.region_pin by the caller.
 	RegionPin string
+	// DocumentID scopes the storage upload-permission check
+	// (ensureUploadPermission needs exactly one of doc/folder/workspace).
+	// For a new version of an existing document this is that document.
+	DocumentID string
 }
 
 // PutSignedBlobResult is returned by the storage round-trip.
@@ -100,6 +104,9 @@ func (p *ingestPipeline) PutAndCreateVersion(ctx context.Context, in PutSignedBl
 		// Documents always have a region_pin; if caller didn't
 		// resolve it, fall back to a sentinel storage understands.
 		in.RegionPin = "us-east-1"
+	}
+	if in.DocumentID == "" {
+		in.DocumentID = documentID // scope the upload-permission check
 	}
 	put, err := p.client.PutSignedBlob(ctx, in)
 	if err != nil {

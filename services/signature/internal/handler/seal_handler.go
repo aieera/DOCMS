@@ -22,6 +22,9 @@ func (h *Handler) sealVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "missing tenant")
 		return
 	}
+	// The sealing actor (the workflow initiator / ops user). Storage requires a
+	// non-nil user_id; the OPA admin rule still authorizes via the role on ctx.
+	userID := r.Header.Get("X-User-ID")
 	var body struct {
 		DocumentID string `json:"document_id"`
 		VersionID  string `json:"version_id"`
@@ -36,7 +39,7 @@ func (h *Handler) sealVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "document_id and version_id are required")
 		return
 	}
-	res, err := h.svc.SealVersion(r.Context(), tenantID, body.DocumentID, body.VersionID, body.SignerName, body.Reason)
+	res, err := h.svc.SealVersion(r.Context(), tenantID, body.DocumentID, body.VersionID, userID, body.SignerName, body.Reason)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

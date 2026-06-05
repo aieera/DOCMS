@@ -22,14 +22,18 @@ package service
 import (
 	"context"
 	"crypto/md5"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/aieera/sedoc/pkg/auth"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"google.golang.org/grpc/metadata"
 )
@@ -48,7 +52,33 @@ type GRPCIngestClient struct {
 func NewGRPCIngestClient(storage sedocv1.StorageServiceClient, document sedocv1.DocumentServiceClient, pool *pgxpool.Pool) *GRPCIngestClient {
 	return &GRPCIngestClient{
 		storage: storage, document: document, pool: pool,
-		http: &http.Client{Timeout: 60 * time.Second},
+		http: newPresignedPUTClient(),
+	}
+}
+
+// newPresignedPUTClient returns an HTTP client whose dialer swaps the public
+// MinIO host storage signs into the presigned URL (SEDOC_S3_PUBLIC_BASE, e.g.
+// localhost:9000) for the in-cluster endpoint (SEDOC_S3_ENDPOINT, e.g.
+// minio:9000). The Host header — and thus the SigV4 signature — is untouched.
+// Without this, in-cluster callers can't reach the browser-facing presigned URL.
+// (Mirrors services/connector/internal/ingest.)
+func newPresignedPUTClient() *http.Client {
+	publicHost := os.Getenv("SEDOC_S3_PUBLIC_BASE")
+	internalHost := os.Getenv("SEDOC_S3_ENDPOINT")
+	if u, err := url.Parse(internalHost); err == nil && u.Host != "" {
+		internalHost = u.Host
+	}
+	base := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Client{
+		Timeout: 60 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if publicHost != "" && internalHost != "" && addr == publicHost {
+					addr = internalHost
+				}
+				return base.DialContext(ctx, network, addr)
+			},
+		},
 	}
 }
 
@@ -60,6 +90,10 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	sha := hashBytes(in.Bytes)
 	size := int64(len(in.Bytes))
 	mdCtx := withTenantMetadata(ctx, in.TenantID, in.UserID)
+	if in.DocumentID != "" {
+		// Scope the upload-permission check (storage scopeFromMetadata).
+		mdCtx = metadata.AppendToOutgoingContext(mdCtx, "x-document-id", in.DocumentID)
+	}
 
 	init, err := c.storage.InitiateUpload(mdCtx, &sedocv1.InitiateUploadRequest{
 		RegionPin:      in.RegionPin,
@@ -82,7 +116,9 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	// Compute Content-MD5 if S3 needs it. Cheap; covers a class of
 	// silent-corruption bugs.
 	md5sum := md5.Sum(in.Bytes)
-	headers["Content-MD5"] = hex.EncodeToString(md5sum[:])
+	// S3/MinIO requires Content-MD5 base64-encoded (not hex) — hex yields a
+	// 400 BadDigest, which silently broke this upload path.
+	headers["Content-MD5"] = base64.StdEncoding.EncodeToString(md5sum[:])
 	if err := httpPutWithRetry(ctx, c.http, init.GetPresignedPutUrl(), in.Bytes, headers); err != nil {
 		return nil, fmt.Errorf("storage put: %w", err)
 	}
@@ -146,10 +182,21 @@ func (c *GRPCIngestClient) CreateVersionFromBlob(ctx context.Context, in CreateV
 func withTenantMetadata(ctx context.Context, tenantID, userID string) context.Context {
 	md := metadata.MD{}
 	if tenantID != "" {
-		md.Set("x-auth-tenant-id", tenantID)
+		// FIX: the storage/document TenantInterceptor reads x-tenant-id
+		// (middleware.TenantMetadataKey); the previous x-auth-tenant-id never
+		// resolved, so every ingest gRPC call failed Unauthenticated. The
+		// QES/esign hand-off shared this bug and was never E2E-green.
+		md.Set("x-tenant-id", tenantID)
 	}
 	if userID != "" {
 		md.Set("x-user-id", userID)
+	}
+	// Forward the caller's role so the storage/document OPA owner/admin rule
+	// (ensureUploadPermission) fires for trusted/system callers — e.g. the
+	// server-seal pipeline runs as the internal-service identity (role=admin)
+	// with no human user.
+	if role := auth.GetUserRole(ctx); role != "" {
+		md.Set("x-user-role", role)
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }

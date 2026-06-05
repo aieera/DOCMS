@@ -831,7 +831,13 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: signature }
     container_name: sedoc-signature
-    environment: *go-env
+    # ADR 0025 — server-seal: use the real DSS sidecar + reach the document
+    # service's HTTP for the decrypt-stream fetch.
+    environment:
+      <<: *go-env
+      SEDOC_SIGNER: "dss"
+      SIGNER_ADDR: "signature-signer:6060"
+      SEDOC_DOCUMENT_HTTP_URL: "http://document:8080"
     ports: ["8090:8081", "9098:9090", "8188:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck

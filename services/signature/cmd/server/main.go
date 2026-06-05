@@ -135,7 +135,7 @@ func main() {
 	if docHTTP == "" {
 		docHTTP = "http://document:8080"
 	}
-	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"))
+	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Msg("server-seal pipeline wired")
 
 	hs := health.NewServerWithMeta("signature", cfg.Region, pool, rdb, nc, s3c)

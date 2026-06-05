@@ -29,23 +29,25 @@ const internalServiceKeyHeader = "X-Internal-Service-Key"
 
 // Sealer holds the server-seal dependencies. Constructed by AddSealer.
 type Sealer struct {
-	signer      signer.Signer
-	ingest      *ingestPipeline
-	docHTTPBase string // e.g. http://document:8080
-	internalKey string // SEDOC_INTERNAL_API_KEY
-	httpClient  *http.Client
+	signer        signer.Signer
+	ingest        *ingestPipeline
+	docHTTPBase   string // e.g. http://document:8080
+	internalKey   string // SEDOC_INTERNAL_API_KEY
+	gatewaySecret string // SEDOC_GATEWAY_SECRET — satisfies the document service's gateway-sig check on the direct (non-gateway) fetch
+	httpClient    *http.Client
 }
 
 // AddSealer wires the server-seal pipeline. main.go calls this when a Signer
 // is configured (SEDOC_SIGNER) and the document HTTP base + internal key are
 // present; otherwise SealVersion returns "not configured".
-func (s *Service) AddSealer(sgnr signer.Signer, docHTTPBase, internalKey string) {
+func (s *Service) AddSealer(sgnr signer.Signer, docHTTPBase, internalKey, gatewaySecret string) {
 	s.sealer = &Sealer{
-		signer:      sgnr,
-		ingest:      s.ingest,
-		docHTTPBase: docHTTPBase,
-		internalKey: internalKey,
-		httpClient:  &http.Client{Timeout: 60 * time.Second},
+		signer:        sgnr,
+		ingest:        s.ingest,
+		docHTTPBase:   docHTTPBase,
+		internalKey:   internalKey,
+		gatewaySecret: gatewaySecret,
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -59,7 +61,7 @@ type SealResult struct {
 // SealVersion fetches (documentID, versionID)'s decrypted PDF, server-seals it,
 // and ingests the sealed bytes as a new version. signerName/reason populate the
 // PAdES signerInfo. Returns the new version id.
-func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, versionID, signerName, reason string) (*SealResult, error) {
+func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, versionID, userID, signerName, reason string) (*SealResult, error) {
 	if s.sealer == nil || s.sealer.signer == nil {
 		return nil, errors.New("seal: signer not configured")
 	}
@@ -91,11 +93,13 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 	}
 
 	newVer, _, err := s.sealer.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{
-		TenantID: tenantID,
-		Filename: "sealed.pdf",
-		MimeType: "application/pdf",
-		Bytes:    resp.PDFBytes,
-	}, documentID, "", "Server seal ("+string(resp.Level)+")")
+		TenantID:   tenantID,
+		UserID:     userID,
+		Filename:   "sealed.pdf",
+		MimeType:   "application/pdf",
+		Bytes:      resp.PDFBytes,
+		DocumentID: documentID,
+	}, documentID, userID, "Server seal ("+string(resp.Level)+")")
 	if err != nil {
 		return nil, fmt.Errorf("seal ingest: %w", err)
 	}
@@ -114,6 +118,11 @@ func (sl *Sealer) fetchVersionPDF(ctx context.Context, tenantID, documentID, ver
 	}
 	req.Header.Set(internalServiceKeyHeader, sl.internalKey)
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
+	if sl.gatewaySecret != "" {
+		// The decrypt-stream endpoint sits behind RequireGatewaySignature; on a
+		// direct service-to-service call we present the shared secret ourselves.
+		req.Header.Set("X-Gateway-Signature", sl.gatewaySecret)
+	}
 
 	resp, err := sl.httpClient.Do(req)
 	if err != nil {
