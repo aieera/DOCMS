@@ -44,6 +44,46 @@ func TestGatewayRoutesMirrorKongConfig(t *testing.T) {
 	}
 }
 
+// TestKongRoutesDeclaredInRoutesYAML is the reverse contract: every route
+// path in deploy/gateway/kong.yaml must also be declared (with its auth
+// level) in deploy/gateway/routes.yaml. Together with the forward check
+// above this keeps the gateway config and the source-of-truth inventory in
+// exact lockstep — a route can't be added to one file without the other.
+//
+// This is the half that was missing when ~21 routes drifted: kong.yaml had
+// been edited without routes.yaml (and vice-versa) and nothing caught it.
+func TestKongRoutesDeclaredInRoutesYAML(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	routes := loadRoutesYAML(t, filepath.Join(repoRoot, "deploy", "gateway", "routes.yaml"))
+	kongPaths := loadKongRoutePaths(t, filepath.Join(repoRoot, "deploy", "gateway", "kong.yaml"))
+
+	var undeclared []string
+	for _, kp := range kongPaths {
+		found := false
+		for _, r := range routes.Routes {
+			// Declared if routes.yaml has: an exact match; a parent prefix
+			// covering this Kong path; or a child prefix (Kong groups several
+			// sub-routes under one broad route, e.g. /auth/mfa covers
+			// /auth/mfa/verify+/setup which routes.yaml enumerates).
+			if r.Prefix == kp ||
+				strings.HasPrefix(kp, r.Prefix+"/") ||
+				strings.HasPrefix(r.Prefix, kp+"/") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			undeclared = append(undeclared, kp)
+		}
+	}
+
+	if len(undeclared) > 0 {
+		t.Fatalf("kong.yaml declares %d route path(s) not present in routes.yaml:\n  %s",
+			len(undeclared), strings.Join(undeclared, "\n  "))
+	}
+}
+
 // ---- helpers --------------------------------------------------------
 
 type routesDoc struct {

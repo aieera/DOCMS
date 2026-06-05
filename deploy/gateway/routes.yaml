@@ -11,6 +11,7 @@
 #   methods   HTTP verbs allowed; [] for all
 #   auth      `required` (session cookie) | `public` (unauthenticated)
 #             | `admin`    (session + role in admin/owner set)
+#             | `apikey`   (tenant API key, Bearer vdms_… — iPaaS/ERP)
 #             | `service`  (mTLS + internal API key, not public;
 #                           listed here only so archtest knows about it)
 #   rate      rate-limit class — see deploy/gateway/rate-limits.yaml
@@ -53,6 +54,12 @@ routes:
     prefix: /api/v1/auth/mfa/disable
     methods: [POST]
     auth: required
+  # WebAuthn / passkeys. One broad Kong route; the auth service enforces
+  # per-endpoint (register/* needs a session, login/* is pre-session).
+  - service: auth
+    prefix: /api/v1/auth/webauthn
+    methods: []
+    auth: public
   - service: auth
     prefix: /api/v1/auth/sessions
     methods: []
@@ -92,6 +99,10 @@ routes:
     methods: []
     auth: required
     rate: doc-rw
+  - service: document
+    prefix: /api/v1/workspaces
+    methods: []
+    auth: required
   - service: document
     prefix: /api/v1/annotations
     methods: []
@@ -273,6 +284,24 @@ routes:
   - { service: intelligence, prefix: /api/v1/admin/tenant, methods: [], auth: admin }
   - { service: graphql-gateway, prefix: /api/v1/graphql, methods: [], auth: required }
   - { service: mcp-server, prefix: /api/v1/mcp, methods: [], auth: required }
+
+  # ---- iPaaS poll triggers (ADR 0090) ---------------------------------
+  # Tenant-API-key authed; per-tenant rate limited (60/min) in-app.
+  - service: document
+    prefix: /api/v1/integrations/triggers/documents
+    methods: [GET]
+    auth: apikey
+    rate: integrations
+  - service: workflow
+    prefix: /api/v1/integrations/triggers/workflows
+    methods: [GET]
+    auth: apikey
+    rate: integrations
+  - service: signature
+    prefix: /api/v1/integrations/triggers/signatures
+    methods: [GET]
+    auth: apikey
+    rate: integrations
 
   # ---- gateway meta ---------------------------------------------------
   - service: auth            # arbitrary healthy upstream

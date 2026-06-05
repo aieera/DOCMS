@@ -23,7 +23,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -61,7 +63,7 @@ func main() {
 	// connection role unexpectedly has BYPASSRLS; set
 	// SEDOC_ALLOW_BYPASS_RLS=1 in dev to opt in.
 
-	nc, js, err := events.ConnectNATS(cfg.NATSURL)
+	nc, _, err := events.ConnectNATS(cfg.NATSURL)
 	if err != nil {
 		log.Warn(ctx).Err(err).Msg("nats connect — audit emit will no-op")
 	}
@@ -72,7 +74,7 @@ func main() {
 	// MCP server with audit-emit + scope reader wired.
 	mcpSrv := mcp.New(mcp.Config{
 		Logger:    *log.Z(),
-		AuditEmit: makeAuditEmitter(js, serviceName),
+		AuditEmit: makeAuditEmitter(pool, serviceName),
 		ScopeOf:   auth.GetScopes,
 	})
 
@@ -142,17 +144,30 @@ func main() {
 	_ = hs.Shutdown(shutdownCtx)
 }
 
-// makeAuditEmitter returns a closure that publishes one
-// dms.audit.mcp_tool_invoked.v1 NATS message per tool call. Failures
-// log but never block the response — audit is fire-and-forget.
-func makeAuditEmitter(js nats.JetStreamContext, source string) func(ctx context.Context, toolName string, ok bool, errMsg string) {
-	if js == nil {
+// makeAuditEmitter returns a closure that records one
+// dms.audit.mcp_tool_invoked.v1 event per tool call. Per §4.7 (outbox-only)
+// it writes to the transactional `outbox` table rather than publishing to
+// NATS directly — the shared outbox publisher forwards it (dms.audit.> →
+// AUDIT_EVENTS). Fire-and-forget: a failed insert logs nothing and never
+// blocks the response (audit is best-effort, not on the hot path).
+func makeAuditEmitter(pool *pgxpool.Pool, source string) func(ctx context.Context, toolName string, ok bool, errMsg string) {
+	if pool == nil {
 		return func(context.Context, string, bool, string) {}
 	}
+	outbox := database.NewOutboxRepository()
 	return func(ctx context.Context, toolName string, ok bool, errMsg string) {
-		tenantID, _ := auth.GetTenantID(ctx)
+		tenantID, err := auth.GetTenantID(ctx)
+		if err != nil || tenantID == uuid.Nil {
+			return // no tenant on ctx → nothing to attribute the audit to
+		}
 		userID, _ := auth.GetUserID(ctx)
-		payload := map[string]any{
+		// Aggregate = the actor (or the tenant when unauthenticated); the
+		// outbox Insert stamps actor_id/ip from ctx for the audit consumer.
+		aggregate := userID
+		if aggregate == uuid.Nil {
+			aggregate = tenantID
+		}
+		raw, _ := json.Marshal(map[string]any{
 			"tenant_id":  tenantID.String(),
 			"user_id":    userID.String(),
 			"tool":       toolName,
@@ -160,9 +175,11 @@ func makeAuditEmitter(js nats.JetStreamContext, source string) func(ctx context.
 			"error":      errMsg,
 			"source":     source,
 			"emitted_at": time.Now().UTC().Format(time.RFC3339Nano),
-		}
-		raw, _ := json.Marshal(payload)
-		_, _ = js.Publish("dms.audit.mcp_tool_invoked.v1", raw)
+		})
+		evt := database.NewOutboxEvent(tenantID, "dms.audit.mcp_tool_invoked.v1", "mcp_tool", aggregate, raw)
+		_ = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+			return outbox.Insert(ctx, tx, evt)
+		})
 	}
 }
 
