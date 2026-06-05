@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Eye, Link2, Lock, ShieldOff, Trash2 } from 'lucide-react'
 
@@ -53,7 +54,7 @@ function ShareLinksPage() {
     return Array.from(byDoc.values())
   }, [data])
 
-  const revoke = useMutation({
+  const revoke = useAppMutation({
     mutationFn: (id: string) => revokeAdminShareLink(id),
     onSuccess: () => {
       toast.success('Link revoked')
@@ -62,7 +63,7 @@ function ShareLinksPage() {
     onError: () => toast.error('Revoke failed'),
   })
 
-  const revokeAll = useMutation({
+  const revokeAll = useAppMutation({
     mutationFn: (docId: string) => revokeAllShareLinksForDocument(docId),
     onSuccess: (r) => {
       toast.success(`Revoked ${r.revoked} link${r.revoked === 1 ? '' : 's'}`)

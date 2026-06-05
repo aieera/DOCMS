@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { FolderDown } from 'lucide-react'
 
@@ -28,7 +29,7 @@ export function DriveImportPanel() {
     enabled: workspaceID !== '',
   })
 
-  const importMut = useMutation({
+  const importMut = useAppMutation({
     mutationFn: () => importGoogleDrive({
       drive_folder_id: driveFolderID.trim() || undefined,
       workspace_id: workspaceID,

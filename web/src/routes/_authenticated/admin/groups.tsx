@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Plus, Trash2, UserMinus, UserPlus, Users } from 'lucide-react'
 import { getUsers } from '@/api/admin'
@@ -42,7 +43,7 @@ export function GroupsPage() {
     enabled: !!selectedId,
   })
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createGroup({ name: newName.trim(), description: newDesc.trim() || undefined }),
     onSuccess: (g) => {
       toast.success(`Created "${g.name}"`)
@@ -53,7 +54,7 @@ export function GroupsPage() {
     onError: () => toast.error('Create failed'),
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteGroup(id),
     onSuccess: (_d, id) => {
       toast.success('Group deleted')
@@ -66,7 +67,7 @@ export function GroupsPage() {
     },
   })
 
-  const rename = useMutation({
+  const rename = useAppMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateGroup(id, { name }),
     onSuccess: (_d, v) => {
       toast.success('Renamed')
@@ -75,7 +76,7 @@ export function GroupsPage() {
     },
   })
 
-  const addMember = useMutation({
+  const addMember = useAppMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string }) => addGroupMember(id, userId),
     onSuccess: (_d, v) => {
       toast.success('Member added')
@@ -85,7 +86,7 @@ export function GroupsPage() {
     onError: () => toast.error('Add failed — check the user ID'),
   })
 
-  const removeMember = useMutation({
+  const removeMember = useAppMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string }) => removeGroupMember(id, userId),
     onSuccess: (_d, v) => {
       toast.success('Member removed')

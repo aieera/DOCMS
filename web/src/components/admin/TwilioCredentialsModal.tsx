@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 
 import { getTwilioConfig, saveTwilioConfig, testTwilio } from '@/api/notif-providers'
@@ -38,7 +39,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
 
   const hasExistingToken = !!existingQ.data?.has_auth_token
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: () => saveTwilioConfig({
       account_sid: accountSID.trim(),
       auth_token: authToken,
@@ -52,7 +53,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
     onError: (e: Error) => toast.error(e.message || 'Save failed'),
   })
 
-  const testMut = useMutation({
+  const testMut = useAppMutation({
     mutationFn: () => testTwilio(testPhone),
     onSuccess: () => toast.success(`Test SMS sent to ${testPhone}`),
     onError: (e: Error) => toast.error(e.message || 'Test failed'),

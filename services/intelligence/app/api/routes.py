@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -109,10 +109,25 @@ def _require_tenant(tenant_id: Optional[str]) -> str:
     return tenant_id
 
 
+def get_tenant_id(
+    x_auth_tenant_id: Optional[str] = Header(None, alias="X-Auth-Tenant-ID"),
+    legacy_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+) -> str:
+    """Track 3 — resolve the tenant, preferring the canonical X-Auth-Tenant-ID
+    and falling back to the legacy X-Tenant-ID. 400 if neither is present, so
+    the FE can drop the legacy dual-write one release later without 400-bombing
+    the AI surface. Defined above the first route: the Depends(get_tenant_id)
+    default is evaluated at module load when each route is defined."""
+    tenant = x_auth_tenant_id or legacy_tenant_id
+    if not tenant:
+        raise HTTPException(400, "X-Auth-Tenant-ID (or legacy X-Tenant-ID) required")
+    return tenant
+
+
 @router.post("/ask")
 def ask_endpoint(
     body: AskRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
 ):
@@ -134,7 +149,7 @@ def ask_endpoint(
 @router.post("/summarize")
 def summarize_endpoint(
     body: SummarizeRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     result = summarize_document.apply(
@@ -146,7 +161,7 @@ def summarize_endpoint(
 @router.post("/redact/detect")
 def redact_detect_endpoint(
     body: RedactDetectRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     result = detect_redaction_candidates.apply(
@@ -174,7 +189,7 @@ def _resolve_caller(x_tenant_id, x_user_id, x_group_ids) -> tuple[str, str, list
 @router.post("/qa")
 async def qa_stream_endpoint(
     body: QARequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
 ):
@@ -255,7 +270,7 @@ async def qa_stream_endpoint(
 @router.post("/qa/sync")
 async def qa_sync_endpoint(
     body: QARequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
 ):
@@ -323,7 +338,7 @@ async def qa_sync_endpoint(
 async def qa_history_endpoint(
     document_id: str,
     conversation_id: Optional[str] = None,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ):
     """List the user's conversations for this document. When
@@ -364,7 +379,7 @@ class TranslateRequest(BaseModel):
 @router.post("/translate")
 async def translate_endpoint(
     body: TranslateRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ):
     """ADR 0056 — request a translation. Idempotent on
@@ -435,7 +450,7 @@ async def translate_endpoint(
 @router.get("/translations/{document_id}")
 async def list_translations_endpoint(
     document_id: str,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     from app.db.pool import get_pool
@@ -482,7 +497,7 @@ async def list_translations_endpoint(
 @router.get("/translations/{translation_id}/text")
 async def get_translation_text_endpoint(
     translation_id: str,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     from app.db.pool import get_pool
@@ -520,7 +535,7 @@ async def get_translation_text_endpoint(
 @router.get("/language/{document_id}")
 async def get_document_language_endpoint(
     document_id: str,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     from app.db.pool import get_pool
@@ -563,7 +578,7 @@ class AnomalyRunRequest(BaseModel):
 @router.post("/anomaly/run")
 async def anomaly_run_endpoint(
     body: AnomalyRunRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ):
     """ADR 0058 — kick off a workspace-level outlier scan.
@@ -621,7 +636,7 @@ async def anomaly_run_endpoint(
 @router.post("/redact/apply")
 def redact_apply_endpoint(
     body: RedactApplyRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     tenant = _require_tenant(x_tenant_id)
     result = apply_redactions.apply_async(kwargs={
@@ -651,7 +666,7 @@ class RAGFeedbackRequest(BaseModel):
 @router.post("/rag/query")
 async def rag_query_endpoint(
     body: RAGQueryRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     x_group_ids: Optional[str] = Header(None, alias="X-Group-IDs"),
 ):
@@ -722,7 +737,7 @@ async def rag_query_endpoint(
 async def rag_feedback_endpoint(
     query_id: str,
     body: RAGFeedbackRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ):
     """Record thumbs-up/-down/flag on a prior /rag/query result.
@@ -759,7 +774,7 @@ class LLMCompletionsRequest(BaseModel):
 @router.post("/llm/completions")
 def llm_completions_endpoint(
     body: LLMCompletionsRequest,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
 ):
     """First-class completions endpoint that the admin "Test" button
@@ -808,7 +823,7 @@ class TenantLLMConfigBody(BaseModel):
 
 @admin_router.get("/tenant/llm-config")
 async def get_tenant_llm_config_endpoint(
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """Return the per-tenant LLM routing config — provider, model,
@@ -825,7 +840,7 @@ async def get_tenant_llm_config_endpoint(
 @admin_router.put("/tenant/llm-config")
 async def put_tenant_llm_config_endpoint(
     body: TenantLLMConfigBody,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """Patch any subset of fields. api_key is write-only — once set,
@@ -886,7 +901,7 @@ class WorkspaceAISettingsBody(BaseModel):
 @router.get("/workspaces/{workspace_id}/ai-settings")
 async def get_workspace_ai_settings_endpoint(
     workspace_id: str,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
 ):
     """Return the per-workspace AI/RAG settings. Falls back to schema
     defaults when no row exists yet (workspace was created before the
@@ -902,7 +917,7 @@ async def get_workspace_ai_settings_endpoint(
 async def update_workspace_ai_settings_endpoint(
     workspace_id: str,
     body: WorkspaceAISettingsBody,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """Admin-only — patch the per-workspace AI settings. Workspace
@@ -928,7 +943,7 @@ async def update_workspace_ai_settings_endpoint(
 
 @admin_router.get("/llm-usage")
 async def llm_usage(
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: str = Depends(get_tenant_id),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """Per-tenant LLM usage tally aggregated by model. Reads the

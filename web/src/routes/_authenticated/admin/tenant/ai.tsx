@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertTriangle, Beaker, Coins, KeyRound, ShieldAlert } from 'lucide-react'
 
@@ -74,7 +75,7 @@ export function TenantAIPage() {
     if (data) setDraft(data)
   }, [data])
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: (patch: TenantLLMConfigPatch) => updateTenantLLMConfig(patch),
     onSuccess: (next) => {
       qc.setQueryData(['tenant-llm-config'], next)
@@ -84,7 +85,7 @@ export function TenantAIPage() {
     onError: () => toast.error('Could not save settings'),
   })
 
-  const testMut = useMutation({
+  const testMut = useAppMutation({
     mutationFn: () => testLLMCompletion(testPrompt, draft?.model || undefined),
     onSuccess: (r) => {
       setTestResult(`${r.content}\n\n— ${r.provider}/${r.model} · ${r.elapsed_ms}ms · ${r.input_tokens + r.output_tokens} tok${r.fallback_used ? ' (fallback)' : ''}`)

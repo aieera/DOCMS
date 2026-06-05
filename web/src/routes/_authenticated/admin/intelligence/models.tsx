@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Brain, CheckCircle2, Play, XCircle } from 'lucide-react'
 
@@ -54,7 +55,7 @@ export function ModelsPage() {
     queryFn: getActiveLearningConfig,
   })
 
-  const promote = useMutation({
+  const promote = useAppMutation({
     mutationFn: (id: string) => promoteModel(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['model-versions'] })
@@ -63,7 +64,7 @@ export function ModelsPage() {
     onError: () => toast.error('Promote failed'),
   })
 
-  const retire = useMutation({
+  const retire = useAppMutation({
     mutationFn: (id: string) => retireModel(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['model-versions'] })
@@ -72,7 +73,7 @@ export function ModelsPage() {
     onError: () => toast.error('Retire failed'),
   })
 
-  const retrain = useMutation({
+  const retrain = useAppMutation({
     mutationFn: () => triggerRetrain('classification'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['model-versions'] })
@@ -254,7 +255,7 @@ function ConfigPanel({ initial }: { initial: ActiveLearningConfig }) {
   const [draft, setDraft] = useState(initial)
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: () => updateActiveLearningConfig(draft),
     onSuccess: (saved) => {
       qc.setQueryData(['active-learning-config'], saved)

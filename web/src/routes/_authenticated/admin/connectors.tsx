@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Plug, ExternalLink, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react'
 
@@ -67,7 +68,7 @@ export function ConnectorsPage() {
       ? `${window.location.origin}/api/v1/connectors/oauth/callback`
       : '/api/v1/connectors/oauth/callback'
 
-  const install = useMutation({
+  const install = useAppMutation({
     mutationFn: async (provider: string) => {
       // Backend exposes a stub /auth-url endpoint today. Once the
       // real OAuth handshake lands, redirect_url comes back here.

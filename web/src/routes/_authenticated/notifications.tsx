@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { readErrorMessage } from '@/api/client'
@@ -20,13 +20,13 @@ function NotificationsPage() {
   // unread with no feedback. readErrorMessage surfaces the server
   // reason (e.g. 404 if the row was already purged) so the user knows
   // their click did something.
-  const readOne = useMutation({
+  const readOne = useAppMutation({
     mutationFn: markAsRead,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications-inbox'] }),
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? "Couldn't mark as read"),
   })
-  const readAll = useMutation({
+  const readAll = useAppMutation({
     mutationFn: markAllRead,
     onSuccess: () => {
       toast.success('Marked all read')

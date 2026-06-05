@@ -8,7 +8,8 @@
 // reminds the admin (and surfaces the "force admin approve" toggle
 // the API expects).
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Check, Filter, Lock, Play, RotateCcw, Trash2 } from 'lucide-react'
 
@@ -74,7 +75,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
     refetchInterval: 15_000,
   })
 
-  const review = useMutation({
+  const review = useAppMutation({
     mutationFn: ({ id, action, note }: { id: string; action: RedactionAction; note?: string }) =>
       reviewRedactionCandidate(documentId, id, action, note),
     onSuccess: () => {
@@ -86,7 +87,7 @@ export function RedactionReviewPanel({ documentId, versionId, isAdminCaller }: P
     },
   })
 
-  const apply = useMutation({
+  const apply = useAppMutation({
     mutationFn: ({ force }: { force: boolean }) => applyRedaction(documentId, versionId!, force),
     onSuccess: (resp) => {
       toast.success(`Burn-in queued for ${resp.candidate_count} candidate${resp.candidate_count === 1 ? '' : 's'}`)

@@ -68,6 +68,11 @@ snapshots/
 .playwright-mcp/
 web/.audit/
 .claude/scheduled_tasks.lock
+# Auto-generated local Claude agent (shared project agents are still tracked)
+.claude/agents/debugger.md
+
+# Local-only ops/monitoring scaffolding (deployable config lives under deploy/)
+ops/
 
 # Runtime artifacts from scripts/dev-up.sh
 .run/

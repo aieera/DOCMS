@@ -419,9 +419,13 @@ func main() {
 	// URL regardless of encryption state.
 	decryptStreamMux := http.NewServeMux()
 	decryptStreamHandler.Register(decryptStreamMux)
+	// SessionOrAPIKey (not SessionAuth) so trusted internal services — e.g.
+	// the signature service's seal pipeline (ADR 0025) — can fetch a version's
+	// decrypted bytes with X-Internal-Service-Key + X-Auth-Tenant-ID. The
+	// gateway strips client-supplied internal keys, so this stays service-only.
 	rootMux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/decrypt-stream",
 		middleware.CorrelationHTTP(
-			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(decryptStreamMux),
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(decryptStreamMux),
 		))
 
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).
@@ -435,11 +439,15 @@ func main() {
 	// budget. Overridable via redis ratelimit:config:{tenant}:integrations.
 	// Nested INSIDE APIKeyAuth so the tenant the key resolved to is on ctx.
 	integrationsRL := middleware.NewRateLimiter(rdb, 60)
+	// License gate (ADR 0095): iPaaS/integration triggers are the `ipaas`
+	// licensed feature. 402 when not licensed; no-op in unlicensed-dev.
+	// Innermost so auth + rate-limit establish the tenant first.
 	rootMux.Handle("/api/v1/integrations/triggers/documents", middleware.CorrelationHTTP(
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)),
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
+			middleware.RequireLicenseFeature("ipaas")(integrationsMux))),
 	))
 
 	// ADR 0112 — Outlook add-in ingest. Uses session auth (not API
@@ -1049,7 +1057,12 @@ func main() {
 	// work because Optional just no-ops when the cookie is absent.
 	wopiAndRoot.Handle("/",
 		middleware.RequireGatewaySignature()(
-			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(rootMux),
+			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+				// License grace write-gate (ADR 0095): mutating requests return
+				// 423 once the license is in grace/expired; reads stay open so a
+				// tenant can export + wind down. No-op when active/unlicensed-dev.
+				middleware.LicenseWriteGate(rootMux),
+			),
 		))
 
 	httpSrv := &http.Server{

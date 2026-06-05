@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Scale, ShieldOff } from 'lucide-react'
 
@@ -30,7 +31,7 @@ function LegalHoldsPage() {
     queryFn: () => listHolds(statusParam ? { status: statusParam } : {}),
   })
 
-  const release = useMutation({
+  const release = useAppMutation({
     mutationFn: ({ id, reason, approver }: { id: string; reason: string; approver: string }) =>
       releaseHold(id, { reason, approver_id: approver }),
     onSuccess: () => {

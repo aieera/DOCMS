@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useTranslation } from 'react-i18next'
 import { Bell, CheckCheck, CheckSquare, LogOut, Menu, Search, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
@@ -207,7 +208,7 @@ function NotificationsDropdown() {
   })
   const items = listData?.items ?? []
 
-  const readOne = useMutation({
+  const readOne = useAppMutation({
     mutationFn: markAsRead,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
@@ -216,7 +217,7 @@ function NotificationsDropdown() {
     onError: () => toast.error("Couldn't mark as read"),
   })
 
-  const readAll = useMutation({
+  const readAll = useAppMutation({
     mutationFn: markAllRead,
     onSuccess: () => {
       toast.success('Marked all read')

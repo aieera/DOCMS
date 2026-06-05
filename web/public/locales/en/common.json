@@ -37,5 +37,20 @@
       }
     }
   },
+  "theme": {
+    "toggle": "Toggle theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "workspace_selector": {
+    "placeholder": "Select workspace",
+    "load_error": "Couldn't load workspaces"
+  },
+  "folder_tree": {
+    "manage_access": "Manage access…",
+    "load_error": "Couldn't load folders",
+    "empty": "No folders"
+  },
   "loading": "Loading…"
 }

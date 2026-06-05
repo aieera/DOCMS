@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ChevronDown, Code2, Copy, RefreshCw, Send, Trash2, Webhook, AlertTriangle, Beaker } from 'lucide-react'
 import {
@@ -48,7 +49,7 @@ export function WebhooksPage() {
   const [newSecret, setNewSecret] = useState<{ id: string; secret: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<WebhookT | null>(null)
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createWebhook({ url, events }),
     onSuccess: (wh) => {
       toast.success('Webhook created')
@@ -59,7 +60,7 @@ export function WebhooksPage() {
     onError: () => toast.error('Create failed'),
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteWebhook(id),
     onSuccess: () => {
       toast.success('Webhook deleted')
@@ -68,7 +69,7 @@ export function WebhooksPage() {
     },
   })
 
-  const rotate = useMutation({
+  const rotate = useAppMutation({
     mutationFn: (id: string) => rotateWebhookSecret(id),
     onSuccess: (wh) => {
       if (wh.secret) setNewSecret({ id: wh.id, secret: wh.secret })
@@ -77,7 +78,7 @@ export function WebhooksPage() {
     },
   })
 
-  const test = useMutation({
+  const test = useAppMutation({
     mutationFn: (id: string) => sendTestWebhook(id),
     onSuccess: (_d, id) => {
       toast.success('Test delivery queued — check the delivery log')
@@ -407,7 +408,7 @@ function DeliveryLog({ webhookId }: { webhookId: string }) {
     queryKey: ['webhook-deliveries', webhookId],
     queryFn: () => listDeliveries(webhookId),
   })
-  const redeliver = useMutation({
+  const redeliver = useAppMutation({
     mutationFn: (deliveryId: string) => redeliverDelivery(webhookId, deliveryId),
     onSuccess: () => {
       toast.success('Queued for redelivery')

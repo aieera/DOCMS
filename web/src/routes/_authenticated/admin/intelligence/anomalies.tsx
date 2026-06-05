@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertTriangle, Play, Search } from 'lucide-react'
 
@@ -57,7 +58,7 @@ function AnomalyDashboardPage() {
     },
   })
 
-  const run = useMutation({
+  const run = useAppMutation({
     mutationFn: () => runAnomalyAnalysis({ analysis_type: 'combined' }),
     onSuccess: (resp) => {
       qc.invalidateQueries({ queryKey: ['anomaly-reports'] })
@@ -167,7 +168,7 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
     },
   })
 
-  const resolve = useMutation({
+  const resolve = useAppMutation({
     mutationFn: ({ id, status }: { id: string; status: FindingStatus }) =>
       resolveAnomalyFinding(id, status),
     onSuccess: () => {

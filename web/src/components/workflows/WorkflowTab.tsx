@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { GitBranch, PlayCircle, X } from 'lucide-react'
 
@@ -74,7 +75,7 @@ export function WorkflowTab({ documentId, canCancel = false }: Props) {
     staleTime: 60_000,
   })
 
-  const attach = useMutation({
+  const attach = useAppMutation({
     mutationFn: (templateId: string) => attachWorkflowToDocument(documentId, templateId),
     onSuccess: () => {
       toast.success(t('tab.toasts.started'))
@@ -84,7 +85,7 @@ export function WorkflowTab({ documentId, canCancel = false }: Props) {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('tab.toasts.error')),
   })
 
-  const cancel = useMutation({
+  const cancel = useAppMutation({
     mutationFn: () => cancelWorkflowInstance(bundle.data!.instance.id),
     onSuccess: () => {
       toast.success(t('tab.toasts.cancelled'))
@@ -94,7 +95,7 @@ export function WorkflowTab({ documentId, canCancel = false }: Props) {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('tab.toasts.error')),
   })
 
-  const act = useMutation({
+  const act = useAppMutation({
     mutationFn: ({
       stepIndex,
       action,

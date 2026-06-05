@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { BellOff, Trash2, Clock, Save } from 'lucide-react'
 
@@ -58,7 +59,7 @@ function NotificationsSettings() {
     setDirty(false)
   }, [matrix.data])
 
-  const saveMatrix = useMutation({
+  const saveMatrix = useAppMutation({
     mutationFn: async () => {
       const cells: PrefCell[] = []
       for (const ev of EVENT_TYPES) {
@@ -187,7 +188,7 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
     }
   }, [dnd, browserTZ])
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: () => putDND({ start, end, timezone: tz }),
     onSuccess: () => {
       toast.success('Do-not-disturb saved')
@@ -195,7 +196,7 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
     },
     onError: () => toast.error('Failed to save'),
   })
-  const clear = useMutation({
+  const clear = useAppMutation({
     mutationFn: () => deleteDND(),
     onSuccess: () => {
       toast.success('Do-not-disturb cleared')
@@ -250,7 +251,7 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
 
 function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type: string; until_at: string }[]; loading: boolean }) {
   const qc = useQueryClient()
-  const cancel = useMutation({
+  const cancel = useAppMutation({
     mutationFn: deleteSnooze,
     onSuccess: () => {
       toast.success('Snooze cancelled')

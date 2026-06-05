@@ -4,7 +4,7 @@
 //   - HTTP (chi router): /api/v1/auth/{register, login, logout, mfa/*, sessions/*, api-keys/*}
 //   - Session validation middleware exported via handler.AuthMiddleware
 //     (imported directly by every other SeDoc service that authenticates
-//      requests at the edge)
+//     requests at the edge)
 //
 // SSO (SAML/OIDC) and SCIM land in follow-up phases A2-A4.
 package main
@@ -143,7 +143,11 @@ func main() {
 	svc.SetMFADeps(service.MFADeps{
 		SMS:   smsSender,
 		Email: emailSender,
-		Push:  notifications.NoopSender{}, // mobile app + dispatcher land in Phase 11.3
+		// SEDOC_PUSH_SENDER selects the dispatcher: nats (default, emits
+		// dms.auth.mfa_push_challenged.v1 for downstream FCM/APNs delivery),
+		// log (dev/observability), or noop. Direct FCM/APNs lands with the
+		// mobile app (Phase 11.3).
+		Push: notifications.NewSender(os.Getenv("SEDOC_PUSH_SENDER"), nc, *log.Z()),
 	})
 
 	// Per-tenant Twilio + SMTP credentials (migration 000044). When a
@@ -314,4 +318,3 @@ func deriveSMTPSealKey(kek string) []byte {
 	h := sha256.Sum256([]byte("vaultdms.notification.smtp.seal.v1:" + kek))
 	return h[:]
 }
-

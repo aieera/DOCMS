@@ -831,10 +831,32 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: signature }
     container_name: sedoc-signature
-    environment: *go-env
+    # ADR 0025 — server-seal: use the real DSS sidecar + reach the document
+    # service's HTTP for the decrypt-stream fetch.
+    environment:
+      <<: *go-env
+      SEDOC_SIGNER: "dss"
+      SIGNER_ADDR: "signature-signer:6060"
+      SEDOC_DOCUMENT_HTTP_URL: "http://document:8080"
     ports: ["8090:8081", "9098:9090", "8188:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
+    restart: unless-stopped
+
+  # JVM DSS PAdES sidecar (ADR 0025 / Wave 12.9b). Stateless — no DB/NATS, so
+  # none of the go-* anchors apply. gRPC on 6060; the dev image bakes a
+  # self-signed signing keystore (PAdES-B-B). Set SIGNER_TSA_URL to enable
+  # B-T/LT/LTA; offline it downgrades to B-B. The Go signature service dials
+  # it via SIGNER_ADDR once the embedding hand-off (qes.go) is wired.
+  signature-signer:
+    build:
+      context: ./services/signature-signer
+      dockerfile: Dockerfile
+    container_name: sedoc-signature-signer
+    image: sedoc-signature-signer:dev
+    environment:
+      SIGNER_TSA_URL: "${SIGNER_TSA_URL:-}"
+    ports: ["6060:6060"]
     restart: unless-stopped
 
   billing:

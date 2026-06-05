@@ -33,6 +33,7 @@ describe('finalizeLoginResult — H-1 guard', () => {
   })
 
   it('rejects a user whose tenant_id is the empty string', () => {
+    // tenant-fallback: doc-reference
     // This is the exact regression the audit named: `user.tenant_id ?? ''`
     // would have admitted this row.
     expect(finalizeLoginResult({ ...baseUser, tenant_id: '' })).toEqual({

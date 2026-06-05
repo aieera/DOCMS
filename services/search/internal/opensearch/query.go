@@ -104,7 +104,7 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 
 	// ---- highlight --------------------------------------------------------
 	if req.Highlight {
-		body["highlight"] = map[string]any{
+		hl := map[string]any{
 			"fields": map[string]any{
 				"title":   map[string]any{"number_of_fragments": 1, "fragment_size": 200},
 				"content": map[string]any{"number_of_fragments": 3, "fragment_size": 150},
@@ -112,6 +112,22 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 			"pre_tags":  []string{"<mark>"},
 			"post_tags": []string{"</mark>"},
 		}
+		// Track 6 — <mark> only tokens that match WITHOUT fuzziness. The outer
+		// query keeps "fuzziness": AUTO for recall (so "contarct" still finds
+		// "contract"), but the unified highlighter would otherwise mark fuzzy
+		// near-misses too — searching "contract" highlighted "contact" (1 edit
+		// away). Re-running the query here with no fuzziness keeps highlights
+		// exact while recall is unchanged. Skipped for empty/browse queries.
+		if req.Query != "" {
+			hl["highlight_query"] = map[string]any{
+				"multi_match": map[string]any{
+					"query":  req.Query,
+					"fields": []string{"title", "content", "tags", "description"},
+					"type":   "best_fields",
+				},
+			}
+		}
+		body["highlight"] = hl
 	}
 
 	// ---- aggregations -----------------------------------------------------

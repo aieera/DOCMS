@@ -4,7 +4,8 @@
 // on InitiateUpload, so what's saved here gates uploads org-wide.
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -65,7 +66,7 @@ export function UploadPolicyPage() {
     }
   }, [data])
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: () =>
       setUploadPolicy({ allowed_mime_types: mimes, allowed_extensions: exts }),
     onSuccess: () => {

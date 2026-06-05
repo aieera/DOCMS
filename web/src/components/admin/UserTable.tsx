@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { type ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { MoreHorizontal, Shield, Ban, KeyRound, UserCheck } from 'lucide-react'
@@ -55,7 +56,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
 
   const close = () => setAction(null)
 
-  const roleMut = useMutation({
+  const roleMut = useAppMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) => changeUserRole(id, role),
     onSuccess: (_, vars) => {
       toast.success(`Role updated to ${vars.role}`)
@@ -64,7 +65,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     onError: (e: Error) => toast.error(e.message || 'Could not change role'),
   })
-  const mfaMut = useMutation({
+  const mfaMut = useAppMutation({
     mutationFn: (id: string) => resetMFA(id),
     onSuccess: () => {
       toast.success('MFA reset — user will be prompted to re-enroll')
@@ -73,7 +74,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     onError: (e: Error) => toast.error(e.message || 'Could not reset MFA'),
   })
-  const suspendMut = useMutation({
+  const suspendMut = useAppMutation({
     mutationFn: (id: string) => suspendUser(id),
     onSuccess: () => {
       toast.success('User suspended — active sessions revoked')
@@ -82,7 +83,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not suspend user'),
   })
-  const reactivateMut = useMutation({
+  const reactivateMut = useAppMutation({
     mutationFn: (id: string) => reactivateUser(id),
     onSuccess: () => {
       toast.success('User reactivated')

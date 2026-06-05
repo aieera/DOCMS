@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useRef, useState, useEffect } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, UserCheck } from 'lucide-react'
 import { isAxiosError } from 'axios'
@@ -74,7 +75,7 @@ function InPersonSignPage() {
   const [handoff, setHandoff] = useState(false)
   const padRef = useRef<SignaturePadHandle>(null)
 
-  const signMut = useMutation({
+  const signMut = useAppMutation({
     mutationFn: async ({ signer, svgPath }: { signer: Signer; svgPath: string }) => {
       let docHash = ''
       try {

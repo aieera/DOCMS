@@ -19,14 +19,15 @@ import (
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/aieera/sedoc/pkg/config"
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/events"
 	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
-	"crypto/sha256"
-	"encoding/hex"
 
 	"github.com/aieera/sedoc/pkg/esign"
 	"github.com/aieera/sedoc/pkg/signing/tsp"
@@ -34,6 +35,7 @@ import (
 	"github.com/aieera/sedoc/services/signature/internal/handler"
 	"github.com/aieera/sedoc/services/signature/internal/repository"
 	"github.com/aieera/sedoc/services/signature/internal/service"
+	"github.com/aieera/sedoc/services/signature/internal/signer"
 )
 
 const serviceName = "signature"
@@ -51,6 +53,14 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// License (ADR 0095): load + hourly re-validate so the esign/ipaas feature
+	// gates + the grace write-gate below have state. Absent = unlicensed-dev
+	// (gates no-op); invalid JWT is fatal.
+	if err := license.Init(); err != nil {
+		log.Fatal(ctx).Err(err).Msg("license init")
+	}
+	license.StartReloader(ctx)
 
 	pool, err := database.NewPool(ctx, cfg.DatabaseURL, database.DefaultPoolConfig())
 	if err != nil {
@@ -110,6 +120,32 @@ func main() {
 	}
 	if documentConn != nil {
 		defer func() { _ = documentConn.Close() }()
+	}
+
+	// ADR 0025 — server-seal pipeline. Construct the Signer (mock by default;
+	// the real DSS sidecar when SEDOC_SIGNER=dss) and wire the seal capability:
+	// fetch a version's decrypted bytes from the document service (internal
+	// key) → DSS-sign → ingest a sealed version. FromEnv fails fast on a bad
+	// SEDOC_SIGNER value.
+	sgnr, serr := signer.FromEnv(os.Getenv("SIGNER_ADDR"))
+	if serr != nil {
+		log.Fatal(ctx).Err(serr).Msg("signer init")
+	}
+	docHTTP := os.Getenv("SEDOC_DOCUMENT_HTTP_URL")
+	if docHTTP == "" {
+		docHTTP = "http://document:8080"
+	}
+	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
+	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Msg("server-seal pipeline wired")
+
+	// ADR 0025 increment 2 — auto-seal on workflow signature completion. The
+	// consumer subscribes to dms.signature.completed.v1 and runs SealVersion.
+	if js != nil {
+		if err := service.NewSealConsumer(js, svc, *log.Z()).Start(); err != nil {
+			log.Warn(ctx).Err(err).Msg("seal consumer not started (will not auto-seal)")
+		} else {
+			log.Info(ctx).Msg("seal consumer started: dms.signature.completed.v1 → server-seal")
+		}
 	}
 
 	hs := health.NewServerWithMeta("signature", cfg.Region, pool, rdb, nc, s3c)
@@ -196,26 +232,26 @@ func main() {
 	hmacBytes := deriveESignHMAC(cfg.ESignStateHMAC, cfg.LocalKEK)
 	if cfg.ESignDocuSignClientID != "" {
 		esignOAuth[esign.ProviderDocuSign] = esign.OAuthConfig{
-			Provider: esign.ProviderDocuSign,
+			Provider:     esign.ProviderDocuSign,
 			AuthorizeURL: cfg.ESignDocuSignAuthorizeURL,
-			TokenURL: cfg.ESignDocuSignTokenURL,
-			ClientID: cfg.ESignDocuSignClientID,
+			TokenURL:     cfg.ESignDocuSignTokenURL,
+			ClientID:     cfg.ESignDocuSignClientID,
 			ClientSecret: cfg.ESignDocuSignClientSecret,
-			RedirectURI: cfg.ESignDocuSignRedirectURI,
-			Scope: "signature",
-			HMACSecret: hmacBytes,
+			RedirectURI:  cfg.ESignDocuSignRedirectURI,
+			Scope:        "signature",
+			HMACSecret:   hmacBytes,
 		}
 	}
 	if cfg.ESignAdobeSignClientID != "" {
 		esignOAuth[esign.ProviderAdobeSign] = esign.OAuthConfig{
-			Provider: esign.ProviderAdobeSign,
+			Provider:     esign.ProviderAdobeSign,
 			AuthorizeURL: cfg.ESignAdobeSignAuthorizeURL,
-			TokenURL: cfg.ESignAdobeSignTokenURL,
-			ClientID: cfg.ESignAdobeSignClientID,
+			TokenURL:     cfg.ESignAdobeSignTokenURL,
+			ClientID:     cfg.ESignAdobeSignClientID,
 			ClientSecret: cfg.ESignAdobeSignClientSecret,
-			RedirectURI: cfg.ESignAdobeSignRedirectURI,
-			Scope: "agreement_send agreement_read",
-			HMACSecret: hmacBytes,
+			RedirectURI:  cfg.ESignAdobeSignRedirectURI,
+			Scope:        "agreement_send agreement_read",
+			HMACSecret:   hmacBytes,
 		}
 	}
 	// Default redirect URI for tenants connecting via the admin UI
@@ -245,10 +281,25 @@ func main() {
 	// Frontend lands on /sign/done after the QTSP redirect; the page
 	// polls /qes/session/:id for the final status.
 	h.RegisterQES(mux, "/sign/done")
-	h.RegisterESign(mux)
+	// esign (external DocuSign/AdobeSign integration) is the `esign` licensed
+	// feature. All its routes share the /api/v1/signatures/esign/ prefix, so
+	// register them on a sub-mux and gate the whole subtree — 402 when esign
+	// isn't licensed; no-op in unlicensed-dev.
+	esignMux := http.NewServeMux()
+	h.RegisterESign(esignMux)
+	mux.Handle("/api/v1/signatures/esign/", middleware.RequireLicenseFeature("esign")(esignMux))
 	// ADR 0073 — in-person tablet ceremony (single device, sequential
 	// signer + witness on the same session).
 	h.RegisterInPerson(mux)
+
+	// ADR 0025 — internal server-seal endpoint. Sub-mux gated by the
+	// internal-service key (SessionOrAPIKey); the path is whitelisted from the
+	// gateway-sig check so trusted services can call it directly, and the
+	// gateway strips client-supplied internal keys so external callers can't.
+	sealMux := http.NewServeMux()
+	h.RegisterSeal(sealMux)
+	mux.Handle("/api/v1/signatures/internal/seal",
+		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "signatures:write")(sealMux))
 
 	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). Lives
 	// on its own sub-mux wrapped with APIKeyAuth so the bearer-token
@@ -264,8 +315,11 @@ func main() {
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
+			middleware.RequireLicenseFeature("ipaas")(integrationsMux))))
+	// License grace write-gate (ADR 0095): mutating requests → 423 in grace/
+	// expired; reads pass. No-op when active/unlicensed-dev.
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.LicenseWriteGate(mux)), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

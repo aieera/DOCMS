@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, RefreshCw, ShieldAlert } from 'lucide-react'
 
@@ -42,14 +43,14 @@ export function CompliancePanel({ documentId }: Props) {
     refetchInterval: 30_000,
   })
 
-  const review = useMutation({
+  const review = useAppMutation({
     mutationFn: ({ id, status, note }: { id: string; status: RemediationStatus; note?: string }) =>
       reviewComplianceFinding(documentId, id, status, note),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['compliance', documentId] }),
     onError: () => toast.error('Review failed'),
   })
 
-  const rescan = useMutation({
+  const rescan = useAppMutation({
     mutationFn: () => rescanDocument(documentId),
     onSuccess: () => toast.success('Rescan queued'),
     onError: () => toast.error('Rescan failed'),

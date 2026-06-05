@@ -14,7 +14,7 @@ package sedoc.signer.v1;
 option java_package = "io.sedoc.signer.grpc";
 option java_multiple_files = true;
 option java_outer_classname = "SignerProto";
-option go_package = "github.com/aieera/sedoc/services/signature-signer/gen/go;signerv1";
+option go_package = "github.com/aieera/sedoc/proto/gen/go/signerv1;signerv1";
 
 // SignerService is the only surface. All secrets flow in the
 // request envelope; nothing persists in the sidecar between

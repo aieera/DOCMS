@@ -112,7 +112,32 @@ func (s *DocumentService) CreateShareLink(ctx context.Context, in *CreateShareLi
 		if err != nil {
 			return err
 		}
-		return s.repos.Outbox.Insert(ctx, tx, evt)
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+
+		// Track 8a — dual-publish a notify event. dms.sharelink.created.v1 isn't
+		// on the notification consumer's subject (dms.notify.>), so without this
+		// no inbox row / topbar badge appears. Notify the sharer + the document
+		// owner (deduped); the consumer reads `data` as a DeliveryPayload.
+		recipients := []string{userID.String()}
+		if doc.CreatedBy != uuid.Nil && doc.CreatedBy != userID {
+			recipients = append(recipients, doc.CreatedBy.String())
+		}
+		notifyEvt, nerr := model.NewOutboxEvent(tenantID, "dms.notify.document_shared.v1", "document", doc.ID,
+			map[string]any{
+				"tenant_id":     tenantID.String(),
+				"user_ids":      recipients,
+				"type":          "document.shared",
+				"title":         "Document shared",
+				"body":          fmt.Sprintf("%q was shared via link.", doc.Title),
+				"resource_type": "document",
+				"resource_id":   doc.ID.String(),
+			})
+		if nerr != nil {
+			return nerr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, notifyEvt)
 	})
 	if err != nil {
 		return nil, err

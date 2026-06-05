@@ -32,6 +32,10 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/register", h.Register)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/accept-invite", h.AcceptInvite)
 		r.Post("/login", h.Login)
+		// Track 2 — password reset. Public + per-IP rate-limited (the service
+		// adds a per-email throttle + a constant-time floor for enumeration).
+		r.With(vdmsmw.NewIPRateLimiter(5, 3, time.Minute)).Post("/forgot-password", h.ForgotPassword)
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/reset-password", h.ResetPassword)
 		r.Post("/mfa/verify", h.MFAVerify)
 		r.Post("/mfa/recovery", h.MFARecovery)
 		// ADR 0112 — Outlook add-in SSO exchange. Public on purpose:

@@ -11,7 +11,8 @@
 // without losing form state on this page).
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   ShieldCheck, Smartphone, Mail, MessageSquare, Bell,
@@ -61,7 +62,7 @@ function MFAPage() {
     queryFn: listMyEnrolledMethods,
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (m: MFAMethod) => disableMFAMethod(m),
     onSuccess: () => {
       toast.success('Method disabled')
@@ -141,7 +142,7 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
 function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
   const me = useAuthStore((s) => s.user)
   const [email, setEmail] = useState(me?.email ?? '')
-  const enroll = useMutation({
+  const enroll = useAppMutation({
     mutationFn: (v: string) => enrollEmailMFA(v),
     onSuccess: () => {
       toast.success('Email enrolled — verify by signing out and signing in.')
@@ -172,7 +173,7 @@ function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
 
 function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
   const [phone, setPhone] = useState('+')
-  const enroll = useMutation({
+  const enroll = useAppMutation({
     mutationFn: (v: string) => enrollSMSMFA(v),
     onSuccess: () => {
       toast.success('SMS enrolled — verify by signing out and signing in.')

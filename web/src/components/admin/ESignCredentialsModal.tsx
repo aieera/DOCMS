@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Copy, Check } from 'lucide-react'
 
@@ -66,7 +67,7 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
     }
   }, [existingQ.data])
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: () => saveESignProviderConfig(provider, {
       client_id: clientId.trim(),
       client_secret: clientSecret,

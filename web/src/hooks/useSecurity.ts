@@ -1,9 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   setupMFA, confirmMFA, disableMFA,
-  listSessions, revokeSession, revokeAllOtherSessions,
+  revokeSession, revokeAllOtherSessions,
   listAPIKeys, createAPIKey, revokeAPIKey,
 } from '@/api/security'
+// listSessions is the canonical unwrapList-backed version (api/auth.ts),
+// not the deleted silent-fail duplicate that used to live in api/security.ts.
+import { listSessions } from '@/api/auth'
 import { useAppMutation } from './useAppMutation'
 
 // Wave 5 pattern 1: every mutation migrated. None had onError before;

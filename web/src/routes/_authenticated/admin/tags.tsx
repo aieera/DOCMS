@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Plus, Tag as TagIcon, Trash2 } from 'lucide-react'
 
@@ -27,7 +28,7 @@ export function TagsPage() {
   const [color, setColor] = useState('#3b82f6')
   const [pendingDelete, setPendingDelete] = useState<Tag | null>(null)
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createTag({ name: name.trim(), color }),
     onSuccess: () => {
       toast.success('Tag created')
@@ -42,7 +43,7 @@ export function TagsPage() {
     },
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteTag(id),
     onSuccess: () => {
       toast.success('Tag deleted')

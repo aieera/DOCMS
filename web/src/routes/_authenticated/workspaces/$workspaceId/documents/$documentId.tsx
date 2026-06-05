@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   AlertCircle,
@@ -1218,7 +1219,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
   // the mutation; the user-facing surface ('Run full layout analysis')
   // doesn't mention it. If the OCR pipeline swaps engines later this
   // call site changes one string; no copy update needed.
-  const runFullLayout = useMutation({
+  const runFullLayout = useAppMutation({
     mutationFn: () => rerunOCR(documentId, versionId!, { forceEngine: 'surya' }),
     onSuccess: () => {
       toast.success('Running full layout analysis — boxes will appear when complete')

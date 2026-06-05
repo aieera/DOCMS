@@ -37,5 +37,20 @@
       }
     }
   },
+  "theme": {
+    "toggle": "تبديل السمة",
+    "light": "فاتح",
+    "dark": "داكن",
+    "system": "النظام"
+  },
+  "workspace_selector": {
+    "placeholder": "اختر مساحة العمل",
+    "load_error": "تعذّر تحميل مساحات العمل"
+  },
+  "folder_tree": {
+    "manage_access": "إدارة الوصول…",
+    "load_error": "تعذّر تحميل المجلدات",
+    "empty": "لا توجد مجلدات"
+  },
   "loading": "جارٍ التحميل…"
 }

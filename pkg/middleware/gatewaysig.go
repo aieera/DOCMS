@@ -27,6 +27,12 @@ var publicExternalCallbackPrefixes = []string{
 	// of the gateway. Path-prefix match covers documents / signatures /
 	// workflows under the same /triggers/ root.
 	"/api/v1/integrations/triggers/",
+	// ADR 0025 — internal server-seal endpoint. Called service-to-service
+	// (not via the gateway), so it bypasses the gateway-sig check and is
+	// instead gated by the internal-service key (SessionOrAPIKey). The
+	// gateway strips client-supplied X-Internal-Service-Key on inbound, so
+	// an external caller can never satisfy that gate.
+	"/api/v1/signatures/internal/",
 }
 
 // GatewaySignatureHeader is the header Kong sets via request-transformer

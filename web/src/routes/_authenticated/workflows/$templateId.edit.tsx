@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Save } from 'lucide-react'
@@ -74,7 +75,7 @@ function TemplateEditorPage() {
   const issueIds = useMemo(() => new Set(issues.map((i) => i.stepId)), [issues])
   const selected = steps.find((s) => s.id === selectedId) ?? null
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: async () => {
       const body = { name, description, steps }
       if (isNew) {

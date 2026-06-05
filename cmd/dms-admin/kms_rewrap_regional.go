@@ -22,9 +22,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"time"
 )
@@ -46,13 +50,15 @@ func kmsRewrapRegional(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	// Find blobs whose kek_id is pre-regional (no "/<region>"
-	// suffix). The alias pattern is "vaultdms/tenant/<uuid>"
-	// (optional "@v<N>" rotation); regional aliases end with
-	// "/<region>" or "/<region>@v<N>".
+	// Find blobs whose kek_id is pre-regional. The base (non-regional)
+	// alias is "vaultdms/tenant/<uuid>" (optional "@v<N>" rotation — no
+	// extra slash); a regional alias adds a 4th segment:
+	// "vaultdms/tenant/<uuid>/<region>(@v<N>)?". So "has a region" is
+	// exactly "a slash after the <uuid> segment": ^vaultdms/tenant/[^/]+/.
 	//
-	// Postgres regex: start/end anchors + the slash check. Anything
-	// matching "/[^/]+(@v[0-9]+)?$" at the end has a region.
+	// (The earlier `/[^/]+(@v[0-9]+)?$` test was buggy — it also matched the
+	// <uuid> segment of a base alias, so EVERY base-alias blob was wrongly
+	// classified as already-regional and the command migrated nothing.)
 	q := `
 		SELECT b.id::text,
 		       b.storage_region,
@@ -63,7 +69,7 @@ func kmsRewrapRegional(args []string) {
 		  LEFT JOIN document_versions dv ON dv.tenant_id = b.tenant_id AND dv.content_blob_id = b.id
 		  LEFT JOIN documents          d  ON d.tenant_id  = dv.tenant_id AND d.id = dv.document_id
 		 WHERE b.tenant_id = $1::uuid
-		   AND COALESCE(b.kek_id, '') !~ '/[^/]+(@v[0-9]+)?$'
+		   AND COALESCE(b.kek_id, '') !~ '^vaultdms/tenant/[^/]+/'
 		 ORDER BY b.created_at
 		 LIMIT $2
 	`
@@ -104,22 +110,59 @@ func kmsRewrapRegional(args []string) {
 
 	if !*execute {
 		fmt.Println("\nDry run — no changes. Pass --execute to call the storage service's re-encrypt endpoint.")
-		fmt.Println("Storage-service internal endpoint (`/internal/v1/reencrypt-blob`) ships in Wave 12.3b;")
-		fmt.Println("until then the CLI enumerates + prints but does not re-encrypt.")
 		return
 	}
 
-	// --execute path: the CLI doesn't hold KMS / S3 clients, so
-	// actual re-encryption lives in the storage service. Rather
-	// than embed a second KMS wiring here we print the command
-	// operators should run once the HTTP endpoint ships. The shape
-	// is stable and documented so scripts can build against it.
-	fmt.Println()
-	fmt.Println("--execute is not yet implemented (Wave 12.3b wires the storage-service endpoint).")
-	fmt.Println("Each blob below would be POSTed to /internal/v1/reencrypt-blob:")
-	for _, b := range pending {
-		fmt.Printf("  POST /internal/v1/reencrypt-blob {\"tenant_id\":%q,\"blob_id\":%q,\"target_region\":%q}\n",
-			*tenant, b.id, b.targetRgn)
+	// --execute: drive the storage service's internal re-encrypt endpoint —
+	// it owns the KMS + S3 wiring, so we don't duplicate crypto here. Needs
+	// SEDOC_INTERNAL_API_KEY; URL defaults to the in-cluster storage health
+	// port (override with SEDOC_STORAGE_REENCRYPT_URL for host/local runs).
+	endpoint := os.Getenv("SEDOC_STORAGE_REENCRYPT_URL")
+	if endpoint == "" {
+		endpoint = "http://storage:8081/internal/v1/reencrypt-blob"
 	}
-	os.Exit(2)
+	key := os.Getenv("SEDOC_INTERNAL_API_KEY")
+	if key == "" {
+		fatal("--execute requires SEDOC_INTERNAL_API_KEY (the storage internal-service key)")
+	}
+	client := &http.Client{Timeout: 2 * time.Minute}
+	var done, failed int
+	for _, b := range pending {
+		reqBody, _ := json.Marshal(map[string]string{
+			"tenant_id":     *tenant,
+			"blob_id":       b.id,
+			"target_region": b.targetRgn,
+		})
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Internal-Service-Key", key)
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Printf("  %s  ERROR  %v\n", b.id, err)
+			failed++
+			continue
+		}
+		rb, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			fmt.Printf("  %s  HTTP %d  %s\n", b.id, resp.StatusCode, trimBody(rb))
+			failed++
+			continue
+		}
+		fmt.Printf("  %s  OK  %s\n", b.id, trimBody(rb))
+		done++
+	}
+	fmt.Printf("\nre-wrapped %d, failed %d (of %d selected).\n", done, failed, len(pending))
+	if failed > 0 {
+		os.Exit(1)
+	}
+}
+
+// trimBody shortens a response body for one-line progress output.
+func trimBody(b []byte) string {
+	s := string(b)
+	if len(s) > 160 {
+		return s[:160] + "…"
+	}
+	return s
 }

@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -45,7 +46,7 @@ function WorkflowsAdminPage() {
     refetchInterval: 15_000,
   })
 
-  const cancel = useMutation({
+  const cancel = useAppMutation({
     mutationFn: (id: string) => cancelWorkflowInstance(id),
     onSuccess: () => {
       toast.success(t('tab.toasts.cancelled'))

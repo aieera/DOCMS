@@ -8,7 +8,7 @@
 // they're on. The header badge counts only the lightweight tasks.
 import { useMemo, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 'lucide-react'
@@ -261,10 +261,10 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
   // reasons reach the toast verbatim.
   const onTaskError = (e: unknown) =>
     toast.error(readErrorMessage(e) ?? 'Could not update task')
-  const complete = useMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange, onError: onTaskError })
-  const reopen   = useMutation({ mutationFn: () => reopenTask(task.id),   onSuccess: onChange, onError: onTaskError })
-  const cancel   = useMutation({ mutationFn: () => cancelTask(task.id),   onSuccess: onChange, onError: onTaskError })
-  const remove   = useMutation({
+  const complete = useAppMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange, onError: onTaskError })
+  const reopen   = useAppMutation({ mutationFn: () => reopenTask(task.id),   onSuccess: onChange, onError: onTaskError })
+  const cancel   = useAppMutation({ mutationFn: () => cancelTask(task.id),   onSuccess: onChange, onError: onTaskError })
+  const remove   = useAppMutation({
     mutationFn: () => deleteTask(task.id),
     onSuccess: onChange,
     onError: onTaskError,
@@ -375,7 +375,7 @@ function KanbanColumn({ title, tasks, onChange, testid }: { title: string; tasks
 }
 
 function KanbanCard({ task, onChange }: { task: Task; onChange: () => void }) {
-  const complete = useMutation({
+  const complete = useAppMutation({
     mutationFn: () => completeTask(task.id),
     onSuccess: onChange,
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not complete task'),

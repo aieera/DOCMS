@@ -8,7 +8,8 @@
 //      consumer forever.
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   AlertTriangle, Antenna, Copy, Download, Key, Play, Square, Trash2, Zap,
@@ -55,7 +56,7 @@ export function EventStreamPage() {
   const [pendingRevoke, setPendingRevoke] = useState<EventStreamToken | null>(null)
   const [tab, setTab] = useState<keyof typeof SAMPLES>('go')
 
-  const issue = useMutation({
+  const issue = useAppMutation({
     mutationFn: () => issueEventStreamToken(label.trim()),
     onSuccess: (t) => {
       toast.success('Token issued — copy it now, it won\'t be shown again')
@@ -66,7 +67,7 @@ export function EventStreamPage() {
     onError: () => toast.error('Issue failed'),
   })
 
-  const revoke = useMutation({
+  const revoke = useAppMutation({
     mutationFn: (id: string) => revokeEventStreamToken(id),
     onSuccess: () => {
       toast.success('Token revoked')

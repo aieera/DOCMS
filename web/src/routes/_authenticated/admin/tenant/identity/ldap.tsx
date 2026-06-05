@@ -16,7 +16,8 @@
 // on PATCH preserves the stored value.
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   Network, ShieldCheck, AlertTriangle, CheckCircle2, RefreshCw,
@@ -104,7 +105,7 @@ export function LDAPAdminPage() {
 
 function NoConfigYet({ onCreated }: { onCreated: () => void }) {
   const [body, setBody] = useState<LDAPWriteBody>(DEFAULT_BODY)
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: (b: LDAPWriteBody) => createLDAPConfig(b),
     onSuccess: () => {
       toast.success('LDAP config saved as draft. Test the connection, then activate.')
@@ -159,7 +160,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
     is_active: config.is_active,
   }))
 
-  const update = useMutation({
+  const update = useAppMutation({
     mutationFn: (b: Partial<LDAPWriteBody>) => updateLDAPConfig(config.id, b),
     onSuccess: () => {
       toast.success('LDAP config saved')
@@ -168,7 +169,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not save LDAP config'),
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: () => deleteLDAPConfig(config.id),
     onSuccess: () => {
       toast.success('LDAP config deleted')
@@ -256,7 +257,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
   const [sampleUser, setSampleUser] = useState('')
   const [samplePass, setSamplePass] = useState('')
 
-  const test = useMutation({
+  const test = useAppMutation({
     mutationFn: () => testLDAPBind(
       existingId
         ? { existing_config_id: existingId, sample_username: sampleUser, sample_password: samplePass }
@@ -392,7 +393,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
   const [ldapDN, setLdapDN] = useState('')
   const [dmsId, setDmsId] = useState('')
 
-  const add = useMutation({
+  const add = useAppMutation({
     mutationFn: () => addLDAPMapping(config.id, ldapDN, dmsId),
     onSuccess: () => {
       setLdapDN(''); setDmsId('')
@@ -402,7 +403,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not add mapping'),
   })
 
-  const del = useMutation({
+  const del = useAppMutation({
     mutationFn: (m: { ldap_group_dn: string; dms_group_id: string }) =>
       deleteLDAPMapping(config.id, m.ldap_group_dn, m.dms_group_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'ldap', 'mappings', config.id] }),
@@ -477,7 +478,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
     queryFn: () => listLDAPHistory(config.id),
   })
 
-  const sync = useMutation({
+  const sync = useAppMutation({
     mutationFn: () => syncLDAPNow(config.id),
     onSuccess: () => {
       toast.success('Sync run complete')

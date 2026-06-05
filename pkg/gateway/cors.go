@@ -30,7 +30,11 @@ func CORSMiddleware(rdb *redis.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			tenantID := r.Header.Get("X-Tenant-ID")
+			// Track 3 — canonical X-Auth-Tenant-ID, legacy X-Tenant-ID fallback.
+			tenantID := r.Header.Get("X-Auth-Tenant-ID")
+			if tenantID == "" {
+				tenantID = r.Header.Get("X-Tenant-ID")
+			}
 
 			cfg := DefaultCORS
 			if tenantID != "" && rdb != nil {

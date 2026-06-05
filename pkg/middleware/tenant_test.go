@@ -80,6 +80,42 @@ func TestTenantHTTP_PutsTenantOnContext(t *testing.T) {
 	}
 }
 
+// TestTenantHTTP_DualReadHeaders pins the Track 3 migration: TenantHTTP accepts
+// the canonical X-Auth-Tenant-ID, still accepts the legacy X-Tenant-ID, and
+// prefers the canonical when both are present (so the FE can drop the legacy
+// dual-write without breaking any reader).
+func TestTenantHTTP_DualReadHeaders(t *testing.T) {
+	canonical := uuid.New()
+	legacy := uuid.New()
+	run := func(set func(r *http.Request)) (uuid.UUID, int) {
+		var seen uuid.UUID
+		next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen, _ = auth.GetTenantID(r.Context())
+		})
+		req := httptest.NewRequest("GET", "/x", nil)
+		set(req)
+		w := httptest.NewRecorder()
+		TenantHTTP(nil)(next).ServeHTTP(w, req)
+		return seen, w.Code
+	}
+
+	// Canonical only → used.
+	if got, code := run(func(r *http.Request) { r.Header.Set(AuthTenantHeader, canonical.String()) }); got != canonical || code != http.StatusOK {
+		t.Errorf("canonical-only: got %v (code %d), want %v", got, code, canonical)
+	}
+	// Legacy only → still used (backward compatible).
+	if got, code := run(func(r *http.Request) { r.Header.Set(TenantHeader, legacy.String()) }); got != legacy || code != http.StatusOK {
+		t.Errorf("legacy-only: got %v (code %d), want %v", got, code, legacy)
+	}
+	// Both present → canonical wins.
+	if got, _ := run(func(r *http.Request) {
+		r.Header.Set(AuthTenantHeader, canonical.String())
+		r.Header.Set(TenantHeader, legacy.String())
+	}); got != canonical {
+		t.Errorf("both present: got %v, want canonical %v", got, canonical)
+	}
+}
+
 // ---- gRPC interceptor ---------------------------------------------------
 
 func TestTenantInterceptor_RejectsMissingMetadata(t *testing.T) {

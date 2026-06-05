@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ArchiveRestore, FileText, FolderClosed, Lock, Trash2 } from 'lucide-react'
 
@@ -54,7 +55,7 @@ function TrashPage() {
     enabled: canManage,
   })
 
-  const restoreFolder = useMutation({
+  const restoreFolder = useAppMutation({
     mutationFn: (id: string) => restoreFolderFromTrash(id),
     onSuccess: () => {
       toast.success('Folder restored')
@@ -67,7 +68,7 @@ function TrashPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore folder"),
   })
 
-  const restore = useMutation({
+  const restore = useAppMutation({
     mutationFn: (id: string) => restoreFromTrash(id),
     onSuccess: () => {
       toast.success('Document restored')
@@ -75,7 +76,7 @@ function TrashPage() {
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore"),
   })
-  const purge = useMutation({
+  const purge = useAppMutation({
     mutationFn: (id: string) => purgeFromTrash(id),
     onSuccess: () => {
       toast.success('Document permanently deleted')

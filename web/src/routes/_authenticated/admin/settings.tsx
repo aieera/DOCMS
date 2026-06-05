@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Save, AlertTriangle } from 'lucide-react'
 
@@ -63,7 +64,7 @@ export function SettingsPage() {
   // post-save sync still happens.
   useEffect(() => { if (data && draft === null) setDraft({ ...data }) }, [data, draft])
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: () => updateTenantSettings(draft as unknown as Record<string, unknown>),
     onSuccess: (out) => {
       toast.success('Settings saved')

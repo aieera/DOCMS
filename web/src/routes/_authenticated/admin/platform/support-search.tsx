@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertTriangle, Search, Shield, Clock, Hash } from 'lucide-react'
 
@@ -40,7 +41,7 @@ function SupportSearchPage() {
   const [reason, setReason] = useState('')
   const [result, setResult] = useState<FederatedSearchResult | null>(null)
 
-  const runMut = useMutation({
+  const runMut = useAppMutation({
     mutationFn: () => runFederatedSearch({ query, reason }),
     onSuccess: (r) => {
       setResult(r)

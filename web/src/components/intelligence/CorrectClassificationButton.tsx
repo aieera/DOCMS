@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, Pencil, X } from 'lucide-react'
 
@@ -30,7 +31,7 @@ export function CorrectClassificationButton({
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(currentCategory)
 
-  const correct = useMutation({
+  const correct = useAppMutation({
     mutationFn: (corrected: string) =>
       correctClassification(documentId, {
         corrected_category: corrected,

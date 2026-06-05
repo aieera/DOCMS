@@ -34,6 +34,23 @@ type Server struct {
 	http    *http.Server
 	service string
 	region  string
+	// extra holds service-specific routes registered via Handle before
+	// Start — e.g. the storage service's internal admin re-encrypt endpoint.
+	// They share the health port (already exposed for probes) rather than
+	// forcing a second listener.
+	extra map[string]http.Handler
+}
+
+// Handle registers an additional route on the health server's mux. Must be
+// called before Start. Intended for narrow internal/admin endpoints that
+// shouldn't warrant a separate listener; protect them with their own auth.
+func (s *Server) Handle(pattern string, h http.Handler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.extra == nil {
+		s.extra = make(map[string]http.Handler)
+	}
+	s.extra[pattern] = h
 }
 
 // NewServer wires the server. Any dependency may be nil; readiness reports
@@ -63,6 +80,9 @@ func (s *Server) Start(addr string) error {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.mu.Lock()
+	for pattern, h := range s.extra {
+		mux.Handle(pattern, h)
+	}
 	s.http = &http.Server{
 		Addr:              addr,
 		Handler:           mux,

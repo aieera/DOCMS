@@ -356,6 +356,14 @@ func (s *DocumentService) RestoreDocument(ctx context.Context, id uuid.UUID) err
 				return vdmserr.ErrLegalHold
 			}
 		}
+		// Retention guard (handoff Track 1): once the retention window has
+		// elapsed the document is eligible for disposal — restoring it would
+		// resurrect something the retention pipeline owns. 409.
+		if until, exempt, rerr := s.retentionInfo(ctx, tx, tenantID, id); rerr != nil {
+			return rerr
+		} else if until != nil && !exempt && until.Before(time.Now().UTC()) {
+			return vdmserr.Conflict("retention period has elapsed; document is past its restoration window")
+		}
 		if err := s.repos.Documents.Restore(ctx, tx, tenantID, id); err != nil {
 			return err
 		}
@@ -369,6 +377,17 @@ func (s *DocumentService) RestoreDocument(ctx context.Context, id uuid.UUID) err
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// retentionInfo reads the document's retention window (the retention pipeline's
+// source-of-truth). Used by restore + purge so trash operations stay aligned
+// with retention: under-retention docs can't be purged, retention-elapsed docs
+// can't be restored. retention_exempt short-circuits both.
+func (s *DocumentService) retentionInfo(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (until *time.Time, exempt bool, err error) {
+	err = tx.QueryRow(ctx,
+		`SELECT retention_until, retention_exempt FROM documents WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id).Scan(&until, &exempt)
+	return until, exempt, err
 }
 
 // PurgeDocument hard-deletes a soft-deleted document. Removes the S3
@@ -407,6 +426,14 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 			if held {
 				return vdmserr.ErrLegalHold
 			}
+		}
+		// Retention guard (handoff Track 1): never hard-delete a document still
+		// inside its retention window — the retention pipeline owns disposal,
+		// and the trash UI must not expose a way to bypass it. 409.
+		if until, exempt, rErr := s.retentionInfo(ctx, tx, tenantID, id); rErr != nil {
+			return rErr
+		} else if until != nil && !exempt && until.After(time.Now().UTC()) {
+			return vdmserr.Conflict("document is under active retention; the retention pipeline owns disposal")
 		}
 		bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, id)
 		if bErr != nil {

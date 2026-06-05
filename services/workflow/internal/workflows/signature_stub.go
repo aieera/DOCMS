@@ -100,9 +100,14 @@ func SignatureWorkflow(ctx workflow.Context, in SignatureInput) (*SignatureOutco
 		out.Signed = append(out.Signed, sig.SignerID)
 	}
 	out.Status = "completed"
+	// version_id + initiated_by let the signature service's seal consumer
+	// (ADR 0025) apply the organizational PAdES seal to the signed version.
 	_ = workflow.ExecuteActivity(ctx, "PublishEvent",
 		in.TenantID, "dms.signature.completed.v1", map[string]string{
-			"instance_id": in.InstanceID, "document_id": in.DocumentID,
+			"instance_id":  in.InstanceID,
+			"document_id":  in.DocumentID,
+			"version_id":   in.VersionID,
+			"initiated_by": in.InitiatedBy,
 		},
 	).Get(ctx, nil)
 	return out, nil

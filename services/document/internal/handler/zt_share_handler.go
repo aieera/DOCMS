@@ -136,7 +136,7 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 		time.Now().UTC().Format("2006-01-02 15:04"), tokenID.String()[:8])
 
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		_, e := tx.Exec(r.Context(), `
+		if _, e := tx.Exec(r.Context(), `
 			INSERT INTO zt_share_tokens
 				(tenant_id, token_id, token_hash, document_id, version_id,
 				 recipient_email, watermark_text, created_by, expires_at,
@@ -145,8 +145,24 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 			tid, tokenID, tokenHash, docID, verID,
 			in.RecipientEmail, watermark, uid, expiresAt,
 			in.MaxViews, seed,
-		)
-		return e
+		); e != nil {
+			return e
+		}
+		// Track 8b — the ZT handler previously emitted no event, so no
+		// notification was ever delivered for a zero-trust share. Notify the
+		// sender (an in-app confirmation; the external recipient gets the link
+		// by email). dms.notify.> reaches the notification consumer.
+		payload, _ := json.Marshal(map[string]any{
+			"tenant_id":     tid.String(),
+			"user_ids":      []string{uid.String()},
+			"type":          "document.shared",
+			"title":         "Secure share sent",
+			"body":          fmt.Sprintf("You sent a zero-trust view-only share to %s.", in.RecipientEmail),
+			"resource_type": "document",
+			"resource_id":   docID.String(),
+		})
+		evt := database.NewOutboxEvent(tid, "dms.notify.document_shared.v1", "document", docID, payload)
+		return database.NewOutboxRepository().Insert(r.Context(), tx, evt)
 	})
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "insert", "detail": err.Error()})

@@ -12,12 +12,15 @@ import (
 // What this package owns:
 //   - the device-registration data shape (PushDevice)
 //   - the challenge envelope (PushChallenge)
-//   - a Sender interface + a NoopSender that emits no actual push.
-//     The auth service emits a `dms.auth.mfa_push_challenged.v1`
-//     NATS event in lieu of calling here when Sender == nil.
+//   - a Sender interface + three dispatchers, selected by NewSender from
+//     SEDOC_PUSH_SENDER: NATSEventSender (the default — emits
+//     dms.auth.mfa_push_challenged.v1 for the notification service / mobile
+//     worker to deliver), LogSender (dev/observability), NoopSender
+//     (push surfaced as unavailable).
 //
-// Concrete FCM / APNs adapters land in pkg/notifications/push_fcm.go
-// and push_apns.go alongside the mobile work.
+// Direct FCM / APNs adapters (pkg/notifications/push_fcm.go, push_apns.go)
+// land with the mobile work; until then delivery is the downstream worker's
+// job and this package only emits/records the challenge.
 
 // PushPlatform — narrow type so callers can't pass "android".
 type PushPlatform string

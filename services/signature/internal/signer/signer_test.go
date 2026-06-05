@@ -104,11 +104,21 @@ func TestFactory_DefaultsToMock(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestDSSSidecarSigner_ReturnsNotConfigured(t *testing.T) {
+// TestDSSSidecarSigner_ValidatesInput pins that the live DSS client
+// short-circuits invalid requests in validateCommon BEFORE any network call,
+// so callers get a fast, typed ErrInvalidRequest rather than a dial timeout.
+// (The shell's old ErrNotConfigured behavior is gone — Wave 9.2b made Sign
+// real; the live round-trip is covered by TestDSSSidecarSignVerifyLive.)
+func TestDSSSidecarSigner_ValidatesInput(t *testing.T) {
 	s := NewDSSSidecarSigner("localhost:6060")
+	// Empty PDF → ErrInvalidRequest before dialing.
 	_, err := s.Sign(context.Background(), Request{
-		PDFBytes: []byte(samplePDF), SignerName: "Alice",
-		Mode: ModeServerHSM, KMSAlias: "k",
+		SignerName: "Alice", Mode: ModeServerHSM, KMSAlias: "k",
 	})
-	require.True(t, errors.Is(err, ErrNotConfigured))
+	require.True(t, errors.Is(err, ErrInvalidRequest))
+	// ServerHSM without KMSAlias → ErrInvalidRequest before dialing.
+	_, err = s.Sign(context.Background(), Request{
+		PDFBytes: []byte(samplePDF), SignerName: "Alice", Mode: ModeServerHSM,
+	})
+	require.True(t, errors.Is(err, ErrInvalidRequest))
 }

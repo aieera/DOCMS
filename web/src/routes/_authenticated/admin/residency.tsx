@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, Globe } from 'lucide-react'
 import {
@@ -46,7 +47,7 @@ export function ResidencyPage() {
   const [src, setSrc] = useState('')
   const [tgt, setTgt] = useState('')
 
-  const submit = useMutation({
+  const submit = useAppMutation({
     mutationFn: () => createResidencyMigration({ source_region: src, target_region: tgt }),
     onSuccess: () => {
       toast.success('Migration queued')

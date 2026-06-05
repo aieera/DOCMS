@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Bell, BellOff, Edit, Globe, Lock, Play, Sparkles, Trash2, Users, UserPlus } from 'lucide-react'
 
@@ -59,7 +60,7 @@ function SavedSearchesPage() {
   // ADR 0100 — promote/demote a saved search to a smart folder (pinned
   // to the sidebar). Invalidates both queries because the sidebar reads
   // `smart-folders` while this page reads `saved-searches`.
-  const demoteMut = useMutation({
+  const demoteMut = useAppMutation({
     mutationFn: demoteSmartFolder,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['saved-searches'] })
@@ -69,7 +70,7 @@ function SavedSearchesPage() {
     onError: () => toast.error('Could not unpin'),
   })
 
-  const patchMut = useMutation({
+  const patchMut = useAppMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Parameters<typeof updateSavedSearch>[1] }) =>
       updateSavedSearch(id, patch),
     onSuccess: () => {
@@ -79,7 +80,7 @@ function SavedSearchesPage() {
     },
     onError: () => toast.error('Could not save'),
   })
-  const deleteMut = useMutation({
+  const deleteMut = useAppMutation({
     mutationFn: deleteSavedSearch,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['saved-searches'] })
@@ -286,7 +287,7 @@ function PromoteSmartFolderDialog({
   const [visibility, setVisibility] = useState<TreeVisibility>('private')
   const [icon, setIcon] = useState('sparkles')
 
-  const mut = useMutation({
+  const mut = useAppMutation({
     mutationFn: () => promoteSmartFolder(ss.id, {
       tree_visibility: visibility,
       workspace_id:    visibility === 'workspace' ? ss.workspace_id ?? null : null,
@@ -460,7 +461,7 @@ function SubscribeDialog({
   const [userId, setUserId] = useState('')
   const [channels, setChannels] = useState<string[]>(['in_app'])
 
-  const subMut = useMutation({
+  const subMut = useAppMutation({
     mutationFn: () => subscribeSavedSearch(ss.id, { user_id: userId || undefined, channels }),
     onSuccess: () => {
       toast.success('Subscribed')
@@ -469,7 +470,7 @@ function SubscribeDialog({
     },
     onError: () => toast.error('Could not subscribe'),
   })
-  const unsubMut = useMutation({
+  const unsubMut = useAppMutation({
     mutationFn: (uid: string) => unsubscribeSavedSearch(ss.id, uid),
     onSuccess: () => {
       toast.success('Unsubscribed')

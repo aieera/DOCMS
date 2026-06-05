@@ -1,0 +1,15 @@
+version: v2
+# Local gen for the signer sidecar's gRPC contract. signer.proto's go_package
+# already points at services/signature-signer/gen/go;signerv1, so a
+# source-relative out into gen/go lands the stubs there. Java stubs are
+# generated separately by the Gradle protobuf plugin (build.gradle.kts).
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.33.0
+    out: ../../proto/gen/go/signerv1
+    opt:
+      - paths=source_relative
+  - remote: buf.build/grpc/go:v1.3.0
+    out: ../../proto/gen/go/signerv1
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false

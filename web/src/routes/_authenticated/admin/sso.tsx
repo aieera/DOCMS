@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ShieldCheck, Trash2, CheckCircle2, AlertTriangle, XCircle, Power, PowerOff } from 'lucide-react'
 import {
@@ -31,7 +32,7 @@ export function SsoPage() {
 
   const [wizardOpen, setWizardOpen] = useState(false)
 
-  const toggleActive = useMutation({
+  const toggleActive = useAppMutation({
     mutationFn: (c: SSOConfig) => updateSSOConfig(c.id, { is_active: !c.is_active }),
     onSuccess: () => {
       toast.success('SSO config updated')
@@ -39,7 +40,7 @@ export function SsoPage() {
     },
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteSSOConfig(id),
     onSuccess: () => {
       toast.success('SSO config deleted')
@@ -168,7 +169,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
     return cfg
   }
 
-  const validate = useMutation({
+  const validate = useAppMutation({
     mutationFn: () => validateSSOConfig(provider, buildConfig()),
     onSuccess: (r) => {
       setValidation(r)
@@ -177,7 +178,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
     onError: () => toast.error('Validation failed'),
   })
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: () =>
       createSSOConfig({
         provider,

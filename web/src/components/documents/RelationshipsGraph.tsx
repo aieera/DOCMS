@@ -7,7 +7,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
 import dagre from 'cytoscape-dagre'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useNavigate } from '@tanstack/react-router'
 import { AlertTriangle, Network, Plus, RotateCcw, Search as SearchIcon, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -56,7 +57,7 @@ export function RelationshipsGraph({ documentId, workspaceId }: Props) {
   // (the backend enforces this via the `src_document` predicate in
   // its DELETE statement). For inbound edges we hide the button — the
   // admin would need to navigate to the source doc to remove it.
-  const deleteMut = useMutation({
+  const deleteMut = useAppMutation({
     mutationFn: (edge: GraphEdge) => deleteContractEdge(edge.src, edge.id),
     onSuccess: () => {
       toast.success('Edge removed')
@@ -315,7 +316,7 @@ function AddEdgeDialog({
     enabled: pickerQ.trim().length >= 2,
   })
 
-  const mut = useMutation({
+  const mut = useAppMutation({
     mutationFn: () => createContractEdge({
       documentId,
       targetDocumentId: targetId!,
