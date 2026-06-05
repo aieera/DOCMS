@@ -10,11 +10,10 @@ import org.slf4j.LoggerFactory;
  * SIGNER_PORT) and serves the one RPC interface the Go
  * signature service calls.
  *
- * Wave 12.9 ships the process lifecycle. The actual DSS PAdES
- * implementation in {@link SignerService} is the shell that
- * Wave 12.9b fills in — the server is production-ready (signal
- * handling, graceful shutdown, startup logging); the service
- * method bodies return UNIMPLEMENTED until the DSS wiring lands.
+ * Wave 12.9 ships the process lifecycle; Wave 12.9b fills in the
+ * DSS PAdES implementation in {@link SignerService} (Sign + Verify
+ * are live). The server is production-ready: signal handling,
+ * graceful shutdown, startup logging.
  */
 public final class SignerServer {
 

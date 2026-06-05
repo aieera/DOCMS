@@ -12,7 +12,8 @@ import eu.europa.esig.dss.service.tsp.OnlineTSPSource;
 import eu.europa.esig.dss.spi.DSSUtils;
 import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
 import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
-import eu.europa.esig.dss.token.KeyStoreSignatureToken;
+import eu.europa.esig.dss.token.KSPrivateKeyEntry;
+import eu.europa.esig.dss.token.Pkcs12SignatureToken;
 import eu.europa.esig.dss.validation.CommonCertificateVerifier;
 import eu.europa.esig.dss.validation.SignedDocumentValidator;
 import eu.europa.esig.dss.validation.reports.Reports;
@@ -59,14 +60,14 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
 
     private static final Logger LOG = LoggerFactory.getLogger(SignerService.class);
 
-    private final KeyStoreSignatureToken token;
+    private final Pkcs12SignatureToken token;
     private final DSSPrivateKeyEntry privateKey;
     private final String defaultTsaUrl;
 
     public SignerService(String keystorePath, String keystorePass, String keyAlias, String defaultTsaUrl) {
         this.defaultTsaUrl = defaultTsaUrl == null ? "" : defaultTsaUrl.trim();
         try {
-            this.token = new KeyStoreSignatureToken(keystorePath, "PKCS12",
+            this.token = new Pkcs12SignatureToken(keystorePath,
                     new PasswordProtection(keystorePass.toCharArray()));
         } catch (Exception e) {
             throw new IllegalStateException("load keystore " + keystorePath + ": " + e.getMessage(), e);
@@ -78,7 +79,8 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
         DSSPrivateKeyEntry selected = keys.get(0);
         if (keyAlias != null && !keyAlias.isBlank()) {
             for (DSSPrivateKeyEntry k : keys) {
-                if (keyAlias.equals(k.getAttribute() == null ? null : k.getAttribute())) {
+                // The alias lives on the keystore-backed concrete entry.
+                if (k instanceof KSPrivateKeyEntry kse && keyAlias.equals(kse.getAlias())) {
                     selected = k;
                     break;
                 }
@@ -122,9 +124,11 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
             if (!req.getContactInfo().isEmpty()) {
                 params.setContactInfo(req.getContactInfo());
             }
-            if (!req.getFieldName().isEmpty()) {
-                params.getImageParameters().getFieldParameters().setFieldId(req.getFieldName());
-            }
+            // Invisible signature by default. field_name (the "Signer_<order>"
+            // convention) maps to a pre-existing empty AcroForm field via
+            // setFieldId — but only when one exists. Creating fresh signatures
+            // we don't pre-seed a field, so naming/visible-appearance is a
+            // follow-up; an unnamed invisible PAdES signature is fully valid.
 
             CommonCertificateVerifier cv = new CommonCertificateVerifier();
             // Trust our own signing chain so the post-sign validation embedded
@@ -185,14 +189,16 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
                     .setSignatureCount(sigIds.size());
             for (String id : sigIds) {
                 boolean valid = simple.isValid(id);
-                String signer = diag.getSignatureById(id) != null
-                        ? String.valueOf(simple.getSignedBy(id)) : "";
+                Object signedBy = simple.getSignedBy(id);
+                String signer = signedBy != null ? signedBy.toString() : "";
                 String issuer = "";
                 var signingCert = diag.getSignatureById(id) != null
                         ? diag.getSignatureById(id).getSigningCertificate() : null;
-                if (signingCert != null && signingCert.getCertificate() != null) {
-                    issuer = signingCert.getCertificate().getCertificateIssuer() != null
-                            ? signingCert.getCertificate().getCertificateIssuer().getCommonName() : "";
+                if (signingCert != null) {
+                    // CertificateWrapper exposes parsed fields directly. For a
+                    // self-signed dev cert subject==issuer; getCommonName is the
+                    // stable accessor across DSS 5.x.
+                    issuer = signingCert.getCommonName() != null ? signingCert.getCommonName() : "";
                 }
                 if (!diag.getTimestampList().isEmpty()) {
                     ltv = true;

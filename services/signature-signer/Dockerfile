@@ -27,12 +27,15 @@ RUN keytool -genkeypair -alias signer -keyalg RSA -keysize 2048 -validity 3650 \
     -storetype PKCS12 -keystore /dev-signer.p12 \
     -storepass changeit -keypass changeit
 
-FROM gcr.io/distroless/java17-debian12:nonroot
+# Runtime: eclipse-temurin JRE. (distroless/java17 is leaner + the prod
+# preference, but its locally-cached layer was truncated by a disk-full event
+# — libz.so.1 "file too short"; temurin's layers are intact. Re-pin distroless
+# on a healthy host for prod.)
+FROM eclipse-temurin:17-jre
 COPY --from=build /src/build/libs/signer-all.jar /app/signer-all.jar
 COPY --from=keygen /dev-signer.p12 /app/dev-signer.p12
 ENV SIGNER_KEYSTORE_PATH=/app/dev-signer.p12 \
     SIGNER_KEYSTORE_PASS=changeit \
     SIGNER_KEY_ALIAS=signer
 EXPOSE 6060
-# distroless/java entrypoint is ["java","-jar"]; pass the jar as args.
-CMD ["/app/signer-all.jar"]
+ENTRYPOINT ["java", "-jar", "/app/signer-all.jar"]
