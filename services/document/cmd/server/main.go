@@ -1053,7 +1053,12 @@ func main() {
 	// work because Optional just no-ops when the cookie is absent.
 	wopiAndRoot.Handle("/",
 		middleware.RequireGatewaySignature()(
-			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(rootMux),
+			middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+				// License grace write-gate (ADR 0095): mutating requests return
+				// 423 once the license is in grace/expired; reads stay open so a
+				// tenant can export + wind down. No-op when active/unlicensed-dev.
+				middleware.LicenseWriteGate(rootMux),
+			),
 		))
 
 	httpSrv := &http.Server{

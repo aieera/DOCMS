@@ -21,6 +21,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/events"
 	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/workflow/internal/activities"
@@ -46,6 +47,14 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// License (ADR 0095): load + hourly re-validate so the ipaas feature gate +
+	// grace write-gate below have state. Absent = unlicensed-dev (gates no-op);
+	// invalid JWT is fatal.
+	if err := license.Init(); err != nil {
+		log.Fatal(ctx).Err(err).Msg("license init")
+	}
+	license.StartReloader(ctx)
 
 	pool, err := database.NewPool(ctx, cfg.DatabaseURL, database.DefaultPoolConfig())
 	if err != nil {
@@ -151,8 +160,11 @@ func main() {
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)))
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(mux), ReadHeaderTimeout: 5 * time.Second}
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
+			middleware.RequireLicenseFeature("ipaas")(integrationsMux))))
+	// License grace write-gate (ADR 0095): mutating requests → 423 in grace/
+	// expired; reads pass. No-op when active/unlicensed-dev.
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.LicenseWriteGate(mux)), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
