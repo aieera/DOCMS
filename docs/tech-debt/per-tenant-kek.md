@@ -1,9 +1,30 @@
-# Per-tenant KEK — deferred
+# Per-tenant KEK — RESOLVED
 
 ## Status
-Deferred. Single KEK shared across all tenants.
-Source reference: `services/storage/cmd/server/main.go:137`.
-Audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM severity).
+**Resolved (2026-06-05).** Per-tenant KEKs are live. The upload encrypt path
+derives a per-tenant KEK alias from the tenant id — `aliasForTenant(tenantID)`
+→ `vaultdms/tenant/<uuid>` (`services/storage/internal/service/tenant_kek.go`,
+called at `service.go` around the envelope-encryption step) — and the
+`LocalKeyManager` HKDF-derives an independent 32-byte KEK per alias
+(`pkg/crypto/kms.go`); Vault / AWS-KMS managers map the alias to their native
+key stores. `content_blobs.kek_id` stores the alias per blob so decrypt is
+unchanged. The hardcoded `TenantKEKID` in `storage/cmd/server/main.go` is now
+only a last-resort fallback (`service.go` comment).
+
+Verified live: every `content_blobs` row carries
+`vaultdms/tenant/<tenant-uuid>` — no blob uses the legacy
+`vaultdms-storage-default`. The `tenant_keks` table + `dms-admin kms
+{list,create,rotate}` provide rotation/versioning.
+
+Remaining (tracked separately): the online historical re-wrap CLI
+(`dms-admin kms rewrap` / `rewrap-regional --execute`) needs the storage
+service's `/internal/v1/reencrypt-blob` endpoint — the `ReencryptBlob` service
+primitive already exists; only the HTTP exposure + CLI wiring were missing.
+
+Original audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM).
+The text below is the original deferred-state plan, kept for history.
+
+---
 
 ## Current behavior
 
