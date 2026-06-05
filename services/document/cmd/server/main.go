@@ -435,11 +435,15 @@ func main() {
 	// budget. Overridable via redis ratelimit:config:{tenant}:integrations.
 	// Nested INSIDE APIKeyAuth so the tenant the key resolved to is on ctx.
 	integrationsRL := middleware.NewRateLimiter(rdb, 60)
+	// License gate (ADR 0095): iPaaS/integration triggers are the `ipaas`
+	// licensed feature. 402 when not licensed; no-op in unlicensed-dev.
+	// Innermost so auth + rate-limit establish the tenant first.
 	rootMux.Handle("/api/v1/integrations/triggers/documents", middleware.CorrelationHTTP(
 		middleware.APIKeyAuth(middleware.APIKeyAuthConfig{
 			Pool:          pool,
 			RequiredScope: "integrations:read",
-		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(integrationsMux)),
+		})(middleware.RateLimitPerTenantHTTP(integrationsRL, "integrations")(
+			middleware.RequireLicenseFeature("ipaas")(integrationsMux))),
 	))
 
 	// ADR 0112 — Outlook add-in ingest. Uses session auth (not API
