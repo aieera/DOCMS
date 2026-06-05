@@ -74,6 +74,13 @@ web/.audit/
 # Local-only ops/monitoring scaffolding (deployable config lives under deploy/)
 ops/
 
+# Scratch reports + planning docs — kept out of the tree (removed in 66960b3).
+# Real product docs live under docs/{adr,architecture,howto,deploy,...}.
+/snap-*.md
+/bug-fix-report-*.md
+docs/reports/
+docs/followups/
+
 # Runtime artifacts from scripts/dev-up.sh
 .run/
 
