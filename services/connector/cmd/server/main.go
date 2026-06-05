@@ -82,13 +82,17 @@ func main() {
 	}
 	svc.SetConnectorDeps(connSeal, connHMAC, defaultRedirect)
 
-	// Server-side ingest path (ADR 0089 Drive import). Dials storage gRPC
-	// + reuses the document REST surface. Non-fatal: if storage is
-	// unreachable at boot the import endpoint returns 503 rather than
-	// taking the whole connector down.
-	if ingestClient, ierr := ingest.New(pool, *log.Z()); ierr != nil {
-		log.Warn(ctx).Err(ierr).Msg("ingest client init failed; drive import will 503")
+	// Server-side ingest path. Dials storage gRPC + reuses the document REST
+	// surface. Shared by Drive import (ADR 0089), email ingestion (ADR 0087),
+	// and watched-folder intake (ADR 0088) so all three create real
+	// documents-with-versions. Non-fatal: if storage is unreachable at boot
+	// the import endpoint returns 503 and email/intake record per-item
+	// failures rather than taking the whole connector down.
+	var ingestClient *ingest.Client
+	if ic, ierr := ingest.New(pool, *log.Z()); ierr != nil {
+		log.Warn(ctx).Err(ierr).Msg("ingest client init failed; drive import will 503, email/intake skip materialise")
 	} else {
+		ingestClient = ic
 		svc.SetIngestClient(ingestClient)
 		defer func() { _ = ingestClient.Close() }()
 	}
@@ -125,13 +129,11 @@ func main() {
 	}
 	esHandler := handler.NewEventStreamHandler(esSvc)
 
-	// ADR 0087 — email ingestion. Pollers run with nil backends in the
-	// default config (no real Graph/Gmail/IMAP credentials wired into
-	// the worker yet); the worker still records runs + makes the admin
-	// UI work end-to-end. Backends are injected when the connector
-	// service grows real credential plumbing (Wave 12.5b).
-	emailDocs := email.NewDocumentClient()
-	emailSvc := email.New(pool, nc, emailDocs, []email.Poller{
+	// ADR 0087 — email ingestion. Each polled envelope's body + attachments
+	// are materialised into real documents-with-versions via the shared
+	// ingest pipeline (so they OCR + embed + become searchable). Pollers run
+	// with nil backends until real Graph/Gmail/IMAP credentials are wired.
+	emailSvc := email.New(pool, nc, ingestClient, []email.Poller{
 		&email.MicrosoftPoller{},
 		&email.GmailPoller{},
 		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z()}},
@@ -139,12 +141,11 @@ func main() {
 	go emailSvc.Start(ctx)
 	emailHandler := handler.NewEmailHandler(emailSvc)
 
-	// ADR 0088 — watched-folder intake. Reuses the email module's
-	// DocumentClient (same connector→document REST hook). The
-	// supervisor reconciles every 60s; per-folder fsnotify watcher
-	// runs in a goroutine, with a 30s poll fallback when fsnotify
-	// is unavailable (rare; mostly tmpfs / NFS edge cases).
-	intakeSvc := intake.New(pool, emailDocs, *log.Z())
+	// ADR 0088 — watched-folder intake. Uses the same ingest pipeline as
+	// email + Drive import, so dropped files become real documents-with-
+	// versions. The supervisor reconciles every 60s; per-folder fsnotify
+	// watcher runs in a goroutine, with a 30s poll fallback.
+	intakeSvc := intake.New(pool, ingestClient, *log.Z())
 	go intakeSvc.Start(ctx)
 	intakeHandler := handler.NewIntakeHandler(intakeSvc)
 

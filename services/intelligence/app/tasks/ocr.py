@@ -65,6 +65,42 @@ def _s3():
     )
 
 
+def _is_text_mime(mime: str) -> bool:
+    """True for already-textual files (plain text, markdown, csv, json, …).
+    These don't need OCR — the bytes ARE the text — but they DO need their
+    content extracted so it flows to lang_detect + embed + index. Without
+    this they were skipped as 'not OCR-able', so email bodies + dropped .txt
+    files landed as documents with no searchable content."""
+    if mime.startswith("text/"):
+        return True
+    return mime in {
+        "application/json", "application/xml", "application/x-ndjson",
+        "application/csv", "application/x-yaml",
+    }
+
+
+def _extract_text_file(path: str) -> list[dict]:
+    """Read a textual file directly as one page. Matches the page dict shape
+    _extract_text_pdf produces so the downstream persist/emit path is
+    unchanged. Decodes as UTF-8 (replacing undecodable bytes) — wrong but
+    safe for the rare non-UTF-8 text file; detection refinement is a TODO."""
+    t0 = time.perf_counter()
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text:
+        return []
+    return [{
+        "page_number": 1,
+        "text": text,
+        "confidence": 1.0,
+        "method": "text",
+        "boxes": [],
+        "word_boxes": [],
+        "processing_time_ms": int((time.perf_counter() - t0) * 1000),
+    }]
+
+
 def _extract_text_pdf(path: str) -> list[dict]:
     doc = _safe_fitz_open(path)
     pages = []
@@ -519,7 +555,7 @@ def process_ocr(
     - Completion ledger: ocr_processed_events row flipped to
       completed/failed. See `app.dedupe`.
     """
-    if mime_type not in OCR_MIMES:
+    if mime_type not in OCR_MIMES and not _is_text_mime(mime_type):
         ocr_documents_total.labels(status="skipped").inc()
         return {"status": "skipped", "reason": f"mime {mime_type} not OCR-able"}
 
@@ -544,6 +580,8 @@ def process_ocr(
                 pages = _ocr_pdf_pages(src)
             else:
                 pages = _extract_text_pdf(src)
+        elif _is_text_mime(mime_type):
+            pages = _extract_text_file(src)
         else:
             pages = _ocr_image(src)
 

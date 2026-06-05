@@ -64,6 +64,7 @@ import (
 type Client struct {
 	docBaseURL    string
 	gatewaySecret string
+	internalKey   string // SEDOC_INTERNAL_API_KEY — used when no session token
 	storage       sedocv1.StorageServiceClient
 	storageConn   *grpc.ClientConn
 	pool          *pgxpool.Pool
@@ -94,6 +95,7 @@ func New(pool *pgxpool.Pool, log zerolog.Logger) (*Client, error) {
 	return &Client{
 		docBaseURL:    strings.TrimRight(docBase, "/"),
 		gatewaySecret: os.Getenv("SEDOC_GATEWAY_SECRET"),
+		internalKey:   os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		storage:       sedocv1.NewStorageServiceClient(conn),
 		storageConn:   conn,
 		pool:          pool,
@@ -157,7 +159,7 @@ func (c *Client) IngestFile(
 	checksum := hex.EncodeToString(sum[:])
 
 	// 1. Create the document row.
-	docID, err := c.createDocument(ctx, authToken, workspaceID, folderID, filename, customMetadata)
+	docID, err := c.createDocument(ctx, tenantID, actorID, authToken, workspaceID, folderID, filename, customMetadata)
 	if err != nil {
 		return "", fmt.Errorf("create document: %w", err)
 	}
@@ -178,7 +180,7 @@ func (c *Client) IngestFile(
 		ChecksumSha256: checksum,
 	})
 	if err != nil {
-		c.rollback(ctx, authToken, docID)
+		c.rollback(ctx, tenantID, actorID, authToken, docID)
 		return "", fmt.Errorf("initiate upload: %w", err)
 	}
 
@@ -186,7 +188,7 @@ func (c *Client) IngestFile(
 	//    an empty presigned URL signals the dedup hit).
 	if initResp.GetPresignedPutUrl() != "" {
 		if err := c.putBytes(ctx, initResp.GetPresignedPutUrl(), contentType, data); err != nil {
-			c.rollback(ctx, authToken, docID)
+			c.rollback(ctx, tenantID, actorID, authToken, docID)
 			return "", fmt.Errorf("put bytes: %w", err)
 		}
 	}
@@ -197,7 +199,7 @@ func (c *Client) IngestFile(
 		ChecksumSha256: checksum,
 		SizeBytes:      int64(len(data)),
 	}); err != nil {
-		c.rollback(ctx, authToken, docID)
+		c.rollback(ctx, tenantID, actorID, authToken, docID)
 		return "", fmt.Errorf("complete upload: %w", err)
 	}
 
@@ -207,11 +209,11 @@ func (c *Client) IngestFile(
 	//    dms.version.uploaded.v1 → OCR + embed + index.
 	blobID, err := c.lookupBlobID(ctx, tenantID, checksum)
 	if err != nil {
-		c.rollback(ctx, authToken, docID)
+		c.rollback(ctx, tenantID, actorID, authToken, docID)
 		return "", fmt.Errorf("resolve blob id: %w", err)
 	}
-	if err := c.createVersion(ctx, authToken, docID, blobID); err != nil {
-		c.rollback(ctx, authToken, docID)
+	if err := c.createVersion(ctx, tenantID, actorID, authToken, docID, blobID); err != nil {
+		c.rollback(ctx, tenantID, actorID, authToken, docID)
 		return "", fmt.Errorf("create version: %w", err)
 	}
 	return docID, nil
@@ -243,7 +245,7 @@ func (c *Client) lookupBlobID(ctx context.Context, tenantID, checksum string) (s
 
 // ---- document REST calls -------------------------------------------------
 
-func (c *Client) createDocument(ctx context.Context, authToken, workspaceID, folderID, title string, meta map[string]any) (string, error) {
+func (c *Client) createDocument(ctx context.Context, tenantID, actorID, authToken, workspaceID, folderID, title string, meta map[string]any) (string, error) {
 	if meta == nil {
 		meta = map[string]any{}
 	}
@@ -256,7 +258,7 @@ func (c *Client) createDocument(ctx context.Context, authToken, workspaceID, fol
 	var out struct {
 		ID string `json:"id"`
 	}
-	if err := c.doDocJSON(ctx, http.MethodPost, "/api/v1/documents", authToken, body, &out); err != nil {
+	if err := c.doDocJSON(ctx, http.MethodPost, "/api/v1/documents", tenantID, actorID, authToken, body, &out); err != nil {
 		return "", err
 	}
 	if out.ID == "" {
@@ -265,33 +267,39 @@ func (c *Client) createDocument(ctx context.Context, authToken, workspaceID, fol
 	return out.ID, nil
 }
 
-func (c *Client) createVersion(ctx context.Context, authToken, docID, blobID string) error {
+func (c *Client) createVersion(ctx context.Context, tenantID, actorID, authToken, docID, blobID string) error {
 	body, _ := json.Marshal(map[string]any{
 		"content_blob_id": blobID,
-		"change_summary":  "imported from Google Drive",
+		"change_summary":  "ingested by connector",
 	})
 	return c.doDocJSON(ctx, http.MethodPost,
-		"/api/v1/documents/"+docID+"/versions", authToken, body, nil)
+		"/api/v1/documents/"+docID+"/versions", tenantID, actorID, authToken, body, nil)
 }
 
 // rollback best-effort deletes the document row when a later step fails,
 // so a partial import doesn't leave a versionless orphan (invisible in the
 // UI, never OCR'd). Mirrors useUpload.ts's BUG-C2 cleanup.
-func (c *Client) rollback(ctx context.Context, authToken, docID string) {
+func (c *Client) rollback(ctx context.Context, tenantID, actorID, authToken, docID string) {
 	if docID == "" {
 		return
 	}
-	if err := c.doDocJSON(ctx, http.MethodDelete, "/api/v1/documents/"+docID, authToken, nil, nil); err != nil {
-		c.log.Warn().Err(err).Str("document_id", docID).Msg("drive import: rollback delete failed")
+	if err := c.doDocJSON(ctx, http.MethodDelete, "/api/v1/documents/"+docID, tenantID, actorID, authToken, nil, nil); err != nil {
+		c.log.Warn().Err(err).Str("document_id", docID).Msg("ingest: rollback delete failed")
 	}
 }
 
-// doDocJSON calls the document REST surface as the importing user. The
-// CRUD routes are gated by SessionOrAPIKey, so we forward the caller's
-// dms_session token (cookie) — a gateway signature alone is not an
-// identity. RequireGatewaySignature still wraps the service, so the
-// signature header is also required.
-func (c *Client) doDocJSON(ctx context.Context, method, path, authToken string, body []byte, out any) error {
+// doDocJSON calls the document REST surface as the caller. The CRUD routes
+// are gated by SessionOrAPIKey, so a gateway signature alone is not an
+// identity. Two auth modes:
+//   - authToken set  → forward it as the dms_session cookie (acts AS that
+//     user; used by Drive import, which has the triggering user's session).
+//   - authToken empty → internal-service auth: present SEDOC_INTERNAL_API_KEY
+//     + the tenant/user the worker acts on behalf of in headers (used by the
+//     email + intake workers, which have no session). The gateway strips
+//     inbound X-Internal-Service-Key so only in-cluster callers can use this.
+// RequireGatewaySignature still wraps the service, so the signature is always
+// required too.
+func (c *Client) doDocJSON(ctx context.Context, method, path, tenantID, actorID, authToken string, body []byte, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		rdr = bytes.NewReader(body)
@@ -306,6 +314,14 @@ func (c *Client) doDocJSON(ctx context.Context, method, path, authToken string, 
 		req.AddCookie(&http.Cookie{Name: "dms_session", Value: authToken})
 		// Belt-and-suspenders: some auth paths read the bearer form.
 		req.Header.Set("Authorization", "Bearer "+authToken)
+	} else {
+		req.Header.Set("X-Internal-Service-Key", c.internalKey)
+		req.Header.Set("X-Auth-Tenant-ID", tenantID)
+		req.Header.Set("X-Tenant-ID", tenantID)
+		if actorID != "" {
+			req.Header.Set("X-User-ID", actorID)
+			req.Header.Set("X-User-Role", "admin")
+		}
 	}
 	resp, err := c.httpc.Do(req)
 	if err != nil {

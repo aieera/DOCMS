@@ -14,8 +14,9 @@
 //   3. SHA-256 + MIME detect.
 //   4. INSERT ON CONFLICT DO NOTHING — duplicate drops move to
 //      `processed/` and exit.
-//   5. Call DocumentClient to create the document + version
-//      (reuses the same client the email worker uses).
+//   5. Call the shared ingest pipeline to create the document + version
+//      (the same client the email worker + Drive import use), which fires
+//      dms.version.uploaded.v1 → OCR + embed + index.
 //   6. On success: move source file to `processed/`, stamp status
 //      = "ingested" with the document_id.
 //   7. On failure: move source file to `quarantine/`, stamp status
@@ -43,7 +44,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
-	"github.com/aieera/sedoc/services/connector/internal/email"
+	"github.com/aieera/sedoc/services/connector/internal/ingest"
 )
 
 // Folder is what the admin REST surface returns for one watched dir.
@@ -104,19 +105,21 @@ type RecentFile struct {
 
 // Service orchestrates folder CRUD + the watcher loop.
 type Service struct {
-	pool *pgxpool.Pool
-	docs *email.DocumentClient
-	log  zerolog.Logger
+	pool   *pgxpool.Pool
+	ingest *ingest.Client
+	log    zerolog.Logger
 
 	mu      sync.Mutex
 	stopFns map[string]context.CancelFunc // folder_id → cancel for its watcher goroutine
 }
 
-// New constructs a Service.
-func New(pool *pgxpool.Pool, docs *email.DocumentClient, log zerolog.Logger) *Service {
+// New constructs a Service. ingestClient may be nil (intake then records a
+// failure per file instead of materialising) — main.go passes a live client
+// when storage is reachable.
+func New(pool *pgxpool.Pool, ingestClient *ingest.Client, log zerolog.Logger) *Service {
 	return &Service{
 		pool:    pool,
-		docs:    docs,
+		ingest:  ingestClient,
 		log:     log,
 		stopFns: map[string]context.CancelFunc{},
 	}
@@ -345,16 +348,23 @@ func (s *Service) handleFile(ctx context.Context, f Folder, path string) {
 		_ = s.move(f, path, f.QuarantineSubdir)
 		return
 	}
-	docID, attachIDs, mErr := s.docs.MaterialiseFile(ctx, f.TenantID, f.CreatedBy, f.TargetWorkspaceID, f.TargetFolderID,
-		name, mime, bytes, map[string]any{
-			"intake.source":       "drop_folder",
-			"intake.folder_id":    f.ID,
-			"intake.source_path":  path,
-			"intake.sha256":       sha,
+	if s.ingest == nil {
+		s.markFailed(ctx, f, rowID, "ingest client unavailable (storage unreachable)")
+		_ = s.move(f, path, f.QuarantineSubdir)
+		return
+	}
+	// Full ingest: create document + upload blob + version, which fires
+	// dms.version.uploaded.v1 → OCR + embed + index. Runs as the folder's
+	// creator (f.CreatedBy) via internal-service auth (empty authToken).
+	docID, mErr := s.ingest.IngestFile(ctx, f.TenantID, f.CreatedBy, "",
+		f.TargetWorkspaceID, f.TargetFolderID, name, mime, bytes, map[string]any{
+			"intake.source":      "drop_folder",
+			"intake.folder_id":   f.ID,
+			"intake.source_path": path,
+			"intake.sha256":      sha,
 		})
-	_ = attachIDs // drop-folder ingestion is single-file; no children.
 	if mErr != nil {
-		s.markFailed(ctx, f, rowID, "materialise: "+mErr.Error())
+		s.markFailed(ctx, f, rowID, "ingest: "+mErr.Error())
 		_ = s.move(f, path, f.QuarantineSubdir)
 		return
 	}

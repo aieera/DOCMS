@@ -97,11 +97,15 @@ var DefaultStreams = []StreamSpec{
 	// Without these bindings each was an infinite outbox-retry bomb
 	// halting the entire batch (same shape as dms.ocr_quality before
 	// the 2026-05-25 rename).
+	// dms.language.> covers lang_detect's dms.language.detected.v1 (ADR 0056).
+	// Without this binding it was an infinite outbox-retry bomb halting the
+	// batch — same shape as the others above; surfaced once the lang_detect
+	// task was repaired (2026-06-05) and actually started emitting.
 	{Name: "INTEL_EVENTS", Subjects: []string{
 		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
 		"dms.model.>", "dms.redaction.>",
 		"dms.routing.>", "dms.anomaly.>", "dms.autotag.>",
-		"dms.entity.>", "dms.ner_config.>",
+		"dms.entity.>", "dms.ner_config.>", "dms.language.>",
 	}},
 	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
 	// Compliance + lifecycle events emitted by services/document/internal/compliance
@@ -120,6 +124,13 @@ var DefaultStreams = []StreamSpec{
 	// Signature lifecycle events emitted by services/signature and the
 	// workflow signature_stub activity (completed, declined).
 	{Name: "SIGNATURE_EVENTS", Subjects: []string{"dms.signature.>"}},
+	// Storage lifecycle events emitted by services/storage on the upload
+	// path (initiated / completed / deduplicated / quarantined). No consumer
+	// today, but the storage service emits them, so they MUST have a stream
+	// to land on — otherwise every upload's storage events ("no response from
+	// stream") permanently jam the shared outbox batch behind them, blocking
+	// the document/version events the OCR + index pipeline depends on.
+	{Name: "STORAGE_EVENTS", Subjects: []string{"dms.storage.>"}},
 	// §17.3 / D10 — annotation CRUD fan-out to collaboration WS.
 	{Name: "ANNOTATION_EVENTS", Subjects: []string{"dms.annotation.>"}},
 	// ADR 0066 — threaded comments + reactions. Without binding, every

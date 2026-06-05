@@ -26,6 +26,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/connector/internal/ingest"
 )
 
 // Source enumerates supported ingestion sources.
@@ -130,7 +131,7 @@ type Poller interface {
 type Service struct {
 	pool    *pgxpool.Pool
 	nc      *nats.Conn
-	docs    *DocumentClient
+	ingest  *ingest.Client
 	log     zerolog.Logger
 	pollers map[Source]Poller
 	mu      sync.Mutex
@@ -138,17 +139,16 @@ type Service struct {
 
 // New constructs a Service. Pollers map keyed by Source so adding a
 // new modality (Exchange on-prem, ProtonMail Bridge) is a no-touch
-// change to this file. The DocumentClient is the synchronous path
-// that materialises ingested envelopes into documents — when nil,
-// the worker still records ingestion in email_messages but skips
-// the document side (useful for environments where the document
-// service isn't reachable, e.g. CI).
-func New(pool *pgxpool.Pool, nc *nats.Conn, docs *DocumentClient, pollers []Poller, log zerolog.Logger) *Service {
+// change to this file. ingestClient materialises each envelope (body +
+// attachments) into real documents-with-versions via the shared ingest
+// pipeline — when nil, the worker still records ingestion in
+// email_messages but skips the document side (e.g. CI / storage down).
+func New(pool *pgxpool.Pool, nc *nats.Conn, ingestClient *ingest.Client, pollers []Poller, log zerolog.Logger) *Service {
 	m := map[Source]Poller{}
 	for _, p := range pollers {
 		m[p.Source()] = p
 	}
-	return &Service{pool: pool, nc: nc, docs: docs, log: log, pollers: m}
+	return &Service{pool: pool, nc: nc, ingest: ingestClient, log: log, pollers: m}
 }
 
 // ---- Worker --------------------------------------------------------------
@@ -249,6 +249,15 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	if err != nil {
 		return 0, err
 	}
+	// Phase 1 (in tx): record each NEW message as 'pending' and collect the
+	// ones to materialise. We do NOT call the ingest pipeline inside the tx —
+	// it makes storage gRPC + presigned-PUT round-trips that would hold a DB
+	// connection open for seconds per message.
+	type pending struct {
+		msgID string
+		env   *Envelope
+	}
+	var toMaterialise []pending
 	var ingested int
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		for _, env := range envelopes {
@@ -268,43 +277,98 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 				return err
 			}
 			if tag.RowsAffected() == 0 {
-				continue
+				continue // duplicate
 			}
-			// Materialise into documents (body + attachments) via the
-			// document service's REST API. The hook is best-effort:
-			// the email_messages row stays in 'pending' status if the
-			// hook fails so a future retry sweep can re-try.
-			if s.docs != nil {
-				if bodyDocID, attachIDs, herr := s.docs.MaterialiseEmail(
-					ctx, cfg.TenantID, cfg.CreatedBy, cfg, msgID, env,
-				); herr != nil {
-					s.log.Warn().Err(herr).Str("config_id", cfg.ID).Msg("email: materialise failed")
-					_, _ = tx.Exec(ctx,
-						`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
-						  WHERE tenant_id = $1 AND id = $2`,
-						cfg.TenantID, msgID, herr.Error())
-				} else {
-					_, _ = tx.Exec(ctx,
-						`UPDATE email_messages
-						    SET ingest_status = 'materialised',
-						        document_id = $3,
-						        attachment_document_ids = $4
-						  WHERE tenant_id = $1 AND id = $2`,
-						cfg.TenantID, msgID, bodyDocID, attachIDs)
-				}
-			}
-			// Async fan-out for any other interested consumer is staged
-			// for §12.5c via the existing outbox (insert
-			// dms.email.ingested.v1 into the outbox table inside this
-			// same tx so the standard publisher picks it up). Removing
-			// the direct s.nc.Publish call here — it bypassed the
-			// outbox-only invariant (§4.7) and dropped events on a
-			// crash between INSERT commit and Publish.
+			toMaterialise = append(toMaterialise, pending{msgID, env})
 			ingested++
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+
+	// Phase 2 (outside tx): ingest body + attachments into real documents.
+	// Best-effort per message — a failure leaves the row 'pending' (re-tried
+	// by a future sweep) or stamps 'failed'; it never blocks the others.
+	if s.ingest != nil {
+		for _, p := range toMaterialise {
+			s.materialiseEmail(ctx, cfg, p.msgID, p.env)
+		}
+	}
 	return ingested, err
+}
+
+// materialiseEmail ingests one envelope's body + attachments as real
+// documents (each gets a version → OCR + embed + index) and stamps the
+// email_messages row with the outcome.
+func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID string, env *Envelope) {
+	tenantUUID, err := uuid.Parse(cfg.TenantID)
+	if err != nil {
+		return
+	}
+	bodyDocID, attachIDs, ierr := s.ingestEmail(ctx, cfg, env)
+	_ = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+		if ierr != nil {
+			s.log.Warn().Err(ierr).Str("config_id", cfg.ID).Msg("email: ingest failed")
+			_, e := tx.Exec(ctx,
+				`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
+				  WHERE tenant_id = $1 AND id = $2`,
+				cfg.TenantID, msgID, ierr.Error())
+			return e
+		}
+		_, e := tx.Exec(ctx,
+			`UPDATE email_messages
+			    SET ingest_status = 'materialised', document_id = $3,
+			        attachment_document_ids = $4
+			  WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, msgID, bodyDocID, attachIDs)
+		return e
+	})
+}
+
+// ingestEmail materialises the body (rendered Markdown) + each attachment as
+// real documents-with-versions via the shared ingest pipeline, running as
+// the config owner (cfg.CreatedBy) over internal-service auth. Returns the
+// body doc id + the attachment doc ids.
+func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (string, []string, error) {
+	if cfg.TargetWorkspaceID == "" || cfg.TargetFolderID == "" {
+		return "", nil, fmt.Errorf("config %s: target workspace + folder required", cfg.ID)
+	}
+	baseMeta := map[string]any{
+		"email.from":        env.From,
+		"email.subject":     env.Subject,
+		"email.received_at": env.Date.Format(time.RFC3339),
+		"email.thread_id":   env.ThreadID,
+		"email.source":      string(cfg.Source),
+	}
+	bodyName := firstNonEmpty(env.Subject, "(no subject)") + ".md"
+	bodyDocID, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+		cfg.TargetWorkspaceID, cfg.TargetFolderID, bodyName, "text/markdown",
+		[]byte(formatBody(env)), baseMeta)
+	if err != nil {
+		return "", nil, fmt.Errorf("body: %w", err)
+	}
+	var attachIDs []string
+	for _, att := range env.Attachments {
+		ct := att.ContentType
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		childMeta := map[string]any{
+			"email.parent_doc_id": bodyDocID,
+			"email.from":          env.From,
+			"email.filename":      att.Filename,
+		}
+		id, aerr := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+			cfg.TargetWorkspaceID, cfg.TargetFolderID, att.Filename, ct, att.Bytes, childMeta)
+		if aerr != nil {
+			s.log.Warn().Err(aerr).Str("filename", att.Filename).Msg("email: attachment ingest failed")
+			continue
+		}
+		attachIDs = append(attachIDs, id)
+	}
+	return bodyDocID, attachIDs, nil
 }
 
 func (s *Service) recordError(ctx context.Context, cfg *Config, msg string) {
