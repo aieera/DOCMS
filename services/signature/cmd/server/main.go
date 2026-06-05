@@ -138,6 +138,16 @@ func main() {
 	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
 	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Msg("server-seal pipeline wired")
 
+	// ADR 0025 increment 2 — auto-seal on workflow signature completion. The
+	// consumer subscribes to dms.signature.completed.v1 and runs SealVersion.
+	if js != nil {
+		if err := service.NewSealConsumer(js, svc, *log.Z()).Start(); err != nil {
+			log.Warn(ctx).Err(err).Msg("seal consumer not started (will not auto-seal)")
+		} else {
+			log.Info(ctx).Msg("seal consumer started: dms.signature.completed.v1 → server-seal")
+		}
+	}
+
 	hs := health.NewServerWithMeta("signature", cfg.Region, pool, rdb, nc, s3c)
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
