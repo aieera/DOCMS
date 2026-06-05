@@ -83,6 +83,8 @@ var PublishedSubjects = []string{
 	"dms.auth.login_success.v1",
 	"dms.auth.api_key_issued.v1",
 	"dms.auth.api_key_revoked.v1",
+	"dms.auth.password_reset_requested.v1",
+	"dms.auth.password_changed.v1",
 	// annotation (§17.3 / D10)
 	"dms.annotation.created.v1",
 	"dms.annotation.updated.v1",

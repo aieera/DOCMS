@@ -45,6 +45,13 @@ type UserRepository interface {
 	// values are gated at the service layer (must match an
 	// installed i18next namespace bundle).
 	SetLocale(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, locale string) error
+
+	// ---- Password reset (audit-2026-05 Track 2) -------------------------
+	// All three run inside WithTenantTx — the reset token carries its tenant
+	// so the caller resolves it before the lookup; no cross-tenant query.
+	InsertPasswordResetToken(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, tokenHash string, expiresAt time.Time, ip string) error
+	FindPasswordResetToken(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, tokenHash string) (*model.PasswordResetToken, error)
+	MarkPasswordResetTokenUsed(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, tokenHash string) error
 }
 
 type userRepo struct{}
