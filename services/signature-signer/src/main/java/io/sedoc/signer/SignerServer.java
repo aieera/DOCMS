@@ -23,8 +23,19 @@ public final class SignerServer {
     public static void main(String[] args) throws Exception {
         int port = Integer.parseInt(System.getenv().getOrDefault("SIGNER_PORT", "6060"));
 
+        String ksPath = System.getenv().getOrDefault("SIGNER_KEYSTORE_PATH", "");
+        String ksPass = System.getenv().getOrDefault("SIGNER_KEYSTORE_PASS", "changeit");
+        String alias = System.getenv().getOrDefault("SIGNER_KEY_ALIAS", "");
+        String tsaUrl = System.getenv().getOrDefault("SIGNER_TSA_URL", "");
+        if (ksPath.isBlank()) {
+            LOG.error("SIGNER_KEYSTORE_PATH is required (PKCS#12 signing keystore)");
+            System.exit(2);
+        }
+
+        SignerService service = new SignerService(ksPath, ksPass, alias, tsaUrl);
+
         Server server = ServerBuilder.forPort(port)
-                .addService(new SignerService())
+                .addService(service)
                 .build()
                 .start();
 
