@@ -98,3 +98,45 @@ deploy/license/dev.priv.pem
 # 2026-04-19 RTL run and were removed alongside this gitignore entry.
 web/test-results/
 web/playwright-report/
+
+# ---- Comprehensive editor / OS / build extras (preventive; none tracked today) ----
+# Editor swap + workspace files
+*.swp
+*.swo
+*~
+*.code-workspace
+.vs/
+.fleet/
+.zed/
+.history/
+# OS junk
+._*
+.Spotlight-V100
+.Trashes
+desktop.ini
+# Merge / backup / temp leftovers
+*.bak
+*.tmp
+*.orig
+*.rej
+# Go / profiling extras
+*.prof
+*.cover
+*.coverprofile
+# Python extras
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Cleanup: scratch + generated + vendored content ----
+# Original planning/scratch (blueprint, build prompts, playbook)
+DMS Architecture/
+# Vendored Helm chart deps — re-fetched via `helm dependency update`; Chart.lock is tracked
+deploy/helm/**/charts/*.tgz
+# Generated coverage reports (never track)
+coverage/
+web/coverage/
+# Stray root-level screenshots — real image assets live in web/public + web/src/assets
+/*.png
+/*.jpg
+/*.jpeg
