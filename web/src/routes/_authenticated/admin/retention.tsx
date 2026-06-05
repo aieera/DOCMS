@@ -152,22 +152,25 @@ function RetentionPage() {
             <Input label="Document class (optional)" placeholder="e.g. invoice, contract" value={form.document_class_filter ?? ''} onChange={(e) => setForm({ ...form, document_class_filter: e.target.value })} />
             <Select
               label="Workspace (optional)"
-              value={form.workspace_filter ?? ''}
-              onValueChange={(v) => setForm({ ...form, workspace_filter: v, folder_filter: '' })}
+              // Radix Select.Item rejects an empty-string value (it throws and
+              // the root error boundary blanks the whole app), so the "All"
+              // option uses a sentinel mapped back to '' in form state.
+              value={form.workspace_filter || '__all__'}
+              onValueChange={(v) => setForm({ ...form, workspace_filter: v === '__all__' ? '' : v, folder_filter: '' })}
               placeholder="All workspaces"
               options={[
-                { value: '', label: 'All workspaces' },
+                { value: '__all__', label: 'All workspaces' },
                 ...(workspacesQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
               ]}
             />
             <Select
               label="Folder (optional, sub-folders included)"
-              value={form.folder_filter ?? ''}
-              onValueChange={(v) => setForm({ ...form, folder_filter: v })}
+              value={form.folder_filter || '__all__'}
+              onValueChange={(v) => setForm({ ...form, folder_filter: v === '__all__' ? '' : v })}
               placeholder={form.workspace_filter ? 'All folders in workspace' : 'Pick a workspace first'}
               disabled={!form.workspace_filter || foldersQ.isLoading}
               options={[
-                { value: '', label: 'All folders' },
+                { value: '__all__', label: 'All folders' },
                 ...folderOptions,
               ]}
             />

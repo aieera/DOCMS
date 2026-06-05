@@ -378,8 +378,8 @@ function MembersSection({
       />
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Tenant-wide user administration: <a className="underline" href="/admin/users">/admin/users</a>{' '}·{' '}
-        Groups: <a className="underline" href="/admin/groups">/admin/groups</a>
+        Manage users &amp; groups tenant-wide under{' '}
+        <a className="underline" href="/admin/identity">Identity &amp; Access</a>.
       </p>
       <span id={`workspace-members-${workspaceId}`} className="sr-only">members</span>
     </SectionCard>

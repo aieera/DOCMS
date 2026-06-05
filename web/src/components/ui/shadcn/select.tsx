@@ -204,11 +204,17 @@ function LabeledSelect({
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
+          {/* Radix Select.Item throws on an empty value, which the root error
+              boundary turns into a full-page crash. Drop such options
+              defensively so a single bad caller degrades gracefully instead of
+              blanking the entire UI. */}
+          {options
+            .filter((opt) => opt.value !== '' && opt.value != null)
+            .map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
         </SelectContent>
       </Select>
     </div>

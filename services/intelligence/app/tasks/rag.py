@@ -270,7 +270,11 @@ def workspace_query(
     top_20_texts = [c["text"] for c in fused[:20]]
     if top_20_texts:
         scores = rerank(question, top_20_texts)
-        ranked_pairs = sorted(zip(scores, fused[:20]), reverse=True)
+        # Sort by score only. Without an explicit key, tuple comparison falls
+        # back to the second element (the chunk dict) whenever two scores tie,
+        # raising "TypeError: '<' not supported between instances of 'dict' and
+        # 'dict'" and 500-ing the whole /rag/query request.
+        ranked_pairs = sorted(zip(scores, fused[:20]), key=lambda p: p[0], reverse=True)
         top_pairs = ranked_pairs[:5]
     else:
         top_pairs = [(0.0, c) for c in fused[:5]]

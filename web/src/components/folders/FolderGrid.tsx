@@ -189,8 +189,11 @@ function FolderCard({
   isDropTarget,
 }: CardProps) {
   const { t } = useTranslation('folders')
-  const childCount = folder.child_folder_count ?? 0
-  const docCount = folder.document_count ?? 0
+  // Coerce with Number(): the API serializes these counts (Postgres bigint)
+  // as strings, so a bare `+` string-concatenates "0" + "0" → "00", which then
+  // fails the `=== 0` check and renders "00 items".
+  const childCount = Number(folder.child_folder_count ?? 0)
+  const docCount = Number(folder.document_count ?? 0)
   const total = childCount + docCount
   const isPrivate = folder.visibility === 'private'
   return (

@@ -1289,8 +1289,11 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
                 {pages.length} page{pages.length === 1 ? '' : 's'}
               </span>
               {avgConf > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  · avg {(avgConf * 100).toFixed(1)}% confidence
+                <span
+                  className="text-xs text-muted-foreground"
+                  title="OCR engine character-recognition confidence. The OCR-quality table below shows a composite quality score (char + layout/skew/language), so the two figures differ by design."
+                >
+                  · avg {(avgConf * 100).toFixed(1)}% char confidence
                 </span>
               )}
               {pages[0]?.engine && (
@@ -1472,7 +1475,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
                   Page {p.page_number}
                   <span className="ms-2 text-xs font-normal text-muted-foreground">
-                    · {(p.confidence * 100).toFixed(1)}% conf
+                    · {(p.confidence * 100).toFixed(1)}% char conf
                     {p.processing_time_ms ? ` · ${p.processing_time_ms}ms` : ''}
                     {p.language ? ` · ${p.language}` : ''}
                     {highlight && pageEntities.length > 0 && (

@@ -455,7 +455,9 @@ function SearchPage() {
                     // No highlight → raw title from the doc. React's
                     // default text-node escaping is what we want here;
                     // a filename like `<script>` must render literally.
-                    <p className="font-medium">{hit.title}</p>
+                    // Fall back so a hit whose title field is missing/empty in
+                    // the index still renders a line instead of a blank card.
+                    <p className="font-medium">{hit.title?.trim() || 'Untitled document'}</p>
                   )}
                   {hit.highlights?.content?.[0] && (
                     <p
