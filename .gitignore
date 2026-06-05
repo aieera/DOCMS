@@ -80,6 +80,7 @@ ops/
 /bug-fix-report-*.md
 docs/reports/
 docs/followups/
+docs/deployment/
 
 # Runtime artifacts from scripts/dev-up.sh
 .run/
