@@ -109,6 +109,21 @@ def _require_tenant(tenant_id: Optional[str]) -> str:
     return tenant_id
 
 
+def get_tenant_id(
+    x_auth_tenant_id: Optional[str] = Header(None, alias="X-Auth-Tenant-ID"),
+    legacy_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
+) -> str:
+    """Track 3 — resolve the tenant, preferring the canonical X-Auth-Tenant-ID
+    and falling back to the legacy X-Tenant-ID. 400 if neither is present, so
+    the FE can drop the legacy dual-write one release later without 400-bombing
+    the AI surface. Defined above the first route: the Depends(get_tenant_id)
+    default is evaluated at module load when each route is defined."""
+    tenant = x_auth_tenant_id or legacy_tenant_id
+    if not tenant:
+        raise HTTPException(400, "X-Auth-Tenant-ID (or legacy X-Tenant-ID) required")
+    return tenant
+
+
 @router.post("/ask")
 def ask_endpoint(
     body: AskRequest,
@@ -161,20 +176,6 @@ class QARequest(BaseModel):
     question: str
     conversation_id: Optional[str] = None
     model: Optional[str] = None
-
-
-def get_tenant_id(
-    x_auth_tenant_id: Optional[str] = Header(None, alias="X-Auth-Tenant-ID"),
-    legacy_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
-) -> str:
-    """Track 3 — resolve the tenant, preferring the canonical X-Auth-Tenant-ID
-    and falling back to the legacy X-Tenant-ID. 400 if neither is present, so
-    the FE can drop the legacy dual-write one release later without 400-bombing
-    the AI surface."""
-    tenant = x_auth_tenant_id or legacy_tenant_id
-    if not tenant:
-        raise HTTPException(400, "X-Auth-Tenant-ID (or legacy X-Tenant-ID) required")
-    return tenant
 
 
 def _resolve_caller(x_tenant_id, x_user_id, x_group_ids) -> tuple[str, str, list[str]]:
