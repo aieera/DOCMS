@@ -393,7 +393,10 @@ func (s *Service) DeleteSavedSearch(ctx context.Context, tenantID, userID, id st
 	if err := s.repo.DeleteAllSubscribers(ctx, tenantID, id); err != nil {
 		s.log.Warn().Err(err).Msg("subscriber cascade delete failed; continuing")
 	}
-	// TODO commit 3 — cancel the Temporal workflow if WorkflowID set.
+	// The bound Temporal alert schedule is cancelled by the workflow
+	// worker's reconcile loop (ReconcileSavedSearchAlertSchedules orphan
+	// sweep) within one tick — the search service has no Temporal client,
+	// so deleting the row here is the trigger; the schedule cleanup follows.
 	return s.repo.DeleteSavedSearch(ctx, tenantID, userID, id)
 }
 

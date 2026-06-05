@@ -111,11 +111,15 @@ func DeleteSavedSearchAlertSchedule(
 //   - notify=true rows missing a schedule  → CreateSchedule
 //   - notify=false rows with a schedule    → DeleteSchedule
 //   - notify=true rows with a schedule already → no-op
+//   - schedule whose saved-search row no longer exists → DeleteSchedule
+//     (the row was deleted; the search service can't reach Temporal, so
+//     this loop is where a deleted alert's schedule is cancelled — within
+//     one reconcile tick rather than leaking a firing-but-no-op schedule)
 //
-// Idempotent + cheap (one DB scan + one Temporal Describe per row).
-// Run periodically by the worker (every 60s) so a search-service
-// PATCH that flips notify becomes effective within a minute without
-// the search service needing a Temporal client.
+// Idempotent + cheap (one DB scan + one Temporal Describe per row + one
+// Schedule list for the orphan sweep). Run periodically by the worker
+// (every 60s) so a search-service DELETE/PATCH becomes effective within a
+// minute without the search service needing a Temporal client.
 //
 // Returns (created, deleted, err) for logging.
 func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool, tc client.Client, taskQueue string) (int, int, error) {
@@ -131,6 +135,7 @@ func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool,
 	defer rows.Close()
 
 	created, deleted := 0, 0
+	existing := map[string]bool{} // every saved-search id seen this scan
 	sc := tc.ScheduleClient()
 	for rows.Next() {
 		var id, tenantID, cronExpr string
@@ -139,6 +144,7 @@ func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool,
 		if err := rows.Scan(&id, &tenantID, &notify, &cronExpr, &intervalMin); err != nil {
 			return created, deleted, err
 		}
+		existing[id] = true
 		schedID := SavedSearchAlertScheduleID(id)
 		handle := sc.GetHandle(ctx, schedID)
 		_, descErr := handle.Describe(ctx)
@@ -157,7 +163,36 @@ func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool,
 			deleted++
 		}
 	}
-	return created, deleted, rows.Err()
+	if err := rows.Err(); err != nil {
+		return created, deleted, err
+	}
+
+	// Orphan sweep: any saved-search-alert schedule whose row was deleted
+	// gets cancelled here. List the schedules, strip the deterministic
+	// prefix, and delete the ones with no surviving row.
+	iter, err := sc.List(ctx, client.ScheduleListOptions{})
+	if err != nil {
+		return created, deleted, fmt.Errorf("list schedules for orphan sweep: %w", err)
+	}
+	const prefix = "saved-search-alert-"
+	for iter.HasNext() {
+		entry, err := iter.Next()
+		if err != nil {
+			return created, deleted, err
+		}
+		if !strings.HasPrefix(entry.ID, prefix) {
+			continue
+		}
+		ssID := strings.TrimPrefix(entry.ID, prefix)
+		if existing[ssID] {
+			continue // row still present
+		}
+		if err := DeleteSavedSearchAlertSchedule(ctx, tc, ssID); err != nil {
+			return created, deleted, err
+		}
+		deleted++
+	}
+	return created, deleted, nil
 }
 
 // RegisterSavedSearchAlertSchedules walks notify=true saved searches
