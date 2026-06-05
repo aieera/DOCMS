@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Brain, CheckCircle2, KeyRound, Trash2 } from 'lucide-react'
 
@@ -48,7 +49,7 @@ export function NERConfigPage() {
 
   const dirty = draft !== null && data !== undefined && JSON.stringify(draft) !== JSON.stringify(data)
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: (patch: Partial<NERConfig>) => updateNERConfig(patch),
     onSuccess: (saved) => {
       qc.setQueryData(['ner-config'], saved)
@@ -174,7 +175,7 @@ function APIKeySection({
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: (k: string) => setNERAPIKey(k),
     onSuccess: () => {
       toast.success('API key saved')
@@ -187,7 +188,7 @@ function APIKeySection({
     },
   })
 
-  const clear = useMutation({
+  const clear = useAppMutation({
     mutationFn: clearNERAPIKey,
     onSuccess: () => {
       toast.success('API key cleared')

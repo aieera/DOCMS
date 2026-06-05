@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Copy, Plus, FileUp, Info } from 'lucide-react'
 
@@ -56,7 +57,7 @@ export function UsersPage() {
     setEmail(''); setDisplayName(''); setRole('member'); setPassword(''); setIssued(null); setMode('invite')
   }
 
-  const invite = useMutation({
+  const invite = useAppMutation({
     mutationFn: () => inviteUser(email.trim(), role, displayName.trim() || email.trim()),
     onSuccess: (resp) => {
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })
@@ -66,7 +67,7 @@ export function UsersPage() {
     onError: (err: unknown) => toast.error(messageFrom(err) ?? 'Failed to send invitation'),
   })
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createUser(email.trim(), password, displayName.trim() || email.trim(), role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'users'] })

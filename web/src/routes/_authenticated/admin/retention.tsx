@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Clock, Plus, Trash2, Power, PowerOff, X, Eye } from 'lucide-react'
 
@@ -86,7 +87,7 @@ function RetentionPage() {
     archive_days: form.then_action === 'archive' ? form.archive_days || undefined : undefined,
   })
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createRetentionPolicy(buildPayload()),
     onSuccess: () => {
       toast.success('Policy created')
@@ -96,7 +97,7 @@ function RetentionPage() {
     onError: (err: unknown) => toast.error(readErrorMessage(err) ?? 'Create failed'),
   })
 
-  const preview = useMutation({
+  const preview = useAppMutation({
     mutationFn: () => previewRetentionPolicy(buildPayload()),
     onSuccess: (res) => {
       setPreviewResult(res)
@@ -105,7 +106,7 @@ function RetentionPage() {
     onError: (err: unknown) => toast.error(readErrorMessage(err) ?? 'Preview failed'),
   })
 
-  const toggleActive = useMutation({
+  const toggleActive = useAppMutation({
     mutationFn: (p: RetentionPolicy) => updateRetentionPolicy(p.id, { is_active: !p.is_active }),
     onSuccess: () => {
       toast.success('Policy updated')
@@ -113,7 +114,7 @@ function RetentionPage() {
     },
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteRetentionPolicy(id),
     onSuccess: () => {
       toast.success('Policy deleted')

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ChevronDown, ChevronUp, FolderTree, X } from 'lucide-react'
 
@@ -40,7 +41,7 @@ export function RouteSuggestionBanner({ documentId }: Props) {
     refetchOnWindowFocus: false,
   })
 
-  const accept = useMutation({
+  const accept = useAppMutation({
     mutationFn: (sid: string) => acceptRouteSuggestion(documentId, sid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['route-suggestions', documentId] })
@@ -50,7 +51,7 @@ export function RouteSuggestionBanner({ documentId }: Props) {
     onError: () => toast.error('Move failed'),
   })
 
-  const dismiss = useMutation({
+  const dismiss = useAppMutation({
     mutationFn: (sid: string) => dismissRouteSuggestion(documentId, sid),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ['route-suggestions', documentId] }),

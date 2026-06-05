@@ -17,7 +17,8 @@
 // We'll revisit when Salesforce / ServiceNow / Workday land and
 // the 4th copy of the same wrapper proves the pattern is real.
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Copy, Check } from 'lucide-react'
 
@@ -73,7 +74,7 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
     }
   }, [existingQ.data])
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: () => saveM365Config({
       client_id:     clientID.trim(),
       client_secret: clientSecret,

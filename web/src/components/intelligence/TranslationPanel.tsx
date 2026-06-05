@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Globe, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 
@@ -44,7 +45,7 @@ export function TranslationPanel({ documentId, versionId, availableLanguages }: 
     },
   })
 
-  const ask = useMutation({
+  const ask = useAppMutation({
     mutationFn: (target: string) =>
       requestTranslation({
         document_id: documentId,

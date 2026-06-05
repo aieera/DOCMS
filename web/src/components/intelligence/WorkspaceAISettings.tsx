@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 
 import {
@@ -49,7 +50,7 @@ export function WorkspaceAISettingsDialog({ open, onOpenChange, workspaceId }: P
     if (data) setDraft(data)
   }, [data])
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: (patch: Partial<WorkspaceAISettings>) =>
       updateWorkspaceAISettings(workspaceId, patch),
     onSuccess: (next) => {

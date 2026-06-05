@@ -4,7 +4,7 @@
 // ONCE; we render them and prompt the user to copy them.
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Copy, RotateCcw, AlertTriangle } from 'lucide-react'
 import { api, readErrorMessage } from '@/api/client'
@@ -30,7 +30,7 @@ async function regenerateRecoveryCodes(): Promise<string[]> {
 
 function RecoveryCodesPage() {
   const [codes, setCodes] = useState<string[] | null>(null)
-  const regen = useMutation({
+  const regen = useAppMutation({
     mutationFn: regenerateRecoveryCodes,
     onSuccess: (cs) => {
       setCodes(cs)

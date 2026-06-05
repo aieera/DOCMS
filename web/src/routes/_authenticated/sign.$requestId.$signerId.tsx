@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Shield, ShieldCheck, ShieldAlert } from 'lucide-react'
 
@@ -56,7 +57,7 @@ function SignPage() {
   const [provider, setProvider] = useState<QESProvider>('swisscom')
   const padRef = useRef<SignaturePadHandle>(null)
 
-  const startMutation = useMutation({
+  const startMutation = useAppMutation({
     mutationFn: async () => {
       const signer = reqQ.data?.signers.find((s) => s.id === signerId)
       if (!signer) throw new Error('signer not found in request')
@@ -79,7 +80,7 @@ function SignPage() {
     onError: (e: Error) => toast.error(e.message || 'Could not start QES'),
   })
 
-  const recordMutation = useMutation({
+  const recordMutation = useAppMutation({
     mutationFn: async (svgPath: string) => {
       // Capture the document bytes the signer is looking at, hash
       // them, and persist alongside the signature for ADR 0073

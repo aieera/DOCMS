@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Save } from 'lucide-react'
 
@@ -31,7 +32,7 @@ export function AutoTagAdminPage() {
     }
   }, [data, draft])
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: (patch: Partial<AutoTagConfig>) => updateAutoTagConfig(patch),
     onSuccess: (next) => {
       qc.setQueryData(['auto-tag-config'], next)

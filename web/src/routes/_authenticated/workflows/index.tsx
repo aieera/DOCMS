@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -76,7 +77,7 @@ function WorkflowsPage() {
     )
   }, [defsQ.data, query])
 
-  const duplicate = useMutation({
+  const duplicate = useAppMutation({
     mutationFn: (d: WorkflowDefinition) =>
       createWorkflowDefinition({
         name: `${d.name} (copy)`,
@@ -94,7 +95,7 @@ function WorkflowsPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? t('editor.save_error')),
   })
 
-  const del = useMutation({
+  const del = useAppMutation({
     mutationFn: (id: string) => deleteWorkflowDefinition(id),
     onSuccess: () => {
       toast.success(t('templates.delete_confirm.confirm'))

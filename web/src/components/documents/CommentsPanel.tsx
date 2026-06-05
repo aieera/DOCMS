@@ -10,7 +10,8 @@
 // The component is intentionally self-contained: pass it a
 // documentId and it manages its own queries + WS subscription.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   MessageSquare, Send, Check, CheckCircle2, Reply, Trash2, Smile,
@@ -137,7 +138,7 @@ function ThreadCard({ thread, currentUserId, authorNames }: { thread: Thread; cu
   const qc = useQueryClient()
   const [replying, setReplying] = useState(false)
 
-  const toggleResolve = useMutation({
+  const toggleResolve = useAppMutation({
     mutationFn: () => (thread.root.is_resolved ? unresolveComment(thread.root.id) : resolveComment(thread.root.id)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comments', thread.root.document_id] }),
   })
@@ -189,7 +190,7 @@ function ThreadCard({ thread, currentUserId, authorNames }: { thread: Thread; cu
 function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentUserId: string; authorNames: Map<string, string> }) {
   const segments = parseBodyForRender(c.body)
   const qc = useQueryClient()
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: () => deleteComment(c.id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['comments', c.document_id] }),
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Comment action failed'),
@@ -236,7 +237,7 @@ function ReactionBar({ commentId }: { commentId: string }) {
     queryFn: () => listReactionsViaListEndpoint(commentId),
     staleTime: 30_000,
   })
-  const toggle = useMutation({
+  const toggle = useAppMutation({
     mutationFn: async (emoji: string) => {
       const mineHas = reactions?.find((r) => r.emoji === emoji)?.users.includes(me?.id ?? '')
       if (mineHas) await removeReaction(commentId, emoji)
@@ -306,7 +307,7 @@ import { listReactions as listReactionsViaListEndpoint } from '@/api/comments'
 function NewCommentForm({ documentId }: { documentId: string }) {
   const qc = useQueryClient()
   const [body, setBody] = useState('')
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createComment(documentId, body),
     onSuccess: () => {
       setBody('')
@@ -330,7 +331,7 @@ function NewCommentForm({ documentId }: { documentId: string }) {
 function ReplyForm({ parentId, onSubmitted }: { parentId: string; onSubmitted: () => void }) {
   const qc = useQueryClient()
   const [body, setBody] = useState('')
-  const reply = useMutation({
+  const reply = useAppMutation({
     mutationFn: () => replyToComment(parentId, body),
     onSuccess: () => {
       onSubmitted()

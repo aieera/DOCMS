@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, FileSearch, MessageSquarePlus } from 'lucide-react'
 
@@ -83,7 +84,7 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
     enabled: open && !!documentId,
   })
 
-  const review = useMutation<OcrPageScore, unknown, ReviewVars, ReviewCtx>({
+  const review = useAppMutation<OcrPageScore, unknown, ReviewVars, ReviewCtx>({
     mutationFn: ({ pageNumber, versionId, note }) =>
       reviewOcrPage(documentId!, versionId, pageNumber, note),
     onMutate: async ({ pageNumber }) => {

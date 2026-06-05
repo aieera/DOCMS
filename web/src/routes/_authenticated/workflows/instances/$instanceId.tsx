@@ -5,7 +5,8 @@
 //   - a "Recall" button visible only to the initiator while no
 //     approver has acted yet
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { RotateCcw, CheckCircle2, XCircle, Clock, UserPlus, AlertTriangle } from 'lucide-react'
 import { api, readErrorMessage } from '@/api/client'
@@ -68,7 +69,7 @@ function InstanceDetail() {
   const inst = useQuery({ queryKey: ['workflow-instance', instanceId], queryFn: () => getInstance(instanceId) })
   const timeline = useQuery({ queryKey: ['workflow-timeline', instanceId], queryFn: () => getTimeline(instanceId) })
 
-  const recall = useMutation({
+  const recall = useAppMutation({
     mutationFn: () => recallInstance(instanceId),
     onSuccess: () => {
       toast.success('Workflow recalled')

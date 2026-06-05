@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Download, RotateCcw, AlertTriangle, Pencil, Check, X } from 'lucide-react'
 
@@ -64,7 +65,7 @@ function VersionRow({ version, documentId }: { version: Version; documentId: str
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(version.label ?? '')
 
-  const rename = useMutation({
+  const rename = useAppMutation({
     mutationFn: (label: string) => setVersionLabel(documentId, version.id, label),
     onSuccess: () => {
       toast.success(draft.trim() ? 'Version renamed' : 'Version label cleared')

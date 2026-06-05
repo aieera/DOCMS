@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Trash2, Copy, Check, Plus, ExternalLink, Zap } from 'lucide-react'
 
@@ -39,7 +40,7 @@ function IpaasPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [revealedKey, setRevealedKey] = useState<{ id: string; plaintext: string } | null>(null)
 
-  const revoke = useMutation({
+  const revoke = useAppMutation({
     mutationFn: revokeAPIKey,
     onSuccess: () => {
       toast.success('API key revoked')
@@ -230,7 +231,7 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
   const [scopes, setScopes] = useState<string[]>(['integrations:read'])
   const [expiresInDays, setExpiresInDays] = useState<number | ''>('')
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createAPIKey({
       name: name.trim(),
       scopes,

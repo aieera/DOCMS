@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
 
@@ -36,7 +37,7 @@ function RoutingRulesPage() {
     queryFn: listRoutingRules,
   })
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: createRoutingRule,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['routing-rules'] })
@@ -46,13 +47,13 @@ function RoutingRulesPage() {
     onError: () => toast.error('Create failed'),
   })
 
-  const toggle = useMutation({
+  const toggle = useAppMutation({
     mutationFn: (rule: RoutingRule) =>
       updateRoutingRule(rule.id, { enabled: !rule.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['routing-rules'] }),
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: deleteRoutingRule,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['routing-rules'] })

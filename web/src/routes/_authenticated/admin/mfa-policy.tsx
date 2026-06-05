@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ShieldCheck, Lock, Info } from 'lucide-react'
 
@@ -50,7 +51,7 @@ function MFAPolicyPage() {
     if (data && draft === null) setDraft(data)
   }, [data, draft])
 
-  const save = useMutation({
+  const save = useAppMutation({
     mutationFn: (p: TenantMFAPolicy) => saveMFAPolicy(p),
     onSuccess: () => {
       toast.success('MFA policy saved — new sessions enforce immediately')

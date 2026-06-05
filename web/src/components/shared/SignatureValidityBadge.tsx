@@ -9,7 +9,7 @@
 // Re-validate runs validatePDF against the current version's
 // content blob and refreshes the badge in place.
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, AlertTriangle, ShieldQuestion, RotateCw, ShieldOff } from 'lucide-react'
 
@@ -30,7 +30,7 @@ interface BadgeProps {
 
 export function SignatureValidityBadge({ documentId, tier1, tier2 }: BadgeProps) {
   const [report, setReport] = useState<PAdESReport | null>(tier1 ?? null)
-  const revalidate = useMutation({
+  const revalidate = useAppMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/v1/documents/${documentId}/content`, { credentials: 'include' })
       if (!res.ok) throw new Error('could not fetch document bytes')

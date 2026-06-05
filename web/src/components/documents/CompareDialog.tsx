@@ -11,7 +11,8 @@
 // present but the "word" and "semantic" options are disabled with a
 // tooltip — they require a different renderer (Phase 2 in ADR 0101).
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { ArrowLeftRight, Loader2, Search as SearchIcon } from 'lucide-react'
 
 import { compareDocuments, type CompareResponse, type DiffOperation } from '@/api/compare'
@@ -63,7 +64,7 @@ export function CompareDialog({ open, onOpenChange, baseDocumentId, baseDocument
     staleTime: 5_000,
   })
 
-  const compare = useMutation({
+  const compare = useAppMutation({
     mutationFn: () => {
       if (!otherId) throw new Error('pick a second document')
       return compareDocuments({

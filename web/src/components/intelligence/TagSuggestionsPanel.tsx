@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Check, Sparkles, X } from 'lucide-react'
 
@@ -48,7 +49,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
     refetchOnWindowFocus: false,
   })
 
-  const review = useMutation({
+  const review = useAppMutation({
     mutationFn: (actions: ReviewAction[]) => reviewTagSuggestions(documentId, actions),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['tag-suggestions', documentId] })

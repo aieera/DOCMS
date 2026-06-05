@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Check, Edit2, Lock, Trash2, X } from 'lucide-react'
 
@@ -227,7 +228,7 @@ function EntityRow({ entity, documentId, qc }: EntityRowProps) {
   const [editing, setEditing] = useState(false)
   const [draftType, setDraftType] = useState(entity.entity_type)
 
-  const correct = useMutation({
+  const correct = useAppMutation({
     mutationFn: (input: Parameters<typeof correctEntity>[1]) => correctEntity(documentId, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['entities', documentId] })

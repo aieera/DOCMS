@@ -7,7 +7,8 @@
 //      Gmail authorisation flow that this page reuses.
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { AlertCircle, CheckCircle2, Inbox, Mail, Play, Plus, Server, Settings, Trash2 } from 'lucide-react'
 import {
@@ -50,7 +51,7 @@ export function EmailIngestionPage() {
   const [creating, setCreating] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<EmailConfig | null>(null)
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: createEmailConfig,
     onSuccess: () => {
       toast.success('Config created')
@@ -60,7 +61,7 @@ export function EmailIngestionPage() {
     onError: () => toast.error('Create failed'),
   })
 
-  const run = useMutation({
+  const run = useAppMutation({
     mutationFn: runEmailConfig,
     onSuccess: (r) => {
       toast.success(`Polled — ${r.ingested} new message${r.ingested === 1 ? '' : 's'}`)
@@ -70,12 +71,12 @@ export function EmailIngestionPage() {
       toast.error(e?.response?.data?.error ?? 'Poll failed'),
   })
 
-  const pause = useMutation({
+  const pause = useAppMutation({
     mutationFn: (c: EmailConfig) => patchEmailConfig(c.id, { active: !c.active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['email-configs'] }),
   })
 
-  const remove = useMutation({
+  const remove = useAppMutation({
     mutationFn: (id: string) => deleteEmailConfig(id),
     onSuccess: () => {
       toast.success('Config disabled')

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Sparkles, ThumbsUp, ThumbsDown, Flag, Send, AlertTriangle } from 'lucide-react'
@@ -22,7 +23,7 @@ function AskPage() {
 
   const { data: workspaces, isError: workspacesError } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
 
-  const askMut = useMutation({
+  const askMut = useAppMutation({
     mutationFn: queryRAG,
     onSuccess: (data) => {
       setAnswer(data)
@@ -33,7 +34,7 @@ function AskPage() {
     },
   })
 
-  const feedbackMut = useMutation({
+  const feedbackMut = useAppMutation({
     mutationFn: ({ id, kind }: { id: string; kind: RAGFeedback }) => sendRAGFeedback(id, kind),
     onSuccess: (_d, vars) => {
       setFeedback(vars.kind)

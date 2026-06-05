@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Trash2, Copy, Check, Plus, Bot } from 'lucide-react'
 
@@ -43,7 +44,7 @@ export function MCPPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [revealedKey, setRevealedKey] = useState<{ id: string; plaintext: string } | null>(null)
 
-  const revoke = useMutation({
+  const revoke = useAppMutation({
     mutationFn: revokeAPIKey,
     onSuccess: () => {
       toast.success('API key revoked — any LLM agent using it will fail next call')
@@ -269,7 +270,7 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
   const [name, setName] = useState('')
   const [scopes, setScopes] = useState<string[]>(['mcp:read'])
 
-  const create = useMutation({
+  const create = useAppMutation({
     mutationFn: () => createAPIKey({ name: name.trim(), scopes }),
     onSuccess: (data) => {
       onCreated(data.api_key, data.key_id)

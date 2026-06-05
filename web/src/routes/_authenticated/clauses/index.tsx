@@ -4,7 +4,8 @@
 // side-panel are Phase 2-4 per the ADR.
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, Edit3, FileText, Plus, Search, Tag, Trash2, X } from 'lucide-react'
 
@@ -46,7 +47,7 @@ function ClausesPage() {
     staleTime: 15_000,
   })
 
-  const delMut = useMutation({
+  const delMut = useAppMutation({
     mutationFn: (id: string) => deleteClause(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
@@ -56,7 +57,7 @@ function ClausesPage() {
     onError: () => toast.error('Delete failed'),
   })
 
-  const approveMut = useMutation({
+  const approveMut = useAppMutation({
     mutationFn: (id: string) => patchClause(id, { approved: true }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
@@ -309,7 +310,7 @@ function CreateClauseDialog({
 }) {
   const [form, setForm] = useState<CreateClauseInput>({ name: '', body_text: '', jurisdiction: '', tags: [] })
   const [tagText, setTagText] = useState('')
-  const mut = useMutation({
+  const mut = useAppMutation({
     mutationFn: createClause,
     onSuccess: () => {
       toast.success('Clause created')
@@ -393,7 +394,7 @@ function EditClauseDialog({
   })
   const [tagText, setTagText] = useState(clause.tags.join(', '))
 
-  const mut = useMutation({
+  const mut = useAppMutation({
     mutationFn: () => patchClause(clause.id, {
       // Only send changed fields. The backend handles the bump
       // regardless, but skipping unchanged fields keeps the audit

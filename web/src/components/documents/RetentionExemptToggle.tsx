@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ShieldOff, ShieldCheck } from 'lucide-react'
 
@@ -41,7 +42,7 @@ export function RetentionExemptToggle({ doc, canManage }: Props) {
   const [reason, setReason] = useState('')
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  const m = useMutation({
+  const m = useAppMutation({
     mutationFn: (vars: { exempt: boolean; reason?: string }) =>
       setRetentionExempt(doc.id, vars.exempt, vars.reason),
     onSuccess: (_data, vars) => {

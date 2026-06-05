@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 
 import { getSMTPConfig, saveSMTPConfig, testSMTP } from '@/api/notif-providers'
@@ -44,7 +45,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
 
   const hasExistingPassword = !!existingQ.data?.has_password
 
-  const saveMut = useMutation({
+  const saveMut = useAppMutation({
     mutationFn: () => saveSMTPConfig({
       host: host.trim(),
       port,
@@ -61,7 +62,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
     onError: (e: Error) => toast.error(e.message || 'Save failed'),
   })
 
-  const testMut = useMutation({
+  const testMut = useAppMutation({
     mutationFn: () => testSMTP(testEmail),
     onSuccess: () => toast.success(`Test email sent to ${testEmail}`),
     onError: (e: Error) => toast.error(e.message || 'Test failed'),

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Trash2, User as UserIcon, Users as UsersIcon, ShieldAlert } from 'lucide-react'
 
@@ -152,9 +152,10 @@ export function ManageAccessDialog({
   // we restore the snapshot in onError and surface the error
   // message via readErrorMessage. onSettled invalidates so the
   // server's canonical state replaces the optimistic write either
-  // way. useMutation (not useAppMutation) so we own onError and
-  // can chain rollback + toast in one place.
-  const revoke = useMutation({
+  // way. We pass an explicit onError so we own rollback + toast in
+  // one place; useAppMutation respects a caller-provided onError
+  // verbatim (no default toast fires on top of ours).
+  const revoke = useAppMutation({
     mutationFn: (principalId: string) =>
       revokePermission(resourceType, resourceId, principalId),
     onMutate: async (principalId: string) => {

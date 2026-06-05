@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Shield, Download } from 'lucide-react'
 
@@ -23,7 +24,7 @@ function PrivacyPage() {
     queryFn: () => listDSR(),
   })
 
-  const requestToken = useMutation({
+  const requestToken = useAppMutation({
     mutationFn: () => requestDSRToken(email),
     onSuccess: () =>
       toast.success(
@@ -32,7 +33,7 @@ function PrivacyPage() {
     onError: () => toast.error('Token request failed'),
   })
 
-  const submit = useMutation({
+  const submit = useAppMutation({
     mutationFn: () => submitDSR(type, { subject_email: email, verification_token: token || undefined }),
     onSuccess: () => {
       toast.success('Request queued')

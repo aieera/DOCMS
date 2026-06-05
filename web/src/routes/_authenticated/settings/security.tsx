@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
   Fingerprint, Trash2, ShieldCheck, AlertTriangle, Plus, Info,
@@ -116,7 +117,7 @@ function SecuritySection() {
     queryFn: listPasskeys,
   })
 
-  const addMut = useMutation({
+  const addMut = useAppMutation({
     mutationFn: () => registerPasskey(name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['passkeys'] })
@@ -138,7 +139,7 @@ function SecuritySection() {
   // remove". The backend rejects last-passkey deletes (so MFA-only
   // accounts can't lock themselves out) with a specific error message
   // — useless if we swallow it.
-  const removeMut = useMutation({
+  const removeMut = useAppMutation({
     mutationFn: (credentialID: string) => deletePasskey(credentialID),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['passkeys'] })
@@ -298,7 +299,7 @@ function SessionsSection() {
   // L-6: surface the server's reason for revoke failures (e.g. "cannot
   // revoke your own current session" if the row id matches the
   // caller). Bare-string toasts hid that.
-  const revokeMut = useMutation({
+  const revokeMut = useAppMutation({
     mutationFn: (id: string) => revokeSession(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] })
@@ -307,7 +308,7 @@ function SessionsSection() {
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? "Couldn't revoke session"),
   })
-  const revokeAllMut = useMutation({
+  const revokeAllMut = useAppMutation({
     mutationFn: revokeAllSessions,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] })

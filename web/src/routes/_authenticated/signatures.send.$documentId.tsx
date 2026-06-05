@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Send, Trash2, Plus } from 'lucide-react'
 
@@ -66,7 +67,7 @@ function SendForSignaturePage() {
     ? [...versionsQ.data].sort((a, b) => b.version_number - a.version_number)[0].id
     : ''
 
-  const sendMut = useMutation({
+  const sendMut = useAppMutation({
     mutationFn: async () => {
       if (!versionId) {
         throw new Error('This document has no versions yet — upload a file before sending for signature')

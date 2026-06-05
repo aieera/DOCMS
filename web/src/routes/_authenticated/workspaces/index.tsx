@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { useMemo, useState } from 'react'
 import { Plus, FolderOpen, Users, FileText, Search, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
@@ -201,7 +202,7 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
-  const mut = useMutation({
+  const mut = useAppMutation({
     mutationFn: () => createWorkspace(name.trim(), description.trim() || undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })

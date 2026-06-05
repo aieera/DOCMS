@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, Gauge } from 'lucide-react'
 
@@ -40,7 +41,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
     queryFn: () => getDocumentOcrQuality(documentId),
   })
 
-  const review = useMutation({
+  const review = useAppMutation({
     mutationFn: (page: OcrPageScore) =>
       reviewOcrPage(documentId, data!.summary!.version_id, page.page_number),
     onSuccess: () => {
@@ -50,7 +51,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
     onError: () => toast.error('Review failed'),
   })
 
-  const reviewAll = useMutation({
+  const reviewAll = useAppMutation({
     mutationFn: async () => {
       const versionId = data!.summary!.version_id
       const pending = (data?.pages ?? []).filter((p) => p.needs_review && !p.reviewed)

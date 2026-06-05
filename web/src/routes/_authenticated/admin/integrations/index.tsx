@@ -19,7 +19,8 @@
 // the matching tab on this page so existing deep-links keep working.
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Link2, Link2Off, Activity, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 
@@ -143,7 +144,7 @@ function ESignatureSection() {
   const twilioQ = useQuery({ queryKey: ['twilio-config'], queryFn: getTwilioConfig })
   const smtpQ = useQuery({ queryKey: ['smtp-config'], queryFn: getSMTPConfig })
   const googleQ = useQuery({ queryKey: ['google-connector'], queryFn: getGoogleConnector })
-  const disconnectGoogleMut = useMutation({
+  const disconnectGoogleMut = useAppMutation({
     mutationFn: disconnectGoogle,
     onSuccess: () => {
       toast.success('Google disconnected')
@@ -168,7 +169,7 @@ function ESignatureSection() {
       toast.error(detail || 'Could not start OAuth — check credentials')
     }
   }
-  const refreshConn = useMutation({
+  const refreshConn = useAppMutation({
     mutationFn: refreshESignConnection,
     onSuccess: () => {
       toast.success('Token refreshed')
@@ -179,7 +180,7 @@ function ESignatureSection() {
       toast.error(msg ?? 'Refresh failed — admin may need to reconnect')
     },
   })
-  const disconnect = useMutation({
+  const disconnect = useAppMutation({
     mutationFn: disconnectESign,
     onSuccess: () => {
       toast.success('Disconnected')
