@@ -167,6 +167,11 @@ func main() {
 
 	// ---- Health ------------------------------------------------------------
 	hs := health.NewServerWithMeta("storage", cfg.Region, pool, rdb, nc, s3c)
+	// Internal admin: blob re-encrypt (dms-admin kms rewrap*). Shares the
+	// health port; gated by SEDOC_INTERNAL_API_KEY. Lets the CLI drive a bulk
+	// re-wrap (region migration / post-rotation) without re-implementing the
+	// KMS+S3 wiring the service owns.
+	hs.Handle("/internal/v1/reencrypt-blob", handler.NewReencryptHTTPHandler(svc))
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")
