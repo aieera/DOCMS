@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle } from 'lucide-react'
 import { getWorkspaces } from '@/api/workspaces'
 import { useUIStore } from '@/store/uiStore'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 
 export function WorkspaceSelector() {
+  const { t } = useTranslation('common')
   const { data: workspaces, isError } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
   const { activeWorkspaceId, setActiveWorkspace } = useUIStore()
   // Wave 5 pattern 3: getWorkspaces throws UnknownListShapeError on a
@@ -15,10 +17,10 @@ export function WorkspaceSelector() {
     return (
       <span className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        Couldn&apos;t load workspaces
+        {t('workspace_selector.load_error') ?? "Couldn't load workspaces"}
       </span>
     )
   }
   const options = (workspaces || []).map((w) => ({ value: w.id, label: w.name }))
-  return <Select value={activeWorkspaceId || ''} onValueChange={setActiveWorkspace} options={options} placeholder="Select workspace" />
+  return <Select value={activeWorkspaceId || ''} onValueChange={setActiveWorkspace} options={options} placeholder={t('workspace_selector.placeholder') ?? 'Select workspace'} />
 }
