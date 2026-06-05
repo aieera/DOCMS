@@ -33,6 +33,9 @@ fi
 KEK=$(openssl rand -base64 32)
 INTERNAL=$(openssl rand -hex 32)
 COOKIE=$(openssl rand -base64 32)
+# Hex (no slashes) so it's sed-safe and matches the compose hint
+# (`openssl rand -hex 32`).
+GATEWAY=$(openssl rand -hex 32)
 
 # Escape slashes + ampersands for sed replacement safety.
 esc() { printf '%s' "$1" | sed 's/[\/&]/\\&/g'; }
@@ -41,6 +44,18 @@ sed "${SED_I[@]}" "s|^SEDOC_LOCAL_KEK=.*|SEDOC_LOCAL_KEK=$(esc "$KEK")|"       .
 sed "${SED_I[@]}" "s|^SEDOC_INTERNAL_API_KEY=.*|SEDOC_INTERNAL_API_KEY=$INTERNAL|" .env
 sed "${SED_I[@]}" "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=$(esc "$COOKIE")|" .env
 
+# SEDOC_GATEWAY_SECRET is :?-required by docker-compose (the stack refuses to
+# start without it) AND must MATCH between the backend (.env) and the frontend
+# dev proxy (web/.env, which signs requests the backend then verifies).
+# Generate once and write to both, so `make setup` works out of the box.
+sed "${SED_I[@]}" "s|^SEDOC_GATEWAY_SECRET=.*|SEDOC_GATEWAY_SECRET=$GATEWAY|" .env
+if [ -f web/.env.example ] && [ ! -f web/.env ]; then
+  cp web/.env.example web/.env
+  sed "${SED_I[@]}" "s|^SEDOC_GATEWAY_SECRET=.*|SEDOC_GATEWAY_SECRET=$GATEWAY|" web/.env
+  WEB_NOTE=" + web/.env"
+fi
+
 echo ".env generated with fresh dev secrets."
-echo "  SEDOC_LOCAL_KEK, SEDOC_INTERNAL_API_KEY, SESSION_COOKIE_SECRET → randomized"
+echo "  SEDOC_LOCAL_KEK, SEDOC_INTERNAL_API_KEY, SEDOC_GATEWAY_SECRET, SESSION_COOKIE_SECRET → randomized"
+echo "  SEDOC_GATEWAY_SECRET written to .env${WEB_NOTE:-} (backend + frontend must match)."
 echo "  (never commit .env; it is in .gitignore)"
