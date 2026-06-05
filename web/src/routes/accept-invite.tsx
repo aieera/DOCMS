@@ -1,11 +1,17 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { AlertCircle, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import {
+  Form, FormField, FormItem, FormLabel, FormControl,
+} from '@/components/ui/form'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { cn } from '@/lib/cn'
 
@@ -29,35 +35,59 @@ function evaluatePolicy(password: string, confirm: string): PolicyCheck[] {
   ]
 }
 
+// L-5 — useForm + zodResolver via the shadcn form.tsx primitive. The Zod
+// schema mirrors the existing evaluatePolicy() password rules (12+ chars,
+// upper+lower, digit, symbol, fields-match) so the policy checklist below
+// and the submit-gating validation share one source of truth.
+const acceptInviteSchema = z
+  .object({
+    password: z
+      .string()
+      .min(12, 'At least 12 characters')
+      .refine((p) => /[a-z]/.test(p) && /[A-Z]/.test(p), 'Mix of upper and lowercase')
+      .refine((p) => /\d/.test(p), 'At least one digit')
+      .refine((p) => /[^A-Za-z0-9]/.test(p), 'At least one symbol'),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, {
+    message: 'Both fields must match',
+    path: ['confirm'],
+  })
+
+type AcceptInviteValues = z.infer<typeof acceptInviteSchema>
+
 function AcceptInvitePage() {
   const search = useSearch({ from: '/accept-invite' }) as InviteSearch
   const navigate = useNavigate()
   const tenantSlug = (search.tenant ?? '').trim()
   const token = (search.token ?? '').trim()
 
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
 
-  const linkOK = tenantSlug !== '' && token !== ''
-  const checks = useMemo(() => evaluatePolicy(password, confirm), [password, confirm])
-  const passwordOK = checks.every((c) => c.ok)
+  const form = useForm<AcceptInviteValues>({
+    resolver: zodResolver(acceptInviteSchema),
+    defaultValues: { password: '', confirm: '' },
+    mode: 'onChange',
+  })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!linkOK || !passwordOK) return
-    setLoading(true)
+  const linkOK = tenantSlug !== '' && token !== ''
+  // Live policy checklist mirrors react-hook-form's watched values so the
+  // green-tick UI updates on every keystroke, same as the old useState
+  // version. useWatch (not form.watch) is the memoization-safe subscription.
+  const password = useWatch({ control: form.control, name: 'password' })
+  const confirm = useWatch({ control: form.control, name: 'confirm' })
+  const checks = useMemo(() => evaluatePolicy(password, confirm), [password, confirm])
+
+  const onSubmit = async (values: AcceptInviteValues) => {
+    if (!linkOK) return
     try {
-      await acceptInvite(tenantSlug, token, password)
+      await acceptInvite(tenantSlug, token, values.password)
       setDone(true)
       toast.success('Password set — sign in to continue')
       setTimeout(() => navigate({ to: '/login' }), 1500)
     } catch (err) {
       const m = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
       toast.error(m ?? 'Activation failed — link may be expired or already used')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -111,47 +141,66 @@ function AcceptInvitePage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="New password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Pick something strong"
-          required
-          autoFocus
-          autoComplete="new-password"
-        />
-        <Input
-          label="Confirm password"
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          autoComplete="new-password"
-        />
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>New password</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="password"
+                    placeholder="Pick something strong"
+                    autoFocus
+                    autoComplete="new-password"
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="confirm"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Confirm password</FormLabel>
+                <FormControl>
+                  <Input {...field} type="password" autoComplete="new-password" />
+                </FormControl>
+              </FormItem>
+            )}
+          />
 
-        <ul className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
-          {checks.map((c) => (
-            <li key={c.label} className="flex items-center gap-2 text-xs">
-              <span
-                className={cn(
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
-                  c.ok ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground',
-                )}
-                aria-hidden
-              >
-                {c.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-              </span>
-              <span className={cn(c.ok ? 'text-foreground' : 'text-muted-foreground')}>{c.label}</span>
-            </li>
-          ))}
-        </ul>
+          <ul className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3">
+            {checks.map((c) => (
+              <li key={c.label} className="flex items-center gap-2 text-xs">
+                <span
+                  className={cn(
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                    c.ok ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground',
+                  )}
+                  aria-hidden
+                >
+                  {c.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                </span>
+                <span className={cn(c.ok ? 'text-foreground' : 'text-muted-foreground')}>{c.label}</span>
+              </li>
+            ))}
+          </ul>
 
-        <Button type="submit" className="w-full" loading={loading} disabled={!passwordOK}>
-          Activate account
-        </Button>
-      </form>
+          <Button
+            type="submit"
+            className="w-full"
+            loading={form.formState.isSubmitting}
+            disabled={!form.formState.isValid}
+          >
+            Activate account
+          </Button>
+        </form>
+      </Form>
     </AuthShell>
   )
 }

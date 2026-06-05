@@ -1,10 +1,16 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import {
+  Form, FormField, FormItem, FormLabel, FormControl, FormMessage,
+} from '@/components/ui/form'
 import { AuthShell } from '@/components/layout/auth-shell'
 import { useAuthStore } from '@/store/authStore'
 import { login, verifyMFA } from '@/api/auth'
@@ -22,10 +28,27 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 interface MethodOption { method: MFAMethod; strength: number; destination?: string }
 
+// L-5 — the primary credential form (tenant, email, password) runs on
+// useForm + zodResolver via the shadcn form.tsx primitive. The MFA
+// picker/verify and passkey sub-flows keep their own useState because
+// they're stateful flow-control, not a single validated form; the
+// `loading` flag still gates every async path's spinner.
+const loginSchema = z.object({
+  tenantSlug: z.string().trim().min(1, 'Tenant is required'),
+  email: z.string().trim().min(1, 'Email is required').email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+})
+
+type LoginValues = z.infer<typeof loginSchema>
+
 function LoginPage() {
-  const [tenantSlug, setTenantSlug] = useState('acme')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { tenantSlug: 'acme', email: '', password: '' },
+  })
+  // Memoization-safe subscription (vs form.watch) — drives the passkey
+  // button's disabled state, which gates on a non-empty email.
+  const watchedEmail = useWatch({ control: form.control, name: 'email' })
   const [loading, setLoading] = useState(false)
   // ADR 0063 — when the password step lands `mfa_required: true`,
   // we hold the session token + the strongest-first method list and
@@ -56,11 +79,10 @@ function LoginPage() {
     return true
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (values: LoginValues) => {
     setLoading(true)
     try {
-      const data = await login(email, password, tenantSlug)
+      const data = await login(values.email, values.password, values.tenantSlug)
       if (data.mfa_required && data.mfa_session_token) {
         setMfaToken(data.mfa_session_token)
         setMethods(data.mfa_methods ?? [])
@@ -154,6 +176,7 @@ function LoginPage() {
   // user-cancelled, browser doesn't support) toast and stay on the
   // login page so the user can fall back to password.
   const handlePasskey = async () => {
+    const { email, tenantSlug } = form.getValues()
     if (!email) {
       toast.error('Enter your email first — we use it to find your passkeys')
       return
@@ -219,7 +242,7 @@ function LoginPage() {
             type="button"
             variant="ghost"
             className="w-full"
-            onClick={() => { setMfaToken(null); setMethods([]); setPassword('') }}
+            onClick={() => { setMfaToken(null); setMethods([]); form.resetField('password') }}
           >
             <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Back
           </Button>
@@ -272,54 +295,84 @@ function LoginPage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Tenant" type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required autoComplete="organization" />
-        {/* autoComplete="username" (not "email") — this is the
-            credential-form pattern. With "email", Chrome aggressively
-            offers any address ever typed in any email field (BUG-C);
-            "username" scopes suggestions to saved credentials for
-            this site only and stays compatible with password managers. */}
-        <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus autoComplete="username" name="login-email" />
-
-        {/* ADR 0061 — passkey-as-primary. Above the password so a user
-            with a registered passkey can skip the password entirely. */}
-        {isWebAuthnSupported() && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePasskey}
-            disabled={loading || !email}
-            className="w-full"
-            data-testid="login-passkey"
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
-            Sign in with passkey
-          </Button>
-        )}
-
-        <div className="relative my-1 text-center text-xs uppercase tracking-wider text-muted-foreground">
-          <span className="relative z-10 bg-background px-2">or with password</span>
-          <span className="absolute inset-x-0 top-1/2 border-t border-border" aria-hidden />
-        </div>
-
-        <div>
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="tenantSlug"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tenant</FormLabel>
+                <FormControl>
+                  <Input {...field} type="text" autoComplete="organization" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-          <div className="mt-1.5 flex justify-end">
-            <Link to="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-        </div>
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email</FormLabel>
+                <FormControl>
+                  {/* autoComplete="username" (not "email") — this is the
+                      credential-form pattern. With "email", Chrome
+                      aggressively offers any address ever typed in any
+                      email field (BUG-C); "username" scopes suggestions
+                      to saved credentials for this site only and stays
+                      compatible with password managers. */}
+                  <Input {...field} type="email" autoFocus autoComplete="username" name="login-email" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
-      </form>
+          {/* ADR 0061 — passkey-as-primary. Above the password so a user
+              with a registered passkey can skip the password entirely. */}
+          {isWebAuthnSupported() && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePasskey}
+              disabled={loading || !watchedEmail}
+              className="w-full"
+              data-testid="login-passkey"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
+              Sign in with passkey
+            </Button>
+          )}
+
+          <div className="relative my-1 text-center text-xs uppercase tracking-wider text-muted-foreground">
+            <span className="relative z-10 bg-background px-2">or with password</span>
+            <span className="absolute inset-x-0 top-1/2 border-t border-border" aria-hidden />
+          </div>
+
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Password</FormLabel>
+                <FormControl>
+                  <Input {...field} type="password" autoComplete="current-password" />
+                </FormControl>
+                <FormMessage />
+                <div className="mt-1.5 flex justify-end">
+                  <Link to="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+        </form>
+      </Form>
     </AuthShell>
   )
 }

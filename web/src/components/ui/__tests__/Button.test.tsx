@@ -32,7 +32,9 @@ describe('<Button>', () => {
 
   it('applies destructive variant class', () => {
     render(<Button variant="destructive">Delete</Button>)
-    expect(screen.getByRole('button')).toHaveClass('bg-red-500')
+    // buttonVariants destructive = `bg-destructive text-destructive-foreground …`
+    // (semantic token), not a raw `bg-red-500`.
+    expect(screen.getByRole('button')).toHaveClass('bg-destructive')
   })
 
   it('forwards arbitrary className', () => {

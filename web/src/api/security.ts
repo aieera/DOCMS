@@ -28,20 +28,11 @@ export async function disableMFA(input: { totp_code?: string; recovery_code?: st
 
 // -------- Sessions --------------------------------------------------------
 
-export interface SessionSummary {
-  id: string
-  ip_address: string
-  user_agent: string
-  created_at: string
-  last_activity_at: string
-  expires_at: string
-  is_current: boolean
-}
-
-export async function listSessions() {
-  const { data } = await api.get<{ sessions: SessionSummary[] }>('/auth/sessions')
-  return data.sessions ?? []
-}
+// listSessions + its row type (SessionRow) live in api/auth.ts — the
+// canonical version routes through unwrapList<SessionRow> so a
+// malformed response surfaces as react-query isError instead of the
+// silent `data.sessions ?? []` fail this module used to do.
+// useSecurity imports listSessions from there.
 
 export async function revokeSession(id: string) {
   await api.delete(`/auth/sessions/${id}`)

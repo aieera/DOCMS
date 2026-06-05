@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 
 // Wave 5 pattern 5: useLogin was deleted in Turn 5 — it was orphaned
 // (login.tsx drives all auth flows directly through
+// tenant-fallback: doc-reference (next line quotes the deleted trap)
 // finalizeLoginResult, see H-1) AND carried a `user.tenant_id ?? ''`
 // fallback that would have re-introduced the empty-tenant-ID trap
 // the moment any new code started consuming it. The handoff doc

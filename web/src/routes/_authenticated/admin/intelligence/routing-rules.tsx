@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle } from 'lucide-react'
 
 import {
   createRoutingRule,
@@ -240,29 +240,49 @@ function FolderPicker({ value, onChange }: { value: string; onChange: (id: strin
 
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      <select
-        value={workspaceId}
-        onChange={(e) => { setWorkspaceId(e.target.value); onChange('') }}
-        className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-        data-testid="folder-picker-workspace"
-      >
-        <option value="">— pick workspace —</option>
-        {(wsQ.data ?? []).map((w: Workspace) => (
-          <option key={w.id} value={w.id}>{w.name}</option>
-        ))}
-      </select>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={!workspaceId || foldersQ.isLoading}
-        className="h-9 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
-        data-testid="folder-picker-folder"
-      >
-        <option value="">{workspaceId ? '— pick folder —' : 'Pick a workspace first'}</option>
-        {(foldersQ.data ?? []).map((f: Folder) => (
-          <option key={f.id} value={f.id}>{f.path || f.name}</option>
-        ))}
-      </select>
+      <div className="space-y-1">
+        <select
+          value={workspaceId}
+          onChange={(e) => { setWorkspaceId(e.target.value); onChange('') }}
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+          data-testid="folder-picker-workspace"
+        >
+          <option value="">— pick workspace —</option>
+          {(wsQ.data ?? []).map((w: Workspace) => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
+        {/* Wave 5 pattern 3: getWorkspaces/getFolders throw on a
+            malformed response (was silently returning []). Surface the
+            error instead of an empty dropdown that reads as "no
+            workspaces / folders" — cf. VersionHistory. */}
+        {wsQ.isError && (
+          <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Couldn&apos;t load workspaces
+          </p>
+        )}
+      </div>
+      <div className="space-y-1">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={!workspaceId || foldersQ.isLoading}
+          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+          data-testid="folder-picker-folder"
+        >
+          <option value="">{workspaceId ? '— pick folder —' : 'Pick a workspace first'}</option>
+          {(foldersQ.data ?? []).map((f: Folder) => (
+            <option key={f.id} value={f.id}>{f.path || f.name}</option>
+          ))}
+        </select>
+        {foldersQ.isError && (
+          <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Couldn&apos;t load folders
+          </p>
+        )}
+      </div>
     </div>
   )
 }

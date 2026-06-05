@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Sparkles, ThumbsUp, ThumbsDown, Flag, Send } from 'lucide-react'
+import { Sparkles, ThumbsUp, ThumbsDown, Flag, Send, AlertTriangle } from 'lucide-react'
 
 import { getWorkspaces } from '@/api/workspaces'
 import { queryRAG, sendRAGFeedback, type RAGCitation, type RAGQueryResponse, type RAGFeedback } from '@/api/rag'
@@ -20,7 +20,7 @@ function AskPage() {
   const [answer, setAnswer] = useState<RAGQueryResponse | null>(null)
   const [feedback, setFeedback] = useState<RAGFeedback | null>(null)
 
-  const { data: workspaces } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
+  const { data: workspaces, isError: workspacesError } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
 
   const askMut = useMutation({
     mutationFn: queryRAG,
@@ -75,6 +75,16 @@ function AskPage() {
               onValueChange={setWorkspaceId}
               options={wsOptions}
             />
+            {/* Wave 5 pattern 3: getWorkspaces throws on a malformed
+                response (was silently returning []). Without this the
+                scope picker would quietly drop every per-workspace
+                option and only show "All workspaces" — cf. VersionHistory. */}
+            {workspacesError && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-destructive" role="alert">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Couldn&apos;t load workspaces — scoped search is unavailable.
+              </p>
+            )}
           </div>
           <div className="flex-1">
             <Textarea

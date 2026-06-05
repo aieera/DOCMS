@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Folder, FolderOpen, Sparkles, Lock, Users, Globe, ShieldCheck } from 'lucide-react'
+import { Folder, FolderOpen, Sparkles, Lock, Users, Globe, ShieldCheck, AlertTriangle } from 'lucide-react'
 import { getFolders } from '@/api/workspaces'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
 import { useUIStore } from '@/store/uiStore'
@@ -96,7 +96,7 @@ function visibilityIcon(v?: TreeVisibility) {
 }
 
 export function FolderTree({ workspaceId }: { workspaceId: string }) {
-  const { data: folders } = useQuery({
+  const { data: folders, isError } = useQuery({
     queryKey: ['folders', workspaceId, 'root'],
     queryFn: () => getFolders(workspaceId),
     enabled: !!workspaceId,
@@ -112,7 +112,16 @@ export function FolderTree({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="space-y-3">
       <div className="space-y-0.5">
-        {folders?.length ? (
+        {/* Wave 5 pattern 3: getFolders throws on a malformed response
+            (was silently returning []). Distinguish the error from a
+            genuinely empty workspace so the tree doesn't read as "No
+            folders" when the fetch actually failed — cf. VersionHistory. */}
+        {isError ? (
+          <p className="flex items-center gap-1.5 px-3 py-2 text-xs text-destructive" role="alert">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Couldn&apos;t load folders
+          </p>
+        ) : folders?.length ? (
           folders.map((f) => <FolderNode key={f.id} folder={f} workspaceId={workspaceId} depth={0} />)
         ) : (
           <p className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">No folders</p>
