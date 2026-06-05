@@ -33,6 +33,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/events"
 	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/mcp-server/internal/handler"
@@ -53,6 +54,14 @@ func main() {
 		panic("config load: " + err.Error())
 	}
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
+
+	// License (ADR 0095): load + hourly re-validate so RequireLicenseFeature
+	// below can gate the MCP surface. Absent license = unlicensed-dev (gates
+	// no-op); an invalid JWT is fatal.
+	if err := license.Init(); err != nil {
+		log.Fatal(ctx).Err(err).Msg("license init")
+	}
+	license.StartReloader(ctx)
 
 	pool, err := database.NewPool(ctx, cfg.DatabaseURL, database.DefaultPoolConfig())
 	if err != nil {
@@ -112,9 +121,14 @@ func main() {
 	defer func() { _ = rdb.Close() }()
 	mcpRL := middleware.NewRateLimiter(rdb, 60)
 	mcpLimit := middleware.RateLimitPerTenantHTTP(mcpRL, "mcp")
+	// License gate (ADR 0095): the MCP surface is a licensed feature. 402 when
+	// the `mcp` flag isn't in the license; no-op in unlicensed-dev. Innermost
+	// so auth + rate-limit run first (a tenant's key is established before we
+	// answer "not licensed").
+	mcpFeature := middleware.RequireLicenseFeature("mcp")
 	rootMux := http.NewServeMux()
-	rootMux.Handle("/api/v1/mcp", apiAuth(mcpLimit(mux)))
-	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mcpLimit(mux)))
+	rootMux.Handle("/api/v1/mcp", apiAuth(mcpLimit(mcpFeature(mux))))
+	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mcpLimit(mcpFeature(mux))))
 
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
