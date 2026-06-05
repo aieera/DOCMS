@@ -14,8 +14,9 @@
 //     (JWT_ENABLED=true) and refuses requests whose token signature
 //     doesn't match — this is the only thing preventing an attacker
 //     from swapping the document URL.
-//   - Callback must also verify the JWT OnlyOffice sends back; not
-//     enforced in this skeleton (TODO marked).
+//   - Callback verifies the JWT OnlyOffice signs the event with (same
+//     secret) and rejects missing/invalid tokens with 403 when
+//     SEDOC_ONLYOFFICE_JWT is set — so a save event can't be forged.
 package handler
 
 import (
@@ -23,10 +24,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -155,25 +156,89 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// OnlyOffice sends status events:
 	//   0 = no changes   1 = editing   2 = ready to save
 	//   3 = save error   4 = closed unchanged   6 = force save ready
-	// Skeleton: acknowledge only; a follow-up PR downloads the new
-	// file when status == 2 and runs it through CreateVersion().
+	// download-and-commit on status==2/6 is a follow-up.
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var body struct {
 		Status int    `json:"status"`
 		URL    string `json:"url"`
 		Key    string `json:"key"`
+		Token  string `json:"token"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.Unmarshal(raw, &body)
+
+	// Verify the JWT OnlyOffice signs the callback with (JWT_ENABLED=true).
+	// Without this an attacker who can reach the callback URL could forge a
+	// "save" event pointing at a malicious file. The token rides in the
+	// Authorization header (token.inbox.header) or the body `token` field;
+	// the signed payload is the authoritative status/url/key.
+	if secret := os.Getenv("SEDOC_ONLYOFFICE_JWT"); secret != "" {
+		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		if token == "" {
+			token = body.Token
+		}
+		payload, ok := verifyHS256(token, secret)
+		if !ok {
+			h.log.Warn().Str("key", body.Key).Msg("onlyoffice callback rejected: missing/invalid JWT")
+			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+			return
+		}
+		// Header-form tokens wrap the event under "payload"; body-form tokens
+		// are the event directly. Trust whichever decodes.
+		var signed struct {
+			Status  int    `json:"status"`
+			URL     string `json:"url"`
+			Key     string `json:"key"`
+			Payload *struct {
+				Status int    `json:"status"`
+				URL    string `json:"url"`
+				Key    string `json:"key"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(payload, &signed) == nil {
+			if signed.Payload != nil {
+				body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
+			} else {
+				body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
+			}
+		}
+	}
 
 	h.log.Info().
 		Int("status", body.Status).
 		Str("key", body.Key).
-		Msg("onlyoffice callback (skeleton; download-and-commit is a follow-up)")
-
-	// TODO E6 follow-up: verify JWT on r.Header.Get("Authorization")
-	// with the same secret; reject if invalid. Skeleton accepts
-	// unsigned callbacks so dev works before signing is wired.
+		Msg("onlyoffice callback (verified; download-and-commit is a follow-up)")
 
 	writeJSONStatus(w, http.StatusOK, map[string]any{"error": 0})
+}
+
+// verifyHS256 checks an OnlyOffice-issued JWT (header.payload.signature,
+// HS256) against secret in constant time and returns the decoded payload.
+// ok=false on a malformed token or signature mismatch.
+func verifyHS256(token, secret string) ([]byte, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return nil, false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(parts[0] + "." + parts[1]))
+	expected := base64Url(mac.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
+		return nil, false
+	}
+	payload, err := base64UrlDecode(parts[1])
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+func base64UrlDecode(s string) ([]byte, error) {
+	s = strings.ReplaceAll(s, "-", "+")
+	s = strings.ReplaceAll(s, "_", "/")
+	if pad := len(s) % 4; pad != 0 {
+		s += strings.Repeat("=", 4-pad)
+	}
+	return base64.StdEncoding.DecodeString(s)
 }
 
 // ---- tiny HS256 signer (no external dep) --------------------------
@@ -203,7 +268,3 @@ func base64Url(b []byte) string {
 	s = strings.ReplaceAll(s, "/", "_")
 	return s
 }
-
-// silence unused — time may be needed when we add iat/exp in the
-// stricter signing pass.
-var _ = time.Now
