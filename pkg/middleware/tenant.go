@@ -12,10 +12,25 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// TenantHeader is the HTTP header used for internal service-to-service
+// TenantHeader is the legacy HTTP header used for internal service-to-service
 // tenant propagation. Public gateway traffic resolves the tenant from the
 // session token instead.
 const TenantHeader = "X-Tenant-ID"
+
+// AuthTenantHeader is the canonical tenant header (audit M-7 / Track 3). The
+// gateway + auth context populate it; readers prefer it and fall back to the
+// legacy TenantHeader so the FE can drop the dual-write one release later.
+const AuthTenantHeader = "X-Auth-Tenant-ID"
+
+// TenantFromHeaders returns the request's tenant header value, preferring the
+// canonical AuthTenantHeader and falling back to the legacy TenantHeader.
+// Empty when neither is present.
+func TenantFromHeaders(r *http.Request) string {
+	if v := r.Header.Get(AuthTenantHeader); v != "" {
+		return v
+	}
+	return r.Header.Get(TenantHeader)
+}
 
 // TenantMetadataKey is the gRPC metadata equivalent.
 const TenantMetadataKey = "x-tenant-id"
@@ -103,7 +118,7 @@ func UserIdentityInterceptor() grpc.UnaryServerInterceptor {
 func TenantHTTP(_ *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			raw := r.Header.Get(TenantHeader)
+			raw := TenantFromHeaders(r) // X-Auth-Tenant-ID, then legacy X-Tenant-ID
 			tid, err := uuid.Parse(raw)
 			// Fallback: a preceding middleware (SessionAuth /
 			// SessionAuthOptional) may have set the tenant on the

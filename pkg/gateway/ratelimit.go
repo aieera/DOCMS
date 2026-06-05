@@ -46,7 +46,11 @@ func (rl *RateLimiter) Allow(ctx context.Context, tenantID, ip, endpoint string)
 // Middleware returns an HTTP middleware that enforces rate limits.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tenantID := r.Header.Get("X-Tenant-ID")
+		// Track 3 — canonical X-Auth-Tenant-ID, legacy X-Tenant-ID fallback.
+		tenantID := r.Header.Get("X-Auth-Tenant-ID")
+		if tenantID == "" {
+			tenantID = r.Header.Get("X-Tenant-ID")
+		}
 		if tenantID == "" {
 			tenantID = "_anon"
 		}

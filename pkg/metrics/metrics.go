@@ -127,7 +127,11 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 		rw := &responseWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rw, r)
 
-		tenant := r.Header.Get("X-Tenant-ID")
+		// Track 3 — canonical X-Auth-Tenant-ID, legacy X-Tenant-ID fallback.
+		tenant := r.Header.Get("X-Auth-Tenant-ID")
+		if tenant == "" {
+			tenant = r.Header.Get("X-Tenant-ID")
+		}
 		if tenant == "" {
 			tenant = "_anon"
 		}
