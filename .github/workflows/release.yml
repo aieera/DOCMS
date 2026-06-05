@@ -81,7 +81,7 @@ jobs:
         run: |
           cosign attest --yes --predicate sbom-${{ matrix.service }}.spdx.json \
               --type spdxjson "$IMAGE"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ matrix.service }}
           path: sbom-${{ matrix.service }}.spdx.json
@@ -106,7 +106,7 @@ jobs:
           REGISTRY: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}
           PLATFORM: linux/amd64
         run: bash scripts/airgap/build-bundle.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: airgap-bundle-amd64
           path: dist/sedoc-airgap-*.tar.gz

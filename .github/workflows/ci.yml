@@ -89,7 +89,7 @@ jobs:
           REDIS_URL: localhost:6379
           NATS_URL: nats://localhost:4222
         run: go test -race -timeout 10m -coverprofile=coverage.txt ./...
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.txt
@@ -280,14 +280,14 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: tests/e2e/playwright-report
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-service-logs
           path: .run/*.log
@@ -369,7 +369,7 @@ jobs:
         run: npm run test:ci
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-coverage
           path: web/coverage
@@ -468,7 +468,7 @@ jobs:
         run: npx playwright test --project=chromium
       - name: Upload report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: web/playwright-report/
