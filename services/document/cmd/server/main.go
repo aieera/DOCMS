@@ -419,9 +419,13 @@ func main() {
 	// URL regardless of encryption state.
 	decryptStreamMux := http.NewServeMux()
 	decryptStreamHandler.Register(decryptStreamMux)
+	// SessionOrAPIKey (not SessionAuth) so trusted internal services — e.g.
+	// the signature service's seal pipeline (ADR 0025) — can fetch a version's
+	// decrypted bytes with X-Internal-Service-Key + X-Auth-Tenant-ID. The
+	// gateway strips client-supplied internal keys, so this stays service-only.
 	rootMux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/decrypt-stream",
 		middleware.CorrelationHTTP(
-			middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(decryptStreamMux),
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(decryptStreamMux),
 		))
 
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).

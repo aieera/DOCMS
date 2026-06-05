@@ -41,6 +41,10 @@ type Service struct {
 	// emits the outbox event with byte counts; only the new-version
 	// hand-off is skipped.
 	ingest *ingestPipeline
+	// sealer is the optional ADR 0025 server-seal pipeline (fetch a
+	// version's decrypted bytes → DSS-sign → ingest a sealed version).
+	// nil until main.go calls AddSealer with a configured Signer.
+	sealer *Sealer
 	// padesVerifier is the lazily-initialized PAdES-LTV validator
 	// (ADR 0072). nil-allocated on first VerifyPDF call so callers
 	// that never validate don't pay the regex compilation cost.
