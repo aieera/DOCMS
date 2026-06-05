@@ -52,8 +52,10 @@ export function CompliancePanel({ documentId }: Props) {
 
   const rescan = useAppMutation({
     mutationFn: () => rescanDocument(documentId),
-    onSuccess: () => toast.success('Rescan queued'),
-    onError: () => toast.error('Rescan failed'),
+    // "Scan" rather than "Rescan": this fires on the first run too, where
+    // "Rescan" is misleading.
+    onSuccess: () => toast.success('Scan queued'),
+    onError: () => toast.error('Scan failed'),
   })
 
   if (isLoading) return <div className="p-4 text-sm text-zinc-500">Loading compliance scan…</div>

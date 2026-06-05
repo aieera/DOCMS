@@ -106,13 +106,17 @@ export function TagsPage() {
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           Preview:
-          <span
-            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
-            style={{ backgroundColor: color }}
-          >
-            <TagIcon className="h-3 w-3" />
-            {name || 'tag-name'}
-          </span>
+          {name.trim() ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-white"
+              style={{ backgroundColor: color }}
+            >
+              <TagIcon className="h-3 w-3" />
+              {name.trim()}
+            </span>
+          ) : (
+            <span className="italic">enter a name to preview</span>
+          )}
         </div>
       </Card>
 

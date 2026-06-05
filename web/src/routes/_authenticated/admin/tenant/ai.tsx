@@ -202,6 +202,10 @@ export function TenantAIPage() {
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value || null })}
             placeholder="https://your-vllm.local/v1"
             type="url"
+            // Stop the browser auto-filling the logged-in user's email into this
+            // URL field. name is non-standard so heuristic autofill won't match.
+            autoComplete="off"
+            name="ai-base-url"
             error={
               draft.base_url && !/^https?:\/\//.test(draft.base_url)
                 ? 'Must start with http:// or https://'

@@ -22,9 +22,13 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={docsByState}>
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
+            {/* Baseline at 0: with a single state (e.g. only "draft") recharts'
+                auto Y-domain collapses to [count, count], so the bar gets 0
+                height and the chart looks empty. allowDecimals=false keeps the
+                integer-count ticks clean. */}
+            <YAxis tick={{ fontSize: 11 }} domain={[0, 'auto']} allowDecimals={false} />
             <Tooltip />
-            <Bar dataKey="count" fill="#1E40AF" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="count" fill="#1E40AF" radius={[4, 4, 0, 0]} minPointSize={2} />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -11,6 +11,10 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 
 const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'medium', 'low']
+// Severity display order. risk_distribution arrives as a Go map → JSON keys in
+// ALPHABETICAL order (critical, high, low, medium, none), which renders "Low"
+// before "Medium". Re-order by real severity.
+const RISK_ORDER = ['critical', 'high', 'medium', 'low', 'none']
 
 const RISK_COLOR: Record<string, string> = {
   critical: 'bg-destructive',
@@ -55,7 +59,9 @@ export function ComplianceAdminDashboard() {
 
       <Section title="Risk distribution">
         <div className="space-y-2">
-          {Object.entries(dash.risk_distribution).map(([risk, count]) => (
+          {Object.entries(dash.risk_distribution)
+            .sort(([a], [b]) => RISK_ORDER.indexOf(a) - RISK_ORDER.indexOf(b))
+            .map(([risk, count]) => (
             <div key={risk} className="flex items-center gap-3 text-sm">
               <span className={`h-2 w-2 rounded-full ${RISK_COLOR[risk] ?? 'bg-muted-foreground/40'}`} />
               <span className="w-24 capitalize">{risk}</span>

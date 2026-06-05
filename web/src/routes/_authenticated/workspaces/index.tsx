@@ -236,7 +236,10 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Q4 Contracts"
-          required
+          // No native `required`: it blocks the form's onSubmit before our
+          // toast.error('Name is required') can fire, so the empty-name case
+          // appeared to do nothing. Let the JS validation handle it (toast),
+          // consistent with the other dialogs (e.g. Webhooks → "URL is required").
           autoFocus
           maxLength={120}
         />
