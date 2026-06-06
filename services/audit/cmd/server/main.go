@@ -21,6 +21,7 @@ import (
 	"github.com/aieera/sedoc/pkg/health"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/audit/internal/handler"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
 	"github.com/aieera/sedoc/services/audit/internal/service"
@@ -82,6 +83,10 @@ func main() {
 		middleware.UserIdentityInterceptor(),
 		middleware.RequestLogInterceptor(log),
 	))
+	// Register the AuditService gRPC server. Without this the server served no
+	// methods, so the graphql-gateway's per-document Activity feed (Audit.Query)
+	// always returned empty.
+	sedocv1.RegisterAuditServiceServer(grpcSrv, handler.NewGRPCHandler(svc))
 	grpcLis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPCPort))
 	if err != nil {
 		log.Fatal(ctx).Err(err).Msg("grpc listen")

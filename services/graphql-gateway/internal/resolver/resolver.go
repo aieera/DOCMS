@@ -21,6 +21,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
@@ -60,25 +61,30 @@ var ErrNotConfigured = errors.New("upstream service not configured")
 type identity struct {
 	tenantID string
 	userID   string
+	role     string
 }
 
 func identityFrom(ctx context.Context) identity {
 	tenant, _ := ctx.Value(ctxTenantKey{}).(string)
 	user, _ := ctx.Value(ctxUserKey{}).(string)
-	return identity{tenantID: tenant, userID: user}
+	role, _ := ctx.Value(ctxRoleKey{}).(string)
+	return identity{tenantID: tenant, userID: user, role: role}
 }
 
 type (
 	ctxTenantKey struct{}
 	ctxUserKey   struct{}
+	ctxRoleKey   struct{}
 )
 
-// WithIdentity stamps the calling tenant + user onto the context.
+// WithIdentity stamps the calling tenant + user + role onto the context.
 // main.go calls this from the HTTP middleware after verifying the
-// gateway-signed headers.
-func WithIdentity(ctx context.Context, tenantID, userID string) context.Context {
+// gateway-signed headers. The role feeds the policy check context so OPA
+// Rule 6 (org owner/admin → all capabilities) can fire.
+func WithIdentity(ctx context.Context, tenantID, userID, role string) context.Context {
 	ctx = context.WithValue(ctx, ctxTenantKey{}, tenantID)
 	ctx = context.WithValue(ctx, ctxUserKey{}, userID)
+	ctx = context.WithValue(ctx, ctxRoleKey{}, role)
 	return ctx
 }
 
@@ -88,9 +94,19 @@ func WithIdentity(ctx context.Context, tenantID, userID string) context.Context 
 // would fail with PermissionDenied.
 func (r *Resolver) outboundCtx(ctx context.Context) context.Context {
 	id := identityFrom(ctx)
+	// Send the canonical gRPC metadata keys (x-tenant-id / x-user-id) that
+	// middleware.TenantInterceptor + UserIdentityInterceptor actually read,
+	// plus the x-auth-* aliases. Previously only x-auth-* were sent, so every
+	// upstream gRPC call saw no tenant/user and 401'd with "authentication
+	// required" — which is why the per-document Activity feed came back empty
+	// (the policy "view" check failed before the audit query even ran).
 	md := metadata.New(map[string]string{
+		"x-tenant-id":      id.tenantID,
+		"x-user-id":        id.userID,
+		"x-user-role":      id.role,
 		"x-auth-tenant-id": id.tenantID,
 		"x-auth-user-id":   id.userID,
+		"x-auth-user-role": id.role,
 	})
 	return metadata.NewOutgoingContext(ctx, md)
 }
@@ -104,12 +120,22 @@ func (r *Resolver) check(ctx context.Context, action, kind, resourceID string) b
 		return false
 	}
 	id := identityFrom(ctx)
+	// Pass the caller's role in the policy context so OPA Rule 6 (org
+	// owner/admin → every capability) can fire. Without it even the tenant
+	// owner is denied "view" on their own documents, so the per-document
+	// Activity feed + document detail resolved empty. Mirrors the
+	// extra["user_role"] the document service already sends.
+	var pctx *structpb.Struct
+	if id.role != "" {
+		pctx, _ = structpb.NewStruct(map[string]any{"user_role": id.role})
+	}
 	resp, err := r.clients.Policy.CheckPermission(r.outboundCtx(ctx), &sedocv1.CheckPermissionRequest{
 		SubjectType:  "user",
 		SubjectId:    id.userID,
 		Action:       action,
 		ResourceType: kind,
 		ResourceId:   resourceID,
+		Context:      pctx,
 	})
 	if err != nil {
 		r.log.Warn().Err(err).Str("kind", kind).Str("id", resourceID).
@@ -432,12 +458,18 @@ func (r *Resolver) DocumentPermissions(ctx context.Context, parent any) (any, er
 		return &model.DocumentPermissions{}, nil
 	}
 	id := identityFrom(ctx)
+	// Same role context as check() — so owner/admin (OPA Rule 6) resolve
+	// canView/... correctly instead of every capability coming back false.
+	var pctx *structpb.Struct
+	if id.role != "" {
+		pctx, _ = structpb.NewStruct(map[string]any{"user_role": id.role})
+	}
 	checks := []*sedocv1.CheckPermissionRequest{
-		{SubjectType: "user", SubjectId: id.userID, Action: "view", ResourceType: "document", ResourceId: doc.ID},
-		{SubjectType: "user", SubjectId: id.userID, Action: "edit", ResourceType: "document", ResourceId: doc.ID},
-		{SubjectType: "user", SubjectId: id.userID, Action: "delete", ResourceType: "document", ResourceId: doc.ID},
-		{SubjectType: "user", SubjectId: id.userID, Action: "share", ResourceType: "document", ResourceId: doc.ID},
-		{SubjectType: "user", SubjectId: id.userID, Action: "admin", ResourceType: "document", ResourceId: doc.ID},
+		{SubjectType: "user", SubjectId: id.userID, Action: "view", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
+		{SubjectType: "user", SubjectId: id.userID, Action: "edit", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
+		{SubjectType: "user", SubjectId: id.userID, Action: "delete", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
+		{SubjectType: "user", SubjectId: id.userID, Action: "share", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
+		{SubjectType: "user", SubjectId: id.userID, Action: "admin", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
 	}
 	resp, err := r.clients.Policy.BatchCheckPermission(r.outboundCtx(ctx), &sedocv1.BatchCheckPermissionRequest{Checks: checks})
 	if err != nil {

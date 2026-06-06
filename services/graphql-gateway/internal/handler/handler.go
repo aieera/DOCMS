@@ -102,6 +102,7 @@ func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
 	// rate-limit → this handler.
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
+	role := auth.RoleString(r)
 	if tenantID == "" || userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "tenant + user identity required"})
 		return
@@ -146,7 +147,7 @@ func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
 
 	// Per-request loader bundle; cache lifetime = handler return.
 	ctx := loader.WithLoaders(r.Context(), cfg.NewLoaders())
-	ctx = resolver.WithIdentity(ctx, tenantID, userID)
+	ctx = resolver.WithIdentity(ctx, tenantID, userID, role)
 
 	result := cfg.Executor.Execute(ctx, query, req.Variables, req.OperationName)
 	writeJSON(w, http.StatusOK, result)

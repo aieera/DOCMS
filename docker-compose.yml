@@ -53,6 +53,13 @@ x-go-env: &go-env
   SEDOC_ONLYOFFICE_JWT: "${SEDOC_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
+  # graphql-gateway upstream gRPC clients. Without these set, the gateway's
+  # config defaults weren't taking effect, so the Audit/Document/Workflow
+  # clients were nil and resolvers (e.g. the per-document Activity feed) silently
+  # returned empty. Each points at the service's :9090 gRPC port.
+  DOCUMENT_SERVICE_ADDR:  "document:9090"
+  AUDIT_SERVICE_ADDR:     "audit:9090"
+  WORKFLOW_SERVICE_ADDR:  "workflow:9090"
   SEDOC_ENV:          "development"
   # ADR 0110 — cluster region. Echoed in /healthz so the Residency
   # admin page can confirm which region a service is serving. Without
