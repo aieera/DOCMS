@@ -88,7 +88,15 @@ func WithIdentity(ctx context.Context, tenantID, userID string) context.Context 
 // would fail with PermissionDenied.
 func (r *Resolver) outboundCtx(ctx context.Context) context.Context {
 	id := identityFrom(ctx)
+	// Send the canonical gRPC metadata keys (x-tenant-id / x-user-id) that
+	// middleware.TenantInterceptor + UserIdentityInterceptor actually read,
+	// plus the x-auth-* aliases. Previously only x-auth-* were sent, so every
+	// upstream gRPC call saw no tenant/user and 401'd with "authentication
+	// required" — which is why the per-document Activity feed came back empty
+	// (the policy "view" check failed before the audit query even ran).
 	md := metadata.New(map[string]string{
+		"x-tenant-id":      id.tenantID,
+		"x-user-id":        id.userID,
 		"x-auth-tenant-id": id.tenantID,
 		"x-auth-user-id":   id.userID,
 	})
