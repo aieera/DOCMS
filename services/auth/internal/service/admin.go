@@ -199,6 +199,9 @@ func (s *Service) InviteUser(ctx context.Context, in InviteInput) (*model.User, 
 		if existing, err := s.users.GetByEmail(ctx, tx, in.TenantID, email); err == nil && existing != nil {
 			return vdmserr.Conflict("user with this email already exists")
 		}
+		if err := s.enforceSeatLimit(ctx, tx, in.TenantID); err != nil {
+			return err
+		}
 		if err := s.users.Create(ctx, tx, user); err != nil {
 			return err
 		}
@@ -282,6 +285,9 @@ func (s *Service) CreateUserAdmin(ctx context.Context, in CreateUserDirectInput)
 	err = database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		if existing, gErr := s.users.GetByEmail(ctx, tx, in.TenantID, email); gErr == nil && existing != nil {
 			return vdmserr.Conflict("user with this email already exists")
+		}
+		if seErr := s.enforceSeatLimit(ctx, tx, in.TenantID); seErr != nil {
+			return seErr
 		}
 		if cErr := s.users.Create(ctx, tx, user); cErr != nil {
 			return cErr

@@ -83,6 +83,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*model.User, 
 		if err != nil && vdmserr.KindOf(err) != vdmserr.KindNotFound {
 			return err
 		}
+		if err := s.enforceSeatLimit(ctx, tx, org.ID); err != nil {
+			return err
+		}
 		if err := s.users.Create(ctx, tx, user); err != nil {
 			return err
 		}

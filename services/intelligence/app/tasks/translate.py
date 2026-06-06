@@ -146,11 +146,19 @@ async def _run_async(
                 )},
                 {"role": "user", "content": chunk},
             ]
-            resp = llm_gateway.completion(
-                tenant_id=tenant_id, messages=messages,
-                model=cfg.get("model_override") or None,
-                temperature=0.0,
-                max_tokens=4000,
+            # Offload the blocking sync LLM call to a worker thread:
+            # llm_gateway.completion() → route_completion() calls asyncio.run()
+            # internally, which raises "asyncio.run() cannot be called from a
+            # running event loop" when invoked directly from this async task.
+            # A thread gives it a clean, loop-free context (and avoids blocking
+            # the worker's event loop) — same effect as the RAG path.
+            resp = await asyncio.to_thread(
+                lambda: llm_gateway.completion(
+                    tenant_id=tenant_id, messages=messages,
+                    model=cfg.get("model_override") or None,
+                    temperature=0.0,
+                    max_tokens=4000,
+                )
             )
             translated_parts.append(resp.get("content") or "")
             total_input += int(resp.get("input_tokens", 0) or 0)
@@ -193,14 +201,28 @@ async def _run_async(
             "elapsed_ms": elapsed_ms,
         }
     except Exception as exc:
+        # Log the raw error for operators — it must NEVER reach the user panel.
+        log.exception(
+            "translate.failed",
+            extra={
+                "tenant_id": tenant_id, "translation_id": translation_id,
+                "version_id": version_id, "target_language": target_language,
+                "attempt": attempt, "terminal": is_terminal,
+            },
+        )
+        # Mark the user-facing translation Failed on EVERY attempt (not only the
+        # terminal one) so the panel converges instead of hanging at "Pending"
+        # through the retry window; a successful retry overwrites it back to
+        # "completed". The message is friendly — the raw exception/DB text stays
+        # in the logs + DLQ only (was leaking "UndefinedColumnError: ..." to UI).
+        try:
+            await _mark_translation_failed(
+                tenant_id, translation_id,
+                "Translation failed — please retry.",
+            )
+        except Exception:
+            log.exception("mark translation failed")
         if is_terminal:
-            try:
-                await _mark_translation_failed(
-                    tenant_id, translation_id,
-                    f"{type(exc).__name__}: {exc}"[:1000],
-                )
-            except Exception:
-                log.exception("mark translation failed (within DLQ branch)")
             reason = classify_error_reason(exc)
             try:
                 await publish_dlq(
@@ -290,12 +312,18 @@ async def _fetch_ocr_text(tenant_id: str, version_id: str) -> str:
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id
             )
+            # ocr_results is per-PAGE (columns: page_number, text_content);
+            # there is no full_text column. Concatenate the pages in order so
+            # translation sees the whole document, not one arbitrary page.
+            # (Same fix already applied to lang_detect.)
             row = await conn.fetchrow(
                 """
-                SELECT COALESCE(full_text, '') AS full_text
+                SELECT COALESCE(
+                         string_agg(text_content, E'\n' ORDER BY page_number),
+                         ''
+                       ) AS full_text
                   FROM ocr_results
                  WHERE tenant_id = $1 AND version_id = $2
-                 ORDER BY created_at DESC LIMIT 1
                 """,
                 tenant_id, version_id,
             )

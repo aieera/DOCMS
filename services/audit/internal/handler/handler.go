@@ -40,7 +40,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	f := model.ListFilter{
@@ -79,7 +79,7 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	events, _, err := h.svc.List(r.Context(), model.ListFilter{TenantID: tenantID, PageSize: 10000})
@@ -100,7 +100,7 @@ func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) verifyIntegrity(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	result, err := h.svc.VerifyIntegrity(r.Context(), tenantID)

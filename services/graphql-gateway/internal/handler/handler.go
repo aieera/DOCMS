@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/exec"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/loader"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/persisted"
@@ -93,8 +94,14 @@ type request struct {
 }
 
 func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-Auth-User-ID")
+	// SEC-2: identity comes from SessionAuth-populated ctx (trusted DB
+	// session). Kong strips client-supplied X-Auth-Tenant-ID / X-Auth-User-ID
+	// on inbound, so the header read this used to do was always empty in
+	// prod — the handler never actually authenticated anyone. Wrap order
+	// in cmd/server/main.go: RequireGatewaySignature → SessionAuth →
+	// rate-limit → this handler.
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "tenant + user identity required"})
 		return

@@ -41,6 +41,11 @@ type UserRepository interface {
 	// CountOwners returns how many users still hold the owner role.
 	// Used by the change-role flow to refuse demoting the last owner.
 	CountOwners(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error)
+	// CountActive returns the number of non-deleted, status='active'
+	// users on this tenant. Drives the seat-limit gate (LIC-1) on
+	// every user-creation path. Suspended/invited-not-yet-accepted/
+	// service users don't count (status != 'active' OR deleted_at IS NOT NULL).
+	CountActive(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error)
 	// SetLocale persists the user's preferred UI language. Valid
 	// values are gated at the service layer (must match an
 	// installed i18next namespace bundle).
@@ -242,6 +247,20 @@ func (r *userRepo) CountOwners(ctx context.Context, tx pgx.Tx, tenantID uuid.UUI
 	err := tx.QueryRow(ctx, `
 		SELECT COUNT(*) FROM users
 		WHERE tenant_id = $1 AND role = 'owner' AND deleted_at IS NULL
+	`, tenantID).Scan(&n)
+	return n, mapPgError(err)
+}
+
+// CountActive returns the seat-consuming user count for a tenant —
+// status='active' AND deleted_at IS NULL. Suspended users, soft-
+// deleted users, and invited-but-not-accepted entries (status='pending')
+// don't count, matching what most SaaS billing surfaces show as "seats
+// in use." Called from EnforceSeatLimit on every user-creation path.
+func (r *userRepo) CountActive(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL
 	`, tenantID).Scan(&n)
 	return n, mapPgError(err)
 }
