@@ -22,7 +22,7 @@ import (
 func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	docID := r.PathValue("document_id")

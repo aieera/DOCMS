@@ -56,7 +56,7 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 	tenantID := auth.TenantIDString(r)
 	actorID := auth.UserIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	var body issueTokenBody
@@ -98,7 +98,7 @@ func (h *EventStreamHandler) revokeToken(w http.ResponseWriter, r *http.Request)
 func (h *EventStreamHandler) tail(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Auth-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	flusher, ok := w.(http.Flusher)

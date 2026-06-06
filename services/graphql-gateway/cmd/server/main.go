@@ -24,6 +24,7 @@ import (
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 
 	"github.com/aieera/sedoc/pkg/config"
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/health"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
@@ -61,6 +62,18 @@ func main() {
 	// ---- Redis (rate-limit only) -------------------------------------
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisURL, Password: cfg.RedisPassword, DB: cfg.RedisDB})
 	defer func() { _ = rdb.Close() }()
+
+	// ---- Postgres pool (session lookup for SessionAuth) --------------
+	// SEC-2: the gateway used to read X-Auth-Tenant-ID from the inbound
+	// header, but Kong strips that header so the value was always empty
+	// in prod (every request fell through to 401). We now run SessionAuth
+	// against the dms_session cookie like every other backend so the
+	// identity reaching the handler is from the trusted DB session.
+	pool, err := database.NewPool(ctx, cfg.DatabaseURL, database.DefaultPoolConfig())
+	if err != nil {
+		log.Fatal(ctx).Err(err).Msg("db pool")
+	}
+	defer pool.Close()
 
 	// ---- Upstream gRPC clients (each optional at boot) ---------------
 	//
@@ -136,9 +149,16 @@ func main() {
 	// in admin config.
 	rl := middleware.NewRateLimiter(rdb, cfg.DefaultRateLimitPerMin)
 
+	// Middleware order (outermost first):
+	//   RequireGatewaySignature → SessionAuth → rate-limit → handler
+	// Gateway signature first so unsigned traffic is rejected before we
+	// burn a DB lookup. SessionAuth next so the rate-limit bucket keys
+	// on the trusted tenant. Handler reads identity from ctx via
+	// auth.TenantIDString / auth.UserIDString.
 	mw := middleware.RequireGatewaySignature()
+	sessAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})
 	limited := middleware.RateLimitHTTP(rl, "graphql")(gqlHandler)
-	root := mw(limited)
+	root := mw(sessAuth(limited))
 
 	hs := health.NewServerWithMeta("graphql-gateway", cfg.Region, nil, rdb, nil, nil)
 	go func() {

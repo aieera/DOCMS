@@ -70,7 +70,7 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant/user on session")
 		return
 	}
 	var body createWebhookBody
@@ -160,7 +160,7 @@ func (h *Handler) rotateSecret(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	wh, err := h.svc.RotateSecret(r.Context(), tenantID, id)
@@ -179,7 +179,7 @@ func (h *Handler) testWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	d, err := h.svc.SendTestEvent(r.Context(), tenantID, id)
@@ -198,7 +198,7 @@ func (h *Handler) redeliverDelivery(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	deliveryID := r.PathValue("deliveryId")
 	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
 		return
 	}
 	d, err := h.svc.RedeliverDelivery(r.Context(), tenantID, deliveryID)
