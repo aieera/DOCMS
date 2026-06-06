@@ -73,6 +73,9 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 				CreatedAt:   s.clock(),
 				UpdatedAt:   s.clock(),
 			}
+			if err := s.enforceSeatLimit(ctx, tx, tenantID); err != nil {
+				return err
+			}
 			if err := s.users.Create(ctx, tx, user); err != nil {
 				return err
 			}

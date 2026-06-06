@@ -279,6 +279,9 @@ func (s *Service) upsertLDAPUser(ctx context.Context, tx pgx.Tx, tenantID uuid.U
 			Role: model.RoleMember, Status: model.StatusActive,
 			CreatedAt: s.clock(), UpdatedAt: s.clock(),
 		}
+		if err := s.enforceSeatLimit(ctx, tx, tenantID); err != nil {
+			return nil, err
+		}
 		if err := s.users.Create(ctx, tx, u); err != nil {
 			return nil, err
 		}
