@@ -50,6 +50,7 @@ type Task struct {
 // TaskFilters narrows listings.
 type TaskFilters struct {
 	AssigneeID       *uuid.UUID
+	CreatedBy        *uuid.UUID // tasks raised by this user (the "Created by me" inbox)
 	LinkedDocumentID *uuid.UUID
 	Statuses         []string // when non-empty, restrict to this set
 	IncludeCompleted bool     // when false (default), excludes done+cancelled
@@ -121,6 +122,11 @@ func (r *taskRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, f Ta
 	if f.AssigneeID != nil {
 		args = append(args, *f.AssigneeID)
 		q.WriteString(` AND assignee_id = $`)
+		q.WriteString(strconv.Itoa(len(args)))
+	}
+	if f.CreatedBy != nil {
+		args = append(args, *f.CreatedBy)
+		q.WriteString(` AND created_by = $`)
 		q.WriteString(strconv.Itoa(len(args)))
 	}
 	if f.LinkedDocumentID != nil {

@@ -71,6 +71,8 @@ class AllProvidersDownError(RoutingError):
 _PROVIDER_PREFIXES = {
     "anthropic":   "anthropic",
     "claude":      "anthropic",     # bare claude- model ids
+    "gemini":      "gemini",        # gemini/gemini-2.x — Google AI Studio
+    "vertex_ai":   "gemini",        # vertex_ai/gemini-... — GCP Vertex
     "openai":      "openai",
     "gpt":         "openai",        # bare gpt-4o, gpt-3.5
     "azure":       "openai",        # azure/openai routes through OpenAI billing

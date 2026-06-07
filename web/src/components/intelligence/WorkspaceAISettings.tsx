@@ -8,7 +8,6 @@ import {
   updateWorkspaceAISettings,
   type WorkspaceAISettings,
 } from '@/api/rag'
-import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
@@ -23,6 +22,8 @@ const ANSWER_MODEL_OPTIONS = [
   { value: 'anthropic/claude-opus-4-7',   label: 'Claude Opus 4.7 (best)' },
   { value: 'openai/gpt-4o-mini',          label: 'GPT-4o mini (OpenAI)' },
   { value: 'openai/gpt-4o',               label: 'GPT-4o (OpenAI)' },
+  { value: 'gemini/gemini-2.5-flash',     label: 'Gemini 2.5 Flash (Google, fast)' },
+  { value: 'gemini/gemini-2.5-pro',       label: 'Gemini 2.5 Pro (Google, best)' },
 ]
 
 const EMBEDDING_MODEL_OPTIONS = [
@@ -30,25 +31,22 @@ const EMBEDDING_MODEL_OPTIONS = [
   { value: 'bge-m3',            label: 'BGE-M3 (multilingual)' },
 ]
 
-interface Props {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  workspaceId: string
-}
-
-export function WorkspaceAISettingsDialog({ open, onOpenChange, workspaceId }: Props) {
+/**
+ * Per-workspace AI (Ask/RAG) controls, rendered as an inline section.
+ * Lives inside the Workspace Settings modal (no longer a standalone
+ * dialog) — see WorkspaceSettingsDialog. The answer model selects which
+ * LLM the Ask page uses; the tenant LLM config (admin/tenant/ai) supplies
+ * the matching provider key.
+ */
+export function WorkspaceAISettingsSection({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['workspace-ai-settings', workspaceId],
     queryFn: () => getWorkspaceAISettings(workspaceId),
-    enabled: open,
   })
 
   const [draft, setDraft] = useState<WorkspaceAISettings | null>(null)
-  // Sync draft from server data each time the dialog opens.
-  useEffect(() => {
-    if (data) setDraft(data)
-  }, [data])
+  useEffect(() => { if (data) setDraft(data) }, [data])
 
   const saveMut = useAppMutation({
     mutationFn: (patch: Partial<WorkspaceAISettings>) =>
@@ -56,7 +54,6 @@ export function WorkspaceAISettingsDialog({ open, onOpenChange, workspaceId }: P
     onSuccess: (next) => {
       qc.setQueryData(['workspace-ai-settings', workspaceId], next)
       toast.success('AI settings saved')
-      onOpenChange(false)
     },
     onError: () => toast.error('Could not save settings'),
   })
@@ -71,76 +68,72 @@ export function WorkspaceAISettingsDialog({ open, onOpenChange, workspaceId }: P
     })
   }
 
+  if (isLoading || !draft) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Spinner className="h-5 w-5" />
+      </div>
+    )
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title="AI settings"
-      description="Per-workspace controls for the Ask page (RAG)."
-     
-    >
-      {isLoading || !draft ? (
-        <div className="flex items-center justify-center py-8">
-          <Spinner className="h-5 w-5" />
-        </div>
-      ) : (
-        <div className="space-y-4" data-testid="ai-settings-form">
-          <label className="flex cursor-pointer items-center justify-between rounded-md border border-[var(--color-border)] px-3 py-2">
-            <div>
-              <div className="text-sm font-medium">Enable Ask in this workspace</div>
-              <div className="text-xs text-[var(--color-text-secondary)]">
-                When off, /rag/query rejects with 403 for this workspace.
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={draft.rag_enabled}
-              onChange={(e) => setDraft({ ...draft, rag_enabled: e.target.checked })}
-              data-testid="ai-settings-enabled"
-            />
-          </label>
-
-          <Select
-            label="Answer model"
-            value={draft.answer_model}
-            onValueChange={(v) => setDraft({ ...draft, answer_model: v })}
-            options={ANSWER_MODEL_OPTIONS}
-          />
-
-          <Select
-            label="Embedding model"
-            value={draft.embedding_model}
-            onValueChange={(v) => setDraft({ ...draft, embedding_model: v })}
-            options={EMBEDDING_MODEL_OPTIONS}
-          />
-
-          <Input
-            label="Per-user daily query limit"
-            type="number"
-            min={0}
-            value={draft.rag_queries_per_day}
-            onChange={(e) =>
-              setDraft({ ...draft, rag_queries_per_day: Number(e.target.value) })
-            }
-            data-testid="ai-settings-quota"
-          />
-          <p className="-mt-2 text-xs text-[var(--color-text-secondary)]">
-            0 disables the gate. Each /rag/query call counts against the rolling 24h window.
-          </p>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button
-              onClick={handleSave}
-              disabled={saveMut.isPending}
-              data-testid="ai-settings-save"
-            >
-              {saveMut.isPending ? <Spinner className="h-4 w-4" /> : null}
-              Save
-            </Button>
+    <div className="space-y-4" data-testid="ai-settings-form">
+      <label className="flex cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2">
+        <div>
+          <div className="text-sm font-medium">Enable Ask in this workspace</div>
+          <div className="text-xs text-muted-foreground">
+            When off, the Ask page (RAG) rejects with 403 for this workspace.
           </div>
         </div>
-      )}
-    </Dialog>
+        <input
+          type="checkbox"
+          checked={draft.rag_enabled}
+          onChange={(e) => setDraft({ ...draft, rag_enabled: e.target.checked })}
+          data-testid="ai-settings-enabled"
+        />
+      </label>
+
+      <Select
+        label="Answer model"
+        value={draft.answer_model}
+        onValueChange={(v) => setDraft({ ...draft, answer_model: v })}
+        options={ANSWER_MODEL_OPTIONS}
+      />
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Pick a model whose provider key is configured under{' '}
+        <a className="underline" href="/admin/tenant/ai">Tenant → AI</a> (e.g. a
+        Gemini model needs a Gemini key there).
+      </p>
+
+      <Select
+        label="Embedding model"
+        value={draft.embedding_model}
+        onValueChange={(v) => setDraft({ ...draft, embedding_model: v })}
+        options={EMBEDDING_MODEL_OPTIONS}
+      />
+
+      <Input
+        label="Per-user daily query limit"
+        type="number"
+        min={0}
+        value={draft.rag_queries_per_day}
+        onChange={(e) => setDraft({ ...draft, rag_queries_per_day: Number(e.target.value) })}
+        data-testid="ai-settings-quota"
+      />
+      <p className="-mt-2 text-xs text-muted-foreground">
+        0 disables the gate. Each Ask query counts against the rolling 24h window.
+      </p>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={saveMut.isPending}
+          loading={saveMut.isPending}
+          data-testid="ai-settings-save"
+        >
+          Save AI settings
+        </Button>
+      </div>
+    </div>
   )
 }

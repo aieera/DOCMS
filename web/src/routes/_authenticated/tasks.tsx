@@ -15,7 +15,7 @@ import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import {
-  listMyTasks, completeTask, reopenTask, cancelTask, deleteTask, createTask,
+  listMyTasks, listMyCreatedTasks, completeTask, reopenTask, cancelTask, deleteTask, createTask,
   type Task, type TaskPriority,
 } from '@/api/tasks'
 import { getDocument } from '@/api/documents'
@@ -33,7 +33,7 @@ import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Dialog } from '@/components/ui/Dialog'
 import { cn } from '@/lib/cn'
 
-type Tab = 'my' | 'approvals'
+type Tab = 'my' | 'created' | 'approvals'
 type View = 'table' | 'kanban'
 type SortKey = 'due_at' | 'priority' | 'created_at'
 
@@ -43,6 +43,7 @@ function TasksPage() {
   const [tab, setTab] = useState<Tab>('my')
   const TABS: { value: Tab; label: string; testid: string }[] = [
     { value: 'my',        label: 'My tasks', testid: 'tab-my-tasks' },
+    { value: 'created',   label: 'Created by me', testid: 'tab-created-tasks' },
     { value: 'approvals', label: 'Approvals', testid: 'tab-approvals' },
   ]
 
@@ -99,7 +100,9 @@ function TasksPage() {
         id={`tasks-panel-${tab}`}
         aria-labelledby={`tasks-tab-${tab}`}
       >
-        {tab === 'my' ? <MyTasksSection /> : <ApprovalsSection />}
+        {tab === 'my' ? <MyTasksSection mode="mine" />
+          : tab === 'created' ? <MyTasksSection mode="created" />
+          : <ApprovalsSection />}
       </div>
     </div>
   )
@@ -107,22 +110,25 @@ function TasksPage() {
 
 // ---- My tasks (ADR 0068) ------------------------------------------------
 
-function MyTasksSection() {
+function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
   const qc = useQueryClient()
   const [view, setView] = useState<View>('table')
   const [sort, setSort] = useState<SortKey>('due_at')
   const [filterPriority, setFilterPriority] = useState<TaskPriority | ''>('')
   const [includeCompleted, setIncludeCompleted] = useState(false)
   const [creating, setCreating] = useState(false)
+  const created = mode === 'created'
 
   const { data, isLoading } = useQuery({
-    queryKey: ['my-tasks', includeCompleted],
-    queryFn: () => listMyTasks(includeCompleted),
+    queryKey: [created ? 'created-tasks' : 'my-tasks', includeCompleted],
+    queryFn: () => (created ? listMyCreatedTasks : listMyTasks)(includeCompleted),
   })
 
-  // Invalidate the header badge whenever the inbox query changes.
+  // Invalidate both inboxes + the header badge — a task can move between
+  // the assigned-to-me and created-by-me lists on any mutation.
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['my-tasks'] })
+    qc.invalidateQueries({ queryKey: ['created-tasks'] })
     qc.invalidateQueries({ queryKey: ['my-tasks-count'] })
   }
 
@@ -215,8 +221,12 @@ function MyTasksSection() {
         <div className="flex min-h-[60vh] items-center justify-center">
           <EmptyState
             icon={<CheckSquare className="h-10 w-10" />}
-            title="No tasks"
-            description={includeCompleted ?"You're all caught up." :"No open tasks. Click 'Show completed' to review past work."}
+            title={created ? 'No tasks created' : 'No tasks'}
+            description={
+              created
+                ? (includeCompleted ? "You haven't created any tasks yet." : "No open tasks you created. Click 'Show completed' to see finished ones, or add one below.")
+                : (includeCompleted ? "You're all caught up." : "No open tasks. Click 'Show completed' to review past work.")
+            }
           />
         </div>
       )}

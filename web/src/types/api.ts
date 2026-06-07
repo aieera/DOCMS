@@ -143,6 +143,10 @@ export interface SearchHit {
    *  is missing or unparseable (search/internal/service mapHit) so the
    *  caller doesn't render the Go zero time as "2025 years ago". */
   created_at?: string
+  /** Indexed on every new version (the indexer sets updated_at but not
+   *  created_at yet), so it's the reliable timestamp when created_at comes
+   *  back as the Go zero value. The result row falls back to this. */
+  updated_at?: string
   size_bytes: number
   mime_type: string
   has_thumbnail: boolean

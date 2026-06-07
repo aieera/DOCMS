@@ -21,6 +21,7 @@ import { Spinner } from '@/components/ui/Spinner'
 
 const PROVIDER_OPTIONS = [
   { value: 'anthropic',  label: 'Anthropic (Claude)' },
+  { value: 'gemini',     label: 'Google (Gemini)' },
   { value: 'openai',     label: 'OpenAI (GPT)' },
   { value: 'bedrock',    label: 'AWS Bedrock' },
   { value: 'vllm_local', label: 'vLLM (self-hosted, on-prem)' },
@@ -33,10 +34,11 @@ const PROVIDER_OPTIONS = [
 // headquartered in San Francisco — the original list omitted it which
 // raised a false-positive "not US-domiciled" warning every time an
 // admin picked the platform's default provider.
-const US_PROVIDERS = new Set(['vllm_local', 'openai', 'bedrock', 'anthropic'])
+const US_PROVIDERS = new Set(['vllm_local', 'openai', 'bedrock', 'anthropic', 'gemini'])
 
 const PROVIDER_DEFAULT_MODELS: Record<string, string[]> = {
   anthropic:  ['anthropic/claude-haiku-4-5', 'anthropic/claude-sonnet-4-6', 'anthropic/claude-opus-4-7'],
+  gemini:     ['gemini/gemini-2.5-flash', 'gemini/gemini-2.5-pro', 'gemini/gemini-2.0-flash'],
   openai:     ['openai/gpt-4o-mini', 'openai/gpt-4o', 'openai/gpt-4-turbo'],
   bedrock:    ['bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0'],
   vllm_local: ['vllm/meta-llama/Llama-3.1-70B-Instruct', 'vllm/mistralai/Mistral-Large-Instruct-2407'],

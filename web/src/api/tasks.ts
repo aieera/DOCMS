@@ -50,6 +50,14 @@ export async function listMyTasks(includeCompleted = false): Promise<Task[]> {
   return data ?? []
 }
 
+// Tasks the current user raised, regardless of who they're assigned to
+// (the "Created by me" inbox). Mirrors listMyTasks against /tasks/created.
+export async function listMyCreatedTasks(includeCompleted = false): Promise<Task[]> {
+  const params = includeCompleted ? { include_completed: 'true' } : {}
+  const { data } = await api.get<Task[]>('/tasks/created', { params })
+  return data ?? []
+}
+
 export async function listTasks(query: { document_id?: string; status?: TaskStatus; include_completed?: boolean } = {}): Promise<Task[]> {
   const params: Record<string, string> = {}
   if (query.document_id) params.document_id = query.document_id
