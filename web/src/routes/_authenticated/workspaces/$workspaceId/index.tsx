@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, Sparkles, Settings as SettingsIcon, Search, FolderOpen } from 'lucide-react'
+import { Upload, Settings as SettingsIcon, Search, FolderOpen } from 'lucide-react'
 
 import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
@@ -19,7 +19,7 @@ import { BrowserTreeSidebar } from '@/components/folders/BrowserTreeSidebar'
 import { BrowserDetailsPanel, type Selection } from '@/components/folders/BrowserDetailsPanel'
 import { DocumentActionsMenu } from '@/components/documents/DocumentActionsMenu'
 import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal'
-import { WorkspaceAISettingsDialog } from '@/components/intelligence/WorkspaceAISettings'
+import { WorkspaceSettingsDialog } from '@/components/workspaces/WorkspaceSettingsDialog'
 import { UploadEnrichmentDialog, type EnrichmentDecision } from '@/components/documents/UploadEnrichmentDialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -51,7 +51,7 @@ function WorkspacePage() {
   const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [aiOpen, setAiOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [query, setQuery] = useState('')
@@ -182,13 +182,8 @@ function WorkspacePage() {
           />
           {isAdmin && (
             <div className="flex flex-none items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setAiOpen(true)} className="gap-2" data-testid="open-ai-settings">
-                <Sparkles className="h-4 w-4" /> AI settings
-              </Button>
-              <Button variant="ghost" size="sm" asChild className="gap-2" data-testid="open-ws-settings">
-                <Link to="/workspaces/$workspaceId/settings" params={{ workspaceId }} aria-label="Workspace settings">
-                  <SettingsIcon className="h-4 w-4" /> Settings
-                </Link>
+              <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="gap-2" data-testid="open-ws-settings">
+                <SettingsIcon className="h-4 w-4" /> Settings
               </Button>
             </div>
           )}
@@ -265,7 +260,7 @@ function WorkspacePage() {
       />
 
       {/* ── dialogs + overlays (unchanged behaviour) ── */}
-      <WorkspaceAISettingsDialog open={aiOpen} onOpenChange={setAiOpen} workspaceId={workspaceId} />
+      <WorkspaceSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} workspaceId={workspaceId} />
 
       <NewFolderDialog
         open={newFolderOpen}

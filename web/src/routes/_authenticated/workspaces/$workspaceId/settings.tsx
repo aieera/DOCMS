@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Settings as SettingsIcon, HardDrive, Users, ShieldAlert, UserCog, UserPlus, UserMinus, Search } from 'lucide-react'
+import { Settings as SettingsIcon, HardDrive, Users, ShieldAlert, UserCog, UserPlus, UserMinus, Search, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getWorkspace } from '@/api/workspaces'
@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { TypedConfirmDialog } from '@/components/ui/shadcn/typed-confirm-dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
+import { WorkspaceAISettingsSection } from '@/components/intelligence/WorkspaceAISettings'
 
 // Settings route — sectioned page for a single workspace.
 //
@@ -35,8 +36,50 @@ import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 function SettingsPage() {
   const { workspaceId } = Route.useParams()
   const navigate = useNavigate()
-  const user = useCurrentUser()
+  const wsQ = useQuery({
+    queryKey: ['workspace', workspaceId],
+    queryFn: () => getWorkspace(workspaceId),
+  })
 
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={
+          wsQ.isLoading ? <Skeleton className="h-7 w-48" /> : (
+            <span className="flex items-center gap-2">
+              <SettingsIcon className="h-5 w-5 text-muted-foreground" />
+              {wsQ.data?.name ?? 'Workspace'} settings
+            </span>
+          )
+        }
+        description="Manage details, members, AI, storage, ownership, and danger zone for this workspace."
+        actions={
+          <Button
+            variant="ghost"
+            onClick={() => navigate({ to: '/workspaces/$workspaceId', params: { workspaceId } })}
+          >
+            Back to workspace
+          </Button>
+        }
+      />
+      <WorkspaceSettingsSections
+        workspaceId={workspaceId}
+        onDeleted={() => navigate({ to: '/workspaces' })}
+      />
+    </div>
+  )
+}
+
+// Shared settings body — rendered both by this page route and by the
+// WorkspaceSettingsDialog modal (browser header → Settings). Owns the
+// role gating and the section composition, including the AI section.
+export function WorkspaceSettingsSections({
+  workspaceId, onDeleted,
+}: {
+  workspaceId: string
+  onDeleted: () => void
+}) {
+  const user = useCurrentUser()
   const wsQ = useQuery({
     queryKey: ['workspace', workspaceId],
     queryFn: () => getWorkspace(workspaceId),
@@ -50,71 +93,64 @@ function SettingsPage() {
   const canTransfer = isTenantOwner || isWorkspaceCreator
   const canDelete = isTenantOwner || isWorkspaceCreator
 
+  if (wsQ.isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-40" />
+        <Skeleton className="h-40" />
+      </div>
+    )
+  }
+  if (wsQ.isError || !wsQ.data) {
+    return (
+      <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        Could not load workspace.
+      </p>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={
-          wsQ.isLoading ? <Skeleton className="h-7 w-48" /> : (
-            <span className="flex items-center gap-2">
-              <SettingsIcon className="h-5 w-5 text-muted-foreground" />
-              {wsQ.data?.name ?? 'Workspace'} settings
-            </span>
-          )
-        }
-        description="Manage details, members, storage, ownership, and danger zone for this workspace."
-        actions={
-          <Button
-            variant="ghost"
-            onClick={() => navigate({
-              to: '/workspaces/$workspaceId',
-              params: { workspaceId },
-            })}
-          >
-            Back to workspace
-          </Button>
-        }
+      <DetailsSection
+        workspaceId={workspaceId}
+        initialName={wsQ.data.name}
+        initialDescription={wsQ.data.description ?? ''}
+        canEdit={canEditDetails}
       />
-
-      {wsQ.isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-40" />
-          <Skeleton className="h-40" />
-        </div>
-      ) : wsQ.isError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          Could not load workspace.
-        </p>
-      ) : wsQ.data && (
-        <>
-          <DetailsSection
-            workspaceId={workspaceId}
-            initialName={wsQ.data.name}
-            initialDescription={wsQ.data.description ?? ''}
-            canEdit={canEditDetails}
-          />
-          <MembersSection
-            workspaceId={workspaceId}
-            workspaceCreatedBy={wsQ.data.created_by ?? ''}
-            canManage={canEditDetails}
-          />
-          <StorageSection />
-          {canTransfer && (
-            <TransferOwnershipSection
-              workspaceId={workspaceId}
-              currentOwnerId={wsQ.data.created_by ?? ''}
-            />
-          )}
-          {canDelete && (
-            <DangerZoneSection
-              workspaceId={workspaceId}
-              workspaceName={wsQ.data.name}
-              documentCount={wsQ.data.document_count ?? 0}
-              onDeleted={() => navigate({ to: '/workspaces' })}
-            />
-          )}
-        </>
+      <MembersSection
+        workspaceId={workspaceId}
+        workspaceCreatedBy={wsQ.data.created_by ?? ''}
+        canManage={canEditDetails}
+      />
+      {isTenantAdmin && <AISection workspaceId={workspaceId} />}
+      <StorageSection />
+      {canTransfer && (
+        <TransferOwnershipSection
+          workspaceId={workspaceId}
+          currentOwnerId={wsQ.data.created_by ?? ''}
+        />
+      )}
+      {canDelete && (
+        <DangerZoneSection
+          workspaceId={workspaceId}
+          workspaceName={wsQ.data.name}
+          documentCount={wsQ.data.document_count ?? 0}
+          onDeleted={onDeleted}
+        />
       )}
     </div>
+  )
+}
+
+function AISection({ workspaceId }: { workspaceId: string }) {
+  return (
+    <SectionCard
+      icon={<Sparkles className="h-4 w-4" />}
+      title="AI (Ask)"
+      description="Pick the answer model and per-user limits for the Ask page in this workspace."
+    >
+      <WorkspaceAISettingsSection workspaceId={workspaceId} />
+    </SectionCard>
   )
 }
 
