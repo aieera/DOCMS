@@ -16,6 +16,54 @@ import { Input } from '@/components/ui/shadcn/input'
 
 const RISK_LEVELS = ['critical', 'high', 'medium', 'low'] as const
 
+// Returns an error string for the current risk-overrides text, or null. Pure
+// + recomputed each render so the message can never go stale relative to the
+// field (the old toast-only flow kept showing "Risk for EMAIL…" after the
+// user had already corrected the override back to {}).
+function validateOverrides(text: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return 'invalid JSON'
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return 'must be a JSON object'
+  }
+  for (const [k, v] of Object.entries(parsed)) {
+    if (typeof v !== 'string' || !RISK_LEVELS.includes(v as never)) {
+      return `Risk for ${k} must be one of ${RISK_LEVELS.join('/')}`
+    }
+  }
+  return null
+}
+
+// Validates the custom-patterns JSON AND that each entry's regex actually
+// compiles — an unclosed group/class like "(unclosed[" is valid JSON but an
+// invalid RegExp that would blow up the scanner at runtime, and was
+// previously saved without any check.
+function validatePatterns(text: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return 'invalid JSON array'
+  }
+  if (!Array.isArray(parsed)) return 'must be a JSON array'
+  if (parsed.length > 32) return 'max 32 custom patterns'
+  for (const [i, p] of parsed.entries()) {
+    if (typeof p !== 'object' || p === null || typeof (p as { regex?: unknown }).regex !== 'string') {
+      return `pattern ${i + 1}: each entry needs a "regex" string`
+    }
+    try {
+      new RegExp((p as { regex: string }).regex)
+    } catch (e) {
+      return `pattern ${i + 1} has an invalid regex: ${(e as Error).message}`
+    }
+  }
+  return null
+}
+
 export function ComplianceConfigPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
@@ -48,30 +96,17 @@ export function ComplianceConfigPage() {
 
   if (isLoading || !draft) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
+  // Recomputed each render from the live textarea contents — never stale.
+  const overridesError = validateOverrides(overridesText)
+  const patternsError = validatePatterns(patternsText)
+
   const onSave = () => {
-    let overrides: Record<string, string>
-    try {
-      overrides = JSON.parse(overridesText)
-    } catch {
-      toast.error('Risk overrides: invalid JSON')
+    if (overridesError) {
+      toast.error(`Risk overrides: ${overridesError}`)
       return
     }
-    for (const [k, v] of Object.entries(overrides)) {
-      if (!RISK_LEVELS.includes(v as never)) {
-        toast.error(`Risk for ${k} must be one of ${RISK_LEVELS.join('/')}`)
-        return
-      }
-    }
-    let patterns: { type: string; regex: string; risk?: string }[]
-    try {
-      patterns = JSON.parse(patternsText)
-      if (!Array.isArray(patterns)) throw new Error('not array')
-    } catch {
-      toast.error('Custom patterns: invalid JSON array')
-      return
-    }
-    if (patterns.length > 32) {
-      toast.error('Max 32 custom patterns')
+    if (patternsError) {
+      toast.error(`Custom patterns: ${patternsError}`)
       return
     }
     const roles = rolesInput.split(',').map((s) => s.trim()).filter(Boolean)
@@ -82,8 +117,8 @@ export function ComplianceConfigPage() {
     save.mutate({
       ...draft,
       notify_roles: roles,
-      pii_entity_risk_overrides: overrides,
-      custom_patterns: patterns,
+      pii_entity_risk_overrides: JSON.parse(overridesText),
+      custom_patterns: JSON.parse(patternsText),
     })
   }
 
@@ -141,8 +176,10 @@ export function ComplianceConfigPage() {
             value={overridesText}
             onChange={(e) => setOverridesText(e.target.value)}
             rows={5}
-            className="mt-2 w-full rounded border border-border bg-muted/40 p-2 font-mono text-xs"
+            aria-invalid={!!overridesError}
+            className={`mt-2 w-full rounded border bg-muted/40 p-2 font-mono text-xs ${overridesError ? 'border-destructive' : 'border-border'}`}
           />
+          {overridesError && <p className="mt-1 text-xs text-destructive">{overridesError}</p>}
         </div>
 
         <div>
@@ -154,12 +191,14 @@ export function ComplianceConfigPage() {
             value={patternsText}
             onChange={(e) => setPatternsText(e.target.value)}
             rows={6}
-            className="mt-2 w-full rounded border border-border bg-muted/40 p-2 font-mono text-xs"
+            aria-invalid={!!patternsError}
+            className={`mt-2 w-full rounded border bg-muted/40 p-2 font-mono text-xs ${patternsError ? 'border-destructive' : 'border-border'}`}
           />
+          {patternsError && <p className="mt-1 text-xs text-destructive">{patternsError}</p>}
         </div>
 
         <div className="flex justify-end">
-          <Button onClick={onSave} disabled={save.isPending}>
+          <Button onClick={onSave} disabled={save.isPending || !!overridesError || !!patternsError}>
             <Save className="me-2 h-4 w-4" />
             Save
           </Button>

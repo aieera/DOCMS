@@ -121,17 +121,22 @@ export function OcrConfigPage() {
     )
   }
 
-  // Soft validation — the backend does NOT enforce excellent > good > fair
-  // > auto_retry_below ordering, so we WARN but still let the user save.
-  // Same for review_threshold > 1.0. Hard validation only on the 0..1
-  // range that's implied by storing as fractions.
+  // HARD ordering — the document service (ocr_quality_repo.go) REJECTS any
+  // save that doesn't satisfy excellent >= good >= fair, so enforce the same
+  // rule here and block the save instead of warning "the backend will accept
+  // this" and then having the request hard-fail. Uses >= (equality allowed)
+  // to match the backend exactly.
+  const orderingErrors: string[] = []
+  if (draft.excellent_threshold < draft.good_threshold) {
+    orderingErrors.push('Excellent threshold must be ≥ Good.')
+  }
+  if (draft.good_threshold < draft.fair_threshold) {
+    orderingErrors.push('Good threshold must be ≥ Fair.')
+  }
+
+  // SOFT advisories — the backend does NOT enforce these (only excellent ≥
+  // good ≥ fair), so we surface them but still allow the save.
   const warnings: string[] = []
-  if (draft.excellent_threshold <= draft.good_threshold) {
-    warnings.push('Excellent threshold should be greater than Good.')
-  }
-  if (draft.good_threshold <= draft.fair_threshold) {
-    warnings.push('Good threshold should be greater than Fair.')
-  }
   if (draft.fair_threshold <= draft.auto_retry_below) {
     warnings.push('Fair threshold should be greater than Auto-retry below.')
   }
@@ -152,6 +157,10 @@ export function OcrConfigPage() {
   const onSave = () => {
     if (outOfRange) {
       toast.error('All thresholds must be between 0% and 100%')
+      return
+    }
+    if (orderingErrors.length > 0) {
+      toast.error('Thresholds must satisfy excellent ≥ good ≥ fair.')
       return
     }
     save.mutate(draft)
@@ -246,6 +255,21 @@ export function OcrConfigPage() {
           </div>
         </div>
 
+        {orderingErrors.length > 0 && (
+          <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm" data-testid="ocr-config-errors">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">Invalid threshold ordering</p>
+              <ul className="mt-1 list-disc space-y-0.5 ps-4 text-muted-foreground">
+                {orderingErrors.map((e) => <li key={e}>{e}</li>)}
+              </ul>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Saving is blocked until excellent ≥ good ≥ fair — the backend rejects other orderings.
+              </p>
+            </div>
+          </div>
+        )}
+
         {warnings.length > 0 && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="ocr-config-warnings">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -273,7 +297,7 @@ export function OcrConfigPage() {
             </Button>
             <Button
               onClick={onSave}
-              disabled={!dirty || save.isPending || outOfRange}
+              disabled={!dirty || save.isPending || outOfRange || orderingErrors.length > 0}
               loading={save.isPending}
               data-testid="ocr-config-save"
             >

@@ -33,6 +33,17 @@ export function TagReviewQueuePage() {
     refetchInterval: 15_000,
   })
 
+  // The main query is filtered by min_confidence, so its `total` shrinks as
+  // the filter tightens — the header read "0 … across the tenant" while rows
+  // still existed tenant-wide. Fetch the UNFILTERED total separately so the
+  // header reflects the true count regardless of the confidence filter.
+  const totalQ = useQuery({
+    queryKey: ['admin-tag-suggestions', 'tenant-total'],
+    queryFn: () => listPendingTagSuggestions({ min_confidence: 0, limit: 1, offset: 0 }),
+    refetchInterval: 15_000,
+  })
+  const tenantTotal = totalQ.data?.total ?? 0
+
   // Group by document for batch review.
   const grouped = useMemo(() => {
     const map = new Map<string, TagSuggestion[]>()
@@ -67,7 +78,7 @@ export function TagReviewQueuePage() {
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
         title="Tag review queue"
-        description={`${total} pending suggestion${total === 1 ? '' : 's'} across the tenant`}
+        description={`${tenantTotal} pending suggestion${tenantTotal === 1 ? '' : 's'} across the tenant`}
       />
 
       <div className="mt-4 flex items-center gap-3 text-sm">

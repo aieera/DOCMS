@@ -85,13 +85,32 @@ export function ModelsPage() {
   const rows = versions.data?.versions ?? []
   const production = rows.find((v) => v.status === 'production')
 
+  // Gate "Trigger retrain" on the configured minimum example count. The
+  // backend was queuing retrains even with 0 examples (a no-op/failed job),
+  // so the disabled button is the user-facing guard that matches the empty-
+  // state hint below. If either signal hasn't loaded — or the minimum is 0 —
+  // we don't pre-block (the backend stays the final authority).
+  const totalExamples = stats.data?.total ?? null
+  const minExamples = config.data?.min_examples_for_retrain ?? null
+  const insufficientExamples =
+    totalExamples != null && minExamples != null && minExamples > 0 && totalExamples < minExamples
+
   return (
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="Model registry"
         description="Per-tenant fine-tuned classifiers. New versions are trained from your manual corrections."
         actions={
-          <Button size="sm" onClick={() => retrain.mutate()} disabled={retrain.isPending}>
+          <Button
+            size="sm"
+            onClick={() => retrain.mutate()}
+            disabled={retrain.isPending || insufficientExamples}
+            title={
+              insufficientExamples
+                ? `Need ${minExamples} training examples to retrain — currently have ${(totalExamples ?? 0).toLocaleString()}.`
+                : undefined
+            }
+          >
             <Play className="me-2 h-4 w-4" />
             Trigger retrain
           </Button>
