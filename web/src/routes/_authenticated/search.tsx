@@ -466,11 +466,23 @@ function SearchPage() {
                     />
                   )}
                   <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
-                    <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
-                    {hit.created_at && (
-                      <span className="text-xs text-muted-foreground">{formatRelativeTime(hit.created_at)}</span>
+                    {hit.lifecycle_state && (
+                      <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     )}
+                    <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
+                    {(() => {
+                      // The index can hand back a zero created_at (0001-01-01)
+                      // because the indexer doesn't populate it yet — that
+                      // rendered as a nonsense relative time. Treat the zero
+                      // value as absent and fall back to the indexed updated_at.
+                      const real = (s?: string) => {
+                        if (!s) return undefined
+                        const t = Date.parse(s)
+                        return Number.isNaN(t) || new Date(t).getUTCFullYear() < 1990 ? undefined : s
+                      }
+                      const when = real(hit.created_at) ?? real(hit.updated_at)
+                      return when ? <span className="text-xs text-muted-foreground">{formatRelativeTime(when)}</span> : null
+                    })()}
                   </div>
                 </div>
               </Link>
