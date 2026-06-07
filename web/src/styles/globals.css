@@ -181,4 +181,20 @@
   *::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
   }
+
+  /* Native <select> theming. Browsers paint the closed box's text and the
+     popped-open <option> list with system colors that ignore our Tailwind
+     utilities, so in dark mode the option list (and any unstyled select)
+     stayed light — a contrast failure. Drive both from theme tokens here so
+     every native select respects the active theme. Per-element bg utilities
+     still win for the closed box, and the Radix dropdown
+     (components/ui/shadcn/select) is unaffected (it renders a button). */
+  select {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+  select option {
+    background-color: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+  }
 }

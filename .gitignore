@@ -141,3 +141,5 @@ web/coverage/
 /*.png
 /*.jpg
 /*.jpeg
+# Design-mockup render/verification screenshots (regeneratable; the .html mockup is tracked)
+design/*.png

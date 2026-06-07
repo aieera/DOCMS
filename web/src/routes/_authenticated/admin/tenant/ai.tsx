@@ -68,7 +68,7 @@ export function TenantAIPage() {
   // Plaintext key never round-trips — we only hold it in component
   // state until the user clicks Save, then send it once.
   const [pendingKey, setPendingKey] = useState<string>('')
-  const [testPrompt, setTestPrompt] = useState<string>('Say"ack" if you can hear me.')
+  const [testPrompt, setTestPrompt] = useState<string>('Say "ack" if you can hear me.')
   const [testResult, setTestResult] = useState<string>('')
 
   useEffect(() => {
@@ -88,7 +88,11 @@ export function TenantAIPage() {
   const testMut = useAppMutation({
     mutationFn: () => testLLMCompletion(testPrompt, draft?.model || undefined),
     onSuccess: (r) => {
-      setTestResult(`${r.content}\n\n— ${r.provider}/${r.model} · ${r.elapsed_ms}ms · ${r.input_tokens + r.output_tokens} tok${r.fallback_used ? ' (fallback)' : ''}`)
+      // Model ids usually already carry their provider prefix (e.g.
+      // "anthropic/claude-haiku-4-5"), so only prepend the provider when it
+      // doesn't — otherwise the line reads "anthropic/anthropic/claude-…".
+      const modelRef = r.model.includes('/') ? r.model : `${r.provider}/${r.model}`
+      setTestResult(`${r.content}\n\n— ${modelRef} · ${r.elapsed_ms}ms · ${r.input_tokens + r.output_tokens} tok${r.fallback_used ? ' (fallback)' : ''}`)
       toast.success('Test call succeeded')
     },
     onError: (err: { response?: { status?: number; data?: { detail?: string } } }) => {
@@ -135,6 +139,28 @@ export function TenantAIPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
+      {/* Autofill honeypot. Chrome ignores autocomplete="off" and fills the
+          signed-in user's email + password into the first text + password
+          pair it finds — which landed the email in Base URL and the password
+          in the write-only API-key field. These off-screen, tab-skipped
+          decoys are the first such pair, so they absorb the autofill and the
+          real fields load empty. */}
+      <input
+        type="text"
+        name="username"
+        autoComplete="username"
+        tabIndex={-1}
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-[9999px] h-px w-px opacity-0"
+      />
+      <input
+        type="password"
+        name="current-password"
+        autoComplete="current-password"
+        tabIndex={-1}
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-[9999px] h-px w-px opacity-0"
+      />
       <PageHeader
         title="AI provider"
         description="Per-tenant LLM routing — provider, model, fallback, encrypted API key, rate limit, daily budget."
@@ -206,6 +232,9 @@ export function TenantAIPage() {
             // URL field. name is non-standard so heuristic autofill won't match.
             autoComplete="off"
             name="ai-base-url"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             error={
               draft.base_url && !/^https?:\/\//.test(draft.base_url)
                 ? 'Must start with http:// or https://'
@@ -226,7 +255,14 @@ export function TenantAIPage() {
           <Input
             label="New API key (write-only)"
             type="password"
-            autoComplete="off"
+            // "new-password" (not "off", which Chrome ignores) stops the
+            // browser autofilling the signed-in user's SAVED password into
+            // this write-only field. The data-* hints opt out of 1Password /
+            // LastPass too. See also the honeypot decoys at the top of the form.
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             value={pendingKey}
             onChange={(e) => setPendingKey(e.target.value)}
             placeholder={draft.key_set ? 'Leave blank to keep existing' : 'sk-...'}

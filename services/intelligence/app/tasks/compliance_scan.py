@@ -280,10 +280,14 @@ async def _fetch_ner_entities(tenant_id: str, version_id: str) -> list[dict]:
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id
             )
+            # document_entities tracks character offsets (start_offset /
+            # end_offset), NOT page numbers — selecting a non-existent
+            # page_number column raised UndefinedColumnError and aborted the
+            # whole scan before anything was persisted. Page resolution isn't
+            # available here, so findings carry page 0 (same as the regex pass).
             rows = await conn.fetch(
                 """
-                SELECT entity_type, entity_value, confidence,
-                       COALESCE(page_number, 0) AS page_number
+                SELECT entity_type, entity_value, confidence
                   FROM document_entities
                  WHERE tenant_id = $1 AND version_id = $2
                 """,
@@ -294,7 +298,7 @@ async def _fetch_ner_entities(tenant_id: str, version_id: str) -> list[dict]:
             "entity_type": (r["entity_type"] or "").upper(),
             "entity_value": r["entity_value"] or "",
             "confidence": float(r["confidence"] or 0.0),
-            "page_number": int(r["page_number"] or 0),
+            "page_number": 0,
         }
         for r in rows
     ]
@@ -309,12 +313,18 @@ async def _fetch_ocr_text(tenant_id: str, version_id: str) -> str:
             await conn.execute(
                 "SELECT set_config('app.current_tenant', $1, true)", tenant_id
             )
+            # ocr_results is per-PAGE (page_number, text_content); there is no
+            # full_text column. Concatenate the pages in order so the regex
+            # pass sees the whole document. (Same fix already applied to
+            # translate + lang_detect.)
             row = await conn.fetchrow(
                 """
-                SELECT COALESCE(full_text, '') AS full_text
+                SELECT COALESCE(
+                         string_agg(text_content, E'\n' ORDER BY page_number),
+                         ''
+                       ) AS full_text
                   FROM ocr_results
                  WHERE tenant_id = $1 AND version_id = $2
-                 ORDER BY created_at DESC LIMIT 1
                 """,
                 tenant_id, version_id,
             )

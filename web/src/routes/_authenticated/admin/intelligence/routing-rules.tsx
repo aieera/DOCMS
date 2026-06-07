@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
@@ -23,10 +23,13 @@ interface CreateForm {
   name: string
   category_key: string
   target_folder_id: string
-  priority: number
+  // Held as the raw string while editing so intermediate states ("-" on the
+  // way to "-5") aren't coerced to 0 — which dropped the sign (BUG-07).
+  // Parsed to an int on submit; the backend column is a signed int32.
+  priority: string
 }
 
-const EMPTY: CreateForm = { name: '', category_key: '', target_folder_id: '', priority: 0 }
+const EMPTY: CreateForm = { name: '', category_key: '', target_folder_id: '', priority: '0' }
 
 function RoutingRulesPage() {
   const qc = useQueryClient()
@@ -36,6 +39,29 @@ function RoutingRulesPage() {
     queryKey: ['routing-rules'],
     queryFn: listRoutingRules,
   })
+
+  // Resolve target_folder_id → a human folder name for the table. Rules only
+  // store the UUID (the list endpoint doesn't join folders), so we load every
+  // workspace's folders and build an id→path map; unresolved ids fall back to
+  // a short, copy-friendly UUID rather than the bare raw value (BUG-08).
+  const workspacesQ = useQuery({
+    queryKey: ['routing-rules', 'workspaces'],
+    queryFn: getWorkspaces,
+    staleTime: 60_000,
+  })
+  const folderQueries = useQueries({
+    queries: (workspacesQ.data ?? []).map((w: Workspace) => ({
+      queryKey: ['routing-rules', 'folders', w.id],
+      queryFn: () => getFolders(w.id),
+      staleTime: 60_000,
+    })),
+  })
+  const folderNameById = new Map<string, string>()
+  for (const q of folderQueries) {
+    for (const f of (q.data as Folder[] | undefined) ?? []) {
+      folderNameById.set(f.id, f.path || f.name)
+    }
+  }
 
   const create = useAppMutation({
     mutationFn: createRoutingRule,
@@ -68,11 +94,13 @@ function RoutingRulesPage() {
       toast.error('Name, category, and target folder are required')
       return
     }
+    // parseInt keeps the sign ("-5" → -5); empty / non-numeric → 0.
+    const priority = parseInt(creating.priority, 10)
     create.mutate({
       name: creating.name,
       category_key: creating.category_key,
       target_folder_id: creating.target_folder_id,
-      priority: creating.priority,
+      priority: Number.isNaN(priority) ? 0 : priority,
     })
   }
 
@@ -118,9 +146,8 @@ function RoutingRulesPage() {
               <Input
                 type="number"
                 value={creating.priority}
-                onChange={(e) =>
-                  setCreating({ ...creating, priority: Number(e.target.value) || 0 })
-                }
+                onChange={(e) => setCreating({ ...creating, priority: e.target.value })}
+                placeholder="0"
               />
             </LabeledInput>
           </div>
@@ -168,7 +195,15 @@ function RoutingRulesPage() {
                 <td className="px-4 py-2">
                   <Badge variant="outline">{r.category_key}</Badge>
                 </td>
-                <td className="px-4 py-2 truncate font-mono text-xs">{r.target_folder_id}</td>
+                <td className="px-4 py-2">
+                  {folderNameById.get(r.target_folder_id) ? (
+                    <span className="font-medium">{folderNameById.get(r.target_folder_id)}</span>
+                  ) : (
+                    <span className="font-mono text-xs text-muted-foreground" title={r.target_folder_id}>
+                      {r.target_folder_id.slice(0, 8)}…
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2 tabular-nums">{r.priority}</td>
                 <td className="px-4 py-2">
                   <button

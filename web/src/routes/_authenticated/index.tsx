@@ -146,7 +146,9 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
       padded="md"
       className={cn(
         'group relative h-full overflow-hidden transition-all',
-        'hover:-translate-y-0.5 hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+        'hover:-translate-y-0.5 hover:border-primary/50',
+        'hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+        'dark:hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
       )}
     >
       <div className="flex items-start justify-between">
@@ -192,7 +194,14 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
       )}
     </WarmCard>
   )
-  return href ? <Link to={href} className="block h-full">{inner}</Link> : inner
+  return href ? (
+    <Link
+      to={href}
+      className="block h-full rounded-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+    >
+      {inner}
+    </Link>
+  ) : inner
 }
 
 // ---- Quick actions -------------------------------------------------------
@@ -227,7 +236,11 @@ function QuickActions() {
           >
             <WarmCard
               padded="md"
-              className="h-full transition-all group-hover:-translate-y-0.5 group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]"
+              className={cn(
+                'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50',
+                'group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+                'dark:group-hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
+              )}
             >
               <div className="flex items-start gap-3">
                 <span
