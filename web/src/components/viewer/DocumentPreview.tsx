@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, FileText } from 'lucide-react'
+import { AlertCircle, Download, ExternalLink, FileText } from 'lucide-react'
 
 import { getDownloadURL } from '@/api/documents'
 import { FileIcon } from '@/components/ui/FileIcon'
@@ -86,18 +87,7 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
   const mime = (mimeType ?? '').toLowerCase()
 
   if (mime === 'application/pdf' || mime.endsWith('/pdf')) {
-    return (
-      <Card className="overflow-hidden p-0" data-testid="preview-pdf">
-        <iframe
-          // #toolbar=0 hides Chrome's toolbar; not all browsers honor
-          // it but those that don't just show their own controls,
-          // which is fine.
-          src={`${url}#toolbar=0&navpanes=0`}
-          title={title ?? 'PDF preview'}
-          className="h-[80vh] w-full border-0"
-        />
-      </Card>
-    )
+    return <PdfPreview url={url} title={title} />
   }
 
   if (mime.startsWith('image/')) {
@@ -155,6 +145,101 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
       >
         Download to open
       </a>
+    </Card>
+  )
+}
+
+// ---- PDF preview --------------------------------------------------------
+//
+// The browser's built-in PDF viewer can't report content failures to us: a
+// corrupt/empty PDF (or a presigned URL that 404s after the fetch already
+// succeeded) renders as a blank/black frame and STILL fires `load`. So we
+// (1) show a spinner overlay until the frame loads, (2) fall back to a
+// download card if `load` never fires within the timeout, and (3) keep a
+// persistent open/download escape hatch for the blank-frame case we can't
+// detect programmatically — replacing the bare black rectangle.
+function PdfPreview({ url, title }: { url: string; title?: string }) {
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+
+  useEffect(() => {
+    if (state !== 'loading') return
+    const t = setTimeout(() => setState('failed'), 12_000)
+    return () => clearTimeout(t)
+  }, [state])
+
+  if (state === 'failed') return <PreviewUnavailable url={url} title={title} kind="PDF" />
+
+  return (
+    <Card className="relative overflow-hidden p-0" data-testid="preview-pdf">
+      {state === 'loading' && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-muted/40"
+          aria-busy
+          aria-label="Rendering PDF"
+        >
+          <Spinner className="h-6 w-6" />
+          <p className="text-xs text-muted-foreground">Rendering PDF…</p>
+        </div>
+      )}
+      <iframe
+        // #toolbar=0 hides Chrome's toolbar; browsers that ignore it just
+        // show their own controls. bg-muted avoids a white/black flash
+        // before the document paints.
+        src={`${url}#toolbar=0&navpanes=0`}
+        title={title ?? 'PDF preview'}
+        onLoad={() => setState('ready')}
+        onError={() => setState('failed')}
+        className="h-[80vh] w-full border-0 bg-muted/30"
+      />
+      <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t border-border bg-card px-3 py-1.5 text-xs">
+        <span className="me-auto text-muted-foreground">Preview not displaying?</span>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:text-primary"
+        >
+          <ExternalLink className="h-3.5 w-3.5" /> Open in new tab
+        </a>
+        <a
+          href={url}
+          download
+          className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:text-primary"
+        >
+          <Download className="h-3.5 w-3.5" /> Download
+        </a>
+      </div>
+    </Card>
+  )
+}
+
+// Shared "can't show this inline" state with open + download actions.
+function PreviewUnavailable({ url, title, kind }: { url: string; title?: string; kind: string }) {
+  return (
+    <Card
+      className="flex h-[60vh] flex-col items-center justify-center gap-3 p-12 text-center text-sm"
+      data-testid="preview-unavailable"
+    >
+      <FileText className="h-10 w-10 text-muted-foreground" />
+      <p className="text-base font-medium text-foreground">{title ?? 'Document'}</p>
+      <p className="text-muted-foreground">The {kind} preview couldn’t be displayed in the browser.</p>
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium transition-colors hover:bg-accent"
+        >
+          <ExternalLink className="h-4 w-4" /> Open in new tab
+        </a>
+        <a
+          href={url}
+          download
+          className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-3 text-sm font-medium text-background transition-opacity hover:opacity-90"
+        >
+          <Download className="h-4 w-4" /> Download
+        </a>
+      </div>
     </Card>
   )
 }

@@ -15,10 +15,20 @@ const warmCardVariants = cva(
   {
     variants: {
       variant: {
+        // Editorial card surface driven by the THEME's card token, not a
+        // pinned cream hex — so it flips with light/dark. Light resolves to
+        // the warm cream (#FFFAEF family); dark to the warm near-black, with
+        // `card-foreground` keeping the title + inner text legible in both.
+        // (Previously the hard-coded cream made dark-mode stat numerals —
+        // which use the theme foreground tokens — render pale-on-cream.)
         cream: cn(
-          'bg-[#FFFAEF] border-[rgba(26,26,26,0.08)] text-[#1A1A1A]',
+          'bg-card border-border text-card-foreground',
           'shadow-[0_8px_28px_-10px_rgba(80,60,10,0.18)]',
+          'dark:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.6)]',
         ),
+        // Deliberate charcoal contrast card (the reference "Onboarding Task"
+        // pairing). Intentionally dark in BOTH themes; in dark mode it reads
+        // as a neutral elevated surface a touch above the warm-black page.
         dark: cn(
           'bg-[#1A1A1A] border-white/10 text-[#FAFAFA]',
           'shadow-[0_24px_56px_-22px_rgba(0,0,0,0.6)]',

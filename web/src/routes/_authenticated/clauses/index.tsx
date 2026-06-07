@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { CheckCircle2, Edit3, FileText, Plus, Search, Tag, Trash2, X } from 'lucide-react'
+import { LabeledSelect } from '@/components/ui/shadcn/select'
 
 import {
   createClause,
@@ -179,6 +180,10 @@ function ClausesPage() {
   )
 }
 
+// Radix can't hold an empty option value, so the "All …" clear row uses
+// this sentinel, mapped back to '' (= no filter) on change.
+const ALL_FILTER = '__all__'
+
 function FilterSelect({
   value,
   onChange,
@@ -190,15 +195,20 @@ function FilterSelect({
   options: string[]
   placeholder: string
 }) {
+  // Styled Radix dropdown — replaces the native <select> so the filter
+  // controls match the rest of the app's selects and theme correctly in
+  // dark mode (the native option list rendered light).
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-    >
-      <option value="">{placeholder}</option>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
+    <LabeledSelect
+      value={value || ALL_FILTER}
+      onValueChange={(v) => onChange(v === ALL_FILTER ? '' : v)}
+      placeholder={placeholder}
+      triggerClassName="w-auto min-w-[150px]"
+      options={[
+        { value: ALL_FILTER, label: placeholder },
+        ...options.map((o) => ({ value: o, label: o })),
+      ]}
+    />
   )
 }
 
