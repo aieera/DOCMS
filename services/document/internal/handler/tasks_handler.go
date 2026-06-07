@@ -42,6 +42,7 @@ func NewTasksHandler(svc *service.DocumentService, log zerolog.Logger) *TasksHan
 func (h *TasksHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/tasks",                 h.create)
 	mux.HandleFunc("GET /api/v1/tasks/mine",             h.listMine)
+	mux.HandleFunc("GET /api/v1/tasks/created",          h.listCreated)
 	mux.HandleFunc("GET /api/v1/tasks",                  h.list)
 	mux.HandleFunc("GET /api/v1/tasks/{id}",             h.get)
 	mux.HandleFunc("PATCH /api/v1/tasks/{id}",           h.update)
@@ -131,6 +132,28 @@ func (h *TasksHandler) listMine(w http.ResponseWriter, r *http.Request) {
 	uid := userID
 	rows, err := h.svc.ListTasks(ctx, repository.TaskFilters{
 		AssigneeID:       &uid,
+		IncludeCompleted: r.URL.Query().Get("include_completed") == "true",
+	})
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if rows == nil {
+		rows = []repository.Task{}
+	}
+	writeJSONStatus(w, http.StatusOK, rows)
+}
+
+// listCreated is the "Created by me" inbox — tasks this user raised,
+// regardless of who they're assigned to. Mirror of listMine.
+func (h *TasksHandler) listCreated(w http.ResponseWriter, r *http.Request) {
+	ctx, _, userID, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	uid := userID
+	rows, err := h.svc.ListTasks(ctx, repository.TaskFilters{
+		CreatedBy:        &uid,
 		IncludeCompleted: r.URL.Query().Get("include_completed") == "true",
 	})
 	if err != nil {
