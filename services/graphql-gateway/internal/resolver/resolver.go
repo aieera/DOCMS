@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -55,6 +57,15 @@ func New(clients Clients, log zerolog.Logger) *Resolver {
 // resolver needs is nil. Wraps a sentinel so callers can errors.Is
 // it for graceful degradation.
 var ErrNotConfigured = errors.New("upstream service not configured")
+
+// deniedOrMissing reports whether an upstream gRPC error means "you can't see
+// this" (permission denied) or "it isn't there" (not found) — both of which a
+// read resolver degrades to a null/empty field rather than surfacing as a hard
+// GraphQL error.
+func deniedOrMissing(err error) bool {
+	c := status.Code(err)
+	return c == codes.NotFound || c == codes.PermissionDenied
+}
 
 // ---- Identity helpers ----------------------------------------------
 
@@ -168,11 +179,16 @@ func (r *Resolver) Document(ctx context.Context, id string) (any, error) {
 	if r.clients.Document == nil {
 		return nil, ErrNotConfigured
 	}
-	if !r.check(ctx, "view", "document", id) {
-		return nil, nil
-	}
+	// Authority for "can view this document" is GetDocument itself — the
+	// document service runs the policy check with FULL context (role +
+	// workspace/folder cascade), which the gateway's own check() can't
+	// replicate (it lacks the doc's workspace/folder, so it denied non-owner
+	// workspace members). Not-found / permission-denied degrade to null.
 	resp, err := r.clients.Document.GetDocument(r.outboundCtx(ctx), &sedocv1.GetDocumentRequest{DocumentId: id})
 	if err != nil {
+		if deniedOrMissing(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return docToModel(resp), nil
@@ -458,12 +474,21 @@ func (r *Resolver) DocumentPermissions(ctx context.Context, parent any) (any, er
 		return &model.DocumentPermissions{}, nil
 	}
 	id := identityFrom(ctx)
-	// Same role context as check() — so owner/admin (OPA Rule 6) resolve
-	// canView/... correctly instead of every capability coming back false.
-	var pctx *structpb.Struct
+	// Full policy context (role + workspace/folder cascade) so canView/... are
+	// correct for owner/admin (OPA Rule 6) AND non-owner workspace members
+	// (Rules 4/5a). The parent doc carries its workspace/folder, so unlike the
+	// id-only resolvers this needs no extra fetch.
+	cm := map[string]any{}
 	if id.role != "" {
-		pctx, _ = structpb.NewStruct(map[string]any{"user_role": id.role})
+		cm["user_role"] = id.role
 	}
+	if doc.WorkspaceID != "" {
+		cm["workspace_id"] = doc.WorkspaceID
+	}
+	if doc.FolderID != "" {
+		cm["folder_id"] = doc.FolderID
+	}
+	pctx, _ := structpb.NewStruct(cm)
 	checks := []*sedocv1.CheckPermissionRequest{
 		{SubjectType: "user", SubjectId: id.userID, Action: "view", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
 		{SubjectType: "user", SubjectId: id.userID, Action: "edit", ResourceType: "document", ResourceId: doc.ID, Context: pctx},
@@ -638,7 +663,17 @@ func taskToModel(t *sedocv1.Task) *model.Task {
 // ---- Activity timeline ---------------------------------------------
 
 func (r *Resolver) ActivityForDocument(ctx context.Context, documentID string, limit int, cursor string) (any, error) {
-	if !r.check(ctx, "view", "document", documentID) {
+	// Gate on view access via GetDocument — the document service checks with
+	// full context (role + workspace/folder cascade), so this works for
+	// non-owner workspace members too, unlike the gateway's own check(). An
+	// inaccessible or missing document yields an empty stream. (Falls back to
+	// the gateway check() only when the document client is unavailable.)
+	if r.clients.Document != nil {
+		if _, err := r.clients.Document.GetDocument(r.outboundCtx(ctx),
+			&sedocv1.GetDocumentRequest{DocumentId: documentID}); err != nil {
+			return &model.Connection[*model.ActivityEvent]{}, nil
+		}
+	} else if !r.check(ctx, "view", "document", documentID) {
 		return &model.Connection[*model.ActivityEvent]{}, nil
 	}
 	// v1: pull from the audit service when available; otherwise
