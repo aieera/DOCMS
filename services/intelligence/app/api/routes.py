@@ -851,7 +851,7 @@ async def put_tenant_llm_config_endpoint(
     if x_user_role not in {"owner", "admin"}:
         raise HTTPException(403, "owner|admin required")
     if body.provider is not None and body.provider not in (
-        "openai", "anthropic", "bedrock", "vllm_local", "custom",
+        "openai", "anthropic", "bedrock", "vllm_local", "custom", "gemini",
     ):
         raise HTTPException(400, "invalid provider")
     if body.rate_limit_rpm is not None and body.rate_limit_rpm < 0:
