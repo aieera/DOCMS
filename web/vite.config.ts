@@ -57,6 +57,24 @@ export default defineConfig(({ command, mode }) => {
   const isTest = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
   const gatewaySecret = command === 'serve' && !isTest ? requireGatewaySecret() : ''
   const wsig = (target: string) => withSig(target, gatewaySecret)
+  // Same-origin MinIO upload proxy. The browser PUTs file bytes straight
+  // to the presigned URL returned by InitiateUpload, whose host is the
+  // dev MinIO public base (localhost:9000). PUTting there directly is a
+  // cross-origin request to a second port, which silently fails whenever
+  // the browser cannot reach :9000 (remote / port-forwarded dev hosts),
+  // leaving a 0-byte document with no version. Routing the PUT through
+  // Vite keeps it same-origin; changeOrigin rewrites the upstream Host to
+  // the MinIO target so the S3 `SignedHeaders=host` signature still
+  // validates. The frontend's uploadToPresigned() rewrites :9000 URLs to
+  // `/s3` (dev only). Override the target with VITE_S3_TARGET if MinIO is
+  // not on localhost:9000.
+  const s3Proxy = {
+    '/s3': {
+      target: process.env.VITE_S3_TARGET || 'http://localhost:9000',
+      changeOrigin: true,
+      rewrite: (p: string) => p.replace(/^\/s3/, ''),
+    },
+  }
   return ({
   plugins: [react(), TanStackRouterVite()],
   resolve: {
@@ -80,8 +98,9 @@ export default defineConfig(({ command, mode }) => {
     // Activated by VITE_PROXY_MODE=host (or VITE_GATEWAY_URL unset AND mode unset).
     proxy:
       process.env.VITE_PROXY_MODE === 'gateway' || process.env.VITE_GATEWAY_URL
-        ? { '/api': wsig(process.env.VITE_GATEWAY_URL || 'http://localhost:8080') }
+        ? { ...s3Proxy, '/api': wsig(process.env.VITE_GATEWAY_URL || 'http://localhost:8080') }
         : {
+            ...s3Proxy,
             '/api/v1/admin/share-links':        wsig('http://localhost:8182'),
             '/api/v1/admin/retention-policies': wsig('http://localhost:8182'),
             '/api/v1/admin/documents':          wsig('http://localhost:8182'),
