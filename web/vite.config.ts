@@ -99,7 +99,6 @@ export default defineConfig(({ command, mode }) => {
             '/api/v1/admin/routing-rules':      wsig('http://localhost:8182'),
             '/api/v1/admin/smart-routing-config': wsig('http://localhost:8182'),
             '/api/v1/admin/filing-analytics':   wsig('http://localhost:8182'),
-            '/api/v1/admin/compliance':         wsig('http://localhost:8182'),
             '/api/v1/admin/ocr-quality':        wsig('http://localhost:8182'),
             '/api/v1/admin/anomalies':          wsig('http://localhost:8182'),
             '/api/v1/admin/anomaly-config':     wsig('http://localhost:8182'),
