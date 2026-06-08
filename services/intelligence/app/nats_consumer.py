@@ -72,7 +72,33 @@ class IntelligenceConsumer:
         return sem
 
     async def start(self) -> None:
-        self.nc = await nats.connect(settings.nats_url, name=settings.service_name)
+        # Resilient reconnect. The default nats-py policy gives up after
+        # max_reconnect_attempts=60 (~2 min at reconnect_time_wait=2s);
+        # when the NATS container is recreated (e.g. a JetStream config
+        # change) the DNS outage can outlast that, after which the
+        # consumer stays dead and the whole intelligence pipeline
+        # (OCR/classify/NER/embed) silently stops until a manual restart.
+        # -1 = retry forever so the consumer always recovers once NATS is
+        # back, matching the Go services' auto-reconnect behaviour. The
+        # nats-py callbacks are awaited, so they must be coroutines.
+        async def _on_disconnect() -> None:
+            log.warning("nats disconnected — will keep retrying")
+
+        async def _on_reconnect() -> None:
+            log.info("nats reconnected")
+
+        async def _on_error(e: Exception) -> None:
+            log.error("nats error: %s", e)
+
+        self.nc = await nats.connect(
+            settings.nats_url,
+            name=settings.service_name,
+            max_reconnect_attempts=-1,
+            reconnect_time_wait=2,
+            disconnected_cb=_on_disconnect,
+            reconnected_cb=_on_reconnect,
+            error_cb=_on_error,
+        )
         js = self.nc.jetstream()
 
         await js.subscribe(
