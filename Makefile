@@ -18,7 +18,7 @@ VERSION         ?= $(shell git describe --tags --always --dirty 2>/dev/null || e
 COMMIT          ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable
+DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
 
 SERVICES := document storage search auth policy workflow notification audit signature billing connector
 
@@ -162,7 +162,7 @@ docker-push: ## Push Docker images
 setup: gen-env up migrate seed ## Full local setup: env, docker, migrate, seed
 	@echo ""
 	@echo "Setup complete. Start the web UI with 'make run-web'."
-	@echo "Then open http://localhost:5173 and log in with the credentials above."
+	@echo "Then open http://localhost:3000 and log in with the credentials above."
 
 .PHONY: wake
 wake: ## Recover from a Docker/WSL restart: up + verify + restart dead-port containers
@@ -182,11 +182,8 @@ up: ## Start all infra services via docker compose + wait for health
 	./scripts/wait-for-health.sh
 
 .PHONY: migrate
-migrate: ## Run all DB migrations
-	$(MIGRATE) -database "$(DATABASE_URL)" -path services/document/migrations up
-	@if [ -d services/search/migrations ]; then \
-		$(MIGRATE) -database "$(DATABASE_URL)" -path services/search/migrations up || true; \
-	fi
+migrate: ## Run all DB migrations (ordered across services)
+	MIGRATE="$(MIGRATE)" DATABASE_URL="$(DATABASE_URL)" ./scripts/migrate-all.sh
 
 .PHONY: seed
 seed: ## Insert default organization and admin user (idempotent)
