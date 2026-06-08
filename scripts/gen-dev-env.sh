@@ -49,8 +49,13 @@ sed "${SED_I[@]}" "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=$(esc "$COO
 # dev proxy (web/.env, which signs requests the backend then verifies).
 # Generate once and write to both, so `make setup` works out of the box.
 sed "${SED_I[@]}" "s|^SEDOC_GATEWAY_SECRET=.*|SEDOC_GATEWAY_SECRET=$GATEWAY|" .env
-if [ -f web/.env.example ] && [ ! -f web/.env ]; then
-  cp web/.env.example web/.env
+# Keep web/.env's copy IN SYNC every run, not just on first creation.
+# Previously this only wrote web/.env when it did not exist, so any later
+# `gen-dev-env` regenerated the backend secret in .env while leaving the
+# frontend's stale — the dev proxy then signed requests the backend
+# rejected (host mode) and every identity endpoint 400/500'd.
+if [ -f web/.env ] || [ -f web/.env.example ]; then
+  [ -f web/.env ] || cp web/.env.example web/.env
   sed "${SED_I[@]}" "s|^SEDOC_GATEWAY_SECRET=.*|SEDOC_GATEWAY_SECRET=$GATEWAY|" web/.env
   WEB_NOTE=" + web/.env"
 fi
