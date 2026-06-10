@@ -28,13 +28,15 @@ interface Props {
   /** Doc-wide entities (offsets into "\n\n".join(pages)). When provided,
    * matching word boxes are highlighted with the entity color and tooltip. */
   entities?: Entity[]
+  /** 1-based page to open on (e.g. from a citation deep-link). */
+  initialPage?: number
   onSelectLine?: (page: number, text: string) => void
   onSelectEntity?: (e: Entity) => void
 }
 
-export function PDFLayoutViewer({ url, pages, entities, onSelectLine, onSelectEntity }: Props) {
+export function PDFLayoutViewer({ url, pages, entities, initialPage, onSelectLine, onSelectEntity }: Props) {
   const [numPages, setNumPages] = useState(0)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(initialPage && initialPage >= 1 ? Math.floor(initialPage) : 1)
   const [renderWidth, setRenderWidth] = useState(800)
   const [showEntities, setShowEntities] = useState(true)
   const [showLines, setShowLines] = useState(true)
@@ -106,7 +108,11 @@ export function PDFLayoutViewer({ url, pages, entities, onSelectLine, onSelectEn
     <div className="flex flex-col items-center">
       <Document
         file={url}
-        onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+        onLoadSuccess={({ numPages: n }) => {
+          setNumPages(n)
+          // Clamp a deep-linked initial page that overshoots the doc.
+          setPage((p) => (p > n ? n : p))
+        }}
         loading={<Spinner />}
         error={
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">

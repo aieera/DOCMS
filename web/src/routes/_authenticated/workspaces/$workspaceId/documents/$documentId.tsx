@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -1171,6 +1171,10 @@ function LegalHoldBanner({ doc }: { doc: Document }) {
 const STUCK_OCR_MINUTES = 30
 
 function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId: string; versionId?: string; uploadedAt?: string; mimeType: string }) {
+  // `?page=N` from a citation deep-link → open the layout viewer on that
+  // page. strict:false so this is harmless when rendered in the modal
+  // (a different route with no `page` search).
+  const { page: deepLinkPage } = useSearch({ strict: false }) as { page?: number }
   const role = useAuthStore((s) => s.user?.role)
   const canRerun = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const isPdf = mimeType === 'application/pdf'
@@ -1181,7 +1185,9 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
   // dataset. Disabled when boxes are empty (text-PDF fast path);
   // hidden entirely for non-PDF mimes where there's no page raster
   // to overlay onto.
-  const [showLayout, setShowLayout] = useState(false)
+  // Open in the layout (page-image) renderer when a citation deep-links
+  // to a specific page, so the page anchor is meaningful; otherwise text.
+  const [showLayout, setShowLayout] = useState(Boolean(deepLinkPage))
   const lastStatus = useRef<OCRStatus | null>(null)
   // Tracks the wall-clock time of the most-recent successful Re-run
   // click. The stuck banner uses uploadedAt to detect "OCR has been
@@ -1456,6 +1462,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
             <PDFLayoutViewer
               url={dl.data.url}
               pages={pages}
+              initialPage={deepLinkPage}
               entities={highlight ? entitiesQuery.data?.entities : undefined}
             />
           </Card>
@@ -1640,4 +1647,14 @@ function StatusBadge({ status }: { status: OCRStatus }) {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/documents/$documentId')({ component: DocumentDetailPage })
+export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/documents/$documentId')({
+  // `?page=N` deep-links straight to a page in the PDF layout viewer.
+  // Citations on the Ask page link with this so a [1:p4] marker lands
+  // on page 4 instead of page 1. Invalid/absent → undefined (page 1).
+  validateSearch: (search: Record<string, unknown>): { page?: number } => {
+    const raw = search.page
+    const n = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN
+    return Number.isFinite(n) && n >= 1 ? { page: Math.floor(n) } : {}
+  },
+  component: DocumentDetailPage,
+})
