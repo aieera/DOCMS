@@ -227,7 +227,7 @@ function WorkspacePage() {
           <h2 className="mb-4 mt-9 px-0.5 text-lg font-bold tracking-tight text-foreground">Files</h2>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4">
             {isLoading ? loadingTiles(4) : shownDocs.map((d) => (
-              <DocumentActionsMenu key={d.id} doc={d}>
+              <DocumentActionsMenu key={d.id} doc={d} onOpen={() => openDoc(d.id)}>
                 <FileTile
                   doc={d}
                   selected={selection?.type === 'file' && selection.doc.id === d.id}

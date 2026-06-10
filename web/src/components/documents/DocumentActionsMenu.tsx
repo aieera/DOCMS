@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   MoreVertical, Download, Pencil, FolderInput, Share2, Trash2,
-  Copy, ListTodo, ShieldCheck,
+  Copy, ListTodo, ShieldCheck, Eye,
 } from 'lucide-react'
 
 import {
@@ -35,6 +35,12 @@ interface Props {
    * ContextMenu; the ⋯-button is positioned absolutely on top-right.
    */
   children: ReactNode
+  /**
+   * Opens the document viewer. When provided, an "Open" item is added
+   * to the top of the menu so users have a discoverable single-action
+   * way to open a file (the card itself only opens on double-click).
+   */
+  onOpen?: () => void
 }
 
 type MenuItem =
@@ -73,7 +79,7 @@ async function downloadLatest(documentId: string) {
   a.click()
 }
 
-export function DocumentActionsMenu({ doc, children }: Props) {
+export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -94,6 +100,12 @@ export function DocumentActionsMenu({ doc, children }: Props) {
   const isOnHold = doc.lifecycle_state === 'legal_hold'
 
   const items: MenuItem[] = [
+    ...(onOpen
+      ? ([
+          { kind: 'action', key: 'open', label: 'Open', icon: <Eye className="h-4 w-4" />, onSelect: onOpen },
+          { kind: 'separator', key: 'sep-open' },
+        ] as MenuItem[])
+      : []),
     { kind: 'action', key: 'rename', label: 'Rename', icon: <Pencil className="h-4 w-4" />, onSelect: () => setRenameOpen(true) },
     {
       kind: 'action', key: 'move', label: 'Move to folder…', icon: <FolderInput className="h-4 w-4" />,

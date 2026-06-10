@@ -115,9 +115,14 @@ export function ManageAccessDialog({
 
   // Users + groups for the principal picker. Only fetched when the
   // caller has admin access — they're irrelevant otherwise.
+  // Share the ['admin', 'users'] cache with the admin Users page (and
+  // other pickers) so opening this dialog reuses an already-fetched
+  // list instead of issuing a duplicate /admin/users request. `select`
+  // keeps the local items-only shape without forking the cache.
   const usersQuery = useQuery({
-    queryKey: ['admin-users'],
-    queryFn: () => getUsers().then((r) => r.items),
+    queryKey: ['admin', 'users'],
+    queryFn: () => getUsers(),
+    select: (r) => r.items,
     enabled: open && canManage.data === true,
   })
   const groupsQuery = useQuery({

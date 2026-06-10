@@ -163,6 +163,10 @@ function TrashPage() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
+          {/* overflow-x-auto lets the table scroll instead of the Card
+              clipping the Actions column ("Delete perman…") when the
+              title column eats the available width at narrow viewports. */}
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -202,7 +206,7 @@ function TrashPage() {
                   <td className="px-4 py-3 text-muted-foreground">
                     {entry.deleted_at ? formatDateTime(entry.deleted_at) : '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex justify-end gap-2">
                       <Button
                         size="sm"
@@ -229,6 +233,7 @@ function TrashPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           {trash.data?.next_page_token && (
             <div className="flex justify-center border-t border-border p-3">

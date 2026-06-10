@@ -167,6 +167,18 @@
     font-family: 'IBM Plex Sans Arabic', var(--font-sans);
   }
 
+  /* ADR 0107 — bidi isolation. In RTL layout, an English (LTR) run's
+     trailing punctuation gets reordered to the start of the line
+     (".Manage your account" instead of "Manage your account."). Until
+     every string is translated, `unicode-bidi: plaintext` makes each
+     text element pick its direction from its own first strong character,
+     so English blocks render LTR (period at the end) and Arabic blocks
+     render RTL — both correct. Scoped to text-bearing elements and to
+     RTL only, so it never touches LTR/English UI or flex layout. */
+  html[dir="rtl"] :where(p, h1, h2, h3, h4, h5, h6, label, li, dt, dd, caption, figcaption, blockquote) {
+    unicode-bidi: plaintext;
+  }
+
   *::-webkit-scrollbar {
     width: 10px;
     height: 10px;

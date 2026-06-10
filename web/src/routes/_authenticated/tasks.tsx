@@ -127,9 +127,10 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
   // Invalidate both inboxes + the header badge — a task can move between
   // the assigned-to-me and created-by-me lists on any mutation.
   const refreshAll = () => {
+    // ['my-tasks'] also drives the topbar badge (same cache key), so a
+    // single invalidation refreshes both the list and the badge.
     qc.invalidateQueries({ queryKey: ['my-tasks'] })
     qc.invalidateQueries({ queryKey: ['created-tasks'] })
-    qc.invalidateQueries({ queryKey: ['my-tasks-count'] })
   }
 
   const tasks = useMemo(() => {

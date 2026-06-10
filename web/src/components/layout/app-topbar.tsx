@@ -148,8 +148,11 @@ function CommandTrigger() {
 
 function MyTasksBadge() {
   const navigate = useNavigate()
+  // Shares the ['my-tasks'] cache with the dashboard KPI/Open-tasks
+  // cards (same listMyTasks(false) query) so navigating to the
+  // dashboard doesn't fire a second identical request.
   const { data } = useQuery({
-    queryKey: ['my-tasks-count'],
+    queryKey: ['my-tasks'],
     queryFn: () => listMyTasks(false),
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -191,7 +194,7 @@ function NotificationsDropdown() {
   // Unread count polls every 30s — drives the red dot on the bell.
   // Cheap endpoint (single SQL COUNT) so polling is fine.
   const { data: unreadCount = 0 } = useQuery({
-    queryKey: ['notifications-unread-count'],
+    queryKey: ['notifications', 'unread-count'],
     queryFn: getUnreadCount,
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -212,7 +215,7 @@ function NotificationsDropdown() {
     mutationFn: markAsRead,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
-      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
     onError: () => toast.error("Couldn't mark as read"),
   })
@@ -222,7 +225,7 @@ function NotificationsDropdown() {
     onSuccess: () => {
       toast.success('Marked all read')
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
-      qc.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
     onError: () => toast.error("Couldn't mark all as read"),
   })

@@ -64,7 +64,7 @@ function relTime(iso: string, opts: { addSuffix?: boolean } = {}): string {
 function KpiRow() {
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
   const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
-  const unread = useQuery({ queryKey: ['notif-count'], queryFn: getUnreadCount, staleTime: 30_000 })
+  const unread = useQuery({ queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000 })
 
   const wsCount = workspaces.data?.length
   const openTaskCount = (tasks.data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress').length

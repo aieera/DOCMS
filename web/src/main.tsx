@@ -17,7 +17,36 @@ const queryClient = new QueryClient({
   },
 })
 
-const router = createRouter({ routeTree })
+// Route-transition pending UI. Rendered in place of the destination
+// route's content while its lazy bundle + loader resolve — crucially
+// it renders *inside* the persisted _authenticated layout, so the
+// sidebar/topbar stay put instead of the whole screen going blank.
+function RoutePending() {
+  return (
+    <div className="flex h-full min-h-[40vh] w-full items-center justify-center p-8">
+      <div
+        className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
+        role="status"
+        aria-label="Loading"
+      />
+    </div>
+  )
+}
+
+const router = createRouter({
+  routeTree,
+  // Preload the target route's bundle + loader on link hover/focus so
+  // navigation usually has nothing left to fetch — the single biggest
+  // win against the multi-second blank transitions. React Query still
+  // owns data freshness, so don't let the router cache preloaded data.
+  defaultPreload: 'intent',
+  defaultPreloadStaleTime: 0,
+  // Show the spinner quickly once a transition is actually in flight,
+  // but hold it briefly so fast loads don't flash it.
+  defaultPendingComponent: RoutePending,
+  defaultPendingMs: 150,
+  defaultPendingMinMs: 300,
+})
 
 declare module '@tanstack/react-router' {
   interface Register { router: typeof router }

@@ -36,7 +36,13 @@ interface DialogProps {
 export function Dialog({ open, onOpenChange, title, description, size = 'md', children }: DialogProps) {
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(sizes[size])}>
+      {/* When there's no description, explicitly pass aria-describedby={undefined}
+          — Radix's documented opt-out — so it doesn't warn about a missing
+          Description. With a description, DialogDescription auto-wires it. */}
+      <DialogContent
+        className={cn(sizes[size])}
+        {...(description ? {} : { 'aria-describedby': undefined })}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}

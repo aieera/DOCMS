@@ -2,7 +2,7 @@
 // Phase 1: list + free-text search + filter chips + create modal +
 // inline edit/delete. Variation tracking, detection, and OnlyOffice
 // side-panel are Phase 2-4 per the ADR.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -35,6 +35,11 @@ function ClausesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editing, setEditing] = useState<Clause | null>(null)
   const [selected, setSelected] = useState<Clause | null>(null)
+  // After creating a clause we only have its id; the full Clause arrives
+  // with the next list refetch. Hold the id and auto-select it once it
+  // shows up so the detail panel opens on the new clause instead of
+  // staying on "No clause selected".
+  const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -66,6 +71,16 @@ function ClausesPage() {
     },
     onError: () => toast.error('Approve failed'),
   })
+
+  // Select the just-created clause once it lands in the refetched list.
+  useEffect(() => {
+    if (!pendingSelectId) return
+    const found = data?.clauses.find((c) => c.id === pendingSelectId)
+    if (found) {
+      setSelected(found)
+      setPendingSelectId(null)
+    }
+  }, [pendingSelectId, data])
 
   // Unique tag + jurisdiction sets for filter chips.
   const { allTags, allJurisdictions } = useMemo(() => {
@@ -161,7 +176,10 @@ function ClausesPage() {
       <CreateClauseDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={() => qc.invalidateQueries({ queryKey: ['clauses'] })}
+        onCreated={(id) => {
+          qc.invalidateQueries({ queryKey: ['clauses'] })
+          setPendingSelectId(id)
+        }}
       />
 
       {editing && (
@@ -316,15 +334,15 @@ function CreateClauseDialog({
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
-  onCreated: () => void
+  onCreated: (id: string) => void
 }) {
   const [form, setForm] = useState<CreateClauseInput>({ name: '', body_text: '', jurisdiction: '', tags: [] })
   const [tagText, setTagText] = useState('')
   const mut = useAppMutation({
     mutationFn: createClause,
-    onSuccess: () => {
+    onSuccess: (created) => {
       toast.success('Clause created')
-      onCreated()
+      onCreated(created.id)
       onOpenChange(false)
       setForm({ name: '', body_text: '', jurisdiction: '', tags: [] })
       setTagText('')

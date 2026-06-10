@@ -428,18 +428,17 @@ function SearchPage() {
             <p className="mb-3 text-sm text-muted-foreground">
               {data.total_count} results in {data.latency_ms}ms
             </p>
-            {(data.results ?? []).map((hit) => (
+            {(data.results ?? []).map((hit) => {
               // Each hit links to the workspace's document viewer.
-              // workspace_id + document_id are guaranteed populated
-              // by the indexer; clicking opens the same PDFLayoutViewer
-              // route that the workspace tree uses.
-              <Link
-                key={hit.document_id}
-                to="/workspaces/$workspaceId/documents/$documentId"
-                params={{ workspaceId: hit.workspace_id, documentId: hit.document_id }}
-                className="flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary hover:bg-muted"
-                data-testid={`search-hit-${hit.document_id}`}
-              >
+              // A valid document always has a workspace_id, but an
+              // orphaned/bad index record can carry an empty one — and
+              // linking that generates "/workspaces//documents/<id>"
+              // (router warns "matched route undefined" and 404s).
+              // Render those rare records as a non-clickable card.
+              const cardClass =
+                'flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary hover:bg-muted'
+              const inner = (
+                <>
                 <FileIcon mime={hit.mime_type} className="mt-0.5" />
                 <div className="min-w-0 flex-1">
                   {hit.highlights?.title?.[0] ? (
@@ -485,8 +484,28 @@ function SearchPage() {
                     })()}
                   </div>
                 </div>
-              </Link>
-            ))}
+                </>
+              )
+              return hit.workspace_id ? (
+                <Link
+                  key={hit.document_id}
+                  to="/workspaces/$workspaceId/documents/$documentId"
+                  params={{ workspaceId: hit.workspace_id, documentId: hit.document_id }}
+                  className={cardClass}
+                  data-testid={`search-hit-${hit.document_id}`}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div
+                  key={hit.document_id}
+                  className={cardClass}
+                  data-testid={`search-hit-${hit.document_id}`}
+                >
+                  {inner}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
