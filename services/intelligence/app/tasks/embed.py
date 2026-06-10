@@ -121,6 +121,34 @@ async def _load_workspace_id(tenant_id: str, document_id: str) -> str | None:
         return None
 
 
+async def _load_document_title(tenant_id: str, document_id: str) -> str | None:
+    """Look up the document's title so embed payloads can carry it.
+    Lets retrieval render named citations and answer "what documents
+    are available?" without a per-query DB lookup. Returns None on
+    lookup failure; build_payload omits the key in that case."""
+    try:
+        from app.persist import get_pool
+    except ImportError:
+        return None
+    try:
+        pool = await get_pool()
+    except Exception:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id,
+            )
+            row = await conn.fetchrow(
+                "SELECT title FROM documents "
+                " WHERE tenant_id = $1 AND id = $2",
+                tenant_id, document_id,
+            )
+            return row["title"] if row and row["title"] else None
+    except Exception:
+        return None
+
+
 async def _load_pages_for_version(tenant_id: str, version_id: str) -> list[dict]:
     """Fetch ocr_results rows in page order so the chunker can map
     char offsets back to page numbers + ride along the
@@ -273,6 +301,7 @@ def generate_embeddings(
         # text (e.g. the unit tests); chunker handles None/[] safely.
         pages = asyncio.run(_load_pages_for_version(tenant_id, version_id))
         workspace_id = asyncio.run(_load_workspace_id(tenant_id, document_id))
+        document_title = asyncio.run(_load_document_title(tenant_id, document_id))
 
         chunks = chunk_text(
             text,
@@ -302,6 +331,7 @@ def generate_embeddings(
                     document_id=document_id,
                     version_id=version_id,
                     workspace_id=workspace_id,
+                    document_title=document_title,
                     chunk_index=chunk["chunk_index"],
                     start_char=chunk["start_char"],
                     end_char=chunk["end_char"],

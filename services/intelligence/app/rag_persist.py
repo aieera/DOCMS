@@ -148,6 +148,40 @@ async def list_allowed_doc_ids(
     return [r["id"] for r in rows]
 
 
+async def get_document_titles(
+    *, tenant_id: str, doc_ids: list[str],
+) -> dict[str, str]:
+    """Map document id -> human-readable title for the given ids.
+
+    Used by workspace_query to put titles (not bare UUIDs) into the LLM
+    context and citations — without this the model can't answer
+    "what documents are available?" and citations render as a bare
+    "Page 1" with no source name (ADR 0080 §6.8). Looked up fresh at
+    query time so it reflects renames and works for chunks embedded
+    before titles were stored in the Qdrant payload.
+
+    Returns {} on empty input or lookup failure; callers fall back to
+    the doc id."""
+    ids = [d for d in dict.fromkeys(doc_ids) if d]  # de-dupe, drop blanks
+    if not ids:
+        return {}
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            rows = await conn.fetch(
+                """
+                SELECT id::text AS id, title
+                  FROM documents
+                 WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+                """,
+                tenant_id, ids,
+            )
+    return {r["id"]: r["title"] for r in rows if r["title"]}
+
+
 def _truncate(text: str | None, limit: int = 4000) -> str:
     if not text:
         return ""

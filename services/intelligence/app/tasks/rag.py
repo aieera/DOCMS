@@ -65,6 +65,7 @@ def _vector_search(q_embedding: list[float], tenant_id: str, user_groups: list[s
             "text": (r.payload.get("text_snippet")
                      or r.payload.get("text") or ""),
             "document_id": r.payload.get("document_id", ""),
+            "document_title": r.payload.get("document_title", ""),
             "workspace_id": r.payload.get("workspace_id", ""),
             "version_id": r.payload.get("version_id", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
@@ -217,13 +218,26 @@ def stream_ask(
     }
 
 
-# ADR 0080 system prompt — explicit "answer only from context" + the
-# fixed "I don't know" sentinel the spec asks for so callers can
-# detect not-in-corpus responses by string match.
+# ADR 0080 system prompt — "answer only from context" + the fixed
+# "I don't know" sentinel the spec asks for so callers can detect
+# not-in-corpus responses by string match.
+#
+# Each context block is headed by the source document's title and a
+# [doc_id:page_X] marker. The prompt explicitly allows two things the
+# old wording forbade and that 500'd simple questions into "I don't
+# know": (1) answering meta-questions about which documents/sources the
+# context contains (e.g. "what documents are available?") from those
+# headers, and (2) citing by the human-readable title. The sentinel is
+# now reserved for genuinely unanswerable *content* questions.
 WORKSPACE_SYSTEM_PROMPT = (
     "You are a workspace assistant for SeDoc. Answer using only the "
-    "provided context. Cite sources as [doc_id:page_X] inline next to "
-    "the claims they support. If the answer is not in the context, "
+    "information in the provided context. Each context block is headed "
+    "by its source document's title followed by a [doc_id:page_X] "
+    "marker. Cite sources inline next to the claims they support by "
+    "copying the exact [doc_id:page_X] marker from the relevant block "
+    "header. When the user asks which documents or sources are "
+    "available, list the document titles shown in the context. "
+    "Only if the context contains nothing relevant to the question, "
     "respond with the exact phrase \"I don't know.\" and nothing else."
 )
 
@@ -236,6 +250,7 @@ def workspace_query(
     question: str,
     workspace_id: str | None = None,
     allowed_doc_ids: list[str] | None = None,
+    doc_titles: dict[str, str] | None = None,
     model: str | None = None,
 ) -> dict[str, Any]:
     """ADR 0080 — workspace-scoped RAG for the /rag/query endpoint.
@@ -290,18 +305,24 @@ def workspace_query(
             "elapsed_ms": int((time.monotonic() - start) * 1000),
         }
 
-    # Build context with explicit doc_id markers the prompt asks the
-    # LLM to cite back. Each block is prefixed with [doc_id:page_X]
-    # so the LLM has a stable token sequence to copy into its answer.
+    # Build context with a title header + explicit doc_id marker the
+    # prompt asks the LLM to cite back. Surfacing the title (resolved
+    # at query time, falling back to a title baked into the chunk
+    # payload, then the bare id) is what lets the model answer
+    # "what documents are available?" and cite by name instead of UUID.
+    titles = doc_titles or {}
     blocks: list[str] = []
     citations: list[dict] = []
     for score, c in top_pairs:
         doc_id = c.get("document_id", "")
+        title = titles.get(doc_id) or c.get("document_title") or ""
         page = c.get("page")
         marker = f"[{doc_id}:page_{page}]" if page is not None else f"[{doc_id}]"
-        blocks.append(f"{marker}\n{c.get('text', '')}")
+        header = f"{title} {marker}" if title else marker
+        blocks.append(f"{header}\n{c.get('text', '')}")
         citations.append({
             "doc_id": doc_id,
+            "document_title": title or None,
             "workspace_id": c.get("workspace_id") or None,
             "page": page,
             "chunk_id": c.get("chunk_index"),

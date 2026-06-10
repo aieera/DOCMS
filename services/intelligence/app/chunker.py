@@ -259,6 +259,7 @@ def build_payload(
     section_path: Optional[str] = None,
     page_number: Optional[int] = None,
     workspace_id: Optional[str] = None,
+    document_title: Optional[str] = None,
 ) -> dict:
     """Spec-shaped Qdrant payload. tenant_id is mandatory and every
     search query MUST filter on it to enforce isolation. ADR 0080
@@ -286,4 +287,10 @@ def build_payload(
         # link to the doc detail page. Optional to keep older callers
         # (and the unit tests in test_chunker_sections.py) working.
         payload["workspace_id"] = workspace_id
+    if document_title:
+        # Baked in so retrieval can render a named citation and answer
+        # "what documents are available?" without a per-query DB lookup.
+        # workspace_query still prefers a freshly-resolved title (handles
+        # renames) and uses this as the fallback.
+        payload["document_title"] = document_title
     return payload

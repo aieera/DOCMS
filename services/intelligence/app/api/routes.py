@@ -708,6 +708,16 @@ async def rag_query_endpoint(
         tenant_id=tenant, user_id=user_id, workspace_id=body.workspace_id,
     )
 
+    # Resolve titles for the accessible docs so workspace_query can put
+    # them into the LLM context + citations. Retrieval is filtered to
+    # `allowed`, so retrieved chunks are always a subset — this covers
+    # every doc that can appear in a citation. Done here (on the event
+    # loop) because workspace_query runs in a thread executor where the
+    # asyncpg pool isn't safe to touch.
+    doc_titles = await rag_persist.get_document_titles(
+        tenant_id=tenant, doc_ids=allowed,
+    )
+
     chosen_model = body.model or settings_row["answer_model"]
 
     loop = asyncio.get_running_loop()
@@ -720,6 +730,7 @@ async def rag_query_endpoint(
             question=question,
             workspace_id=body.workspace_id,
             allowed_doc_ids=allowed,
+            doc_titles=doc_titles,
             model=chosen_model,
         ),
     )

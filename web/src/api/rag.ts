@@ -2,6 +2,7 @@ import { api } from './client'
 
 export interface RAGCitation {
   doc_id: string
+  document_title: string | null
   workspace_id: string | null
   page: number | null
   chunk_id: number | null

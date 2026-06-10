@@ -305,7 +305,12 @@ function CitationsList({ citations }: { citations: RAGCitation[] }) {
       <ul className="space-y-3" data-testid="ask-citations-list">
         {citations.map((c, i) => {
           const n = citationIndex.get(c.doc_id) ?? i + 1
-          const label = c.section_path ?? (c.page != null ? `Page ${c.page}` : `Source ${n}`)
+          // Lead with the document title so every source reads
+          // consistently ("Raabyt Partner Program Guide · page 7")
+          // instead of a bare "Page 1" when section_path is absent.
+          const label = c.document_title ?? c.section_path ?? `Source ${n}`
+          const pageSuffix =
+            c.page != null ? <span className="ms-1 text-xs font-normal text-muted-foreground">· page {c.page}</span> : null
           return (
             <li key={`${c.doc_id}-${c.chunk_id}-${i}`} className="flex flex-col gap-1 text-sm">
               {c.workspace_id ? (
@@ -316,16 +321,13 @@ function CitationsList({ citations }: { citations: RAGCitation[] }) {
                 >
                   <span className="me-1 font-mono text-xs text-muted-foreground">[{n}]</span>
                   {label}
-                  {c.page != null && c.section_path && (
-                    <span className="ms-1 text-xs font-normal text-muted-foreground">
-                      · page {c.page}
-                    </span>
-                  )}
+                  {pageSuffix}
                 </Link>
               ) : (
                 <span className="font-medium">
                   <span className="me-1 font-mono text-xs text-muted-foreground">[{n}]</span>
                   {label}
+                  {pageSuffix}
                 </span>
               )}
               <p className="text-xs text-muted-foreground">{c.snippet}</p>
