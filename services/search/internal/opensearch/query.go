@@ -335,6 +335,22 @@ func buildFilters(req *model.SearchRequest) []any {
 		filters = append(filters, map[string]any{"term": map[string]any{"custom_metadata." + k: v}})
 	}
 
+	// Hygiene: drop orphaned/empty index records — a document with no
+	// extracted content AND zero bytes is a placeholder shell (it
+	// surfaced as an "Untitled document" (0 B) hit with no snippet).
+	// Require at least one of: indexed content, or a positive size, so
+	// real documents (including binary files with no text layer) still
+	// match while empty shells are excluded.
+	filters = append(filters, map[string]any{
+		"bool": map[string]any{
+			"should": []any{
+				map[string]any{"exists": map[string]any{"field": "content"}},
+				map[string]any{"range": map[string]any{"size_bytes": map[string]any{"gt": 0}}},
+			},
+			"minimum_should_match": 1,
+		},
+	})
+
 	return filters
 }
 

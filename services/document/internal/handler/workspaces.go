@@ -6,6 +6,8 @@ package handler
 import (
 	"context"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -25,6 +27,11 @@ func (h *Handler) CreateWorkspace(ctx context.Context, req *sedocv1.CreateWorksp
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
+	// Return HTTP 201 Created to match the REST create handlers (clauses,
+	// tasks, …). grpc-gateway defaults POST responses to 200; the mux's
+	// forward-response-option (see cmd/server/main.go) turns this
+	// metadata signal into the 201 status.
+	_ = grpc.SetHeader(ctx, metadata.Pairs("x-http-code", "201"))
 	return workspaceToProto(w), nil
 }
 

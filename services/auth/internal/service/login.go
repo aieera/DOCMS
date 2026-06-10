@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/ldap"
@@ -177,6 +178,20 @@ var ErrMFAEnrollmentRequired = vdmserr.Conflict("multi-factor authentication is 
 // finishLogin completes a successful authentication by creating a session,
 // writing the audit event, and updating last_login_at — all in one TX.
 func (s *Service) finishLogin(ctx context.Context, user *model.User, method, ip, ua string) (*CreatedSession, error) {
+	// Attach the just-authenticated user (and client IP) to ctx so the
+	// outbox stamps actor_id/actor_name on the login_success audit row.
+	// At login time the request ctx has no UserInfo yet — without this
+	// the outbox falls back to actor_type="system", which is why login
+	// events were mis-attributed to "system" instead of the real user.
+	ctx = auth.WithUser(ctx, auth.UserInfo{
+		ID:       user.ID,
+		TenantID: user.TenantID,
+		Email:    user.Email,
+		Role:     string(user.Role),
+	})
+	if ip != "" {
+		ctx = auth.WithClientIP(ctx, ip)
+	}
 	var created *CreatedSession
 	err := database.WithTenantTx(ctx, s.pool, user.TenantID, func(tx pgx.Tx) error {
 		sess, err := s.createSessionInTx(ctx, tx, user, ip, ua)

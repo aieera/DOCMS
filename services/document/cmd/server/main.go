@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/config"
@@ -47,6 +49,27 @@ import (
 const serviceName = "document"
 
 var version = "dev"
+
+// httpStatusFromMetadata promotes an `x-http-code` gRPC header (set by a
+// handler via grpc.SetHeader) to the REST response status, then strips it
+// so it isn't leaked back as a Grpc-Metadata-* response header. Used so
+// gateway-backed create RPCs can return 201 like the REST handlers do.
+func httpStatusFromMetadata(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
+	md, ok := runtime.ServerMetadataFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	if vals := md.HeaderMD.Get("x-http-code"); len(vals) > 0 {
+		code, err := strconv.Atoi(vals[0])
+		if err != nil {
+			return err
+		}
+		delete(md.HeaderMD, "x-http-code")
+		w.Header().Del("Grpc-Metadata-X-Http-Code")
+		w.WriteHeader(code)
+	}
+	return nil
+}
 
 func main() {
 	cfg, err := config.Load(serviceName)
@@ -292,6 +315,12 @@ func main() {
 				DiscardUnknown: true,
 			},
 		}),
+		// Let handlers override the default HTTP 200 for create RPCs.
+		// A handler sets `x-http-code` in gRPC header metadata (e.g.
+		// CreateWorkspace → 201) and this option promotes it to the REST
+		// status, keeping the gateway-backed creates consistent with the
+		// hand-written REST handlers that already return 201.
+		runtime.WithForwardResponseOption(httpStatusFromMetadata),
 	)
 
 	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
