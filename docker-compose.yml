@@ -491,7 +491,7 @@ services:
     volumes:
       - clamdata:/var/lib/clamav
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/3310'"]
+      test: ["CMD", "clamdcheck.sh"]
       interval: 15s
       timeout: 3s
       retries: 20
