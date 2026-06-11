@@ -88,6 +88,7 @@ export default defineConfig(({ command, mode }) => {
     include: ['urql', '@urql/exchange-persisted', 'graphql'],
   },
   server: {
+     host: true,   // or '0.0.0.0'
     port: 3000,
     // Two modes:
     //   1. Gateway mode (default in compose-only deploys) — VITE_GATEWAY_URL
