@@ -1,8 +1,8 @@
 // NER REST endpoints (ADR 0078).
 //
-//   GET  /api/v1/documents/{id}/entities
-//   POST /api/v1/documents/{id}/entities/correct
-//   GET  /api/v1/documents/{id}/entities/corrections
+//	GET  /api/v1/documents/{id}/entities
+//	POST /api/v1/documents/{id}/entities/correct
+//	GET  /api/v1/documents/{id}/entities/corrections
 package handler
 
 import (
@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -245,6 +246,14 @@ func (h *NERHandler) upsertConfig(w http.ResponseWriter, r *http.Request) {
 	var body nerConfigBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	// ADR 0095 — gate *enabling* LLM NER on the intel_llm license feature.
+	// Disabling or editing other fields stays open so a tenant that loses
+	// the feature can still turn it off. Unlicensed-dev passes (HasFeature
+	// returns true on nil claims), so local/CI workflows don't regress.
+	if body.Enabled != nil && *body.Enabled && !license.Current().HasFeature("intel_llm") {
+		writeErr(w, r, vdmserr.Forbidden("the intel_llm feature is not included in your license"))
 		return
 	}
 	c, err := h.svc.UpsertNERConfig(ctx, repository.NERConfigPatch{

@@ -28,6 +28,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/events"
 	"github.com/aieera/sedoc/pkg/health"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 
@@ -58,6 +59,17 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// ADR 0095 — license validation. Init reads SEDOC_LICENSE_JWT (or
+	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
+	// public key bundled in pkg/license/dev_pubkey.go, and caches the parsed
+	// claims for license.Current() readers. Absent license is OK
+	// (unlicensed_dev_mode); a present-but-invalid license is fatal, and
+	// SEDOC_REQUIRE_LICENSE=true escalates absence to fatal too.
+	if err := license.Init(); err != nil {
+		log.Fatal(ctx).Err(err).Msg("license init")
+	}
+	license.StartReloader(ctx)
 
 	// ---- Dependencies ------------------------------------------------------
 
