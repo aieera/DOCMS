@@ -226,6 +226,12 @@ export function readErrorMessage(err: unknown): string | null {
   if (data && typeof data === 'object') {
     const d = data as Record<string, unknown>
     if (typeof d.error === 'string') return d.error
+    // License middleware envelope (pkg/middleware/license.go):
+    // { error: { code, message } } — nested object, not a string.
+    if (d.error && typeof d.error === 'object') {
+      const ne = d.error as { code?: string; message?: string }
+      if (typeof ne.message === 'string') return ne.message
+    }
     if (typeof d.message === 'string') return d.message
     if (typeof d.detail === 'string') return d.detail
     if (Array.isArray(d.field_errors) && d.field_errors.length > 0) {
@@ -249,6 +255,12 @@ api.interceptors.response.use(
       window.location.href = '/login'
     } else if (status === 403) {
       toast.error(detail ? `Access denied — ${detail}` : 'Access denied')
+    } else if (status === 402) {
+      // ADR 0095 RequireLicenseFeature — feature not in the license.
+      toast.error(detail ?? 'This feature is not included in your license.')
+    } else if (status === 423) {
+      // ADR 0095 LicenseWriteGate — grace/expired license locks writes.
+      toast.error(detail ?? 'License expired — writes are locked. Renew to restore write access.')
     } else if (status === 429) {
       toast.error('Rate limited — try again in a moment')
     } else if (status && status >= 500) {
