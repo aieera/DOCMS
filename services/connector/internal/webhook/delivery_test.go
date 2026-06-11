@@ -57,7 +57,7 @@ func TestSignPayload_ChangesWithSecret(t *testing.T) {
 }
 
 func TestValidateURL_RejectsNonHTTPS(t *testing.T) {
-	err := ValidateURL("http://example.com/hook")
+	err := ValidateURL("http://example.com/hook", false)
 	if err == nil {
 		t.Fatal("plain http must be rejected")
 	}
@@ -69,8 +69,30 @@ func TestValidateURL_RejectsNonHTTPS(t *testing.T) {
 func TestValidateURL_RejectsMalformed(t *testing.T) {
 	// url.Parse is lenient — an invalid URL is mostly a scheme-less string.
 	// Anything without https should fail the https check.
-	err := ValidateURL("not-a-url")
+	err := ValidateURL("not-a-url", false)
 	if err == nil {
 		t.Fatal("malformed URL must be rejected")
+	}
+}
+
+func TestValidateURL_AllowPrivateWaivesHTTPSAndPrivateIPChecks(t *testing.T) {
+	// On-prem mode (SEDOC_WEBHOOK_ALLOW_PRIVATE): a plain-http private-IP
+	// target must pass the scheme + private-IP guards. We can't assert the
+	// HEAD reachability succeeds (no live server in a unit test), so assert
+	// only that failure — if any — is the reachability check, never the
+	// https/private-IP guard the flag is meant to waive.
+	err := ValidateURL("http://192.168.70.79:8080/", true)
+	if err != nil {
+		if strings.Contains(err.Error(), "https") || strings.Contains(err.Error(), "internal IP") {
+			t.Fatalf("allowPrivate must waive https + private-IP checks, got: %v", err)
+		}
+	}
+}
+
+func TestValidateURL_RejectsNonHTTPSchemeEvenWithAllowPrivate(t *testing.T) {
+	// allowPrivate only widens to http — exotic schemes stay rejected.
+	err := ValidateURL("ftp://192.168.70.79/hook", true)
+	if err == nil {
+		t.Fatal("non-http(s) scheme must be rejected even with allowPrivate")
 	}
 }

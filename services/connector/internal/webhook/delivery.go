@@ -142,12 +142,19 @@ func (w *DeliveryWorker) deliver(ctx context.Context, d *model.WebhookDelivery) 
 
 // ValidateURL checks that a webhook URL is external (no internal IPs) and
 // reachable. Returns an error if validation fails.
-func ValidateURL(rawURL string) error {
+//
+// allowPrivate relaxes the SSRF guard for self-hosted / on-prem deployments
+// (cfg.WebhookAllowPrivateTargets): when true the URL may use plain http and
+// may resolve to a private/loopback/link-local address — appropriate when the
+// receiver lives on a trusted internal network (e.g. an internal ERP on a
+// LAN). The DNS-resolvability and HEAD reachability checks always run, and the
+// HMAC signature still authenticates every delivery regardless of this flag.
+func ValidateURL(rawURL string, allowPrivate bool) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid url: %w", err)
 	}
-	if u.Scheme != "https" {
+	if u.Scheme != "https" && !(allowPrivate && u.Scheme == "http") {
 		return fmt.Errorf("url must use https")
 	}
 	host := u.Hostname()
@@ -155,9 +162,11 @@ func ValidateURL(rawURL string) error {
 	if err != nil {
 		return fmt.Errorf("dns lookup failed: %w", err)
 	}
-	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-			return fmt.Errorf("url resolves to internal IP %s", ip)
+	if !allowPrivate {
+		for _, ip := range ips {
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+				return fmt.Errorf("url resolves to internal IP %s", ip)
+			}
 		}
 	}
 	// HEAD check to verify reachability.

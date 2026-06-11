@@ -69,7 +69,7 @@ func main() {
 	defer nc.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(service.Config{Repo: repo, Logger: *log.Z()})
+	svc := service.New(service.Config{Repo: repo, Logger: *log.Z(), AllowPrivateWebhookTargets: cfg.WebhookAllowPrivateTargets})
 
 	// Native connector wiring (ADR 0089). Sealing key and state-HMAC
 	// secret are both derived from SEDOC_LOCAL_KEK with distinct

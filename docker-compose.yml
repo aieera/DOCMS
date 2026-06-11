@@ -890,7 +890,14 @@ services:
       dockerfile: build/Dockerfile.go-service
       args: { SERVICE: connector }
     container_name: sedoc-connector
-    environment: *go-env
+    environment:
+      # On-prem: allow outbound webhooks to plain-http / private-IP
+      # receivers (e.g. an internal ERP on the LAN). Waives the https +
+      # public-IP SSRF guard in connector ValidateURL; HMAC signing still
+      # authenticates every delivery. Leave unset (public-SaaS default)
+      # to enforce https + public IPs.
+      <<: *go-env
+      SEDOC_WEBHOOK_ALLOW_PRIVATE: "true"
     ports: ["8092:8081", "9100:9090", "8190:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck

@@ -110,6 +110,18 @@ type Config struct {
 	// SEDOC-prefixed — follows Stripe convention).
 	StripeWebhookSecret string `mapstructure:"stripe_webhook_secret"`
 
+	// WebhookAllowPrivateTargets relaxes the connector's outbound-webhook
+	// URL guard (ValidateURL) so a subscription may target a plain-http
+	// and/or private/loopback/link-local address. The default (false)
+	// enforces https + public-IP-only, which is correct for a public
+	// multi-tenant SaaS (SSRF defence). Set true ONLY on self-hosted /
+	// on-prem deployments where the webhook receiver legitimately lives on
+	// a trusted private network (e.g. an internal ERP on a LAN). The HMAC
+	// signature still authenticates every delivery; this flag only waives
+	// the transport-level https + private-IP checks. Env:
+	// SEDOC_WEBHOOK_ALLOW_PRIVATE.
+	WebhookAllowPrivateTargets bool `mapstructure:"webhook_allow_private_targets"`
+
 	// ---- SMTP (Wave 12.1) -------------------------------------------------
 	// SMTPHost + SMTPPort + creds point at the outbound mail relay
 	// the notification service uses for transactional emails
@@ -224,6 +236,7 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("audit_service_addr", "AUDIT_SERVICE_ADDR")
 	_ = v.BindEnv("auth_service_addr", "AUTH_SERVICE_ADDR")
 	_ = v.BindEnv("stripe_webhook_secret", "STRIPE_WEBHOOK_SECRET")
+	_ = v.BindEnv("webhook_allow_private_targets", "SEDOC_WEBHOOK_ALLOW_PRIVATE")
 	_ = v.BindEnv("clamav_addr", "CLAMAV_ADDR")
 	_ = v.BindEnv("temporal_addr", "TEMPORAL_ADDR")
 	_ = v.BindEnv("opensearch_url", "OPENSEARCH_URL")

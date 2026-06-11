@@ -35,6 +35,11 @@ type Service struct {
 	// and later Salesforce/M365 pulls). Nil disables import actions —
 	// SetIngestClient wires it from main.go when storage is reachable.
 	ingest *ingest.Client
+	// allowPrivateWebhooks relaxes the outbound-webhook URL guard for
+	// on-prem deployments (cfg.WebhookAllowPrivateTargets) — permits
+	// http/private-IP receivers. Default false keeps the https + public-IP
+	// SSRF guard.
+	allowPrivateWebhooks bool
 }
 
 // SetIngestClient wires the server-side ingest path used by Drive
@@ -57,18 +62,22 @@ func (s *Service) kick() {
 type Config struct {
 	Repo   *repository.Repository
 	Logger zerolog.Logger
+	// AllowPrivateWebhookTargets relaxes the webhook URL SSRF guard for
+	// self-hosted/on-prem deployments. Sourced from
+	// cfg.WebhookAllowPrivateTargets (env SEDOC_WEBHOOK_ALLOW_PRIVATE).
+	AllowPrivateWebhookTargets bool
 }
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	return &Service{repo: cfg.Repo, log: cfg.Logger}
+	return &Service{repo: cfg.Repo, log: cfg.Logger, allowPrivateWebhooks: cfg.AllowPrivateWebhookTargets}
 }
 
 // ---- Webhook CRUD ---------------------------------------------------------
 
 // CreateWebhook validates the URL, generates an HMAC secret, and persists.
 func (s *Service) CreateWebhook(ctx context.Context, tenantID, userID, url string, events []string) (*model.WebhookSubscription, error) {
-	if err := webhook.ValidateURL(url); err != nil {
+	if err := webhook.ValidateURL(url, s.allowPrivateWebhooks); err != nil {
 		return nil, err
 	}
 	wh := &model.WebhookSubscription{
