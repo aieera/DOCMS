@@ -12,11 +12,11 @@ package license
 // private key. ADR 0095 § Open questions discusses an alternative
 // remote-fetched key endpoint that would avoid the rebuild step.
 const DevPublicKeyPEM = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA26kAUgD/GGbuCWLhfnBq
-1wMOZVwtvN8+9DGFvH58ajpyvYbwZt0Yeb1LJOz1uRNWOGm4cn5069rtTPpTFOxj
-+V7DHeTr1nrBpAw8j4IHgfDRULXswC0NCWpnZSHrfAn80XYRnCy3q/rLy0OxCaxE
-llRf9deC9jC8mZfO6VBfobmbn1U86i9I6p2S/7UnRgdVHPKULQySob7JN/Ln1GPS
-43Ss6NEmKXYcRq2AFD6+UcD3wLJhkR7Gc5GFRsf7eoZae3sUTjIqY/ZZLSeeCQUr
-2l9igixeTAaayyFKQMlHudJ8Ua41tBwzIUmsQhz9p7a3kiaIiDHPID5JJyiiMtFc
-lwIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwugRyfET5avj6CxRpbwl
+M8W57R8ryaNLVTASrhYK5JMvVgdtQQebmnHuP3xcOWAVu4MR4fdYjFPl7AIvzGGk
+7a+DZxxVM383a7Yc8q/yngRrOaEu5uuW1fC5lMwFD4ecU9G1Ytscpe1+5a3IyS4a
+bSeuIzaAyg96h37s/Lzs5LO5h82wX3Kywl8pQ91xtfK30GQL1geniRHEoBfhLJPo
+cQE+NGARWZYuEVt9JsxEJ5qEfWQBXiHLsGBY3KeUa/pijXRWhdt4nt6cELwEIc6E
+y/DnckOcqpmajkn69xN6TD0d6zQZOtrzfY90uGeZWnqETrSIn/cqG2CeoJysvKiD
+BwIDAQAB
 -----END PUBLIC KEY-----`
