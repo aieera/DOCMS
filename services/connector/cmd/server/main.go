@@ -193,7 +193,11 @@ func main() {
 	// ---- HTTP REST -------------------------------------------------------
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
-	h.Register(mux)
+	// Webhook management accepts EITHER the admin-UI session cookie OR a
+	// Bearer vdms_ API key carrying webhooks:manage — the latter is what
+	// an external integrator (e.g. the ERP's boot-time subscription
+	// bootstrap, docs/integrations/erp-integration.md) authenticates with.
+	h.Register(mux, middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "webhooks:manage"))
 	esHandler.Register(mux)
 	emailHandler.Register(mux)
 	intakeHandler.Register(mux)

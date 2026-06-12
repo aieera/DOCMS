@@ -58,20 +58,24 @@ and policy checks behave identically regardless of which path ran.
 | `documents:write` | create document, create version, create folder |
 | `documents:read` | read a document, list folders |
 | `integrations:read` | poll the iPaaS/reconcile trigger feed |
+| `webhooks:manage` | create/list/delete subscriptions, rotate secret, test-send, redeliver |
 
 Issue **one key per tenant** carrying the union of scopes the ERP needs
-(`upload`, `documents:read`, `documents:write`, `integrations:read`). Keys are tenant-scoped:
-a key can only ever touch its own tenant's data (Postgres RLS fails closed otherwise).
+(`upload`, `documents:read`, `documents:write`, `integrations:read`, `webhooks:manage`).
+Keys are tenant-scoped: a key can only ever touch its own tenant's data (Postgres RLS
+fails closed otherwise).
 
 > The key is a bearer secret. Store it in the ERP's secret store / env, never in source or
 > chat. Rotate by issuing a new key and retiring the old one.
 
-### 2.2 Session cookies (webhook management)
+### 2.2 Webhook management auth (session OR API key)
 
-The webhook **management** endpoints (`/api/v1/webhooks…`, §4.1) are part of the admin/web
-surface and authenticate with a session cookie, not an API key. In practice these are driven
-from the SeDoc admin UI or an authenticated admin session — they create the subscription
-the ERP later receives deliveries on.
+The webhook **management** endpoints (`/api/v1/webhooks…`, §4.1) accept **either** the
+admin-UI session cookie **or** a Bearer `vdms_` API key carrying the `webhooks:manage`
+scope (`SessionOrAPIKey` on the connector routes). This means the ERP can manage its own
+subscription programmatically — e.g. a boot-time `ensureDmsSubscription` that checks for an
+existing subscription and creates one if missing — using the same API key it pushes
+documents with, as long as that key includes `webhooks:manage`.
 
 ### 2.3 Gateway
 
@@ -178,7 +182,7 @@ its current `lifecycle_state`.
 > **Note — version count.** A SeDoc document has no `version_count` field (only
 > `current_version_id`). The ERP must maintain its own count by tallying
 > `dms.version.uploaded.v1` events, or by listing versions. Don't expect to read a count from
-> a single document GET. (See §6.)
+> a single document GET. (See §7.)
 
 ### 3.5 Deep link — "Open in DMS"
 
@@ -191,7 +195,7 @@ The canonical document URL in the SeDoc web UI is a **path**, not query params:
 (route [web/.../workspaces/$workspaceId/documents/$documentId.tsx](../../web/src/routes/_authenticated/workspaces/$workspaceId/documents/$documentId.tsx)).
 
 Build the ERP's "Open in DMS" link with this template. A `?folder=…&doc=…` query form does
-**not** resolve to the document — it lands on the workspace index. (See §6.)
+**not** resolve to the document — it lands on the workspace index. (See §7.)
 
 ---
 
@@ -228,8 +232,15 @@ Routes: [handler.go:52-58](../../services/connector/internal/handler/handler.go#
 - Must pass a `HEAD` reachability check.
 
 > This means you cannot register `http://localhost:…` for local testing. Use a public HTTPS
-> tunnel (e.g. ngrok) or a deployed receiver. This is the open item from the connector work:
-> real subscription creation needs a public HTTPS endpoint.
+> tunnel (e.g. ngrok) or a deployed receiver.
+
+**On-prem / self-hosted exception.** Deployments where the receiver legitimately lives on a
+trusted private network (e.g. an internal ERP on the same LAN) can set
+`SEDOC_WEBHOOK_ALLOW_PRIVATE=true` on the connector service
+(`cfg.WebhookAllowPrivateTargets`). That waives the `https` + public-IP checks for
+subscription URLs — plain `http://192.168.…` targets register and deliver. The DNS and
+`HEAD` reachability checks still run, and every delivery is still HMAC-signed (§4.3), so
+receivers remain authenticated. Leave the flag unset on public multi-tenant deployments.
 
 ### 4.2 Delivery format
 
@@ -334,7 +345,52 @@ so all four reach subscribers.
 
 ---
 
-## 5. End-to-end verification
+## 5. License enforcement (HTTP 402 / 423)
+
+SeDoc enforces a deployment license (ADR 0095, a signed JWT in `SEDOC_LICENSE_JWT`).
+Two gates sit directly on the integration surface, so the ERP **will** encounter these
+status codes and must handle them distinctly from auth failures:
+
+| Status | Code in body | When | Affected endpoints |
+|---|---|---|---|
+| **402 Payment Required** | `feature_not_licensed` | the license lacks a feature flag | `GET /integrations/triggers/*` (reconcile poll) requires `feature_flags.ipaas` |
+| **423 Locked** | `license_locked` | license is in **grace** or **expired** | every mutating call (POST/PUT/PATCH/DELETE) on the document, signature, and workflow services — i.e. the entire §3.2 ingest flow |
+
+Error body shape for both:
+
+```json
+{ "error": { "code": "license_locked", "message": "License expired — writes are locked. …" } }
+```
+
+What stays open, by design:
+
+- **Reads** (GET document, list folders, download) keep working through grace/expiry so a
+  tenant can export and wind down.
+- **Webhook delivery is not license-gated.** The connector keeps fanning out events and the
+  delivery worker keeps POSTing to the ERP regardless of license state, so the ERP stays
+  consistent (deletes, state changes) even while writes are locked.
+- **Webhook management** (§4.1) is likewise ungated.
+
+**ERP handling guidance:**
+
+- On **423**: pause the outbound push queue and raise an operator alert ("DMS license
+  expired — sync paused"). Do **not** retry-storm or mark sync rows permanently failed —
+  the push succeeds unchanged once the license is renewed. Keep consuming inbound webhooks.
+- On **402**: alert as a configuration/licensing error and stop polling that endpoint —
+  retries can never succeed until the license adds the `ipaas` feature. The rest of the
+  integration (push + webhooks) continues to work without it.
+- Treat both as distinct from **401** (bad/revoked API key) in the sync log and dashboards.
+
+**License prerequisite for this integration:** the deployment's license must include
+`feature_flags.ipaas` for the reconcile poll (§3.4). Verify with a quick
+`GET /api/v1/integrations/triggers/documents?limit=1` — a 402 means the license needs
+regenerating with `--features …,ipaas` (`cmd/license-gen`), not a code problem. The `esign`
+flag gates only the third-party e-sign vendor routes; `dms.signature.completed.v1` events
+themselves are not feature-gated.
+
+---
+
+## 6. End-to-end verification
 
 A minimal smoke test exercising both directions:
 
@@ -357,7 +413,7 @@ A minimal smoke test exercising both directions:
 
 ---
 
-## 6. Configuring the integration in the SeDoc web UI
+## 7. Configuring the integration in the SeDoc web UI
 
 Everything above can be driven from the API, but a tenant admin sets most of it up from the
 SeDoc web admin. For reference, the relevant screens:
@@ -391,7 +447,7 @@ SeDoc web admin. For reference, the relevant screens:
 
 ---
 
-## 7. Known gaps / contract notes for the ERP side
+## 8. Known gaps / contract notes for the ERP side
 
 These are fixed in the **ERP repository**, not SeDoc — but they are contract decisions
 SeDoc dictates:
@@ -405,7 +461,7 @@ SeDoc dictates:
 
 ---
 
-## 8. Reference
+## 9. Reference
 
 - Dual-auth middleware: [pkg/middleware/session_or_apikey.go](../../pkg/middleware/session_or_apikey.go)
 - ERP ingest routes: [services/document/cmd/server/main.go:1018](../../services/document/cmd/server/main.go#L1018),

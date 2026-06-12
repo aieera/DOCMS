@@ -24,18 +24,30 @@ func New(svc *service.Service, log zerolog.Logger) *Handler {
 	return &Handler{svc: svc, log: log}
 }
 
-// Register mounts all routes.
-func (h *Handler) Register(mux *http.ServeMux) {
+// Register mounts all routes. webhookAuth optionally wraps the webhook
+// management routes with a dual-auth middleware (SessionOrAPIKey with the
+// webhooks:manage scope) so machine callers — e.g. an ERP's boot-time
+// subscription bootstrap — can manage subscriptions with a Bearer vdms_
+// key, while the admin UI keeps using its session cookie. Nil leaves the
+// routes on the mux's global auth (session only).
+func (h *Handler) Register(mux *http.ServeMux, webhookAuth func(http.Handler) http.Handler) {
 	// Wave 12.6: DSR subject-erase for connector data.
 	mux.HandleFunc("POST /internal/v1/connectors/purge-subject", h.purgeSubject)
 	// Webhooks
-	mux.HandleFunc("POST /api/v1/webhooks", h.createWebhook)
-	mux.HandleFunc("GET /api/v1/webhooks", h.listWebhooks)
-	mux.HandleFunc("DELETE /api/v1/webhooks/{id}", h.deleteWebhook)
-	mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", h.getDeliveryLog)
-	mux.HandleFunc("POST /api/v1/webhooks/{id}/rotate-secret", h.rotateSecret)
-	mux.HandleFunc("POST /api/v1/webhooks/{id}/test", h.testWebhook)
-	mux.HandleFunc("POST /api/v1/webhooks/{id}/deliveries/{deliveryId}/redeliver", h.redeliverDelivery)
+	wh := func(pattern string, fn http.HandlerFunc) {
+		if webhookAuth != nil {
+			mux.Handle(pattern, webhookAuth(fn))
+			return
+		}
+		mux.HandleFunc(pattern, fn)
+	}
+	wh("POST /api/v1/webhooks", h.createWebhook)
+	wh("GET /api/v1/webhooks", h.listWebhooks)
+	wh("DELETE /api/v1/webhooks/{id}", h.deleteWebhook)
+	wh("GET /api/v1/webhooks/{id}/deliveries", h.getDeliveryLog)
+	wh("POST /api/v1/webhooks/{id}/rotate-secret", h.rotateSecret)
+	wh("POST /api/v1/webhooks/{id}/test", h.testWebhook)
+	wh("POST /api/v1/webhooks/{id}/deliveries/{deliveryId}/redeliver", h.redeliverDelivery)
 	// Connectors
 	mux.HandleFunc("GET /api/v1/connectors", h.listConnectors)
 	mux.HandleFunc("GET /api/v1/connectors/{provider}", h.getConnector)
