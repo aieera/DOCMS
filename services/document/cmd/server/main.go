@@ -264,6 +264,11 @@ func main() {
 		middleware.RequestLogInterceptor(log),
 	))
 	sedocv1.RegisterDocumentServiceServer(grpcSrv, docHandler)
+	// CollaborationService (read side) — comments + annotations live in
+	// this service; the graphql-gateway resolves DocumentDetail's
+	// comments/annotations fields through this server. The Node Yjs
+	// process never speaks gRPC. See internal/handler/collab_grpc.go.
+	sedocv1.RegisterCollaborationServiceServer(grpcSrv, handler.NewCollabGRPC(svc))
 
 	// ADR 0075 — bulk import + export. Lives in the document service
 	// because workspaces, folders, and documents are document-owned.

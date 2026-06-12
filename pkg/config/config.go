@@ -370,7 +370,13 @@ func setDefaults(v *viper.Viper, serviceName string) {
 	v.SetDefault("storage_service_addr", "storage:9090")
 	v.SetDefault("document_service_addr", "document:9090")
 	v.SetDefault("workflow_service_addr", "workflow:9090")
-	v.SetDefault("collaboration_service_addr", "collaboration:9090")
+	// CollaborationService gRPC is served by the DOCUMENT service
+	// (comments + annotations live there; see its collab_grpc.go). The
+	// Node collaboration/Yjs process is WebSocket-only (:8083) and has
+	// never exposed :9090 — the old "collaboration:9090" default made
+	// the gateway's comments/annotations resolvers dial a port nothing
+	// listens on.
+	v.SetDefault("collaboration_service_addr", "document:9090")
 	v.SetDefault("audit_service_addr", "audit:9090")
 	v.SetDefault("auth_service_addr", "auth:9090")
 	v.SetDefault("clamav_addr", "clamav:3310")

@@ -60,6 +60,9 @@ x-go-env: &go-env
   DOCUMENT_SERVICE_ADDR:  "document:9090"
   AUDIT_SERVICE_ADDR:     "audit:9090"
   WORKFLOW_SERVICE_ADDR:  "workflow:9090"
+  # CollaborationService gRPC (comments/annotations) is served by the
+  # DOCUMENT service — the Node Yjs container is WebSocket-only.
+  COLLABORATION_SERVICE_ADDR: "document:9090"
   SEDOC_ENV:          "development"
   # ADR 0110 — cluster region. Echoed in /healthz so the Residency
   # admin page can confirm which region a service is serving. Without
