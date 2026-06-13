@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"github.com/aieera/sedoc/pkg/auth"
 	"net/http"
 )
 
@@ -17,14 +18,14 @@ func (h *Handler) RegisterSeal(mux *http.ServeMux) {
 }
 
 func (h *Handler) sealVersion(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusUnauthorized, "missing tenant")
 		return
 	}
 	// The sealing actor (the workflow initiator / ops user). Storage requires a
 	// non-nil user_id; the OPA admin rule still authorizes via the role on ctx.
-	userID := r.Header.Get("X-User-ID")
+	userID := auth.UserIDString(r)
 	var body struct {
 		DocumentID string `json:"document_id"`
 		VersionID  string `json:"version_id"`

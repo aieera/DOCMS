@@ -97,41 +97,41 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 // ---- search ---------------------------------------------------------------
 
 type searchRequestBody struct {
-	Query      string            `json:"query"`
-	Filters    filtersBody       `json:"filters"`
-	Facets     []string          `json:"facets"`
-	SortBy     string            `json:"sort_by"`
-	SortOrder  string            `json:"sort_order"`
-	PageSize   int               `json:"page_size"`
-	PageToken  string            `json:"page_token"`
-	SearchMode string            `json:"search_mode"`
-	Highlight  bool              `json:"highlight"`
-	Explain    bool              `json:"explain"`
+	Query      string      `json:"query"`
+	Filters    filtersBody `json:"filters"`
+	Facets     []string    `json:"facets"`
+	SortBy     string      `json:"sort_by"`
+	SortOrder  string      `json:"sort_order"`
+	PageSize   int         `json:"page_size"`
+	PageToken  string      `json:"page_token"`
+	SearchMode string      `json:"search_mode"`
+	Highlight  bool        `json:"highlight"`
+	Explain    bool        `json:"explain"`
 	// ADR 0083 — share-link follower path. In production this should
 	// come from a gateway-injected header rather than a free-text
 	// POST body field; allowed here for development + integration
 	// testing. The model.SearchRequest field threads it into the
 	// share_tokens query clause.
-	ShareToken string            `json:"share_token,omitempty"`
+	ShareToken string `json:"share_token,omitempty"`
 }
 
 type filtersBody struct {
-	WorkspaceID    string            `json:"workspace_id"`
-	FolderID       string            `json:"folder_id"`
-	DocumentClass  []string          `json:"document_class"`
-	LifecycleState []string          `json:"lifecycle_state"`
-	Tags           []string          `json:"tags"`
-	CreatedAfter   string            `json:"created_after"`
-	CreatedBefore  string            `json:"created_before"`
-	MimeType       []string          `json:"mime_type"`
-	SizeMinBytes   *int64            `json:"size_min_bytes"`
-	SizeMaxBytes   *int64            `json:"size_max_bytes"`
-	CreatedBy      string            `json:"created_by"`
+	WorkspaceID    string   `json:"workspace_id"`
+	FolderID       string   `json:"folder_id"`
+	DocumentClass  []string `json:"document_class"`
+	LifecycleState []string `json:"lifecycle_state"`
+	Tags           []string `json:"tags"`
+	CreatedAfter   string   `json:"created_after"`
+	CreatedBefore  string   `json:"created_before"`
+	MimeType       []string `json:"mime_type"`
+	SizeMinBytes   *int64   `json:"size_min_bytes"`
+	SizeMaxBytes   *int64   `json:"size_max_bytes"`
+	CreatedBy      string   `json:"created_by"`
 	// Sidebar "Author" facet filter — display-name set, multi-valued.
 	// Mirrors model.SearchFilters.CreatedByName. Was missing from this
 	// struct, so the JSON decoder silently dropped the key and Author
 	// filtering was a no-op end-to-end.
-	CreatedByName  []string          `json:"created_by_name"`
+	CreatedByName []string `json:"created_by_name"`
 	// Residency-region filter. Same story as CreatedByName — the
 	// model has it, the wire body had to be added.
 	RegionPin      []string          `json:"region_pin"`

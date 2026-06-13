@@ -4,16 +4,24 @@ package handler
 import (
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func TestParseURL_BasicQueryAndFacets(t *testing.T) {
+	// Identity is read from the request context (populated by the
+	// IdentityHeadersHTTP / SessionAuth middleware in prod), not from
+	// raw headers — so seed the context the way the middleware would.
+	tid, uid := uuid.New(), uuid.New()
 	r := httptest.NewRequest("GET",
 		"/api/v1/search?q=contract&facet=tag,author", nil)
-	r.Header.Set("X-Auth-Tenant-ID", "t1")
-	r.Header.Set("X-User-ID", "u1")
+	r = r.WithContext(auth.WithUser(auth.SetTenantID(r.Context(), tid),
+		auth.UserInfo{ID: uid, TenantID: tid}))
 	req := parseSearchRequestFromURL(r)
 
-	if req.TenantID != "t1" || req.UserID != "u1" {
+	if req.TenantID != tid.String() || req.UserID != uid.String() {
 		t.Errorf("identity: tenant=%s user=%s", req.TenantID, req.UserID)
 	}
 	if req.Query != "contract" {

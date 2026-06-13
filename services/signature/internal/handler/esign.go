@@ -1,12 +1,12 @@
 // ADR 0071 — handler routes for DocuSign / Adobe Sign connectors.
 //
-//   POST /api/v1/signatures/esign/send                 send via vendor
-//   GET  /api/v1/signatures/esign/connections          list tenant's connections
-//   POST /api/v1/signatures/esign/oauth/start          {provider}    → 302 to vendor
-//   GET  /api/v1/signatures/esign/oauth/callback       vendor redirects here
-//   POST /api/v1/signatures/esign/disconnect           {provider}
-//   GET  /api/v1/signatures/esign/envelopes            in-progress envelope status tab
-//   POST /api/v1/signatures/esign/webhook/{provider}   vendor → us
+//	POST /api/v1/signatures/esign/send                 send via vendor
+//	GET  /api/v1/signatures/esign/connections          list tenant's connections
+//	POST /api/v1/signatures/esign/oauth/start          {provider}    → 302 to vendor
+//	GET  /api/v1/signatures/esign/oauth/callback       vendor redirects here
+//	POST /api/v1/signatures/esign/disconnect           {provider}
+//	GET  /api/v1/signatures/esign/envelopes            in-progress envelope status tab
+//	POST /api/v1/signatures/esign/webhook/{provider}   vendor → us
 package handler
 
 import (
@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/esign"
 	"github.com/aieera/sedoc/services/signature/internal/service"
 )
@@ -50,18 +51,18 @@ type esignRoutes struct {
 // ----- Send --------------------------------------------------------
 
 type sendBody struct {
-	RequestID  string             `json:"request_id"`
-	Provider   esign.Provider     `json:"provider"`
-	DocumentName string           `json:"document_name"`
-	DocumentBytesB64 string       `json:"document_bytes_b64"`
-	Recipients []esign.Recipient  `json:"recipients"`
-	Subject    string             `json:"subject"`
-	Message    string             `json:"message"`
-	ReturnURL  string             `json:"return_url"`
+	RequestID        string            `json:"request_id"`
+	Provider         esign.Provider    `json:"provider"`
+	DocumentName     string            `json:"document_name"`
+	DocumentBytesB64 string            `json:"document_bytes_b64"`
+	Recipients       []esign.Recipient `json:"recipients"`
+	Subject          string            `json:"subject"`
+	Message          string            `json:"message"`
+	ReturnURL        string            `json:"return_url"`
 }
 
 func (e *esignRoutes) send(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -125,7 +126,7 @@ func deriveTokenStatus(expiresAt time.Time) string {
 }
 
 func (e *esignRoutes) connections(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		// Reload-race protection: the FE's axios interceptor stages
 		// requests behind /auth/me hydration, but a stale 500 from
@@ -143,7 +144,7 @@ func (e *esignRoutes) connections(w http.ResponseWriter, r *http.Request) {
 	for _, t := range rows {
 		out = append(out, connectionRow{
 			Provider: t.Provider, AccountID: t.AccountID, BaseURI: t.BaseURI,
-			Scope: t.Scope,
+			Scope:       t.Scope,
 			ConnectedAt: t.ConnectedAt.Format(time.RFC3339),
 			ExpiresAt:   t.ExpiresAt.Format(time.RFC3339),
 			Status:      deriveTokenStatus(t.ExpiresAt),
@@ -157,7 +158,7 @@ type oauthStartBody struct {
 }
 
 func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	var b oauthStartBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -174,7 +175,7 @@ func (e *esignRoutes) oauthStart(w http.ResponseWriter, r *http.Request) {
 func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	userID := r.Header.Get("X-User-ID")
+	userID := auth.UserIDString(r)
 	if code == "" || state == "" {
 		writeError(w, http.StatusBadRequest, "code, state required")
 		return
@@ -205,7 +206,7 @@ type disconnectBody struct {
 }
 
 func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	var b disconnectBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -223,7 +224,7 @@ func (e *esignRoutes) disconnect(w http.ResponseWriter, r *http.Request) {
 // admin button in the Connections UI hits this directly; the
 // background worker calls the same service method on a 30-min tick.
 func (e *esignRoutes) refresh(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusUnauthorized, "tenant required")
 		return
@@ -256,7 +257,7 @@ func (e *esignRoutes) refresh(w http.ResponseWriter, r *http.Request) {
 // ----- Envelope status tab ----------------------------------------
 
 func (e *esignRoutes) envelopes(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusUnauthorized, "tenant required")
 		return
@@ -314,8 +315,8 @@ type putProviderConfigBody struct {
 }
 
 func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -340,7 +341,7 @@ func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) 
 }
 
 func (e *esignRoutes) getProviderConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
@@ -359,7 +360,7 @@ func (e *esignRoutes) getProviderConfig(w http.ResponseWriter, r *http.Request) 
 }
 
 func (e *esignRoutes) deleteProviderConfig(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return

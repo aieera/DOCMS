@@ -164,7 +164,7 @@ func main() {
 			middleware.RequireLicenseFeature("ipaas")(integrationsMux))))
 	// License grace write-gate (ADR 0095): mutating requests → 423 in grace/
 	// expired; reads pass. No-op when active/unlicensed-dev.
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.LicenseWriteGate(mux)), ReadHeaderTimeout: 5 * time.Second}
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(middleware.LicenseWriteGate(mux))), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -1,10 +1,10 @@
 // ADR 0064 — HTTP surface for tenant-wide delegations and recall.
 //
-//   POST   /api/v1/workflows/delegations            — create
-//   GET    /api/v1/workflows/delegations            — list mine
-//   DELETE /api/v1/workflows/delegations/{id}       — revoke
-//   POST   /api/v1/workflows/instances/{id}/recall  — initiator-only,
-//                                                     gated by approver-acted check
+//	POST   /api/v1/workflows/delegations            — create
+//	GET    /api/v1/workflows/delegations            — list mine
+//	DELETE /api/v1/workflows/delegations/{id}       — revoke
+//	POST   /api/v1/workflows/instances/{id}/recall  — initiator-only,
+//	                                                  gated by approver-acted check
 //
 // The cancel route stays as the admin override and audits as
 // "cancel"; recall audits as "recall" with the gate.
@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/workflow/internal/repository"
 	"github.com/aieera/sedoc/services/workflow/internal/service"
 )
@@ -24,8 +25,8 @@ import (
 // existing Register call. Caller is responsible for chaining this
 // after the main mux registration.
 func (h *Handler) RegisterRoutingPatterns(mux *http.ServeMux) {
-	mux.HandleFunc("POST   /api/v1/workflows/delegations",      h.createDelegation)
-	mux.HandleFunc("GET    /api/v1/workflows/delegations",      h.listDelegations)
+	mux.HandleFunc("POST   /api/v1/workflows/delegations", h.createDelegation)
+	mux.HandleFunc("GET    /api/v1/workflows/delegations", h.listDelegations)
 	mux.HandleFunc("DELETE /api/v1/workflows/delegations/{id}", h.revokeDelegation)
 	mux.HandleFunc("POST   /api/v1/workflows/instances/{id}/recall", h.recallInstance)
 }
@@ -39,9 +40,9 @@ type createDelegationBody struct {
 }
 
 func (h *Handler) createDelegation(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID   := r.Header.Get("X-User-ID")
-	role     := r.Header.Get("X-User-Role")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
+	role := auth.RoleString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
 		return
@@ -69,8 +70,8 @@ func (h *Handler) createDelegation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listDelegations(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID   := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
 		return
@@ -87,10 +88,10 @@ func (h *Handler) listDelegations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) revokeDelegation(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID   := r.Header.Get("X-User-ID")
-	role     := r.Header.Get("X-User-Role")
-	id       := r.PathValue("id")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
+	role := auth.RoleString(r)
+	id := r.PathValue("id")
 	if tenantID == "" || userID == "" || id == "" {
 		writeError(w, http.StatusBadRequest, "missing identity headers or id")
 		return
@@ -103,9 +104,9 @@ func (h *Handler) revokeDelegation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) recallInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID   := r.Header.Get("X-User-ID")
-	id       := r.PathValue("id")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
+	id := r.PathValue("id")
 	if tenantID == "" || userID == "" || id == "" {
 		writeError(w, http.StatusBadRequest, "missing identity headers or id")
 		return

@@ -2,8 +2,9 @@
 //
 // POST /api/v1/signatures/requests/{id}/in-person/sign
 // Body:
-//   { "signer_id": "...", "svg_path": "...", "device_kind": "tablet",
-//     "doc_hash_sha256": "..." }
+//
+//	{ "signer_id": "...", "svg_path": "...", "device_kind": "tablet",
+//	  "doc_hash_sha256": "..." }
 //
 // 200 → recorded; 409 with { expected_signer_id } when the caller
 // tries to sign out of order so the UI can fast-forward.
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/signature/internal/service"
 )
 
@@ -30,7 +32,7 @@ type inPersonBody struct {
 }
 
 func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	reqID := r.PathValue("id")
 	if tenantID == "" || reqID == "" {
 		writeError(w, http.StatusBadRequest, "tenant + request id required")

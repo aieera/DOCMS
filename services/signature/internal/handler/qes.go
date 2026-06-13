@@ -1,9 +1,9 @@
 // ADR 0070 — QES handler routes.
 //
-//   POST /api/v1/signatures/qes/start         body: { request_id, signer_id, provider, signer_email, ... }
-//   GET  /api/v1/signatures/qes/return        QTSP redirects user back here; we 302 to /sign/done
-//   GET  /api/v1/signatures/qes/session/:id   poll endpoint for the post-redirect UI
-//   GET  /api/v1/signatures/qes/certificates  ?request_id=…   cert-display block
+//	POST /api/v1/signatures/qes/start         body: { request_id, signer_id, provider, signer_email, ... }
+//	GET  /api/v1/signatures/qes/return        QTSP redirects user back here; we 302 to /sign/done
+//	GET  /api/v1/signatures/qes/session/:id   poll endpoint for the post-redirect UI
+//	GET  /api/v1/signatures/qes/certificates  ?request_id=…   cert-display block
 package handler
 
 import (
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	tsplib "github.com/aieera/sedoc/pkg/signing/tsp"
 	"github.com/aieera/sedoc/services/signature/internal/service"
 )
@@ -29,20 +30,21 @@ func (h *Handler) RegisterQES(mux *http.ServeMux, frontendBase string) {
 }
 
 type qesRoutes struct {
-	svc          *service.Service
-	log          interface{ /* zerolog.Logger value */ }
+	svc *service.Service
+	log interface { /* zerolog.Logger value */
+	}
 	frontendBase string // e.g. "/sign/done" or full https://app.vaultdms…/sign
 }
 
 type startBody struct {
-	RequestID    string `json:"request_id"`
-	SignerID     string `json:"signer_id"`
-	Provider     string `json:"provider"`
-	SignerEmail  string `json:"signer_email"`
-	SignerName   string `json:"signer_name"`
-	CountryCode  string `json:"country_code"`
-	Reason       string `json:"reason"`
-	Location     string `json:"location"`
+	RequestID   string `json:"request_id"`
+	SignerID    string `json:"signer_id"`
+	Provider    string `json:"provider"`
+	SignerEmail string `json:"signer_email"`
+	SignerName  string `json:"signer_name"`
+	CountryCode string `json:"country_code"`
+	Reason      string `json:"reason"`
+	Location    string `json:"location"`
 	// DocumentBytesB64 is the to-be-signed PDF, base64'd. The
 	// service hashes once and discards. Frontend only sends this
 	// for QES; the regular signing flow uses the document service's
@@ -51,8 +53,8 @@ type startBody struct {
 }
 
 func (q *qesRoutes) start(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "tenant + user required")
 		return
@@ -73,9 +75,9 @@ func (q *qesRoutes) start(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := q.svc.StartQES(r.Context(), tenantID, userID, service.StartQESInput{
 		RequestID: body.RequestID, SignerID: body.SignerID,
-		Provider:    tsplib.Provider(body.Provider),
+		Provider:      tsplib.Provider(body.Provider),
 		DocumentBytes: docBytes,
-		SignerEmail: body.SignerEmail, SignerName: body.SignerName,
+		SignerEmail:   body.SignerEmail, SignerName: body.SignerName,
 		CountryCode: body.CountryCode,
 		Reason:      body.Reason, Location: body.Location,
 	})
@@ -90,7 +92,7 @@ func (q *qesRoutes) start(w http.ResponseWriter, r *http.Request) {
 // "sign done" route with a status so the user lands on a page that
 // reads /qes/session/:id and renders.
 func (q *qesRoutes) handleReturn(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		// The QTSP redirect won't carry our gateway headers. The
 		// gateway must set X-Auth-Tenant-ID on this path from the
@@ -134,7 +136,7 @@ type sessionResp struct {
 }
 
 func (q *qesRoutes) session(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	row, err := q.svcSession(r.Context(), tenantID, id)
 	if err != nil {
@@ -162,19 +164,19 @@ func (q *qesRoutes) svcSession(ctx context.Context, tenantID, id string) (*sessi
 }
 
 type certResp struct {
-	ID         string `json:"id"`
-	SignerID   string `json:"signer_id"`
-	Provider   string `json:"provider"`
-	SubjectDN  string `json:"subject_dn"`
-	IssuerDN   string `json:"issuer_dn"`
-	SerialHex  string `json:"serial_hex"`
-	NotBefore  string `json:"not_before"`
-	NotAfter   string `json:"not_after"`
-	CreatedAt  string `json:"created_at"`
+	ID        string `json:"id"`
+	SignerID  string `json:"signer_id"`
+	Provider  string `json:"provider"`
+	SubjectDN string `json:"subject_dn"`
+	IssuerDN  string `json:"issuer_dn"`
+	SerialHex string `json:"serial_hex"`
+	NotBefore string `json:"not_before"`
+	NotAfter  string `json:"not_after"`
+	CreatedAt string `json:"created_at"`
 }
 
 func (q *qesRoutes) certificates(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	requestID := r.URL.Query().Get("request_id")
 	if requestID == "" {
 		writeError(w, http.StatusBadRequest, "request_id required")

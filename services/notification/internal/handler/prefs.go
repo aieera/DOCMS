@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
@@ -28,8 +29,8 @@ func (h *Handler) RegisterPrefs(mux *http.ServeMux) {
 // ----- Matrix -----------------------------------------------------
 
 func (h *Handler) getMatrix(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "tenant + user required")
 		return
@@ -47,8 +48,8 @@ type matrixBody struct {
 }
 
 func (h *Handler) putMatrix(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	var body matrixBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -62,8 +63,8 @@ func (h *Handler) putMatrix(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) patchCell(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	var c model.PrefCell
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -84,8 +85,8 @@ func (h *Handler) patchCell(w http.ResponseWriter, r *http.Request) {
 // ----- Snoozes ----------------------------------------------------
 
 func (h *Handler) listSnoozes(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	rows, err := h.svc.ListActiveSnoozes(r.Context(), tenantID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -101,8 +102,8 @@ type snoozeBody struct {
 }
 
 func (h *Handler) createSnooze(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	var b snoozeBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -122,8 +123,8 @@ func (h *Handler) createSnooze(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteSnooze(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	id := r.PathValue("id")
 	if err := h.svc.DeleteSnooze(r.Context(), tenantID, userID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, "delete failed")
@@ -135,8 +136,8 @@ func (h *Handler) deleteSnooze(w http.ResponseWriter, r *http.Request) {
 // ----- DND --------------------------------------------------------
 
 func (h *Handler) getDND(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	d, err := h.svc.GetDND(r.Context(), tenantID, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "get failed")
@@ -156,8 +157,8 @@ type dndBody struct {
 }
 
 func (h *Handler) putDND(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	var b dndBody
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -175,8 +176,8 @@ func (h *Handler) putDND(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteDND(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if err := h.svc.DeleteDND(r.Context(), tenantID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "delete failed")
 		return

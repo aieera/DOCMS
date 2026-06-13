@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/workflow/internal/model"
 	"github.com/aieera/sedoc/services/workflow/internal/service"
 
@@ -47,7 +48,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) listDefinitions(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -68,8 +69,8 @@ type createDefBody struct {
 }
 
 func (h *Handler) createDefinition(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
 		return
@@ -93,8 +94,8 @@ type startBody struct {
 }
 
 func (h *Handler) startInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	var body startBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -114,7 +115,7 @@ func (h *Handler) startInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	inst, err := h.svc.GetInstance(r.Context(), tenantID, id)
 	if err != nil || inst == nil {
@@ -125,7 +126,7 @@ func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getInstanceTimeline(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -143,14 +144,14 @@ func (h *Handler) getInstanceTimeline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	var signal model.StepSignal
 	if err := json.NewDecoder(r.Body).Decode(&signal); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	signal.ActorID = r.Header.Get("X-User-ID")
+	signal.ActorID = auth.UserIDString(r)
 	if err := h.svc.CompleteStep(r.Context(), tenantID, id, signal); err != nil {
 		h.log.Error().Err(err).Msg("signal step")
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -160,7 +161,7 @@ func (h *Handler) signalStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getDefinition(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -189,7 +190,7 @@ type visibilityBody struct {
 }
 
 func (h *Handler) setDefinitionVisibility(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -213,7 +214,7 @@ func (h *Handler) setDefinitionVisibility(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) listDefinitionGrants(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -240,7 +241,7 @@ type grantBody struct {
 }
 
 func (h *Handler) addDefinitionGrant(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -264,7 +265,7 @@ func (h *Handler) addDefinitionGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) removeDefinitionGrant(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	granteeType := r.PathValue("granteeType")
 	granteeID := r.PathValue("granteeId")
@@ -284,7 +285,7 @@ func (h *Handler) removeDefinitionGrant(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) updateDefinition(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -304,7 +305,7 @@ func (h *Handler) updateDefinition(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteDefinition(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -323,7 +324,7 @@ func (h *Handler) deleteDefinition(w http.ResponseWriter, r *http.Request) {
 //     for the admin page). Empty / any other value returns 400 today;
 //     extend when the UI grows a "completed" filter.
 func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
 		return
@@ -353,7 +354,7 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 // no active workflow — distinct from 404 "document doesn't exist"
 // which the doc service handles.
 func (h *Handler) getActiveInstanceByDocument(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	docID := r.PathValue("document_id")
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID required")
@@ -375,7 +376,7 @@ func (h *Handler) getActiveInstanceByDocument(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
+	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	if err := h.svc.CancelInstance(r.Context(), tenantID, id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -387,8 +388,8 @@ func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listMyTasks(w http.ResponseWriter, r *http.Request) {
 	// Back-compat shim: /tasks/mine always returns pending tasks for the
 	// caller. New clients should use /tasks?assignee=me&status=pending.
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	tasks, err := h.svc.ListTasks(r.Context(), tenantID, userID, "pending")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list failed")
@@ -410,8 +411,8 @@ func (h *Handler) listMyTasks(w http.ResponseWriter, r *http.Request) {
 //
 // Returns [] (never null) to simplify frontend consumption.
 func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
 		return

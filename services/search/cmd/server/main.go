@@ -189,7 +189,7 @@ func main() {
 		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(searchAuth),
+		Handler:           middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

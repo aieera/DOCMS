@@ -1,12 +1,14 @@
 // ADR 0082 — GET /api/v1/search URL syntax.
 //
 // Spec form (§7.2):
-//   /search?q=X&facet=tag,author&filter=tag:contract&filter=author:alice
+//
+//	/search?q=X&facet=tag,author&filter=tag:contract&filter=author:alice
 //
 // `filter=` is a repeating param, key:value, with bracket notation
 // reserved for ranges:
-//   filter=created_at:[2026-01-01,2026-04-30]
-//   filter=size:[100000,]
+//
+//	filter=created_at:[2026-01-01,2026-04-30]
+//	filter=size:[100000,]
 //
 // This file owns the URL → SearchRequest mapping. The result feeds
 // the same service.Search() entry point as the POST /search body —

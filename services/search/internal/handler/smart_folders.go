@@ -1,9 +1,10 @@
 // Smart folder HTTP handlers — ADR 0100.
 //
 // Routes (mounted in handler.go):
-//   GET  /api/v1/saved-searches/smart-folders   — list visible smart folders
-//   POST /api/v1/saved-searches/{id}/promote    — flip saved search → smart folder
-//   POST /api/v1/saved-searches/{id}/demote     — flip back
+//
+//	GET  /api/v1/saved-searches/smart-folders   — list visible smart folders
+//	POST /api/v1/saved-searches/{id}/promote    — flip saved search → smart folder
+//	POST /api/v1/saved-searches/{id}/demote     — flip back
 //
 // Workspace membership is read from the optional X-Workspace-IDs
 // header (CSV) — the document service forwards it when present.
@@ -14,6 +15,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"github.com/aieera/sedoc/pkg/auth"
 	"net/http"
 	"strings"
 
@@ -21,8 +23,8 @@ import (
 )
 
 func (h *Handler) listSmartFolders(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	if tenantID == "" || userID == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
@@ -44,8 +46,8 @@ type promoteBody struct {
 }
 
 func (h *Handler) promoteSmartFolder(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" || userID == "" || id == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID, X-User-ID, id required")
@@ -99,8 +101,8 @@ func (h *Handler) promoteSmartFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) demoteSmartFolder(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Auth-Tenant-ID")
-	userID := r.Header.Get("X-User-ID")
+	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	id := r.PathValue("id")
 	if tenantID == "" || userID == "" || id == "" {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID, X-User-ID, id required")
