@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/aieera/sedoc/pkg/auth"
@@ -177,7 +178,7 @@ func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	userID := auth.UserIDString(r)
 	if code == "" || state == "" {
-		writeError(w, http.StatusBadRequest, "code, state required")
+		esignCallbackError(w, r, "code, state required")
 		return
 	}
 	// DocuSign / Adobe Sign return `state` and `code` only; the
@@ -188,17 +189,30 @@ func (e *esignRoutes) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	if provider == "" {
 		_, parsedProvider, ok := esign.ParseState(state)
 		if !ok || parsedProvider == "" {
-			writeError(w, http.StatusBadRequest, "state does not encode a provider — re-initiate connect")
+			esignCallbackError(w, r, "state does not encode a provider — re-initiate connect")
 			return
 		}
 		provider = esign.Provider(parsedProvider)
 	}
 	target, err := e.svc.HandleOAuthCallback(r.Context(), provider, code, state, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		// This is a top-level browser navigation (the vendor redirected
+		// the browser here), not an XHR — a raw JSON 400 would leave the
+		// user staring at a JSON body. Bounce back into the SPA with the
+		// reason so they see a real page + a surfaced error, and so the
+		// failure is visible in the URL for support.
+		esignCallbackError(w, r, err.Error())
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// esignCallbackError redirects a failed OAuth callback back into the SPA
+// integrations page with the reason in a query param.
+func esignCallbackError(w http.ResponseWriter, r *http.Request, msg string) {
+	http.Redirect(w, r,
+		"/admin/integrations?tab=esign&esign_error="+url.QueryEscape(msg),
+		http.StatusSeeOther)
 }
 
 type disconnectBody struct {

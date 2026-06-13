@@ -136,7 +136,16 @@ func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, expiresA
 		MaxAge:   int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true,
 		Secure:   h.cookieSecure,
-		SameSite: http.SameSiteStrictMode,
+		// Lax, not Strict: the session must survive a top-level inbound
+		// redirect — notably the OAuth callbacks (DocuSign / Adobe Sign /
+		// Google / M365) that bounce the browser back from the vendor's
+		// site. With Strict the cookie is withheld on that cross-site
+		// navigation, the SPA loads logged-out, and the user is bounced to
+		// /login ("callback pending, only reloading"). Lax still withholds
+		// the cookie on cross-site subresource/POST requests; CSRF on
+		// mutating calls is covered separately by the dms_csrf
+		// double-submit token.
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -149,7 +158,7 @@ func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   h.cookieSecure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -203,7 +212,7 @@ func (h *Handler) clearCSRFCookie(w http.ResponseWriter) {
 
 // clientMeta returns (ip, user-agent) suitable for audit logging. The IP is
 // returned bracket-free (IPv6 host) so it round-trips into Postgres INET
-// columns via NULLIF('', '')::inet.
+// columns via NULLIF(”, ”)::inet.
 func clientMeta(r *http.Request) (string, string) {
 	ip := r.Header.Get("X-Forwarded-For")
 	if i := strings.IndexByte(ip, ','); i > 0 {

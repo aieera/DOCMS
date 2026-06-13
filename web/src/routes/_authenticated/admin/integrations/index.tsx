@@ -18,7 +18,7 @@
 // /admin/integrations/email, /admin/integrations/mcp) redirect into
 // the matching tab on this page so existing deep-links keep working.
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -48,20 +48,33 @@ import { MCPPage } from './mcp'
 
 type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp'
 const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp']
-interface S { tab?: TopTab }
+interface S { tab?: TopTab; esign_error?: string }
 
 export const Route = createFileRoute('/_authenticated/admin/integrations/')({
   component: IntegrationsPage,
   validateSearch: (raw: Record<string, unknown>): S => {
     const t = raw.tab
-    return TOP_TABS.includes(t as TopTab) ? { tab: t as TopTab } : {}
+    const s: S = TOP_TABS.includes(t as TopTab) ? { tab: t as TopTab } : {}
+    // ADR 0071 — the eSign OAuth callback bounces back here with this
+    // param when the connect fails (it's a top-level redirect, not an
+    // XHR, so it can't toast directly).
+    if (typeof raw.esign_error === 'string') s.esign_error = raw.esign_error
+    return s
   },
 })
 
 function IntegrationsPage() {
   const navigate = useNavigate()
-  const { tab } = Route.useSearch()
+  const { tab, esign_error } = Route.useSearch()
   const active: TopTab = tab ?? 'esign'
+  // Surface a failed eSign OAuth connect, then strip the param so a
+  // refresh doesn't re-toast it.
+  useEffect(() => {
+    if (esign_error) {
+      toast.error(`Couldn't connect e-signature provider: ${esign_error}`)
+      navigate({ to: '/admin/integrations', search: { tab: 'esign' }, replace: true })
+    }
+  }, [esign_error, navigate])
   return (
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
