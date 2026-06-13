@@ -11,6 +11,7 @@ import { listMyTasks } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
 import { Breadcrumbs } from './breadcrumbs'
 import { ThemeToggle } from './theme-toggle'
+import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { formatRelativeTime } from '@/lib/formatters'
 import { Button } from '@/components/ui/shadcn/button'
@@ -182,14 +183,14 @@ function MyTasksBadge() {
 }
 
 // Bell + dropdown panel. Replaces the prior NotificationsButton that
-// navigated to /notifications on click. The full-page route is still
-// reachable via the "See all" link in the dropdown header and the
-// /settings/notifications preferences deep link in the footer — both
-// still need to exist as a destination, just not as the primary
-// affordance.
+// navigated to /notifications on click. "See all" opens the
+// NotificationsPanel — an end-side slide-in Sheet — rather than
+// navigating away; the /notifications route stays deep-linkable but
+// is no longer a click target here.
 function NotificationsDropdown() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
 
   // Unread count polls every 30s — drives the red dot on the bell.
   // Cheap endpoint (single SQL COUNT) so polling is fine.
@@ -231,6 +232,7 @@ function NotificationsDropdown() {
   })
 
   return (
+    <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
@@ -272,14 +274,17 @@ function NotificationsDropdown() {
                 Mark all read
               </Button>
             )}
-            <Link
-              to="/notifications"
+            <button
+              type="button"
               className="rounded px-2 py-1 text-xs text-primary hover:underline"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false)
+                setPanelOpen(true)
+              }}
               data-testid="notif-see-all"
             >
               See all
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -351,6 +356,9 @@ function NotificationsDropdown() {
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
+
+    <NotificationsPanel open={panelOpen} onOpenChange={setPanelOpen} />
+    </>
   )
 }
 

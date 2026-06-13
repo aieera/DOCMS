@@ -5,6 +5,7 @@ import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
 import { createDocument, createVersion, deleteDocument } from '@/api/documents'
 import { getFolders, createFolder } from '@/api/workspaces'
 import { sendFilingFeedback } from '@/api/predictiveFiling'
+import { randomId } from '@/lib/id'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
 
@@ -127,14 +128,14 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       // Reject files that violate backend upload limits before touching the server.
       const preflightError = preflightFile(file)
       if (preflightError) {
-        const failId = crypto.randomUUID()
+        const failId = randomId()
         addUpload({ id: failId, file, progress: 0, status: 'pending' })
         setStatus(failId, 'failed', preflightError)
         toast.error(`${file.name} — ${preflightError}`)
         continue
       }
 
-      const id = crypto.randomUUID()
+      const id = randomId()
       addUpload({ id, file, progress: 0, status: 'pending' })
 
       // ADR 0102: pull the per-file decision (if any). The decision

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-export const Route = createFileRoute('/_authenticated/settings/security/mfa/recovery')({
+export const Route = createFileRoute('/_authenticated/settings/security/mfa_/recovery')({
   component: RecoveryCodesPage,
 })
 

@@ -461,6 +461,6 @@ function parseUA(ua: string): string {
   return `${browser} on ${os}`
 }
 
-export const Route = createFileRoute('/_authenticated/settings/security')({
+export const Route = createFileRoute('/_authenticated/settings/security/')({
   component: SettingsPage,
 })
