@@ -38,8 +38,8 @@ import (
 	"github.com/aieera/sedoc/pkg/storage"
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
-	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
+	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
 	"github.com/aieera/sedoc/services/document/internal/janitor"
 	"github.com/aieera/sedoc/services/document/internal/repository"
@@ -753,11 +753,11 @@ func main() {
 	clMux := http.NewServeMux()
 	handler.NewClausesHandler(pool).Register(clMux)
 	clauseAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(clMux)
-	rootMux.Handle("GET /api/v1/clauses",            middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("GET /api/v1/clauses/{id}",       middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("POST /api/v1/clauses",           middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("PATCH /api/v1/clauses/{id}",     middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("DELETE /api/v1/clauses/{id}",    middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("GET /api/v1/clauses", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("GET /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("POST /api/v1/clauses", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("PATCH /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("DELETE /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
 
 	// ADR 0099 — contract intelligence graph. GET is read-only and
 	// uses SessionAuth (so the tenant + user context is set); the
@@ -826,32 +826,32 @@ func main() {
 	// dms.comment.* outbox subjects we emit on every transition.
 	commentsMux := http.NewServeMux()
 	handler.NewCommentsHandler(svc, *log.Z()).Register(commentsMux)
-	rootMux.Handle("POST /api/v1/documents/{id}/comments",    middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("GET /api/v1/documents/{id}/comments",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/replies",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("PATCH /api/v1/comments/{cid}",            middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("DELETE /api/v1/comments/{cid}",           middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/resolve",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/unresolve",   middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/reactions",   middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/comments", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/comments", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/replies", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("PATCH /api/v1/comments/{cid}", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("DELETE /api/v1/comments/{cid}", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/resolve", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/unresolve", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 	rootMux.Handle("DELETE /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("GET /api/v1/comments/{cid}/reactions",    middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 
 	// ADR 0068 — lightweight tasks. Distinct from workflow_tasks
 	// (approval-step state) which lives in services/workflow.
 	tasksMux := http.NewServeMux()
 	handler.NewTasksHandler(svc, *log.Z()).Register(tasksMux)
-	rootMux.Handle("POST /api/v1/tasks",                   middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/mine",               middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks",                    middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/{id}",               middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("PATCH /api/v1/tasks/{id}",             middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/assign",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/unassign",     middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/complete",     middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/reopen",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/cancel",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("DELETE /api/v1/tasks/{id}",            middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/mine", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("PATCH /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/assign", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/unassign", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/complete", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/reopen", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/cancel", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("DELETE /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
 
 	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at
 	// on tasks crossing the 24h-out and overdue thresholds; emits one
@@ -1016,6 +1016,14 @@ func main() {
 		middleware.CorrelationHTTP(nerMux))
 	rootMux.Handle("DELETE /api/v1/admin/ner-config/api-key",
 		middleware.CorrelationHTTP(nerMux))
+
+	// ADR 0115 — document processing-status surface + reprocess.
+	processingMux := http.NewServeMux()
+	handler.NewProcessingHandler(svc).Register(processingMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/processing",
+		middleware.CorrelationHTTP(processingMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/reprocess",
+		middleware.CorrelationHTTP(processingMux))
 
 	// ADR 0060 — active-learning model management surface (owner/admin gated).
 	activeLearningMux := http.NewServeMux()

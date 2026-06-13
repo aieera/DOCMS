@@ -26,6 +26,7 @@ from app.config import settings
 from app.db.pool import get_pool
 from app.dedupe import mark_completed, mark_failed, publish_dlq
 from app.events.publisher import publish_cloudevent
+from app.processing_stages import ocr_failure_reason, record_stage
 from app.storage.envelope import EnvelopeError, decrypt_blob
 from app.metrics import (
     ocr_documents_total,
@@ -557,7 +558,20 @@ def process_ocr(
     """
     if mime_type not in OCR_MIMES and not _is_text_mime(mime_type):
         ocr_documents_total.labels(status="skipped").inc()
+        record_stage(
+            tenant_id=tenant_id, document_id=document_id, version_id=version_id,
+            stage="ocr", status="skipped", failure_reason="unsupported_mime",
+            failure_detail=f"mime {mime_type} is not OCR-able",
+        )
         return {"status": "skipped", "reason": f"mime {mime_type} not OCR-able"}
+
+    # ADR 0115 — mark the OCR stage running so the UI can show progress
+    # (and so a silently-dropped job is visibly stuck at 'running' rather
+    # than invisible). Best-effort; never blocks OCR.
+    record_stage(
+        tenant_id=tenant_id, document_id=document_id, version_id=version_id,
+        stage="ocr", status="running",
+    )
 
     # Envelope-encrypted blobs are decrypted in-place after download.
     # _decrypt_src_if_envelope looks up content_blobs for the wrapped
@@ -629,6 +643,24 @@ def process_ocr(
         ocr_documents_total.labels(status="completed").inc()
         ocr_duration_seconds.observe(time.perf_counter() - t_start)
 
+        # ADR 0115 — terminal success. A publish failure is itself a
+        # failure surface (downstream stages never fire), so record
+        # 'failed' with event_publish_failed when the completed event
+        # couldn't be published; otherwise 'completed'.
+        if published:
+            record_stage(
+                tenant_id=tenant_id, document_id=document_id,
+                version_id=version_id, stage="ocr", status="completed",
+            )
+        else:
+            record_stage(
+                tenant_id=tenant_id, document_id=document_id,
+                version_id=version_id, stage="ocr", status="failed",
+                failure_reason="event_publish_failed",
+                failure_detail="OCR finished but the ocr_completed event "
+                "could not be published; downstream stages were not triggered.",
+            )
+
         # Ledger flip: this event_id is now observably complete and
         # will dedupe on any redelivery.
         try:
@@ -678,6 +710,16 @@ def process_ocr(
         if is_terminal:
             reason = _classify_error(exc)
             ocr_documents_total.labels(status="failed").inc()
+            # ADR 0115 — surface the terminal failure to the user with a
+            # sanitized, displayable reason. TerminalOCRError carries a
+            # short message; generic exceptions are mapped to a taxonomy
+            # code (str(exc) is operator-only via failure_detail).
+            record_stage(
+                tenant_id=tenant_id, document_id=document_id,
+                version_id=version_id, stage="ocr", status="failed",
+                failure_reason=ocr_failure_reason(exc),
+                failure_detail=str(exc),
+            )
             try:
                 asyncio.run(publish_dlq(
                     reason=reason,

@@ -179,6 +179,8 @@ type Repositories struct {
 	Comments            CommentRepository
 	// ADR 0068 — lightweight tasks (separate from workflow_tasks).
 	Tasks               TaskRepository
+	// ADR 0115 — per-stage processing status surface.
+	Processing          ProcessingRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -206,5 +208,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Redaction:           NewRedactionRepo(),
 		Comments:            NewCommentRepo(),
 		Tasks:               NewTaskRepo(),
+		Processing:          NewProcessingRepo(),
 	}
 }

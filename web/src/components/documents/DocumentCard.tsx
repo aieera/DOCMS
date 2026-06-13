@@ -42,6 +42,18 @@ export function DocumentCard({ doc }: { doc: Document }) {
                 No content
               </Badge>
             )}
+            {/* ADR 0115 — processing-failure badge, distinct from the
+                no-file-uploaded "No content" case. Renders only once the
+                list response carries processing_status; until then the
+                doc-detail banner is the surface. */}
+            {(() => {
+              const ps = (doc as unknown as { processing_status?: string }).processing_status
+              return ps === 'failed' || ps === 'partial' ? (
+                <Badge variant="destructive" title="Intelligence processing failed — open the document to retry">
+                  Processing failed
+                </Badge>
+              ) : null
+            })()}
             {doc.workflow_instance && (
               <WorkflowStatusBadge status={doc.workflow_instance.status} size="sm" />
             )}

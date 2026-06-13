@@ -68,6 +68,7 @@ import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPan
 import { RouteSuggestionBanner } from '@/components/intelligence/RouteSuggestionBanner'
 import { CompliancePanel } from '@/components/intelligence/CompliancePanel'
 import { ComplianceBadge } from '@/components/intelligence/ComplianceBadge'
+import { ProcessingFailureBanner } from '@/components/documents/ProcessingFailureBanner'
 import { DocQAChat } from '@/components/intelligence/DocQAChat'
 import { LanguageBadge } from '@/components/intelligence/LanguageBadge'
 import { TranslationPanel } from '@/components/intelligence/TranslationPanel'
@@ -198,6 +199,13 @@ export function DocumentDetailBody({
         <p className="text-xs text-muted-foreground" data-testid="gql-status-loading">
           Loading aggregated detail via GraphQL…
         </p>
+      )}
+
+      {/* ADR 0115 — processing-failure banner. Shows only when a file
+          was uploaded but the intelligence pipeline failed/partially
+          failed, with a per-stage reason and (for admins) a Retry. */}
+      {versionId && (
+        <ProcessingFailureBanner documentId={documentId} canRetry={isAdminCaller} />
       )}
 
       {/* No-content prompt: when the document row exists but no file
