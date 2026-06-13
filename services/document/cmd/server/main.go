@@ -461,6 +461,12 @@ func main() {
 		middleware.CorrelationHTTP(
 			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(decryptStreamMux),
 		))
+	// Current-version content alias (signature validation + signing flows
+	// fetch GET /documents/{id}/content). Same handler/mux + auth.
+	rootMux.Handle("GET /api/v1/documents/{id}/content",
+		middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(decryptStreamMux),
+		))
 
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).
 	// Authenticated by API key (Bearer vdms_...) with scope

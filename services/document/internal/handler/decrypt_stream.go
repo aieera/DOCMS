@@ -74,6 +74,9 @@ func (h *DecryptStreamHandler) Register(mux *http.ServeMux) {
 		"GET /api/v1/documents/{document_id}/versions/{version_id}/decrypt-stream",
 		h.serve,
 	)
+	// Current-version convenience alias (frontend signature-validation +
+	// signing flows fetch this).
+	mux.HandleFunc("GET /api/v1/documents/{id}/content", h.serveContent)
 }
 
 func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +95,43 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "document_id not a uuid", http.StatusBadRequest)
 		return
 	}
+	h.streamVersion(w, r, tenantID, docID, versionID)
+}
+
+// serveContent resolves the document's CURRENT version and streams its
+// decrypted bytes. Backs GET /api/v1/documents/{id}/content — the
+// convenience URL the frontend (signature validation, in-person + send
+// signing flows) uses to fetch the live PDF without first resolving a
+// version id.
+func (h *DecryptStreamHandler) serveContent(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := auth.GetTenantID(r.Context())
+	if err != nil || tenantID == uuid.Nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	docID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "document id not a uuid", http.StatusBadRequest)
+		return
+	}
+	var versionID *uuid.UUID
+	if err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(r.Context(),
+			`SELECT current_version_id FROM documents
+			  WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+			tenantID, docID).Scan(&versionID)
+	}); err != nil || versionID == nil {
+		http.Error(w, "document has no current version", http.StatusNotFound)
+		return
+	}
+	h.streamVersion(w, r, tenantID, docID, *versionID)
+}
+
+// streamVersion enforces the view permission, loads the (doc, version)
+// blob, decrypts if it's envelope-encrypted, and streams the plaintext.
+// Shared by the version-pinned decrypt-stream route and the current-
+// version /content route.
+func (h *DecryptStreamHandler) streamVersion(w http.ResponseWriter, r *http.Request, tenantID, docID, versionID uuid.UUID) {
 	// FIX-2 (2026-05-31): per-document view check. Previously the
 	// stream loaded blob metadata + unwrapped the DEK for ANY known
 	// (tenantID, versionID) — IDOR with envelope-encryption-as-a-
@@ -122,7 +162,7 @@ func (h *DecryptStreamHandler) serve(w http.ResponseWriter, r *http.Request) {
 	// application/octet-stream it refuses to parse, so PDFs that
 	// happened to be uploaded with the wrong blob mime never
 	// previewed.
-	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
+	err := database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			SELECT b.storage_bucket,
 			       b.storage_key,
