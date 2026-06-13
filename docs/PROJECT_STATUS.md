@@ -168,7 +168,7 @@ DOCMS/
 
 ## Missing / unset env variables I can detect
 
-- The `.env` file on this dev box has DocuSign credentials but the `AUTHORIZE_URL` points at the **REST API host** (`demo.docusign.net`) instead of the **OAuth identity host** (`account-d.docusign.com`). This was flagged earlier in the session.
+- ~~The `.env` file on this dev box has DocuSign credentials but the `AUTHORIZE_URL` points at the **REST API host** (`demo.docusign.net`) instead of the **OAuth identity host** (`account-d.docusign.com`).~~ **Fixed** — `.env` `SEDOC_ESIGN_DOCUSIGN_AUTHORIZE_URL` is now `https://account-d.docusign.com/oauth/auth`; `oauth/start` builds a correct authorize URL and the sandbox endpoint is reachable (HTTP 200). The only remaining step is interactive: an admin completes the OAuth consent at `/admin/integrations` to store the tenant's DocuSign token.
 - `SEDOC_TWILIO_*`, `SEDOC_SMTP_*`, `SEDOC_WEBAUTHN_*` blocks have been added to `docker-compose.yml`'s `x-go-env` anchor with defaults of `""` — they remain empty in `.env`, so SMS MFA / email / passkeys fall back to stub/log mode.
 - `SEDOC_ESIGN_ADOBE_SIGN_*` not set (only DocuSign is configured).
 
