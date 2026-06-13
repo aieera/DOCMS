@@ -27,14 +27,14 @@ import (
 // issuer, audience, exp). A UserInfo call fetches attributes not present
 // in the ID token (typically groups).
 type OIDCService struct {
-	pool        *pgxpool.Pool
-	rdb         *redis.Client
-	cfgRepo     ConfigRepository
-	prov        SAMLProvisioner // interface is SSO-generic; same find-or-create
-	log         zerolog.Logger
-	publicURL   string
-	httpClient  *http.Client
-	now         func() time.Time
+	pool       *pgxpool.Pool
+	rdb        *redis.Client
+	cfgRepo    ConfigRepository
+	prov       SAMLProvisioner // interface is SSO-generic; same find-or-create
+	log        zerolog.Logger
+	publicURL  string
+	httpClient *http.Client
+	now        func() time.Time
 }
 
 // OIDCServiceConfig bundles DI.
@@ -235,7 +235,10 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, r *http.Request, tenantS
 		return nil, vdmserr.Validation("claims", "email missing from id_token and userinfo")
 	}
 
-	token, expiresAt, err := s.prov.FindOrCreateSAMLUser(ctx, tenantID, claims.Email, claims.Name, claims.Groups, ip, ua)
+	// idt.Subject is the OIDC `sub` claim (Entra object id for M365) — an
+	// immutable per-IdP identifier. Passing it makes provisioning bind to
+	// the subject, not the mutable email (takeover hardening).
+	token, expiresAt, err := s.prov.FindOrCreateSAMLUser(ctx, tenantID, "oidc", idt.Subject, claims.Email, claims.Name, claims.Groups, ip, ua)
 	if err != nil {
 		return nil, err
 	}

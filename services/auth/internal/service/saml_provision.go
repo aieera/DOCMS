@@ -13,23 +13,32 @@ import (
 	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
-// FindOrCreateSAMLUser is called by the SSO layer after it has validated
-// a SAML assertion. It looks the user up by (tenant_id, email) and either:
-//   - returns the existing row (JIT refresh of display_name), or
-//   - creates a new one with role=member, status=active, NO password (the
-//     user is SSO-only and can never log in with a password unless an admin
-//     later sets one).
+// FindOrCreateSAMLUser is called by the SSO layer (SAML or OIDC) after it
+// has validated an assertion. Resolution is SUBJECT-FIRST to prevent
+// account takeover via email reassignment (blueprint §24.1):
 //
-// In both cases a fresh session is created. Returns (session_token,
-// expires_at). Group sync lands in Phase A2.1.
-func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, email, displayName string, _ []string, ip, ua string) (string, time.Time, error) {
+//  1. (tenant, provider, subject) → user. The IdP subject (OIDC `sub` /
+//     SAML NameID) is immutable, so this binding is authoritative and
+//     survives the IdP changing the user's email.
+//  2. Only when no subject link exists do we fall back to matching by
+//     email — the first-time link. If that email already belongs to a
+//     user linked to a DIFFERENT subject, we refuse (takeover guard).
+//  3. New users are created SSO-only (no password) with role=member.
+//
+// `subject` may be empty for legacy IdPs that send no stable id; the
+// flow then degrades to the old email-only behavior (less secure, but
+// keeps those IdPs working). A fresh session is created in all cases.
+func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, provider, subject, email, displayName string, _ []string, ip, ua string) (string, time.Time, error) {
+	provider = strings.TrimSpace(provider)
+	subject = strings.TrimSpace(subject)
 	email = strings.ToLower(strings.TrimSpace(email))
-	if email == "" {
-		return "", time.Time{}, vdmserr.Validation("email", "required")
+	if email == "" && subject == "" {
+		return "", time.Time{}, vdmserr.Validation("identity", "email or subject required")
 	}
 	if displayName == "" {
 		displayName = emailLocalPart(email)
 	}
+	hasSubject := subject != "" && provider != ""
 
 	var (
 		user       *model.User
@@ -38,57 +47,114 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 	)
 
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		// Find existing user.
-		existing, err := s.users.GetByEmail(ctx, tx, tenantID, email)
-		switch {
-		case err == nil && existing != nil:
-			user = existing
-			if user.Status != model.StatusActive {
-				return vdmserr.ErrUnauthorized
+		// 1. Subject-first: an existing link is the authoritative user.
+		if hasSubject {
+			var uid uuid.UUID
+			switch err := tx.QueryRow(ctx,
+				`SELECT user_id FROM sso_identities
+				 WHERE tenant_id = $1 AND provider = $2 AND subject = $3`,
+				tenantID, provider, subject).Scan(&uid); err {
+			case nil:
+				u, gErr := s.users.GetByID(ctx, tx, tenantID, uid)
+				if gErr != nil {
+					return gErr
+				}
+				user = u
+			case pgx.ErrNoRows:
+				// fall through to email matching
+			default:
+				return err
 			}
-			// Keep display_name in sync with the IdP.
-			if displayName != "" && displayName != user.DisplayName {
-				if _, err := tx.Exec(ctx,
-					`UPDATE users SET display_name = $3, updated_at = now()
-					 WHERE tenant_id = $1 AND id = $2`,
-					tenantID, user.ID, displayName,
-				); err != nil {
+		}
+
+		// 2. No subject link → match by email (first-time link / legacy).
+		if user == nil {
+			existing, err := s.users.GetByEmail(ctx, tx, tenantID, email)
+			switch {
+			case err == nil && existing != nil:
+				// Takeover guard: refuse if this email already maps to a
+				// user bound to a different subject for this provider.
+				if hasSubject {
+					var linked string
+					switch qErr := tx.QueryRow(ctx,
+						`SELECT subject FROM sso_identities
+						 WHERE tenant_id = $1 AND provider = $2 AND user_id = $3`,
+						tenantID, provider, existing.ID).Scan(&linked); qErr {
+					case nil:
+						if linked != subject {
+							return vdmserr.ErrUnauthorized
+						}
+					case pgx.ErrNoRows:
+						// no prior link — safe to link below
+					default:
+						return qErr
+					}
+				}
+				user = existing
+			case vdmserr.KindOf(err) == vdmserr.KindNotFound:
+				// Create new user. No password (PasswordHash stays empty).
+				id, err := newUUID()
+				if err != nil {
 					return err
 				}
-				user.DisplayName = displayName
-			}
-		case vdmserr.KindOf(err) == vdmserr.KindNotFound:
-			// Create new user. No password (PasswordHash stays empty).
-			id, err := newUUID()
-			if err != nil {
+				user = &model.User{
+					TenantID:    tenantID,
+					ID:          id,
+					Email:       email,
+					DisplayName: displayName,
+					Role:        model.RoleMember,
+					Status:      model.StatusActive,
+					CreatedAt:   s.clock(),
+					UpdatedAt:   s.clock(),
+				}
+				if err := s.enforceSeatLimit(ctx, tx, tenantID); err != nil {
+					return err
+				}
+				if err := s.users.Create(ctx, tx, user); err != nil {
+					return err
+				}
+				if err := s.emitAuth(ctx, tx, tenantID, user.ID, "dms.auth.user_registered.v1", map[string]any{
+					"user_id":   user.ID.String(),
+					"tenant_id": tenantID.String(),
+					"email":     email,
+					"method":    provider,
+				}); err != nil {
+					return err
+				}
+			default:
 				return err
 			}
-			user = &model.User{
-				TenantID:    tenantID,
-				ID:          id,
-				Email:       email,
-				DisplayName: displayName,
-				Role:        model.RoleMember,
-				Status:      model.StatusActive,
-				CreatedAt:   s.clock(),
-				UpdatedAt:   s.clock(),
-			}
-			if err := s.enforceSeatLimit(ctx, tx, tenantID); err != nil {
+		}
+
+		if user.Status != model.StatusActive {
+			return vdmserr.ErrUnauthorized
+		}
+		// Keep display_name in sync with the IdP.
+		if displayName != "" && displayName != user.DisplayName {
+			if _, err := tx.Exec(ctx,
+				`UPDATE users SET display_name = $3, updated_at = now()
+				 WHERE tenant_id = $1 AND id = $2`,
+				tenantID, user.ID, displayName,
+			); err != nil {
 				return err
 			}
-			if err := s.users.Create(ctx, tx, user); err != nil {
+			user.DisplayName = displayName
+		}
+
+		// Persist / refresh the (tenant, provider, subject) → user link so
+		// subsequent logins resolve by subject. The unique index on
+		// (tenant, provider, user_id) is the DB-level twin of the takeover
+		// guard above: a second subject for an already-linked user errors.
+		if hasSubject {
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO sso_identities (tenant_id, provider, subject, user_id, last_login_at)
+				 VALUES ($1, $2, $3, $4, now())
+				 ON CONFLICT (tenant_id, provider, subject)
+				 DO UPDATE SET last_login_at = now()`,
+				tenantID, provider, subject, user.ID,
+			); err != nil {
 				return err
 			}
-			if err := s.emitAuth(ctx, tx, tenantID, user.ID, "dms.auth.user_registered.v1", map[string]any{
-				"user_id":   user.ID.String(),
-				"tenant_id": tenantID.String(),
-				"email":     email,
-				"method":    "saml",
-			}); err != nil {
-				return err
-			}
-		default:
-			return err
 		}
 
 		// Issue a session in the same TX as login_success.
@@ -105,7 +171,7 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 		return s.emitAuth(ctx, tx, tenantID, user.ID, "dms.auth.login_success.v1", map[string]any{
 			"user_id":    user.ID.String(),
 			"tenant_id":  tenantID.String(),
-			"method":     "saml",
+			"method":     provider,
 			"ip":         ip,
 			"user_agent": ua,
 		})

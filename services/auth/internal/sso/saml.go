@@ -101,7 +101,7 @@ func LoadSPKeyMaterial(keyPEM, certPEM []byte) (*SPKeyMaterial, error) {
 // users after a successful assertion. The auth service's core
 // *service.Service satisfies this (method added in saml_provision.go).
 type SAMLProvisioner interface {
-	FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, email, displayName string, groups []string, ip, ua string) (sessionToken string, expiresAt time.Time, err error)
+	FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, provider, subject, email, displayName string, groups []string, ip, ua string) (sessionToken string, expiresAt time.Time, err error)
 }
 
 // Service exposes SAML 2.0 flows to HTTP handlers. It is stateless apart
@@ -117,7 +117,6 @@ type Service struct {
 	publicURL string // https://app.example.com (no trailing slash)
 	now       func() time.Time
 }
-
 
 // ServiceConfig bundles dependencies.
 type ServiceConfig struct {
@@ -265,7 +264,14 @@ func (s *Service) ConsumeAssertion(ctx context.Context, r *http.Request, tenantS
 		return nil, vdmserr.Validation("saml_response", "email attribute missing")
 	}
 
-	token, expiresAt, err := s.prov.FindOrCreateSAMLUser(ctx, tenantID, email, displayName, groups, ip, ua)
+	// The SAML NameID is the stable subject; pass it so provisioning binds
+	// to it rather than the mutable email (takeover hardening). Empty when
+	// the IdP omits it — the provisioner then degrades to email-only.
+	var nameID string
+	if assertion.Subject != nil && assertion.Subject.NameID != nil {
+		nameID = strings.TrimSpace(assertion.Subject.NameID.Value)
+	}
+	token, expiresAt, err := s.prov.FindOrCreateSAMLUser(ctx, tenantID, "saml", nameID, email, displayName, groups, ip, ua)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +372,9 @@ func (s *Service) consumeAuthnReqID(ctx context.Context, id, tenantSlug string) 
 	if err != nil {
 		return fmt.Errorf("redis getdel: %w", err)
 	}
-	var rec struct{ TenantSlug string `json:"tenant_slug"` }
+	var rec struct {
+		TenantSlug string `json:"tenant_slug"`
+	}
 	if err := json.Unmarshal(body, &rec); err != nil {
 		return vdmserr.ErrUnauthorized
 	}
