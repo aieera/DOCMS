@@ -22,14 +22,30 @@ Re-wrap CLI status:
   the storage service's `/internal/v1/reencrypt-blob` endpoint
   (`services/storage/internal/handler/reencrypt_http.go` → `Service.ReencryptBlob`)
   to re-encrypt each under the region-local KEK. Dry-run by default.
-- **Rotation re-wrap — STILL PENDING.** Re-wrapping a tenant's existing blobs in
-  place under the NEW key version after `dms-admin kms rotate` is not yet
-  automated. `ReencryptBlob` only re-wraps on a *region change* (it no-ops when
-  the target region equals the blob's current region), so a same-region version
-  bump needs a primitive that re-wraps the DEK under the live alias version
-  without moving the blob. After a rotate, existing ciphertext keeps decrypting
-  under the retired version, so this is a forward-secrecy hygiene task, not a
-  correctness one.
+- **Rotation re-wrap — STILL PENDING, and bigger than a primitive.** Re-wrapping
+  a tenant's existing blobs in place under the NEW key version after
+  `dms-admin kms rotate` is not automated, and the prerequisite is missing:
+  the **live encrypt path never consults versioned aliases**. New uploads call
+  `aliasForTenant(tenantID)` → `vaultdms/tenant/<uuid>` (no region, no `@vN`
+  version) at `services/storage/internal/service/service.go` ~L478, so the
+  `@vN` aliases that `kms rotate` writes into `tenant_keks` are never used to
+  encrypt. Consequences:
+    1. There is no resolved "live version" for a re-wrap to target — that
+       resolution (read the current `tenant_keks` row for the tenant/region and
+       use its alias on encrypt) must be built FIRST.
+    2. The envelope re-wrap primitive itself is straightforward and SAFE to add
+       once a target exists: unwrap the DEK under the old `kek_id`, re-wrap the
+       SAME DEK under the live alias via a new `KeyManager.EncryptDataKey`,
+       verify it round-trips back to the original DEK, then update only
+       `content_blobs.encrypted_dek` + `kek_id` (blob ciphertext + `dek_nonce`
+       untouched). `KeyManager` today has only `GenerateDataKey` (new random
+       DEK) and `DecryptDataKey` — no way to wrap an existing DEK — so the
+       method must be added across Local (HKDF wrap), Vault (`transit/encrypt`),
+       and AWS KMS (`kms:Encrypt`).
+  After a rotate, existing ciphertext keeps decrypting under the retired
+  version, so this is a forward-secrecy hygiene task, not a correctness one —
+  but it should be scoped as "wire versioned-alias resolution into the encrypt
+  path + add the re-wrap primitive", not just a CLI subcommand.
 
 Original audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM).
 The text below is the original deferred-state plan, kept for history.
