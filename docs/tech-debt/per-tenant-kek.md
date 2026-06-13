@@ -16,10 +16,20 @@ Verified live: every `content_blobs` row carries
 `vaultdms-storage-default`. The `tenant_keks` table + `dms-admin kms
 {list,create,rotate}` provide rotation/versioning.
 
-Remaining (tracked separately): the online historical re-wrap CLI
-(`dms-admin kms rewrap` / `rewrap-regional --execute`) needs the storage
-service's `/internal/v1/reencrypt-blob` endpoint — the `ReencryptBlob` service
-primitive already exists; only the HTTP exposure + CLI wiring were missing.
+Re-wrap CLI status:
+- **Region migration — SHIPPED.** `dms-admin kms rewrap-regional --tenant <t>
+  [--execute]` enumerates blobs whose `kek_id` lacks a region suffix and drives
+  the storage service's `/internal/v1/reencrypt-blob` endpoint
+  (`services/storage/internal/handler/reencrypt_http.go` → `Service.ReencryptBlob`)
+  to re-encrypt each under the region-local KEK. Dry-run by default.
+- **Rotation re-wrap — STILL PENDING.** Re-wrapping a tenant's existing blobs in
+  place under the NEW key version after `dms-admin kms rotate` is not yet
+  automated. `ReencryptBlob` only re-wraps on a *region change* (it no-ops when
+  the target region equals the blob's current region), so a same-region version
+  bump needs a primitive that re-wraps the DEK under the live alias version
+  without moving the blob. After a rotate, existing ciphertext keeps decrypting
+  under the retired version, so this is a forward-secrecy hygiene task, not a
+  correctness one.
 
 Original audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM).
 The text below is the original deferred-state plan, kept for history.

@@ -169,8 +169,12 @@ func kmsRotate(args []string) {
 		*tenant, liveVer, newVer, newAlias)
 	fmt.Println("note: existing ciphertext still decrypts under v" +
 		fmt.Sprint(liveVer) + "; new encrypts use the new alias.")
-	fmt.Println("to re-wrap historical DEKs online, run `dms-admin kms rewrap --tenant " +
-		*tenant + "` (deferred to Wave 6 follow-up).")
+	fmt.Println("to migrate historical blobs to a region-local KEK online, run " +
+		"`dms-admin kms rewrap-regional --tenant " + *tenant + " --execute` " +
+		"(dry-run first without --execute).")
+	fmt.Println("note: re-wrapping in place under the NEW rotation version " +
+		"(same region) is not yet automated — ReencryptBlob only re-wraps on " +
+		"a region change; tracked in docs/tech-debt/per-tenant-kek.md.")
 }
 
 func mustPool() *pgxpool.Pool {
