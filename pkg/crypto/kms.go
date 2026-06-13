@@ -24,6 +24,15 @@ type KeyManager interface {
 	// GenerateDataKey under the same kekID.
 	DecryptDataKey(ctx context.Context, kekID string, encryptedDEK []byte) ([]byte, error)
 
+	// EncryptDataKey wraps an EXISTING plaintext DEK under kekID, producing
+	// the same wrapped form GenerateDataKey would. Unlike GenerateDataKey it
+	// does not mint a new DEK — it is the primitive for re-wrapping an
+	// existing DEK under a new KEK version (rotation re-wrap) without
+	// regenerating it or touching the blob ciphertext. Callers should verify
+	// round-trip (DecryptDataKey of the result equals the input) before
+	// persisting, so a backend wrap bug fails closed instead of corrupting.
+	EncryptDataKey(ctx context.Context, kekID string, plaintextDEK []byte) (encryptedDEK []byte, err error)
+
 	// RotateKey re-wraps any data keys under a new KEK. Implementation is
 	// backend-specific; for the Phase B skeleton it is a no-op.
 	RotateKey(ctx context.Context, oldKEKID, newKEKID string) error
@@ -233,6 +242,29 @@ func (l *LocalKeyManager) GenerateDataKey(_ context.Context, kekID string) ([]by
 	return dek, wrapped, nil
 }
 
+// EncryptDataKey wraps an existing DEK under the per-tenant KEK derived
+// from kekID — identical to GenerateDataKey's wrap step but for a caller-
+// supplied DEK. Output format (nonce||ciphertext) matches GenerateDataKey
+// so DecryptDataKey unwraps it unchanged.
+func (l *LocalKeyManager) EncryptDataKey(_ context.Context, kekID string, dek []byte) ([]byte, error) {
+	l.emitWarning()
+	if len(dek) != DEKSize {
+		return nil, fmt.Errorf("EncryptDataKey: DEK must be %d bytes, got %d", DEKSize, len(dek))
+	}
+	kek, err := l.deriveKEK(kekID)
+	if err != nil {
+		return nil, err
+	}
+	ct, nonce, err := EncryptData(dek, kek)
+	if err != nil {
+		return nil, err
+	}
+	wrapped := make([]byte, 0, len(nonce)+len(ct))
+	wrapped = append(wrapped, nonce...)
+	wrapped = append(wrapped, ct...)
+	return wrapped, nil
+}
+
 // DecryptDataKey unwraps a DEK previously produced by GenerateDataKey
 // under the SAME kekID. Passing a different kekID fails (this is the
 // cross-tenant isolation boundary on the local manager).
@@ -300,6 +332,10 @@ type VaultTransitClient interface {
 	// GenerateDataKey calls /transit/datakey/plaintext/<key>,
 	// returning (plaintextDEK, wrappedDEK) for AES-256 (32-byte).
 	GenerateDataKey(ctx context.Context, key string) (plaintext, wrapped []byte, err error)
+	// Encrypt calls /transit/encrypt/<key>, wrapping a caller-supplied
+	// plaintext (an existing DEK) and returning the Vault ciphertext —
+	// the same wrapped form GenerateDataKey emits, so Decrypt unwraps it.
+	Encrypt(ctx context.Context, key string, plaintext []byte) (wrapped []byte, err error)
 	// Decrypt calls /transit/decrypt/<key>, returning the plaintext DEK.
 	Decrypt(ctx context.Context, key string, wrapped []byte) ([]byte, error)
 	// Rotate calls /transit/keys/<key>/rotate. Vault preserves the
@@ -321,6 +357,14 @@ func (v *VaultKeyManager) GenerateDataKey(ctx context.Context, kekID string) (pl
 		return nil, nil, ErrKMSNotConfigured
 	}
 	return v.client.GenerateDataKey(ctx, v.KeyPrefix+kekID)
+}
+
+// EncryptDataKey proxies to Vault's transit/encrypt to wrap an existing DEK.
+func (v *VaultKeyManager) EncryptDataKey(ctx context.Context, kekID string, plaintextDEK []byte) ([]byte, error) {
+	if v.client == nil {
+		return nil, ErrKMSNotConfigured
+	}
+	return v.client.Encrypt(ctx, v.KeyPrefix+kekID, plaintextDEK)
 }
 
 // DecryptDataKey proxies to Vault's transit/decrypt.
@@ -361,6 +405,10 @@ type AWSKMSKeyManager struct {
 type AWSKMSClient interface {
 	// GenerateDataKey calls kms:GenerateDataKey with KeySpec=AES_256.
 	GenerateDataKey(ctx context.Context, keyID string) (plaintext, wrapped []byte, err error)
+	// Encrypt calls kms:Encrypt to wrap a caller-supplied plaintext (an
+	// existing DEK), returning the ciphertext blob — the same wrapped form
+	// GenerateDataKey emits, so Decrypt unwraps it.
+	Encrypt(ctx context.Context, keyID string, plaintext []byte) (wrapped []byte, err error)
 	// Decrypt calls kms:Decrypt. AWS KMS self-identifies the key
 	// from the ciphertext blob, so the keyID is only a consistency
 	// check (and trust boundary).
@@ -404,6 +452,14 @@ func (a *AWSKMSKeyManager) GenerateDataKey(ctx context.Context, kekID string) (p
 		return nil, nil, ErrKMSNotConfigured
 	}
 	return a.client.GenerateDataKey(ctx, a.keyID(kekID))
+}
+
+// EncryptDataKey proxies to kms:Encrypt to wrap an existing DEK.
+func (a *AWSKMSKeyManager) EncryptDataKey(ctx context.Context, kekID string, plaintextDEK []byte) ([]byte, error) {
+	if a.client == nil {
+		return nil, ErrKMSNotConfigured
+	}
+	return a.client.Encrypt(ctx, a.keyID(kekID), plaintextDEK)
 }
 
 // DecryptDataKey proxies to kms:Decrypt.

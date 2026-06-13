@@ -184,6 +184,7 @@ func main() {
 	// re-wrap (region migration / post-rotation) without re-implementing the
 	// KMS+S3 wiring the service owns.
 	hs.Handle("/internal/v1/reencrypt-blob", handler.NewReencryptHTTPHandler(svc))
+	hs.Handle("/internal/v1/rewrap-dek", handler.NewRewrapDEKHTTPHandler(svc))
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")

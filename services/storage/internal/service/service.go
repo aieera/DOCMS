@@ -67,7 +67,7 @@ type Config struct {
 	S3               *storage.S3Client
 	Scanner          *scanner.Client
 	Outbox           *database.OutboxRepository
-	Policy           PermissionChecker // nil = permission check skipped (dev only; warn on startup)
+	Policy           PermissionChecker    // nil = permission check skipped (dev only; warn on startup)
 	Plans            *PlanLookup          // nil = use MaxUploadSize flat; when set, MaxUploadSize acts as fallback
 	KMS              pkgcrypto.KeyManager // required when EncryptAtRest=true
 	Logger           zerolog.Logger
@@ -471,11 +471,15 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	//    (re-uploading a malware ciphertext doesn't help anyone).
 	var envResult *envelopeResult
 	if s.cfg.EncryptAtRest && scanRes.result != model.ScanInfected {
-		// ADR 0022: per-tenant KEK alias derived from tenant id. The
+		// ADR 0022: per-tenant KEK alias. liveKEKAlias resolves the
+		// currently-live alias from tenant_keks (so a `kms rotate` takes
+		// effect on new encrypts), falling back to the base
+		// aliasForTenant form when the tenant has no tenant_keks row —
+		// a no-op for every tenant that never ran `kms create`. The
 		// LocalKeyManager HKDF-derives a unique 32-byte KEK per alias;
 		// Vault / AWS KMS managers look the alias up in their native
 		// stores.
-		kekAlias := aliasForTenant(session.TenantID)
+		kekAlias := s.liveKEKAlias(ctx, session.TenantID)
 		envResult, err = s.encryptAll(ctx, bytes.NewReader(plainBytes), kekAlias)
 		if err != nil {
 			s.failUpload(ctx, session, "envelope encrypt: "+err.Error())
@@ -606,7 +610,6 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		Tier:          finalTier,
 	}, nil
 }
-
 
 // ---- Abort, Download, Scan status -----------------------------------------
 

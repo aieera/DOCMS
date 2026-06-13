@@ -22,30 +22,23 @@ Re-wrap CLI status:
   the storage service's `/internal/v1/reencrypt-blob` endpoint
   (`services/storage/internal/handler/reencrypt_http.go` → `Service.ReencryptBlob`)
   to re-encrypt each under the region-local KEK. Dry-run by default.
-- **Rotation re-wrap — STILL PENDING, and bigger than a primitive.** Re-wrapping
-  a tenant's existing blobs in place under the NEW key version after
-  `dms-admin kms rotate` is not automated, and the prerequisite is missing:
-  the **live encrypt path never consults versioned aliases**. New uploads call
-  `aliasForTenant(tenantID)` → `vaultdms/tenant/<uuid>` (no region, no `@vN`
-  version) at `services/storage/internal/service/service.go` ~L478, so the
-  `@vN` aliases that `kms rotate` writes into `tenant_keks` are never used to
-  encrypt. Consequences:
-    1. There is no resolved "live version" for a re-wrap to target — that
-       resolution (read the current `tenant_keks` row for the tenant/region and
-       use its alias on encrypt) must be built FIRST.
-    2. The envelope re-wrap primitive itself is straightforward and SAFE to add
-       once a target exists: unwrap the DEK under the old `kek_id`, re-wrap the
-       SAME DEK under the live alias via a new `KeyManager.EncryptDataKey`,
-       verify it round-trips back to the original DEK, then update only
-       `content_blobs.encrypted_dek` + `kek_id` (blob ciphertext + `dek_nonce`
-       untouched). `KeyManager` today has only `GenerateDataKey` (new random
-       DEK) and `DecryptDataKey` — no way to wrap an existing DEK — so the
-       method must be added across Local (HKDF wrap), Vault (`transit/encrypt`),
-       and AWS KMS (`kms:Encrypt`).
-  After a rotate, existing ciphertext keeps decrypting under the retired
-  version, so this is a forward-secrecy hygiene task, not a correctness one —
-  but it should be scoped as "wire versioned-alias resolution into the encrypt
-  path + add the re-wrap primitive", not just a CLI subcommand.
+- **Rotation re-wrap — SHIPPED.** Both halves landed:
+    1. **Live-version resolution on encrypt.** `Service.liveKEKAlias` reads the
+       non-retired `tenant_keks` row and the encrypt path
+       (`service.go`) uses it, falling back to the base
+       `aliasForTenant` form when the tenant has no `tenant_keks` row — a no-op
+       for tenants that never ran `kms create`. So a `kms rotate` now actually
+       takes effect on new encrypts.
+    2. **In-place envelope re-wrap.** `KeyManager.EncryptDataKey`
+       (Local HKDF wrap / Vault `transit/encrypt` / AWS `kms:Encrypt`) wraps an
+       existing DEK. `Service.RewrapDEK` unwraps a blob's DEK under its current
+       `kek_id`, re-wraps under the live alias, **verifies the result decrypts
+       back to the identical DEK**, then updates only
+       `content_blobs.encrypted_dek` + `kek_id` (ciphertext + `dek_nonce`
+       untouched; S3 never read). A backend wrap bug fails closed. Driven by
+       `dms-admin kms rewrap --tenant <t> [--execute]` over the storage
+       `/internal/v1/rewrap-dek` endpoint. Regional aliases are left to
+       `kms rewrap-regional` (the two are kept orthogonal).
 
 Original audit reference: `docs/audit/04-antipatterns.md` finding **k** (MEDIUM).
 The text below is the original deferred-state plan, kept for history.

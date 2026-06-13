@@ -13,12 +13,16 @@ import (
 
 // stubVault records the calls so assertions can examine them.
 type stubVault struct {
-	genKey, decKey, rotKey string
+	genKey, encKey, decKey, rotKey string
 }
 
 func (s *stubVault) GenerateDataKey(_ context.Context, key string) ([]byte, []byte, error) {
 	s.genKey = key
 	return []byte("pt012345678901234567890123456789"), []byte("wrapped"), nil
+}
+func (s *stubVault) Encrypt(_ context.Context, key string, _ []byte) ([]byte, error) {
+	s.encKey = key
+	return []byte("wrapped"), nil
 }
 func (s *stubVault) Decrypt(_ context.Context, key string, _ []byte) ([]byte, error) {
 	s.decKey = key
@@ -54,12 +58,16 @@ func TestVaultKeyManager_NilClientRejected(t *testing.T) {
 // stubAWSKMS records the translated key id so we can verify the
 // slash → dash normalisation.
 type stubAWSKMS struct {
-	genKey, decKey string
+	genKey, encKey, decKey string
 }
 
 func (s *stubAWSKMS) GenerateDataKey(_ context.Context, keyID string) ([]byte, []byte, error) {
 	s.genKey = keyID
 	return []byte("pt012345678901234567890123456789"), []byte("wrapped"), nil
+}
+func (s *stubAWSKMS) Encrypt(_ context.Context, keyID string, _ []byte) ([]byte, error) {
+	s.encKey = keyID
+	return []byte("wrapped"), nil
 }
 func (s *stubAWSKMS) Decrypt(_ context.Context, keyID string, _ []byte) ([]byte, error) {
 	s.decKey = keyID

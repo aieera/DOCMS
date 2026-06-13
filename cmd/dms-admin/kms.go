@@ -26,7 +26,7 @@ import (
 func kmsMain(args []string) {
 	if len(args) == 0 {
 		fmt.Println("Usage: dms-admin kms <subcommand>")
-		fmt.Println("Subcommands: list, create, rotate, rewrap-regional")
+		fmt.Println("Subcommands: list, create, rotate, rewrap, rewrap-regional")
 		os.Exit(2)
 	}
 	switch args[0] {
@@ -36,6 +36,10 @@ func kmsMain(args []string) {
 		kmsCreate(args[1:])
 	case "rotate":
 		kmsRotate(args[1:])
+	case "rewrap":
+		// Rotation re-wrap: re-wrap each non-regional blob's DEK in
+		// place under the tenant's live KEK version (post `kms rotate`).
+		kmsRewrap(args[1:])
 	case "rewrap-regional":
 		// Wave 12.3: enumerate blobs whose kek_id lacks a region
 		// suffix and re-encrypt each under the region-local KEK.
@@ -169,12 +173,11 @@ func kmsRotate(args []string) {
 		*tenant, liveVer, newVer, newAlias)
 	fmt.Println("note: existing ciphertext still decrypts under v" +
 		fmt.Sprint(liveVer) + "; new encrypts use the new alias.")
-	fmt.Println("to migrate historical blobs to a region-local KEK online, run " +
-		"`dms-admin kms rewrap-regional --tenant " + *tenant + " --execute` " +
+	fmt.Println("to re-wrap existing blobs under the new version online, run " +
+		"`dms-admin kms rewrap --tenant " + *tenant + " --execute` " +
 		"(dry-run first without --execute).")
-	fmt.Println("note: re-wrapping in place under the NEW rotation version " +
-		"(same region) is not yet automated — ReencryptBlob only re-wraps on " +
-		"a region change; tracked in docs/tech-debt/per-tenant-kek.md.")
+	fmt.Println("to migrate historical blobs to a region-local KEK, run " +
+		"`dms-admin kms rewrap-regional --tenant " + *tenant + " --execute`.")
 }
 
 func mustPool() *pgxpool.Pool {
