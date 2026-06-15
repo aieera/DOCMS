@@ -115,7 +115,7 @@ function CommandTrigger() {
         navigate({ to: '/search', search: { q: trimmed } })
       }}
       className={
-        'group hidden h-9 items-center gap-2 rounded-md border border-input bg-background px-3 ' +
+        'group hidden h-10 items-center gap-2 rounded-full border border-input bg-card px-4 shadow-sm ' +
         'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
         'hover:border-ring/60 sm:inline-flex sm:w-64 md:w-80'
       }

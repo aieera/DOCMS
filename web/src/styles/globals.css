@@ -24,59 +24,71 @@
 
 @layer base {
   :root {
-    --background: 45 80% 96%;
-    --foreground: 0 0% 10%;
+    /* "gig share" reference theme — cool, clean, lots of whitespace.
+     * Light cool-grey canvas, white cards, dark-slate sidebar, emerald
+     * call-to-action, pastel accent surfaces for folder/feature cards. */
+    --background: 220 24% 96%;
+    --foreground: 222 24% 19%;
 
-    --muted: 42 60% 90%;
-    --muted-foreground: 34 11% 50%;
+    --muted: 220 16% 93%;
+    --muted-foreground: 220 9% 46%;
 
-    --popover: 45 80% 97%;
-    --popover-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 24% 19%;
 
-    --card: 45 85% 97%;
-    --card-foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 24% 19%;
 
-    --border: 40 30% 85%;
-    --input: 40 30% 85%;
+    --border: 220 16% 89%;
+    --input: 220 16% 89%;
 
-    --primary: 43 90% 60%;
-    --primary-foreground: 0 0% 10%;
+    /* Emerald — the primary call-to-action (the reference's green
+     * "Upgrade Plan" button). */
+    --primary: 152 46% 43%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 42 65% 91%;
-    --secondary-foreground: 0 0% 10%;
+    --secondary: 220 16% 94%;
+    --secondary-foreground: 222 24% 19%;
 
-    /* `accent` is used by shadcn for hover backgrounds — keep it
-     * cream-soft rather than the loud mustard, otherwise every
-     * hover flashes yellow. Use `--primary` explicitly for the
-     * mustard call-to-action surfaces. */
-    --accent: 42 70% 88%;
-    --accent-foreground: 0 0% 10%;
+    /* Neutral cool hover surface so hovers don't flash a loud colour. */
+    --accent: 220 16% 94%;
+    --accent-foreground: 222 24% 19%;
 
-    /* Warm red — sits on cream without the clinical bright-red feel */
-    --destructive: 5 65% 50%;
-    --destructive-foreground: 45 80% 96%;
+    /* Coral red for destructive. */
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
 
-    /* Olive-y green so success states don't clash with cream */
-    --success: 100 30% 38%;
-    --success-foreground: 45 80% 96%;
+    /* Success shares the emerald family. */
+    --success: 152 46% 40%;
+    --success-foreground: 0 0% 100%;
 
-    /* Warm orange (close to the mustard's hue family) */
-    --warning: 30 85% 50%;
-    --warning-foreground: 0 0% 10%;
+    /* Amber warning. */
+    --warning: 38 92% 50%;
+    --warning-foreground: 30 40% 14%;
 
-    /* Muted blue — used rarely; tuned to coexist with cream */
-    --info: 200 55% 45%;
-    --info-foreground: 45 80% 96%;
+    /* Indigo info — matches the reference's "02 / Branding" card. */
+    --info: 234 50% 56%;
+    --info-foreground: 0 0% 100%;
 
-    --ring: 43 90% 60%;
+    --ring: 152 46% 43%;
 
     --radius: 1rem;
 
-    --sidebar: 42 70% 92%;
-    --sidebar-foreground: 0 0% 10%;
-    --sidebar-border: 40 30% 82%;
-    --sidebar-accent: 43 90% 60%;
-    --sidebar-accent-foreground: 0 0% 10%;
+    /* Dark slate sidebar (the reference's signature left panel). */
+    --sidebar: 218 24% 32%;
+    --sidebar-foreground: 220 22% 92%;
+    --sidebar-border: 218 16% 42%;
+    --sidebar-accent: 218 20% 44%;
+    --sidebar-accent-foreground: 0 0% 100%;
+
+    /* Pastel accent surfaces for folder / feature cards (sage, indigo,
+     * coral) — soft tints designed to read on the light canvas. */
+    --folder-sage: 152 33% 70%;
+    --folder-sage-foreground: 158 42% 18%;
+    --folder-indigo: 234 45% 60%;
+    --folder-indigo-foreground: 0 0% 100%;
+    --folder-coral: 8 78% 66%;
+    --folder-coral-foreground: 0 0% 100%;
 
     /* Legacy aliases — kept so existing `var(--color-*)` usages don't
      * break while pages migrate. Phase 2/3 will remove these. */
@@ -84,8 +96,8 @@
     --color-bg-secondary: hsl(var(--card));
     --color-text: hsl(var(--foreground));
     --color-text-secondary: hsl(var(--muted-foreground));
-    --color-primary: #F5C13B;
-    --color-primary-hover: #D9A422;
+    --color-primary: #34a06a;
+    --color-primary-hover: #2c885a;
     --color-border: hsl(var(--border));
     --color-accent: hsl(var(--accent));
     --color-danger: hsl(var(--destructive));

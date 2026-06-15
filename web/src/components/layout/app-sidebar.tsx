@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, FolderTree, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, Plus, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -36,6 +36,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard', exact: true },
       { to: '/workspaces', icon: FolderOpen, labelKey: 'sidebar.workspaces' },
+      // ERP↔SeDoc customer file explorer (separate integration product, embedded).
+      // Folders auto-provision when a customer is created in the ERP. Admin/owner
+      // only — it's an integration surface, not a per-member view.
+      { to: '/customer-files', icon: FolderTree, labelKey: 'Files', roles: ['admin', 'owner'] },
       // Cross-workspace surface for folders shared with the caller via
       // folder_grants (direct or group). Hidden from admins is NOT a
       // goal — admins see all so they'd rarely need this, but it's
@@ -83,25 +87,23 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
         active
-          ? 'bg-accent text-foreground'
-          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+          ? 'bg-white/12 text-white'
+          : 'text-sidebar-foreground/70 hover:bg-white/5 hover:text-white',
         collapsed && 'justify-center px-0',
       )}
     >
-      {/* Active indicator rail — 2px leading-edge accent at the
-          primary color so the active row reads at a glance, paired
-          with the cream-soft accent background (not the loud mustard
-          sidebar-accent token, which produces zero icon contrast). */}
+      {/* Active indicator rail — emerald leading-edge accent so the
+          active row reads at a glance against the dark slate panel. */}
       {active && (
         <span
           aria-hidden
-          className="absolute inset-y-1.5 start-0 w-[2px] rounded-e-full bg-primary"
+          className="absolute inset-y-1.5 start-0 w-[3px] rounded-e-full bg-primary"
         />
       )}
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-foreground' : 'text-muted-foreground/80 group-hover:text-foreground')} />
+      <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-white' : 'text-sidebar-foreground/55 group-hover:text-white')} />
       {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   )
@@ -111,11 +113,11 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
   return (
     <div className={cn('flex h-14 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
       {!collapsed && (
-        <Link to="/" className="flex flex-1 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-sidebar-accent/60">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background">
-            <Database className="h-4 w-4" />
+        <Link to="/" className="flex flex-1 items-center gap-2.5 rounded-lg px-2 py-1 transition-colors hover:bg-white/5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-sidebar shadow-sm">
+            <Database className="h-[18px] w-[18px]" />
           </span>
-          <span className="text-sm font-semibold tracking-tight">SeDoc</span>
+          <span className="text-[15px] font-semibold tracking-tight text-white">SeDoc</span>
         </Link>
       )}
       <Button
@@ -123,7 +125,7 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
         size="icon"
         onClick={onToggle}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="h-8 w-8 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+        className="h-8 w-8 text-sidebar-foreground/70 hover:bg-white/10 hover:text-white"
       >
         {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </Button>
@@ -139,17 +141,17 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
   // email so it's clearly a status surface, not a control. Once the
   // switcher API lands, this becomes a real button again.
   return (
-    <div className="border-b border-sidebar-border/60 px-3 py-3">
+    <div className="px-3 py-4">
       <div
-        className="flex w-full items-center gap-2.5 rounded-md border border-sidebar-border bg-background/50 px-3 py-2.5"
+        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-4 text-center"
         aria-label={`Signed in as ${user.display_name ?? user.email}`}
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground ring-4 ring-white/10">
           {user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
         </span>
-        <span className="min-w-0 flex-1 leading-tight">
-          <span className="block truncate text-xs font-semibold">{user.display_name ?? 'Account'}</span>
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{user.email}</span>
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate text-sm font-semibold text-white">{user.display_name ?? 'Account'}</span>
+          <span className="mt-0.5 block truncate text-[11px] text-sidebar-foreground/60">{user.email}</span>
         </span>
       </div>
     </div>
@@ -159,9 +161,9 @@ function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
 function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGroup; collapsed: boolean; pathname: string; isFirst: boolean }) {
   const { t } = useTranslation('common')
   return (
-    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-2 border-t border-sidebar-border/40 pt-2')}>
+    <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-3 border-t border-white/10 pt-3')}>
       {!collapsed && (
-        <div className="px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
+        <div className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/45">
           {t(group.labelKey)}
         </div>
       )}
@@ -191,7 +193,7 @@ function SmartFoldersBlock({ collapsed }: { collapsed: boolean }) {
   if (!data || data.length === 0) return null
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
         <Sparkles className="h-3 w-3" />
         {t('sidebar.smart_folders')}
       </div>
@@ -206,10 +208,10 @@ function SmartFolderLink({ sf }: { sf: SavedSearch }) {
     <Link
       to="/search"
       search={{ q: sf.query, saved: sf.id } as any}
-      className="group relative mx-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
       data-testid={`smart-folder-${sf.id}`}
     >
-      <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-500" />
+      <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-300" />
       <span className="truncate">{sf.name}</span>
       <Vis className="ms-auto h-3 w-3 opacity-60" aria-label={sf.tree_visibility ?? 'private'} />
     </Link>
@@ -244,6 +246,27 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
         ))}
         <SmartFoldersBlock collapsed={collapsed} />
       </nav>
+      <UploadCard collapsed={collapsed} />
+    </div>
+  )
+}
+
+// Bottom upload affordance — mirrors the reference's dashed "Add files"
+// card. Routes to the workspace browser where the upload action lives.
+function UploadCard({ collapsed }: { collapsed: boolean }) {
+  if (collapsed) return null
+  return (
+    <div className="px-3 pb-4">
+      <Link
+        to="/workspaces"
+        className="group flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/20 bg-white/[0.03] px-3 py-4 text-center transition-colors hover:border-primary/60 hover:bg-white/5"
+      >
+        <span className="text-xs font-medium text-sidebar-foreground/80">Add files</span>
+        <span className="text-[11px] text-sidebar-foreground/45">Browse your workspaces</span>
+        <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-white text-sidebar shadow-sm transition-transform group-hover:scale-105">
+          <Plus className="h-4 w-4" />
+        </span>
+      </Link>
     </div>
   )
 }
