@@ -2,8 +2,7 @@ package opensearch
 
 import (
 	"encoding/base64"
-	"fmt"
-	"strconv"
+	"encoding/json"
 
 	"github.com/aieera/sedoc/services/search/internal/model"
 )
@@ -41,7 +40,6 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	if pageSize <= 0 || pageSize > MaxPageSize {
 		pageSize = DefaultPageSize
 	}
-	from := decodePageToken(req.PageToken)
 
 	// ---- bool query -------------------------------------------------------
 	musts := []any{}
@@ -95,12 +93,20 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 	body := map[string]any{
 		"query":   map[string]any{"bool": boolQ},
 		"size":    pageSize,
-		"from":    from,
 		"_source": SourceFields,
 	}
 
 	// ---- sort -------------------------------------------------------------
 	body["sort"] = buildSort(req.SortBy, req.SortOrder)
+
+	// ---- deep pagination via search_after (Workstream 7) ------------------
+	// No `from`: results past OpenSearch's 10k from+size ceiling are reachable.
+	// The cursor is the previous page's last hit's sort values; the first page
+	// omits it. Requires the deterministic total-ordering sort below (every
+	// branch ends with the unique document_id tiebreaker).
+	if after := DecodeSearchAfter(req.PageToken); len(after) > 0 {
+		body["search_after"] = after
+	}
 
 	// ---- highlight --------------------------------------------------------
 	if req.Highlight {
@@ -359,6 +365,7 @@ func buildFilters(req *model.SearchRequest) []any {
 // share-link URL with one of these sentinels in X-User-ID:
 //   - "" (empty): preferred shape, no header at all
 //   - "anonymous": legacy alias kept for in-flight integrations
+//
 // Any other value means a logged-in user is making the request, in
 // which case the share-token clause stacks ON TOP of their normal
 // access (logged-in user following a share link sees the union).
@@ -376,24 +383,32 @@ func buildPrincipals(userID string, groupIDs []string) []string {
 	return out
 }
 
+// buildSort always ends with the unique document_id tiebreaker so the sort is a
+// TOTAL order — a hard requirement for search_after (a non-unique final sort key
+// can skip or repeat rows across pages). document_id is a keyword field in the
+// index mapping, so it's safely sortable.
 func buildSort(sortBy, sortOrder string) []any {
 	order := "desc"
 	if sortOrder == "asc" {
 		order = "asc"
 	}
+	const tiebreaker = "document_id"
 	switch sortBy {
 	case "created_at", "updated_at", "size_bytes":
 		return []any{
 			map[string]any{sortBy: map[string]any{"order": order}},
-			"_score",
+			map[string]any{tiebreaker: map[string]any{"order": "asc"}},
 		}
 	case "title":
 		return []any{
 			map[string]any{"title.keyword": map[string]any{"order": order}},
-			"_score",
+			map[string]any{tiebreaker: map[string]any{"order": "asc"}},
 		}
 	default: // "relevance"
-		return []any{"_score"}
+		return []any{
+			"_score",
+			map[string]any{tiebreaker: map[string]any{"order": "asc"}},
+		}
 	}
 }
 
@@ -422,28 +437,34 @@ func StripAggs(searchBody map[string]any) map[string]any {
 	return out
 }
 
-// DecodePageTokenInt is the exported counterpart used by the service layer.
-func DecodePageTokenInt(token string) int { return decodePageToken(token) }
-
-func decodePageToken(token string) int {
+// DecodeSearchAfter reverses EncodeSearchAfter: an opaque base64(JSON-array)
+// cursor → the OpenSearch `search_after` sort values. Empty / malformed / legacy
+// (the old base64 integer offset) tokens decode to nil, i.e. "first page", so a
+// rollout from the from+size cursor degrades gracefully instead of erroring.
+func DecodeSearchAfter(token string) []any {
 	if token == "" {
-		return 0
+		return nil
 	}
 	b, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return 0
+		return nil
 	}
-	n, err := strconv.Atoi(string(b))
-	if err != nil || n < 0 {
-		return 0
+	var after []any
+	if err := json.Unmarshal(b, &after); err != nil {
+		return nil // old integer-offset token or garbage → start over
 	}
-	return n
+	return after
 }
 
-// EncodePageToken encodes the next "from" offset.
-func EncodePageToken(from int) string {
-	if from <= 0 {
+// EncodeSearchAfter packs a hit's sort values into an opaque cursor. nil/empty
+// sort → "" (no further pages).
+func EncodeSearchAfter(sort []any) string {
+	if len(sort) == 0 {
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", from)))
+	b, err := json.Marshal(sort)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }

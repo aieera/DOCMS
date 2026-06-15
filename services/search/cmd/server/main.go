@@ -185,6 +185,18 @@ func main() {
 	searchAuth := http.NewServeMux()
 	searchAuth.Handle("POST /api/v1/search",
 		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "search:read")(mux))
+	// WS5 — idempotency on the saved-search mutations the integration drives.
+	// create is a resource-creating POST (IdempotencyRequired); promote toggles
+	// an existing row (Idempotency, honoured-when-supplied). These routes are
+	// session-scoped today, so the required-gate only bites once they accept an
+	// API-key principal — but the dedupe works for any caller that sends a key.
+	// More specific patterns than "/" so they win the mux match.
+	searchAuth.Handle("POST /api/v1/saved-searches",
+		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+			middleware.IdempotencyRequired(pool)(mux)))
+	searchAuth.Handle("POST /api/v1/saved-searches/{id}/promote",
+		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+			middleware.Idempotency(pool)(mux)))
 	searchAuth.Handle("/",
 		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
 	httpSrv := &http.Server{

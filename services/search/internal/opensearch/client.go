@@ -272,6 +272,9 @@ type RawHit struct {
 	Score     float64
 	Source    map[string]any
 	Highlight map[string][]string
+	// Sort holds this hit's `sort` values (Workstream 7) — the cursor the
+	// service encodes as the next page's search_after token.
+	Sort []any
 }
 
 // RawBucket is a single aggregation bucket.
@@ -299,6 +302,9 @@ func parseSearchResult(raw map[string]any) (*RawSearchResult, error) {
 		}
 		if s, ok := hm["_score"].(float64); ok {
 			rh.Score = s
+		}
+		if sortVals, ok := hm["sort"].([]any); ok {
+			rh.Sort = sortVals
 		}
 		if hl, ok := hm["highlight"].(map[string]any); ok {
 			rh.Highlight = make(map[string][]string)
@@ -336,7 +342,7 @@ func parseSearchResult(raw map[string]any) (*RawSearchResult, error) {
 //   - terms:          key is the term itself ("contract", "invoice", …)
 //   - date_histogram: key is a unix-ms float; key_as_string is the ISO date
 //   - range:          key is the caller-supplied label ("100KB-1MB"),
-//                     and from/to come along but we only surface the label
+//     and from/to come along but we only surface the label
 //
 // The `key_as_string` field is what the UI wants to render for date
 // buckets, so prefer it when present.

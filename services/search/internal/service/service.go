@@ -31,8 +31,8 @@ type Service struct {
 	// vec is the dense-vector path (§7.1 / D6 part 2). Nil in dev
 	// stacks without intelligence running; Search() degrades to
 	// lexical mode when it's absent.
-	vec   *vector.Client
-	log   zerolog.Logger
+	vec *vector.Client
+	log zerolog.Logger
 }
 
 // Config is the DI struct for New.
@@ -202,13 +202,17 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 		}
 	}
 
+	// Deep pagination via search_after (Workstream 7): the next page's cursor is
+	// the last hit's sort values. Only emit when the page came back full — a
+	// short page means the end. Reachable past the 10k from+size ceiling because
+	// the query carries no `from`.
 	pageSize := req.PageSize
 	if pageSize <= 0 || pageSize > opensearch.MaxPageSize {
 		pageSize = opensearch.DefaultPageSize
 	}
-	nextFrom := opensearch.DecodePageTokenInt(req.PageToken) + pageSize
-	if int64(nextFrom) < raw.TotalHits {
-		result.PageToken = opensearch.EncodePageToken(nextFrom)
+	if len(raw.Hits) == pageSize {
+		last := raw.Hits[len(raw.Hits)-1]
+		result.PageToken = opensearch.EncodeSearchAfter(last.Sort)
 	}
 
 	// Store query in recent searches (fire-and-forget).

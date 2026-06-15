@@ -1,7 +1,9 @@
 package opensearch
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -137,16 +139,73 @@ func TestBuildSearchQuery_SortOptions(t *testing.T) {
 	}
 }
 
-func TestPageTokenRoundtrip(t *testing.T) {
-	for _, n := range []int{0, 20, 100, 500} {
-		token := EncodePageToken(n)
-		got := DecodePageTokenInt(token)
-		if n == 0 && token != "" {
-			t.Fatalf("0 should encode to empty token")
+// TestSearchAfterCursorRoundTrip: a hit's sort values encode to an opaque token
+// and decode back unchanged (numbers come back as float64 through JSON, which is
+// exactly what OpenSearch's search_after accepts).
+func TestSearchAfterCursorRoundTrip(t *testing.T) {
+	sort := []any{1719500000000.0, "doc-abc"}
+	tok := EncodeSearchAfter(sort)
+	if tok == "" {
+		t.Fatal("expected non-empty cursor")
+	}
+	if got := DecodeSearchAfter(tok); !reflect.DeepEqual(got, sort) {
+		t.Fatalf("roundtrip mismatch: %v != %v", got, sort)
+	}
+}
+
+func TestSearchAfterEmptyAndLegacy(t *testing.T) {
+	if got := DecodeSearchAfter(""); got != nil {
+		t.Fatalf("empty token → nil, got %v", got)
+	}
+	// A legacy from+size token was base64 of an integer string — must decode to
+	// nil (first page) rather than erroring, so a rollout degrades gracefully.
+	legacy := base64.StdEncoding.EncodeToString([]byte("40"))
+	if got := DecodeSearchAfter(legacy); got != nil {
+		t.Fatalf("legacy offset token → nil, got %v", got)
+	}
+	if got := DecodeSearchAfter("!!!not-base64"); got != nil {
+		t.Fatalf("garbage token → nil, got %v", got)
+	}
+	if EncodeSearchAfter(nil) != "" {
+		t.Fatal("nil sort → empty cursor")
+	}
+}
+
+// TestBuildSortHasUniqueTiebreaker: every sort path must end with the unique
+// document_id tiebreaker, or search_after can skip/repeat rows across pages.
+func TestBuildSortHasUniqueTiebreaker(t *testing.T) {
+	for _, sb := range []string{"relevance", "created_at", "updated_at", "size_bytes", "title", ""} {
+		sort := buildSort(sb, "desc")
+		if len(sort) < 2 {
+			t.Fatalf("sortBy %q: expected primary + tiebreaker, got %v", sb, sort)
 		}
-		if n > 0 && got != n {
-			t.Fatalf("roundtrip failed: encoded %d, decoded %d", n, got)
+		last, ok := sort[len(sort)-1].(map[string]any)
+		if !ok || last["document_id"] == nil {
+			t.Fatalf("sortBy %q: final sort key must be document_id, got %v", sb, sort[len(sort)-1])
 		}
+	}
+}
+
+// TestBuildSearchQueryPagination: first page carries no `from` and no
+// `search_after`; a cursor page carries search_after and still no `from` (so the
+// 10k from+size ceiling never applies).
+func TestBuildSearchQueryPagination(t *testing.T) {
+	first := BuildSearchQuery(&model.SearchRequest{TenantID: "t", UserID: "u", Query: "x"})
+	if _, hasFrom := first["from"]; hasFrom {
+		t.Fatal("query must not set `from` (search_after pagination)")
+	}
+	if _, hasAfter := first["search_after"]; hasAfter {
+		t.Fatal("first page must not set search_after")
+	}
+
+	cursor := EncodeSearchAfter([]any{1.0, "doc-1"})
+	next := BuildSearchQuery(&model.SearchRequest{TenantID: "t", UserID: "u", Query: "x", PageToken: cursor})
+	if _, hasFrom := next["from"]; hasFrom {
+		t.Fatal("cursor page must not set `from`")
+	}
+	after, ok := next["search_after"].([]any)
+	if !ok || len(after) != 2 {
+		t.Fatalf("cursor page must set search_after to the decoded sort values, got %v", next["search_after"])
 	}
 }
 
