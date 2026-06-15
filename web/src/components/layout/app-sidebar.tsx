@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, FolderTree, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, Plus, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, FolderTree, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -133,31 +133,6 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
   )
 }
 
-function WorkspaceCard({ collapsed }: { collapsed: boolean }) {
-  const user = useAuthStore((s) => s.user)
-  if (collapsed || !user) return null
-  // Tenant switcher is not yet wired (no auth.tenants[] endpoint).
-  // Render as a non-interactive card with the user's display name +
-  // email so it's clearly a status surface, not a control. Once the
-  // switcher API lands, this becomes a real button again.
-  return (
-    <div className="px-3 py-4">
-      <div
-        className="flex w-full flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-4 text-center"
-        aria-label={`Signed in as ${user.display_name ?? user.email}`}
-      >
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground ring-4 ring-white/10">
-          {user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
-        </span>
-        <span className="min-w-0 leading-tight">
-          <span className="block truncate text-sm font-semibold text-white">{user.display_name ?? 'Account'}</span>
-          <span className="mt-0.5 block truncate text-[11px] text-sidebar-foreground/60">{user.email}</span>
-        </span>
-      </div>
-    </div>
-  )
-}
-
 function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGroup; collapsed: boolean; pathname: string; isFirst: boolean }) {
   const { t } = useTranslation('common')
   return (
@@ -239,34 +214,12 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <BrandRow collapsed={collapsed} onToggle={onToggle} />
-      <WorkspaceCard collapsed={collapsed} />
-      <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4', collapsed && 'px-1.5')}>
+      <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4 pt-3', collapsed && 'px-1.5')}>
         {visibleGroups.map((group, i) => (
           <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} isFirst={i === 0} />
         ))}
         <SmartFoldersBlock collapsed={collapsed} />
       </nav>
-      <UploadCard collapsed={collapsed} />
-    </div>
-  )
-}
-
-// Bottom upload affordance — mirrors the reference's dashed "Add files"
-// card. Routes to the workspace browser where the upload action lives.
-function UploadCard({ collapsed }: { collapsed: boolean }) {
-  if (collapsed) return null
-  return (
-    <div className="px-3 pb-4">
-      <Link
-        to="/workspaces"
-        className="group flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/20 bg-white/[0.03] px-3 py-4 text-center transition-colors hover:border-primary/60 hover:bg-white/5"
-      >
-        <span className="text-xs font-medium text-sidebar-foreground/80">Add files</span>
-        <span className="text-[11px] text-sidebar-foreground/45">Browse your workspaces</span>
-        <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-white text-sidebar shadow-sm transition-transform group-hover:scale-105">
-          <Plus className="h-4 w-4" />
-        </span>
-      </Link>
     </div>
   )
 }
