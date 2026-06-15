@@ -44,6 +44,11 @@ message Document {
   // flight workflow. Frontend renders a status pill on the document
   // card + header.
   DocumentWorkflowInstance  workflow_instance        = 22;
+  // Caller-owned stable business key (e.g. "INV-2024-00188"). Tenant-
+  // unique when set; empty when the document has no external mapping.
+  // Set on create + upsert; surfaced on reads. See the documents:upsert
+  // and documents:byExternalKey REST routes.
+  string                    external_id              = 23;
 }
 
 message DocumentWorkflowInstance {
@@ -173,8 +178,17 @@ message GetFolderRequest { string folder_id = 1; }
 message ListFoldersRequest {
   string workspace_id     = 1;
   string parent_folder_id = 2;
+  // Keyset pagination (Workstream 6 — folder hierarchy at 100k). page_size
+  // defaults to 50 and is capped at 200 server-side. page_token is an opaque
+  // cursor returned as next_page_token from the previous page; empty = first page.
+  int32  page_size  = 3;
+  string page_token = 4;
 }
-message ListFoldersResponse { repeated Folder folders = 1; }
+message ListFoldersResponse {
+  repeated Folder folders = 1;
+  // Opaque cursor for the next page; empty when there are no more children.
+  string next_page_token = 2;
+}
 message UpdateFolderRequest {
   string folder_id            = 1;
   string name                 = 2;
@@ -208,6 +222,8 @@ message CreateDocumentRequest {
   RegionPin              region_pin      = 5;
   google.protobuf.Struct custom_metadata = 6;
   repeated string        tags            = 7;
+  // Optional caller-owned stable business key. Tenant-unique when set.
+  string                 external_id     = 8;
 }
 message GetDocumentRequest { string document_id = 1; }
 message UpdateDocumentRequest {
