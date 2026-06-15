@@ -12,7 +12,10 @@ const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
     <div
       ref={ref}
       className={cn(
-        'rounded-lg border border-border bg-card text-card-foreground shadow-sm',
+        // "New" soft card: larger radius + a gentle layered shadow +
+        // hairline border, matching the reference's elevated white cards.
+        'rounded-2xl border border-border/70 bg-card text-card-foreground',
+        'shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.12)]',
         className,
       )}
       {...props}

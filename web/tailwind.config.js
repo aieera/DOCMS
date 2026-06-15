@@ -78,6 +78,11 @@ export default {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        // Larger radii scale off --radius too, so the "new" soft cards
+        // (rounded-2xl/3xl) read as generously rounded as the reference.
+        xl: 'calc(var(--radius) + 4px)',
+        '2xl': 'calc(var(--radius) + 8px)',
+        '3xl': 'calc(var(--radius) + 16px)',
       },
       keyframes: {
         'accordion-down': {

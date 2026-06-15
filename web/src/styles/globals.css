@@ -74,11 +74,11 @@
 
     --radius: 1rem;
 
-    /* Dark slate sidebar (the reference's signature left panel). */
-    --sidebar: 218 24% 32%;
-    --sidebar-foreground: 220 22% 92%;
-    --sidebar-border: 218 16% 42%;
-    --sidebar-accent: 218 20% 44%;
+    /* Navy-blue sidebar (the signature left panel). */
+    --sidebar: 222 47% 20%;
+    --sidebar-foreground: 217 40% 90%;
+    --sidebar-border: 222 35% 34%;
+    --sidebar-accent: 222 40% 32%;
     --sidebar-accent-foreground: 0 0% 100%;
 
     /* Pastel accent surfaces for folder / feature cards (sage, indigo,
