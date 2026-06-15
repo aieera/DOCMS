@@ -23,6 +23,7 @@ import { Route as AuthenticatedSharedWithMeRouteImport } from './routes/_authent
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authenticated/saved-searches'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedCustomerFilesRouteImport } from './routes/_authenticated/customer-files'
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows/index'
@@ -177,6 +178,12 @@ const AuthenticatedNotificationsRoute =
   AuthenticatedNotificationsRouteImport.update({
     id: '/notifications',
     path: '/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCustomerFilesRoute =
+  AuthenticatedCustomerFilesRouteImport.update({
+    id: '/customer-files',
+    path: '/customer-files',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAskRoute = AuthenticatedAskRouteImport.update({
@@ -675,6 +682,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
+  '/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -772,6 +780,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
+  '/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -871,6 +880,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/_authenticated/ask': typeof AuthenticatedAskRoute
+  '/_authenticated/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
@@ -972,6 +982,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/ask'
+    | '/customer-files'
     | '/notifications'
     | '/saved-searches'
     | '/search'
@@ -1069,6 +1080,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/ask'
+    | '/customer-files'
     | '/notifications'
     | '/saved-searches'
     | '/search'
@@ -1167,6 +1179,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/_authenticated/ask'
+    | '/_authenticated/customer-files'
     | '/_authenticated/notifications'
     | '/_authenticated/saved-searches'
     | '/_authenticated/search'
@@ -1368,6 +1381,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/customer-files': {
+      id: '/_authenticated/customer-files'
+      path: '/customer-files'
+      fullPath: '/customer-files'
+      preLoaderRoute: typeof AuthenticatedCustomerFilesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/ask': {
@@ -1983,6 +2003,7 @@ const AuthenticatedAdminIntegrationsRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAskRoute: typeof AuthenticatedAskRoute
+  AuthenticatedCustomerFilesRoute: typeof AuthenticatedCustomerFilesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSavedSearchesRoute: typeof AuthenticatedSavedSearchesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
@@ -2071,6 +2092,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAskRoute: AuthenticatedAskRoute,
+  AuthenticatedCustomerFilesRoute: AuthenticatedCustomerFilesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSavedSearchesRoute: AuthenticatedSavedSearchesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
