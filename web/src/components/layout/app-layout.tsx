@@ -23,7 +23,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <MobileSidebar open={mobileOpen} onOpenChange={setMobileOpen} />
       <div
         className={cn(
-          'flex min-h-screen flex-col transition-[padding] duration-200 ease-out motion-reduce:transition-none',
+          // Navy backdrop so the content panel's rounded top-left corner
+          // reveals navy where it meets the navy sidebar + topbar.
+          'flex min-h-screen flex-col bg-sidebar transition-[padding] duration-200 ease-out motion-reduce:transition-none',
           // The sidebar is hidden below lg; on lg+ we reserve space
           // for it so the content doesn't slide under the panel.
           'lg:ps-[260px]',
@@ -31,7 +33,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         <AppTopbar onOpenMobileNav={() => setMobileOpen(true)} />
-        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Content panel — curved top-left corner tucks the light canvas
+            under the navy topbar/sidebar like a nested card. */}
+        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[28px] bg-background">
           <div className="mx-auto flex w-full flex-1 flex-col p-4 sm:p-6 lg:p-8">{children}</div>
         </main>
       </div>
