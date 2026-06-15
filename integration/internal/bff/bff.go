@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -24,12 +27,21 @@ type BFF struct {
 	doc         *sedoc.Client
 	authz       erp.Authorizer
 	workspaceID string
+	workerURL   string // base URL of the integration worker, for the metrics passthrough
 	log         zerolog.Logger
 }
 
 // New constructs the BFF.
 func New(st *store.Store, doc *sedoc.Client, authz erp.Authorizer, workspaceID string, log zerolog.Logger) *BFF {
 	return &BFF{st: st, doc: doc, authz: authz, workspaceID: workspaceID, log: log}
+}
+
+// WithWorkerURL sets the integration worker's base URL so GET /files/sync/metrics
+// can proxy the worker's runtime metrics (throughput + limiter state). Without
+// it, that route returns 503. Returns the BFF for chaining.
+func (b *BFF) WithWorkerURL(u string) *BFF {
+	b.workerURL = strings.TrimRight(u, "/")
+	return b
 }
 
 // Register mounts the routes.
@@ -39,7 +51,9 @@ func (b *BFF) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /files/customers/{ref}/tree", b.tree)
 	mux.HandleFunc("GET /files/customers/{ref}/folders/{folder_id}/documents", b.folderDocuments)
 	mux.HandleFunc("POST /files/customers/{ref}/upload", b.upload)
-	mux.HandleFunc("GET /files/search", b.search)
+	// POST (not GET): the free-text query travels in the body, not the URL, so it
+	// never lands in access logs.
+	mux.HandleFunc("POST /files/search", b.search)
 	// Document-id routes (authz resolved via the document's folder → customer).
 	mux.HandleFunc("GET /files/documents/{id}", b.documentDetail)
 	mux.HandleFunc("GET /files/documents/{id}/download", b.download)
@@ -49,7 +63,11 @@ func (b *BFF) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /files/review-queue/{id}", b.adminReviewGet)
 	mux.HandleFunc("POST /files/review-queue/{id}/resolve", b.adminReviewResolve)
 	mux.HandleFunc("GET /files/sync/log", b.adminSyncLog)
+	mux.HandleFunc("GET /files/sync/metrics", b.adminSyncMetrics)
 	mux.HandleFunc("POST /files/sync/retry/{id}", b.adminSyncRetry)
+	mux.HandleFunc("POST /files/sync/backfill", b.adminBackfillStart)
+	mux.HandleFunc("GET /files/sync/backfill", b.adminBackfillList)
+	mux.HandleFunc("GET /files/sync/backfill/{run_id}", b.adminBackfillGet)
 }
 
 // ---- auth + authz ----------------------------------------------------------
@@ -149,71 +167,110 @@ func (b *BFF) folderDocuments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// upload streams a multipart file straight to SeDoc's presigned PUT, then fires
+// /ingest. It reads parts incrementally (no ParseMultipartForm, no size cap), so
+// a multi-hundred-MB attachment holds flat memory. The browser sends, IN ORDER,
+// a "sha256" field, a "size" field, then the "file" part: the hash lets initiate
+// dedup and the size sets the PUT Content-Length, enabling the zero-copy path. If
+// either is absent (non-browser client), UploadStream spools to a temp file.
 func (b *BFF) upload(w http.ResponseWriter, r *http.Request) {
 	ref := r.PathValue("ref")
 	m := b.authorizeCustomer(w, r, ref)
 	if m == nil {
 		return
 	}
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		writeErr(w, http.StatusBadRequest, "expected multipart form with a 'file' field", "")
-		return
-	}
-	file, hdr, err := r.FormFile("file")
+	mr, err := r.MultipartReader()
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "missing 'file'", "")
+		writeErr(w, http.StatusBadRequest, "expected multipart/form-data", "")
 		return
 	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "read file", "")
-		return
+	var clientSHA string
+	var declaredSize int64 = -1
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "read multipart: "+err.Error(), "")
+			return
+		}
+		switch part.FormName() {
+		case "sha256":
+			v, _ := io.ReadAll(io.LimitReader(part, 128))
+			clientSHA = strings.TrimSpace(string(v))
+		case "size":
+			v, _ := io.ReadAll(io.LimitReader(part, 32))
+			declaredSize, _ = strconv.ParseInt(strings.TrimSpace(string(v)), 10, 64)
+		case "file":
+			mime := part.Header.Get("Content-Type")
+			if mime == "" {
+				mime = "application/octet-stream"
+			}
+			// A fresh idempotency base per interactive upload.
+			base := "bff-upload:" + uuid.NewString()
+			up, err := b.doc.UploadStream(r.Context(), base, "us-east-1", part.FileName(), mime, part, declaredSize, clientSHA)
+			if err != nil {
+				b.proxyErr(w, err)
+				return
+			}
+			res, err := b.doc.Ingest(r.Context(), base+":ingest", sedoc.IngestInput{
+				WorkspaceID:       b.workspaceID,
+				FolderID:          m.SubfolderIDs["attachments"],
+				TargetCustomerRef: ref,
+				BlobChecksum:      up.SHA256,
+				ContentBlobID:     up.ContentBlobID,
+				Mime:              mime,
+			})
+			if err != nil {
+				b.proxyErr(w, err)
+				return
+			}
+			if res.IngestionItemID != "" {
+				_ = b.st.TrackIngestion(r.Context(), res.IngestionItemID, ref, res.Status)
+			}
+			writeJSON(w, http.StatusOK, res)
+			return // the file part is last; nothing more to read
+		}
 	}
-	mime := hdr.Header.Get("Content-Type")
-	if mime == "" {
-		mime = "application/octet-stream"
-	}
-	// A fresh idempotency base per interactive upload.
-	base := "bff-upload:" + uuid.NewString()
-	up, err := b.doc.UploadBlob(r.Context(), base, "us-east-1", hdr.Filename, mime, data)
-	if err != nil {
-		b.proxyErr(w, err)
-		return
-	}
-	res, err := b.doc.Ingest(r.Context(), base+":ingest", sedoc.IngestInput{
-		WorkspaceID:       b.workspaceID,
-		FolderID:          m.SubfolderIDs["attachments"],
-		TargetCustomerRef: ref,
-		BlobChecksum:      up.SHA256,
-		ContentBlobID:     up.ContentBlobID,
-		Mime:              mime,
-	})
-	if err != nil {
-		b.proxyErr(w, err)
-		return
-	}
-	if res.IngestionItemID != "" {
-		_ = b.st.TrackIngestion(r.Context(), res.IngestionItemID, ref, res.Status)
-	}
-	writeJSON(w, http.StatusOK, res)
+	writeErr(w, http.StatusBadRequest, "missing 'file' part", "")
 }
 
+// search runs a customer-scoped query. The query text + customer_ref travel in
+// the POST body (never the URL) so they don't leak into access logs. Authz +
+// subtree scoping are unchanged from the prior GET form.
 func (b *BFF) search(w http.ResponseWriter, r *http.Request) {
-	ref := r.URL.Query().Get("customer_ref")
-	if ref == "" {
+	if erpUser(r) == "" {
+		// Reject before reading the body — don't even parse for an anon caller.
+		writeErr(w, http.StatusUnauthorized, "unauthenticated", "")
+		return
+	}
+	var req struct {
+		CustomerRef string `json:"customer_ref"`
+		Query       string `json:"q"`
+		PageSize    int    `json:"page_size"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body", "")
+		return
+	}
+	if req.CustomerRef == "" {
 		writeErr(w, http.StatusBadRequest, "customer_ref required", "")
 		return
 	}
-	m := b.authorizeCustomer(w, r, ref)
+	m := b.authorizeCustomer(w, r, req.CustomerRef)
 	if m == nil {
 		return
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 50
 	}
 	// Scope: run the query workspace-wide, then drop any hit whose folder isn't
 	// in this customer's subtree so results never leak across customers.
 	body := map[string]any{
-		"query":     r.URL.Query().Get("q"),
-		"page_size": 50,
+		"query":     req.Query,
+		"page_size": pageSize,
 		"filters":   map[string]any{"workspace_id": b.workspaceID},
 	}
 	raw, err := b.doc.Search(r.Context(), body)
@@ -350,6 +407,32 @@ func (b *BFF) adminSyncLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": rows})
 }
 
+// adminSyncMetrics proxies the worker's operational metrics (throughput,
+// backlog, DLQ, limiter state) to the dashboard. The worker holds the limiter +
+// runtime counters in-process, so this is a server-side passthrough.
+func (b *BFF) adminSyncMetrics(w http.ResponseWriter, r *http.Request) {
+	if !b.requireAdmin(w, r) {
+		return
+	}
+	if b.workerURL == "" {
+		writeErr(w, http.StatusServiceUnavailable, "worker metrics endpoint not configured", "")
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, b.workerURL+"/metrics/sync", nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "worker unreachable: "+err.Error(), "")
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	writeRaw(w, resp.StatusCode, body)
+}
+
 func (b *BFF) adminSyncRetry(w http.ResponseWriter, r *http.Request) {
 	if !b.requireAdmin(w, r) {
 		return
@@ -364,6 +447,65 @@ func (b *BFF) adminSyncRetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// adminBackfillStart enqueues a pending backfill run (the worker poller picks it
+// up and executes it under the shared rate limiter) and returns its run_id. An
+// optional {"customer_refs":[...]} body scopes the run to specific customers.
+func (b *BFF) adminBackfillStart(w http.ResponseWriter, r *http.Request) {
+	if !b.requireAdmin(w, r) {
+		return
+	}
+	var body struct {
+		CustomerRefs []string `json:"customer_refs"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body)
+	id, err := b.st.CreateBackfillRun(r.Context(), "erp", strings.Join(body.CustomerRefs, ","), false)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "status": "pending"})
+}
+
+// adminBackfillList returns recent backfill runs with their progress.
+func (b *BFF) adminBackfillList(w http.ResponseWriter, r *http.Request) {
+	if !b.requireAdmin(w, r) {
+		return
+	}
+	runs, err := b.st.ListBackfillRuns(r.Context(), 50)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": runs})
+}
+
+// adminBackfillGet returns one run plus its per-item failures.
+func (b *BFF) adminBackfillGet(w http.ResponseWriter, r *http.Request) {
+	if !b.requireAdmin(w, r) {
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("run_id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad run_id", "")
+		return
+	}
+	run, err := b.st.GetBackfillRun(r.Context(), id)
+	if err == store.ErrNotFound {
+		writeErr(w, http.StatusNotFound, "not found", "")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	fails, err := b.st.ListBackfillFailures(r.Context(), id, 200)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"run": run, "failures": fails})
 }
 
 func (b *BFF) requireAdmin(w http.ResponseWriter, r *http.Request) bool {

@@ -24,6 +24,7 @@ type Worker struct {
 	maxAttempts int
 	poll        time.Duration
 	lease       time.Duration
+	metrics     *Metrics // optional; nil-safe
 }
 
 // WorkerOptions configures the loop.
@@ -32,6 +33,7 @@ type WorkerOptions struct {
 	MaxAttempts int
 	Poll        time.Duration
 	Lease       time.Duration
+	Metrics     *Metrics // dashboard counters; nil disables metric recording
 }
 
 // NewWorker constructs a Worker with sensible defaults.
@@ -49,7 +51,7 @@ func NewWorker(st *store.Store, syncer *Syncer, log zerolog.Logger, o WorkerOpti
 		o.Lease = 5 * time.Minute
 	}
 	return &Worker{st: st, syncer: syncer, log: log, concurrency: o.Concurrency,
-		maxAttempts: o.MaxAttempts, poll: o.Poll, lease: o.Lease}
+		maxAttempts: o.MaxAttempts, poll: o.Poll, lease: o.Lease, metrics: o.Metrics}
 }
 
 // Run loops until ctx is cancelled.
@@ -95,7 +97,11 @@ func (w *Worker) process(ctx context.Context, j store.SyncJob) {
 	res, err := w.syncer.Handle(ctx, j.ID.String(), e)
 	if err == nil {
 		_ = w.st.MarkDone(ctx, j.ID, res, "")
+		w.metrics.OnProcessed()
 		return
+	}
+	if sedoc.HTTPStatus(err) == 429 { // throttle breach — should be rare with the proactive limiter
+		w.metrics.On429()
 	}
 
 	corr := sedoc.CorrelationID(err)

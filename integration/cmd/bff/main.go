@@ -38,6 +38,7 @@ func main() {
 	baseURL := env("SEDOC_BASE_URL", "http://localhost:8081/api/v1")
 	searchURL := env("SEDOC_SEARCH_URL", "http://localhost:8086/api/v1")
 	erpBase := env("ERP_BASE_URL", "http://localhost:8095")
+	workerURL := env("SEDOC_INTEGRATION_WORKER_URL", "http://localhost:8090")
 	port := envInt("SEDOC_BFF_HTTP_PORT", 8091)
 
 	poolCfg := database.DefaultPoolConfig()
@@ -50,7 +51,8 @@ func main() {
 
 	doc := sedoc.New(baseURL, apiKey)
 	doc.SetSearchURL(searchURL)
-	b := bff.New(store.New(pool), doc, erp.NewHTTPClient(erpBase), workspaceID, log)
+	erpClient := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
+	b := bff.New(store.New(pool), doc, erpClient, workspaceID, log).WithWorkerURL(workerURL)
 
 	mux := http.NewServeMux()
 	b.Register(mux)

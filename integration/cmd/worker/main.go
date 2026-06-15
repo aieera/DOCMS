@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/integration/internal/backfill"
 	"github.com/aieera/sedoc/integration/internal/erp"
 	"github.com/aieera/sedoc/integration/internal/sedoc"
 	"github.com/aieera/sedoc/integration/internal/store"
@@ -42,6 +43,11 @@ func main() {
 	buckets := envInt("SEDOC_INTEGRATION_BUCKETS", 256)
 	port := envInt("SEDOC_INTEGRATION_HTTP_PORT", 8090)
 	concurrency := envInt("SEDOC_INTEGRATION_CONCURRENCY", 8)
+	// Proactive throttle: stay under SeDoc's 600/min :upsert/ingest ceiling
+	// (10/s) with a small burst, so neither the event worker nor the backfill can
+	// avalanche into 429s/DLQ. A SINGLE limiter is shared by every SeDoc client.
+	ratePerMin := envInt("SEDOC_INTEGRATION_RATE_PER_MIN", 600)
+	rateBurst := envInt("SEDOC_INTEGRATION_RATE_BURST", 20)
 
 	if err := database.RunMigrations(dsn, "migrations"); err != nil {
 		log.Fatal().Err(err).Msg("migrate")
@@ -57,16 +63,28 @@ func main() {
 	defer pool.Close()
 
 	st := store.New(pool)
-	doc := sedoc.New(baseURL, apiKey)
-	src := erp.NewHTTPClient(erpBase)
+	limiter := sedoc.NewLimiter(float64(ratePerMin)/60.0, rateBurst)
+	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter)
+	src := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	syncer := syncpkg.New(st, doc, src, syncpkg.Config{
 		WorkspaceID: workspaceID, RegionPin: env("SEDOC_REGION_PIN", "us-east-1"), Buckets: buckets,
 	})
-	worker := syncpkg.NewWorker(st, syncer, log, syncpkg.WorkerOptions{Concurrency: concurrency})
+	metrics := syncpkg.NewMetrics()
+	worker := syncpkg.NewWorker(st, syncer, log, syncpkg.WorkerOptions{Concurrency: concurrency, Metrics: metrics})
+	log.Info().Int("concurrency", concurrency).Int("rate_per_min", ratePerMin).Int("rate_burst", rateBurst).
+		Msg("SeDoc write throttle engaged")
 	go worker.Run(ctx)
+
+	// Backfill poller (worker mode): claims pending backfill_runs (BFF-triggered)
+	// and processes them in-process, sharing the same rate-limited SeDoc client.
+	backfillConcurrency := envInt("SEDOC_INTEGRATION_BACKFILL_CONCURRENCY", 4)
+	go backfill.NewRunner(st, syncer, src, backfillConcurrency, log).PollLoop(ctx, 5*time.Second)
 
 	mux := http.NewServeMux()
 	syncpkg.NewIngress(st, log).Register(mux)
+	// Operational metrics for the Sync Dashboard (proxied by the BFF, admin-gated):
+	// throughput + backlog + DLQ + shared-limiter state.
+	mux.HandleFunc("GET /metrics/sync", syncpkg.MetricsHandler(metrics, limiter, st))
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info().Int("port", port).Msg("integration worker listening")

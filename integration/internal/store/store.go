@@ -234,6 +234,30 @@ func (s *Store) TrackIngestion(ctx context.Context, itemID, customerRef, status 
 	return err
 }
 
+// SyncCounts returns the live queue backlog (pending) and dead-letter size
+// (failed) from sync_log, for the dashboard's operational metrics.
+func (s *Store) SyncCounts(ctx context.Context) (backlog, dlq int64, err error) {
+	rows, qerr := s.pool.Query(ctx, `SELECT status, count(*) FROM sync_log GROUP BY status`)
+	if qerr != nil {
+		return 0, 0, qerr
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status string
+		var n int64
+		if serr := rows.Scan(&status, &n); serr != nil {
+			return 0, 0, serr
+		}
+		switch status {
+		case "pending":
+			backlog = n
+		case "failed":
+			dlq = n
+		}
+	}
+	return backlog, dlq, rows.Err()
+}
+
 // SyncLogRow is a row for the dashboard.
 type SyncLogRow struct {
 	ID            uuid.UUID `json:"id"`

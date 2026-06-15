@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,6 +65,18 @@ func serve() {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	})
+	// Backfill inventory: a deterministic seed of customers + their documents so
+	// `backfill -source erp` has existing data to onboard. ERP_SEED_CUSTOMERS
+	// controls the count (default 3). Re-listing is stable, so a re-run dedups.
+	seedCount := envIntOr("ERP_SEED_CUSTOMERS", 3)
+	mux.HandleFunc("GET /erp/customers", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"customers": seedCustomers(seedCount)})
+	})
+	mux.HandleFunc("GET /erp/customers/{ref}/documents", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"documents": seedDocuments(r.PathValue("ref"))})
 	})
 	fmt.Fprintf(os.Stderr, "mock ERP listening on %s\n", addr)
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -136,4 +149,35 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func envIntOr(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+// seedCustomers returns n deterministic customers (CUST-1..CUST-n).
+func seedCustomers(n int) []erp.Customer {
+	out := make([]erp.Customer, 0, n)
+	for i := 1; i <= n; i++ {
+		ref := "CUST-" + strconv.Itoa(i)
+		out = append(out, erp.Customer{Ref: ref, Name: "Customer " + strconv.Itoa(i)})
+	}
+	return out
+}
+
+// seedDocuments returns a deterministic per-customer document set: a quote, a PO,
+// an invoice, and one attachment. The render endpoint serves bytes for any
+// file_ref, so these onboard end-to-end.
+func seedDocuments(ref string) []erp.DocumentRef {
+	return []erp.DocumentRef{
+		{Kind: "document", DocType: erp.DocQuote, DocNumber: ref + "-Q1", Status: "sent", FileRef: "f-" + ref + "-q1", Mime: "application/pdf"},
+		{Kind: "document", DocType: erp.DocPO, DocNumber: ref + "-P1", Status: "confirmed", FileRef: "f-" + ref + "-p1", Mime: "application/pdf"},
+		{Kind: "document", DocType: erp.DocInvoice, DocNumber: ref + "-I1", Status: "confirmed", FileRef: "f-" + ref + "-i1", Mime: "application/pdf"},
+		{Kind: "attachment", Filename: "contract.pdf", FileRef: "f-" + ref + "-a1", Mime: "application/pdf"},
+	}
 }
