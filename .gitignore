@@ -17,6 +17,10 @@
 *.out
 coverage.txt
 coverage.html
+# Stray in-place `go build` artifacts (binaries named after their dir)
+/cmd/dms-admin/dms-admin
+/cmd/license-gen/license-gen
+/scripts/seed/seed
 
 # Generated code (uncomment if you choose to gitignore generated protos)
 # proto/vaultdms/v1/*.pb.go
