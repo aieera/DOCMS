@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     ocr_gpu: bool = False
     ocr_confidence_threshold: float = 0.7
+    # When a Surya page comes back below this floor, re-run it through the
+    # PaddleOCR fallback and keep whichever engine scored higher. Set <= 0 to
+    # disable the fallback entirely.
+    ocr_paddle_fallback_threshold: float = 0.6
     ocr_per_tenant_cap: int = 8
     ocr_page_timeout_seconds: int = 90
     ocr_total_timeout_seconds: int = 1800  # 30 min hard abort
@@ -70,6 +74,17 @@ class Settings(BaseSettings):
     ocr_retry_jitter: float = 0.2
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64
+
+    # Structured field extraction (Workstream "Activate structured field
+    # extraction"). When the per-field regex coverage for a document falls
+    # below this floor, fall back to the LLM extractor for the missing fields.
+    extraction_enabled: bool = True
+    extraction_llm_fallback_threshold: float = 0.8
+    # Per-field confidence assigned to a clean regex hit vs an LLM-supplied
+    # value. Regex on a labelled field is a strong-but-not-certain signal;
+    # the LLM is broader but unverifiable, so neither is 1.0.
+    extraction_regex_confidence: float = 0.72
+    extraction_llm_confidence: float = 0.86
 
 
 settings = Settings()

@@ -55,6 +55,199 @@ async def upsert_classification(
             )
 
 
+async def load_ocr_text(*, tenant_id: str, version_id: str) -> str:
+    """Concatenate a version's OCR pages back into one document string,
+    in page order. Returns "" when no OCR rows exist yet."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+        )
+        rows = await conn.fetch(
+            """
+            SELECT text_content FROM ocr_results
+             WHERE tenant_id = $1 AND version_id = $2
+             ORDER BY page_number ASC
+            """,
+            tenant_id, version_id,
+        )
+    return "\n\n".join((r["text_content"] or "") for r in rows).strip()
+
+
+# ---- WS3 pre-commit ingestion pipeline -------------------------------------
+
+# Statuses past which process_ingestion must NOT re-run (idempotency).
+_INGESTION_DONE_STATES = ("processed", "routed", "needs_review", "committed", "rejected")
+
+
+async def get_ingestion_status(*, tenant_id: str, ingestion_item_id: str) -> str:
+    """Return the current status of a staged ingestion item ("" if missing)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+        )
+        row = await conn.fetchrow(
+            "SELECT status FROM ingestion_items WHERE tenant_id = $1 AND id = $2",
+            tenant_id, ingestion_item_id,
+        )
+    return (row["status"] if row else "") or ""
+
+
+async def mark_ingestion_status(
+    *, tenant_id: str, ingestion_item_id: str, status: str, failure_reason: str = ""
+) -> None:
+    """Flip a staged item's status (e.g. → ocr_running). Never moves a terminal
+    item backwards."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+        )
+        await conn.execute(
+            """
+            UPDATE ingestion_items
+               SET status = $3, failure_reason = $4, updated_at = now()
+             WHERE tenant_id = $1 AND id = $2
+               AND status NOT IN ('committed','rejected')
+            """,
+            tenant_id, ingestion_item_id, status, failure_reason,
+        )
+
+
+async def write_ingestion_result(
+    *,
+    tenant_id: str,
+    ingestion_item_id: str,
+    full_text: str,
+    page_count: int,
+    confidence_avg: float,
+    engine: str,
+    external_key: str,
+    confidence: float,
+) -> bool:
+    """Persist OCR + extraction output for a staged item and flip it to
+    'processed'. Upserts the ingestion_ocr sidecar (ocr_result_ref → it) so a
+    redelivery overwrites rather than duplicates. Returns False (no-op) when the
+    item is already terminal. Idempotent on ingestion_item.id.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            ocr_id = await conn.fetchval(
+                """
+                INSERT INTO ingestion_ocr
+                    (tenant_id, id, ingestion_item_id, full_text, page_count,
+                     confidence_avg, engine, created_at)
+                VALUES ($1, gen_random_uuid(), $2, $3, $4, $5, $6, NOW())
+                ON CONFLICT (tenant_id, ingestion_item_id) DO UPDATE
+                  SET full_text = EXCLUDED.full_text,
+                      page_count = EXCLUDED.page_count,
+                      confidence_avg = EXCLUDED.confidence_avg,
+                      engine = EXCLUDED.engine,
+                      created_at = NOW()
+                RETURNING id
+                """,
+                tenant_id, ingestion_item_id, full_text or "", int(page_count),
+                float(confidence_avg), engine or "",
+            )
+            tag = await conn.execute(
+                """
+                UPDATE ingestion_items
+                   SET ocr_result_ref = $3,
+                       extracted_external_key = $4,
+                       confidence = $5,
+                       status = 'processed',
+                       updated_at = now()
+                 WHERE tenant_id = $1 AND id = $2
+                   AND status NOT IN ('committed','rejected','needs_review','routed')
+                """,
+                tenant_id, ingestion_item_id, ocr_id,
+                (external_key or "")[:255], float(confidence),
+            )
+    # asyncpg returns e.g. "UPDATE 1" — non-zero means we advanced the item.
+    return tag.endswith(" 1")
+
+
+async def replace_extracted_fields(
+    *,
+    tenant_id: str,
+    document_id: str,
+    version_id: str,
+    document_class: str,
+    fields: Iterable[dict[str, Any]],
+) -> int:
+    """Delete + re-insert the per-field extraction rows for this version in
+    one tx (same idempotency strategy as replace_entities). Each field dict is
+    {field_key, value, confidence, method}. Returns the row count inserted."""
+    inserted = 0
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            await conn.execute(
+                "DELETE FROM extracted_fields WHERE tenant_id=$1 AND version_id=$2",
+                tenant_id, version_id,
+            )
+            for f in fields:
+                key = str(f.get("field_key", "")).strip()
+                if not key:
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO extracted_fields
+                        (tenant_id, id, version_id, document_id, document_class,
+                         field_key, value, confidence, method, extracted_at)
+                    VALUES ($1, gen_random_uuid(), $2, $3, $4, $5, $6, $7, $8, NOW())
+                    """,
+                    tenant_id,
+                    version_id,
+                    document_id,
+                    document_class,
+                    key,
+                    (str(f["value"])[:2000] if f.get("value") is not None else None),
+                    float(f.get("confidence", 0.0)),
+                    str(f.get("method", "regex")),
+                )
+                inserted += 1
+    return inserted
+
+
+async def merge_custom_metadata(
+    *,
+    tenant_id: str,
+    document_id: str,
+    values: dict[str, Any],
+) -> None:
+    """Shallow-merge `values` into documents.custom_metadata (jsonb `||`).
+
+    Used to mirror the key extracted business fields onto the document so the
+    routing step + UI + search can read them without joining extracted_fields.
+    No-op when `values` is empty. RLS-scoped; the documents metadata size CHECK
+    bounds the payload."""
+    if not values:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+        )
+        await conn.execute(
+            """
+            UPDATE documents
+               SET custom_metadata = COALESCE(custom_metadata, '{}'::jsonb) || $3::jsonb,
+                   updated_at = now()
+             WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+            """,
+            tenant_id, document_id, json.dumps(values),
+        )
+
+
 async def replace_entities(
     *,
     tenant_id: str,

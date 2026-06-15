@@ -37,7 +37,7 @@ from app.metrics import (
     ocr_processing_seconds,
     ocr_publish_failed_total,
 )
-from app.models.ocr_model import surya_ocr_page
+from app.models.ocr_model import paddle_ocr_page, surya_ocr_page
 from app.worker import celery_app
 
 log = logging.getLogger(__name__)
@@ -239,6 +239,31 @@ def _pdf_has_text(path: str) -> bool:
         doc.close()
 
 
+def _maybe_paddle_fallback(result: dict, img, page_no: int) -> tuple[dict, str]:
+    """When the Surya result is below the configured floor, re-run the page
+    through PaddleOCR and keep whichever engine scored higher. Returns
+    (chosen_result, engine_label). A disabled floor (<=0) or an unavailable
+    PaddleOCR keeps the Surya result untouched."""
+    floor = settings.ocr_paddle_fallback_threshold
+    surya_conf = result.get("confidence", 0.0) or 0.0
+    if floor <= 0 or surya_conf >= floor:
+        return result, "surya"
+    pad = paddle_ocr_page(img, ["en"])
+    if pad is None:
+        log.info(
+            "page %d surya conf %.2f < %.2f; PaddleOCR unavailable, keeping surya",
+            page_no, surya_conf, floor,
+        )
+        return result, "surya"
+    if (pad.get("confidence", 0.0) or 0.0) > surya_conf:
+        log.info(
+            "page %d PaddleOCR fallback win: conf %.2f -> %.2f",
+            page_no, surya_conf, pad.get("confidence", 0.0),
+        )
+        return pad, "paddle"
+    return result, "surya"
+
+
 def _ocr_pdf_pages(path: str) -> list[dict]:
     doc = _safe_fitz_open(path)
     pages = []
@@ -247,10 +272,8 @@ def _ocr_pdf_pages(path: str) -> list[dict]:
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         t0 = time.perf_counter()
         result = surya_ocr_page(img, ["ar", "en"])
+        result, method = _maybe_paddle_fallback(result, img, i + 1)
         dur = time.perf_counter() - t0
-        method = "surya"
-        if result["confidence"] < settings.ocr_confidence_threshold:
-            log.info("page %d confidence %.2f below threshold, would try PaddleOCR", i + 1, result["confidence"])
         pages.append({
             "page_number": i + 1,
             "text": result["text"],
@@ -268,13 +291,14 @@ def _ocr_image(path: str) -> list[dict]:
     img = Image.open(path).convert("RGB")
     t0 = time.perf_counter()
     result = surya_ocr_page(img, ["ar", "en"])
+    result, method = _maybe_paddle_fallback(result, img, 1)
     dur = time.perf_counter() - t0
-    ocr_processing_seconds.labels(engine="surya").observe(dur)
+    ocr_processing_seconds.labels(engine=method).observe(dur)
     return [{
         "page_number": 1,
         "text": result["text"],
         "confidence": result["confidence"],
-        "method": "surya",
+        "method": method,
         "boxes": result["boxes"],
         "processing_time_ms": int(dur * 1000),
     }]
@@ -508,6 +532,42 @@ def _classify_error(exc: Exception) -> str:
     return "engine_error"
 
 
+def ocr_file(src: str, mime_type: str, language: str = "en",
+             force_engine: str = "") -> tuple[list[dict], str, str, float]:
+    """OCR a local file that is already downloaded AND decrypted.
+
+    Shared engine core for both the version path (process_ocr) and the WS3
+    pre-commit ingestion path (process_ingestion) so they read pages
+    identically. Returns (pages, full_text, engine, avg_confidence). The
+    caller owns S3 download + envelope decrypt + persistence.
+    """
+    if mime_type == "application/pdf":
+        # force_engine="surya" bypasses the pymupdf fast path so the layout
+        # viewer can get bounding boxes even on text-PDFs.
+        if force_engine == "surya" or not _pdf_has_text(src):
+            pages = _ocr_pdf_pages(src)
+        else:
+            pages = _extract_text_pdf(src)
+    elif _is_text_mime(mime_type):
+        pages = _extract_text_file(src)
+    else:
+        pages = _ocr_image(src)
+
+    if pages:
+        method_counts: dict[str, int] = {}
+        for p in pages:
+            method_counts[p.get("method", "surya")] = method_counts.get(p.get("method", "surya"), 0) + 1
+        engine = max(method_counts, key=method_counts.get)
+    else:
+        engine = "none"
+
+    total_text = "\n\n".join(p["text"] for p in pages if p["text"])
+    if len(total_text.encode("utf-8")) > MAX_FULL_TEXT_BYTES:
+        total_text = total_text.encode("utf-8")[:MAX_FULL_TEXT_BYTES].decode("utf-8", errors="ignore")
+    avg_conf = (sum(p["confidence"] for p in pages) / len(pages)) if pages else 0.0
+    return pages, total_text, engine, avg_conf
+
+
 @celery_app.task(
     name="app.tasks.ocr.process_ocr",
     bind=True,
@@ -587,31 +647,8 @@ def process_ocr(
         _s3().download_file(storage_bucket, storage_key, src)
         _decrypt_src_if_envelope(src, tenant_id, content_blob_id)
 
-        if mime_type == "application/pdf":
-            # force_engine="surya" bypasses the pymupdf fast path so the
-            # layout viewer can get bounding boxes even on text-PDFs.
-            if force_engine == "surya" or not _pdf_has_text(src):
-                pages = _ocr_pdf_pages(src)
-            else:
-                pages = _extract_text_pdf(src)
-        elif _is_text_mime(mime_type):
-            pages = _extract_text_file(src)
-        else:
-            pages = _ocr_image(src)
-
-        if pages:
-            method_counts: dict[str, int] = {}
-            for p in pages:
-                method_counts[p.get("method", "surya")] = method_counts.get(p.get("method", "surya"), 0) + 1
-            engine = max(method_counts, key=method_counts.get)
-        else:
-            engine = "none"
-
-        total_text = "\n\n".join(p["text"] for p in pages if p["text"])
-        if len(total_text.encode("utf-8")) > MAX_FULL_TEXT_BYTES:
-            total_text = total_text.encode("utf-8")[:MAX_FULL_TEXT_BYTES].decode("utf-8", errors="ignore")
+        pages, total_text, engine, avg_conf = ocr_file(src, mime_type, language, force_engine)
         total_chars = len(total_text)
-        avg_conf = (sum(p["confidence"] for p in pages) / len(pages)) if pages else 0.0
 
         try:
             asyncio.run(_persist_pages(tenant_id, version_id, pages, language))

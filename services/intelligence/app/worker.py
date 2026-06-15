@@ -8,6 +8,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.tasks.ocr",
+        "app.tasks.ingest",
         "app.tasks.classify",
         "app.tasks.extract",
         "app.tasks.ner",
@@ -44,6 +45,9 @@ celery_app.conf.update(
     task_default_queue="intelligence",
     task_routes={
         "app.tasks.ocr.process_ocr": {"queue": "intelligence-ocr"},
+        # WS3 pre-commit ingestion reuses the OCR engine, so it runs on the
+        # OCR worker pool (where the models are loaded).
+        "app.tasks.ingest.process_ingestion": {"queue": "intelligence-ocr"},
         "app.tasks.embed.generate_embeddings": {"queue": "intelligence-embed"},
         "app.tasks.rag.*": {"queue": "intelligence-rag"},
     },

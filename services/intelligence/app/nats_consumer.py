@@ -1,7 +1,8 @@
 """NATS consumer — drives the intelligence pipeline.
 
 version.uploaded.v1 → OCR (if OCR-able)
-version.ocr_completed.v1 → classify + extract + NER + embed + duplicate (parallel)
+version.ocr_completed.v1 → classify + NER + embed + duplicate (parallel)
+classify.completed.v1 → extract (needs the document_class classify produces)
 
 Wave 5 Prompt 5.3 hardening:
 - parses storage_uri (s3://bucket/key) from the new event schema
@@ -31,7 +32,6 @@ from app.dedupe import (
 )
 from app.metrics import ocr_queue_depth
 from app.tasks.auto_tag import auto_tag
-from app.tasks.compliance_scan import compliance_scan
 from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
 from app.tasks.model_retrain import retrain as model_retrain
@@ -113,6 +113,15 @@ class IntelligenceConsumer:
             cb=self._on_ocr_completed,
             manual_ack=True,
         )
+        # WS3 — pre-commit ingestion. dms.ingestion.received.v1 stages a blob
+        # BEFORE any version exists; we OCR + extract a business key against the
+        # blob ref and emit dms.ingestion.processed.v1 for the routing workflow.
+        await js.subscribe(
+            "dms.ingestion.received.v1",
+            durable="intel-ingestion",
+            cb=self._on_ingestion_received,
+            manual_ack=True,
+        )
         # Wave 12.5: redaction fan-out. The document service emits
         # dms.document.redacted.v1 with status=queued on the
         # document_redactions row; we flip it to 'applied' after
@@ -144,6 +153,16 @@ class IntelligenceConsumer:
             "dms.classify.completed.v1",
             durable="intel-smart-route",
             cb=self._on_smart_route_trigger,
+            manual_ack=True,
+        )
+        # Structured field extraction fans in from classify — it needs the
+        # document_class to pick the right extraction profile, which only
+        # exists once classify has run. Own durable so a slow LLM-fallback
+        # extract can't backpressure smart_route / auto_tag.
+        await js.subscribe(
+            "dms.classify.completed.v1",
+            durable="intel-extract",
+            cb=self._on_extract_trigger,
             manual_ack=True,
         )
         # ADR 0054 — compliance scan fans in from NER. Own durable so a
@@ -319,6 +338,50 @@ class IntelligenceConsumer:
                 await msg.nak(delay=5)
             finally:
                 ocr_queue_depth.labels(tenant_id=tenant_id).dec()
+
+    async def _on_ingestion_received(self, msg) -> None:
+        """WS3 — a blob was staged for routing. OCR + extract a business key
+        against the blob ref (no version exists yet), then process_ingestion
+        emits dms.ingestion.processed.v1 for the routing workflow."""
+        from app.tasks.ingest import process_ingestion
+
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tenant_id = data.get("tenant_id", "")
+        item_id = data.get("ingestion_item_id", "")
+        bucket = data.get("storage_bucket", "")
+        key = data.get("storage_key", "")
+        correlation_id = self._header(msg, "correlation-id")
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        if not (tenant_id and item_id and bucket and key):
+            log.warning("ingestion.received missing ids/storage; term'd")
+            await msg.term()
+            return
+        try:
+            process_ingestion.apply_async(
+                kwargs={
+                    "tenant_id": tenant_id,
+                    "ingestion_item_id": item_id,
+                    "content_blob_id": data.get("content_blob_id", ""),
+                    "storage_bucket": bucket,
+                    "storage_key": key,
+                    "blob_checksum": data.get("blob_checksum", ""),
+                    "mime_type": data.get("mime_type", ""),
+                    "document_class": data.get("document_class", ""),
+                    "target_customer_ref": data.get("target_customer_ref", ""),
+                    "region_pin": data.get("region_pin", settings.s3_region),
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence-ocr",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue process_ingestion failed for %s", item_id)
+            await msg.nak(delay=5)
 
     async def _on_ocr_completed(self, msg) -> None:
         envelope = self._parse_envelope(msg)
@@ -636,6 +699,43 @@ class IntelligenceConsumer:
             await msg.ack()
         except Exception:
             log.exception("enqueue compliance_scan failed")
+            await msg.nak(delay=5)
+
+    async def _on_extract_trigger(self, msg) -> None:
+        """Structured field extraction — fire extract_fields after classify.
+
+        The classify.completed event carries the document_class the extract
+        profile is keyed on. The extract task loads the OCR text itself from
+        ocr_results, so the (text-less) classify event is sufficient here."""
+        envelope = self._parse_envelope(msg)
+        data = (envelope or {}).get("data") or envelope
+        if not data:
+            await msg.term()
+            return
+        tid = data.get("tenant_id", "")
+        did = data.get("document_id", "")
+        vid = data.get("version_id", "")
+        document_class = data.get("document_class") or data.get("category") or ""
+        event_id = (envelope or {}).get("id", "") or data.get("event_id", "")
+        correlation_id = self._header(msg, "correlation-id")
+        if not (tid and did and vid):
+            await msg.term()
+            return
+        try:
+            extract_fields.apply_async(
+                kwargs={
+                    "tenant_id": tid,
+                    "document_id": did,
+                    "version_id": vid,
+                    "document_class": document_class,
+                    "event_id": event_id,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
+            )
+            await msg.ack()
+        except Exception:
+            log.exception("enqueue extract_fields failed")
             await msg.nak(delay=5)
 
     async def _on_smart_route_trigger(self, msg) -> None:
