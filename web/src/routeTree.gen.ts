@@ -55,6 +55,7 @@ import { Route as AuthenticatedAdminMetadataSchemaRouteImport } from './routes/_
 import { Route as AuthenticatedAdminLegalHoldsRouteImport } from './routes/_authenticated/admin/legal-holds'
 import { Route as AuthenticatedAdminIntegrationsHubRouteImport } from './routes/_authenticated/admin/integrations-hub'
 import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin/integrations'
+import { Route as AuthenticatedAdminIngestionRouteImport } from './routes/_authenticated/admin/ingestion'
 import { Route as AuthenticatedAdminIdentityRouteImport } from './routes/_authenticated/admin/identity'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
 import { Route as AuthenticatedAdminDataGovernanceRouteImport } from './routes/_authenticated/admin/data-governance'
@@ -360,6 +361,12 @@ const AuthenticatedAdminIntegrationsRoute =
   AuthenticatedAdminIntegrationsRouteImport.update({
     id: '/admin/integrations',
     path: '/admin/integrations',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminIngestionRoute =
+  AuthenticatedAdminIngestionRouteImport.update({
+    id: '/admin/ingestion',
+    path: '/admin/ingestion',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminIdentityRoute =
@@ -686,6 +693,7 @@ export interface FileRoutesByFullPath {
   '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/identity': typeof AuthenticatedAdminIdentityRoute
+  '/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
   '/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -783,6 +791,7 @@ export interface FileRoutesByTo {
   '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/identity': typeof AuthenticatedAdminIdentityRoute
+  '/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
   '/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
   '/admin/metadata-schema': typeof AuthenticatedAdminMetadataSchemaRoute
@@ -881,6 +890,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/identity': typeof AuthenticatedAdminIdentityRoute
+  '/_authenticated/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
   '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRouteWithChildren
   '/_authenticated/admin/integrations-hub': typeof AuthenticatedAdminIntegrationsHubRoute
   '/_authenticated/admin/legal-holds': typeof AuthenticatedAdminLegalHoldsRoute
@@ -980,6 +990,7 @@ export interface FileRouteTypes {
     | '/admin/data-governance'
     | '/admin/groups'
     | '/admin/identity'
+    | '/admin/ingestion'
     | '/admin/integrations'
     | '/admin/integrations-hub'
     | '/admin/legal-holds'
@@ -1077,6 +1088,7 @@ export interface FileRouteTypes {
     | '/admin/data-governance'
     | '/admin/groups'
     | '/admin/identity'
+    | '/admin/ingestion'
     | '/admin/integrations-hub'
     | '/admin/legal-holds'
     | '/admin/metadata-schema'
@@ -1174,6 +1186,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/data-governance'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/identity'
+    | '/_authenticated/admin/ingestion'
     | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/integrations-hub'
     | '/_authenticated/admin/legal-holds'
@@ -1581,6 +1594,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIntegrationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/ingestion': {
+      id: '/_authenticated/admin/ingestion'
+      path: '/admin/ingestion'
+      fullPath: '/admin/ingestion'
+      preLoaderRoute: typeof AuthenticatedAdminIngestionRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/identity': {
       id: '/_authenticated/admin/identity'
       path: '/admin/identity'
@@ -1980,6 +2000,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminDataGovernanceRoute: typeof AuthenticatedAdminDataGovernanceRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminIdentityRoute: typeof AuthenticatedAdminIdentityRoute
+  AuthenticatedAdminIngestionRoute: typeof AuthenticatedAdminIngestionRoute
   AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRouteWithChildren
   AuthenticatedAdminIntegrationsHubRoute: typeof AuthenticatedAdminIntegrationsHubRoute
   AuthenticatedAdminLegalHoldsRoute: typeof AuthenticatedAdminLegalHoldsRoute
@@ -2067,6 +2088,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminDataGovernanceRoute: AuthenticatedAdminDataGovernanceRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminIdentityRoute: AuthenticatedAdminIdentityRoute,
+  AuthenticatedAdminIngestionRoute: AuthenticatedAdminIngestionRoute,
   AuthenticatedAdminIntegrationsRoute:
     AuthenticatedAdminIntegrationsRouteWithChildren,
   AuthenticatedAdminIntegrationsHubRoute:

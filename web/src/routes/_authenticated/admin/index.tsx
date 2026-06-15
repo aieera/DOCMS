@@ -71,6 +71,7 @@ const INTEL_GROUP: SectionGroup = {
     { to: '/admin/ai', icon: Brain, label: 'AI & Models', desc: 'Provider keys · NER tier · model registry · usage & cost' },
     { to: '/admin/tagging', icon: TagsIcon, label: 'Tagging', desc: 'Catalog · auto-tag thresholds · review queue' },
     { to: '/admin/ocr', icon: FileSearch, label: 'OCR', desc: 'Quality config + review queue' },
+    { to: '/admin/ingestion', icon: Upload, label: 'Ingestion', desc: 'Pre-commit pipeline — review queue + staged items' },
     { to: '/admin/pii-scanning', icon: Shield, label: 'PII / PHI scanning', desc: 'Findings + detection rules' },
     { to: '/admin/intelligence/routing-rules', icon: MapPinned, label: 'Routing rules', desc: 'Smart-routing rules + config' },
     { to: '/admin/intelligence/filing-analytics', icon: FileSearch, label: 'Filing analytics', desc: 'Suggestion acceptance + filing patterns' },
