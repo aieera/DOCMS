@@ -83,6 +83,7 @@ tidy: ## Run go mod tidy in every service module
 .PHONY: proto-gen
 proto-gen: ## Generate Go stubs, gateway, and OpenAPI from .proto files
 	cd proto && $(BUF) dep update && $(BUF) generate
+	python3 scripts/merge-openapi.py  # fold hand-wired routes into the generated swagger (survives regen)
 	@echo "stubs in proto/gen/go/ — run 'cd proto/gen/go && go mod tidy' if deps changed"
 
 .PHONY: proto-lint

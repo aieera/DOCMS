@@ -1,0 +1,508 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "SeDoc API — hand-wired routes",
+    "version": "v1",
+    "description": "OpenAPI fragment for the SeDoc HTTP routes that are NOT generated from proto (custom http.ServeMux handlers: the external-key upsert, pre-commit ingestion, review queue, storage upload proxy, bulk import/export, and blob download/decrypt-stream). This file is hand-maintained and merged into the generated proto/gen/openapi/sedoc.swagger.json by scripts/merge-openapi.py (run from `make proto-gen`), so it survives buf regeneration. See INTEGRATION.md for the prose contracts."
+  },
+  "securityDefinitions": {
+    "ApiKeyBearer": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header",
+      "description": "ERP / service-to-service auth. Send `Authorization: Bearer vdms_<key>`. The key carries scopes (documents:read, documents:write, upload); each route below names the scope it requires. The browser uses the dms_session cookie instead — the same routes accept either."
+    }
+  },
+  "parameters": {
+    "IdempotencyKey": {
+      "name": "Idempotency-Key",
+      "in": "header",
+      "type": "string",
+      "maxLength": 200,
+      "required": false,
+      "description": "Replay-safety key (tenant-scoped). REQUIRED on resource-creating POSTs for API-key callers; optional for session callers. A retry with the same key replays the original response (Idempotency-Replayed: true) and creates nothing new. See INTEGRATION.md §Idempotency."
+    }
+  },
+  "responses": {
+    "Error": {
+      "description": "Error response.",
+      "schema": { "$ref": "#/definitions/hwError" }
+    }
+  },
+  "tags": [
+    { "name": "External Key (Upsert)", "description": "ERP create-or-version + resolve documents by a stable business key (Workstream 1)." },
+    { "name": "Ingestion", "description": "Pre-commit staging pipeline: OCR-before-routing (Workstream 3)." },
+    { "name": "Review Queue", "description": "Human triage of low-confidence ingestion reads (Workstream 4)." },
+    { "name": "Storage Upload", "description": "Browser/ERP upload proxy: initiate → PUT to presigned URL → complete." },
+    { "name": "Bulk", "description": "NDJSON streaming bulk import/export (admin)." },
+    { "name": "Download", "description": "Blob download + decrypt-stream." }
+  ],
+  "paths": {
+    "/api/v1/workspaces/{workspace_id}/documents:upsert": {
+      "post": {
+        "tags": ["External Key (Upsert)"],
+        "summary": "Create-or-version a document by external_id",
+        "description": "Idempotent on (tenant, external_id): no existing doc → create + v1; existing + same checksum → no-op; existing + new checksum → append a version. Blob bytes must already be uploaded via the storage flow (referenced by blob_checksum / blob_ref). Returns 201 when a new document is minted, 200 otherwise.",
+        "operationId": "UpsertDocumentByExternalKey",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "workspace_id", "in": "path", "required": true, "type": "string", "format": "uuid" },
+          { "$ref": "#/parameters/IdempotencyKey" },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/hwUpsertRequest" } }
+        ],
+        "responses": {
+          "200": { "description": "Versioned or no-op.", "schema": { "$ref": "#/definitions/hwUpsertResponse" } },
+          "201": { "description": "New document created.", "schema": { "$ref": "#/definitions/hwUpsertResponse" } },
+          "400": { "$ref": "#/responses/Error" },
+          "401": { "$ref": "#/responses/Error" },
+          "403": { "$ref": "#/responses/Error" },
+          "409": { "description": "Idempotency-Key in progress, OR external_id maps to a trashed document.", "schema": { "$ref": "#/definitions/hwError" } },
+          "422": { "description": "Idempotency-Key reused for a different request.", "schema": { "$ref": "#/definitions/hwError" } },
+          "429": { "description": "Rate limited (per-tenant).", "schema": { "$ref": "#/definitions/hwError" } },
+          "503": { "description": "Idempotency store unavailable (retry).", "schema": { "$ref": "#/definitions/hwError" } }
+        }
+      }
+    },
+    "/api/v1/documents:byExternalKey": {
+      "get": {
+        "tags": ["External Key (Upsert)"],
+        "summary": "Resolve internal ids from a business key",
+        "description": "Permission-filtered: returns 404 when the key is unknown OR the caller may not view it (existence is not leaked).",
+        "operationId": "GetDocumentByExternalKey",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "external_id", "in": "query", "required": true, "type": "string" }
+        ],
+        "responses": {
+          "200": { "description": "Resolved.", "schema": { "$ref": "#/definitions/hwByExternalKeyResponse" } },
+          "401": { "$ref": "#/responses/Error" },
+          "404": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/ingest": {
+      "post": {
+        "tags": ["Ingestion"],
+        "summary": "Stage a completed blob for OCR-then-route",
+        "description": "Stages an already-uploaded blob as an ingestion_item WITHOUT creating a document/version, and emits dms.ingestion.received.v1. The intelligence worker OCRs + extracts a business key against the blob, then a Temporal workflow auto-commits a high-confidence read (new version of a match, or a new document) or routes a low-confidence read to the review queue. Idempotent on (tenant, blob_checksum, target_customer_ref).",
+        "operationId": "CreateIngestionItem",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          { "$ref": "#/parameters/IdempotencyKey" },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/hwIngestRequest" } }
+        ],
+        "responses": {
+          "201": { "description": "Staged.", "schema": { "$ref": "#/definitions/hwIngestResponse" } },
+          "400": { "$ref": "#/responses/Error" },
+          "401": { "$ref": "#/responses/Error" },
+          "403": { "$ref": "#/responses/Error" },
+          "429": { "$ref": "#/responses/Error" },
+          "503": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/ingest/items": {
+      "get": {
+        "tags": ["Ingestion"],
+        "summary": "List staged ingestion items",
+        "operationId": "ListIngestionItems",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "type": "string", "enum": ["received", "ocr_running", "processed", "routed", "needs_review", "committed", "rejected"] },
+          { "name": "limit", "in": "query", "required": false, "type": "integer", "default": 100, "maximum": 500 }
+        ],
+        "responses": {
+          "200": { "description": "Items.", "schema": { "$ref": "#/definitions/hwIngestionItemList" } },
+          "401": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/review-queue": {
+      "get": {
+        "tags": ["Review Queue"],
+        "summary": "List review items (keyset paginated)",
+        "operationId": "ListReviewQueue",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "status", "in": "query", "required": false, "type": "string", "enum": ["pending", "resolved", "rejected"], "default": "pending" },
+          { "name": "limit", "in": "query", "required": false, "type": "integer", "default": 50, "maximum": 200 },
+          { "name": "cursor", "in": "query", "required": false, "type": "string", "description": "Opaque keyset cursor from a previous page's next_cursor." }
+        ],
+        "responses": {
+          "200": { "description": "Page of review items.", "schema": { "$ref": "#/definitions/hwReviewItemList" } },
+          "401": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/review-queue/{id}": {
+      "get": {
+        "tags": ["Review Queue"],
+        "summary": "Get one review item with OCR text",
+        "operationId": "GetReviewItem",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "200": { "description": "Review item.", "schema": { "$ref": "#/definitions/hwReviewItem" } },
+          "401": { "$ref": "#/responses/Error" },
+          "404": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/review-queue/{id}/resolve": {
+      "post": {
+        "tags": ["Review Queue"],
+        "summary": "Resolve a queued item (reviewer decision)",
+        "description": "decision = new_version (append the staged blob as a new version of target_document_id) | new_document (file standalone) | reject (discard, no version). Emits dms.review.resolved.v1. Resolving an already-resolved item returns 409.",
+        "operationId": "ResolveReviewItem",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "type": "string", "format": "uuid" },
+          { "$ref": "#/parameters/IdempotencyKey" },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/hwResolveReviewRequest" } }
+        ],
+        "responses": {
+          "200": { "description": "Resolved.", "schema": { "$ref": "#/definitions/hwResolveReviewResponse" } },
+          "400": { "$ref": "#/responses/Error" },
+          "401": { "$ref": "#/responses/Error" },
+          "403": { "$ref": "#/responses/Error" },
+          "409": { "description": "Already resolved.", "schema": { "$ref": "#/definitions/hwError" } }
+        }
+      }
+    },
+    "/api/v1/storage/uploads/initiate": {
+      "post": {
+        "tags": ["Storage Upload"],
+        "summary": "Begin an upload — get a presigned PUT URL",
+        "description": "Step 1 of the upload flow. Returns a presigned S3 URL the client PUTs the bytes to directly, plus the upload_id used to complete. When sha256_hash is supplied and a matching blob already exists, the response is deduplicated (no PUT needed).",
+        "operationId": "InitiateUpload",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          { "$ref": "#/parameters/IdempotencyKey" },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/hwInitiateUploadRequest" } }
+        ],
+        "responses": {
+          "200": { "description": "Presigned URL + upload id.", "schema": { "$ref": "#/definitions/hwInitiateUploadResponse" } },
+          "400": { "$ref": "#/responses/Error" },
+          "401": { "$ref": "#/responses/Error" },
+          "403": { "$ref": "#/responses/Error" },
+          "503": { "description": "Storage service unreachable.", "schema": { "$ref": "#/definitions/hwError" } }
+        }
+      }
+    },
+    "/api/v1/storage/uploads/{upload_id}/complete": {
+      "post": {
+        "tags": ["Storage Upload"],
+        "summary": "Finalize an upload (scan, encrypt, persist blob)",
+        "description": "Step 3 of the upload flow (after the client PUTs the bytes). Verifies the checksum, virus-scans, envelope-encrypts, and persists the content_blob. Returns content_blob_id — use it (or the checksum) as blob_ref in :upsert / CreateVersion / /ingest.",
+        "operationId": "CompleteUpload",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          { "name": "upload_id", "in": "path", "required": true, "type": "string", "format": "uuid" },
+          { "$ref": "#/parameters/IdempotencyKey" },
+          { "name": "body", "in": "body", "required": false, "schema": { "$ref": "#/definitions/hwCompleteUploadRequest" } }
+        ],
+        "responses": {
+          "200": { "description": "Blob finalized.", "schema": { "$ref": "#/definitions/hwCompleteUploadResponse" } },
+          "400": { "$ref": "#/responses/Error" },
+          "401": { "$ref": "#/responses/Error" },
+          "503": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/storage/uploads/{upload_id}/abort": {
+      "post": {
+        "tags": ["Storage Upload"],
+        "summary": "Abort an in-flight upload",
+        "operationId": "AbortUpload",
+        "security": [{ "ApiKeyBearer": [] }],
+        "parameters": [
+          { "name": "upload_id", "in": "path", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "204": { "description": "Aborted." },
+          "401": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/admin/bulk/import": {
+      "post": {
+        "tags": ["Bulk"],
+        "summary": "Bulk import (NDJSON streaming)",
+        "description": "Request body is newline-delimited JSON: an optional first envelope line {request_id, batch_size}, then one item line per resource ({resource: \"document\", document: {...}}). Documents are processed through a bounded worker pool and are idempotent on external_id (re-runs dedupe; duplicates within a batch converge). Responds with an NDJSON stream of per-item results.",
+        "operationId": "BulkImport",
+        "security": [{ "ApiKeyBearer": [] }],
+        "consumes": ["application/x-ndjson"],
+        "produces": ["application/x-ndjson"],
+        "responses": {
+          "200": { "description": "NDJSON stream of per-item results." },
+          "401": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/admin/bulk/export": {
+      "get": {
+        "tags": ["Bulk"],
+        "summary": "Bulk export (NDJSON streaming)",
+        "operationId": "BulkExport",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/x-ndjson"],
+        "responses": {
+          "200": { "description": "NDJSON stream of resources." },
+          "401": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/documents/{id}/content": {
+      "get": {
+        "tags": ["Download"],
+        "summary": "Download the current version's bytes",
+        "description": "Streams the decrypted bytes of the document's current version.",
+        "operationId": "GetDocumentContent",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/octet-stream"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "200": { "description": "Blob bytes." },
+          "401": { "$ref": "#/responses/Error" },
+          "404": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/versions/{version_id}/download": {
+      "get": {
+        "tags": ["Download"],
+        "summary": "Download a specific version (presigned redirect for plaintext blobs)",
+        "operationId": "DownloadVersion",
+        "security": [{ "ApiKeyBearer": [] }],
+        "parameters": [
+          { "name": "document_id", "in": "path", "required": true, "type": "string", "format": "uuid" },
+          { "name": "version_id", "in": "path", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "200": { "description": "Blob bytes or a presigned URL." },
+          "302": { "description": "Redirect to a presigned S3 URL (plaintext blobs)." },
+          "401": { "$ref": "#/responses/Error" },
+          "404": { "$ref": "#/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/versions/{version_id}/decrypt-stream": {
+      "get": {
+        "tags": ["Download"],
+        "summary": "Stream the decrypted bytes of an envelope-encrypted version",
+        "operationId": "DecryptStreamVersion",
+        "security": [{ "ApiKeyBearer": [] }],
+        "produces": ["application/octet-stream"],
+        "parameters": [
+          { "name": "document_id", "in": "path", "required": true, "type": "string", "format": "uuid" },
+          { "name": "version_id", "in": "path", "required": true, "type": "string", "format": "uuid" }
+        ],
+        "responses": {
+          "200": { "description": "Decrypted blob bytes." },
+          "401": { "$ref": "#/responses/Error" },
+          "404": { "$ref": "#/responses/Error" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "hwError": {
+      "type": "object",
+      "description": "Standard error envelope. `type` is a stable machine code (e.g. IDEMPOTENCY_KEY_REQUIRED, VALIDATION, FORBIDDEN).",
+      "properties": {
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "correlation_id": { "type": "string" }
+      }
+    },
+    "hwUpsertVersion": {
+      "type": "object",
+      "required": ["blob_checksum"],
+      "properties": {
+        "blob_checksum": { "type": "string", "description": "sha256 hex of the already-uploaded blob; the no-op comparison key." },
+        "blob_ref": { "type": "string", "format": "uuid", "description": "Optional content_blob id; verified against blob_checksum." },
+        "mime": { "type": "string" },
+        "size": { "type": "integer", "format": "int64" }
+      }
+    },
+    "hwUpsertRequest": {
+      "type": "object",
+      "required": ["external_id", "folder_id", "version"],
+      "properties": {
+        "external_id": { "type": "string", "description": "Caller-owned stable business key, tenant-unique (e.g. INV-2024-00188)." },
+        "folder_id": { "type": "string", "format": "uuid" },
+        "title": { "type": "string", "description": "Defaults to external_id when omitted." },
+        "doc_type": { "type": "string" },
+        "document_class": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "custom_metadata": { "type": "object" },
+        "region_pin": { "type": "string" },
+        "change_summary": { "type": "string" },
+        "version": { "$ref": "#/definitions/hwUpsertVersion" }
+      }
+    },
+    "hwUpsertResponse": {
+      "type": "object",
+      "properties": {
+        "document_id": { "type": "string", "format": "uuid" },
+        "current_version_id": { "type": "string", "format": "uuid" },
+        "current_version_number": { "type": "integer" },
+        "created": { "type": "boolean", "description": "true = a brand-new document was minted." },
+        "version_created": { "type": "boolean", "description": "false on a same-bytes no-op." }
+      }
+    },
+    "hwByExternalKeyResponse": {
+      "type": "object",
+      "properties": {
+        "document_id": { "type": "string", "format": "uuid" },
+        "current_version_id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "hwIngestRequest": {
+      "type": "object",
+      "required": ["workspace_id", "folder_id", "blob_checksum"],
+      "properties": {
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "folder_id": { "type": "string", "format": "uuid", "description": "Where a NEW document lands if the read has no match." },
+        "target_customer_ref": { "type": "string", "description": "Caller routing hint; part of the ingest idempotency key." },
+        "blob_checksum": { "type": "string", "description": "sha256 hex of the already-uploaded blob." },
+        "blob_ref": { "type": "string", "format": "uuid" },
+        "content_blob_id": { "type": "string", "format": "uuid", "description": "Alias for blob_ref (the value complete returns)." },
+        "mime": { "type": "string" },
+        "size": { "type": "integer", "format": "int64" },
+        "region_pin": { "type": "string" },
+        "document_class": { "type": "string", "description": "Optional hint for the extraction profile." }
+      }
+    },
+    "hwIngestResponse": {
+      "type": "object",
+      "properties": {
+        "ingestion_item_id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string" }
+      }
+    },
+    "hwIngestionItem": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "target_customer_ref": { "type": "string" },
+        "status": { "type": "string" },
+        "extracted_external_key": { "type": "string" },
+        "match_document_id": { "type": "string", "format": "uuid" },
+        "confidence": { "type": "number", "format": "double" },
+        "document_class": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "hwIngestionItemList": {
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/definitions/hwIngestionItem" } }
+      }
+    },
+    "hwReviewItem": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "ingestion_item_id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "target_customer_ref": { "type": "string" },
+        "document_class": { "type": "string" },
+        "extracted_external_key": { "type": "string" },
+        "suggested_match_document_id": { "type": "string", "format": "uuid" },
+        "confidence": { "type": "number", "format": "double" },
+        "reason": { "type": "string", "enum": ["below_threshold", "ambiguous_match", "no_external_key", "low_ocr_confidence"] },
+        "status": { "type": "string", "enum": ["pending", "resolved", "rejected"] },
+        "ocr_text": { "type": "string", "description": "Populated only on the single-item GET." },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "hwReviewItemList": {
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/definitions/hwReviewItem" } },
+        "next_cursor": { "type": "string", "description": "Opaque keyset cursor; empty when there are no more pages." }
+      }
+    },
+    "hwResolveReviewRequest": {
+      "type": "object",
+      "required": ["decision"],
+      "properties": {
+        "decision": { "type": "string", "enum": ["new_version", "new_document", "reject"] },
+        "target_document_id": { "type": "string", "format": "uuid", "description": "Required for new_version." },
+        "external_key": { "type": "string", "description": "Optional for new_document (defaults to the extracted key)." },
+        "notes": { "type": "string" }
+      }
+    },
+    "hwResolveReviewResponse": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" },
+        "document_id": { "type": "string", "format": "uuid" },
+        "version_id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "hwInitiateUploadRequest": {
+      "type": "object",
+      "required": ["filename", "mime_type", "size_bytes"],
+      "properties": {
+        "region_pin": { "type": "string" },
+        "filename": { "type": "string" },
+        "mime_type": { "type": "string" },
+        "size_bytes": { "type": "integer", "format": "int64" },
+        "sha256_hash": { "type": "string", "description": "Optional; enables dedup at initiate + verification at complete." },
+        "checksum_sha256": { "type": "string", "description": "Alias for sha256_hash." },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "folder_id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "hwInitiateUploadResponse": {
+      "type": "object",
+      "properties": {
+        "upload_id": { "type": "string", "format": "uuid" },
+        "presigned_put_url": { "type": "string" },
+        "storage_bucket": { "type": "string" },
+        "storage_key": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "required_headers": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "hwCompleteUploadRequest": {
+      "type": "object",
+      "properties": {
+        "sha256_hash": { "type": "string" },
+        "checksum_sha256": { "type": "string" },
+        "size_bytes": { "type": "integer", "format": "int64" }
+      }
+    },
+    "hwCompleteUploadResponse": {
+      "type": "object",
+      "properties": {
+        "storage_bucket": { "type": "string" },
+        "storage_key": { "type": "string" },
+        "size_bytes": { "type": "integer", "format": "int64" },
+        "checksum_sha256": { "type": "string" },
+        "content_blob_id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}
