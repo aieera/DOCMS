@@ -1,0 +1,12 @@
+# Build the React SPA and serve it via nginx, proxying /files → the BFF.
+# Build context is the repo root.
+FROM node:20-alpine AS build
+WORKDIR /web
+COPY integration/web/package.json integration/web/package-lock.json ./
+RUN npm ci
+COPY integration/web/ ./
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /web/dist /usr/share/nginx/html
+COPY integration/deploy/nginx.conf /etc/nginx/conf.d/default.conf

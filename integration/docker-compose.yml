@@ -1,0 +1,63 @@
+# One-command demo of the ERP↔SeDoc integration product:
+#   worker + BFF + mock ERP + web + the integration's own Postgres.
+#
+# Prerequisites: a running SeDoc stack (the parent `make docker-up`) plus an API
+# key (scopes documents:read/write, upload) and a workspace id. Put them in a
+# .env next to this file (see .env.example). SeDoc is reached via SEDOC_BASE_URL
+# — by default the host's SeDoc through host.docker.internal.
+#
+#   docker compose up --build      # web on http://localhost:5180
+name: sedoc-integration
+
+x-sedoc-env: &sedoc-env
+  SEDOC_INTEGRATION_DB_URL: postgres://sedoc:devpassword@integration-postgres:5432/sedoc_integration?sslmode=disable
+  SEDOC_BASE_URL: ${SEDOC_BASE_URL:-http://host.docker.internal:8080/api/v1}
+  SEDOC_SEARCH_URL: ${SEDOC_SEARCH_URL:-http://host.docker.internal:8086/api/v1}
+  SEDOC_API_KEY: ${SEDOC_API_KEY:?set SEDOC_API_KEY in .env}
+  SEDOC_WORKSPACE_ID: ${SEDOC_WORKSPACE_ID:?set SEDOC_WORKSPACE_ID in .env}
+  ERP_BASE_URL: http://mockerp:8095
+
+services:
+  integration-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sedoc
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: sedoc_integration
+    volumes: ["integration-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sedoc -d sedoc_integration"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    build: { context: .., dockerfile: integration/deploy/Dockerfile, args: { BIN: worker } }
+    environment: *sedoc-env
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["8090:8090"]
+    depends_on:
+      integration-postgres: { condition: service_healthy }
+
+  bff:
+    build: { context: .., dockerfile: integration/deploy/Dockerfile, args: { BIN: bff } }
+    environment: *sedoc-env
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["8091:8091"]
+    depends_on:
+      integration-postgres: { condition: service_healthy }
+
+  mockerp:
+    build: { context: .., dockerfile: integration/deploy/Dockerfile, args: { BIN: mockerp } }
+    command: ["serve"]
+    environment:
+      ERP_LISTEN_ADDR: ":8095"
+    ports: ["8095:8095"]
+
+  web:
+    build: { context: .., dockerfile: integration/deploy/Dockerfile.web }
+    ports: ["5180:80"]
+    depends_on: ["bff"]
+
+volumes:
+  integration-pgdata: {}

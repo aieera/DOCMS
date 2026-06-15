@@ -5,6 +5,7 @@ toolchain go1.26.2
 use (
 	./cmd/dms-admin
 	./cmd/license-gen
+	./integration
 	./pkg
 	./proto/gen/go
 	./scripts/seed
