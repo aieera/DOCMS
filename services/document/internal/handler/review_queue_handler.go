@@ -65,6 +65,13 @@ type reviewItemResp struct {
 	Status                   string  `json:"status"`
 	OCRText                  string  `json:"ocr_text,omitempty"`
 	CreatedAt                string  `json:"created_at"`
+	// Resolution audit — populated once an item leaves the pending state, so a
+	// reviewer can see who actioned it and how.
+	Resolution          string `json:"resolution,omitempty"`
+	ResultingDocumentID string `json:"resulting_document_id,omitempty"`
+	ResolvedBy          string `json:"resolved_by,omitempty"`
+	ResolvedAt          string `json:"resolved_at,omitempty"`
+	Notes               string `json:"notes,omitempty"`
 }
 
 type reviewListResp struct {
@@ -201,6 +208,17 @@ func toReviewItemResp(it *model.ReviewQueueItem, ocrText string) reviewItemResp 
 	}
 	if it.SuggestedMatchDocumentID != nil {
 		r.SuggestedMatchDocumentID = it.SuggestedMatchDocumentID.String()
+	}
+	r.Resolution = it.Resolution
+	r.Notes = it.Notes
+	if it.ResultingDocumentID != nil {
+		r.ResultingDocumentID = it.ResultingDocumentID.String()
+	}
+	if it.ResolvedBy != nil {
+		r.ResolvedBy = it.ResolvedBy.String()
+	}
+	if it.ResolvedAt != nil {
+		r.ResolvedAt = it.ResolvedAt.UTC().Format(time.RFC3339Nano)
 	}
 	return r
 }
