@@ -10,7 +10,6 @@ import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
 import { Breadcrumbs } from './breadcrumbs'
-import { ThemeToggle } from './theme-toggle'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { formatRelativeTime } from '@/lib/formatters'
@@ -34,13 +33,16 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
     <header
       role="banner"
       aria-label="Application toolbar"
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/80 bg-background px-4 shadow-sm lg:px-6"
+      // Navy toolbar matching the sidebar. `text-sidebar-foreground`
+      // sets a light default so icons + breadcrumbs read on navy; the
+      // white search pill provides the contrast input surface.
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground lg:px-6"
     >
       <Button
         variant="ghost"
         size="icon"
         onClick={onOpenMobileNav}
-        className="lg:hidden"
+        className="text-sidebar-foreground hover:bg-white/10 hover:text-white lg:hidden"
         aria-label="Open navigation"
       >
         <Menu className="h-5 w-5" />
@@ -53,14 +55,13 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
       <div className="flex items-center gap-2">
         <CommandTrigger />
-        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
         <div className="flex items-center gap-2">
           <MyTasksBadge />
           <NotificationsDropdown />
-          <ThemeToggle />
           <LanguageSelector />
         </div>
-        <Separator orientation="vertical" className="hidden h-6 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
         <UserMenu />
       </div>
     </header>
@@ -164,7 +165,7 @@ function MyTasksBadge() {
       variant="ghost"
       size="icon"
       onClick={() => navigate({ to: '/tasks' })}
-      className="relative"
+      className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
       aria-label={count > 0 ? `${count} open tasks` : 'My tasks'}
       title={count > 0 ? `${count} open task${count === 1 ? '' : 's'}` : 'My tasks'}
       data-testid="my-tasks-badge"
@@ -238,7 +239,7 @@ function NotificationsDropdown() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
+          className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
           aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
           data-testid="notifications-button"
         >
@@ -384,7 +385,7 @@ function UserMenu() {
           size="icon"
           aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
           data-testid="user-avatar-button"
-          className="rounded-full font-semibold"
+          className="rounded-full border border-white/15 bg-white/10 font-semibold text-white hover:bg-white/20"
           disabled={isHydrating}
         >
           {isHydrating ? (

@@ -19,11 +19,6 @@ interface ThemeContextValue {
 const STORAGE_KEY = 'vaultdms-theme'
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-function getSystemTheme(): 'light' | 'dark' {
-  if (typeof window === 'undefined') return 'light'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
 function applyClass(theme: 'light' | 'dark') {
   const root = document.documentElement
   root.classList.toggle('dark', theme === 'dark')
@@ -39,29 +34,17 @@ export function ThemeProvider({ children, defaultMode = 'system' }: { children: 
     const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null
     return stored ?? defaultMode
   })
-  const [resolved, setResolved] = useState<'light' | 'dark'>(() =>
-    mode === 'system' ? getSystemTheme() : mode,
-  )
+  // The product ships a single fixed theme (the navy/light design) — no
+  // light/dark switching. `resolved` is pinned to 'light' and the `dark`
+  // class is never applied, regardless of stored preference or OS
+  // setting. `mode`/`setMode` stay on the context so the (now removed)
+  // toggle and any callers don't break.
+  const [resolved] = useState<'light' | 'dark'>('light')
 
   useEffect(() => {
-    const next = mode === 'system' ? getSystemTheme() : mode
-    setResolved(next)
-    applyClass(next)
-    window.localStorage.setItem(STORAGE_KEY, mode)
-  }, [mode])
-
-  // When the user picks 'system', keep tracking OS changes live.
-  useEffect(() => {
-    if (mode !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (e: MediaQueryListEvent) => {
-      const next = e.matches ? 'dark' : 'light'
-      setResolved(next)
-      applyClass(next)
-    }
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [mode])
+    applyClass('light')
+    window.localStorage.setItem(STORAGE_KEY, 'light')
+  }, [])
 
   return (
     <ThemeContext.Provider value={{ mode, resolved, setMode: setModeState }}>
