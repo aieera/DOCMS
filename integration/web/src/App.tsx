@@ -12,26 +12,37 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FileExplorer } from "./pages/FileExplorer";
 import { ReviewQueue } from "./pages/ReviewQueue";
 import { SyncDashboard } from "./pages/SyncDashboard";
+import { Toaster } from "./components/toast";
+import { createApiClient } from "./lib/api";
+import { ApiProvider } from "./lib/apiContext";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
+
+// Standalone dev client: same-origin (Vite proxies /files → BFF) unless
+// VITE_BFF_BASE overrides; no getAuthToken → dev identity from localStorage. An
+// ERP embed builds its own client via mountFileExplorer instead (see widget.tsx).
+const devClient = createApiClient({ apiBase: import.meta.env.VITE_BFF_BASE ?? "" });
 
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
-      <BrowserRouter>
-        <div className="mx-auto max-w-6xl p-4">
-          <TopBar />
-          <main className="mt-4">
-            <Routes>
-              <Route path="/" element={<CustomerPicker />} />
-              <Route path="/customers/:ref" element={<ExplorerHeader />} />
-              <Route path="/review" element={<ReviewQueue />} />
-              <Route path="/sync" element={<SyncDashboard />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
-      </BrowserRouter>
+      <ApiProvider client={devClient}>
+        <BrowserRouter>
+          <Toaster />
+          <div className="mx-auto max-w-6xl p-4">
+            <TopBar />
+            <main className="mt-4">
+              <Routes>
+                <Route path="/" element={<CustomerPicker />} />
+                <Route path="/customers/:ref" element={<ExplorerHeader />} />
+                <Route path="/review" element={<ReviewQueue />} />
+                <Route path="/sync" element={<SyncDashboard />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+          </div>
+        </BrowserRouter>
+      </ApiProvider>
     </QueryClientProvider>
   );
 }
@@ -110,7 +121,7 @@ function ExplorerHeader() {
         <span className="mx-1">/</span>
         <span className="font-medium text-gray-700">{ref}</span>
       </nav>
-      <FileExplorer />
+      <FileExplorer customerRef={ref ?? ""} />
     </div>
   );
 }

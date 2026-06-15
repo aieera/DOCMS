@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { downloadDoc } from "../lib/api";
+import { useApiClient } from "../lib/apiContext";
 import { FolderTree } from "../components/FolderTree";
 import { Empty, ErrorBanner, Skeleton, StatusBadge, SyncIndicator, bytesHuman } from "../components/ui";
 import {
@@ -12,11 +11,11 @@ import {
 } from "../hooks/queries";
 import type { DocumentRow } from "../lib/types";
 
-// [D] Customer File Explorer — the core feature. Scoped to one customer (in the
-// ERP the customer is in context; here it's the :ref route param). Tree → doc
-// list → detail/versions, plus drag-drop upload into Attachments.
-export function FileExplorer() {
-  const { ref = "" } = useParams();
+// [D] Customer File Explorer — the core feature, scoped to one customer. The
+// customer is supplied by the host (the ERP customer record, or the :ref route in
+// standalone dev) via the customerRef prop — no routing assumptions here. Tree →
+// doc list → detail/versions, plus drag-drop upload into Attachments.
+export function FileExplorer({ customerRef: ref }: { customerRef: string }) {
   const tree = useCustomerTree(ref);
   const [folderId, setFolderId] = useState<string | undefined>();
   const [docId, setDocId] = useState<string | undefined>();
@@ -95,6 +94,7 @@ function DocumentList({
 }
 
 function DocumentDetailPanel({ docId }: { docId: string }) {
+  const api = useApiClient();
   const q = useDocumentDetail(docId);
   const restore = useRestoreVersion(docId);
   const [downloading, setDownloading] = useState(false);
@@ -106,7 +106,7 @@ function DocumentDetailPanel({ docId }: { docId: string }) {
   async function onDownload() {
     setDownloading(true);
     try {
-      await downloadDoc(doc.id, doc.title || doc.id);
+      await api.download(doc.id, doc.title || doc.id);
     } finally {
       setDownloading(false);
     }

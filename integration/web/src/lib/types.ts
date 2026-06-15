@@ -54,6 +54,8 @@ export interface UploadResult {
   status: string;
 }
 
+export type ReviewStatus = "pending" | "resolved" | "rejected";
+
 export interface ReviewItem {
   id: string;
   ingestion_item_id: string;
@@ -64,9 +66,15 @@ export interface ReviewItem {
   suggested_match_document_id?: string;
   confidence: number;
   reason: string;
-  status: string;
+  status: ReviewStatus;
   ocr_text?: string;
   created_at: string;
+  // Resolution audit — present once an item leaves the pending state.
+  resolution?: string; // new_version | new_document | reject
+  resulting_document_id?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  notes?: string;
 }
 
 export interface ReviewList {
@@ -88,6 +96,55 @@ export interface SyncLogRow {
 
 export interface SyncLogList {
   items: SyncLogRow[];
+}
+
+export interface LimiterState {
+  limit_per_sec: number;
+  burst: number;
+  tokens_available: number;
+  wait_count: number;
+  wait_total_ms: number;
+}
+
+export interface SyncMetrics {
+  events_per_min: number;
+  processed_total: number;
+  http_429: number;
+  backlog: number;
+  dlq: number;
+  limiter?: LimiterState;
+}
+
+export interface BackfillRun {
+  id: string;
+  status: string;
+  source: string;
+  source_arg: string;
+  total: number;
+  processed: number;
+  failed: number;
+  last_error: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BackfillFailure {
+  customer_ref: string;
+  item: string;
+  error: string;
+  correlation_id: string;
+  created_at: string;
+}
+
+export interface BackfillList {
+  items: BackfillRun[];
+}
+
+export interface BackfillDetail {
+  run: BackfillRun;
+  failures: BackfillFailure[];
 }
 
 // ApiError carries the BFF/SeDoc correlation_id for support traceability.
