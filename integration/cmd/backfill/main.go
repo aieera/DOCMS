@@ -66,7 +66,7 @@ func main() {
 	ratePerMin := envInt("SEDOC_INTEGRATION_RATE_PER_MIN", 600)
 	rateBurst := envInt("SEDOC_INTEGRATION_RATE_BURST", 20)
 	limiter := sedoc.NewLimiter(float64(ratePerMin)/60.0, rateBurst)
-	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter)
+	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter).WithWorkspace(workspaceID)
 	erpClient := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	syncer := syncpkg.New(st, doc, erpClient, syncpkg.Config{
 		WorkspaceID: workspaceID, RegionPin: env("SEDOC_REGION_PIN", "us-east-1"),

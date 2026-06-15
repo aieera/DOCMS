@@ -16,6 +16,13 @@ x-sedoc-env: &sedoc-env
   SEDOC_API_KEY: ${SEDOC_API_KEY:?set SEDOC_API_KEY in .env}
   SEDOC_WORKSPACE_ID: ${SEDOC_WORKSPACE_ID:?set SEDOC_WORKSPACE_ID in .env}
   ERP_BASE_URL: http://mockerp:8095
+  # BFF reaches the worker over the compose network for the metrics passthrough
+  # (host port is irrelevant in-container). Worker ignores this var.
+  SEDOC_INTEGRATION_WORKER_URL: http://worker:8090
+  # Dev only: SeDoc signs presigned MinIO URLs against localhost:9000 (the host's
+  # published port). From a container, dial the host instead (Host header kept so
+  # the signature validates). Unset in prod — presigned URLs use a routable host.
+  SEDOC_S3_DIAL_HOST: ${SEDOC_S3_DIAL_HOST:-host.docker.internal}
 
 services:
   integration-postgres:
@@ -35,7 +42,9 @@ services:
     build: { context: .., dockerfile: integration/deploy/Dockerfile, args: { BIN: worker } }
     environment: *sedoc-env
     extra_hosts: ["host.docker.internal:host-gateway"]
-    ports: ["8090:8090"]
+    # Host port is parameterized so it can avoid a co-hosted SeDoc stack (whose
+    # services may already hold 8090/8091). Container port is always 8090.
+    ports: ["${WORKER_HOST_PORT:-8090}:8090"]
     depends_on:
       integration-postgres: { condition: service_healthy }
 
@@ -43,7 +52,7 @@ services:
     build: { context: .., dockerfile: integration/deploy/Dockerfile, args: { BIN: bff } }
     environment: *sedoc-env
     extra_hosts: ["host.docker.internal:host-gateway"]
-    ports: ["8091:8091"]
+    ports: ["${BFF_HOST_PORT:-8091}:8091"]
     depends_on:
       integration-postgres: { condition: service_healthy }
 

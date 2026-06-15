@@ -64,7 +64,8 @@ func main() {
 
 	st := store.New(pool)
 	limiter := sedoc.NewLimiter(float64(ratePerMin)/60.0, rateBurst)
-	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter)
+	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter).WithWorkspace(workspaceID).
+		WithS3DialHost(env("SEDOC_S3_DIAL_HOST", ""))
 	src := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	syncer := syncpkg.New(st, doc, src, syncpkg.Config{
 		WorkspaceID: workspaceID, RegionPin: env("SEDOC_REGION_PIN", "us-east-1"), Buckets: buckets,

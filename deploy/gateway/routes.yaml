@@ -255,6 +255,10 @@ routes:
   - { service: document, prefix: /api/v1/contracts, methods: [], auth: required }
   - { service: document, prefix: /api/v1/compare, methods: [], auth: required }
   - { service: document, prefix: /api/v1/folders, methods: [], auth: required }
+  # ERP pre-commit ingestion (WS3) + native review queue (WS4). Session (admin
+  # review UI) or Bearer API key (ERP worker /ingest, explorer BFF review).
+  - { service: document, prefix: /api/v1/ingest, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/review-queue, methods: [], auth: required }
   - { service: document, prefix: /api/v1/uploads/predict, methods: [], auth: required }
   - { service: document, prefix: /api/v1/zt, methods: [], auth: required }
   - { service: document, prefix: /api/v1/tenants/metadata-schema, methods: [], auth: required }

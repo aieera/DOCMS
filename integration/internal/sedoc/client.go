@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strconv"
 	"time"
@@ -22,11 +23,13 @@ import (
 
 // Client talks to the SeDoc document gateway.
 type Client struct {
-	baseURL   string // document gateway, e.g. http://localhost:8081/api/v1
-	searchURL string // search service, e.g. http://localhost:8086/api/v1 (BFF only)
-	apiKey    string // vdms_... ; sent as Authorization: Bearer
-	hc        *http.Client
-	limiter   *Limiter // optional proactive write throttle (nil = unthrottled)
+	baseURL     string // document gateway, e.g. http://localhost:8081/api/v1
+	searchURL   string // search service, e.g. http://localhost:8086/api/v1 (BFF only)
+	apiKey      string // vdms_... ; sent as Authorization: Bearer
+	workspaceID string // sent as workspace_id on storage initiate (permission-check scope)
+	s3DialHost  string // dev: dial this host for loopback presigned PUTs (preserving signed Host)
+	hc          *http.Client
+	limiter     *Limiter // optional proactive write throttle (nil = unthrottled)
 }
 
 // New constructs a client. baseURL should include the /api/v1 suffix.
@@ -48,6 +51,28 @@ func New(baseURL, apiKey string) *Client {
 // interactive read path). Returns the client for chaining.
 func (c *Client) WithLimiter(l *Limiter) *Client {
 	c.limiter = l
+	return c
+}
+
+// WithWorkspace sets the workspace id sent as `workspace_id` on the storage
+// upload-initiate call. SeDoc's storage proxy requires a scope (workspace/folder/
+// document) for its permission check; folder/document/upsert routes carry the
+// workspace in the URL, but initiate has no path scope, so it must be in the
+// body. Returns the client for chaining.
+func (c *Client) WithWorkspace(id string) *Client {
+	c.workspaceID = id
+	return c
+}
+
+// WithS3DialHost accommodates a dev/demo deployment where SeDoc's storage signs
+// presigned URLs against a loopback host (e.g. localhost:9000) that is only
+// reachable on the Docker host, not from inside this container. When set, a
+// presigned PUT to a loopback host is DIALED at this host (the port is kept)
+// while the signed Host header is preserved, so the signature still validates.
+// Leave empty in production, where presigned URLs already use a routable
+// endpoint. Returns the client for chaining.
+func (c *Client) WithS3DialHost(host string) *Client {
+	c.s3DialHost = host
 	return c
 }
 
@@ -307,31 +332,40 @@ func (c *Client) UploadStream(ctx context.Context, idemBase, regionPin, filename
 		sha, size, src = h, n, tmp
 	}
 
+	initBody := map[string]any{
+		"region_pin": regionPin, "filename": filename, "mime_type": mime,
+		"size_bytes": size, "sha256_hash": sha,
+	}
+	if c.workspaceID != "" {
+		initBody["workspace_id"] = c.workspaceID // permission-check scope (no path scope on initiate)
+	}
 	var init InitiateUploadResult
-	if err := c.doJSON(ctx, http.MethodPost, "/storage/uploads/initiate", idemBase+":initiate",
-		map[string]any{
-			"region_pin": regionPin, "filename": filename, "mime_type": mime,
-			"size_bytes": size, "sha256_hash": sha,
-		}, &init); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/storage/uploads/initiate", idemBase+":initiate", initBody, &init); err != nil {
 		return nil, fmt.Errorf("initiate: %w", err)
 	}
 
-	if init.PresignedPutURL != "" {
-		cr := &countingReader{r: src}
-		if err := c.putStream(ctx, init.PresignedPutURL, mime, cr, size); err != nil {
-			return nil, fmt.Errorf("put: %w", err)
-		}
-		// Verify the streamed byte count matches what we declared + hashed.
-		if cr.n != size {
-			return nil, fmt.Errorf("upload size mismatch: streamed %d, declared %d", cr.n, size)
-		}
-		if extra, _ := io.Copy(io.Discard, src); extra > 0 {
-			return nil, fmt.Errorf("upload size mismatch: source has %d byte(s) beyond declared %d", extra, size)
-		}
-	} else {
-		// Dedup hit — SeDoc already holds this blob. Skip the PUT but drain the
-		// source so the multipart part / connection is fully consumed.
+	// Dedup hit: SeDoc already holds this blob, so it returns no presigned URL
+	// and no upload session (upload_id is nil). There is nothing to PUT or
+	// complete — drain the source and return a checksum-only result. The
+	// :upsert / /ingest that follows resolves the existing content blob by
+	// sha256 (blob_ref is optional, verified against the checksum), so an empty
+	// ContentBlobID is fine. This is the common case for re-runs, backfills, and
+	// identical attachments.
+	if init.PresignedPutURL == "" {
 		_, _ = io.Copy(io.Discard, src)
+		return &UploadResult{SHA256: sha, SizeBytes: size}, nil
+	}
+
+	cr := &countingReader{r: src}
+	if err := c.putStream(ctx, init.PresignedPutURL, mime, cr, size); err != nil {
+		return nil, fmt.Errorf("put: %w", err)
+	}
+	// Verify the streamed byte count matches what we declared + hashed.
+	if cr.n != size {
+		return nil, fmt.Errorf("upload size mismatch: streamed %d, declared %d", cr.n, size)
+	}
+	if extra, _ := io.Copy(io.Discard, src); extra > 0 {
+		return nil, fmt.Errorf("upload size mismatch: source has %d byte(s) beyond declared %d", extra, size)
 	}
 
 	var done CompleteUploadResult
@@ -348,10 +382,14 @@ func (c *Client) UploadStream(ctx context.Context, idemBase, regionPin, filename
 // header (the URL is pre-signed); a non-2xx is a storage error (retryable). This
 // PUT goes to object storage, not the SeDoc API gateway, so it is intentionally
 // NOT paced by the write limiter (it doesn't consume the 600/min budget).
-func (c *Client) putStream(ctx context.Context, url, contentType string, body io.Reader, size int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, body)
+func (c *Client) putStream(ctx context.Context, rawURL, contentType string, body io.Reader, size int64) error {
+	target, signedHost := c.rewriteLoopbackPut(rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target, body)
 	if err != nil {
 		return err
+	}
+	if signedHost != "" {
+		req.Host = signedHost // preserve the signed Host header while dialing s3DialHost
 	}
 	req.ContentLength = size // fixed-length streaming; net/http errors if body is short
 	req.Header.Set("Content-Type", contentType)
@@ -365,6 +403,33 @@ func (c *Client) putStream(ctx context.Context, url, contentType string, body io
 		return &APIError{StatusCode: resp.StatusCode, Type: "STORAGE_PUT", Message: "presigned PUT failed"}
 	}
 	return nil
+}
+
+// rewriteLoopbackPut, when s3DialHost is configured and the presigned URL points
+// at a loopback host, returns a connect-URL with the host swapped to s3DialHost
+// (port kept) plus the original host:port to send as the Host header (so the
+// SigV4 signature, which signs `host`, still validates). Otherwise returns the
+// URL unchanged and an empty host. Dev/demo only — see WithS3DialHost.
+func (c *Client) rewriteLoopbackPut(rawURL string) (target, signedHost string) {
+	if c.s3DialHost == "" {
+		return rawURL, ""
+	}
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return rawURL, ""
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		orig := u.Host // host:port, the value signed into the presigned URL
+		if p := u.Port(); p != "" {
+			u.Host = c.s3DialHost + ":" + p
+		} else {
+			u.Host = c.s3DialHost
+		}
+		return u.String(), orig
+	default:
+		return rawURL, ""
+	}
 }
 
 // countingReader tallies bytes read, so an upload can verify the streamed count.

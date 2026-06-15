@@ -49,7 +49,8 @@ func main() {
 	}
 	defer pool.Close()
 
-	doc := sedoc.New(baseURL, apiKey)
+	doc := sedoc.New(baseURL, apiKey).WithWorkspace(workspaceID).
+		WithS3DialHost(env("SEDOC_S3_DIAL_HOST", ""))
 	doc.SetSearchURL(searchURL)
 	erpClient := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	b := bff.New(store.New(pool), doc, erpClient, workspaceID, log).WithWorkerURL(workerURL)

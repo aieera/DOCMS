@@ -1,0 +1,14 @@
+// The ERP↔SeDoc integration is a separate, self-contained product (its own
+// go.mod with a `replace … => ../pkg` + go.sum), NOT part of the main repo
+// workspace — keeping it out of the root go.work means the main services'
+// Docker builds (build/Dockerfile.go-service) don't need to copy it. This
+// per-product workspace lets local `go build`/`go test` here resolve ../pkg
+// from source. The container build uses GOWORK=off + the go.mod replace.
+go 1.25.0
+
+toolchain go1.26.2
+
+use (
+	.
+	../pkg
+)

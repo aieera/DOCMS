@@ -150,6 +150,12 @@ services:
       # ERP integration (ADR 0090) — iPaaS poll trigger, Bearer API-key auth
       # (integrations:read). Sibling triggers live on signature + workflow.
       - { name: integrations-triggers-documents, paths: [/api/v1/integrations/triggers/documents], strip_path: false }
+      # ERP pre-commit ingestion (WS3) + native review queue (WS4). Bearer
+      # API-key (ERP worker POST /ingest; explorer BFF review passthrough) or
+      # session (admin review UI) — backend SessionOrAPIKey enforces. Added
+      # 2026-06-15 for the ERP↔SeDoc explorer cutover.
+      - { name: ingest,             paths: [/api/v1/ingest],                   strip_path: false }
+      - { name: review-queue,       paths: [/api/v1/review-queue],             strip_path: false }
       - { name: annotations,        paths: [/api/v1/annotations],              strip_path: false }
       - { name: admin-documents,    paths: [/api/v1/admin/documents],          strip_path: false }
       - { name: admin-retention,    paths: [/api/v1/admin/retention-policies], strip_path: false }
