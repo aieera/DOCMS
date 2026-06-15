@@ -5,15 +5,36 @@
 // outbound push the same "one document per record, retries never duplicate"
 // guarantee its dms_sync_log enforces via UNIQUE(entity_type, entity_id).
 //
+// Contract (status semantics):
+//   - first request          → handler runs; success (2xx, ≤1 MiB body) is
+//     stored; response returned with Idempotency-Replayed: false.
+//   - replay (same key)      → stored response replayed verbatim, Idempotency-Replayed: true.
+//   - concurrent in-flight   → 409 IDEMPOTENCY_IN_PROGRESS (the reservation row
+//     exists but isn't completed yet; caller retries).
+//   - key reused for a       → 422 IDEMPOTENCY_KEY_REUSED (method/path differ
+//     different request          from the stored request).
+//   - store unavailable      → 503 IDEMPOTENCY_STORE_UNAVAILABLE (fail-closed:
+//     never pass through, which would risk a duplicate).
+//   - key > 200 chars        → 400 IDEMPOTENCY_KEY_TOO_LONG.
+//   - missing key (required) → 400 IDEMPOTENCY_KEY_REQUIRED — only under
+//     IdempotencyRequired AND only for API-key callers.
+//
 // Concurrency: the key is RESERVED with an atomic INSERT before the handler
 // runs, so two simultaneous retries can't both create. The loser sees the
 // reservation and gets 409 (in-flight) — a transient the BullMQ worker retries.
 //
-// Requests without the header pass through untouched, so this is opt-in and
-// never changes behaviour for the web UI.
+// Two entry points:
+//   - Idempotency          — opt-in: requests without the header pass through
+//     untouched, so the web UI (session) is unaffected.
+//   - IdempotencyRequired  — additionally rejects an unsafe request from an
+//     API-key principal that omits the header (400). The
+//     web UI is still exempt (only api_key-role callers
+//     are forced), so the ERP integration must send a key
+//     on resource-creating POSTs while the browser flow
+//     is unchanged.
 //
-// Wrap AFTER auth + tenant middleware (it needs the tenant on ctx) and BEFORE
-// the business handler.
+// Wrap AFTER auth + tenant middleware (it needs the tenant + role on ctx) and
+// BEFORE the business handler.
 package middleware
 
 import (
@@ -29,7 +50,7 @@ import (
 )
 
 const (
-	idempotencyHeader        = "Idempotency-Key"
+	idempotencyHeader         = "Idempotency-Key"
 	idempotencyReplayedHeader = "Idempotency-Replayed"
 	// Cap on cached response size. Larger successful responses still return
 	// to the caller; they just aren't stored (so a replay re-executes).
@@ -37,14 +58,45 @@ const (
 	// Cap on the client-supplied key length. Bounds storage/abuse from a
 	// caller (authenticated, but still) sending pathologically long keys.
 	maxKeyLen = 200
+	// apiKeyRole is the role APIKeyAuth stamps on the identity (see apikey.go).
+	// IdempotencyRequired only forces the header for these principals so the
+	// session-authed web UI keeps working without one.
+	apiKeyRole = "api_key"
 )
 
-// Idempotency returns middleware backed by the idempotency_keys table.
+// Idempotency returns opt-in middleware backed by the idempotency_keys table:
+// requests without the header pass through untouched.
 func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return idempotencyMW(pool, false)
+}
+
+// IdempotencyRequired is Idempotency plus a hard requirement: an unsafe request
+// from an API-key principal MUST carry the header (else 400). Session callers
+// stay exempt. Use on resource-creating POSTs the ERP integration drives, so a
+// re-fired webhook can't spawn a duplicate.
+func IdempotencyRequired(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return idempotencyMW(pool, true)
+}
+
+func idempotencyMW(pool *pgxpool.Pool, required bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isSafeMethod(r.Method) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			key := r.Header.Get(idempotencyHeader)
-			if key == "" || isSafeMethod(r.Method) {
+			if key == "" {
+				// Force the header for the integration (API-key callers) on
+				// required routes; the web UI (session) is left opt-in.
+				if required && auth.GetUserRole(r.Context()) == apiKeyRole {
+					writeJSON(w, http.StatusBadRequest, map[string]any{
+						"type":           "IDEMPOTENCY_KEY_REQUIRED",
+						"message":        "Idempotency-Key header is required on this request",
+						"correlation_id": auth.GetCorrelationID(r.Context()),
+					})
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
