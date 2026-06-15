@@ -131,6 +131,15 @@ var DefaultStreams = []StreamSpec{
 	// stream") permanently jam the shared outbox batch behind them, blocking
 	// the document/version events the OCR + index pipeline depends on.
 	{Name: "STORAGE_EVENTS", Subjects: []string{"dms.storage.>"}},
+	// WS3 — pre-commit ingestion pipeline. dms.ingestion.> carries the
+	// staging-then-route lifecycle (received → processed → routed /
+	// needs_review). received is consumed by the intelligence worker
+	// (OCR + extract against the blob ref) and processed is consumed by
+	// the document service to start the IngestAndRoute Temporal workflow.
+	// Without this binding every ingest would jam the shared outbox
+	// publisher in a "no response from stream" retry loop, same failure
+	// mode the other comments in this list warn about.
+	{Name: "INGESTION_EVENTS", Subjects: []string{"dms.ingestion.>"}},
 	// §17.3 / D10 — annotation CRUD fan-out to collaboration WS.
 	{Name: "ANNOTATION_EVENTS", Subjects: []string{"dms.annotation.>"}},
 	// ADR 0066 — threaded comments + reactions. Without binding, every

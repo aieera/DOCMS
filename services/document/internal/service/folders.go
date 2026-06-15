@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
 // CreateFolder creates a workspace-scoped folder under an optional parent.
@@ -147,10 +149,27 @@ func (s *DocumentService) GetFolder(ctx context.Context, id uuid.UUID) (*model.F
 	return f, nil
 }
 
-func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID, parentID *uuid.UUID) ([]model.Folder, error) {
+// ListFolders returns one keyset page of a parent's direct children (Workstream
+// 6). pageToken is the opaque cursor from a previous page's nextToken (empty =
+// first page); limit is clamped to [1, 200] with a default of 50. The returned
+// nextToken is empty when the underlying scan is exhausted. Private folders the
+// caller can't see are filtered out of the page, but the cursor advances past
+// every scanned row (filtered or not) so pagination never skips or loops.
+func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID, parentID *uuid.UUID, pageToken string, limit int) ([]model.Folder, string, error) {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	cursorName, cursorID, err := decodeFolderToken(pageToken)
+	if err != nil {
+		return nil, "", vdmserr.Validation("page_token", "malformed cursor")
+	}
+	effLimit := limit
+	if effLimit <= 0 {
+		effLimit = repository.FolderPageDefaultLimit
+	}
+	if effLimit > repository.FolderPageMaxLimit {
+		effLimit = repository.FolderPageMaxLimit
 	}
 	// Effective workspace access: full workspace permission (member /
 	// admin) OR at least one folder grant in the workspace (direct
@@ -160,22 +179,32 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 	isMember := true
 	if err := s.requirePermission(ctx, userID, "view", "workspace", workspaceID, nil); err != nil {
 		if !errors.Is(err, vdmserr.ErrForbidden) {
-			return nil, err
+			return nil, "", err
 		}
 		ok, gerr := s.callerHasGrantInWorkspace(ctx, tenantID, workspaceID, userID)
 		if gerr != nil {
-			return nil, gerr
+			return nil, "", gerr
 		}
 		if !ok {
-			return nil, err
+			return nil, "", err
 		}
 		isMember = false
 	}
-	var out []model.Folder
+	var (
+		out       []model.Folder
+		nextToken string
+	)
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		raw, lerr := s.repos.Folders.ListByParent(ctx, tx, tenantID, workspaceID, parentID)
+		raw, lerr := s.repos.Folders.ListByParent(ctx, tx, tenantID, workspaceID, parentID, cursorName, cursorID, effLimit)
 		if lerr != nil {
 			return lerr
+		}
+		// A full page implies there may be more. The cursor advances past the
+		// last SCANNED row (before access-filtering) so paging never skips an
+		// entitled folder that happened to sit behind filtered-out siblings.
+		if len(raw) == effLimit {
+			last := raw[len(raw)-1]
+			nextToken = encodeFolderToken(last.Name, last.ID)
 		}
 		// Filter private folders the caller can't access. Shared
 		// folders pass through for full members; grantee-only callers
@@ -217,7 +246,10 @@ func (s *DocumentService) ListFolders(ctx context.Context, workspaceID uuid.UUID
 		out = filtered
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, "", err
+	}
+	return out, nextToken, nil
 }
 
 // ListSharedWithMe returns folders the caller has been granted access
@@ -938,4 +970,34 @@ func lastLabel(path string) string {
 		return path
 	}
 	return path[i+1:]
+}
+
+// encodeFolderToken packs a keyset position (name, id) into an opaque base64
+// cursor for ListFolders. Folder names are validated to exclude control chars
+// (folderNameRE), so a NUL byte is a safe field separator.
+func encodeFolderToken(name string, id uuid.UUID) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(name + "\x00" + id.String()))
+}
+
+// decodeFolderToken reverses encodeFolderToken. Empty token → first page
+// (zero cursor). A malformed token is an error so the caller can 400.
+func decodeFolderToken(token string) (string, uuid.UUID, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", uuid.Nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", uuid.Nil, err
+	}
+	s := string(b)
+	i := strings.IndexByte(s, 0)
+	if i < 0 {
+		return "", uuid.Nil, errors.New("malformed folder cursor")
+	}
+	id, err := uuid.Parse(s[i+1:])
+	if err != nil {
+		return "", uuid.Nil, err
+	}
+	return s[:i], id, nil
 }

@@ -33,21 +33,111 @@ func (r *documentRepo) Create(ctx context.Context, tx pgx.Tx, d *model.Document)
 			mime_type, total_size_bytes, sha256_hash, current_version_id,
 			version_count, lifecycle_state, region_pin, under_legal_hold,
 			tags, custom_metadata, document_class, classification_confidence,
-			created_by, created_at, updated_by, updated_at
+			created_by, created_at, updated_by, updated_at, external_id
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10,
 			$11, $12, $13, $14,
 			$15, $16, $17, $18,
-			$19, $20, $21, $22
+			$19, $20, $21, $22, $23
 		)`,
 		d.ID, d.TenantID, d.WorkspaceID, d.FolderID, d.Title, d.Description,
 		d.MimeType, d.TotalSizeBytes, d.SHA256Hash, nullableUUID(d.CurrentVersionID),
 		0, string(d.LifecycleState), d.RegionPin, d.LifecycleState == model.StateLegalHold,
 		d.Tags, meta, d.DocumentClass, d.ClassificationConfidence,
-		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt,
+		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt, nullableText(d.ExternalID),
 	)
 	return mapPgError(err)
+}
+
+// InsertUpsert inserts a new document but treats a (tenant_id, external_id)
+// collision as a no-op, returning created=false. Callers use this for the
+// create branch of an upsert: the partial unique index serializes concurrent
+// first-creations so exactly one wins, and the loser re-reads the existing row
+// and falls through to the append/no-op path. external_id MUST be non-empty —
+// the ON CONFLICT target is the partial index WHERE external_id IS NOT NULL.
+func (r *documentRepo) InsertUpsert(ctx context.Context, tx pgx.Tx, d *model.Document) (bool, error) {
+	meta, err := json.Marshal(d.CustomMetadata)
+	if err != nil {
+		return false, fmt.Errorf("marshal metadata: %w", err)
+	}
+	if d.Tags == nil {
+		d.Tags = []string{}
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO documents (
+			id, tenant_id, workspace_id, folder_id, title, description,
+			mime_type, total_size_bytes, sha256_hash, current_version_id,
+			version_count, lifecycle_state, region_pin, under_legal_hold,
+			tags, custom_metadata, document_class, classification_confidence,
+			created_by, created_at, updated_by, updated_at, external_id
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10,
+			$11, $12, $13, $14,
+			$15, $16, $17, $18,
+			$19, $20, $21, $22, $23
+		)
+		ON CONFLICT (tenant_id, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
+		d.ID, d.TenantID, d.WorkspaceID, d.FolderID, d.Title, d.Description,
+		d.MimeType, d.TotalSizeBytes, d.SHA256Hash, nullableUUID(d.CurrentVersionID),
+		0, string(d.LifecycleState), d.RegionPin, d.LifecycleState == model.StateLegalHold,
+		d.Tags, meta, d.DocumentClass, d.ClassificationConfidence,
+		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt, nullableText(d.ExternalID),
+	)
+	if err != nil {
+		return false, mapPgError(err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// GetByExternalID loads the document carrying the given tenant-scoped business
+// key, or ErrNotFound when none exists. Unlike GetByID this is a lean,
+// join-free projection (no users / workflow LATERAL) so it can take a
+// FOR UPDATE row lock — the upsert path locks the row to serialize concurrent
+// version appends against the same key. Only the fields the upsert decision
+// needs are populated.
+func (r *documentRepo) GetByExternalID(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, externalID string, forUpdate bool) (*model.Document, error) {
+	if externalID == "" {
+		return nil, vdmserr.ErrNotFound
+	}
+	q := `
+		SELECT id, tenant_id, workspace_id, folder_id, title,
+		       COALESCE(description, ''), lifecycle_state,
+		       COALESCE(region_pin, ''), custom_metadata, tags,
+		       current_version_id, COALESCE(document_class, ''),
+		       COALESCE(sha256_hash, ''), COALESCE(mime_type, ''),
+		       total_size_bytes, deleted_at, COALESCE(external_id, '')
+		FROM documents
+		WHERE tenant_id = $1 AND external_id = $2`
+	if forUpdate {
+		q += " FOR UPDATE"
+	}
+	var (
+		d            model.Document
+		curVersion   *uuid.UUID
+		metaBytes    []byte
+		deleted      *time.Time
+		lifecycleRaw string
+	)
+	if err := tx.QueryRow(ctx, q, tenantID, externalID).Scan(
+		&d.ID, &d.TenantID, &d.WorkspaceID, &d.FolderID, &d.Title,
+		&d.Description, &lifecycleRaw, &d.RegionPin, &metaBytes, &d.Tags,
+		&curVersion, &d.DocumentClass, &d.SHA256Hash, &d.MimeType,
+		&d.TotalSizeBytes, &deleted, &d.ExternalID,
+	); err != nil {
+		return nil, mapPgError(err)
+	}
+	d.LifecycleState = model.LifecycleState(lifecycleRaw)
+	d.CurrentVersionID = curVersion
+	d.DeletedAt = deleted
+	if len(metaBytes) > 0 {
+		_ = json.Unmarshal(metaBytes, &d.CustomMetadata)
+	}
+	if d.CustomMetadata == nil {
+		d.CustomMetadata = map[string]any{}
+	}
+	return &d, nil
 }
 
 // GetByID returns one document by id, enforcing tenant isolation. Includes
@@ -85,6 +175,7 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
 		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
+		       COALESCE(d.external_id, '') AS external_id,
 		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
@@ -405,6 +496,7 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
 		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
+		       COALESCE(d.external_id, '') AS external_id,
 		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
@@ -492,7 +584,7 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 		&curVersion, &d.DocumentClass, &d.ClassificationConfidence,
 		&d.SHA256Hash, &d.TotalSizeBytes, &d.MimeType,
 		&d.CreatedBy, &d.CreatedByName,
-		&d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted,
+		&d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted, &d.ExternalID,
 		&wfID, &wfDefinitionID, &wfDefName, &wfStatus, &wfCurrentStepID, &wfStartedAt,
 	); err != nil {
 		return nil, mapPgError(err)
@@ -535,4 +627,14 @@ func nullableUUID(u *uuid.UUID) any {
 		return nil
 	}
 	return *u
+}
+
+// nullableText maps "" → SQL NULL so an empty external_id stays out of the
+// partial unique index (which is WHERE external_id IS NOT NULL). Non-empty
+// values pass through unchanged.
+func nullableText(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

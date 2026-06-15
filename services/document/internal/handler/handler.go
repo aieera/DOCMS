@@ -75,11 +75,14 @@ func (h *Handler) ListFolders(ctx context.Context, req *sedocv1.ListFoldersReque
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	folders, err := h.svc.ListFolders(ctx, ws, parent)
+	folders, nextToken, err := h.svc.ListFolders(ctx, ws, parent, req.GetPageToken(), int(req.GetPageSize()))
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	out := &sedocv1.ListFoldersResponse{Folders: make([]*sedocv1.Folder, 0, len(folders))}
+	out := &sedocv1.ListFoldersResponse{
+		Folders:       make([]*sedocv1.Folder, 0, len(folders)),
+		NextPageToken: nextToken,
+	}
 	for i := range folders {
 		out.Folders = append(out.Folders, folderToProto(&folders[i]))
 	}
@@ -122,7 +125,7 @@ func (h *Handler) DeleteFolder(ctx context.Context, req *sedocv1.DeleteFolderReq
 }
 
 // SetFolderVisibility flips a folder's visibility between shared and
-// private. Visibility = '' returns InvalidArgument. The service layer
+// private. Visibility = ” returns InvalidArgument. The service layer
 // enforces owner / admin gating.
 func (h *Handler) SetFolderVisibility(ctx context.Context, req *sedocv1.SetFolderVisibilityRequest) (*sedocv1.Folder, error) {
 	id, err := parseUUID("folder_id", req.GetFolderId())
@@ -210,6 +213,7 @@ func (h *Handler) CreateDocument(ctx context.Context, req *sedocv1.CreateDocumen
 		RegionPin:      regionToString(req.GetRegionPin()),
 		CustomMetadata: structToMap(req.GetCustomMetadata()),
 		Tags:           req.GetTags(),
+		ExternalID:     req.GetExternalId(),
 		UpdatedBy:      userID,
 	})
 	if err != nil {

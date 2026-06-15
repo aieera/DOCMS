@@ -21,6 +21,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
 	temporalclient "go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -41,6 +42,7 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
+	"github.com/aieera/sedoc/services/document/internal/ingestroute"
 	"github.com/aieera/sedoc/services/document/internal/janitor"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
@@ -169,6 +171,24 @@ func main() {
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
 	svc.SetEnvironment(cfg.Environment)
+	// WS3 — routing confidence gate (default 0.85 when unset/invalid).
+	if thr := os.Getenv("SEDOC_INGEST_MATCH_THRESHOLD"); thr != "" {
+		if v, perr := strconv.ParseFloat(thr, 64); perr == nil {
+			svc.SetMatchThreshold(v)
+		} else {
+			log.Warn(ctx).Err(perr).Str("value", thr).Msg("SEDOC_INGEST_MATCH_THRESHOLD invalid; using default 0.85")
+		}
+	}
+	// WS6 — customer-folder sharding scheme (default hash/2 when unset).
+	if mode := os.Getenv("SEDOC_FOLDER_BUCKET_MODE"); mode != "" {
+		scheme := service.FolderBucketScheme{Mode: mode}
+		if pl := os.Getenv("SEDOC_FOLDER_BUCKET_PREFIX_LEN"); pl != "" {
+			if v, perr := strconv.Atoi(pl); perr == nil {
+				scheme.PrefixLen = v
+			}
+		}
+		svc.SetFolderBucketScheme(scheme)
+	}
 	// ADR 0078 — base64-decode SEDOC_LOCAL_KEK so the NER api-key
 	// Set/Clear endpoints can encrypt with AES-256-GCM. Same key the
 	// auth service uses for MFA secrets and the intelligence worker
@@ -282,6 +302,13 @@ func main() {
 	}
 	bulkRepo := bulk.NewRepo(pool)
 	bulkSvc := bulk.NewService(pool, repos, bulkRepo, authClient, *log.Z())
+	// WS7 — bound the bulk-import document worker pool (default 8). Keep ≤ the
+	// DB pool size; each parallel item opens its own tx.
+	if c := os.Getenv("SEDOC_BULK_IMPORT_CONCURRENCY"); c != "" {
+		if n, perr := strconv.Atoi(c); perr == nil {
+			bulkSvc.SetConcurrency(n)
+		}
+	}
 	sedocv1.RegisterBulkServiceServer(grpcSrv, bulk.NewGRPCServer(bulkSvc))
 	bulkHTTP := bulk.NewHTTPHandler(bulkSvc, *log.Z())
 
@@ -433,8 +460,14 @@ func main() {
 	// initiate → PUT → complete flow service-to-service. SessionOrAPIKey
 	// stamps the same tenant/user identity either way, which the proxy's
 	// outbound() injects into the storage gRPC metadata.
+	// WS5 — idempotency on the upload flow (POST uploads/initiate +
+	// uploads/{id}/complete). IdempotencyRequired forces the header for API-key
+	// callers so a re-fired sync can't double-initiate / double-finalize a blob;
+	// GET proxy routes pass through (safe methods) and the web UI (session) is
+	// exempt. SessionOrAPIKey stamps the tenant the middleware scopes the key by.
 	rootMux.Handle("/api/v1/storage/", middleware.CorrelationHTTP(
-		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "upload")(storageMux),
+		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "upload")(
+			middleware.IdempotencyRequired(pool)(storageMux)),
 	))
 	// Download alias — handled by storageProxy.download but addressed at
 	// /api/v1/documents/{id}/versions/{vid}/download for backward compat
@@ -1065,20 +1098,99 @@ func main() {
 				middleware.TenantHTTP(pool)(grpcGatewayInject(gwMux))))
 	}
 	// Same chain, plus the Idempotency layer (after auth+tenant so the key is
-	// tenant-scoped). Used on the create + version writes so an Idempotency-Key
-	// retry replays the original document instead of duplicating it — the
-	// server-side counterpart to the ERP dms_sync_log UNIQUE(entity_type,entity_id).
+	// tenant-scoped). Two flavours (Workstream 5):
+	//   - apiKeyGatewayIdem    — resource-CREATING POSTs. IdempotencyRequired
+	//     forces the header for API-key callers (the ERP integration) so a
+	//     re-fired webhook can't duplicate; the web UI (session) stays exempt.
+	//   - apiKeyGatewayMutate  — non-creating mutations (PATCH / move / batch).
+	//     Idempotency is honoured when a key is supplied but not required.
 	apiKeyGatewayIdem := func(scope string) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, scope)(
+				middleware.TenantHTTP(pool)(
+					middleware.IdempotencyRequired(pool)(grpcGatewayInject(gwMux)))))
+	}
+	apiKeyGatewayMutate := func(scope string) http.Handler {
 		return middleware.CorrelationHTTP(
 			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, scope)(
 				middleware.TenantHTTP(pool)(
 					middleware.Idempotency(pool)(grpcGatewayInject(gwMux)))))
 	}
+	// Resource-creating POSTs → idempotency required for the integration.
 	rootMux.Handle("POST /api/v1/documents", apiKeyGatewayIdem("documents:write"))
 	rootMux.Handle("GET /api/v1/documents/{document_id}", apiKeyGateway("documents:read"))
 	rootMux.Handle("POST /api/v1/documents/{document_id}/versions", apiKeyGatewayIdem("documents:write"))
 	rootMux.Handle("GET /api/v1/workspaces/{workspace_id}/folders", apiKeyGateway("documents:read"))
-	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/folders", apiKeyGateway("documents:write"))
+	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/folders", apiKeyGatewayIdem("documents:write"))
+	// Non-creating mutations the integration may re-fire → idempotency honoured.
+	rootMux.Handle("PATCH /api/v1/folders/{folder_id}", apiKeyGatewayMutate("documents:write"))
+	rootMux.Handle("POST /api/v1/folders/{folder_id}/visibility", apiKeyGatewayMutate("documents:write"))
+	rootMux.Handle("POST /api/v1/documents/{document_id}/move", apiKeyGatewayMutate("documents:write"))
+	rootMux.Handle("POST /api/v1/documents/batch/metadata", apiKeyGatewayMutate("documents:write"))
+
+	// Stable external key (Workstream "Stable external key + upsert-by-
+	// external-key"). The ERP create-or-versions + resolves documents by its
+	// own business key. upsert reuses the SAME SessionOrAPIKey + TenantHTTP +
+	// Idempotency chain as the document create/version writes above (manual
+	// handler instead of the gateway because of the nested body + ":upsert"
+	// custom verb); byExternalKey is a permission-filtered read.
+	// WS7 — app-layer rate limit on the high-volume integration write routes
+	// (:upsert + /ingest) as defense-in-depth behind Kong. Per-tenant fixed
+	// window, 600/min default (generous for an ERP backfill burst but caps a
+	// runaway), overridable via redis ratelimit:config:{tenant}:integration_write.
+	// Placed AFTER TenantHTTP so the bucket keys on the resolved tenant, and
+	// before Idempotency so a flood is shed before touching the idempotency store.
+	integrationRL := middleware.NewRateLimiter(rdb, 600)
+	externalKeyMux := http.NewServeMux()
+	handler.NewExternalKeyHandler(svc).Register(externalKeyMux)
+	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/documents:upsert",
+		middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:write")(
+				middleware.TenantHTTP(pool)(
+					middleware.RateLimitPerTenantHTTP(integrationRL, "integration_write")(
+						middleware.IdempotencyRequired(pool)(externalKeyMux))))))
+	rootMux.Handle("GET /api/v1/documents:byExternalKey",
+		middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(
+				middleware.TenantHTTP(pool)(externalKeyMux))))
+
+	// WS3 — pre-commit ingestion pipeline. POST /ingest stages a completed
+	// blob (no document/version yet). WS4 — the native review/triage queue at
+	// /api/v1/review-queue lets a human resolve low-confidence routing. Same
+	// SessionOrAPIKey + TenantHTTP chain as the document writes; the POSTs add
+	// the Idempotency layer so a retry replays instead of re-staging /
+	// double-committing.
+	ingestMux := http.NewServeMux()
+	handler.NewIngestionHandler(svc).Register(ingestMux)
+	reviewMux := http.NewServeMux()
+	handler.NewReviewQueueHandler(svc).Register(reviewMux)
+	// createChain — resource-creating POSTs: idempotency required for the
+	// integration (POST /ingest stages a new item). mutateChain — non-creating
+	// mutations: idempotency honoured but not required (review resolve is
+	// already self-idempotent on review status). readChain — GETs.
+	createChain := func(h http.Handler) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:write")(
+				middleware.TenantHTTP(pool)(
+					middleware.RateLimitPerTenantHTTP(integrationRL, "integration_write")(
+						middleware.IdempotencyRequired(pool)(h)))))
+	}
+	mutateChain := func(h http.Handler) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:write")(
+				middleware.TenantHTTP(pool)(
+					middleware.Idempotency(pool)(h))))
+	}
+	readChain := func(h http.Handler) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(
+				middleware.TenantHTTP(pool)(h)))
+	}
+	rootMux.Handle("POST /api/v1/ingest", createChain(ingestMux))
+	rootMux.Handle("GET /api/v1/ingest/items", readChain(ingestMux))
+	rootMux.Handle("GET /api/v1/review-queue", readChain(reviewMux))
+	rootMux.Handle("GET /api/v1/review-queue/{id}", readChain(reviewMux))
+	rootMux.Handle("POST /api/v1/review-queue/{id}/resolve", mutateChain(reviewMux))
 
 	// All other routes (including gRPC-Gateway) go through default chain.
 	// SessionAuthOptional populates ctx from the session cookie when
@@ -1129,6 +1241,29 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- WS3 ingestion routing (embedded Temporal worker + consumer) ------
+	// The worker serves IngestAndRoute on its own task queue; its activities
+	// call the service layer in-process. The processed-event consumer starts
+	// the workflow when the intelligence worker finishes OCR + key extraction.
+	// Best-effort: without a Temporal client the staging + REST surface still
+	// works and items sit at 'processed' until a worker comes up.
+	var ingestWorker worker.Worker
+	if tcDSR != nil {
+		ingestWorker = worker.New(tcDSR, ingestroute.TaskQueue, worker.Options{})
+		ingestWorker.RegisterWorkflow(ingestroute.IngestAndRoute)
+		ingestWorker.RegisterActivity(ingestroute.NewActivities(svc, *log.Z()))
+		if werr := ingestWorker.Start(); werr != nil {
+			log.Error(ctx).Err(werr).Msg("ingestion-route worker start failed; auto-routing disabled")
+			ingestWorker = nil
+		} else if js != nil {
+			if cerr := ingestroute.NewConsumer(js, tcDSR, *log.Z()).Start(); cerr != nil {
+				log.Error(ctx).Err(cerr).Msg("ingestion-route consumer start failed; processed events won't auto-route")
+			}
+		}
+	} else {
+		log.Warn(ctx).Msg("temporal client unavailable; WS3 ingestion auto-routing disabled (items stage but won't route)")
+	}
+
 	// ---- Orphan-document GC -----------------------------------------------
 	// Sweeps documents rows whose upload never produced a version (client
 	// crash between create-row and complete-upload). Hourly tick, 24h grace.
@@ -1146,6 +1281,9 @@ func main() {
 	_ = hs.Shutdown(shutdownCtx)
 	outbox.Stop()
 	orphanGC.Stop()
+	if ingestWorker != nil {
+		ingestWorker.Stop()
+	}
 }
 
 // ---- deny-all fallback when Policy Service is unreachable -----------------

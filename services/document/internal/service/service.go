@@ -70,6 +70,36 @@ type DocumentService struct {
 	// s3 is set by main.go for the admin Trash purge path. Nil means
 	// PurgeDocument cannot proceed (admin Trash falls back to a 503).
 	s3 *storage.S3Client
+	// matchThreshold is the WS3 routing confidence gate (default 0.85 when
+	// unset). At or above it a staged ingestion item auto-commits; below it
+	// the item goes to the review queue. Set from SEDOC_INGEST_MATCH_THRESHOLD.
+	matchThreshold float64
+	// folderBuckets is the WS6 customer-folder sharding scheme used by
+	// PlaceCustomerFolder so no single parent holds tens of thousands of direct
+	// children. Zero value falls back to the hash/2 default. Set from
+	// SEDOC_FOLDER_BUCKET_MODE / SEDOC_FOLDER_BUCKET_PREFIX_LEN.
+	folderBuckets FolderBucketScheme
+}
+
+// SetFolderBucketScheme installs the WS6 customer-folder sharding scheme.
+func (s *DocumentService) SetFolderBucketScheme(scheme FolderBucketScheme) {
+	s.folderBuckets = scheme
+}
+
+// SetMatchThreshold overrides the WS3 routing confidence gate. Values ≤ 0 are
+// ignored so the 0.85 default stands.
+func (s *DocumentService) SetMatchThreshold(t float64) {
+	if t > 0 {
+		s.matchThreshold = t
+	}
+}
+
+// MatchThreshold returns the effective WS3 routing confidence gate.
+func (s *DocumentService) MatchThreshold() float64 {
+	if s.matchThreshold > 0 {
+		return s.matchThreshold
+	}
+	return 0.85
 }
 
 // SetS3Client wires the S3/MinIO client used by the admin Trash
@@ -116,6 +146,9 @@ type CreateDocumentInput struct {
 	CustomMetadata map[string]any
 	Tags           []string
 	UpdatedBy      uuid.UUID
+	// ExternalID is an optional caller-owned business key. Empty = none.
+	// Tenant-unique when set; a collision surfaces as ErrAlreadyExists.
+	ExternalID string
 }
 
 type UpdateDocumentInput struct {
@@ -436,9 +469,9 @@ func (s *DocumentService) requireDocPermission(
 //
 //   - nil               — caller may read the bytes
 //   - vdmserr.ErrNotFound — document doesn't exist in this tenant
-//                            (or caller lacks any visibility)
+//     (or caller lacks any visibility)
 //   - vdmserr.ErrForbidden — document exists and caller can see it,
-//                            but lacks view (e.g. revoked grant)
+//     but lacks view (e.g. revoked grant)
 //
 // Returning NotFound for the "cannot see it at all" case avoids
 // leaking existence to enumerators. Forbidden is only returned for

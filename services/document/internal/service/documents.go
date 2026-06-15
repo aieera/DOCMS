@@ -9,8 +9,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
@@ -28,6 +32,9 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		return nil, err
 	}
 	if err := validateRegion(in.RegionPin); err != nil {
+		return nil, err
+	}
+	if err := validateExternalID(in.ExternalID); err != nil {
 		return nil, err
 	}
 	if in.WorkspaceID == uuid.Nil {
@@ -53,6 +60,7 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	doc := &model.Document{
 		TenantID:       tenantID,
 		ID:             id,
+		ExternalID:     in.ExternalID,
 		WorkspaceID:    in.WorkspaceID,
 		FolderID:       in.FolderID,
 		Title:          in.Title,
@@ -632,13 +640,13 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		now := time.Now().UTC()
 		newID, _ := newExternalID()
 		dst := &model.Document{
-			ID:                       newID,
-			TenantID:                 tenantID,
-			WorkspaceID:              targetWS,
-			FolderID:                 in.TargetFolderID,
-			Title:                    src.Title,
-			Description:              src.Description,
-			LifecycleState:           model.StateDraft,
+			ID:             newID,
+			TenantID:       tenantID,
+			WorkspaceID:    targetWS,
+			FolderID:       in.TargetFolderID,
+			Title:          src.Title,
+			Description:    src.Description,
+			LifecycleState: model.StateDraft,
 			// Inherit region from the source. Cross-region copy would
 			// require a residency migration; that's out of scope for
 			// the user-facing Copy action.
@@ -661,12 +669,12 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.copied.v1", "document", dst.ID,
 			map[string]any{
-				"document_id":          dst.ID.String(),
-				"source_document_id":   src.ID.String(),
-				"source_workspace_id":  src.WorkspaceID.String(),
-				"target_workspace_id":  targetWS.String(),
-				"target_folder_id":     in.TargetFolderID.String(),
-				"copied_by":            in.CopiedBy.String(),
+				"document_id":         dst.ID.String(),
+				"source_document_id":  src.ID.String(),
+				"source_workspace_id": src.WorkspaceID.String(),
+				"target_workspace_id": targetWS.String(),
+				"target_folder_id":    in.TargetFolderID.String(),
+				"copied_by":           in.CopiedBy.String(),
 			})
 		if err != nil {
 			return err
@@ -724,7 +732,82 @@ func (s *DocumentService) ListDocuments(ctx context.Context, f model.DocumentFil
 		page, err = s.repos.Documents.List(ctx, tx, tenantID, f)
 		return err
 	})
-	return page, err
+	if err != nil {
+		return nil, err
+	}
+	// Per-row ACL (Workstream 7). The gate above authorizes the LISTING
+	// (workspace view or a folder grant), but individual rows may sit in
+	// private folders or carry document-level restrictions the caller can't
+	// read. Batch-check "view" on every returned row in ONE round-trip and drop
+	// the ones OPA denies, so a list never leaks a document the caller can't
+	// open. Tenant admins/owners see everything, so skip the call for them.
+	// NextPageToken is unaffected (it keys on the last raw row), so a filtered
+	// page may be short — the client keeps paging until the token is empty.
+	if page != nil && len(page.Items) > 0 && !s.callerIsTenantAdmin(ctx) {
+		visible, ferr := s.filterViewableDocuments(ctx, userID, page.Items)
+		if ferr != nil {
+			return nil, ferr
+		}
+		page.Items = visible
+	}
+	return page, nil
+}
+
+// filterViewableDocuments returns the subset of docs the caller may "view",
+// resolved with a single BatchCheckPermission (one check per document). Fails
+// closed: a policy-transport error returns the error rather than risk leaking
+// rows. Mirrors the OPA context built by requireDocPermission so workspace /
+// lifecycle / region / hold rules evaluate correctly per row.
+func (s *DocumentService) filterViewableDocuments(ctx context.Context, userID uuid.UUID, docs []model.Document) ([]model.Document, error) {
+	checks := make([]*sedocv1.CheckPermissionRequest, 0, len(docs))
+	for i := range docs {
+		d := &docs[i]
+		ctxStruct, err := structpb.NewStruct(stringifyMap(map[string]any{
+			"workspace_id":     d.WorkspaceID.String(),
+			"lifecycle_state":  string(d.LifecycleState),
+			"region_pin":       d.RegionPin,
+			"classification":   d.DocumentClass,
+			"under_legal_hold": d.LifecycleState == model.StateLegalHold,
+			"user_role":        auth.GetUserRole(ctx),
+		}))
+		if err != nil {
+			return nil, fmt.Errorf("build context struct: %w", err)
+		}
+		checks = append(checks, &sedocv1.CheckPermissionRequest{
+			SubjectType:  "user",
+			SubjectId:    userID.String(),
+			Action:       "view",
+			ResourceType: "document",
+			ResourceId:   d.ID.String(),
+			Context:      ctxStruct,
+		})
+	}
+
+	pairs := []string{"x-user-id", userID.String()}
+	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
+		pairs = append(pairs, "x-tenant-id", tid.String())
+	}
+	if name := auth.GetUserName(ctx); name != "" {
+		pairs = append(pairs, "x-user-name", name)
+	}
+	if role := auth.GetUserRole(ctx); role != "" {
+		pairs = append(pairs, "x-user-role", role)
+	}
+	octx := metadata.AppendToOutgoingContext(ctx, pairs...)
+
+	resp, err := s.policy.BatchCheckPermission(octx, &sedocv1.BatchCheckPermissionRequest{Checks: checks})
+	if err != nil {
+		// Fail closed: surface the error instead of returning unfiltered rows.
+		return nil, fmt.Errorf("per-row permission check unavailable: %w", err)
+	}
+	results := resp.GetResults()
+	out := docs[:0]
+	for i := range docs {
+		if i < len(results) && results[i].GetAllowed() {
+			out = append(out, docs[i])
+		}
+	}
+	return out, nil
 }
 
 // CreateVersion creates the next immutable version. Reserves the next
@@ -799,90 +882,109 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 			return err
 		}
 
-		n, err := s.repos.Versions.NextVersionNumber(ctx, tx, tenantID, doc.ID)
+		v, err := s.appendVersionLocked(ctx, tx, tenantID, userID, doc,
+			in.ContentBlobID, in.SizeBytes, in.SHA256Hash, in.MimeType,
+			in.CreatedByName, in.ChangeSummary)
 		if err != nil {
-			return err
-		}
-		vid, err := newExternalID()
-		if err != nil {
-			return err
-		}
-		v := &model.Version{
-			TenantID:      tenantID,
-			ID:            vid,
-			DocumentID:    doc.ID,
-			VersionNumber: n,
-			ContentBlobID: in.ContentBlobID,
-			SizeBytes:     in.SizeBytes,
-			MimeType:      in.MimeType,
-			SHA256Hash:    in.SHA256Hash,
-			CreatedBy:     userID,
-			CreatedByName: in.CreatedByName,
-			CreatedAt:     time.Now().UTC(),
-			ChangeSummary: in.ChangeSummary,
-		}
-		if err := s.repos.Versions.Create(ctx, tx, v); err != nil {
-			return err
-		}
-		if err := s.repos.Documents.SetCurrentVersion(ctx, tx, tenantID, doc.ID, v.ID, v.SHA256Hash, v.MimeType, v.SizeBytes); err != nil {
-			return err
-		}
-
-		// ADR 0021: emit dms.version.uploaded.v1 (not the legacy
-		// dms.version.created.v1) so the intelligence pipeline — OCR,
-		// classify, embed, preview — has a single canonical trigger.
-		// storage_uri is composed from the content_blobs row in the same tx.
-		storageURI, err := s.lookupBlobURI(ctx, tx, tenantID, in.ContentBlobID)
-		if err != nil {
-			return fmt.Errorf("lookup blob uri: %w", err)
-		}
-		evtID, _ := newExternalID()
-		evt, err := model.NewOutboxEvent(tenantID, "dms.version.uploaded.v1", "version", v.ID,
-			model.VersionUploadedPayload{
-				EventID:          evtID.String(),
-				TenantID:         tenantID.String(),
-				DocumentID:       doc.ID.String(),
-				VersionID:        v.ID.String(),
-				VersionNumber:    v.VersionNumber,
-				ContentBlobID:    v.ContentBlobID.String(),
-				StorageURI:       storageURI,
-				MimeType:         v.MimeType,
-				SizeBytes:        v.SizeBytes,
-				SHA256:           v.SHA256Hash,
-				UploadedByUserID: userID.String(),
-				UploadedAt:       v.CreatedAt.Format(time.RFC3339),
-			})
-		if err != nil {
-			return err
-		}
-		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
-			return err
-		}
-		versionUploadedEmitted.WithLabelValues("dms.version.uploaded.v1").Inc()
-
-		// Dual-publish a notify event so the uploader gets an inbox row.
-		// The notification consumer subscribes to dms.notify.> and reads
-		// `data` as a DeliveryPayload (tenant_id + user_ids required).
-		notifyEvt, err := model.NewOutboxEvent(tenantID, "dms.notify.document.uploaded.v1", "document", doc.ID,
-			map[string]any{
-				"tenant_id":     tenantID.String(),
-				"user_ids":      []string{userID.String()},
-				"type":          "document.uploaded",
-				"title":         "Document uploaded",
-				"body":          fmt.Sprintf("%q v%d is ready.", doc.Title, v.VersionNumber),
-				"resource_type": "document",
-				"resource_id":   doc.ID.String(),
-			})
-		if err != nil {
-			return err
-		}
-		if err := s.repos.Outbox.Insert(ctx, tx, notifyEvt); err != nil {
 			return err
 		}
 		out = v
 		return nil
 	})
 	return out, err
+}
+
+// appendVersionLocked reserves the next version number for doc, inserts the
+// immutable version row, repoints the document head to it, and emits the
+// canonical dms.version.uploaded.v1 event (+ an uploader inbox notify) — all
+// inside the caller's transaction. The caller owns the permission +
+// legal-hold checks and must have resolved the blob's canonical size/sha/mime
+// (the content_blobs row is the source of truth). Shared by CreateVersion and
+// the upsert-by-external-key append path so both produce identical version
+// rows + events. The UNIQUE(document_id, version_number) constraint serializes
+// concurrent writers; the loser surfaces as ErrAlreadyExists.
+func (s *DocumentService) appendVersionLocked(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, doc *model.Document, blobID uuid.UUID, size int64, sha, mime, createdByName, changeSummary string) (*model.Version, error) {
+	n, err := s.repos.Versions.NextVersionNumber(ctx, tx, tenantID, doc.ID)
+	if err != nil {
+		return nil, err
+	}
+	vid, err := newExternalID()
+	if err != nil {
+		return nil, err
+	}
+	v := &model.Version{
+		TenantID:      tenantID,
+		ID:            vid,
+		DocumentID:    doc.ID,
+		VersionNumber: n,
+		ContentBlobID: blobID,
+		SizeBytes:     size,
+		MimeType:      mime,
+		SHA256Hash:    sha,
+		CreatedBy:     userID,
+		CreatedByName: createdByName,
+		CreatedAt:     time.Now().UTC(),
+		ChangeSummary: changeSummary,
+	}
+	if err := s.repos.Versions.Create(ctx, tx, v); err != nil {
+		return nil, err
+	}
+	if err := s.repos.Documents.SetCurrentVersion(ctx, tx, tenantID, doc.ID, v.ID, v.SHA256Hash, v.MimeType, v.SizeBytes); err != nil {
+		return nil, err
+	}
+
+	// ADR 0021: emit dms.version.uploaded.v1 (not the legacy
+	// dms.version.created.v1) so the intelligence pipeline — OCR,
+	// classify, embed, preview — has a single canonical trigger.
+	// storage_uri is composed from the content_blobs row in the same tx.
+	storageURI, err := s.lookupBlobURI(ctx, tx, tenantID, blobID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup blob uri: %w", err)
+	}
+	evtID, _ := newExternalID()
+	evt, err := model.NewOutboxEvent(tenantID, "dms.version.uploaded.v1", "version", v.ID,
+		model.VersionUploadedPayload{
+			EventID:          evtID.String(),
+			TenantID:         tenantID.String(),
+			DocumentID:       doc.ID.String(),
+			VersionID:        v.ID.String(),
+			VersionNumber:    v.VersionNumber,
+			ContentBlobID:    v.ContentBlobID.String(),
+			StorageURI:       storageURI,
+			MimeType:         v.MimeType,
+			SizeBytes:        v.SizeBytes,
+			SHA256:           v.SHA256Hash,
+			UploadedByUserID: userID.String(),
+			UploadedAt:       v.CreatedAt.Format(time.RFC3339),
+		})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+		return nil, err
+	}
+	versionUploadedEmitted.WithLabelValues("dms.version.uploaded.v1").Inc()
+
+	// Dual-publish a notify event so the uploader gets an inbox row.
+	// The notification consumer subscribes to dms.notify.> and reads
+	// `data` as a DeliveryPayload (tenant_id + user_ids required).
+	notifyEvt, err := model.NewOutboxEvent(tenantID, "dms.notify.document.uploaded.v1", "document", doc.ID,
+		map[string]any{
+			"tenant_id":     tenantID.String(),
+			"user_ids":      []string{userID.String()},
+			"type":          "document.uploaded",
+			"title":         "Document uploaded",
+			"body":          fmt.Sprintf("%q v%d is ready.", doc.Title, v.VersionNumber),
+			"resource_type": "document",
+			"resource_id":   doc.ID.String(),
+		})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repos.Outbox.Insert(ctx, tx, notifyEvt); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 // lookupBlobURI fetches storage_bucket + storage_key for a content blob

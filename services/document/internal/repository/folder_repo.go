@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,48 +92,136 @@ func (r *folderRepo) Ancestors(ctx context.Context, tx pgx.Tx, tenantID uuid.UUI
 	return out, mapPgError(rows.Err())
 }
 
-func (r *folderRepo) ListByParent(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, parent *uuid.UUID) ([]model.Folder, error) {
-	var (
-		rows pgx.Rows
-		err  error
-	)
-	if parent == nil {
-		rows, err = tx.Query(ctx, `
-			SELECT f.id, f.tenant_id, f.workspace_id, f.parent_folder_id, f.path::text,
-			       f.name, f.depth, f.created_by, f.created_at, f.updated_at, f.deleted_at,
-		       f.visibility, f.owner_id,
-			       0::bigint, 0::bigint
-			FROM folders f
-			WHERE f.tenant_id = $1 AND f.workspace_id = $2
-			  AND f.parent_folder_id IS NULL AND f.deleted_at IS NULL
-			ORDER BY f.name ASC
-		`, tenantID, workspaceID)
-	} else {
-		rows, err = tx.Query(ctx, `
-			SELECT f.id, f.tenant_id, f.workspace_id, f.parent_folder_id, f.path::text,
-			       f.name, f.depth, f.created_by, f.created_at, f.updated_at, f.deleted_at,
-		       f.visibility, f.owner_id,
-			       0::bigint, 0::bigint
-			FROM folders f
-			WHERE f.tenant_id = $1 AND f.workspace_id = $2
-			  AND f.parent_folder_id = $3 AND f.deleted_at IS NULL
-			ORDER BY f.name ASC
-		`, tenantID, workspaceID, *parent)
+// FolderPageDefaultLimit / FolderPageMaxLimit bound a single ListByParent page
+// (Workstream 6) so a parent with 100k direct children is never materialised in
+// one shot.
+const (
+	FolderPageDefaultLimit = 50
+	FolderPageMaxLimit     = 200
+)
+
+// ListByParent returns one keyset page of a folder's direct children, ordered by
+// (name, id). A non-nil cursor (cursorID != uuid.Nil) resumes AFTER the given
+// (name, id). limit is clamped to [1, FolderPageMaxLimit] with a default of
+// FolderPageDefaultLimit. Child + document counts for the page are filled with
+// TWO aggregate queries (GROUP BY) — O(1) round-trips per listing regardless of
+// page size, never an N+1 per row.
+func (r *folderRepo) ListByParent(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, parent *uuid.UUID, cursorName string, cursorID uuid.UUID, limit int) ([]model.Folder, error) {
+	if limit <= 0 {
+		limit = FolderPageDefaultLimit
 	}
+	if limit > FolderPageMaxLimit {
+		limit = FolderPageMaxLimit
+	}
+
+	q := `
+		SELECT f.id, f.tenant_id, f.workspace_id, f.parent_folder_id, f.path::text,
+		       f.name, f.depth, f.created_by, f.created_at, f.updated_at, f.deleted_at,
+		       f.visibility, f.owner_id,
+		       0::bigint, 0::bigint
+		FROM folders f
+		WHERE f.tenant_id = $1 AND f.workspace_id = $2 AND f.deleted_at IS NULL`
+	args := []any{tenantID, workspaceID}
+	if parent == nil {
+		q += ` AND f.parent_folder_id IS NULL`
+	} else {
+		q += fmt.Sprintf(` AND f.parent_folder_id = $%d`, len(args)+1)
+		args = append(args, *parent)
+	}
+	if cursorID != uuid.Nil {
+		// Row-value comparison gives the stable (name, id) keyset order.
+		q += fmt.Sprintf(` AND (f.name, f.id) > ($%d, $%d)`, len(args)+1, len(args)+2)
+		args = append(args, cursorName, cursorID)
+	}
+	q += fmt.Sprintf(` ORDER BY f.name ASC, f.id ASC LIMIT $%d`, len(args)+1)
+	args = append(args, limit)
+
+	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, mapPgError(err)
 	}
 	defer rows.Close()
-
 	var out []model.Folder
 	for rows.Next() {
-		f, err := scanFolderWithCounts(rows)
-		if err != nil {
-			return nil, err
+		f, serr := scanFolderWithCounts(rows)
+		if serr != nil {
+			return nil, serr
 		}
 		out = append(out, *f)
 	}
-	return out, mapPgError(rows.Err())
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+	if err := r.fillCounts(ctx, tx, tenantID, workspaceID, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// fillCounts populates ChildFolderCount + DocumentCount for a page of folders
+// with two GROUP BY aggregates (not a per-row correlated subquery). The child
+// aggregate uses idx_folders_parent; the doc aggregate uses
+// idx_documents_workspace_folder (all page folders share the workspace).
+func (r *folderRepo) fillCounts(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, page []model.Folder) error {
+	if len(page) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(page))
+	for i := range page {
+		ids[i] = page[i].ID
+	}
+
+	childCount := make(map[uuid.UUID]int64, len(ids))
+	crows, err := tx.Query(ctx, `
+		SELECT parent_folder_id, count(*)
+		  FROM folders
+		 WHERE tenant_id = $1 AND parent_folder_id = ANY($2::uuid[]) AND deleted_at IS NULL
+		 GROUP BY parent_folder_id`, tenantID, ids)
+	if err != nil {
+		return mapPgError(err)
+	}
+	for crows.Next() {
+		var pid uuid.UUID
+		var n int64
+		if err := crows.Scan(&pid, &n); err != nil {
+			crows.Close()
+			return mapPgError(err)
+		}
+		childCount[pid] = n
+	}
+	crows.Close()
+	if err := crows.Err(); err != nil {
+		return mapPgError(err)
+	}
+
+	docCount := make(map[uuid.UUID]int64, len(ids))
+	drows, err := tx.Query(ctx, `
+		SELECT folder_id, count(*)
+		  FROM documents
+		 WHERE tenant_id = $1 AND workspace_id = $2 AND folder_id = ANY($3::uuid[]) AND deleted_at IS NULL
+		 GROUP BY folder_id`, tenantID, workspaceID, ids)
+	if err != nil {
+		return mapPgError(err)
+	}
+	for drows.Next() {
+		var fid uuid.UUID
+		var n int64
+		if err := drows.Scan(&fid, &n); err != nil {
+			drows.Close()
+			return mapPgError(err)
+		}
+		docCount[fid] = n
+	}
+	drows.Close()
+	if err := drows.Err(); err != nil {
+		return mapPgError(err)
+	}
+
+	for i := range page {
+		page[i].ChildFolderCount = childCount[page[i].ID]
+		page[i].DocumentCount = docCount[page[i].ID]
+	}
+	return nil
 }
 
 func (r *folderRepo) UpdateName(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name string) error {
@@ -502,10 +591,10 @@ func (r *folderRepo) CanAccessFolder(
 // inaccessible. Skips the isAdmin short-circuit — caller must do that.
 //
 // SQL union covers all four "yes" cases:
-//   1. visibility = 'shared'
-//   2. owner_id = userID
-//   3. folder_grants row for the user directly
-//   4. folder_grants row for any of the user's groups
+//  1. visibility = 'shared'
+//  2. owner_id = userID
+//  3. folder_grants row for the user directly
+//  4. folder_grants row for any of the user's groups
 func (r *folderRepo) FilterAccessibleFolderIDs(
 	ctx context.Context, tx pgx.Tx,
 	tenantID uuid.UUID, folderIDs []uuid.UUID,

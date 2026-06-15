@@ -44,8 +44,14 @@ const (
 
 // Document is the top-level aggregate.
 type Document struct {
-	TenantID                 uuid.UUID
-	ID                       uuid.UUID
+	TenantID uuid.UUID
+	ID       uuid.UUID
+	// ExternalID is the caller's stable business key (e.g.
+	// "INV-2024-00188") used by the ERP upsert + byExternalKey paths.
+	// Empty when the document has no external mapping. Tenant-unique
+	// (partial unique index, migration 000072) when set; persisted as
+	// SQL NULL when empty so the partial index ignores it.
+	ExternalID               string
 	WorkspaceID              uuid.UUID
 	FolderID                 uuid.UUID
 	Title                    string
@@ -66,11 +72,11 @@ type Document struct {
 	// uses soft-delete) or missing. The handler-layer mapper passes
 	// this through; the frontend renders "Deleted user" when empty +
 	// CreatedBy non-zero. Not persisted, not write-mapped.
-	CreatedByName            string
-	CreatedAt                time.Time
-	UpdatedBy                uuid.UUID
-	UpdatedAt                time.Time
-	DeletedAt                *time.Time
+	CreatedByName string
+	CreatedAt     time.Time
+	UpdatedBy     uuid.UUID
+	UpdatedAt     time.Time
+	DeletedAt     *time.Time
 	// WorkflowInstance is the document's currently-active workflow
 	// summary, joined at read time from workflow_instances. nil when
 	// no active (non-terminal) workflow exists. Used by the frontend's
@@ -143,7 +149,7 @@ type WorkspaceMember struct {
 // FolderVisibility classifies who can see + act on a folder.
 //   - FolderShared: inherits workspace membership / permissions
 //   - FolderPrivate: visible only to the OwnerID + folder_grants
-//                   rows + workspace admins
+//     rows + workspace admins
 type FolderVisibility string
 
 const (

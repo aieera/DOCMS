@@ -180,6 +180,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *sedocv1
 	out := &sedocv1.Document{
 		Id:                       d.ID.String(),
 		TenantId:                 d.TenantID.String(),
+		ExternalId:               d.ExternalID,
 		WorkspaceId:              d.WorkspaceID.String(),
 		FolderId:                 d.FolderID.String(),
 		Title:                    d.Title,

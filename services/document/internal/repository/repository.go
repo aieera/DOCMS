@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,14 @@ import (
 
 type DocumentRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, d *model.Document) error
+	// InsertUpsert inserts a document, treating a (tenant_id, external_id)
+	// collision as a no-op (created=false). Used by the upsert create
+	// branch so concurrent first-creations converge on one row.
+	InsertUpsert(ctx context.Context, tx pgx.Tx, d *model.Document) (bool, error)
+	// GetByExternalID loads the document for a tenant-scoped business key
+	// (ErrNotFound when absent). forUpdate takes a row lock to serialize
+	// concurrent version appends against the same key.
+	GetByExternalID(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, externalID string, forUpdate bool) (*model.Document, error)
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error)
 	Update(ctx context.Context, tx pgx.Tx, d *model.Document) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
@@ -70,7 +79,11 @@ type FolderRepository interface {
 	// Ancestors returns the breadcrumb (root → parent of f, exclusive of f
 	// itself) ordered shallowest first. Empty for root folders.
 	Ancestors(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ltreePath string) ([]model.Folder, error)
-	ListByParent(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, parent *uuid.UUID) ([]model.Folder, error)
+	// ListByParent returns one keyset page of direct children ordered by
+	// (name, id), resuming after (cursorName, cursorID) when cursorID is set.
+	// limit is clamped to [1, FolderPageMaxLimit]. Child/document counts are
+	// filled with O(1) aggregates, not per-row subqueries (Workstream 6).
+	ListByParent(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, parent *uuid.UUID, cursorName string, cursorID uuid.UUID, limit int) ([]model.Folder, error)
 	UpdateName(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name string) error
 	Move(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, oldPath, newParentPath string, newDepth int) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
@@ -151,50 +164,82 @@ type OutboxRepository interface {
 	Insert(ctx context.Context, tx pgx.Tx, e *model.OutboxEvent) error
 }
 
+// IngestionRepository is the data-access layer for WS3's pre-commit staging
+// table. Create is idempotent on the (tenant, checksum, target) partial unique
+// index so a re-POST converges on one active row.
+type IngestionRepository interface {
+	// Create inserts a staged item, treating a collision on the active-row
+	// dedup index as a no-op. created=false returns the existing active row.
+	Create(ctx context.Context, tx pgx.Tx, it *model.IngestionItem) (created bool, existing *model.IngestionItem, err error)
+	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, forUpdate bool) (*model.IngestionItem, error)
+	// UpdateRouting sets status + match_document_id (nil clears) after the
+	// route step decides.
+	UpdateRouting(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, status model.IngestionStatus, matchDocumentID *uuid.UUID) error
+	// SetStatus is a generic status (+ optional failure reason) update.
+	SetStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, status model.IngestionStatus, failureReason string) error
+	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, status string, limit int) ([]model.IngestionItem, error)
+}
+
+// ReviewQueueRepository is the data-access layer for WS3's human review queue.
+type ReviewQueueRepository interface {
+	// Create inserts a review item, treating a collision on (tenant,
+	// ingestion_item_id) as a no-op so the route step is idempotent.
+	Create(ctx context.Context, tx pgx.Tx, it *model.ReviewQueueItem) (created bool, err error)
+	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.ReviewQueueItem, error)
+	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, status string, limit int) ([]model.ReviewQueueItem, error)
+	// ListKeyset is the keyset-paginated read behind GET /api/v1/review-queue.
+	ListKeyset(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, status string, cursorTime time.Time, cursorID uuid.UUID, limit int) ([]model.ReviewQueueItem, error)
+	// Resolve marks the review terminal with the reviewer's decision.
+	Resolve(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, status model.ReviewStatus, resolution string, resultingDoc, resultingVer *uuid.UUID, resolvedBy uuid.UUID, notes string) error
+}
+
 // ---- Bundle (convenient wiring) -------------------------------------------
 
 // Repositories groups all repos for a document-service instance.
 type Repositories struct {
-	Pool          *pgxpool.Pool
-	Workspaces    WorkspaceRepository
-	Documents     DocumentRepository
-	Folders       FolderRepository
-	Versions      VersionRepository
-	ShareLinks    ShareLinkRepository
-	Tags          TagRepository
-	LegalHolds    LegalHoldRepository
-	MetadataSchema MetadataSchemaRepository
-	Outbox             OutboxRepository
-	Annotations        AnnotationRepository
-	TagSuggestions     TagSuggestionRepository
-	Routing            RoutingRepository
-	Compliance         ComplianceRepository
-	OCRQuality         OCRQualityRepository
-	Anomaly            AnomalyRepository
+	Pool                *pgxpool.Pool
+	Workspaces          WorkspaceRepository
+	Documents           DocumentRepository
+	Folders             FolderRepository
+	Versions            VersionRepository
+	ShareLinks          ShareLinkRepository
+	Tags                TagRepository
+	LegalHolds          LegalHoldRepository
+	MetadataSchema      MetadataSchemaRepository
+	Outbox              OutboxRepository
+	Annotations         AnnotationRepository
+	TagSuggestions      TagSuggestionRepository
+	Routing             RoutingRepository
+	Compliance          ComplianceRepository
+	OCRQuality          OCRQualityRepository
+	Anomaly             AnomalyRepository
 	ClassifyCorrections ClassifyCorrectionRepository
 	ActiveLearning      ActiveLearningRepository
 	NER                 NERRepository
 	Redaction           RedactionRepository
 	// ADR 0066 — threaded comments + reactions.
-	Comments            CommentRepository
+	Comments CommentRepository
 	// ADR 0068 — lightweight tasks (separate from workflow_tasks).
-	Tasks               TaskRepository
+	Tasks TaskRepository
 	// ADR 0115 — per-stage processing status surface.
-	Processing          ProcessingRepository
+	Processing ProcessingRepository
+	// WS3 — pre-commit ingestion pipeline.
+	Ingestion   IngestionRepository
+	ReviewQueue ReviewQueueRepository
 }
 
 // New wires concrete repo implementations against a single pool.
 func New(pool *pgxpool.Pool) *Repositories {
 	return &Repositories{
-		Pool:           pool,
-		Workspaces:     &workspaceRepo{},
-		Documents:      &documentRepo{},
-		Folders:        &folderRepo{},
-		Versions:       &versionRepo{},
-		ShareLinks:     &shareLinkRepo{},
-		Tags:           &tagRepo{},
-		LegalHolds:     &legalHoldRepo{},
-		MetadataSchema: &metadataSchemaRepo{},
+		Pool:                pool,
+		Workspaces:          &workspaceRepo{},
+		Documents:           &documentRepo{},
+		Folders:             &folderRepo{},
+		Versions:            &versionRepo{},
+		ShareLinks:          &shareLinkRepo{},
+		Tags:                &tagRepo{},
+		LegalHolds:          &legalHoldRepo{},
+		MetadataSchema:      &metadataSchemaRepo{},
 		Outbox:              &outboxRepo{},
 		Annotations:         NewAnnotationRepo(),
 		TagSuggestions:      NewTagSuggestionRepo(),
@@ -209,5 +254,7 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Comments:            NewCommentRepo(),
 		Tasks:               NewTaskRepo(),
 		Processing:          NewProcessingRepo(),
+		Ingestion:           &ingestionRepo{},
+		ReviewQueue:         &reviewQueueRepo{},
 	}
 }
