@@ -74,11 +74,11 @@
 
     --radius: 1rem;
 
-    /* Navy-blue sidebar (the signature left panel). */
-    --sidebar: 222 47% 20%;
+    /* Deep midnight-navy sidebar (the signature left panel). */
+    --sidebar: 224 50% 13%;
     --sidebar-foreground: 217 40% 90%;
-    --sidebar-border: 222 35% 34%;
-    --sidebar-accent: 222 40% 32%;
+    --sidebar-border: 223 38% 26%;
+    --sidebar-accent: 223 42% 24%;
     --sidebar-accent-foreground: 0 0% 100%;
 
     /* Pastel accent surfaces for folder / feature cards (sage, indigo,

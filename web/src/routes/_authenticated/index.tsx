@@ -147,7 +147,7 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
       className={cn(
         'group relative h-full overflow-hidden transition-all',
         'hover:-translate-y-0.5 hover:border-primary/50',
-        'hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+        'hover:shadow-[0_16px_38px_-14px_rgba(16,24,40,0.18)]',
         'dark:hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
       )}
     >

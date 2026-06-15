@@ -22,8 +22,9 @@ const warmCardVariants = cva(
         // (Previously the hard-coded cream made dark-mode stat numerals —
         // which use the theme foreground tokens — render pale-on-cream.)
         cream: cn(
-          'bg-card border-border text-card-foreground',
-          'shadow-[0_8px_28px_-10px_rgba(80,60,10,0.18)]',
+          'bg-card border-border/70 text-card-foreground',
+          // Cool layered shadow — matches the canonical Card "new" look.
+          'shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.12)]',
           'dark:shadow-[0_12px_32px_-16px_rgba(0,0,0,0.6)]',
         ),
         // Deliberate charcoal contrast card (the reference "Onboarding Task"
@@ -72,7 +73,7 @@ export const WarmCardHeader = forwardRef<HTMLDivElement, WarmCardHeaderProps>(
       className={cn('mb-4 flex items-center justify-between gap-3', className)}
       {...props}
     >
-      <h3 className={cn('font-serif text-[17px] font-normal tracking-[-0.005em]', titleClassName)}>
+      <h3 className={cn('text-[15px] font-semibold tracking-tight', titleClassName)}>
         {title}
       </h3>
       {action}
