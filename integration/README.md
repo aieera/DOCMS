@@ -8,6 +8,11 @@ Built against [`INTEGRATION.md`](../INTEGRATION.md) and
 [`proto/gen/openapi/sedoc.swagger.json`](../proto/gen/openapi/sedoc.swagger.json)
 as the API contract.
 
+> **Connecting a real ERP?** Section B below is currently the mock
+> (`cmd/mockerp`). [`ERP-CONTRACT.md`](ERP-CONTRACT.md) is the exact contract the
+> real ERP must implement (the 4 events, render/authz/listing endpoints,
+> delivery guarantees) and the config-only cutover steps + smoke test.
+
 ```
 ERP (events + render API + customer authz)         [B] mock under cmd/mockerp
    │  canonical events (webhook, at-least-once)
@@ -70,6 +75,36 @@ sync monitoring.
 - **Terminal** (DLQ + alert): `400 VALIDATION`/`IDEMPOTENCY_KEY_*`, `403`,
   `422 IDEMPOTENCY_KEY_REUSED`.
 
+### Backfill (onboarding existing data)
+Live events only sync net-new changes; to onboard customers/documents that
+existed *before* the integration was switched on, run a **backfill**. It
+enumerates existing ERP data from a source, synthesizes the canonical events, and
+feeds them through the **same idempotent handlers** (`ensureCustomer` →
+`document.committed`/`attachment.uploaded`) with **stable** `erp_event_id`s — so a
+re-run replays the same SeDoc Idempotency-Keys and `(external_id, checksum)`
+upserts, creating **nothing new**. All writes flow through the shared Prompt-1
+rate limiter, so a backfill paces itself under 600/min and shares that budget with
+the live worker.
+
+Two ways to drive it:
+- **CLI** (`cmd/backfill`) — one-shot, ops-run:
+  ```
+  go run ./cmd/backfill                              # full backfill from the ERP listing API
+  go run ./cmd/backfill -customers CUST-1,CUST-2     # scope to specific customers
+  go run ./cmd/backfill -source ndjson -file inv.ndjson   # from an NDJSON inventory
+  ```
+- **BFF** — `POST /files/sync/backfill` enqueues a `pending` run (status returned
+  immediately as a `run_id`); the **worker poller** claims and executes it
+  in-process under the shared limiter. Progress + per-item failures are queryable
+  via `GET /files/sync/backfill[/{run_id}]`.
+
+Runs are tracked in `backfill_runs` (status, total/processed/failed,
+started/finished) with one `backfill_failures` row per failed item. Sources
+implement `erp.Lister`: the ERP HTTP listing (`GET /erp/customers`,
+`GET /erp/customers/{ref}/documents`) or an NDJSON file (one
+`{"type":"customer|document|attachment",…}` record per line; document bytes are
+still resolved via the ERP render endpoint).
+
 ## Demo (one command)
 
 With a SeDoc stack running (parent `make docker-up`) plus an API key + workspace
@@ -122,6 +157,12 @@ make web-build          # tsc --noEmit && vite build
 | `SEDOC_INTEGRATION_BUCKETS` | Shard count for customer bucketing (default 256) |
 | `SEDOC_INTEGRATION_HTTP_PORT` | Webhook ingress port (default 8090) |
 | `SEDOC_INTEGRATION_CONCURRENCY` | Worker-loop concurrency (default 8) |
+| `SEDOC_INTEGRATION_RATE_PER_MIN` | Proactive SeDoc write throttle, requests/min (default 600 = SeDoc's `:upsert`/`/ingest` ceiling) |
+| `SEDOC_INTEGRATION_RATE_BURST` | Token-bucket burst above the steady rate (default 20) |
+| `SEDOC_INTEGRATION_BACKFILL_CONCURRENCY` | Customers processed in parallel during a backfill (default 4); SeDoc write rate is still capped by the shared limiter |
+| `SEDOC_INTEGRATION_WORKER_URL` | BFF only: integration worker base URL for the `/files/sync/metrics` passthrough (default `http://localhost:8090`) |
+| `ERP_BASE_URL` | worker/bff/backfill: ERP boundary (render/authz/listing). Default `http://localhost:8095` (mock); point at the live ERP to cut over |
+| `ERP_API_TOKEN` | worker/bff/backfill: optional bearer presented to the ERP's endpoints (empty = none, for the mock or a network-isolated ERP) |
 
 ## [C] Files BFF design
 Browser → BFF → SeDoc. The BFF holds the API key (never sent to the client) and
@@ -135,13 +176,16 @@ is surfaced on errors for support.
 |---|---|---|
 | `GET /files/customers/{ref}/tree` | customer | main folder + 6 subfolders with doc counts |
 | `GET /files/customers/{ref}/folders/{folder_id}/documents?cursor=` | customer + folder∈subtree | keyset-paginated |
-| `POST /files/customers/{ref}/upload` | customer | multipart → 3-step upload → `/ingest` |
-| `GET /files/search?customer_ref=&q=` | customer | scoped: hits outside the subtree are dropped |
+| `POST /files/customers/{ref}/upload` | customer | streaming multipart → 3-step upload → `/ingest` (browser sends `sha256`+`size` first → bytes stream straight to the presigned PUT, flat memory, no size cap) |
+| `POST /files/search` | customer | body `{customer_ref, q}` (query in the body, not the URL → not logged); scoped: hits outside the subtree are dropped |
 | `GET /files/documents/{id}` | doc→folder→customer | detail + version history |
 | `GET /files/documents/{id}/download` | doc→folder→customer | streamed (flat memory; storage key never exposed) |
 | `POST /files/documents/{id}/versions/{vid}/restore` | doc→folder→customer | |
 | `GET /files/review-queue` · `/{id}` · `POST /{id}/resolve` | admin | passthrough to SeDoc review queue |
 | `GET /files/sync/log` · `POST /files/sync/retry/{id}` | admin | worker sync_log + DLQ retry |
+| `GET /files/sync/metrics` | admin | passthrough to the worker's runtime metrics (throughput, backlog, DLQ, limiter state) |
+| `POST /files/sync/backfill` | admin | enqueue a backfill run (optional `{customer_refs:[…]}` scope) → `{run_id}`; the worker poller executes it |
+| `GET /files/sync/backfill` · `/{run_id}` | admin | run list / one run with progress + per-item failures |
 
 Document-id routes resolve the doc's folder → owning customer
 (`store.CustomerByFolder`) and re-run the authz gate, so a user can never read a
@@ -156,11 +200,20 @@ React 18 + Vite + TS + TanStack Query + Tailwind — a lean, self-contained SPA
 - **[D] File Explorer** (`/customers/:ref`): accessible folder tree (`role="tree"`,
   arrow-key nav) → document list with status + sync badges → detail panel with
   download + version history (restore) → drag-drop upload into Attachments with a
-  progress bar and the routing outcome.
-- **[E] Review Queue** (`/review`, admin): pending items with OCR excerpt +
-  confidence + reason, and New-version / New-document / Reject resolve actions.
-- **[F] Sync Dashboard** (`/sync`, admin): live `sync_log` table with status
-  filter, the DLQ, last error + `correlation_id`, and a Retry action.
+  progress bar and the routing outcome. Scoped to one customer via a `customerRef`
+  prop — no routing/auth assumptions — so it's **embeddable** (see below).
+- **[E] Review Queue** (`/review`, admin): keyset-paginated ("Load more") with a
+  pending/resolved/rejected status filter. Each row shows confidence + reason + a
+  lazy OCR preview and (when pending) New-version / New-document / Reject resolve
+  actions; resolved/rejected rows show the audit trail (who actioned it, when,
+  resulting document). Concurrent resolution is handled cleanly — a 409 surfaces
+  as an info toast and refreshes the list rather than a red error.
+- **[F] Sync Dashboard** (`/sync`, admin): live operational metrics — events/min
+  throughput (sparkline), queue backlog, DLQ size, observed SeDoc 429s, and the
+  shared rate-limiter's token/throttle-wait state — plus a **backfill** control
+  panel (start a run, watch progress + per-item failures) and the `sync_log` /
+  DLQ table with status filter + Retry. Metrics come from the worker via the
+  `GET /files/sync/metrics` BFF passthrough.
 
 Identity is sent via `X-ERP-User` / `X-ERP-Admin`; a dev control in the header
 stands in for the ERP's SSO (the ERP auth proxy injects these in production).
@@ -170,8 +223,47 @@ color **and** text.
 ```
 cd integration/web && npm install
 VITE_BFF_URL=http://localhost:8091 npm run dev   # dev server on :5180, proxies /files → BFF
-npm run build                                     # tsc --noEmit && vite build → dist/
+npm run build                                     # tsc --noEmit && vite build → dist/ (SPA + embed.html)
+npm run build:widget                              # → dist-widget/ (mountFileExplorer JS + CSS)
 ```
+
+### Embedding in the ERP
+The explorer mounts inside the ERP's customer record without becoming the ERP.
+All config (BFF base URL, how the ERP user's token is obtained, which customer)
+is injected — there's no hardcoded routing or auth. Three ways to ship it:
+
+1. **JS widget (preferred)** — `npm run build:widget` emits a self-contained
+   `dist-widget/sedoc-file-explorer.es.js` (+ `.umd.js`, `style.css`). The ERP
+   drops it into its customer page:
+   ```js
+   import { mountFileExplorer } from "sedoc-file-explorer";
+   import "sedoc-file-explorer/style.css";
+   const handle = mountFileExplorer(document.getElementById("files"), {
+     customerRef: "CUST-1",
+     apiBase: "https://erp.example.com",      // Files BFF base ("" = same origin)
+     getAuthToken: () => erp.getUserToken(),   // → Authorization: Bearer <token>
+   });
+   // later, when leaving the customer record:
+   handle.unmount();
+   ```
+2. **iframe fallback** — `dist/embed.html` reads `customerRef` + `apiBase` from the
+   URL; the host supplies the token over `postMessage` (never in the URL):
+   ```html
+   <iframe id="f" src=".../embed.html?customerRef=CUST-1&apiBase=https://erp.example.com"></iframe>
+   <script>
+     addEventListener("message", (e) => {
+       if (e.data?.type === "sedoc-files-ready")
+         f.contentWindow.postMessage({ type: "sedoc-files-token", token: erp.getUserToken() }, "*");
+     });
+   </script>
+   ```
+3. **Standalone SPA** — `npm run dev` / `dist/index.html`, with a dev-identity
+   control standing in for the ERP's SSO. Unchanged, for local development.
+
+`getAuthToken` returns the ERP user's token, sent as `Authorization: Bearer …`;
+the ERP's auth proxy maps it to the `X-ERP-User`/`X-ERP-Admin` the BFF trusts.
+When omitted (standalone dev only) the explorer falls back to dev identity headers
+from localStorage.
 
 ## Remaining (build prompt §11.9 — hardening)
 a11y audit, load-test the tree at ~100k customers, and a security review of the

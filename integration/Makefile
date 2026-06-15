@@ -7,9 +7,10 @@ help: ## List targets
 
 .PHONY: build
 build: ## Build all binaries → ./bin
-	go build -o ./bin/worker  ./cmd/worker
-	go build -o ./bin/bff     ./cmd/bff
-	go build -o ./bin/mockerp ./cmd/mockerp
+	go build -o ./bin/worker   ./cmd/worker
+	go build -o ./bin/bff      ./cmd/bff
+	go build -o ./bin/mockerp  ./cmd/mockerp
+	go build -o ./bin/backfill ./cmd/backfill
 
 .PHONY: test
 test: ## Unit tests
@@ -37,8 +38,16 @@ run-bff: ## Run the Files BFF
 	go run ./cmd/bff
 
 .PHONY: run-mockerp
-run-mockerp: ## Run the mock ERP (render + authz)
+run-mockerp: ## Run the mock ERP (render + authz + backfill listing)
 	go run ./cmd/mockerp serve
+
+.PHONY: run-backfill
+run-backfill: ## Run a one-shot backfill (ERP source; SEDOC_* + DB env). Args via ARGS=
+	go run ./cmd/backfill $(ARGS)
+
+.PHONY: smoke
+smoke: ## Cutover smoke test (4 events + download + authz denial). Override via env — see scripts/cutover-smoke.sh
+	./scripts/cutover-smoke.sh
 
 .PHONY: web-dev
 web-dev: ## Web dev server (Vite, :5180, proxies /files → BFF)
