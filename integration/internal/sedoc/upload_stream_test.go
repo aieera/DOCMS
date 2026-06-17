@@ -144,7 +144,9 @@ func TestUploadStreamFlatMemoryForLargeFile(t *testing.T) {
 }
 
 // TestUploadStreamDedupSkipsPut: when initiate reports the blob already exists
-// (no presigned URL), the PUT is skipped, the body is drained, complete still runs.
+// (no presigned URL), there is no upload session — the PUT and complete are both
+// skipped, the body is drained, and a checksum-only result is returned. The
+// :upsert/ingest that follows resolves the existing content blob by sha256.
 func TestUploadStreamDedupSkipsPut(t *testing.T) {
 	body := []byte("hello world")
 	f := &uploadFake{dedup: true}
@@ -160,11 +162,14 @@ func TestUploadStreamDedupSkipsPut(t *testing.T) {
 	if f.putHit {
 		t.Fatal("dedup hit must skip the PUT")
 	}
-	if !f.completeHit {
-		t.Fatal("complete must still run on dedup")
+	if f.completeHit {
+		t.Fatal("dedup hit has no upload session — complete must be skipped")
 	}
-	if res.ContentBlobID != "blob-1" {
-		t.Fatalf("content_blob_id = %q", res.ContentBlobID)
+	if res.ContentBlobID != "" {
+		t.Fatalf("dedup result should carry no content_blob_id, got %q", res.ContentBlobID)
+	}
+	if res.SHA256 != shaOf(body) || res.SizeBytes != int64(len(body)) {
+		t.Fatalf("dedup result should carry checksum+size, got %+v", res)
 	}
 }
 

@@ -105,6 +105,24 @@ func (c *Client) ListDocuments(ctx context.Context, workspaceID, folderID, pageT
 	return &out, nil
 }
 
+// GetByExternalKey resolves a document id by its stable external_id (WS1
+// documents:byExternalKey). Returns ("", false, nil) when no document carries
+// that key — used to back the CRM's pre-create dedup search.
+func (c *Client) GetByExternalKey(ctx context.Context, externalID string) (string, bool, error) {
+	var out struct {
+		DocumentID string `json:"document_id"`
+	}
+	err := c.doJSON(ctx, http.MethodGet,
+		"/documents:byExternalKey?external_id="+url.QueryEscape(externalID), "", nil, &out)
+	if err != nil {
+		if ae, ok := err.(*APIError); ok && ae.StatusCode == http.StatusNotFound {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return out.DocumentID, out.DocumentID != "", nil
+}
+
 // GetDocument fetches a document (used to resolve folder → customer for authz).
 func (c *Client) GetDocument(ctx context.Context, id string) (*Document, error) {
 	var out Document

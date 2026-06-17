@@ -54,9 +54,12 @@ func main() {
 	doc.SetSearchURL(searchURL)
 	erpClient := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	b := bff.New(store.New(pool), doc, erpClient, workspaceID, log).WithWorkerURL(workerURL)
+	// CRM-facing DMS-contract adapter (dmsSync points its dms_base_url here).
+	dmsAdapter := bff.NewDMSAdapter(doc, workspaceID, env("DMS_ADAPTER_TOKEN", ""), log)
 
 	mux := http.NewServeMux()
 	b.Register(mux)
+	dmsAdapter.Register(mux)
 	srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info().Int("port", port).Msg("files BFF listening")

@@ -471,15 +471,19 @@ func spoolAndHash(r io.Reader) (*os.File, int64, string, error) {
 
 // UpsertInput is the :upsert request (we know the document identity).
 type UpsertInput struct {
-	WorkspaceID   string
-	ExternalID    string
-	FolderID      string
-	Title         string
-	DocumentClass string
-	BlobChecksum  string
-	BlobRef       string
-	Mime          string
-	ChangeSummary string
+	WorkspaceID    string
+	ExternalID     string
+	FolderID       string
+	Title          string
+	DocumentClass  string
+	DocType        string
+	Tags           []string
+	CustomMetadata map[string]any
+	BlobChecksum   string
+	BlobRef        string
+	Mime           string
+	Size           int64
+	ChangeSummary  string
 }
 
 // UpsertResult mirrors the :upsert response.
@@ -493,17 +497,30 @@ type UpsertResult struct {
 
 // UpsertByExternalKey create-or-versions a document keyed on the ERP business id.
 func (c *Client) UpsertByExternalKey(ctx context.Context, idemKey string, in UpsertInput) (*UpsertResult, error) {
+	version := map[string]any{
+		"blob_checksum": in.BlobChecksum,
+		"blob_ref":      in.BlobRef,
+		"mime":          in.Mime,
+	}
+	if in.Size > 0 {
+		version["size"] = in.Size
+	}
 	body := map[string]any{
 		"external_id":    in.ExternalID,
 		"folder_id":      in.FolderID,
 		"title":          in.Title,
 		"document_class": in.DocumentClass,
 		"change_summary": in.ChangeSummary,
-		"version": map[string]any{
-			"blob_checksum": in.BlobChecksum,
-			"blob_ref":      in.BlobRef,
-			"mime":          in.Mime,
-		},
+		"version":        version,
+	}
+	if in.DocType != "" {
+		body["doc_type"] = in.DocType
+	}
+	if len(in.Tags) > 0 {
+		body["tags"] = in.Tags
+	}
+	if len(in.CustomMetadata) > 0 {
+		body["custom_metadata"] = in.CustomMetadata
 	}
 	var out UpsertResult
 	if err := c.doJSON(ctx, http.MethodPost,

@@ -15,7 +15,15 @@ x-sedoc-env: &sedoc-env
   SEDOC_SEARCH_URL: ${SEDOC_SEARCH_URL:-http://host.docker.internal:8086/api/v1}
   SEDOC_API_KEY: ${SEDOC_API_KEY:?set SEDOC_API_KEY in .env}
   SEDOC_WORKSPACE_ID: ${SEDOC_WORKSPACE_ID:?set SEDOC_WORKSPACE_ID in .env}
-  ERP_BASE_URL: http://mockerp:8095
+  # ERP boundary. Defaults to the bundled mock; set ERP_BASE_URL (+ ERP_API_TOKEN
+  # if the ERP requires a bearer) in .env to point at the real ERP — config-only,
+  # no rebuild. See ERP-CONTRACT.md.
+  ERP_BASE_URL: ${ERP_BASE_URL:-http://mockerp:8095}
+  ERP_API_TOKEN: ${ERP_API_TOKEN:-}
+  # Shared secret the CRM's dmsSync presents as its bearer (external_apis.
+  # dms_api_key) to the BFF's DMS-contract adapter. NOT the SeDoc key. Empty
+  # disables the check (dev). See internal/bff/dms_adapter.go.
+  DMS_ADAPTER_TOKEN: ${DMS_ADAPTER_TOKEN:-}
   # BFF reaches the worker over the compose network for the metrics passthrough
   # (host port is irrelevant in-container). Worker ignores this var.
   SEDOC_INTEGRATION_WORKER_URL: http://worker:8090
