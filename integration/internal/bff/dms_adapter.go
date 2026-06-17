@@ -68,6 +68,84 @@ func (a *DMSAdapter) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/workspaces/{wid}/folders", a.listWorkspaceFolders)
 	mux.HandleFunc("POST /api/v1/workspaces/{wid}/folders", a.createWorkspaceFolder)
 	mux.HandleFunc("GET /folders", a.listFolders)
+	// Read surfaces for the in-ERP DMS UI (the CRM backend proxies these).
+	mux.HandleFunc("GET /api/v1/documents/{id}", a.getDocument)
+	mux.HandleFunc("GET /api/v1/documents/{id}/content", a.downloadDocument)
+	mux.HandleFunc("GET /api/v1/review-queue", a.reviewList)
+	mux.HandleFunc("GET /api/v1/review-queue/{id}", a.reviewGet)
+	mux.HandleFunc("POST /api/v1/review-queue/{id}/resolve", a.reviewResolve)
+}
+
+// getDocument returns a document's metadata + version history.
+func (a *DMSAdapter) getDocument(w http.ResponseWriter, r *http.Request) {
+	if !a.authed(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	doc, err := a.doc.GetDocument(r.Context(), id)
+	if err != nil {
+		a.proxyErr(w, err)
+		return
+	}
+	out := map[string]any{"document": doc}
+	if vers, verr := a.doc.ListVersions(r.Context(), id); verr == nil {
+		out["versions"] = vers.Versions
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// downloadDocument streams the current version's bytes (the storage key never
+// reaches the caller — the BFF holds the SeDoc credential).
+func (a *DMSAdapter) downloadDocument(w http.ResponseWriter, r *http.Request) {
+	if !a.authed(w, r) {
+		return
+	}
+	rc, ct, err := a.doc.StreamContent(r.Context(), r.PathValue("id"))
+	if err != nil {
+		a.proxyErr(w, err)
+		return
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", ct)
+	_, _ = io.Copy(w, rc)
+}
+
+func (a *DMSAdapter) reviewList(w http.ResponseWriter, r *http.Request) {
+	if !a.authed(w, r) {
+		return
+	}
+	q := r.URL.Query()
+	raw, err := a.doc.ReviewQueueList(r.Context(), q.Get("status"), q.Get("cursor"), 50)
+	if err != nil {
+		a.proxyErr(w, err)
+		return
+	}
+	writeRaw(w, http.StatusOK, raw)
+}
+
+func (a *DMSAdapter) reviewGet(w http.ResponseWriter, r *http.Request) {
+	if !a.authed(w, r) {
+		return
+	}
+	raw, err := a.doc.ReviewQueueGet(r.Context(), r.PathValue("id"))
+	if err != nil {
+		a.proxyErr(w, err)
+		return
+	}
+	writeRaw(w, http.StatusOK, raw)
+}
+
+func (a *DMSAdapter) reviewResolve(w http.ResponseWriter, r *http.Request) {
+	if !a.authed(w, r) {
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	raw, err := a.doc.ReviewQueueResolve(r.Context(), "dms-resolve:"+uuid.NewString(), r.PathValue("id"), body)
+	if err != nil {
+		a.proxyErr(w, err)
+		return
+	}
+	writeRaw(w, http.StatusOK, raw)
 }
 
 // authed validates the CRM's shared-secret bearer (constant-time). Health is
