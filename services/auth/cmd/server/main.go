@@ -210,6 +210,9 @@ func main() {
 		Service:      svc,
 		Logger:       *log.Z(),
 		CookieSecure: cookieSecure,
+		// ERP integration Files BFF target for /api/v1/integrations/erp/*.
+		// Defaults to http://localhost:8091 when unset.
+		IntegrationBFFURL: os.Getenv("SEDOC_INTEGRATION_BFF_URL"),
 	})
 
 	// ---- SAML 2.0 (Phase A2) ----------------------------------------------

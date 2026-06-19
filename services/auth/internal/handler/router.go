@@ -199,6 +199,21 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		})
 	}
 
+	// ---- ERP integration files proxy ------------------------------------
+	// Same-origin bridge so the native "Integrations → ERP" explorer (which
+	// runs on the SeDoc session) can reach the ERP integration "Files BFF".
+	// That BFF speaks a different (ERP-user) auth model and holds the SeDoc
+	// service API key, so the browser can't call it directly. Admin/owner only;
+	// IntegrationERPProxy stamps the ERP identity server-side and rewrites
+	// /api/v1/integrations/erp/<rest> → <bff>/files/<rest>. CSRF middleware
+	// exempts the GET reads this explorer uses.
+	r.Route("/api/v1/integrations/erp", func(r chi.Router) {
+		r.Use(h.AuthMiddleware)
+		r.Use(vdmsmw.CSRFDoubleSubmit())
+		r.Use(h.RequireRole("admin", "owner"))
+		r.Handle("/*", http.HandlerFunc(h.IntegrationERPProxy))
+	})
+
 	// ---- Tenant control-plane (Wave 12.7) --------------------------------
 	// Owner-only: region-pin + CMK scheduled-deletion.
 	if tenantAdmin != nil {

@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, FolderTree, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -36,10 +36,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/', icon: LayoutDashboard, labelKey: 'sidebar.dashboard', exact: true },
       { to: '/workspaces', icon: FolderOpen, labelKey: 'sidebar.workspaces' },
-      // ERP↔SeDoc customer file explorer (separate integration product, embedded).
-      // Folders auto-provision when a customer is created in the ERP. Admin/owner
-      // only — it's an integration surface, not a per-member view.
-      { to: '/customer-files', icon: FolderTree, labelKey: 'Files', roles: ['admin', 'owner'] },
       // Cross-workspace surface for folders shared with the caller via
       // folder_grants (direct or group). Hidden from admins is NOT a
       // goal — admins see all so they'd rarely need this, but it's
@@ -51,6 +47,15 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/saved-searches', icon: Bookmark, labelKey: 'sidebar.saved_searches' },
       // ADR 0104 — clause library.
       { to: '/clauses',        icon: BookOpen,  labelKey: 'sidebar.clauses' },
+    ],
+  },
+  {
+    // Native ERP↔SeDoc integration surface — replaces the old embedded
+    // customer-files iframe. Its own top-level section so further
+    // integrations can slot in beside ERP. Admin/owner only.
+    labelKey: 'sidebar.integrations',
+    items: [
+      { to: '/integrations', icon: Boxes, labelKey: 'sidebar.integrations', roles: ['admin', 'owner'] },
     ],
   },
   {

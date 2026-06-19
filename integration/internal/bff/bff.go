@@ -51,6 +51,9 @@ func (b *BFF) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /files/customers/{ref}/tree", b.tree)
 	mux.HandleFunc("GET /files/customers/{ref}/folders/{folder_id}/documents", b.folderDocuments)
 	mux.HandleFunc("POST /files/customers/{ref}/upload", b.upload)
+	// Admin: list provisioned customers for the native explorer's picker (the
+	// roster is not customer-scoped data, so it's admin-gated).
+	mux.HandleFunc("GET /files/customers", b.adminCustomers)
 	// POST (not GET): the free-text query travels in the body, not the URL, so it
 	// never lands in access logs.
 	mux.HandleFunc("POST /files/search", b.search)
@@ -88,17 +91,22 @@ func (b *BFF) authorizeCustomer(w http.ResponseWriter, r *http.Request, ref stri
 		writeErr(w, http.StatusUnauthorized, "unauthenticated", "")
 		return nil
 	}
-	ok, err := b.authz.CanAccessCustomer(r.Context(), user, ref)
-	if err != nil {
-		b.log.Error().Err(err).Str("customer", ref).Msg("authz check")
-		writeErr(w, http.StatusBadGateway, "authz check failed", "")
-		return nil
-	}
-	if !ok {
-		// 404 (not 403) so we don't even confirm the customer exists to an
-		// unauthorized user.
-		writeErr(w, http.StatusNotFound, "not found", "")
-		return nil
+	// Admins (e.g. a SeDoc operator browsing the integration natively) see every
+	// provisioned customer, so skip the per-user ERP ACL callback. A non-admin
+	// ERP user still goes through the ERP's customer authorization.
+	if !isAdmin(r) {
+		ok, err := b.authz.CanAccessCustomer(r.Context(), user, ref)
+		if err != nil {
+			b.log.Error().Err(err).Str("customer", ref).Msg("authz check")
+			writeErr(w, http.StatusBadGateway, "authz check failed", "")
+			return nil
+		}
+		if !ok {
+			// 404 (not 403) so we don't even confirm the customer exists to an
+			// unauthorized user.
+			writeErr(w, http.StatusNotFound, "not found", "")
+			return nil
+		}
 	}
 	m, err := b.st.GetCustomer(r.Context(), ref)
 	if err == store.ErrNotFound {
@@ -506,6 +514,19 @@ func (b *BFF) adminBackfillGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"run": run, "failures": fails})
+}
+
+// adminCustomers lists provisioned customers for the native explorer's picker.
+func (b *BFF) adminCustomers(w http.ResponseWriter, r *http.Request) {
+	if !b.requireAdmin(w, r) {
+		return
+	}
+	items, err := b.st.ListCustomers(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error(), "")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (b *BFF) requireAdmin(w http.ResponseWriter, r *http.Request) bool {

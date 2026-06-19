@@ -16,7 +16,8 @@
     "admin": "Admin",
     "inbox": "Inbox",
     "settings": "Settings",
-    "workspace": "Workspace"
+    "workspace": "Workspace",
+    "integrations": "Integrations"
   },
   "search_placeholder": "Search documents…",
   "user_menu": {

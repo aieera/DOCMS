@@ -16,7 +16,8 @@
     "admin": "الإدارة",
     "inbox": "صندوق الوارد",
     "settings": "الإعدادات",
-    "workspace": "مساحة العمل"
+    "workspace": "مساحة العمل",
+    "integrations": "التكاملات"
   },
   "search_placeholder": "ابحث في المستندات…",
   "user_menu": {

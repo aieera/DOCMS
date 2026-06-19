@@ -163,6 +163,10 @@ export default defineConfig(({ command, mode }) => {
             // catch-all '/api' below routes to auth (:8180), so this
             // explicit rule is required or these requests 404.
             '/api/v1/intelligence':             wsig('http://localhost:8194'),
+            // ERP integration explorer — the native Integrations→ERP screens
+            // call /api/v1/integrations/erp/*, proxied by the auth service to
+            // the Files BFF (/files/*). Must sit above the /api catch-all.
+            '/api/v1/integrations/erp':         wsig('http://localhost:8180'),
             '/api/v1/admin/settings':           wsig('http://localhost:8189'),
             '/api/v1/admin':                    wsig('http://localhost:8180'),
             '/api/v1/permissions':              wsig('http://localhost:8181'),

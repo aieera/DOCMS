@@ -33,6 +33,12 @@ type CustomerMapping struct {
 	SubfolderIDs   map[string]string // quote/po/so/do/invoice/attachments → folder id
 }
 
+// CustomerListItem is one provisioned customer, for the admin file-explorer picker.
+type CustomerListItem struct {
+	CustomerRef string `json:"customer_ref"`
+	Name        string `json:"name"`
+}
+
 // SyncJob is one claimed unit of work.
 type SyncJob struct {
 	ID          uuid.UUID
@@ -150,6 +156,28 @@ func (s *Store) GetCustomer(ctx context.Context, ref string) (*CustomerMapping, 
 	m.SubfolderIDs = map[string]string{}
 	_ = json.Unmarshal(subJSON, &m.SubfolderIDs)
 	return &m, nil
+}
+
+// ListCustomers returns every provisioned customer (ref + display name),
+// ordered by name. Powers the admin file-explorer's customer picker — the
+// "customer" concept lives in the ERP, so the native SeDoc UI can't enumerate
+// it any other way.
+func (s *Store) ListCustomers(ctx context.Context) ([]CustomerListItem, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT customer_ref, name FROM customer_map ORDER BY name, customer_ref`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CustomerListItem{}
+	for rows.Next() {
+		var it CustomerListItem
+		if err := rows.Scan(&it.CustomerRef, &it.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
 
 // SaveCustomer upserts a customer mapping.

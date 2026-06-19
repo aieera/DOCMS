@@ -23,16 +23,17 @@ import { Route as AuthenticatedSharedWithMeRouteImport } from './routes/_authent
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authenticated/saved-searches'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
-import { Route as AuthenticatedCustomerFilesRouteImport } from './routes/_authenticated/customer-files'
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
 import { Route as AuthenticatedWorkflowsIndexRouteImport } from './routes/_authenticated/workflows/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedIntegrationsIndexRouteImport } from './routes/_authenticated/integrations/index'
 import { Route as AuthenticatedClausesIndexRouteImport } from './routes/_authenticated/clauses/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSignDoneRouteImport } from './routes/_authenticated/sign.done'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedSandboxCrextioRouteImport } from './routes/_authenticated/sandbox.crextio'
+import { Route as AuthenticatedIntegrationsErpRouteImport } from './routes/_authenticated/integrations/erp'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -180,12 +181,6 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedCustomerFilesRoute =
-  AuthenticatedCustomerFilesRouteImport.update({
-    id: '/customer-files',
-    path: '/customer-files',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAskRoute = AuthenticatedAskRouteImport.update({
   id: '/ask',
   path: '/ask',
@@ -207,6 +202,12 @@ const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
     id: '/settings/',
     path: '/settings/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedIntegrationsIndexRoute =
+  AuthenticatedIntegrationsIndexRouteImport.update({
+    id: '/integrations/',
+    path: '/integrations/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedClausesIndexRoute =
@@ -235,6 +236,12 @@ const AuthenticatedSandboxCrextioRoute =
   AuthenticatedSandboxCrextioRouteImport.update({
     id: '/sandbox/crextio',
     path: '/sandbox/crextio',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedIntegrationsErpRoute =
+  AuthenticatedIntegrationsErpRouteImport.update({
+    id: '/integrations/erp',
+    path: '/integrations/erp',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminWorkflowsRoute =
@@ -682,7 +689,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
-  '/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -725,11 +731,13 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
   '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/sign/done': typeof AuthenticatedSignDoneRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/clauses/': typeof AuthenticatedClausesIndexRoute
+  '/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
@@ -780,7 +788,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
-  '/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
@@ -823,11 +830,13 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
   '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/sign/done': typeof AuthenticatedSignDoneRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/clauses': typeof AuthenticatedClausesIndexRoute
+  '/integrations': typeof AuthenticatedIntegrationsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/workflows': typeof AuthenticatedWorkflowsIndexRoute
   '/workspaces': typeof AuthenticatedWorkspacesIndexRoute
@@ -880,7 +889,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/_authenticated/ask': typeof AuthenticatedAskRoute
-  '/_authenticated/customer-files': typeof AuthenticatedCustomerFilesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
@@ -924,11 +932,13 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
+  '/_authenticated/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
   '/_authenticated/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/sign/done': typeof AuthenticatedSignDoneRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/clauses/': typeof AuthenticatedClausesIndexRoute
+  '/_authenticated/integrations/': typeof AuthenticatedIntegrationsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/workflows/': typeof AuthenticatedWorkflowsIndexRoute
   '/_authenticated/workspaces/': typeof AuthenticatedWorkspacesIndexRoute
@@ -982,7 +992,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/ask'
-    | '/customer-files'
     | '/notifications'
     | '/saved-searches'
     | '/search'
@@ -1025,11 +1034,13 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/integrations/erp'
     | '/sandbox/crextio'
     | '/settings/notifications'
     | '/sign/done'
     | '/admin/'
     | '/clauses/'
+    | '/integrations/'
     | '/settings/'
     | '/workflows/'
     | '/workspaces/'
@@ -1080,7 +1091,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/ask'
-    | '/customer-files'
     | '/notifications'
     | '/saved-searches'
     | '/search'
@@ -1123,11 +1133,13 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workflows'
+    | '/integrations/erp'
     | '/sandbox/crextio'
     | '/settings/notifications'
     | '/sign/done'
     | '/admin'
     | '/clauses'
+    | '/integrations'
     | '/settings'
     | '/workflows'
     | '/workspaces'
@@ -1179,7 +1191,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/_authenticated/ask'
-    | '/_authenticated/customer-files'
     | '/_authenticated/notifications'
     | '/_authenticated/saved-searches'
     | '/_authenticated/search'
@@ -1223,11 +1234,13 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
+    | '/_authenticated/integrations/erp'
     | '/_authenticated/sandbox/crextio'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/sign/done'
     | '/_authenticated/admin/'
     | '/_authenticated/clauses/'
+    | '/_authenticated/integrations/'
     | '/_authenticated/settings/'
     | '/_authenticated/workflows/'
     | '/_authenticated/workspaces/'
@@ -1383,13 +1396,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/customer-files': {
-      id: '/_authenticated/customer-files'
-      path: '/customer-files'
-      fullPath: '/customer-files'
-      preLoaderRoute: typeof AuthenticatedCustomerFilesRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/ask': {
       id: '/_authenticated/ask'
       path: '/ask'
@@ -1416,6 +1422,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/integrations/': {
+      id: '/_authenticated/integrations/'
+      path: '/integrations'
+      fullPath: '/integrations/'
+      preLoaderRoute: typeof AuthenticatedIntegrationsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/clauses/': {
@@ -1451,6 +1464,13 @@ declare module '@tanstack/react-router' {
       path: '/sandbox/crextio'
       fullPath: '/sandbox/crextio'
       preLoaderRoute: typeof AuthenticatedSandboxCrextioRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/integrations/erp': {
+      id: '/_authenticated/integrations/erp'
+      path: '/integrations/erp'
+      fullPath: '/integrations/erp'
+      preLoaderRoute: typeof AuthenticatedIntegrationsErpRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/workflows': {
@@ -2003,7 +2023,6 @@ const AuthenticatedAdminIntegrationsRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAskRoute: typeof AuthenticatedAskRoute
-  AuthenticatedCustomerFilesRoute: typeof AuthenticatedCustomerFilesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedSavedSearchesRoute: typeof AuthenticatedSavedSearchesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
@@ -2045,11 +2064,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
+  AuthenticatedIntegrationsErpRoute: typeof AuthenticatedIntegrationsErpRoute
   AuthenticatedSandboxCrextioRoute: typeof AuthenticatedSandboxCrextioRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSignDoneRoute: typeof AuthenticatedSignDoneRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedClausesIndexRoute: typeof AuthenticatedClausesIndexRoute
+  AuthenticatedIntegrationsIndexRoute: typeof AuthenticatedIntegrationsIndexRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedWorkspacesIndexRoute: typeof AuthenticatedWorkspacesIndexRoute
@@ -2092,7 +2113,6 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAskRoute: AuthenticatedAskRoute,
-  AuthenticatedCustomerFilesRoute: AuthenticatedCustomerFilesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedSavedSearchesRoute: AuthenticatedSavedSearchesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
@@ -2136,12 +2156,14 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
+  AuthenticatedIntegrationsErpRoute: AuthenticatedIntegrationsErpRoute,
   AuthenticatedSandboxCrextioRoute: AuthenticatedSandboxCrextioRoute,
   AuthenticatedSettingsNotificationsRoute:
     AuthenticatedSettingsNotificationsRoute,
   AuthenticatedSignDoneRoute: AuthenticatedSignDoneRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedClausesIndexRoute: AuthenticatedClausesIndexRoute,
+  AuthenticatedIntegrationsIndexRoute: AuthenticatedIntegrationsIndexRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedWorkflowsIndexRoute: AuthenticatedWorkflowsIndexRoute,
   AuthenticatedWorkspacesIndexRoute: AuthenticatedWorkspacesIndexRoute,

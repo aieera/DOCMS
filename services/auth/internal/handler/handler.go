@@ -23,10 +23,11 @@ import (
 
 // Handler carries the service + logger + cookie settings.
 type Handler struct {
-	svc          *service.Service
-	log          zerolog.Logger
-	cookieName   string
-	cookieSecure bool
+	svc               *service.Service
+	log               zerolog.Logger
+	cookieName        string
+	cookieSecure      bool
+	integrationBFFURL string
 }
 
 // Config is the handler's DI shape.
@@ -35,6 +36,9 @@ type Config struct {
 	Logger       zerolog.Logger
 	CookieName   string // default "dms_session"
 	CookieSecure bool   // true in prod; false for local HTTP-only testing
+	// IntegrationBFFURL is the base URL of the ERP integration Files BFF that
+	// /api/v1/integrations/erp/* proxies to. Default http://localhost:8091.
+	IntegrationBFFURL string
 }
 
 // New constructs a Handler.
@@ -43,11 +47,16 @@ func New(cfg Config) *Handler {
 	if name == "" {
 		name = "dms_session"
 	}
+	bffURL := cfg.IntegrationBFFURL
+	if bffURL == "" {
+		bffURL = "http://localhost:8091"
+	}
 	return &Handler{
-		svc:          cfg.Service,
-		log:          cfg.Logger,
-		cookieName:   name,
-		cookieSecure: cfg.CookieSecure,
+		svc:               cfg.Service,
+		log:               cfg.Logger,
+		cookieName:        name,
+		cookieSecure:      cfg.CookieSecure,
+		integrationBFFURL: strings.TrimRight(bffURL, "/"),
 	}
 }
 
