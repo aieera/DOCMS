@@ -228,7 +228,10 @@ func (a *DMSAdapter) pushDocument(w http.ResponseWriter, r *http.Request) {
 	folderID := firstNonEmpty(fields["folder_id"], fields["folder"])
 	if folderID == "" {
 		name := defaultFolderName(docClass)
-		fid, ferr := a.doc.EnsureFolder(r.Context(), "dms-folder:"+name, a.workspaceID, nil, name)
+		// Idempotency key MUST include the workspace id — otherwise ensuring a
+		// same-named folder (e.g. "ERP Invoices") in a second workspace reuses
+		// the first workspace's key and SeDoc 422s IDEMPOTENCY_KEY_REUSED.
+		fid, ferr := a.doc.EnsureFolder(r.Context(), "dms-folder:"+a.workspaceID+":"+name, a.workspaceID, nil, name)
 		if ferr != nil {
 			a.proxyErr(w, ferr)
 			return
@@ -353,7 +356,9 @@ func (a *DMSAdapter) createWorkspaceFolder(w http.ResponseWriter, r *http.Reques
 	if req.ParentFolderID != "" {
 		parent = &req.ParentFolderID
 	}
-	fid, err := a.doc.EnsureFolder(r.Context(), "dms-folder:"+req.Name, wid, parent, req.Name)
+	// Workspace-qualified idempotency key (see pushDocument) so the same folder
+	// name can exist in more than one workspace without a key collision.
+	fid, err := a.doc.EnsureFolder(r.Context(), "dms-folder:"+wid+":"+req.Name, wid, parent, req.Name)
 	if err != nil {
 		a.proxyErr(w, err)
 		return
