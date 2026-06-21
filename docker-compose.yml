@@ -30,6 +30,11 @@ x-go-env: &go-env
   SEDOC_HEALTH_PORT:  "8081"
   SEDOC_HTTP_PORT:    "8080"
   SEDOC_GRPC_PORT:    "9090"
+  # ERP integration Files BFF (runs in the separate `sedoc-integration`
+  # compose, reached via the host's published port). The auth service's
+  # /api/v1/integrations/erp/* proxy forwards here. Default is the host LAN IP
+  # (same address the CRM uses); override per environment.
+  SEDOC_INTEGRATION_BFF_URL: "${SEDOC_INTEGRATION_BFF_URL:-http://192.168.70.22:18091}"
   SEDOC_S3_ENDPOINT:  "http://minio:9000"
   # Browser-reachable address. Storage service signs presigned URLs
   # against this so the Host header matches in dev (browser can't
