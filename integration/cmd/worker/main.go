@@ -66,9 +66,23 @@ func main() {
 	limiter := sedoc.NewLimiter(float64(ratePerMin)/60.0, rateBurst)
 	doc := sedoc.New(baseURL, apiKey).WithLimiter(limiter).WithWorkspace(workspaceID).
 		WithS3DialHost(env("SEDOC_S3_DIAL_HOST", ""))
+	// Optional "Company Files" root: customers provision directly under this
+	// folder instead of at the workspace root. Validate it up front so a typo
+	// fails fast rather than silently filing at the workspace root.
+	rootFolderID := env("SEDOC_ROOT_FOLDER_ID", "")
+	if rootFolderID != "" {
+		// Sanity-check via the workspace-scoped folder list (the service key only
+		// resolves tenant on workspace-scoped routes, not GET /folders/{id}).
+		// Children may legitimately be empty; only a hard error (bad workspace /
+		// auth / unreachable) is fatal.
+		if _, ferr := doc.ListFolders(ctx, workspaceID, rootFolderID, "", 1); ferr != nil {
+			log.Fatal().Err(ferr).Str("root_folder_id", rootFolderID).Msg("SEDOC_ROOT_FOLDER_ID check failed")
+		}
+		log.Info().Str("root_folder_id", rootFolderID).Msg("provisioning customers under the Company Files root folder")
+	}
 	src := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
 	syncer := syncpkg.New(st, doc, src, syncpkg.Config{
-		WorkspaceID: workspaceID, RegionPin: env("SEDOC_REGION_PIN", "us-east-1"), Buckets: buckets,
+		WorkspaceID: workspaceID, RootFolderID: rootFolderID, RegionPin: env("SEDOC_REGION_PIN", "us-east-1"), Buckets: buckets,
 	})
 	metrics := syncpkg.NewMetrics()
 	worker := syncpkg.NewWorker(st, syncer, log, syncpkg.WorkerOptions{Concurrency: concurrency, Metrics: metrics})

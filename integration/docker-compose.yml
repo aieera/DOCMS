@@ -15,6 +15,10 @@ x-sedoc-env: &sedoc-env
   SEDOC_SEARCH_URL: ${SEDOC_SEARCH_URL:-http://host.docker.internal:8086/api/v1}
   SEDOC_API_KEY: ${SEDOC_API_KEY:?set SEDOC_API_KEY in .env}
   SEDOC_WORKSPACE_ID: ${SEDOC_WORKSPACE_ID:?set SEDOC_WORKSPACE_ID in .env}
+  # Optional "Company Files" root folder. When set, the worker provisions each
+  # customer's tree directly under this folder (flat: Company Files → Customer →
+  # subfolders) instead of at the workspace root. See internal/sync/sync.go.
+  SEDOC_ROOT_FOLDER_ID: ${SEDOC_ROOT_FOLDER_ID:-}
   # ERP boundary. Defaults to the bundled mock; set ERP_BASE_URL (+ ERP_API_TOKEN
   # if the ERP requires a bearer) in .env to point at the real ERP — config-only,
   # no rebuild. See ERP-CONTRACT.md.

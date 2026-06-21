@@ -19,6 +19,7 @@ import (
 
 	"github.com/aieera/sedoc/integration/internal/bff"
 	"github.com/aieera/sedoc/integration/internal/erp"
+	"github.com/aieera/sedoc/integration/internal/provision"
 	"github.com/aieera/sedoc/integration/internal/sedoc"
 	"github.com/aieera/sedoc/integration/internal/store"
 	"github.com/aieera/sedoc/pkg/database"
@@ -53,9 +54,18 @@ func main() {
 		WithS3DialHost(env("SEDOC_S3_DIAL_HOST", ""))
 	doc.SetSearchURL(searchURL)
 	erpClient := erp.NewHTTPClient(erpBase).WithToken(env("ERP_API_TOKEN", ""))
-	b := bff.New(store.New(pool), doc, erpClient, workspaceID, log).WithWorkerURL(workerURL)
+	st := store.New(pool)
+	b := bff.New(st, doc, erpClient, workspaceID, log).WithWorkerURL(workerURL)
+	// Shared provisioner: lets the adapter file a CRM push into the same
+	// per-customer tree the event worker builds (Company Files → Customer → type)
+	// instead of a flat per-doc-class folder. Honours SEDOC_ROOT_FOLDER_ID.
+	prov := provision.New(st, doc, provision.Config{
+		WorkspaceID:  workspaceID,
+		RootFolderID: env("SEDOC_ROOT_FOLDER_ID", ""),
+		Buckets:      envInt("SEDOC_INTEGRATION_BUCKETS", 256),
+	})
 	// CRM-facing DMS-contract adapter (dmsSync points its dms_base_url here).
-	dmsAdapter := bff.NewDMSAdapter(doc, workspaceID, env("DMS_ADAPTER_TOKEN", ""), log)
+	dmsAdapter := bff.NewDMSAdapter(doc, workspaceID, env("DMS_ADAPTER_TOKEN", ""), prov, log)
 
 	mux := http.NewServeMux()
 	b.Register(mux)

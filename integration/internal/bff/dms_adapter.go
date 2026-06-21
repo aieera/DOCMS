@@ -31,10 +31,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/integration/internal/provision"
 	"github.com/aieera/sedoc/integration/internal/sedoc"
 )
 
@@ -43,13 +45,17 @@ type DMSAdapter struct {
 	doc         *sedoc.Client
 	workspaceID string
 	token       string
+	prov        *provision.Provisioner // customer-tree filing; nil = flat per-doc-class folders
 	log         zerolog.Logger
 }
 
 // NewDMSAdapter builds the adapter. token is the shared secret the CRM presents
 // as a bearer (its external_apis.dms_api_key); empty disables the check (dev).
-func NewDMSAdapter(doc *sedoc.Client, workspaceID, token string, log zerolog.Logger) *DMSAdapter {
-	a := &DMSAdapter{doc: doc, workspaceID: workspaceID, token: token, log: log.With().Str("component", "dms-adapter").Logger()}
+// prov (optional) makes a push file into the per-customer tree (Company Files →
+// Customer → doc-type) when it carries an erp_customer_id; nil keeps the legacy
+// flat per-doc-class folders.
+func NewDMSAdapter(doc *sedoc.Client, workspaceID, token string, prov *provision.Provisioner, log zerolog.Logger) *DMSAdapter {
+	a := &DMSAdapter{doc: doc, workspaceID: workspaceID, token: token, prov: prov, log: log.With().Str("component", "dms-adapter").Logger()}
 	if token == "" {
 		a.log.Warn().Msg("DMS_ADAPTER_TOKEN not set — adapter accepts unauthenticated callers (dev only)")
 	}
@@ -221,12 +227,33 @@ func (a *DMSAdapter) pushDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	externalID := erpExternalID(entityType, entityID)
 	docClass := firstNonEmpty(fields["dms_doc_type"], entityType)
+	meta := parseJSONObject(fields["custom_metadata"])
+	customerRef := stringifyScalar(meta["erp_customer_id"])
+	customerName := stringifyScalar(meta["erp_customer_name"])
 
-	// SeDoc's upsert requires a folder UUID. The CRM normally resolves one via
-	// the folders API and sends `folder_id`; if absent, ensure a per-doc-class
-	// default folder so a push never fails for lack of one.
+	// Resolve the target folder. Precedence:
+	//   1. the customer's doc-type subfolder (Company Files → Customer → <type>)
+	//      when the push carries an erp_customer_id and a provisioner is wired —
+	//      this WINS over the CRM's auto-resolved flat folder_id so ERP files
+	//      land in the per-customer explorer tree,
+	//   2. an explicit folder_id the CRM sent (no customer on the push),
+	//   3. a flat per-doc-class folder (legacy fallback).
 	folderID := firstNonEmpty(fields["folder_id"], fields["folder"])
-	if folderID == "" {
+	switch {
+	case a.prov != nil && customerRef != "":
+		m, perr := a.prov.EnsureCustomer(r.Context(), customerRef, customerName)
+		if perr != nil {
+			a.proxyErr(w, perr)
+			return
+		}
+		sub, ok := m.SubfolderIDs[provision.SubfolderKey(docClass)]
+		if !ok || sub == "" {
+			sub = m.SubfolderIDs["attachments"]
+		}
+		folderID = sub
+	case folderID != "":
+		// CRM-provided folder (no customer on the push) — use as-is
+	default:
 		name := defaultFolderName(docClass)
 		// Idempotency key MUST include the workspace id — otherwise ensuring a
 		// same-named folder (e.g. "ERP Invoices") in a second workspace reuses
@@ -239,6 +266,13 @@ func (a *DMSAdapter) pushDocument(w http.ResponseWriter, r *http.Request) {
 		folderID = fid
 	}
 
+	// DMS-side transfer status: stamp the transfer time next to the erp_* identity
+	// the CRM already sent (erp_status, erp_invoice_number, erp_customer_*, …).
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	meta["dms_transferred_at"] = time.Now().UTC().Format(time.RFC3339)
+
 	in := sedoc.UpsertInput{
 		WorkspaceID:    a.workspaceID,
 		ExternalID:     externalID,
@@ -247,7 +281,7 @@ func (a *DMSAdapter) pushDocument(w http.ResponseWriter, r *http.Request) {
 		DocumentClass:  docClass,
 		DocType:        fields["dms_doc_type"],
 		Tags:           parseJSONStringArray(fields["tags"]),
-		CustomMetadata: parseJSONObject(fields["custom_metadata"]),
+		CustomMetadata: meta,
 		BlobChecksum:   up.SHA256,
 		BlobRef:        up.ContentBlobID,
 		Mime:           mime,
