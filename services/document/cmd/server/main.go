@@ -1121,6 +1121,12 @@ func main() {
 	rootMux.Handle("GET /api/v1/documents/{document_id}", apiKeyGateway("documents:read"))
 	rootMux.Handle("POST /api/v1/documents/{document_id}/versions", apiKeyGatewayIdem("documents:write"))
 	rootMux.Handle("GET /api/v1/workspaces/{workspace_id}/folders", apiKeyGateway("documents:read"))
+	// Document + version reads — the ERP file explorer (Files BFF) lists a
+	// folder's documents and inspects a document's versions with the service
+	// key, the same way it already lists folders above. Permission-filtered in
+	// the handler; the BFF additionally scopes to the authorized customer subtree.
+	rootMux.Handle("GET /api/v1/workspaces/{workspace_id}/documents", apiKeyGateway("documents:read"))
+	rootMux.Handle("GET /api/v1/documents/{document_id}/versions", apiKeyGateway("documents:read"))
 	rootMux.Handle("POST /api/v1/workspaces/{workspace_id}/folders", apiKeyGatewayIdem("documents:write"))
 	// Non-creating mutations the integration may re-fire → idempotency honoured.
 	rootMux.Handle("PATCH /api/v1/folders/{folder_id}", apiKeyGatewayMutate("documents:write"))
