@@ -1,11 +1,13 @@
-// Word task pane — two modes, dispatched by ?action= on the URL.
+// Word task pane — three modes, dispatched by ?action= on the URL.
 //
-//   ?action=open  → search + recents + open-into-Word
-//   ?action=save  → save the current document as a new version on
-//                    a document the user picks (or, if the document
-//                    was originally opened from SeDoc, defaults
-//                    to that document — we store the source
-//                    document_id in CustomProperties as a hint).
+//   ?action=open   → search + recents + open-into-Word
+//   ?action=save   → save the current document as a new version on a
+//                     document the user explicitly picks. (No persisted
+//                     "source document" default: the pane's
+//                     CustomProperties belong to whatever document is
+//                     currently open, so a stamp taken at Open time
+//                     tags the wrong file.)
+//   ?action=insert → insert a link/reference at the cursor.
 //
 // Defaulting between the two when no ?action= is present:
 //   * If Word has an open document: assume Save.
@@ -14,35 +16,31 @@
 // the heuristic only matters if a user reloads the pane.
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Button, Input, Spinner, Tab, TabList,
+  Button, Input, Spinner, Tab, TabList, Checkbox,
   MessageBar, MessageBarBody, MessageBarTitle,
 } from '@fluentui/react-components'
 
 import {
   searchDocuments, listVersions, getDownloadURL,
   initiateUpload, putPresigned, completeUpload, createVersion,
+  createShareLink, documentURL, ConflictError,
   type SearchHit,
 } from '../api'
-import { readDocumentBytes, openWordURL } from '../wordIO'
+import { readDocumentBytes, openWordURL, insertHyperlink } from '../wordIO'
 
 declare const Office: {
   context: {
     document?: {
       url?: string
-      settings?: {
-        get: (key: string) => unknown
-        set: (key: string, value: unknown) => void
-        saveAsync: (cb: (r: { status: string; error?: { message: string } }) => void) => void
-      }
     }
   }
 }
 
-type Mode = 'open' | 'save'
+type Mode = 'open' | 'save' | 'insert'
 
 function deriveMode(): Mode {
   const q = new URLSearchParams(location.search).get('action')
-  if (q === 'open' || q === 'save') return q
+  if (q === 'open' || q === 'save' || q === 'insert') return q
   return Office.context.document?.url ? 'save' : 'open'
 }
 
@@ -56,9 +54,10 @@ export function TaskPane() {
       <TabList selectedValue={mode} onTabSelect={(_, d) => setMode(d.value as Mode)}>
         <Tab value="open">Open from SeDoc</Tab>
         <Tab value="save">Save to SeDoc</Tab>
+        <Tab value="insert">Insert link</Tab>
       </TabList>
       <div style={{ marginTop: 16 }}>
-        {mode === 'open' ? <OpenPanel /> : <SavePanel />}
+        {mode === 'open' ? <OpenPanel /> : mode === 'save' ? <SavePanel /> : <InsertPanel />}
       </div>
     </div>
   )
@@ -102,10 +101,12 @@ function OpenPanel() {
         throw new Error('Document has no versions yet')
       }
       const url = await getDownloadURL(h.document_id, versions[0].id)
-      // Stamp the source document_id into Office's CustomProperties
-      // so the Save panel can default to "save back to the doc the
-      // user opened" without a second search step.
-      stampSourceDocumentID(h.document_id)
+      // NOTE: no CustomProperties "source document" stamp here. The pane
+      // runs in whatever document is CURRENTLY open — stamping before
+      // openWordURL launches the download would tag the wrong document
+      // and later default a save at a stale target/base (silent
+      // wrong-target overwrite). Save always requires an explicit pick;
+      // the base version is read from the head at save time.
       openWordURL(url)
     } catch (e) {
       setErr((e as Error).message)
@@ -171,7 +172,14 @@ function OpenPanel() {
 // =====================================================================
 
 function SavePanel() {
-  const [docID, setDocID] = useState<string>(() => readSourceDocumentID() ?? '')
+  // Explicit pick every session (C4): a persisted default was stamped
+  // into the browsing document's settings, not the opened file, so it
+  // pointed saves at the wrong target.
+  const [target, setTarget] = useState<SearchHit | null>(null)
+  // Base for optimistic concurrency. Starts empty (head is read at
+  // save time); advances to the created version after each save so a
+  // second save in the same pane session doesn't false-conflict.
+  const [baseVersionID, setBaseVersionID] = useState<string>('')
   const [search, setSearch] = useState('')
   const [matches, setMatches] = useState<SearchHit[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -187,18 +195,22 @@ function SavePanel() {
   }
 
   const save = async () => {
-    if (!docID) { setErr('Pick a target document first'); return }
+    if (!target) { setErr('Pick a target document first'); return }
+    const docID = target.document_id
     setErr(null); setBusy(true)
     try {
       // 1. Grab .docx bytes from Word.
       const bytes = await readDocumentBytes()
       const filename = guessFilename() + '.docx'
-      // 2. Initiate upload → presigned PUT URL.
+      // 2. Initiate upload → presigned PUT URL. document_id scopes the
+      //    permission check to the target; workspace_id rides along as
+      //    the fallback scope.
       const session = await initiateUpload({
         filename,
         mime_type:  DOCX_MIME,
         size_bytes: bytes.byteLength,
         document_id: docID,
+        workspace_id: target.workspace_id,
       })
       // 2.a. Dedup hit short-circuits the PUT.
       let blobID = session.content_blob_id ?? session.existing_blob_id
@@ -210,12 +222,27 @@ function SavePanel() {
         blobID = completed.content_blob_id ?? blobID
       }
       if (!blobID) throw new Error('storage did not return a blob id')
-      // 5. New version on the target document.
+      // 5. New version on the target document, guarded by the base
+      //    version. If we don't have a stamped base (the user picked a
+      //    target they didn't open here), read the current head so the
+      //    save still carries a base for the server's FOR UPDATE check.
+      let base = baseVersionID
+      if (!base) {
+        const versions = await listVersions(docID)
+        base = versions[0]?.id ?? ''
+      }
       const summary = changeSummary.trim() || 'Saved from Microsoft Word add-in'
-      await createVersion(docID, blobID, summary)
+      const created = await createVersion(docID, blobID, summary, base || undefined)
+      // Advance our local base to the version we just wrote so a second
+      // save in the same session doesn't false-conflict against itself.
+      if (created?.id) setBaseVersionID(created.id)
       setDone(true)
     } catch (e) {
-      setErr((e as Error).message)
+      if (e instanceof ConflictError) {
+        setErr('A newer version was saved to SeDoc since you opened this document. Open the latest version, reapply your edits, then save again.')
+      } else {
+        setErr((e as Error).message)
+      }
     } finally {
       setBusy(false)
     }
@@ -243,10 +270,10 @@ function SavePanel() {
         </MessageBar>
       )}
 
-      {docID ? (
+      {target ? (
         <div style={{ fontSize: 13, color: '#444' }}>
-          Saving as new version of <code>{docID}</code>.
-          <Button appearance="transparent" size="small" onClick={() => setDocID('')} style={{ marginInlineStart: 8 }}>
+          Saving as new version of <strong>{target.title || '(untitled)'}</strong>.
+          <Button appearance="transparent" size="small" onClick={() => { setTarget(null); setBaseVersionID('') }} style={{ marginInlineStart: 8 }}>
             change
           </Button>
         </div>
@@ -268,7 +295,7 @@ function SavePanel() {
                 <li key={m.document_id}>
                   <Button
                     appearance="subtle"
-                    onClick={() => setDocID(m.document_id)}
+                    onClick={() => { setTarget(m); setBaseVersionID('') }}
                     style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'start' }}
                   >
                     {m.title || '(untitled)'}
@@ -286,7 +313,7 @@ function SavePanel() {
         onChange={(_, d) => setChangeSummary(d.value)}
       />
 
-      <Button appearance="primary" onClick={() => void save()} disabled={!docID || busy}>
+      <Button appearance="primary" onClick={() => void save()} disabled={!target || busy}>
         {busy ? <Spinner size="extra-tiny" /> : 'Save as new version'}
       </Button>
     </div>
@@ -294,22 +321,117 @@ function SavePanel() {
 }
 
 // =====================================================================
-// Office CustomProperties — remember the source document_id between
-// the Open click and a later Save click in the same Word session.
+// Insert link — drop a reference to a SeDoc document into the open Word
+// document at the cursor. Internal reference by default (opens with a
+// SeDoc session); optionally a tokenised share link for external
+// recipients.
 // =====================================================================
 
-const SOURCE_KEY = 'vaultdms.source_document_id'
+function InsertPanel() {
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<SearchHit[] | null>(null)
+  const [picked, setPicked] = useState<SearchHit | null>(null)
+  const [shareable, setShareable] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
 
-function stampSourceDocumentID(id: string): void {
-  const settings = Office.context.document?.settings
-  if (!settings) return
-  settings.set(SOURCE_KEY, id)
-  settings.saveAsync(() => { /* best-effort */ })
-}
+  const runSearch = async () => {
+    setErr(null); setBusy(true)
+    try { setHits(await searchDocuments(q)) }
+    catch (e) { setErr((e as Error).message) }
+    finally   { setBusy(false) }
+  }
 
-function readSourceDocumentID(): string | null {
-  const v = Office.context.document?.settings?.get(SOURCE_KEY)
-  return typeof v === 'string' ? v : null
+  const insert = async () => {
+    if (!picked) { setErr('Pick a document first'); return }
+    setErr(null); setBusy(true)
+    try {
+      let url: string
+      if (shareable) {
+        url = (await createShareLink(picked.document_id)).url
+      } else {
+        if (!picked.workspace_id) {
+          throw new Error('This search result has no workspace — use a shareable link instead.')
+        }
+        url = documentURL(picked.workspace_id, picked.document_id)
+      }
+      await insertHyperlink(url, picked.title || 'SeDoc document')
+      setDone(true)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <div>
+        <MessageBar intent="success">
+          <MessageBarBody>
+            <MessageBarTitle>Link inserted</MessageBarTitle>
+            A reference to {picked?.title || 'the document'} was inserted at your cursor.
+          </MessageBarBody>
+        </MessageBar>
+        <Button style={{ marginTop: 16 }} onClick={() => { setDone(false); setPicked(null) }}>Insert another</Button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {err && (
+        <MessageBar intent="error"><MessageBarBody>{err}</MessageBarBody></MessageBar>
+      )}
+      {picked ? (
+        <div style={{ fontSize: 13, color: '#444' }}>
+          Linking to <strong>{picked.title || '(untitled)'}</strong>.
+          <Button appearance="transparent" size="small" onClick={() => setPicked(null)} style={{ marginInlineStart: 8 }}>
+            change
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input
+              value={q}
+              placeholder="Find a document to link…"
+              onChange={(_, d) => setQ(d.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void runSearch() }}
+              style={{ flex: 1 }}
+            />
+            <Button onClick={() => void runSearch()} disabled={busy}>Search</Button>
+          </div>
+          {hits && (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {hits.map((h) => (
+                <li key={h.document_id}>
+                  <Button
+                    appearance="subtle"
+                    onClick={() => setPicked(h)}
+                    style={{ width: '100%', justifyContent: 'flex-start', textAlign: 'start' }}
+                  >
+                    {h.title || '(untitled)'}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <Checkbox
+        checked={shareable}
+        onChange={(_, d) => setShareable(d.checked === true)}
+        label="Create a shareable link (anyone with the link can view)"
+      />
+
+      <Button appearance="primary" onClick={() => void insert()} disabled={!picked || busy}>
+        {busy ? <Spinner size="extra-tiny" /> : 'Insert link'}
+      </Button>
+    </div>
+  )
 }
 
 // Word doesn't expose the open document's display name to the

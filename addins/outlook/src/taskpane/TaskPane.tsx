@@ -26,13 +26,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Button, Combobox, Option, Field, Input, Switch, Spinner,
+  Button, Combobox, Option, Field, Input, Spinner,
+  RadioGroup, Radio,
   MessageBar, MessageBarBody, MessageBarTitle,
 } from '@fluentui/react-components'
 
 import {
-  listWorkspaces, listFolders, ingestEmail,
-  type Workspace, type Folder, type IngestAttachment,
+  listWorkspaces, listFolders, ingestEmail, documentURL, createShareLink,
+  type Workspace, type Folder, type IngestAttachment, type IngestEmailResponse,
 } from '../api'
 
 // Office.js types — we don't pull in @types/office-js entirely
@@ -89,12 +90,41 @@ export function TaskPane() {
   const [folders, setFolders] = useState<Folder[] | null>(null)
   const [folderID, setFolderID] = useState<string>('')
   const [tagsText, setTagsText] = useState('')
-  const [includeAttachments, setIncludeAttachments] = useState(true)
+  // file-as: 'both' (message + attachments), 'message' only, or 'attachments' only.
+  const [fileAs, setFileAs] = useState<'both' | 'message' | 'attachments'>('both')
+  const [result, setResult] = useState<IngestEmailResponse | null>(null)
 
   // ---- save flow -------------------------------------------------
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+
+  // ---- reference / share-link affordance (result screen) ---------
+  const [copyMsg, setCopyMsg] = useState<'internal' | 'share' | null>(null)
+  const [copyErr, setCopyErr] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
+
+  // Copy a reference to the filed document: the internal canonical URL,
+  // or a tokenised share link (shareable=true). Falls back to a legacy
+  // execCommand copy when navigator.clipboard is unavailable in the host.
+  const copyReference = async (documentID: string, shareable: boolean) => {
+    setCopyErr(null)
+    try {
+      let url: string
+      if (shareable) {
+        setSharing(true)
+        url = (await createShareLink(documentID)).url
+      } else {
+        url = documentURL(workspaceID, documentID)
+      }
+      await copyText(url)
+      setCopyMsg(shareable ? 'share' : 'internal')
+    } catch (e) {
+      setCopyErr((e as Error).message ?? 'Copy failed')
+    } finally {
+      setSharing(false)
+    }
+  }
 
   // Initial workspace fetch — runs once when Office.onReady has
   // fired (the outer index.tsx ensures we don't mount before then).
@@ -147,7 +177,7 @@ export function TaskPane() {
     try {
       const bodyHTML = await readBodyAsync(item, 'html')
       const bodyText = await readBodyAsync(item, 'text')
-      const attachments = includeAttachments ? await readAttachments(item) : []
+      const attachments = fileAs !== 'message' ? await readAttachments(item) : []
       const res = await ingestEmail({
         subject,
         from:         fromAddr,
@@ -160,9 +190,10 @@ export function TaskPane() {
         folder_id:    folderID,
         tags,
         message_id:   item.internetMessageId,
+        include_body: fileAs !== 'attachments',
       })
+      setResult(res)
       setDone(true)
-      console.info('saved', res)
     } catch (e) {
       setErr((e as Error).message ?? 'Save failed')
     } finally {
@@ -175,15 +206,54 @@ export function TaskPane() {
   }
 
   if (done) {
+    // Read-mode Outlook can't inject into the received message body, so
+    // "insert link/reference" here means a copyable reference; true
+    // compose-mode insertion is deferred per ADR 0112.
+    //
+    // Attachments-only filing returns document_id:"" (no parent body
+    // document is created), so every per-document affordance gates on a
+    // non-empty id — a link built from "" would be broken.
+    const docId = result?.document_id || null
+    const docUrl = docId ? documentURL(workspaceID, docId) : null
+    const attachCount = result?.attachment_document_ids?.length ?? 0
     return (
       <div style={{ padding: 16 }}>
         <MessageBar intent="success">
           <MessageBarBody>
             <MessageBarTitle>Saved to SeDoc</MessageBarTitle>
-            Email + attachments have been queued for ingestion. OCR + classification will run in the background.
+            Filed the email{attachCount > 0 ? ` + ${attachCount} attachment${attachCount === 1 ? '' : 's'}` : ''}.
+            OCR + classification run in the background.
           </MessageBarBody>
         </MessageBar>
-        <Button style={{ marginTop: 16 }} onClick={() => setDone(false)}>Save another</Button>
+        {docUrl && (
+          <a
+            href={docUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'inline-block', marginTop: 12, fontWeight: 600 }}
+            data-testid="open-in-sedoc"
+          >
+            Open in SeDoc →
+          </a>
+        )}
+        {docId && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <Button size="small" onClick={() => void copyReference(docId, false)}>
+              {copyMsg === 'internal' ? 'Copied ✓' : 'Copy reference'}
+            </Button>
+            <Button size="small" onClick={() => void copyReference(docId, true)} disabled={sharing}>
+              {sharing ? <Spinner size="extra-tiny" /> : copyMsg === 'share' ? 'Copied ✓' : 'Copy shareable link'}
+            </Button>
+          </div>
+        )}
+        {copyErr && (
+          <div style={{ marginTop: 8 }}>
+            <MessageBar intent="warning"><MessageBarBody>{copyErr}</MessageBarBody></MessageBar>
+          </div>
+        )}
+        <div>
+          <Button style={{ marginTop: 16 }} onClick={() => { setDone(false); setResult(null); setCopyMsg(null); setCopyErr(null) }}>Save another</Button>
+        </div>
       </div>
     )
   }
@@ -241,11 +311,13 @@ export function TaskPane() {
         <Input value={tagsText} onChange={(_, d) => setTagsText(d.value)} placeholder="invoice, q1-2026" />
       </Field>
 
-      <Switch
-        checked={includeAttachments}
-        onChange={(_, d) => setIncludeAttachments(Boolean(d.checked))}
-        label={`Include attachments`}
-      />
+      <Field label="File as">
+        <RadioGroup value={fileAs} onChange={(_, d) => setFileAs(d.value as 'both' | 'message' | 'attachments')}>
+          <Radio value="both" label="Message + attachments" />
+          <Radio value="message" label="Message only" />
+          <Radio value="attachments" label="Attachments only" />
+        </RadioGroup>
+      </Field>
 
       <Button appearance="primary" onClick={onSave} disabled={!canSave}>
         {saving ? <Spinner size="extra-tiny" /> : 'Save email'}
@@ -302,4 +374,36 @@ function readOne(
       })
     })
   })
+}
+
+// ---- clipboard ----------------------------------------------------
+
+/**
+ * Copy text to the clipboard. Prefers the async Clipboard API; falls
+ * back to a transient <textarea> + execCommand for older Office hosts
+ * (Outlook desktop on Windows historically lacked navigator.clipboard
+ * inside the add-in iframe). Must be called from a user gesture.
+ */
+async function copyText(text: string): Promise<void> {
+  const nav = globalThis.navigator as Navigator | undefined
+  if (nav?.clipboard?.writeText) {
+    try {
+      await nav.clipboard.writeText(text)
+      return
+    } catch {
+      // fall through to the legacy path
+    }
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    const ok = document.execCommand('copy')
+    if (!ok) throw new Error('Copy is not supported in this host — select the link and copy manually.')
+  } finally {
+    document.body.removeChild(ta)
+  }
 }

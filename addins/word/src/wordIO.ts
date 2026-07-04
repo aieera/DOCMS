@@ -31,6 +31,16 @@ declare const Office: {
   AsyncResultStatus: { Succeeded: 'succeeded' }
 }
 
+// Minimal structural typing for the Word.run surface we touch — we don't
+// pull in the full Word namespace from @types/office-js in this file.
+interface WordRange {
+  insertText: (text: string, location: string) => WordRange
+  hyperlink: string
+}
+declare const Word: {
+  run: (batch: (context: { document: { getSelection: () => WordRange }; sync: () => Promise<void> }) => Promise<void>) => Promise<void>
+}
+
 interface OfficeFile {
   size:        number
   sliceCount:  number
@@ -103,6 +113,19 @@ export async function readDocumentBytes(): Promise<Uint8Array> {
  * URL itself resolves to the .docx content-type and the browser
  * hands the file off to Word for Web automatically.
  */
+/**
+ * Insert `text` as a hyperlink to `url` at the current selection,
+ * replacing any selected text. Used by the Insert-link panel to drop a
+ * reference to a SeDoc document into the open Word document.
+ */
+export async function insertHyperlink(url: string, text: string): Promise<void> {
+  await Word.run(async (context) => {
+    const range = context.document.getSelection().insertText(text, 'Replace')
+    range.hyperlink = url
+    await context.sync()
+  })
+}
+
 export function openWordURL(url: string): void {
   // Encode the URL once for the protocol handler. ofe|u| is the
   // "Open for Editing | URL" prefix; `nft|u|` would be "New From
