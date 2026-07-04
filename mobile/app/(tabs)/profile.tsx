@@ -1,13 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../store/authStore'
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuthStore()
+  const { user, logout, biometricEnabled, setBiometricEnabled } = useAuthStore()
   const router = useRouter()
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     router.replace('/(auth)/login')
   }
 
@@ -19,7 +19,20 @@ export default function ProfileScreen() {
       <Text style={styles.name}>{user?.display_name || 'User'}</Text>
       <Text style={styles.email}>{user?.email || ''}</Text>
       <Text style={styles.role}>{user?.role || 'member'}</Text>
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+
+      <View style={styles.prefRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.prefTitle}>Biometric unlock</Text>
+          <Text style={styles.prefHint}>Require Face ID / fingerprint when opening the app</Text>
+        </View>
+        <Switch
+          value={biometricEnabled}
+          onValueChange={(v) => void setBiometricEnabled(v)}
+          trackColor={{ true: '#1E40AF' }}
+        />
+      </View>
+
+      <TouchableOpacity style={styles.logoutBtn} onPress={() => void handleLogout()}>
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
     </View>
@@ -33,6 +46,9 @@ const styles = StyleSheet.create({
   name: { fontSize: 20, fontWeight: '700', marginBottom: 4 },
   email: { fontSize: 14, color: '#64748b', marginBottom: 4 },
   role: { fontSize: 13, color: '#94a3b8', marginBottom: 24 },
+  prefRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 24, alignSelf: 'stretch' },
+  prefTitle: { fontSize: 14, fontWeight: '600' },
+  prefHint: { fontSize: 12, color: '#64748b', marginTop: 2 },
   logoutBtn: { height: 44, paddingHorizontal: 32, backgroundColor: '#ef4444', borderRadius: 8, justifyContent: 'center' },
   logoutText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 })
