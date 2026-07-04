@@ -21,8 +21,18 @@ type AnnotationRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, a *model.Annotation) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Annotation, error)
 	ListByDocumentVersion(ctx context.Context, tx pgx.Tx, tenantID, documentID, versionID uuid.UUID) ([]model.Annotation, error)
+	ListByDocumentVersionPage(ctx context.Context, tx pgx.Tx, tenantID, documentID, versionID uuid.UUID, limit int, cursor *AnnotationCursor) ([]model.Annotation, error)
 	Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, page int, data map[string]any) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+}
+
+// AnnotationCursor is the keyset position for paginated listing — the
+// (page_number, created_at, id) of the last row already returned. Ordering
+// matches ListByDocumentVersion so pages stitch together seamlessly.
+type AnnotationCursor struct {
+	Page      int
+	CreatedAt time.Time
+	ID        uuid.UUID
 }
 
 type annotationRepo struct{}
@@ -67,6 +77,49 @@ func (r *annotationRepo) ListByDocumentVersion(ctx context.Context, tx pgx.Tx, t
 		  AND deleted_at IS NULL
 		ORDER BY page_number ASC, created_at ASC
 	`, tenantID, documentID, versionID)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+
+	var out []model.Annotation
+	for rows.Next() {
+		a, err := scanAnnotation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, mapPgError(rows.Err())
+}
+
+// ListByDocumentVersionPage returns up to `limit` annotations after
+// `cursor` (nil = first page), keyset-ordered by (page_number, created_at,
+// id). Keyset rather than OFFSET so paging stays stable under concurrent
+// inserts and never re-scans skipped rows (docs/audit/04-antipatterns.md c).
+func (r *annotationRepo) ListByDocumentVersionPage(ctx context.Context, tx pgx.Tx, tenantID, documentID, versionID uuid.UUID, limit int, cursor *AnnotationCursor) ([]model.Annotation, error) {
+	const cols = `
+		SELECT id, tenant_id, document_id, version_id,
+		       page_number, annotation_type, annotation_data,
+		       created_by, created_at, updated_at, deleted_at
+		FROM annotations
+		WHERE tenant_id = $1 AND document_id = $2 AND version_id = $3
+		  AND deleted_at IS NULL`
+	const order = `
+		ORDER BY page_number ASC, created_at ASC, id ASC
+		LIMIT $4`
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if cursor == nil {
+		rows, err = tx.Query(ctx, cols+order, tenantID, documentID, versionID, limit)
+	} else {
+		// Row-value comparison advances past the cursor's exact position.
+		rows, err = tx.Query(ctx, cols+`
+		  AND (page_number, created_at, id) > ($5, $6, $7)`+order,
+			tenantID, documentID, versionID, limit, cursor.Page, cursor.CreatedAt, cursor.ID)
+	}
 	if err != nil {
 		return nil, mapPgError(err)
 	}

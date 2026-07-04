@@ -125,18 +125,23 @@ type ldapTestBindBody struct {
 type ldapMappingDTO struct {
 	LDAPGroupDN string `json:"ldap_group_dn"`
 	DMSGroupID  string `json:"dms_group_id"`
+	// DMSRole optionally grants a SeDoc role (owner|admin|member|guest) to
+	// members of this AD group in addition to the DMS group.
+	DMSRole string `json:"dms_role,omitempty"`
 }
 
+var validLDAPRoles = map[string]bool{"owner": true, "admin": true, "member": true, "guest": true}
+
 type ldapHistoryDTO struct {
-	ID            string     `json:"id"`
-	Trigger       string     `json:"trigger"`
-	StartedAt     time.Time  `json:"started_at"`
-	FinishedAt    *time.Time `json:"finished_at,omitempty"`
-	Status        string     `json:"status"`
-	UsersSynced   int        `json:"users_synced"`
-	GroupsSynced  int        `json:"groups_synced"`
-	Errors        int        `json:"errors"`
-	ErrorSummary  *string    `json:"error_summary,omitempty"`
+	ID           string     `json:"id"`
+	Trigger      string     `json:"trigger"`
+	StartedAt    time.Time  `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
+	Status       string     `json:"status"`
+	UsersSynced  int        `json:"users_synced"`
+	GroupsSynced int        `json:"groups_synced"`
+	Errors       int        `json:"errors"`
+	ErrorSummary *string    `json:"error_summary,omitempty"`
 }
 
 // ---- Handlers -------------------------------------------------------------
@@ -373,6 +378,7 @@ func (h *LDAPAdminHandler) listMappings(w http.ResponseWriter, r *http.Request) 
 			out = append(out, ldapMappingDTO{
 				LDAPGroupDN: m.LDAPGroupDN,
 				DMSGroupID:  m.DMSGroupID.String(),
+				DMSRole:     m.DMSRole,
 			})
 		}
 		return nil
@@ -409,10 +415,14 @@ func (h *LDAPAdminHandler) addMapping(w http.ResponseWriter, r *http.Request) {
 		h.writeErr(w, r, vdmserr.Validation("ldap_group_dn", "required"))
 		return
 	}
+	if body.DMSRole != "" && !validLDAPRoles[body.DMSRole] {
+		h.writeErr(w, r, vdmserr.Validation("dms_role", "must be owner|admin|member|guest"))
+		return
+	}
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
 		return h.repo.UpsertMapping(r.Context(), tx, &repository.LDAPGroupMappingRow{
 			TenantID: tenantID, LDAPConfigID: configID,
-			LDAPGroupDN: body.LDAPGroupDN, DMSGroupID: dmsID,
+			LDAPGroupDN: body.LDAPGroupDN, DMSGroupID: dmsID, DMSRole: body.DMSRole,
 		})
 	})
 	if err != nil {

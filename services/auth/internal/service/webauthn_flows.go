@@ -30,7 +30,9 @@ import (
 
 // NewWebAuthnLib constructs the lib instance from a WebAuthnConfig.
 // Returns nil on a nil config so callers can do
-//   svc.WebAuthnLib = service.NewWebAuthnLib(cfg)
+//
+//	svc.WebAuthnLib = service.NewWebAuthnLib(cfg)
+//
 // in cmd/server without a separate nil branch.
 func NewWebAuthnLib(cfg *WebAuthnConfig) (*libwebauthn.WebAuthn, error) {
 	if cfg == nil {
@@ -241,7 +243,10 @@ func (s *Service) PasskeyRegistrationFinish(
 			BackupEligible: libCred.Flags.BackupEligible,
 			BackupState:    libCred.Flags.BackupState,
 		}
-		return s.webauthn.UpsertCredential(ctx, tx, row)
+		if err := s.webauthn.UpsertCredential(ctx, tx, row); err != nil {
+			return err
+		}
+		return s.emitMFAChanged(ctx, tx, tenantID, envUserID, "enrolled", "passkey")
 	})
 	if err != nil {
 		return nil, err
@@ -430,7 +435,10 @@ func (s *Service) DeletePasskey(ctx context.Context, tenantID, userID uuid.UUID,
 		return ErrWebAuthnNotImplemented
 	}
 	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		return s.webauthn.DeleteCredential(ctx, tx, tenantID, userID, credentialID)
+		if err := s.webauthn.DeleteCredential(ctx, tx, tenantID, userID, credentialID); err != nil {
+			return err
+		}
+		return s.emitMFAChanged(ctx, tx, tenantID, userID, "removed", "passkey")
 	})
 }
 

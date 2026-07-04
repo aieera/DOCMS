@@ -219,10 +219,10 @@ type recordingAuditor struct {
 	}
 }
 
-func (r *recordingAuditor) SessionStarted(c *WOPIClaims) {
+func (r *recordingAuditor) SessionStarted(_ context.Context, c *WOPIClaims) {
 	r.started = append(r.started, c)
 }
-func (r *recordingAuditor) SessionEnded(c *WOPIClaims, d int64) {
+func (r *recordingAuditor) SessionEnded(_ context.Context, c *WOPIClaims, d int64) {
 	r.ended = append(r.ended, struct {
 		c        *WOPIClaims
 		duration int64
@@ -315,4 +315,3 @@ func TestAudit_TwoUsers_BothTracked(t *testing.T) {
 
 	_ = context.Background() // keep import resolved
 }
-

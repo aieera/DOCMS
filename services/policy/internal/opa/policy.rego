@@ -115,7 +115,55 @@ deny if {
     input.context.user_status == "deactivated"
 }
 
+# ─── CLASSIFICATION / CLEARANCE GATE (§8) ──────────────────────────────────
+# Deny when classification gating is enabled for the tenant and the caller's
+# clearance is below the clearance the document's sensitivity requires. The
+# document service resolves `required_clearance` from the tenant's
+# classification->access rules (+ the always-on PHI backstop) and passes the
+# caller's `user_clearance`, the document's `security_classification`, and its
+# `has_phi` flag in the ABAC context. The org owner is exempt (break-glass).
+deny if {
+    input.context.classification_gate == "on"
+    input.context.required_clearance != ""
+    clearance_rank(input.context.user_clearance) < clearance_rank(input.context.required_clearance)
+    not input.context.user_role == "owner"
+}
+
+# deny_reason is the explainable message surfaced to the caller as an HTTP 403
+# ("blocked: contains PHI, you lack clearance"). PHI-flagged documents get a
+# PHI-specific message; everything else names the classification level.
+deny_reason := msg if {
+    input.context.classification_gate == "on"
+    input.context.has_phi == "true"
+    input.context.required_clearance != ""
+    clearance_rank(input.context.user_clearance) < clearance_rank(input.context.required_clearance)
+    not input.context.user_role == "owner"
+    msg := sprintf("blocked: document contains PHI and requires '%s' clearance, which you lack (your clearance: '%s')", [input.context.required_clearance, clearance_display(input.context.user_clearance)])
+}
+
+deny_reason := msg if {
+    input.context.classification_gate == "on"
+    not input.context.has_phi == "true"
+    input.context.required_clearance != ""
+    clearance_rank(input.context.user_clearance) < clearance_rank(input.context.required_clearance)
+    not input.context.user_role == "owner"
+    msg := sprintf("blocked: '%s'-classified document requires '%s' clearance, which you lack (your clearance: '%s')", [class_display(input.context.security_classification), input.context.required_clearance, clearance_display(input.context.user_clearance)])
+}
+
 # ─── HELPERS ───────────────────────────────────────────────────────────────
+
+clearance_levels := {"unclassified": 0, "internal": 1, "confidential": 2, "restricted": 3}
+
+# Unknown / unset ("") clearance ranks lowest — an ungranted clearance can see
+# only unclassified content (fail-closed).
+clearance_rank(c) := r if { r := clearance_levels[c] }
+clearance_rank(c) := 0 if { not clearance_levels[c] }
+
+clearance_display(c) := "none" if { c == "" }
+clearance_display(c) := c if { c != "" }
+
+class_display(c) := "unclassified" if { c == "" }
+class_display(c) := c if { c != "" }
 
 matches_principal(p, inp) if {
     p.principal_type == inp.subject_type

@@ -201,11 +201,13 @@ func (h *SSOAdminHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.New()
 	err = database.WithTenantTx(r.Context(), h.pool, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(r.Context(), `
+		if _, err := tx.Exec(r.Context(), `
 			INSERT INTO sso_configs (tenant_id, id, provider_type, display_name, config, is_active)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
-			tenantID, id, body.Provider, body.DisplayName, body.Config, active)
-		return err
+			tenantID, id, body.Provider, body.DisplayName, body.Config, active); err != nil {
+			return err
+		}
+		return h.emitConfigured(r.Context(), tx, tenantID, id, body.Provider, body.DisplayName, active, "created")
 	})
 	if err != nil {
 		h.writeErr(w, r, vdmserr.FromPgError(err))
@@ -270,13 +272,37 @@ func (h *SSOAdminHandler) update(w http.ResponseWriter, r *http.Request) {
 		if tag.RowsAffected() == 0 {
 			return vdmserr.NotFound("sso config not found")
 		}
-		return nil
+		action := "updated"
+		if body.IsActive != nil && !*body.IsActive {
+			action = "disabled"
+		}
+		dn := ""
+		if body.DisplayName != nil {
+			dn = *body.DisplayName
+		}
+		active := body.IsActive == nil || *body.IsActive
+		return h.emitConfigured(r.Context(), tx, tenantID, id, provider, dn, active, action)
 	})
 	if err != nil {
 		h.writeErr(w, r, vdmserr.FromPgError(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// emitConfigured writes dms.idp.configured.v1 to the outbox in the same tx as
+// the config write (transactional-outbox → durable delivery + audit).
+func (h *SSOAdminHandler) emitConfigured(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, provider, displayName string, active bool, action string) error {
+	payload, _ := json.Marshal(map[string]any{
+		"sso_config_id": id.String(),
+		"tenant_id":     tenantID.String(),
+		"provider":      provider,
+		"display_name":  displayName,
+		"is_active":     active,
+		"action":        action, // created | updated | disabled
+	})
+	evt := database.NewOutboxEvent(tenantID, "dms.idp.configured.v1", "sso_config", id, payload)
+	return database.NewOutboxRepository().Insert(ctx, tx, evt)
 }
 
 func (h *SSOAdminHandler) delete(w http.ResponseWriter, r *http.Request) {

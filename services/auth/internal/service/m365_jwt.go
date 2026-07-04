@@ -90,7 +90,7 @@ func (v *m365Verifier) configured() bool {
 // wrong audience, or signature mismatch.
 func (v *m365Verifier) verify(ctx context.Context, raw string) (*VerifiedEntraIdentity, error) {
 	if !v.configured() {
-		return nil, errors.New("m365: exchange not configured (set " + envM365Audience + " and " + envM365AllowedTIDs + ")")
+		return nil, fmt.Errorf("%w (set %s and %s)", ErrM365NotConfigured, envM365Audience, envM365AllowedTIDs)
 	}
 	// Extract `tid` BEFORE verification so we can pick the right
 	// JWKS endpoint. tid in an unverified token is untrusted, but

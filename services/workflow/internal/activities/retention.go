@@ -22,10 +22,10 @@ import (
 // and retention_until are returned so the workflow can make
 // deterministic policy choices without further DB calls.
 type ExpiredDocument struct {
-	DocumentID      string    `json:"document_id"`
-	LifecycleState  string    `json:"lifecycle_state"`
-	RetentionUntil  time.Time `json:"retention_until"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	DocumentID     string    `json:"document_id"`
+	LifecycleState string    `json:"lifecycle_state"`
+	RetentionUntil time.Time `json:"retention_until"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // SweepExpiredRetentions returns documents whose retention clock has

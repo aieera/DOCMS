@@ -83,6 +83,28 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
          )`,
       [tenantId, docId, KEEP_SNAPSHOTS],
     )
+    // Emit dms.document.edited.v1 in the SAME tx as the snapshot
+    // (transactional outbox, blueprint §4) so search/preview can re-index
+    // collaborative edits — these never create a new version, so they'd
+    // otherwise be invisible to the pipeline. The document service's outbox
+    // publisher drains this shared `outbox` table; DOC_EVENTS binds
+    // dms.document.> so the subject has a home. RLS passes because
+    // app.current_tenant is set above; doc_id is a UUID (yjs_snapshots.doc_id),
+    // safe as the UUID aggregate_id.
+    await client.query(
+      `INSERT INTO outbox (tenant_id, event_type, aggregate_type, aggregate_id, payload)
+       VALUES ($1, 'dms.document.edited.v1', 'document', $2, $3::jsonb)`,
+      [
+        tenantId,
+        docId,
+        JSON.stringify({
+          tenant_id: tenantId,
+          document_id: docId,
+          source: 'collaboration',
+          edited_at: new Date().toISOString(),
+        }),
+      ],
+    )
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})

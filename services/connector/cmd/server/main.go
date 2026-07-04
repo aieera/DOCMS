@@ -161,6 +161,11 @@ func main() {
 	go intakeSvc.Start(ctx)
 	intakeHandler := handler.NewIntakeHandler(intakeSvc)
 
+	// Scan-capture separation (capture pipeline): bundle → barcode split →
+	// one document per segment via the same ingest pipeline. Decode/split runs
+	// in the intelligence service (SEDOC_INTELLIGENCE_URL).
+	captureHandler := handler.NewCaptureHandler(intake.NewCaptureService(ingestClient, *log.Z()))
+
 	// MCP server extracted to services/mcp-server (ADR 0091).
 
 	// ---- Health ----------------------------------------------------------
@@ -201,6 +206,7 @@ func main() {
 	esHandler.Register(mux)
 	emailHandler.Register(mux)
 	intakeHandler.Register(mux)
+	captureHandler.Register(mux)
 	// FIX-1 follow-up: SessionAuthOptional so handlers read tenant/
 	// user from ctx; Kong now strips the X-Auth-Tenant-ID + X-User-*
 	// headers that connector handlers previously trusted.

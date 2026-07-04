@@ -63,6 +63,18 @@ func (h *Handler) ExchangeM365(w http.ResponseWriter, r *http.Request) {
 				"error": "no SeDoc user with this email; ask your SeDoc admin to invite you",
 			})
 			return
+		case errors.Is(err, service.ErrM365TokenInvalid):
+			// 401 per the documented contract — the add-in clears its
+			// cache and re-runs the Office SSO exchange.
+			h.writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": "invalid or expired Entra access token",
+			})
+			return
+		case errors.Is(err, service.ErrM365NotConfigured):
+			h.writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "M365 exchange is not configured on this deployment",
+			})
+			return
 		}
 		var multi *service.ErrM365MultipleTenants
 		if errors.As(err, &multi) {

@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func newPrivacyMux(t *testing.T) *http.ServeMux {
@@ -37,8 +39,7 @@ func TestDSR_Submit_MissingEmail400(t *testing.T) {
 	mux := newPrivacyMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/privacy/dsr/export",
 		bytes.NewBufferString(`{}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New()}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -50,8 +51,7 @@ func TestDSR_Erase_RequiresVerificationToken400(t *testing.T) {
 	mux := newPrivacyMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/privacy/dsr/erase",
 		bytes.NewBufferString(`{"subject_email":"x@y.io"}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New()}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -63,8 +63,7 @@ func TestDSR_List_InvalidStatus400(t *testing.T) {
 	mux := newPrivacyMux(t)
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/privacy/dsr?status=wat", nil)
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New()}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -76,8 +75,7 @@ func TestDSR_Get_BadUUID400(t *testing.T) {
 	mux := newPrivacyMux(t)
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/privacy/dsr/not-a-uuid", nil)
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New()}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {

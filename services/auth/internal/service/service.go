@@ -86,6 +86,11 @@ type Service struct {
 	// refuses to run rather than falling back to the pre-audit
 	// Graph-only flow that allowed cross-tenant takeover.
 	m365 *m365Verifier
+	// google holds the verifier for the Google Workspace add-on token
+	// exchange (ADR 0116). Configured via env (SEDOC_GOOGLE_AUDIENCE +
+	// SEDOC_GOOGLE_ALLOWED_HDS). When unset, ExchangeGoogleToken
+	// refuses to run rather than accepting unvalidated tokens.
+	google *googleVerifier
 }
 
 // Config bundles all service dependencies; allows tests to swap them.
@@ -117,6 +122,7 @@ func New(cfg Config) *Service {
 		log:      cfg.Logger,
 		now:      time.Now,
 		m365:     newM365Verifier(),
+		google:   newGoogleVerifier(),
 	}
 }
 

@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
@@ -34,7 +34,7 @@ type Activities struct {
 	// activities. ADR 0085 saved-search alert workflow uses this
 	// to publish dms.notify.saved_search_match.v1. nil is accepted;
 	// EmitSavedSearchMatch returns a typed error when JS isn't wired.
-	JS nats.JetStreamContext
+	JS  nats.JetStreamContext
 	Log zerolog.Logger
 }
 

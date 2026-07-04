@@ -1,12 +1,16 @@
-"""OCR model loaders — Surya primary, PaddleOCR fallback."""
+"""OCR model loaders — Surya (printed, primary), PaddleOCR (printed, fallback),
+TrOCR (handwriting / ICR)."""
 from __future__ import annotations
 import logging
+
+from app.config import settings
 
 log = logging.getLogger(__name__)
 
 _surya_det = None
 _surya_rec = None
 _paddle = None
+_trocr = None
 
 # Map our language codes to a PaddleOCR `lang` value. Paddle takes a single
 # language; for the ar+en mix we OCR with Surya, the fallback just needs latin.
@@ -109,5 +113,101 @@ def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
             "x2": bbox[2], "y2": bbox[3],
             "text": text, "confidence": conf,
         })
+    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}
+
+
+# ---- TrOCR (handwriting / ICR) -------------------------------------------
+#
+# TrOCR is a recognition-only transformer (microsoft/trocr-*-handwritten): it
+# transcribes a single CROPPED text line, with no detector of its own. So we
+# reuse Surya's detector to find line regions, then run TrOCR on each crop —
+# yielding the same {text, confidence, boxes} shape every other engine returns,
+# which lets the OCR task swap/merge results without special-casing. Lazy-loaded
+# like Surya/Paddle so the (large) weights only download on first handwriting
+# job, not at import.
+
+def load_trocr():
+    global _trocr
+    if _trocr is None:
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        name = settings.ocr_trocr_model
+        log.info("loading TrOCR handwriting model (%s)", name)
+        proc = TrOCRProcessor.from_pretrained(name)
+        model = VisionEncoderDecoderModel.from_pretrained(name)
+        model.eval()
+        _trocr = (proc, model)
+    return _trocr
+
+
+def _trocr_line_confidence(model, generated) -> float:
+    """Derive a 0..1 confidence from the generation transition scores
+    (mean per-token probability). Falls back to a neutral 0.5 if the
+    transformers version doesn't expose compute_transition_scores or the
+    scores are unavailable — never raises (confidence is advisory)."""
+    try:
+        import torch
+        scores = model.compute_transition_scores(
+            generated.sequences, generated.scores, normalize_logits=True,
+        )
+        # scores are log-probs; drop any -inf padding then mean -> exp.
+        finite = scores[torch.isfinite(scores)]
+        if finite.numel() == 0:
+            return 0.5
+        return float(torch.exp(finite.mean()).clamp(0.0, 1.0))
+    except Exception:
+        return 0.5
+
+
+def trocr_ocr_page(image, languages: list[str] | None = None) -> dict:
+    """Handwriting OCR (ICR). Detects line regions with Surya, transcribes
+    each with TrOCR. Returns the standard {text, confidence, boxes} shape;
+    boxes carry per-line {x1,y1,x2,y2,text,confidence} like the other engines.
+    Raises only if the models can't load — a page with no detected lines
+    returns an empty result rather than erroring."""
+    import torch
+    from surya.detection import batch_text_detection
+    det, _rec = load_surya()
+    det_model, det_proc = det
+    proc, model = load_trocr()
+
+    det_result = batch_text_detection([image], det_model, det_proc)[0]
+    regions = []
+    for b in getattr(det_result, "bboxes", []) or []:
+        bb = getattr(b, "bbox", None)
+        if bb and len(bb) >= 4:
+            regions.append([float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3])])
+    # No detected lines (e.g. a tight single-line crop) → transcribe the
+    # whole image so we still produce output.
+    if not regions:
+        regions = [[0.0, 0.0, float(image.width), float(image.height)]]
+
+    text_lines: list[str] = []
+    boxes: list[dict] = []
+    confidences: list[float] = []
+    for bb in regions:
+        x1, y1, x2, y2 = (int(bb[0]), int(bb[1]), int(bb[2]), int(bb[3]))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        crop = image.crop((x1, y1, x2, y2)).convert("RGB")
+        pixel_values = proc(images=crop, return_tensors="pt").pixel_values
+        with torch.no_grad():
+            generated = model.generate(
+                pixel_values,
+                max_new_tokens=256,
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+        text = proc.batch_decode(generated.sequences, skip_special_tokens=True)[0].strip()
+        if not text:
+            continue
+        conf = _trocr_line_confidence(model, generated)
+        text_lines.append(text)
+        confidences.append(conf)
+        boxes.append({
+            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "text": text, "confidence": conf,
+        })
+
     avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
     return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}

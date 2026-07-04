@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.internal import router as internal_router
 from app.api.routes import router as previews_router
 from app.config import settings
 from app.nats_consumer import PreviewConsumer
@@ -62,6 +63,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(previews_router)
+app.include_router(internal_router)
 
 
 @app.get("/healthz")

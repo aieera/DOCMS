@@ -54,6 +54,9 @@ type SAMLConfig struct {
 	// Optional: clock skew tolerance for NotBefore/NotOnOrAfter.
 	// Default: 120s. Max enforced: 600s.
 	ClockSkewSeconds int `json:"clock_skew_seconds,omitempty"`
+
+	// Optional: map the groups claim to a SeDoc role at JIT time.
+	RoleMapping RoleMapping `json:"role_mapping,omitempty"`
 }
 
 // AttributeMapping is the subset of SAML assertion attributes we care about.
@@ -65,12 +68,27 @@ type AttributeMapping struct {
 	Groups      string `json:"groups,omitempty"`
 }
 
+// RoleRule maps one claim/group value to a SeDoc role. The first matching
+// rule (case-insensitive, in order) wins during JIT provisioning.
+type RoleRule struct {
+	ClaimValue string `json:"claim_value"` // a group/role value from the groups claim
+	Role       string `json:"role"`        // owner|admin|member|guest
+}
+
+// RoleMapping turns an IdP's group/role claim into a SeDoc role at JIT time.
+// Empty (no rules) → DefaultRole, else "member". Shared by SAML + OIDC.
+type RoleMapping struct {
+	Rules       []RoleRule `json:"rules,omitempty"`
+	DefaultRole string     `json:"default_role,omitempty"`
+}
+
 // OIDCConfig is the JSON body when Provider is "oidc". Ships in Phase A3.
 // Defined here so sso_configs rows can round-trip through the repository.
 type OIDCConfig struct {
-	IssuerURL    string   `json:"issuer_url"`
-	ClientID     string   `json:"client_id"`
-	ClientSecret string   `json:"client_secret"`
-	RedirectURL  string   `json:"redirect_url"`
-	Scopes       []string `json:"scopes,omitempty"`
+	IssuerURL    string      `json:"issuer_url"`
+	ClientID     string      `json:"client_id"`
+	ClientSecret string      `json:"client_secret"`
+	RedirectURL  string      `json:"redirect_url"`
+	Scopes       []string    `json:"scopes,omitempty"`
+	RoleMapping  RoleMapping `json:"role_mapping,omitempty"`
 }

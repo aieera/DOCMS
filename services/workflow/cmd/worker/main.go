@@ -129,6 +129,7 @@ func main() {
 	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
 	// ADR 0085 — saved-search alert.
 	w.RegisterWorkflow(workflows.SavedSearchAlertWorkflow)
+	w.RegisterWorkflow(workflows.ScheduledReportWorkflow)
 	w.RegisterActivity(acts)
 
 	log.Info(ctx).
@@ -178,6 +179,29 @@ func main() {
 				}
 				if c > 0 || d > 0 {
 					log.Info(ctx).Int("created", c).Int("deleted", d).Msg("alert reconciler synced")
+				}
+			}
+		}
+	}()
+
+	// ADR 0119 — scheduled reports: same bootstrap + reconcile contract
+	// as saved-search alerts (the analytics API flips schedule_enabled
+	// in the DB; this loop tracks it within ~60s).
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				c, d, err := workflows.ReconcileScheduledReportSchedules(ctx, pool, tc, queue)
+				if err != nil {
+					log.Warn(ctx).Err(err).Msg("report reconciler iteration failed")
+					continue
+				}
+				if c > 0 || d > 0 {
+					log.Info(ctx).Int("created", c).Int("deleted", d).Msg("report reconciler synced")
 				}
 			}
 		}

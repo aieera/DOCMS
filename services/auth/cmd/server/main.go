@@ -277,6 +277,8 @@ func main() {
 					Resolver: scimResolver,
 				}, handler.NewGroupsHandler(pool, *log.Z(), cfg.Environment),
 					handler.NewSSOAdminHandler(pool, *log.Z()),
+					handler.NewSCIMAdminHandler(pool, *log.Z()),
+					handler.NewEncryptionAdminHandler(pool, *log.Z()),
 					handler.NewTenantAdminHandler(pool, *log.Z()),
 					handler.NewLDAPAdminHandler(pool, svc, ldapRepo, *log.Z()))),
 			),

@@ -32,6 +32,20 @@ type Notification struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
+// PushDevice is one registered mobile push target (ADR 0117). Platform
+// is 'expo' for the Expo push service (the app's default); 'fcm'/'apns'
+// are reserved for future native transports.
+type PushDevice struct {
+	ID         string    `json:"id"`
+	TenantID   string    `json:"tenant_id"`
+	UserID     string    `json:"user_id"`
+	Platform   string    `json:"platform"`
+	Token      string    `json:"token,omitempty"`
+	Label      string    `json:"label,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 // UserPreference controls per-user notification settings.
 type UserPreference struct {
 	TenantID       string `json:"tenant_id"`
@@ -53,4 +67,13 @@ type DeliveryPayload struct {
 	Body         string   `json:"body"`
 	ResourceType string   `json:"resource_type,omitempty"`
 	ResourceID   string   `json:"resource_id,omitempty"`
+	// Channels is the emitter's per-event channel consent (ADR 0085
+	// hardening): the recipient explicitly chose these channels for
+	// THIS kind of event (e.g. a saved-search subscriber picking
+	// email). Recognized values: in_app, email, push, digest (email
+	// folded through the ADR 0086 digest table). Empty = no consent
+	// hint; the matrix/default policy alone decides. Consent never
+	// overrides snooze, DND, an explicit matrix disable for the
+	// event type, or the user's flat per-channel switches.
+	Channels []string `json:"channels,omitempty"`
 }

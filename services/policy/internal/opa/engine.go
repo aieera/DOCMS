@@ -82,8 +82,11 @@ func (e *Engine) Eval(ctx context.Context, in EvalInput) (model.CheckResult, tim
 	store := inmem.NewFromObject(data)
 
 	start := time.Now()
+	// Query the whole authz document so we can read both the decision and the
+	// explainable deny_reason (surfaced to the caller on a classification block)
+	// in a single evaluation.
 	rs, err := rego.New(
-		rego.Query("data.vaultdms.authz.final_decision"),
+		rego.Query("data.vaultdms.authz"),
 		rego.Compiler(e.compiler),
 		rego.Store(store),
 		rego.Input(in.Input),
@@ -95,11 +98,18 @@ func (e *Engine) Eval(ctx context.Context, in EvalInput) (model.CheckResult, tim
 	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
 		return model.CheckResult{Allowed: false, Reason: "no policy decision"}, elapsed, nil
 	}
-	decision, _ := rs[0].Expressions[0].Value.(string)
+	doc, _ := rs[0].Expressions[0].Value.(map[string]any)
+	decision, _ := doc["final_decision"].(string)
 	if decision == "allow" {
 		return model.CheckResult{Allowed: true}, elapsed, nil
 	}
-	return model.CheckResult{Allowed: false, Reason: "policy denied"}, elapsed, nil
+	// deny_reason is only defined for classification blocks; fall back to the
+	// generic reason for ACL / lifecycle denials.
+	reason, _ := doc["deny_reason"].(string)
+	if reason == "" {
+		reason = "policy denied"
+	}
+	return model.CheckResult{Allowed: false, Reason: reason}, elapsed, nil
 }
 
 // toPermissionsJSON converts the Go slice into the []any Rego expects.

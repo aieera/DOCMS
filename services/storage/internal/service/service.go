@@ -92,6 +92,15 @@ type Config struct {
 	// lookup is not yet wired. Phase A2 follow-up: fetch per-tenant from
 	// organizations.settings.
 	TenantKEKID string
+	// ScanFailOpen controls what happens when a *configured* virus
+	// scanner errors out (clamd unreachable, timeout, unparseable
+	// response). Default false = fail-closed: the upload is rejected and
+	// never becomes an accessible blob. Set true (SEDOC_STORAGE_SCAN_FAIL_OPEN)
+	// only for environments that knowingly accept unscanned bytes. Note
+	// this is distinct from disabling scanning entirely
+	// (SEDOC_STORAGE_SKIP_VIRUS_SCAN), which leaves Scanner nil and is
+	// always treated as "scanning intentionally off".
+	ScanFailOpen bool
 }
 
 // New wires a Service. UploadTTL defaults 60 min, MaxUploadSize 5 GiB,
@@ -440,6 +449,20 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		scanRes.result = model.ScanInfected
 		scanRes.signature = "BlockedMIME:" + detected.MIME
 	}
+	// Fail-closed on scan errors. A nil scanner means scanning is
+	// intentionally disabled (SEDOC_STORAGE_SKIP_VIRUS_SCAN) and stays
+	// fail-open; but a *configured* scanner that errors (clamd down,
+	// timeout, unparseable response) must not let the bytes through as a
+	// clean, downloadable blob — that is exactly how malware slips in
+	// during a scanner outage. Reject the upload so the client retries
+	// once the scanner is healthy. SEDOC_STORAGE_SCAN_FAIL_OPEN=true
+	// restores the old permissive behaviour for operators who accept the
+	// risk.
+	if scanRes.result == model.ScanError && s.scanner != nil && !s.cfg.ScanFailOpen {
+		s.failUpload(ctx, session, "virus scan unavailable: "+scanRes.signature)
+		return nil, vdmserr.Internal("virus scan unavailable; upload rejected (fail-closed)")
+	}
+
 	scanID, _ := uuid.NewV7()
 	rec := &model.ScanRecord{
 		TenantID:  session.TenantID,
@@ -706,8 +729,8 @@ func (s *Service) scanBuffer(ctx context.Context, r io.Reader) scanOutcome {
 	}
 	res, err := s.scanner.Scan(ctx, r)
 	if err != nil {
-		s.log.Error().Err(err).Msg("clamav scan failed; fail-open")
-		return scanOutcome{result: model.ScanError}
+		s.log.Error().Err(err).Msg("clamav scan failed")
+		return scanOutcome{result: model.ScanError, signature: err.Error()}
 	}
 	if res.Infected {
 		return scanOutcome{result: model.ScanInfected, signature: res.Signature}

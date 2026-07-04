@@ -136,13 +136,13 @@ export function attachYjs(wss) {
     // The socket is already accepted at this point, but we close with
     // the right code below if auth fails. The client never sees the
     // initial sync step because we don't send anything until after auth.
-    authorize(req, parsed.tenantId)
+    authorize(req, parsed.tenantId, parsed.docId)
       .then((authResult) => {
         if (authResult.code) {
           conn.close(authResult.code, authResult.message || '')
           return
         }
-        handleYjsConnection(conn, parsed)
+        handleYjsConnection(conn, parsed, { canEdit: authResult.canEdit })
       })
       .catch((err) => {
         console.error('yjs: authorize threw', err)
@@ -168,7 +168,7 @@ if (!GATEWAY_SECRET) {
  *   { ok: true, tenantId, userId }   on success
  *   { code: 4401 | 4403 | 4503, message }  on failure
  */
-async function authorize(req, urlTenantId) {
+async function authorize(req, urlTenantId, docId) {
   const cookie = req.headers.cookie || ''
   // Pass the *full* Cookie header through — auth's SessionAuth reads
   // dms_session out of it. No need to parse on this side.
@@ -205,10 +205,67 @@ async function authorize(req, urlTenantId) {
   if (sessionTenant !== urlTenantId) {
     return { code: 4403, message: 'tenant mismatch' }
   }
-  return { ok: true, tenantId: sessionTenant, userId: body.user_id || body.userId }
+  // Doc-level RBAC (§8): a valid tenant session is necessary but not
+  // sufficient — the user must have at least `view` on THIS document to
+  // join its room. `edit` then decides whether their CRDT writes are
+  // accepted or the session is read-only. We reuse the same cookie +
+  // gateway signature the /auth/me call presented; policy's HTTP surface
+  // is wrapped with SessionAuth + RequireGatewaySignature.
+  const view = await checkDocPermission(cookie, docId, 'view')
+  if (view.code) return view
+  if (!view.allowed) {
+    return { code: 4403, message: 'no access to document' }
+  }
+  const edit = await checkDocPermission(cookie, docId, 'edit')
+  return {
+    ok: true,
+    tenantId: sessionTenant,
+    userId: body.user_id || body.userId,
+    canEdit: edit.allowed === true,
+  }
 }
 
-function handleYjsConnection(conn, { roomId, tenantId, docId }) {
+const POLICY_BASE = process.env.POLICY_SERVICE_URL || 'http://policy:8080'
+
+/**
+ * Calls policy's POST /api/v1/permissions/check for (document, docId, action)
+ * with the caller's session cookie + gateway signature. Returns:
+ *   { allowed: boolean }                on a definitive answer
+ *   { code: 4401|4403|4503, message }    on auth / transport failure
+ * Fails CLOSED — any error answering the question denies the action, so a
+ * policy outage never silently grants edit (or view) on a document.
+ */
+async function checkDocPermission(cookie, docId, action) {
+  let resp
+  try {
+    resp = await fetch(`${POLICY_BASE}/api/v1/permissions/check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie,
+        'X-Gateway-Signature': GATEWAY_SECRET,
+      },
+      body: JSON.stringify({ action, resource_type: 'document', resource_id: docId }),
+    })
+  } catch (err) {
+    return { code: 4503, message: 'policy service unreachable' }
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    return { code: 4401, message: 'auth required' }
+  }
+  if (!resp.ok) {
+    return { code: 4503, message: `policy service returned ${resp.status}` }
+  }
+  let body
+  try {
+    body = await resp.json()
+  } catch (err) {
+    return { code: 4503, message: 'policy response not JSON' }
+  }
+  return { allowed: body.allowed === true }
+}
+
+function handleYjsConnection(conn, { roomId, tenantId, docId }, { canEdit = true } = {}) {
   const room = getRoom(roomId, tenantId, docId)
   room.clients.add(conn)
 
@@ -236,6 +293,18 @@ function handleYjsConnection(conn, { roomId, tenantId, docId }) {
       const kind = decoding.readVarUint(dec)
       const out = encoding.createEncoder()
       if (kind === messageSync) {
+        // Read-only enforcement (§8): clients without `edit` may read
+        // (SyncStep1 = request state) but must not write. Peek the sync
+        // subtype on a throwaway decoder and drop SyncStep2 / Update from
+        // read-only clients so their mutations never reach room.ydoc.
+        if (!canEdit) {
+          const peek = decoding.createDecoder(new Uint8Array(raw))
+          decoding.readVarUint(peek) // kind
+          const syncType = decoding.readVarUint(peek)
+          if (syncType !== syncProtocol.messageYjsSyncStep1) {
+            return
+          }
+        }
         encoding.writeVarUint(out, messageSync)
         syncProtocol.readSyncMessage(dec, out, room.ydoc, conn)
         if (encoding.length(out) > 1) {

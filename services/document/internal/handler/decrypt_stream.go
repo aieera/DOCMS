@@ -173,8 +173,8 @@ func (h *DecryptStreamHandler) streamVersion(w http.ResponseWriter, r *http.Requ
 			FROM document_versions v
 			JOIN content_blobs b
 			  ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
-			WHERE v.tenant_id = $1 AND v.id = $2 AND b.shredded_at IS NULL
-		`, tenantID, versionID).Scan(
+			WHERE v.tenant_id = $1 AND v.document_id = $2 AND v.id = $3 AND b.shredded_at IS NULL
+		`, tenantID, docID, versionID).Scan(
 			&bucket, &key, &mimeType, &kekID, &encryptedDEK, &dekNonce,
 		)
 	})

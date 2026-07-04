@@ -1,22 +1,22 @@
 // Outlook add-in ingest endpoint (ADR 0112).
 //
-//   POST /api/v1/integrations/m365/ingest-email
-//     Auth: SeDoc session (set up by the upstream auth gateway).
-//     Body: { subject, from, to[], sent_at, body_html, body_text,
-//             attachments[{name, content_b64, mime_type}],
-//             workspace_id, folder_id, tags?, message_id? }
-//     201:  { document_id, attachment_document_ids[] }
+//	POST /api/v1/integrations/m365/ingest-email
+//	  Auth: SeDoc session (set up by the upstream auth gateway).
+//	  Body: { subject, from, to[], sent_at, body_html, body_text,
+//	          attachments[{name, content_b64, mime_type}],
+//	          workspace_id, folder_id, tags?, message_id? }
+//	  201:  { document_id, attachment_document_ids[] }
 //
 // Phase 1 contract (matches the existing connector/email ingestion
 // path in services/connector/internal/email/document_client.go):
-//   * Create one parent document for the email body with the
+//   - Create one parent document for the email body with the
 //     subject as title + email metadata in custom_metadata.
-//   * Create one child document per attachment with the parent's
+//   - Create one child document per attachment with the parent's
 //     document_id stamped in custom_metadata.email.parent_doc_id.
-//   * Audit-log the operation as dms.m365.outlook.email.saved.v1.
+//   - Audit-log the operation as dms.m365.outlook.email.saved.v1.
 //
 // What's DEFERRED (matches the existing email-ingest deferral):
-//   * Blob upload to MinIO + version creation. CreateVersion needs
+//   - Blob upload to MinIO + version creation. CreateVersion needs
 //     a content_blob_id; threading that through here requires a
 //     StorageClient handle the handler doesn't have today. Until
 //     that sweep ships, the documents render in the list but carry
@@ -68,34 +68,39 @@ func (h *M365IngestHandler) Register(mux *http.ServeMux) {
 // ---- wire types ----------------------------------------------------
 
 type m365Attachment struct {
-	Name        string `json:"name"`
-	ContentB64  string `json:"content_b64"`
-	MimeType    string `json:"mime_type,omitempty"`
+	Name       string `json:"name"`
+	ContentB64 string `json:"content_b64"`
+	MimeType   string `json:"mime_type,omitempty"`
 }
 
 type m365IngestReq struct {
-	Subject     string          `json:"subject"`
-	From        string          `json:"from"`
-	To          []string        `json:"to"`
-	CC          []string        `json:"cc,omitempty"`
-	SentAt      string          `json:"sent_at"`
-	BodyHTML    string          `json:"body_html,omitempty"`
-	BodyText    string          `json:"body_text,omitempty"`
+	Subject     string           `json:"subject"`
+	From        string           `json:"from"`
+	To          []string         `json:"to"`
+	CC          []string         `json:"cc,omitempty"`
+	SentAt      string           `json:"sent_at"`
+	BodyHTML    string           `json:"body_html,omitempty"`
+	BodyText    string           `json:"body_text,omitempty"`
 	Attachments []m365Attachment `json:"attachments"`
-	WorkspaceID string          `json:"workspace_id"`
-	FolderID    string          `json:"folder_id"`
-	Tags        []string        `json:"tags,omitempty"`
-	MessageID   string          `json:"message_id,omitempty"`
+	WorkspaceID string           `json:"workspace_id"`
+	FolderID    string           `json:"folder_id"`
+	Tags        []string         `json:"tags,omitempty"`
+	MessageID   string           `json:"message_id,omitempty"`
+	// IncludeBody controls whether the email body becomes a parent
+	// document. nil/true = file the body (back-compat); false = file the
+	// attachments only (the "attachments only" add-in option). When false
+	// the attachments have no parent and document_id comes back empty.
+	IncludeBody *bool `json:"include_body,omitempty"`
 }
 
 type m365IngestResp struct {
-	DocumentID             string   `json:"document_id"`
-	AttachmentDocumentIDs  []string `json:"attachment_document_ids"`
+	DocumentID            string   `json:"document_id"`
+	AttachmentDocumentIDs []string `json:"attachment_document_ids"`
 	// Pending == true signals the FE that blob upload (+ OCR +
 	// classification) hasn't run yet. Lets the add-in show a
 	// "queued for processing" message instead of "saved" until
 	// the sweep flips it.
-	Pending                bool     `json:"pending"`
+	Pending bool `json:"pending"`
 }
 
 // ---- handler ------------------------------------------------------
@@ -127,23 +132,36 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 	wsID, _ := uuid.Parse(body.WorkspaceID)
 	folderID, _ := uuid.Parse(body.FolderID)
 
-	// 1. Parent email document.
+	includeBody := body.IncludeBody == nil || *body.IncludeBody
+	if !includeBody && len(body.Attachments) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "attachments-only ingest requires at least one attachment"})
+		return
+	}
+
 	subject := body.Subject
 	if subject == "" {
 		subject = "(no subject)"
 	}
-	parent, err := h.svc.CreateDocument(r.Context(), &service.CreateDocumentInput{
-		WorkspaceID:    wsID,
-		FolderID:       folderID,
-		Title:          subject,
-		Description:    "From " + body.From,
-		Tags:           body.Tags,
-		CustomMetadata: parentMetadata(&body),
-		UpdatedBy:      userID,
-	})
-	if err != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
-		return
+
+	// 1. Parent email document — skipped when filing attachments only.
+	var parentID uuid.UUID
+	parentIDStr := ""
+	if includeBody {
+		parent, err := h.svc.CreateDocument(r.Context(), &service.CreateDocumentInput{
+			WorkspaceID:    wsID,
+			FolderID:       folderID,
+			Title:          subject,
+			Description:    "From " + body.From,
+			Tags:           body.Tags,
+			CustomMetadata: parentMetadata(&body),
+			UpdatedBy:      userID,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		parentID = parent.ID
+		parentIDStr = parent.ID.String()
 	}
 
 	// 2. Attachment documents. Best-effort — a single failure does
@@ -169,7 +187,7 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			Title:          a.Name,
 			Description:    "Attachment of: " + subject,
 			Tags:           append([]string{"attachment"}, body.Tags...),
-			CustomMetadata: childMetadata(&body, &a, parent.ID.String()),
+			CustomMetadata: childMetadata(&body, &a, parentIDStr),
 			UpdatedBy:      userID,
 		})
 		if cerr != nil {
@@ -182,26 +200,33 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 
 	// 3. Audit event in its own short-lived tx — fire-and-forget at
 	// the response level, but transactional w.r.t. the outbox row
-	// so the publisher reliably picks it up.
-	auditEvent := map[string]any{
-		"email_id":          body.MessageID,
-		"message_id":        body.MessageID,
-		"document_id":       parent.ID.String(),
-		"attachment_count":  len(attachIDs),
-		"workspace_id":      body.WorkspaceID,
-		"folder_id":         body.FolderID,
-		"saved_by":          userID.String(),
-		"from":              body.From,
-		"subject":           subject,
+	// so the publisher reliably picks it up. Aggregate is the parent
+	// doc, or the first attachment when filing attachments only.
+	auditAggregate := parentID
+	if auditAggregate == uuid.Nil && len(attachIDs) > 0 {
+		auditAggregate, _ = uuid.Parse(attachIDs[0])
 	}
-	if err := h.insertAuditOutbox(r.Context(), tenantID, parent.ID, auditEvent); err != nil {
-		// Don't fail the request — the user's document was saved.
-		// The audit gap surfaces in the outbox-lag dashboard.
-		_ = err
+	auditEvent := map[string]any{
+		"email_id":         body.MessageID,
+		"message_id":       body.MessageID,
+		"document_id":      parentIDStr,
+		"attachment_count": len(attachIDs),
+		"workspace_id":     body.WorkspaceID,
+		"folder_id":        body.FolderID,
+		"saved_by":         userID.String(),
+		"from":             body.From,
+		"subject":          subject,
+	}
+	if auditAggregate != uuid.Nil {
+		if err := h.insertAuditOutbox(r.Context(), tenantID, auditAggregate, auditEvent); err != nil {
+			// Don't fail the request — the user's document was saved.
+			// The audit gap surfaces in the outbox-lag dashboard.
+			_ = err
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, m365IngestResp{
-		DocumentID:            parent.ID.String(),
+		DocumentID:            parentIDStr,
 		AttachmentDocumentIDs: attachIDs,
 		Pending:               true, // blob upload + OCR pending — see file header.
 	})

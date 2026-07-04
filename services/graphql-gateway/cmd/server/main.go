@@ -108,6 +108,10 @@ func main() {
 		}
 		conn, err := grpc.NewClient(addr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			// Propagate correlation ID + originating client IP / User-Agent
+			// into upstream metadata so a downstream handler's audit/outbox
+			// writes inherit the caller attribution captured at this edge.
+			grpc.WithChainUnaryInterceptor(middleware.ClientPropagationInterceptor()),
 		)
 		if err != nil {
 			log.Warn(ctx).Err(err).Str("service", name).Str("addr", addr).
@@ -170,7 +174,12 @@ func main() {
 	mw := middleware.RequireGatewaySignature()
 	sessAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})
 	limited := middleware.RateLimitHTTP(rl, "graphql")(gqlHandler)
-	root := mw(sessAuth(limited))
+	// CorrelationHTTP outermost so the correlation ID, client IP, and
+	// User-Agent are on ctx before auth + the handler run — and before the
+	// upstream gRPC client interceptor reads them. The gateway previously
+	// omitted this, so any audit event produced on a gateway-originated
+	// call had no IP/User-Agent attribution.
+	root := middleware.CorrelationHTTP(mw(sessAuth(limited)))
 
 	hs := health.NewServerWithMeta("graphql-gateway", cfg.Region, nil, rdb, nil, nil)
 	go func() {

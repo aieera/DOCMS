@@ -318,6 +318,107 @@ func (r *Repository) AnonymizeSubject(ctx context.Context, tenantID, subjectID s
 	return tag.RowsAffected(), nil
 }
 
+// HeadAndCount returns the tenant's current event count and the
+// event_hash of the most recent event, read in one snapshot so the pair
+// is consistent. count == 0 means there are no events to checkpoint.
+// Runs inside WithTenantTx so the FORCE-RLS audit_events read sees rows
+// under the dms_app (NOBYPASSRLS) role.
+func (r *Repository) HeadAndCount(ctx context.Context, tenantID string) (int64, string, error) {
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		return 0, "", fmt.Errorf("head+count: tenant_id not a uuid: %w", err)
+	}
+	var (
+		count int64
+		head  string
+	)
+	err = database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT count(*),
+			       COALESCE((SELECT event_hash FROM audit_events
+			                  WHERE tenant_id = $1
+			               ORDER BY created_at DESC, id DESC LIMIT 1), '')
+			FROM audit_events WHERE tenant_id = $1
+		`, tenantID).Scan(&count, &head)
+	})
+	return count, head, err
+}
+
+// InsertCheckpoint appends a signed checkpoint (append-only, tenant-RLS).
+func (r *Repository) InsertCheckpoint(ctx context.Context, cp *model.AuditCheckpoint) error {
+	tenantUUID, err := uuid.Parse(cp.TenantID)
+	if err != nil {
+		return fmt.Errorf("insert checkpoint: tenant_id not a uuid: %w", err)
+	}
+	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			INSERT INTO audit_checkpoints (tenant_id, head_hash, event_count, algo, key_id, signature)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING id, created_at
+		`, cp.TenantID, cp.HeadHash, cp.EventCount, cp.Algo, cp.KeyID, cp.Signature).
+			Scan(&cp.ID, &cp.CreatedAt)
+	})
+}
+
+// LatestCheckpoint returns the most recent checkpoint for the tenant, or
+// (nil, nil) when none exists.
+func (r *Repository) LatestCheckpoint(ctx context.Context, tenantID string) (*model.AuditCheckpoint, error) {
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("latest checkpoint: tenant_id not a uuid: %w", err)
+	}
+	var cp *model.AuditCheckpoint
+	err = database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		c := &model.AuditCheckpoint{}
+		serr := tx.QueryRow(ctx, `
+			SELECT tenant_id, id, created_at, head_hash, event_count, algo, key_id, signature
+			FROM audit_checkpoints WHERE tenant_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT 1
+		`, tenantID).Scan(&c.TenantID, &c.ID, &c.CreatedAt, &c.HeadHash, &c.EventCount, &c.Algo, &c.KeyID, &c.Signature)
+		if serr == pgx.ErrNoRows {
+			return nil
+		}
+		if serr != nil {
+			return serr
+		}
+		cp = c
+		return nil
+	})
+	return cp, err
+}
+
+// ListCheckpoints returns the tenant's checkpoints, newest first.
+func (r *Repository) ListCheckpoints(ctx context.Context, tenantID string, limit int) ([]*model.AuditCheckpoint, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list checkpoints: tenant_id not a uuid: %w", err)
+	}
+	var out []*model.AuditCheckpoint
+	err = database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
+		rows, qerr := tx.Query(ctx, `
+			SELECT tenant_id, id, created_at, head_hash, event_count, algo, key_id, signature
+			FROM audit_checkpoints WHERE tenant_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT $2
+		`, tenantID, limit)
+		if qerr != nil {
+			return qerr
+		}
+		defer rows.Close()
+		for rows.Next() {
+			c := &model.AuditCheckpoint{}
+			if serr := rows.Scan(&c.TenantID, &c.ID, &c.CreatedAt, &c.HeadHash, &c.EventCount, &c.Algo, &c.KeyID, &c.Signature); serr != nil {
+				return serr
+			}
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 func encodeCursor(t time.Time, id string) string {
 	b, _ := json.Marshal([]string{t.Format(time.RFC3339Nano), id})
 	return base64.StdEncoding.EncodeToString(b)

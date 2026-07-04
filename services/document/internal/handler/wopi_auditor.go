@@ -38,20 +38,21 @@ func NewOutboxWOPIAuditor(pool *pgxpool.Pool, outbox *database.OutboxRepository,
 }
 
 // SessionStarted writes dms.coauth.session.started.v1 to the outbox.
-// Background context with a 5s deadline so a stuck Postgres can't
-// hold a WOPI request goroutine. Errors are logged — audit is
-// best-effort here; the WOPI request must still succeed.
-func (a *outboxWOPIAuditor) SessionStarted(c *WOPIClaims) {
-	a.emit(c, "dms.coauth.session.started.v1", 0)
+// The request context is detached (WithoutCancel) with a 5s deadline:
+// a client disconnect must not drop the audit row, and a stuck
+// Postgres can't hold a WOPI request goroutine. Errors are logged —
+// audit is best-effort here; the WOPI request must still succeed.
+func (a *outboxWOPIAuditor) SessionStarted(ctx context.Context, c *WOPIClaims) {
+	a.emit(ctx, c, "dms.coauth.session.started.v1", 0)
 }
 
 // SessionEnded writes dms.coauth.session.ended.v1 with the duration.
-func (a *outboxWOPIAuditor) SessionEnded(c *WOPIClaims, durationSeconds int64) {
-	a.emit(c, "dms.coauth.session.ended.v1", durationSeconds)
+func (a *outboxWOPIAuditor) SessionEnded(ctx context.Context, c *WOPIClaims, durationSeconds int64) {
+	a.emit(ctx, c, "dms.coauth.session.ended.v1", durationSeconds)
 }
 
-func (a *outboxWOPIAuditor) emit(c *WOPIClaims, subject string, durationSeconds int64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (a *outboxWOPIAuditor) emit(ctx context.Context, c *WOPIClaims, subject string, durationSeconds int64) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
 	payload := map[string]any{

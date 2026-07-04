@@ -8,12 +8,12 @@
 //
 // Routes:
 //
-//   GET  /wopi/files/{file_id}                  — CheckFileInfo
-//   GET  /wopi/files/{file_id}/contents         — GetFile (binary)
-//   POST /wopi/files/{file_id}                  — Lock | Unlock | RefreshLock | PutRelativeFile
-//                                                  (multiplexed via X-WOPI-Override)
-//   POST /wopi/files/{file_id}/contents         — PutFile (binary)
-//   GET  /wopi/hosting/discovery                — discovery.xml
+//	GET  /wopi/files/{file_id}                  — CheckFileInfo
+//	GET  /wopi/files/{file_id}/contents         — GetFile (binary)
+//	POST /wopi/files/{file_id}                  — Lock | Unlock | RefreshLock | PutRelativeFile
+//	                                               (multiplexed via X-WOPI-Override)
+//	POST /wopi/files/{file_id}/contents         — PutFile (binary)
+//	GET  /wopi/hosting/discovery                — discovery.xml
 //
 // Auth: every WOPI call must carry ?access_token=… The token is a
 // 4-segment HMAC-signed string built by IssueWOPIToken below; the
@@ -56,23 +56,23 @@ type WOPIHandler struct {
 // WOPIFileInfo is what CheckFileInfo returns. Trimmed to the fields
 // every editor agrees on; full WOPI spec has ~80 properties.
 type WOPIFileInfo struct {
-	BaseFileName             string `json:"BaseFileName"`
-	OwnerID                  string `json:"OwnerId"`
-	Size                     int64  `json:"Size"`
-	UserID                   string `json:"UserId"`
-	UserFriendlyName         string `json:"UserFriendlyName"`
-	Version                  string `json:"Version"`
-	UserCanWrite             bool   `json:"UserCanWrite"`
-	UserCanRename            bool   `json:"UserCanRename"`
-	ReadOnly                 bool   `json:"ReadOnly"`
-	SupportsLocks            bool   `json:"SupportsLocks"`
-	SupportsUpdate           bool   `json:"SupportsUpdate"`
-	SupportsRename           bool   `json:"SupportsRename"`
-	SupportsGetLock          bool   `json:"SupportsGetLock"`
-	SupportsExtendedLockLength bool `json:"SupportsExtendedLockLength"`
-	HostEditUrl              string `json:"HostEditUrl,omitempty"`
-	HostViewUrl              string `json:"HostViewUrl,omitempty"`
-	BreadcrumbDocName        string `json:"BreadcrumbDocName,omitempty"`
+	BaseFileName               string `json:"BaseFileName"`
+	OwnerID                    string `json:"OwnerId"`
+	Size                       int64  `json:"Size"`
+	UserID                     string `json:"UserId"`
+	UserFriendlyName           string `json:"UserFriendlyName"`
+	Version                    string `json:"Version"`
+	UserCanWrite               bool   `json:"UserCanWrite"`
+	UserCanRename              bool   `json:"UserCanRename"`
+	ReadOnly                   bool   `json:"ReadOnly"`
+	SupportsLocks              bool   `json:"SupportsLocks"`
+	SupportsUpdate             bool   `json:"SupportsUpdate"`
+	SupportsRename             bool   `json:"SupportsRename"`
+	SupportsGetLock            bool   `json:"SupportsGetLock"`
+	SupportsExtendedLockLength bool   `json:"SupportsExtendedLockLength"`
+	HostEditUrl                string `json:"HostEditUrl,omitempty"`
+	HostViewUrl                string `json:"HostViewUrl,omitempty"`
+	BreadcrumbDocName          string `json:"BreadcrumbDocName,omitempty"`
 }
 
 // WOPIDoc is the resolver's view of one (file_id, requesting_user) pair.
@@ -97,10 +97,12 @@ type WOPIFileResolver interface {
 	SaveAs(r *http.Request, claims *WOPIClaims, suggestedName string, relativeTarget string, body io.Reader) (newFileID, newName, hostURL string, err error)
 }
 
-// WOPIAuditor is the audit-event sink. Optional.
+// WOPIAuditor is the audit-event sink. Optional. ctx is the WOPI
+// request's context (C4: request-scoped); implementations that must
+// survive a client disconnect detach with context.WithoutCancel.
 type WOPIAuditor interface {
-	SessionStarted(claims *WOPIClaims)
-	SessionEnded(claims *WOPIClaims, durationSeconds int64)
+	SessionStarted(ctx context.Context, claims *WOPIClaims)
+	SessionEnded(ctx context.Context, claims *WOPIClaims, durationSeconds int64)
 }
 
 // NewWOPIHandler constructs the handler.
@@ -110,10 +112,10 @@ func NewWOPIHandler(rdb *redis.Client, log zerolog.Logger) *WOPIHandler {
 
 // Register mounts every WOPI route on the given mux.
 func (h *WOPIHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET  /wopi/hosting/discovery",     h.discovery)
-	mux.HandleFunc("GET  /wopi/files/{file_id}",       h.checkFileInfo)
+	mux.HandleFunc("GET  /wopi/hosting/discovery", h.discovery)
+	mux.HandleFunc("GET  /wopi/files/{file_id}", h.checkFileInfo)
 	mux.HandleFunc("GET  /wopi/files/{file_id}/contents", h.getFile)
-	mux.HandleFunc("POST /wopi/files/{file_id}",       h.fileOperation)  // multiplexed via X-WOPI-Override
+	mux.HandleFunc("POST /wopi/files/{file_id}", h.fileOperation) // multiplexed via X-WOPI-Override
 	mux.HandleFunc("POST /wopi/files/{file_id}/contents", h.putFile)
 }
 
@@ -452,9 +454,9 @@ func (h *WOPIHandler) putRelative(w http.ResponseWriter, r *http.Request, c *WOP
 		return
 	}
 	writeJSONStatus(w, http.StatusOK, map[string]any{
-		"Name":    newName,
-		"Url":     hostURL,
-		"FileID":  newID,
+		"Name":   newName,
+		"Url":    hostURL,
+		"FileID": newID,
 	})
 }
 
@@ -528,8 +530,8 @@ func (h *WOPIHandler) discovery(w http.ResponseWriter, r *http.Request) {
 		NetZones: []discoveryZone{{
 			Name: "external-http",
 			Apps: []discoveryApp{
-				{Name: "Word",       Actions: docxActions(editURL, viewURL)},
-				{Name: "Excel",      Actions: xlsxActions(editURL, viewURL)},
+				{Name: "Word", Actions: docxActions(editURL, viewURL)},
+				{Name: "Excel", Actions: xlsxActions(editURL, viewURL)},
 				{Name: "PowerPoint", Actions: pptxActions(editURL, viewURL)},
 			},
 		}},
@@ -544,26 +546,26 @@ func (h *WOPIHandler) discovery(w http.ResponseWriter, r *http.Request) {
 
 func docxActions(edit, view string) []discoveryAction {
 	return []discoveryAction{
-		{Name: "edit",       Ext: "docx", URLSrc: edit, Default: "true"},
-		{Name: "view",       Ext: "docx", URLSrc: view},
-		{Name: "edit",       Ext: "doc",  URLSrc: edit},
-		{Name: "view",       Ext: "doc",  URLSrc: view},
+		{Name: "edit", Ext: "docx", URLSrc: edit, Default: "true"},
+		{Name: "view", Ext: "docx", URLSrc: view},
+		{Name: "edit", Ext: "doc", URLSrc: edit},
+		{Name: "view", Ext: "doc", URLSrc: view},
 	}
 }
 func xlsxActions(edit, view string) []discoveryAction {
 	return []discoveryAction{
 		{Name: "edit", Ext: "xlsx", URLSrc: edit, Default: "true"},
 		{Name: "view", Ext: "xlsx", URLSrc: view},
-		{Name: "edit", Ext: "xls",  URLSrc: edit},
-		{Name: "view", Ext: "xls",  URLSrc: view},
+		{Name: "edit", Ext: "xls", URLSrc: edit},
+		{Name: "view", Ext: "xls", URLSrc: view},
 	}
 }
 func pptxActions(edit, view string) []discoveryAction {
 	return []discoveryAction{
 		{Name: "edit", Ext: "pptx", URLSrc: edit, Default: "true"},
 		{Name: "view", Ext: "pptx", URLSrc: view},
-		{Name: "edit", Ext: "ppt",  URLSrc: edit},
-		{Name: "view", Ext: "ppt",  URLSrc: view},
+		{Name: "edit", Ext: "ppt", URLSrc: edit},
+		{Name: "view", Ext: "ppt", URLSrc: view},
 	}
 }
 
@@ -586,7 +588,7 @@ func (h *WOPIHandler) maybeStartSession(parent context.Context, c *WOPIClaims) {
 	startedAt := strconv.FormatInt(time.Now().Unix(), 10)
 	ok, _ := h.rdb.SetNX(ctx, wopiSessionKey(c), startedAt, time.Hour).Result()
 	if ok && h.Auditor != nil {
-		h.Auditor.SessionStarted(c)
+		h.Auditor.SessionStarted(parent, c)
 	}
 }
 
@@ -605,6 +607,6 @@ func (h *WOPIHandler) endSession(parent context.Context, c *WOPIClaims) {
 		return
 	}
 	if startUnix, err := strconv.ParseInt(startStr, 10, 64); err == nil {
-		h.Auditor.SessionEnded(c, time.Now().Unix()-startUnix)
+		h.Auditor.SessionEnded(parent, c, time.Now().Unix()-startUnix)
 	}
 }

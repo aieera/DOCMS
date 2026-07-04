@@ -122,15 +122,15 @@ func NewError(status int, scimType, detail string) *Error {
 
 // PatchOp is the envelope for PATCH requests.
 type PatchOp struct {
-	Schemas    []string          `json:"schemas"`
+	Schemas    []string         `json:"schemas"`
 	Operations []PatchOperation `json:"Operations"`
 }
 
 // PatchOperation is one entry in the ops array.
 type PatchOperation struct {
-	Op    string          `json:"op"`   // "add" | "replace" | "remove"
-	Path  string          `json:"path,omitempty"`
-	Value any             `json:"value,omitempty"`
+	Op    string `json:"op"` // "add" | "replace" | "remove"
+	Path  string `json:"path,omitempty"`
+	Value any    `json:"value,omitempty"`
 }
 
 // ---- small int→string helper (avoid strconv dep in this file) -----------

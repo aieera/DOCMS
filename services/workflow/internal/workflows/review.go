@@ -10,8 +10,8 @@
 //   - ANY rejection → emit dms.review.rejected.v1 with the rejector's
 //     comment + revert document to draft.
 //   - Signals:
-//       ReviewerDecided(reviewer_id, decision, comment)
-//       ReviewerReassigned(old_id, new_id, reason)
+//     ReviewerDecided(reviewer_id, decision, comment)
+//     ReviewerReassigned(old_id, new_id, reason)
 //   - 72h timer per reviewer → auto-escalation (counts as a reject by
 //     default; the policy team can adjust via a follow-up).
 //

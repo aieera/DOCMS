@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -55,12 +57,22 @@ type HoldsChecker interface {
 	AnyActiveHoldFor(ctx context.Context, tenantID, documentID uuid.UUID) (bool, error)
 }
 
+// RecordsChecker is the narrow interface DocumentService needs from the
+// records package to enforce record immutability on mutating paths: a
+// document declared as a record (not yet disposed) cannot be edited, moved,
+// re-versioned, or deleted except via disposition. Local interface avoids an
+// import cycle (records imports model; service would otherwise import records).
+type RecordsChecker interface {
+	IsDeclaredRecord(ctx context.Context, tenantID, documentID uuid.UUID) (bool, error)
+}
+
 // DocumentService orchestrates repositories + PolicyService.
 type DocumentService struct {
 	pool     *pgxpool.Pool
 	repos    *repository.Repositories
 	policy   PermissionChecker
 	holds    HoldsChecker
+	records  RecordsChecker
 	log      zerolog.Logger
 	localKEK []byte // 32 bytes; nil disables tenant-secret encrypt/decrypt paths
 	// env mirrors pkg/config.Config.Environment ("dev" | "staging" | "prod").
@@ -106,6 +118,46 @@ func (s *DocumentService) MatchThreshold() float64 {
 // purge path so it can delete blob bytes alongside the DB rows.
 func (s *DocumentService) SetS3Client(c *storage.S3Client) { s.s3 = c }
 
+// SetRecordsChecker installs the records immutability gate. When set, mutating
+// document paths refuse changes to a declared (non-disposed) record with
+// ErrRecordDeclared. Nil disables the check (used by tests / pre-records boot).
+func (s *DocumentService) SetRecordsChecker(c RecordsChecker) { s.records = c }
+
+// blockedByRecord returns ErrRecordDeclared when documentID is a declared
+// record (immutable until disposition). No-op when the checker is unset.
+func (s *DocumentService) blockedByRecord(ctx context.Context, tenantID, documentID uuid.UUID) error {
+	if s.records == nil {
+		return nil
+	}
+	declared, err := s.records.IsDeclaredRecord(ctx, tenantID, documentID)
+	if err != nil {
+		return fmt.Errorf("record check: %w", err)
+	}
+	if declared {
+		return vdmserr.ErrRecordDeclared
+	}
+	return nil
+}
+
+// blockedByWORM returns ErrWORMLocked when the document's blob is under an
+// unexpired S3 object-lock retention (app-level guard mirroring the S3-enforced
+// lock). Cheap targeted read; WORM is an admin-rare designation.
+func (s *DocumentService) blockedByWORM(ctx context.Context, tenantID, documentID uuid.UUID) error {
+	var until *time.Time
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT worm_retain_until FROM documents WHERE tenant_id=$1 AND id=$2`,
+			tenantID, documentID).Scan(&until)
+	})
+	if err != nil {
+		return fmt.Errorf("worm check: %w", err)
+	}
+	if until != nil && until.After(time.Now()) {
+		return vdmserr.ErrWORMLocked
+	}
+	return nil
+}
+
 // SetLocalKEK installs the AES-256 key used to encrypt/decrypt small
 // per-tenant secrets stored in the document DB (currently the LLM API
 // key in ner_config). Loaded from SEDOC_LOCAL_KEK in main.go; nil
@@ -149,6 +201,21 @@ type CreateDocumentInput struct {
 	// ExternalID is an optional caller-owned business key. Empty = none.
 	// Tenant-unique when set; a collision surfaces as ErrAlreadyExists.
 	ExternalID string
+	// DocType is "file" (default), "note", or "wiki". Notes/wikis are
+	// normal documents whose content is a collaborative markdown version,
+	// so they inherit versioning/ACL/search/audit.
+	DocType string
+}
+
+// CreateNoteInput creates a note/wiki document. Content is added later as a
+// markdown version through the normal version path; the document exists
+// immediately so the collaborative editor can open on it.
+type CreateNoteInput struct {
+	WorkspaceID uuid.UUID
+	FolderID    uuid.UUID
+	Title       string
+	// DocType must be model.DocTypeNote or model.DocTypeWiki; empty = note.
+	DocType string
 }
 
 type UpdateDocumentInput struct {
@@ -225,6 +292,11 @@ type CreateVersionInput struct {
 	SHA256Hash    string
 	CreatedByName string
 	ChangeSummary string
+	// BaseVersionID is the version the caller based this edit on (optimistic
+	// concurrency, §sync). When non-nil and it no longer equals the document's
+	// current_version_id, CreateVersion returns vdmserr.Conflict (409). Nil =
+	// skip the check.
+	BaseVersionID *uuid.UUID
 }
 
 type UpdateLifecycleInput struct {
@@ -365,9 +437,18 @@ func validateSharePermissions(perms []string) error {
 // Without this block every CheckPermission was Unauthenticated → the
 // fail-closed branch below turned that into a generic 403.
 func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID, action, resourceType string, resourceID uuid.UUID, extra map[string]any) (bool, error) {
+	ok, _, err := s.checkPermissionDetailed(ctx, userID, action, resourceType, resourceID, extra)
+	return ok, err
+}
+
+// checkPermissionDetailed is checkPermission plus the policy's reason string.
+// The reason is generic ("policy denied") for ACL/lifecycle denials and a
+// specific, user-facing "blocked: ..." message for classification/clearance
+// blocks (§8) — the read path surfaces the latter as an explainable HTTP 403.
+func (s *DocumentService) checkPermissionDetailed(ctx context.Context, userID uuid.UUID, action, resourceType string, resourceID uuid.UUID, extra map[string]any) (bool, string, error) {
 	ctxStruct, err := structpb.NewStruct(stringifyMap(extra))
 	if err != nil {
-		return false, fmt.Errorf("build context struct: %w", err)
+		return false, "", fmt.Errorf("build context struct: %w", err)
 	}
 	pairs := []string{"x-user-id", userID.String()}
 	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
@@ -393,7 +474,7 @@ func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID,
 		// Re-marshal the struct now that user_role landed.
 		ctxStruct, err = structpb.NewStruct(stringifyMap(extra))
 		if err != nil {
-			return false, fmt.Errorf("build context struct: %w", err)
+			return false, "", fmt.Errorf("build context struct: %w", err)
 		}
 	}
 	ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
@@ -408,9 +489,9 @@ func (s *DocumentService) checkPermission(ctx context.Context, userID uuid.UUID,
 	if err != nil {
 		s.log.Error().Err(err).Str("action", action).Str("resource", resourceType).
 			Msg("policy service unavailable; denying request (fail-closed)")
-		return false, nil
+		return false, "", nil
 	}
-	return resp.GetAllowed(), nil
+	return resp.GetAllowed(), resp.GetReason(), nil
 }
 
 // requirePermission short-circuits with ErrForbidden if the check denies.
@@ -449,16 +530,182 @@ func (s *DocumentService) requireDocPermission(
 	}); err != nil {
 		return nil, err
 	}
-	if err := s.requirePermission(ctx, userID, action, "document", docID, map[string]any{
+	extra := map[string]any{
 		"workspace_id":     doc.WorkspaceID.String(),
 		"lifecycle_state":  string(doc.LifecycleState),
 		"region_pin":       doc.RegionPin,
 		"classification":   doc.DocumentClass,
 		"under_legal_hold": doc.LifecycleState == model.StateLegalHold,
-	}); err != nil {
+	}
+	// §8: merge the classification/clearance gate context (no-op when the
+	// tenant hasn't enabled gating). Actions map onto the same vocabulary the
+	// rules use (view/edit/share/delete), so this gates every action, not just
+	// reads.
+	gate, err := s.loadClassGate(ctx, tenantID, userID)
+	if err != nil {
 		return nil, err
 	}
+	for k, v := range gate.contextFor(doc, action) {
+		extra[k] = v
+	}
+	allowed, reason, err := s.checkPermissionDetailed(ctx, userID, action, "document", docID, extra)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		if blocked := s.classificationDenial(ctx, tenantID, userID, doc, action, reason); blocked != nil {
+			return nil, blocked
+		}
+		return nil, vdmserr.ErrForbidden
+	}
 	return doc, nil
+}
+
+// classGate bundles the per-request inputs the classification gate needs: the
+// tenant config, its rules, and the caller's clearance. Loaded once per request
+// so batch paths don't re-query per document.
+type classGate struct {
+	cfg       model.ClassificationGateConfig
+	rules     []model.ClassificationRule
+	clearance string
+}
+
+// loadClassGate reads the gate config + rules + caller clearance in one tenant
+// tx. When gating is disabled for the tenant, contextFor returns nil and the
+// read path is byte-for-byte unchanged.
+func (s *DocumentService) loadClassGate(ctx context.Context, tenantID, userID uuid.UUID) (*classGate, error) {
+	g := &classGate{}
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		cfg, err := s.repos.Classification.GetGateConfig(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		g.cfg = cfg
+		if !cfg.Enabled {
+			return nil
+		}
+		rules, err := s.repos.Classification.ListRules(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		g.rules = rules
+		if userID != uuid.Nil {
+			cl, err := s.repos.Classification.GetUserClearance(ctx, tx, tenantID, userID)
+			if err != nil {
+				return err
+			}
+			g.clearance = cl
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+// contextFor produces the ABAC context fields the OPA classification gate reads
+// for (doc, action). Returns nil when gating is disabled. security_classification
+// carries the *effective* level (PHI/PII floor applied) so the reason names it.
+func (g *classGate) contextFor(doc *model.Document, action string) map[string]any {
+	if g == nil || !g.cfg.Enabled {
+		return nil
+	}
+	eff := model.EffectiveClassification(g.cfg, doc.SecurityClassification, doc.HasPHI, doc.HasPII)
+	req := model.RequiredClearance(g.rules, eff, doc.HasPHI, action)
+	return map[string]any{
+		"classification_gate":     "on",
+		"security_classification": eff,
+		"has_phi":                 boolStr(doc.HasPHI),
+		"has_pii":                 boolStr(doc.HasPII),
+		"user_clearance":          g.clearance,
+		"required_clearance":      req,
+	}
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// enforceClassificationView applies the classification gate for a "view" after
+// the ACL check has already granted visibility. Returns nil (allowed / gating
+// disabled), an explainable *vdmserr.Error (classification block, HTTP 403), or
+// ErrForbidden. Callers must only invoke this once ACL visibility is confirmed,
+// so a clearance block is never revealed to someone who couldn't see the doc.
+func (s *DocumentService) enforceClassificationView(ctx context.Context, tenantID, userID uuid.UUID, doc *model.Document) error {
+	gate, err := s.loadClassGate(ctx, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	gc := gate.contextFor(doc, "view")
+	if gc == nil {
+		return nil // gating disabled
+	}
+	gc["workspace_id"] = doc.WorkspaceID.String()
+	allowed, reason, err := s.checkPermissionDetailed(ctx, userID, "view", "document", doc.ID, gc)
+	if err != nil {
+		return err
+	}
+	if allowed {
+		return nil
+	}
+	if blocked := s.classificationDenial(ctx, tenantID, userID, doc, "view", reason); blocked != nil {
+		return blocked
+	}
+	return vdmserr.ErrForbidden
+}
+
+// classificationDenial turns a policy "blocked: ..." reason into an explainable
+// 403 and audits the decision. Returns nil when the denial wasn't a
+// classification block (the caller then applies its normal deny behaviour).
+func (s *DocumentService) classificationDenial(ctx context.Context, tenantID, userID uuid.UUID, doc *model.Document, action, reason string) error {
+	if !strings.HasPrefix(reason, "blocked:") {
+		return nil
+	}
+	s.auditClassificationDeny(ctx, tenantID, userID, doc, action, reason)
+	return &vdmserr.Error{Kind: vdmserr.KindForbidden, Code: "CLASSIFICATION_BLOCKED", Message: reason}
+}
+
+type policyDeniedPayload struct {
+	TenantID               string `json:"tenant_id"`
+	DocumentID             string `json:"document_id"`
+	UserID                 string `json:"user_id"`
+	Action                 string `json:"action"`
+	Reason                 string `json:"reason"`
+	SecurityClassification string `json:"security_classification"`
+	HasPHI                 bool   `json:"has_phi"`
+	HasPII                 bool   `json:"has_pii"`
+	DeniedAt               string `json:"denied_at"`
+}
+
+// auditClassificationDeny records a classification/clearance block to the audit
+// trail via the transactional outbox (dms.policy.denied.v1). Best-effort: a
+// failure to audit must not change the (already-decided) deny outcome, so the
+// error is logged, not returned.
+func (s *DocumentService) auditClassificationDeny(ctx context.Context, tenantID, userID uuid.UUID, doc *model.Document, action, reason string) {
+	err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		evt, oErr := model.NewOutboxEvent(tenantID, "dms.policy.denied.v1", "document", doc.ID, policyDeniedPayload{
+			TenantID:               tenantID.String(),
+			DocumentID:             doc.ID.String(),
+			UserID:                 userID.String(),
+			Action:                 action,
+			Reason:                 reason,
+			SecurityClassification: doc.SecurityClassification,
+			HasPHI:                 doc.HasPHI,
+			HasPII:                 doc.HasPII,
+			DeniedAt:               time.Now().UTC().Format(time.RFC3339Nano),
+		})
+		if oErr != nil {
+			return oErr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+	if err != nil {
+		s.log.Error().Err(err).Str("document", doc.ID.String()).Msg("failed to audit classification denial")
+	}
 }
 
 // EnsureCanViewDocument is the exported per-document view gate used by
@@ -502,7 +749,10 @@ func (s *DocumentService) EnsureCanViewDocument(ctx context.Context, docID uuid.
 	if !perms.CanView {
 		return vdmserr.ErrNotFound
 	}
-	return nil
+	// §8: ACL grants visibility; now apply the classification/clearance gate.
+	// Runs only after CanView so a clearance block is never surfaced to a
+	// caller who couldn't see the document in the first place.
+	return s.enforceClassificationView(ctx, tenantID, userID, doc)
 }
 
 // summarizeDocumentPermissions issues a single BatchCheckPermission for the

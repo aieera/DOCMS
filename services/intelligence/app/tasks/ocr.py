@@ -37,10 +37,65 @@ from app.metrics import (
     ocr_processing_seconds,
     ocr_publish_failed_total,
 )
-from app.models.ocr_model import paddle_ocr_page, surya_ocr_page
+from app.models.ocr_model import paddle_ocr_page, surya_ocr_page, trocr_ocr_page
 from app.worker import celery_app
 
 log = logging.getLogger(__name__)
+
+_redis_client = None
+
+
+def _get_redis():
+    """Lazy Redis client for per-tenant OCR config (mirrors llm_gateway)."""
+    global _redis_client
+    if _redis_client is None:
+        import redis
+        _redis_client = redis.from_url(settings.redis_cache_url, decode_responses=True)
+    return _redis_client
+
+
+def _normalize_engine(value: str) -> str:
+    """Map any engine spelling to one of: auto | printed | handwriting | surya.
+    'surya' is the legacy 'printed + force-OCR' value (bypasses the pymupdf
+    text fast path); kept for the existing ?force=surya rerun callers."""
+    e = (value or "").strip().lower()
+    if e in ("icr", "handwriting", "handwritten", "trocr"):
+        return "handwriting"
+    if e in ("printed", "paddle", "type", "typed"):
+        return "printed"
+    if e == "surya":
+        return "surya"
+    return "auto"
+
+
+def _resolve_engine(tenant_id: str, doc_type: str, force_engine: str) -> str:
+    """Decide which engine to run, most-specific wins:
+
+      1. an explicit non-auto force_engine (rerun / event override)
+      2. a per-doc-type override in the tenant's ocr_config
+      3. the tenant default in ocr_config
+      4. settings.ocr_default_engine
+
+    Reads Redis key ocr_config:{tenant_id} = {"engine": "...",
+    "doc_type_overrides": {"<doc_type>": "..."}}. Any Redis failure falls
+    back to the configured default — engine choice must never block OCR.
+    The resolved value is normalized and returned for both routing AND the
+    audit trail (persisted engine label + dms.ocr.completed envelope)."""
+    norm = _normalize_engine(force_engine)
+    if norm != "auto":
+        return norm
+    try:
+        raw = _get_redis().get(f"ocr_config:{tenant_id}")
+        if raw:
+            cfg = json.loads(raw)
+            overrides = cfg.get("doc_type_overrides") or {}
+            if doc_type and doc_type in overrides:
+                return _normalize_engine(overrides[doc_type])
+            if cfg.get("engine"):
+                return _normalize_engine(cfg["engine"])
+    except Exception:
+        log.warning("ocr_config lookup failed for tenant %s; using default", tenant_id, exc_info=True)
+    return _normalize_engine(settings.ocr_default_engine)
 
 OCR_MIMES = {
     "application/pdf", "image/jpeg", "image/png", "image/tiff",
@@ -264,15 +319,85 @@ def _maybe_paddle_fallback(result: dict, img, page_no: int) -> tuple[dict, str]:
     return result, "surya"
 
 
-def _ocr_pdf_pages(path: str) -> list[dict]:
+def _iou(a: dict, b: dict) -> float:
+    """Intersection-over-union of two {x1,y1,x2,y2} boxes."""
+    ix1, iy1 = max(a["x1"], b["x1"]), max(a["y1"], b["y1"])
+    ix2, iy2 = min(a["x2"], b["x2"]), min(a["y2"], b["y2"])
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    area_a = max(0.0, a["x2"] - a["x1"]) * max(0.0, a["y2"] - a["y1"])
+    area_b = max(0.0, b["x2"] - b["x1"]) * max(0.0, b["y2"] - b["y1"])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _merge_ocr_results(printed: dict, handwriting: dict) -> dict:
+    """Merge a printed-engine result with an ICR result into one page.
+
+    The two engines see the same page differently: printed (Surya/Paddle)
+    nails typed labels; ICR (TrOCR) recovers ink the printed engine missed or
+    scored badly. We take the union of their line boxes and, wherever two
+    boxes overlap (IoU > 0.5), keep the higher-confidence one — so typed
+    regions stay typed and handwritten regions become ICR. Text is rebuilt
+    top-to-bottom, left-to-right from the kept boxes so reading order holds
+    on forms (printed prompt + handwritten answer on the same row)."""
+    kept: list[dict] = list(printed.get("boxes") or [])
+    for hb in handwriting.get("boxes") or []:
+        clash = next((i for i, pb in enumerate(kept) if _iou(pb, hb) > 0.5), None)
+        if clash is None:
+            kept.append(hb)
+        elif (hb.get("confidence", 0.0) or 0.0) > (kept[clash].get("confidence", 0.0) or 0.0):
+            kept[clash] = hb
+    kept.sort(key=lambda b: (round(b["y1"] / 10.0), b["x1"]))
+    text = "\n".join(b["text"] for b in kept if b.get("text"))
+    confs = [b["confidence"] for b in kept if b.get("confidence") is not None]
+    return {
+        "text": text,
+        "confidence": (sum(confs) / len(confs)) if confs else 0.0,
+        "boxes": kept,
+    }
+
+
+def _ocr_page_image(img, page_no: int, engine: str) -> tuple[dict, str]:
+    """Run one rasterised page through the selected engine. `engine` is the
+    normalized choice (auto | printed | surya | handwriting). Returns
+    (result, method_label) where the label is what gets persisted + audited:
+
+      - printed/surya : Surya, with the existing PaddleOCR confidence fallback
+      - handwriting   : TrOCR primary, MERGED with Surya so typed regions on a
+                        mixed form aren't lost -> "trocr+surya"
+      - auto          : printed first; if the page scores below the handwriting
+                        threshold (and autodetect is on), also run TrOCR and
+                        merge -> "surya+trocr" (recovers handwriting without a
+                        manual flag)
+    """
+    if engine == "handwriting":
+        hw = trocr_ocr_page(img, ["en"])
+        printed = surya_ocr_page(img, ["ar", "en"])
+        return _merge_ocr_results(printed, hw), "trocr+surya"
+
+    result = surya_ocr_page(img, ["ar", "en"])
+    result, method = _maybe_paddle_fallback(result, img, page_no)
+    if engine == "auto" and settings.ocr_handwriting_autodetect:
+        if (result.get("confidence", 0.0) or 0.0) < settings.ocr_handwriting_threshold:
+            log.info("page %d conf %.2f below handwriting floor; trying ICR merge",
+                     page_no, result.get("confidence", 0.0) or 0.0)
+            hw = trocr_ocr_page(img, ["en"])
+            merged = _merge_ocr_results(result, hw)
+            return merged, method + "+trocr"
+    return result, method
+
+
+def _ocr_pdf_pages(path: str, engine: str = "auto") -> list[dict]:
     doc = _safe_fitz_open(path)
     pages = []
     for i, page in enumerate(doc):
         pix = page.get_pixmap(dpi=150)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         t0 = time.perf_counter()
-        result = surya_ocr_page(img, ["ar", "en"])
-        result, method = _maybe_paddle_fallback(result, img, i + 1)
+        result, method = _ocr_page_image(img, i + 1, engine)
         dur = time.perf_counter() - t0
         pages.append({
             "page_number": i + 1,
@@ -287,11 +412,10 @@ def _ocr_pdf_pages(path: str) -> list[dict]:
     return pages
 
 
-def _ocr_image(path: str) -> list[dict]:
+def _ocr_image(path: str, engine: str = "auto") -> list[dict]:
     img = Image.open(path).convert("RGB")
     t0 = time.perf_counter()
-    result = surya_ocr_page(img, ["ar", "en"])
-    result, method = _maybe_paddle_fallback(result, img, 1)
+    result, method = _ocr_page_image(img, 1, engine)
     dur = time.perf_counter() - t0
     ocr_processing_seconds.labels(engine=method).observe(dur)
     return [{
@@ -541,17 +665,22 @@ def ocr_file(src: str, mime_type: str, language: str = "en",
     identically. Returns (pages, full_text, engine, avg_confidence). The
     caller owns S3 download + envelope decrypt + persistence.
     """
+    engine = _normalize_engine(force_engine)  # auto | printed | surya | handwriting
+    # 'surya' (layout boxes) and 'handwriting' (a text layer can't carry ink)
+    # both force the rasterise+OCR path, bypassing the pymupdf text fast path.
+    force_ocr = engine in ("surya", "handwriting")
+    # The rasterised path runs a real page engine; collapse the legacy 'surya'
+    # alias to 'printed'.
+    page_engine = "printed" if engine == "surya" else engine
     if mime_type == "application/pdf":
-        # force_engine="surya" bypasses the pymupdf fast path so the layout
-        # viewer can get bounding boxes even on text-PDFs.
-        if force_engine == "surya" or not _pdf_has_text(src):
-            pages = _ocr_pdf_pages(src)
+        if force_ocr or not _pdf_has_text(src):
+            pages = _ocr_pdf_pages(src, page_engine)
         else:
             pages = _extract_text_pdf(src)
     elif _is_text_mime(mime_type):
         pages = _extract_text_file(src)
     else:
-        pages = _ocr_image(src)
+        pages = _ocr_image(src, page_engine)
 
     if pages:
         method_counts: dict[str, int] = {}
@@ -602,6 +731,7 @@ def process_ocr(
     language: str = "en",
     event_id: str = "",
     force_engine: str = "",
+    doc_type: str = "",
 ):
     """Run OCR for one document. Per Wave 5 Prompt 5.3:
 
@@ -647,7 +777,15 @@ def process_ocr(
         _s3().download_file(storage_bucket, storage_key, src)
         _decrypt_src_if_envelope(src, tenant_id, content_blob_id)
 
-        pages, total_text, engine, avg_conf = ocr_file(src, mime_type, language, force_engine)
+        # Resolve the engine per tenant/doc-type (explicit force_engine wins).
+        # The resolved value drives routing AND is what gets persisted +
+        # emitted on dms.ocr.completed, so the engine choice is auditable.
+        resolved_engine = _resolve_engine(tenant_id, doc_type, force_engine)
+        log.info(
+            "ocr engine resolved: tenant=%s doc_type=%s force=%r -> %s",
+            tenant_id, doc_type or "-", force_engine or "-", resolved_engine,
+        )
+        pages, total_text, engine, avg_conf = ocr_file(src, mime_type, language, resolved_engine)
         total_chars = len(total_text)
 
         try:

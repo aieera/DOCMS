@@ -161,13 +161,13 @@ func (s *Service) ListByDocument(ctx context.Context, tenantID, documentID strin
 // the moment of signing. SVGPath / DeviceKind / DocHashHex are the
 // ADR 0073 additions; older callers can leave them empty.
 type RecordSignatureInput struct {
-	TenantID    string
-	RequestID   string
-	SignerID    string
-	IPAddress   string
-	SVGPath     string
-	DeviceKind  string
-	DocHashHex  string
+	TenantID   string
+	RequestID  string
+	SignerID   string
+	IPAddress  string
+	SVGPath    string
+	DeviceKind string
+	DocHashHex string
 }
 
 // RecordSignature marks a signer as signed and, when every required
@@ -240,6 +240,68 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 		evt := database.NewOutboxEvent(tenantUUID, "dms.signature.completed.v1", "signature_request", reqUUID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// sealAggregateID picks the outbox aggregate id for a signature.applied
+// event: the new sealed version when it parses, else the document id as a
+// stable fallback. Pure so the choice is unit-testable.
+func sealAggregateID(versionID, documentID string) (uuid.UUID, error) {
+	if id, err := uuid.Parse(versionID); err == nil {
+		return id, nil
+	}
+	return uuid.Parse(documentID)
+}
+
+// buildSignatureAppliedEvent constructs the dms.signature.applied.v1 outbox
+// event. The payload is a FLAT map — the outbox publisher wraps it as the
+// CloudEvent `data`; a second envelope here would double-nest fields at
+// data.data.* and break webhook consumers (same constraint as
+// dms.signature.completed.v1). Pure (no DB) so the wire contract is
+// unit-testable.
+func buildSignatureAppliedEvent(tenantUUID, aggID uuid.UUID, documentID, versionID, userID, signerName, reason, level, fingerprint string) *database.OutboxEvent {
+	payload, _ := json.Marshal(map[string]string{
+		"tenant_id":         tenantUUID.String(),
+		"document_id":       documentID,
+		"version_id":        versionID,
+		"signer_name":       signerName,
+		"reason":            reason,
+		"level":             level,
+		"fingerprint":       fingerprint,
+		"sealed_by_user_id": userID,
+	})
+	return database.NewOutboxEvent(tenantUUID, "dms.signature.applied.v1", "version", aggID, payload)
+}
+
+// emitSignatureApplied writes dms.signature.applied.v1 to the outbox after a
+// server-seal produces a new signed version (ADR 0072 / §sign). Unlike
+// dms.signature.completed.v1 — emitted inside the request state-change tx —
+// the seal's authoritative state (the new version) is created in the document
+// service over HTTP, so there is no local row to bundle the event with. We
+// therefore emit in a standalone tenant tx, best-effort: the sealed version
+// (and its own dms.version.uploaded.v1) is already durable and the triggering
+// dms.signature.completed.v1 was delivered at-least-once, so a rare emit
+// failure is logged loudly rather than failing the seal — failing here would
+// risk a duplicate seal on caller retry. Outbox-only per §4.7 (TestPhaseC5);
+// never publishes to NATS directly.
+func (s *Service) emitSignatureApplied(ctx context.Context, tenantID, documentID, versionID, userID, signerName, reason, level, fingerprint string) {
+	tenantUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		s.log.Error().Err(err).Str("tenant_id", tenantID).Msg("signature.applied: bad tenant id; event dropped")
+		return
+	}
+	aggID, err := sealAggregateID(versionID, documentID)
+	if err != nil {
+		s.log.Error().Err(err).Str("version_id", versionID).Str("document_id", documentID).
+			Msg("signature.applied: no parseable aggregate id; event dropped")
+		return
+	}
+	evt := buildSignatureAppliedEvent(tenantUUID, aggID, documentID, versionID, userID, signerName, reason, level, fingerprint)
+	if err := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+		return s.outbox.Insert(ctx, tx, evt)
+	}); err != nil {
+		s.log.Error().Err(err).Str("document_id", documentID).Str("version_id", versionID).
+			Msg("signature.applied: outbox insert failed; event lost (seal itself succeeded)")
+	}
 }
 
 // NextExpectedSigner returns the id of the next signer who should

@@ -2,25 +2,25 @@
 //
 // Three new activities:
 //
-//   ResolveAssignee     — given a step's intended assignee, walks
-//                         workflow_delegations and returns (effective,
-//                         delegator-or-empty, kind). Called from the
-//                         workflow before CreateTask so the task row
-//                         lands under the right user.
+//	ResolveAssignee     — given a step's intended assignee, walks
+//	                      workflow_delegations and returns (effective,
+//	                      delegator-or-empty, kind). Called from the
+//	                      workflow before CreateTask so the task row
+//	                      lands under the right user.
 //
-//   EvaluateConditionRego — Rego-based condition eval for the new
-//                         schema's `condition_rego` field. Falls
-//                         through to expr-lang if the expression
-//                         doesn't parse as a Rego query (legacy
-//                         compatibility).
+//	EvaluateConditionRego — Rego-based condition eval for the new
+//	                      schema's `condition_rego` field. Falls
+//	                      through to expr-lang if the expression
+//	                      doesn't parse as a Rego query (legacy
+//	                      compatibility).
 //
-//   EscalateToManager   — looks up users.manager_id, returns the
-//                         next-in-chain user id (empty if no manager).
+//	EscalateToManager   — looks up users.manager_id, returns the
+//	                      next-in-chain user id (empty if no manager).
 //
-//   EmitStepTransition  — single audit entrypoint for every state
-//                         change. Dual-id (actor + delegator) so the
-//                         audit row is honest about who clicked the
-//                         button vs. on whose behalf.
+//	EmitStepTransition  — single audit entrypoint for every state
+//	                      change. Dual-id (actor + delegator) so the
+//	                      audit row is honest about who clicked the
+//	                      button vs. on whose behalf.
 package activities
 
 import (

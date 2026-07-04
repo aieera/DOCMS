@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     # disable the fallback entirely.
     ocr_paddle_fallback_threshold: float = 0.6
     ocr_per_tenant_cap: int = 8
+    # OCR engine selection. ocr_default_engine is the tenant-agnostic fallback
+    # ("auto" | "printed" | "handwriting") used when neither the event nor a
+    # per-tenant/doc-type override picks one. "auto" runs the printed engines
+    # and, when a page lands below ocr_handwriting_threshold (and autodetect is
+    # on), re-runs that page through TrOCR (ICR) and keeps whichever scores
+    # higher — so handwriting-heavy scans get materially better text without a
+    # manual flag. "handwriting" forces TrOCR; "printed" forces Surya/Paddle.
+    ocr_default_engine: str = "auto"
+    ocr_trocr_model: str = "microsoft/trocr-base-handwritten"
+    ocr_handwriting_autodetect: bool = True
+    ocr_handwriting_threshold: float = 0.65
     ocr_page_timeout_seconds: int = 90
     ocr_total_timeout_seconds: int = 1800  # 30 min hard abort
     ocr_max_retries: int = 3

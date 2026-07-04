@@ -107,9 +107,9 @@ func (p *StorageProxy) RegisterDownloadAlias(mux *http.ServeMux) {
 
 func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	// Accepts the frontend's historical field name sha256_hash as well
-	// as the proto-native checksum_sha256. workspace_id / folder_id are
-	// accepted and ignored here — they belong to document creation, not
-	// the storage upload session.
+	// as the proto-native checksum_sha256. workspace_id / folder_id /
+	// document_id scope the permission check and are forwarded to the
+	// storage service as gRPC metadata below.
 	var in struct {
 		RegionPin      string `json:"region_pin"`
 		Filename       string `json:"filename"`
@@ -119,6 +119,9 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 		ChecksumSHA256 string `json:"checksum_sha256"`
 		WorkspaceID    string `json:"workspace_id,omitempty"`
 		FolderID       string `json:"folder_id,omitempty"`
+		// DocumentID scopes a new-version upload to an existing document
+		// (the Word add-in / dms-sync save flows send only this).
+		DocumentID string `json:"document_id,omitempty"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -130,6 +133,9 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 	// X-Workspace-ID. The frontend posts them as JSON body fields
 	// (workspace_id / folder_id), so we forward into metadata here.
 	scopePairs := []string{}
+	if in.DocumentID != "" {
+		scopePairs = append(scopePairs, "x-document-id", in.DocumentID)
+	}
 	if in.WorkspaceID != "" {
 		scopePairs = append(scopePairs, "x-workspace-id", in.WorkspaceID)
 	}
@@ -161,6 +167,10 @@ func (p *StorageProxy) initiate(w http.ResponseWriter, r *http.Request) {
 		"storage_key":       resp.GetStorageKey(),
 		"expires_at":        formatTs(resp.GetExpiresAt()),
 		"required_headers":  resp.GetRequiredHeaders(),
+		// Dedup hit: no presigned URL; the client links existing_blob_id
+		// directly instead of PUTting to an empty URL (404).
+		"deduplicated":     resp.GetDeduplicated(),
+		"existing_blob_id": resp.GetExistingBlobId(),
 	})
 }
 
@@ -207,11 +217,11 @@ func (p *StorageProxy) complete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeProxyJSON(w, http.StatusOK, map[string]any{
-		"storage_bucket":   resp.GetStorageBucket(),
-		"storage_key":      resp.GetStorageKey(),
-		"size_bytes":       resp.GetSizeBytes(),
-		"checksum_sha256":  resp.GetChecksumSha256(),
-		"content_blob_id":  blobID,
+		"storage_bucket":  resp.GetStorageBucket(),
+		"storage_key":     resp.GetStorageKey(),
+		"size_bytes":      resp.GetSizeBytes(),
+		"checksum_sha256": resp.GetChecksumSha256(),
+		"content_blob_id": blobID,
 	})
 }
 
@@ -424,7 +434,7 @@ func grpcToHTTP(code string) int {
 		return http.StatusBadRequest
 	case "NotFound":
 		return http.StatusNotFound
-	case "AlreadyExists":
+	case "AlreadyExists", "Aborted":
 		return http.StatusConflict
 	case "PermissionDenied":
 		return http.StatusForbidden

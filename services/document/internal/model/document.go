@@ -42,6 +42,25 @@ const (
 
 // ---- Domain types ----------------------------------------------------------
 
+// Document types. A note/wiki is a normal document distinguished by
+// DocType so it inherits versioning, ACL, search, and audit while the
+// tree/editor treat it specially. Empty is treated as DocTypeFile.
+const (
+	DocTypeFile = "file"
+	DocTypeNote = "note"
+	DocTypeWiki = "wiki"
+)
+
+// IsValidDocType reports whether t is an accepted document type. The empty
+// string is NOT accepted here — callers default it to DocTypeFile first.
+func IsValidDocType(t string) bool {
+	switch t {
+	case DocTypeFile, DocTypeNote, DocTypeWiki:
+		return true
+	}
+	return false
+}
+
 // Document is the top-level aggregate.
 type Document struct {
 	TenantID uuid.UUID
@@ -63,10 +82,24 @@ type Document struct {
 	CurrentVersionID         *uuid.UUID
 	DocumentClass            string
 	ClassificationConfidence float64
-	SHA256Hash               string
-	TotalSizeBytes           int64
-	MimeType                 string
-	CreatedBy                uuid.UUID
+	// SecurityClassification is the sensitivity level gating access (§8):
+	// unclassified < internal < confidential < restricted. Empty = unset.
+	// HasPHI/HasPII are denormalised from the intelligence compliance scan
+	// (ADR 0054); ClassificationSource records who set the level
+	// ("scan" | "manual" | "records"). Migration 000087.
+	SecurityClassification string
+	HasPHI                 bool
+	HasPII                 bool
+	ClassificationSource   string
+	SHA256Hash             string
+	TotalSizeBytes         int64
+	MimeType               string
+	// DocType marks notes/wikis as a first-class document type. A note is
+	// a normal document (versioning/ACL/search/audit) whose content is a
+	// markdown version; the tree, search, and the collaborative editor key
+	// off this. Defaults to DocTypeFile (migration 000078).
+	DocType   string
+	CreatedBy uuid.UUID
 	// CreatedByName is denormalised at read time via LEFT JOIN users.
 	// Empty when the uploader row is hard-deleted (rare — the schema
 	// uses soft-delete) or missing. The handler-layer mapper passes
@@ -156,6 +189,17 @@ const (
 	FolderShared  FolderVisibility = "shared"
 	FolderPrivate FolderVisibility = "private"
 )
+
+// DuplicateMatch is a lightweight projection of a document that already
+// holds the same content (by version sha256) as a file about to be
+// uploaded. Powers the pre-upload "possible duplicate" prompt.
+type DuplicateMatch struct {
+	DocumentID  uuid.UUID
+	Title       string
+	WorkspaceID uuid.UUID
+	FolderID    uuid.UUID
+	CreatedAt   time.Time
+}
 
 // Folder is an ltree-pathed container for documents and sub-folders.
 type Folder struct {

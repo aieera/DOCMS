@@ -4,12 +4,12 @@
 // the SavedSearchAlertWorkflow on the cadence the user configured
 // (cron when set, else `every <interval_minutes>` derived spec).
 // The workflow:
-//   1. fetches the saved search row + its subscribers
-//   2. runs the search
-//   3. diffs current doc-id set vs. last_match_doc_ids
-//   4. emits dms.notify.saved_search_match.v1 per (subscriber, channel)
-//      for each NEW doc_id
-//   5. updates last_match_doc_ids + last_run_at
+//  1. fetches the saved search row + its subscribers
+//  2. runs the search
+//  3. diffs current doc-id set vs. last_match_doc_ids
+//  4. emits dms.notify.saved_search_match.v1 per (subscriber, channel)
+//     for each NEW doc_id
+//  5. updates last_match_doc_ids + last_run_at
 //
 // Determinism: no time.Now in the workflow body; everything routed
 // through activities.
@@ -103,48 +103,49 @@ func SavedSearchAlertWorkflow(ctx workflow.Context, in SavedSearchAlertInput) (*
 		}
 	}
 
-	// 4. Fan out notifications. One activity call per (subscriber,
-	//    channel) so a slow email backend doesn't block the in-app
-	//    delivery for the same subscriber.
-	if len(out.NewMatches) > 0 && len(loaded.Subscribers) > 0 {
-		for _, sub := range loaded.Subscribers {
-			for _, channel := range sub.Channels {
-				if err := workflow.ExecuteActivity(ctx,
-					"EmitSavedSearchMatch",
-					activities.EmitMatchInput{
-						TenantID:        loaded.TenantID,
-						SavedSearchID:   in.SavedSearchID,
-						SavedSearchName: loaded.Name,
-						SubscriberID:    sub.UserID,
-						Channel:         channel,
-						MatchedDocIDs:   out.NewMatches,
-					}).Get(ctx, nil); err != nil {
-					// Per-subscriber failure isn't fatal — the others
-					// still need to land. Log + continue.
-					logger.Warn("subscriber notification failed",
-						"subscriber_id", sub.UserID, "channel", channel, "err", err)
-					continue
-				}
-				out.NotificationsOut++
-			}
-		}
-	}
-
-	// 5. Update the diff cursor + last_run_at. Always — even on a
-	//    no-new-matches tick — so the cursor stays current and a
-	//    later doc that matches the previous set doesn't get a
-	//    spurious notification.
+	// 4. Advance the diff cursor BEFORE emitting. Always — even on a
+	//    no-new-matches tick — so the cursor stays current. Ordering
+	//    is deliberate: a failure after emission would re-emit the
+	//    same doc_ids on the next tick (there is NO notification-side
+	//    dedup — the cursor is the only guard), spamming every
+	//    subscriber. Cursor-first makes delivery at-most-once per
+	//    window instead: the rare crash between cursor write and
+	//    emission skips one notification batch, and the documents
+	//    remain visible in the app either way. Failure here is FATAL
+	//    so Temporal's activity retries (idempotent UPDATE) run
+	//    before anything is emitted.
 	if err := workflow.ExecuteActivity(ctx,
 		"UpdateSavedSearchAlertCursor",
 		activities.UpdateCursorInput{
 			SavedSearchID:   in.SavedSearchID,
 			LastMatchDocIDs: matched,
 		}).Get(ctx, nil); err != nil {
-		// Non-fatal. The next run will use a stale cursor and may
-		// re-emit, but the notifications service dedupes by
-		// (saved_search_id, doc_id, day) so the user won't see a
-		// flood.
-		logger.Warn("cursor update failed", "err", err)
+		return nil, err
+	}
+
+	// 5. Fan out notifications: one event per SUBSCRIBER, carrying
+	//    that subscriber's chosen channels as the DeliveryPayload
+	//    consent hint (single in-app row; email/digest per choice).
+	if len(out.NewMatches) > 0 && len(loaded.Subscribers) > 0 {
+		for _, sub := range loaded.Subscribers {
+			if err := workflow.ExecuteActivity(ctx,
+				"EmitSavedSearchMatch",
+				activities.EmitMatchInput{
+					TenantID:        loaded.TenantID,
+					SavedSearchID:   in.SavedSearchID,
+					SavedSearchName: loaded.Name,
+					SubscriberID:    sub.UserID,
+					Channels:        sub.Channels,
+					MatchedDocIDs:   out.NewMatches,
+				}).Get(ctx, nil); err != nil {
+				// Per-subscriber failure isn't fatal — the others
+				// still need to land. Log + continue.
+				logger.Warn("subscriber notification failed",
+					"subscriber_id", sub.UserID, "err", err)
+				continue
+			}
+			out.NotificationsOut++
+		}
 	}
 
 	return out, nil

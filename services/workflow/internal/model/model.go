@@ -5,12 +5,12 @@ import "time"
 
 // WorkflowDefinition is a saved workflow template.
 type WorkflowDefinition struct {
-	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Steps       []Step    `json:"steps"`
-	CreatedBy   string    `json:"created_by"`
+	ID          string `json:"id"`
+	TenantID    string `json:"tenant_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Steps       []Step `json:"steps"`
+	CreatedBy   string `json:"created_by"`
 	// Visibility — 'shared' (default) | 'private'. Migration 000062.
 	Visibility string `json:"visibility"`
 	// OwnerID — set when Visibility flips to 'private'. Empty for
@@ -56,12 +56,12 @@ type Step struct {
 
 	// ADR 0064 — wider schema fields. Optional; nil/empty falls back
 	// to legacy semantics so old definitions still execute.
-	ID             string      `json:"id,omitempty"`
-	ConditionRego  string      `json:"condition_rego,omitempty"`
-	SLAHours       int         `json:"sla_hours,omitempty"`
-	OnExpire       string      `json:"on_expire,omitempty"` // escalate | auto_approve | auto_reject
-	Escalation     *Escalation `json:"escalation,omitempty"`
-	AllowDelegate  *bool       `json:"allow_delegate,omitempty"`
+	ID            string      `json:"id,omitempty"`
+	ConditionRego string      `json:"condition_rego,omitempty"`
+	SLAHours      int         `json:"sla_hours,omitempty"`
+	OnExpire      string      `json:"on_expire,omitempty"` // escalate | auto_approve | auto_reject
+	Escalation    *Escalation `json:"escalation,omitempty"`
+	AllowDelegate *bool       `json:"allow_delegate,omitempty"`
 }
 
 // Escalation models the escalation strategy from ADR 0064.

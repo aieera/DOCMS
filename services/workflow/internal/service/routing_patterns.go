@@ -137,4 +137,4 @@ func (s *Service) anyActionTaken(ctx context.Context, tenantID, instanceID strin
 func isAdmin(role string) bool { return role == "admin" || role == "owner" }
 
 var _ = client.Client(nil) // import kept for future Temporal-side helpers
-var _ = time.Now            // ditto
+var _ = time.Now           // ditto

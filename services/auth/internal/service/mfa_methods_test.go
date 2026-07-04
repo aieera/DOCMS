@@ -7,6 +7,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -106,6 +107,11 @@ func TestErrMFAEnrollmentRequired_IsForbidden(t *testing.T) {
 	if vdmserr.KindOf(ErrMFAEnrollmentRequired) != vdmserr.KindForbidden {
 		t.Errorf("ErrMFAEnrollmentRequired must be Forbidden kind for 403 mapping, got %v",
 			vdmserr.KindOf(ErrMFAEnrollmentRequired))
+	}
+	// It must NOT collide with ErrAccountLocked (also Forbidden) under the
+	// (Kind, Code) errors.Is — otherwise the handler re-stamps it to 429.
+	if errors.Is(ErrMFAEnrollmentRequired, ErrAccountLocked) {
+		t.Error("ErrMFAEnrollmentRequired must not match ErrAccountLocked (would re-stamp to 429)")
 	}
 }
 

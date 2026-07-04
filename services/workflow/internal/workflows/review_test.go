@@ -46,25 +46,25 @@ func TestReviewWorkflow_NoReviewersApprovesImmediately(t *testing.T) {
 // context.Context for an activity to register successfully.
 type stubActivities struct{}
 
-func (*stubActivities)CreateTask(_ context.Context, _, _, _, _, _ string) error {
+func (*stubActivities) CreateTask(_ context.Context, _, _, _, _, _ string) error {
 	return nil
 }
-func (*stubActivities)NotifyAssignee(_ context.Context, _, _, _ string) error {
+func (*stubActivities) NotifyAssignee(_ context.Context, _, _, _ string) error {
 	return nil
 }
-func (*stubActivities)CompleteTask(_ context.Context, _, _ string, _ int, _, _ string) error {
+func (*stubActivities) CompleteTask(_ context.Context, _, _ string, _ int, _, _ string) error {
 	return nil
 }
-func (*stubActivities)DelegateTask(_ context.Context, _, _ string, _ int, _ string) error {
+func (*stubActivities) DelegateTask(_ context.Context, _, _ string, _ int, _ string) error {
 	return nil
 }
-func (*stubActivities)SetDocumentLifecycle(_ context.Context, _, _, _ string) error {
+func (*stubActivities) SetDocumentLifecycle(_ context.Context, _, _, _ string) error {
 	return nil
 }
-func (*stubActivities)PublishEvent(_ context.Context, _, _ string, _ map[string]string) error {
+func (*stubActivities) PublishEvent(_ context.Context, _, _ string, _ map[string]string) error {
 	return nil
 }
-func (*stubActivities)EvaluateCondition(_ context.Context, _, _, _ string) (bool, error) {
+func (*stubActivities) EvaluateCondition(_ context.Context, _, _, _ string) (bool, error) {
 	return false, nil
 }
 
@@ -85,7 +85,7 @@ func TestReviewWorkflow_UnanimousApprove(t *testing.T) {
 	}, 2*time.Millisecond)
 
 	env.ExecuteWorkflow(ReviewWorkflow, ReviewInput{
-		TenantID:   "t", InstanceID: "i", DocumentID: "d", VersionID: "v",
+		TenantID: "t", InstanceID: "i", DocumentID: "d", VersionID: "v",
 		Reviewers: []string{"alice", "bob"},
 	})
 	require.True(t, env.IsWorkflowCompleted())
@@ -107,7 +107,7 @@ func TestReviewWorkflow_AnyRejectShortCircuits(t *testing.T) {
 	}, 1*time.Millisecond)
 
 	env.ExecuteWorkflow(ReviewWorkflow, ReviewInput{
-		TenantID:   "t", InstanceID: "i", DocumentID: "d", VersionID: "v",
+		TenantID: "t", InstanceID: "i", DocumentID: "d", VersionID: "v",
 		Reviewers: []string{"alice", "bob"},
 	})
 	require.True(t, env.IsWorkflowCompleted())

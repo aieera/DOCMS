@@ -135,13 +135,17 @@ func main() {
 	if docHTTP == "" {
 		docHTTP = "http://document:8080"
 	}
-	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"))
-	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Msg("server-seal pipeline wired")
+	// SIGNER_TSA_URL is the RFC3161 timestamp authority; REQUIRED for
+	// PAdES-B-LT/LTV (the sidecar downgrades to B-B without it). Wire a test TSA
+	// in dev/CI and a real one in prod.
+	tsaURL := os.Getenv("SIGNER_TSA_URL")
+	svc.AddSealer(sgnr, docHTTP, os.Getenv("SEDOC_INTERNAL_API_KEY"), os.Getenv("SEDOC_GATEWAY_SECRET"), tsaURL)
+	log.Info(ctx).Str("signer", os.Getenv("SEDOC_SIGNER")).Str("doc_http", docHTTP).Bool("tsa_configured", tsaURL != "").Msg("server-seal pipeline wired")
 
 	// ADR 0025 increment 2 — auto-seal on workflow signature completion. The
 	// consumer subscribes to dms.signature.completed.v1 and runs SealVersion.
 	if js != nil {
-		if err := service.NewSealConsumer(js, svc, *log.Z()).Start(); err != nil {
+		if err := service.NewSealConsumer(js, svc, *log.Z()).Start(ctx); err != nil {
 			log.Warn(ctx).Err(err).Msg("seal consumer not started (will not auto-seal)")
 		} else {
 			log.Info(ctx).Msg("seal consumer started: dms.signature.completed.v1 → server-seal")

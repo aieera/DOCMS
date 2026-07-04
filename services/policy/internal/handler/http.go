@@ -35,6 +35,9 @@ func NewHTTPHandler(svc *service.Service) *HTTPHandler { return &HTTPHandler{svc
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/permissions/matrix", h.MatrixHandler)
 	mux.HandleFunc("GET /api/v1/permissions/{resource_type}/{resource_id}", h.list)
+	// Effective access — "who can see this and why". More-specific literal
+	// segment than the {resource_id} list route, so ServeMux routes it here.
+	mux.HandleFunc("GET /api/v1/permissions/{resource_type}/{resource_id}/effective", h.effective)
 	mux.HandleFunc("POST /api/v1/permissions/check", h.check)
 	mux.HandleFunc("POST /api/v1/permissions/{resource_type}/{resource_id}", h.grant)
 	mux.HandleFunc("DELETE /api/v1/permissions/{resource_type}/{resource_id}/{principal_id}", h.revoke)
@@ -84,6 +87,77 @@ func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toPermissionDTO(p))
 	}
 	writeJSONOK(w, out)
+}
+
+type effectivePrincipalDTO struct {
+	PrincipalType string   `json:"principal_type"`
+	PrincipalID   string   `json:"principal_id"`
+	Capability    string   `json:"capability"`
+	Reasons       []string `json:"reasons"`
+}
+
+type effectiveAccessDTO struct {
+	Principals                       []effectivePrincipalDTO `json:"principals"`
+	OrgAdminsHaveAccess              bool                    `json:"org_admins_have_access"`
+	WorkspaceBaselineViewWorkspaceID string                  `json:"workspace_baseline_view_workspace_id,omitempty"`
+	PrivateFolder                    bool                    `json:"private_folder"`
+	FolderOwnerID                    string                  `json:"folder_owner_id,omitempty"`
+}
+
+// effective — GET /permissions/:resource_type/:resource_id/effective
+// "Who can see this, and why." Requires ADMIN on the resource (same gate
+// as listing the ACL). Optional ?workspace_id= & ?folder_id= supply the
+// cascade context the caller already knows.
+func (h *HTTPHandler) effective(w http.ResponseWriter, r *http.Request) {
+	u, err := auth.User(r.Context())
+	if err != nil {
+		writeHTTPError(w, r, vdmserr.ErrUnauthorized)
+		return
+	}
+	resourceType, resourceID, httpErr := parseResource(r)
+	if httpErr != nil {
+		writeHTTPError(w, r, httpErr)
+		return
+	}
+	if !h.callerMayAdminister(r, u, resourceType, resourceID) {
+		writeHTTPError(w, r, vdmserr.ErrForbidden)
+		return
+	}
+	optUUID := func(q string) *uuid.UUID {
+		v := r.URL.Query().Get(q)
+		if v == "" {
+			return nil
+		}
+		if id, err := uuid.Parse(v); err == nil {
+			return &id
+		}
+		return nil
+	}
+	ea, err := h.svc.EffectiveAccess(r.Context(), u.TenantID, resourceType, resourceID, optUUID("workspace_id"), optUUID("folder_id"))
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	dto := effectiveAccessDTO{
+		OrgAdminsHaveAccess: ea.OrgAdminsHaveAccess,
+		PrivateFolder:       ea.PrivateFolder,
+		Principals:          make([]effectivePrincipalDTO, 0, len(ea.Principals)),
+	}
+	for _, p := range ea.Principals {
+		dto.Principals = append(dto.Principals, effectivePrincipalDTO{
+			PrincipalType: string(p.PrincipalType),
+			PrincipalID:   p.PrincipalID.String(),
+			Capability:    string(p.Capability),
+			Reasons:       p.Reasons,
+		})
+	}
+	if ea.WorkspaceBaselineView != nil {
+		dto.WorkspaceBaselineViewWorkspaceID = ea.WorkspaceBaselineView.String()
+	}
+	if ea.FolderOwner != nil {
+		dto.FolderOwnerID = ea.FolderOwner.String()
+	}
+	writeJSONOK(w, dto)
 }
 
 // check — POST /permissions/check

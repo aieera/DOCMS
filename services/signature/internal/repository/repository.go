@@ -20,6 +20,16 @@ type Querier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
+// RowQuerier is the read counterpart of Querier — satisfied by both
+// *pgxpool.Pool and pgx.Tx. It lets a caller read inside an outer tenant tx
+// (which sets app.current_tenant) so RLS-forced tables return rows; a raw pool
+// read from a non-HTTP context (e.g. a NATS consumer) has no tenant GUC and
+// fails closed to 0 rows.
+type RowQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 type Repository struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
@@ -75,9 +85,16 @@ func (r *Repository) CreateTx(ctx context.Context, q Querier, req *model.Signatu
 }
 
 func (r *Repository) GetByID(ctx context.Context, tenantID, id string) (*model.SignatureRequest, error) {
+	return r.GetByIDTx(ctx, r.pool, tenantID, id)
+}
+
+// GetByIDTx reads a request + its signers via an explicit querier so callers
+// outside an HTTP request (e.g. the seal consumer) can read inside a
+// database.WithTenantTx (which sets app.current_tenant for RLS).
+func (r *Repository) GetByIDTx(ctx context.Context, q RowQuerier, tenantID, id string) (*model.SignatureRequest, error) {
 	req := &model.SignatureRequest{}
 	var envelope, message, finalHash *string
-	err := r.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT id, tenant_id, document_id, version_id, COALESCE(requested_by::text,''),
 		       status, provider, provider_envelope_id, message,
 		       created_at, completed_at, expires_at,
@@ -99,7 +116,7 @@ func (r *Repository) GetByID(ctx context.Context, tenantID, id string) (*model.S
 	if finalHash != nil {
 		req.FinalHashSHA256 = *finalHash
 	}
-	signers, err := r.signersFor(ctx, tenantID, req.ID)
+	signers, err := r.signersForTx(ctx, q, tenantID, req.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -151,10 +168,35 @@ func (r *Repository) ListByDocument(ctx context.Context, tenantID, documentID st
 	return out, nil
 }
 
+// ClaimSealTx atomically claims the seal for a request (sets sealed_at when it
+// was NULL). Returns true when THIS caller won the claim; false means it was
+// already claimed/sealed (idempotent skip). Guards against duplicate seals on
+// NATS redelivery.
+func (r *Repository) ClaimSealTx(ctx context.Context, q Querier, tenantID, id string) (bool, error) {
+	ct, err := q.Exec(ctx,
+		`UPDATE signature_requests SET sealed_at = now()
+		  WHERE tenant_id = $1 AND id = $2 AND sealed_at IS NULL`, tenantID, id)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
+// ReleaseSealTx clears the claim so a failed seal can be retried on redelivery.
+func (r *Repository) ReleaseSealTx(ctx context.Context, q Querier, tenantID, id string) error {
+	_, err := q.Exec(ctx,
+		`UPDATE signature_requests SET sealed_at = NULL WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	return err
+}
+
 // signersFor returns the signature_signers rows attached to one
 // request, ordered by signing position.
 func (r *Repository) signersFor(ctx context.Context, tenantID, requestID string) ([]model.Signer, error) {
-	rows, err := r.pool.Query(ctx, `
+	return r.signersForTx(ctx, r.pool, tenantID, requestID)
+}
+
+func (r *Repository) signersForTx(ctx context.Context, q RowQuerier, tenantID, requestID string) ([]model.Signer, error) {
+	rows, err := q.Query(ctx, `
 		SELECT id, COALESCE(signer_email,''), COALESCE(signer_name,''),
 		       COALESCE(role,'signer'), COALESCE(order_index,1),
 		       COALESCE(status,'pending'),

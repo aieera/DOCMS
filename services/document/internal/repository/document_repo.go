@@ -33,19 +33,20 @@ func (r *documentRepo) Create(ctx context.Context, tx pgx.Tx, d *model.Document)
 			mime_type, total_size_bytes, sha256_hash, current_version_id,
 			version_count, lifecycle_state, region_pin, under_legal_hold,
 			tags, custom_metadata, document_class, classification_confidence,
-			created_by, created_at, updated_by, updated_at, external_id
+			created_by, created_at, updated_by, updated_at, external_id, doc_type
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10,
 			$11, $12, $13, $14,
 			$15, $16, $17, $18,
-			$19, $20, $21, $22, $23
+			$19, $20, $21, $22, $23,
+			COALESCE(NULLIF($24, ''), 'file')
 		)`,
 		d.ID, d.TenantID, d.WorkspaceID, d.FolderID, d.Title, d.Description,
 		d.MimeType, d.TotalSizeBytes, d.SHA256Hash, nullableUUID(d.CurrentVersionID),
 		0, string(d.LifecycleState), d.RegionPin, d.LifecycleState == model.StateLegalHold,
 		d.Tags, meta, d.DocumentClass, d.ClassificationConfidence,
-		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt, nullableText(d.ExternalID),
+		d.CreatedBy, d.CreatedAt, d.UpdatedBy, d.UpdatedAt, nullableText(d.ExternalID), d.DocType,
 	)
 	return mapPgError(err)
 }
@@ -170,13 +171,17 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 		       d.current_version_id,
 		       COALESCE(d.document_class, '') AS document_class,
 		       d.classification_confidence,
+		       COALESCE(d.security_classification, '') AS security_classification,
+		       d.has_phi, d.has_pii,
+		       COALESCE(d.classification_source, '') AS classification_source,
 		       COALESCE(d.sha256_hash, '') AS sha256_hash,
 		       d.total_size_bytes,
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
 		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
 		       COALESCE(d.external_id, '') AS external_id,
-		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
+		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at,
+		       d.doc_type
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
 		LEFT JOIN LATERAL (
@@ -194,6 +199,42 @@ func (r *documentRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid
 		WHERE d.tenant_id = $1 AND d.id = $2
 	`, tenantID, id)
 	return scanDocument(row)
+}
+
+// FindByContentHash returns live documents whose any version carries the
+// given sha256. DISTINCT ON (d.id) collapses multiple matching versions
+// of the same document to one row.
+func (r *documentRepo) FindByContentHash(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, sha256 string, limit int) ([]model.DuplicateMatch, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 50
+	}
+	q := `
+		SELECT DISTINCT ON (d.id) d.id, d.title, d.workspace_id, d.folder_id, d.created_at
+		FROM documents d
+		JOIN versions v ON v.tenant_id = d.tenant_id AND v.document_id = d.id
+		WHERE d.tenant_id = $1 AND d.deleted_at IS NULL AND v.sha256_hash = $2`
+	args := []any{tenantID, sha256}
+	if workspaceID != uuid.Nil {
+		q += fmt.Sprintf(` AND d.workspace_id = $%d`, len(args)+1)
+		args = append(args, workspaceID)
+	}
+	q += fmt.Sprintf(` ORDER BY d.id, d.created_at ASC LIMIT $%d`, len(args)+1)
+	args = append(args, limit)
+
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	var out []model.DuplicateMatch
+	for rows.Next() {
+		var m model.DuplicateMatch
+		if err := rows.Scan(&m.DocumentID, &m.Title, &m.WorkspaceID, &m.FolderID, &m.CreatedAt); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapPgError(rows.Err())
 }
 
 // Update writes back fields that the service layer marks as changed. It uses
@@ -491,13 +532,17 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 		       d.current_version_id,
 		       COALESCE(d.document_class, '') AS document_class,
 		       d.classification_confidence,
+		       COALESCE(d.security_classification, '') AS security_classification,
+		       d.has_phi, d.has_pii,
+		       COALESCE(d.classification_source, '') AS classification_source,
 		       COALESCE(d.sha256_hash, '') AS sha256_hash,
 		       d.total_size_bytes,
 		       COALESCE(d.mime_type, '') AS mime_type,
 		       d.created_by, COALESCE(u.display_name, '') AS created_by_name,
 		       d.created_at, d.updated_by, d.updated_at, d.deleted_at,
 		       COALESCE(d.external_id, '') AS external_id,
-		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at
+		       wf.id, wf.definition_id, wf.definition_name, wf.status, wf.current_step_id, wf.started_at,
+		       d.doc_type
 		FROM documents d
 		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
 		LEFT JOIN LATERAL (
@@ -582,10 +627,12 @@ func scanDocument(r rowScanner) (*model.Document, error) {
 		&d.ID, &d.TenantID, &d.WorkspaceID, &d.FolderID, &d.Title, &d.Description,
 		&lifecycleRaw, &d.RegionPin, &metaBytes, &d.Tags,
 		&curVersion, &d.DocumentClass, &d.ClassificationConfidence,
+		&d.SecurityClassification, &d.HasPHI, &d.HasPII, &d.ClassificationSource,
 		&d.SHA256Hash, &d.TotalSizeBytes, &d.MimeType,
 		&d.CreatedBy, &d.CreatedByName,
 		&d.CreatedAt, &d.UpdatedBy, &d.UpdatedAt, &deleted, &d.ExternalID,
 		&wfID, &wfDefinitionID, &wfDefName, &wfStatus, &wfCurrentStepID, &wfStartedAt,
+		&d.DocType,
 	); err != nil {
 		return nil, mapPgError(err)
 	}

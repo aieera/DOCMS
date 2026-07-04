@@ -23,6 +23,7 @@ import (
 	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
+	"github.com/aieera/sedoc/pkg/notifications"
 	"github.com/aieera/sedoc/services/notification/internal/handler"
 	"github.com/aieera/sedoc/services/notification/internal/repository"
 	"github.com/aieera/sedoc/services/notification/internal/service"
@@ -87,6 +88,10 @@ func main() {
 		StartTLS: cfg.SMTPStartTLS,
 	})
 	svc := service.New(service.Config{Repo: repo, Redis: rdb, SMTP: smtpSender, Logger: *log.Z()})
+	// ADR 0117 — mobile push via the Expo push service. Send only fires
+	// for users with registered devices; no keys/config needed (Expo
+	// fronts FCM+APNs). SEDOC_EXPO_PUSH_URL overrides the endpoint.
+	svc.SetPushTransport(notifications.NewExpoClient(*log.Z()))
 
 	// Per-tenant SMTP override (migration 000044). When a tenant has
 	// saved their own SMTP creds via the admin UI Notifications tab,
@@ -131,7 +136,14 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(mux)), ReadHeaderTimeout: 5 * time.Second}
+	h.RegisterDevices(mux)
+	// SessionAuthOptional resolves the caller from the session cookie OR
+	// a Bearer session token (ADR 0117 — the mobile app) before the
+	// header gap-fill. Kong strips client-supplied identity headers and
+	// injects none (no session plugin yet), so without this the service
+	// could not identify ANY external caller; IdentityHeadersHTTP stays
+	// for trusted in-cluster callers that set the headers directly.
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(middleware.IdentityHeadersHTTP()(mux))), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

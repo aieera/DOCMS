@@ -27,13 +27,16 @@ type Service struct {
 	// builds a per-tenant sender on the fly instead of using s.smtp.
 	tenantSMTP  TenantSMTPReader
 	smtpSealKey []byte
-	log         zerolog.Logger
+	// push is the optional mobile push transport (ADR 0117, Expo).
+	// Nil disables the push channel. Set via SetPushTransport.
+	push PushTransport
+	log  zerolog.Logger
 }
 
 // Config is DI.
 type Config struct {
-	Repo   *repository.Repository
-	Redis  *redis.Client
+	Repo  *repository.Repository
+	Redis *redis.Client
 	// SMTP is optional. nil → email channel disabled; the service
 	// still logs "would send email" as before for observability.
 	SMTP   SMTPSender
@@ -49,18 +52,31 @@ func New(cfg Config) *Service {
 func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) error {
 	now := time.Now().UTC()
 	for _, uid := range payload.UserIDs {
+		// DSR verify tokens (Wave 11.4) put EMAIL ADDRESSES in
+		// user_ids — there is no user row, so every UUID-typed step
+		// below (Decide's snooze lookup, the notifications insert,
+		// device listing) would error out and the DSR email itself
+		// was never sent. Branch to a direct SMTP send up front.
+		if containsAt(uid) {
+			s.deliverEmailOnly(ctx, payload, uid)
+			continue
+		}
+
 		// ADR 0086 — pre-delivery gate. Skip the user entirely on
 		// snooze; otherwise the returned channel set tells us
 		// which channels survive matrix + DND + digest. Decide()
-		// is best-effort: on error we fall back to the legacy
-		// flat-pref behavior so a Postgres blip can't lose
-		// notifications.
+		// is best-effort for in-app/email: on error we fall back to
+		// the flat-pref behavior so a Postgres blip can't lose
+		// notifications. Push is the exception — it FAILS CLOSED on
+		// a Decide error (see below).
 		eventPayload := map[string]any{
 			"title": payload.Title, "body": payload.Body,
 			"resource_type": payload.ResourceType, "resource_id": payload.ResourceID,
 		}
+		requested := []model.Channel{model.ChannelInApp, model.ChannelEmail, model.ChannelPush}
+		consent := ParseChannelConsent(payload.Channels)
 		channels, decideErr := s.Decide(ctx, payload.TenantID, uid, payload.Type,
-			[]model.Channel{model.ChannelInApp, model.ChannelEmail}, eventPayload)
+			requested, consent, eventPayload)
 		if decideErr == nil && len(channels) == 0 {
 			// Active snooze (channels=nil) or every channel was
 			// either disabled or folded into a digest row. Either
@@ -69,7 +85,15 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 		}
 		emailAllowed := containsChan(channels, model.ChannelEmail) || decideErr != nil
 
-		pref, _ := s.repo.GetPreference(ctx, payload.TenantID, uid)
+		pref, prefErr := s.repo.GetPreference(ctx, payload.TenantID, uid)
+		if prefErr != nil || pref == nil {
+			// A pref-lookup failure must not silently kill delivery
+			// (a zero-value struct's false switches did exactly that
+			// before — review finding). Fall back to the defaults the
+			// repository would return for a missing row.
+			s.log.Warn().Err(prefErr).Str("user_id", uid).Msg("pref lookup failed; using default-enabled prefs")
+			pref = &model.UserPreference{TenantID: payload.TenantID, UserID: uid, EmailEnabled: true, PushEnabled: true}
+		}
 
 		// In-app always.
 		notif := &model.Notification{
@@ -90,36 +114,51 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 			s.log.Warn().Err(err).Msg("redis publish")
 		}
 
+		// Mobile push (ADR 0117). Unlike in-app/email, push FAILS
+		// CLOSED on a Decide error: a buzzing phone that bypassed the
+		// user's snooze/DND because of a DB blip is worse than one
+		// skipped push (the in-app row above still landed).
+		if containsChan(channels, model.ChannelPush) && pref.PushEnabled {
+			s.sendPush(ctx, notif)
+		} else if decideErr != nil {
+			s.log.Warn().Err(decideErr).Str("user_id", uid).Msg("push suppressed: preferences unavailable (fail-closed)")
+		}
+
 		// Email delivery. Wave 12.1: real SMTP when configured;
 		// otherwise the pre-existing "would send" log retains the
 		// observability breadcrumb for dev. Failure to send is
 		// logged at Error; we don't fail the whole Deliver loop
-		// because in-app notification has already landed.
-		if emailAllowed && pref != nil && pref.EmailEnabled {
+		// because in-app notification has already landed. uid here is
+		// always a user UUID (email uids branched at the loop top) —
+		// the uid → email address lookup for direct user email is
+		// still the Wave 12 follow-up.
+		if emailAllowed && pref.EmailEnabled {
 			sender := s.smtpSenderForTenant(ctx, payload.TenantID)
 			if sender != nil && sender.Enabled() {
-				// payload.UserIDs carries user UUIDs today; the
-				// DSR-verify publisher (Wave 11.4) passes email
-				// addresses instead. Treat the string as an email
-				// when it contains '@'; otherwise we'd need a DB
-				// lookup to resolve uid → email. That lookup is a
-				// Wave 12 follow-up; for now only DSR tokens
-				// reach the SMTP path (they already carry emails).
-				if containsAt(uid) {
-					if err := sender.Send(uid, payload.Title, payload.Body); err != nil {
-						s.log.Error().Err(err).Str("to", uid).Str("type", payload.Type).Msg("smtp send failed")
-					} else {
-						s.log.Info().Str("to", uid).Str("type", payload.Type).Msg("email sent")
-					}
-				} else {
-					s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: user-id not an email (lookup pending)")
-				}
+				s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: user-id not an email (lookup pending)")
 			} else {
 				s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("would send email (SMTP not configured)")
 			}
 		}
 	}
 	return nil
+}
+
+// deliverEmailOnly handles recipients addressed by EMAIL rather than a
+// user id (the DSR-verify path): there is no user row, so preferences,
+// the in-app insert, and push don't apply — the message goes straight
+// to SMTP.
+func (s *Service) deliverEmailOnly(ctx context.Context, payload model.DeliveryPayload, email string) {
+	sender := s.smtpSenderForTenant(ctx, payload.TenantID)
+	if sender == nil || !sender.Enabled() {
+		s.log.Info().Str("to", email).Str("type", payload.Type).Msg("would send email (SMTP not configured)")
+		return
+	}
+	if err := sender.Send(email, payload.Title, payload.Body); err != nil {
+		s.log.Error().Err(err).Str("to", email).Str("type", payload.Type).Msg("smtp send failed")
+		return
+	}
+	s.log.Info().Str("to", email).Str("type", payload.Type).Msg("email sent")
 }
 
 // List returns notifications for a user.

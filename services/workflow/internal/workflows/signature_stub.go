@@ -16,8 +16,16 @@ import (
 
 // SignatureInput configures the orchestration at start.
 type SignatureInput struct {
-	TenantID    string   `json:"tenant_id"`
-	InstanceID  string   `json:"instance_id"`
+	TenantID   string `json:"tenant_id"`
+	InstanceID string `json:"instance_id"`
+	// RequestID is the signature_requests row this workflow drives. It MUST be
+	// carried into the dms.signature.completed.v1 payload: the signature
+	// service's seal consumer keys per-signer PAdES sealing off request_id, and
+	// without it the ceremony silently falls back to a single org seal. Empty
+	// on the current stub (the active v1 path is the REST RecordSignature state
+	// machine, which sets request_id); populate it when Temporal owns the
+	// ceremony ("REST now, Temporal later").
+	RequestID   string   `json:"request_id"`
 	DocumentID  string   `json:"document_id"`
 	VersionID   string   `json:"version_id"`
 	InitiatedBy string   `json:"initiated_by"`

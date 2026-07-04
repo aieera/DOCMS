@@ -40,12 +40,15 @@ import (
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
+	"github.com/aieera/sedoc/services/document/internal/classification"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
 	"github.com/aieera/sedoc/services/document/internal/ingestroute"
 	"github.com/aieera/sedoc/services/document/internal/janitor"
+	"github.com/aieera/sedoc/services/document/internal/records"
 	"github.com/aieera/sedoc/services/document/internal/repository"
 	"github.com/aieera/sedoc/services/document/internal/service"
+	docwatermark "github.com/aieera/sedoc/services/document/internal/watermark"
 )
 
 const serviceName = "document"
@@ -168,8 +171,12 @@ func main() {
 	// ---- Wire repos → service → handler -----------------------------------
 	repos := repository.New(pool)
 	holdsService := compliance.NewHoldsService(pool)
+	recordsService := records.New(pool)
 	svc := service.New(pool, repos, policyClient, *log.Z())
 	svc.SetHoldsChecker(holdsService)
+	// Records immutability gate: declared (non-disposed) records refuse
+	// edit/move/delete/new-version on the document write paths.
+	svc.SetRecordsChecker(recordsService)
 	svc.SetEnvironment(cfg.Environment)
 	// WS3 — routing confidence gate (default 0.85 when unset/invalid).
 	if thr := os.Getenv("SEDOC_INGEST_MATCH_THRESHOLD"); thr != "" {
@@ -261,6 +268,21 @@ func main() {
 	// (storageProxy) or streaming decrypted bytes (decryptStreamHandler).
 	storageProxy := handler.NewStorageProxy(storageClient, pool, svc)
 	decryptStreamHandler := handler.NewDecryptStreamHandler(pool, s3c, docKMS, svc, *log.Z())
+
+	// §5 dynamic viewer watermark: the document service resolves identity +
+	// config and delegates the drawing to the preview service's internal
+	// stamping endpoints. Empty env => preview client disabled (viewer falls
+	// back to the unwatermarked "Original" path).
+	previewClient := docwatermark.NewPreviewClient(os.Getenv("SEDOC_PREVIEW_URL"), os.Getenv("SEDOC_SERVICE_API_KEY"))
+	watermarkHandler := handler.NewWatermarkHandler(svc, previewClient, pool, s3c, docKMS, *log.Z())
+
+	// §5/§8 IRM protected-container export: seals a document version under a
+	// fresh payload DEK (per-recipient wrapped), gates opens through an online
+	// license-check callback, and streams decrypted bytes to authorised
+	// recipients. Runs against docKMS (LocalKeyManager in dev) + MinIO.
+	irmSvc := service.NewIRMService(pool, repos, s3c, docKMS, svc, *log.Z())
+	irmHandler := handler.NewIRMHandler(irmSvc, *log.Z())
+	irmAdminHandler := handler.NewIRMAdminHandler(irmSvc, *log.Z())
 
 	// ---- Health ------------------------------------------------------------
 	hs := health.NewServerWithMeta("document", cfg.Region, pool, rdb, nc, s3c)
@@ -501,6 +523,36 @@ func main() {
 			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "documents:read")(decryptStreamMux),
 		))
 
+	// §5 watermarked viewer + download/print. CorrelationHTTP populates the
+	// client IP for the {ip} token; the global SessionAuthOptional wrap has
+	// already put the viewer's identity on ctx, and each handler runs
+	// EnsureCanViewDocument before stamping.
+	watermarkMux := http.NewServeMux()
+	watermarkHandler.Register(watermarkMux)
+	for _, route := range []string{
+		"GET /api/v1/documents/{document_id}/versions/{version_id}/wm/status",
+		"GET /api/v1/documents/{document_id}/versions/{version_id}/wm/pages/{page_number}",
+		"GET /api/v1/documents/{document_id}/versions/{version_id}/wm/thumbnail",
+		"GET /api/v1/documents/{document_id}/versions/{version_id}/wm/download",
+	} {
+		rootMux.Handle(route, middleware.CorrelationHTTP(watermarkMux))
+	}
+
+	// §5/§8 IRM protected export. export requires a session; check + content are
+	// token-authenticated (external recipients have no session — the global
+	// SessionAuthOptional still binds a session when a cookie is present so
+	// internal-bound licenses are enforced). CorrelationHTTP supplies the client
+	// IP for the open log.
+	irmMux := http.NewServeMux()
+	irmHandler.Register(irmMux)
+	for _, route := range []string{
+		"POST /api/v1/irm/export",
+		"POST /api/v1/irm/licenses/check",
+		"GET /api/v1/irm/licenses/content",
+	} {
+		rootMux.Handle(route, middleware.CorrelationHTTP(irmMux))
+	}
+
 	// ADR 0090 — iPaaS trigger endpoints (Zapier / Make / n8n).
 	// Authenticated by API key (Bearer vdms_...) with scope
 	// integrations:read; tenant is stamped on ctx by APIKeyAuth.
@@ -545,6 +597,22 @@ func main() {
 	holdsHandler.Register(complianceMux)
 	rootMux.Handle("/api/v1/compliance/", middleware.CorrelationHTTP(complianceMux))
 
+	// Records management (file plan + schedules + declare/dispose). The
+	// per-document record lookup lives under /api/v1/documents/ so it's
+	// registered as a second specific route into the same mux.
+	recordsMux := http.NewServeMux()
+	recordsHandler := handler.NewRecordsHandler(recordsService, *log.Z())
+	recordsHandler.Register(recordsMux)
+	rootMux.Handle("/api/v1/records/", middleware.CorrelationHTTP(recordsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/record", middleware.CorrelationHTTP(recordsMux))
+
+	// WORM object-lock: admin lock action + status, registered as specific
+	// routes under /api/v1/documents/ into a dedicated mux.
+	wormMux := http.NewServeMux()
+	handler.NewWORMHandler(pool, *log.Z()).Register(wormMux)
+	rootMux.Handle("POST /api/v1/documents/{id}/worm-lock", middleware.CorrelationHTTP(wormMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/worm", middleware.CorrelationHTTP(wormMux))
+
 	// Privacy (GDPR DSR) REST endpoints — Wave 8.3.
 	privacyMux := http.NewServeMux()
 	privacyHandler.Register(privacyMux)
@@ -582,6 +650,15 @@ func main() {
 	)
 	rootMux.Handle("/api/v1/admin/bulk/", bulkAdminWrapped)
 	rootMux.Handle("/api/v1/admin/documents/", shareLinksAdminWrapped)
+
+	// §note — note/wiki creation. SessionAuth so CreateNote can resolve the
+	// caller and enforce the folder "edit" permission, like every other
+	// authenticated document mutation.
+	notesMux := http.NewServeMux()
+	handler.NewNotesHandler(svc, *log.Z()).Register(notesMux)
+	rootMux.Handle("POST /api/v1/notes", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(notesMux),
+	))
 
 	// Retention policies admin — Wave 10 + Phase 5 preview/exempt.
 	retentionPolicyMux := http.NewServeMux()
@@ -643,6 +720,25 @@ func main() {
 	rootMux.Handle("POST /api/v1/admin/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("DELETE /api/v1/admin/trash/{id}", middleware.CorrelationHTTP(trashAuth))
 
+	// Pre-upload duplicate check — GET /documents/duplicates?sha256=&workspace_id=.
+	// Any authenticated user; the service permission-filters matches to
+	// folders the caller can access.
+	dupCheckMux := http.NewServeMux()
+	handler.NewDuplicateCheckHandler(svc).Register(dupCheckMux)
+	rootMux.Handle("GET /api/v1/documents/duplicates", middleware.CorrelationHTTP(
+		middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(dupCheckMux),
+	))
+
+	// Admin maintenance — empty-folder cleanup (dry-run list + execute).
+	// Owner/admin only (handler role-gates). Removes the orphaned empty
+	// folders that accumulate from aborted ingests; deletions are soft
+	// (recoverable via Trash) and audited via dms.folder.deleted.v1.
+	folderCleanupMux := http.NewServeMux()
+	handler.NewFolderCleanupHandler(svc).Register(folderCleanupMux)
+	folderCleanupAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(folderCleanupMux)
+	rootMux.Handle("GET /api/v1/admin/folders/empty", middleware.CorrelationHTTP(folderCleanupAuth))
+	rootMux.Handle("POST /api/v1/admin/folders/cleanup", middleware.CorrelationHTTP(folderCleanupAuth))
+
 	// Compliance dashboard real-data feed. Replaces the mocked
 	// docs-by-state / storage-by-region / encryption-coverage props
 	// that previously rendered fictional numbers (94% / 67 GB
@@ -688,7 +784,8 @@ func main() {
 	// §9.5 / G9 — eDiscovery signed-ZIP export.
 	ediscoveryMux := http.NewServeMux()
 	handler.NewEDiscoveryHandler(svc, *log.Z()).Register(ediscoveryMux)
-	rootMux.Handle("POST /api/v1/admin/ediscovery/export",
+	// Whole prefix → the mux (sync export + hold-scoped scope/jobs/download).
+	rootMux.Handle("/api/v1/admin/ediscovery/",
 		middleware.CorrelationHTTP(ediscoveryMux))
 
 	// ADR 0094 — admin DB-info surface (driver + version + feature
@@ -821,6 +918,14 @@ func main() {
 	rootMux.Handle("POST /internal/v1/retention/sweep",
 		middleware.CorrelationHTTP(retentionSweepMux))
 
+	// Records cutoff sweep — the "janitor proposes disposition" step. Driven
+	// per-tenant by the same daily CronJob pattern as the retention sweep:
+	// flips declared records past cutoff to cutoff_pending (review queue).
+	recordsSweepMux := http.NewServeMux()
+	recordsHandler.RegisterInternal(recordsSweepMux)
+	rootMux.Handle("POST /internal/v1/records/cutoff-sweep",
+		middleware.CorrelationHTTP(recordsSweepMux))
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
@@ -891,6 +996,24 @@ func main() {
 	rootMux.Handle("POST /api/v1/tasks/{id}/reopen", middleware.CorrelationHTTP(tasksMux))
 	rootMux.Handle("POST /api/v1/tasks/{id}/cancel", middleware.CorrelationHTTP(tasksMux))
 	rootMux.Handle("DELETE /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+
+	// ADR 0118 — workspace templates: gallery CRUD + ProvisionFromTemplate.
+	// Provision walks the template tree in ONE tenant tx (folders +
+	// placeholder docs + grants + outbox events).
+	templatesMux := http.NewServeMux()
+	handler.NewTemplatesHandler(svc, *log.Z()).Register(templatesMux)
+	rootMux.Handle("GET /api/v1/templates", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("POST /api/v1/templates", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("GET /api/v1/templates/{id}", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("PUT /api/v1/templates/{id}", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("DELETE /api/v1/templates/{id}", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("GET /api/v1/templates/{id}/variables", middleware.CorrelationHTTP(templatesMux))
+	rootMux.Handle("POST /api/v1/templates/{id}/provision", middleware.CorrelationHTTP(templatesMux))
+
+	// ADR 0119 — governed analytics query API + saved/scheduled reports.
+	analyticsMux := http.NewServeMux()
+	handler.NewAnalyticsHandler(svc, *log.Z()).Register(analyticsMux)
+	rootMux.Handle("/api/v1/analytics/", middleware.CorrelationHTTP(analyticsMux))
 
 	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at
 	// on tasks crossing the 24h-out and overdue thresholds; emits one
@@ -1016,6 +1139,46 @@ func main() {
 	rootMux.Handle("PUT /api/v1/admin/anomaly-config",
 		middleware.CorrelationHTTP(anomalyMux))
 
+	// §8 — classification-based access control admin surface.
+	classificationMux := http.NewServeMux()
+	handler.NewClassificationAdminHandler(svc, *log.Z()).Register(classificationMux)
+	for _, route := range []string{
+		"GET /api/v1/admin/classification/config",
+		"PUT /api/v1/admin/classification/config",
+		"GET /api/v1/admin/classification/rules",
+		"POST /api/v1/admin/classification/rules",
+		"DELETE /api/v1/admin/classification/rules/{id}",
+		"PUT /api/v1/admin/classification/users/{userID}/clearance",
+		"PUT /api/v1/admin/documents/{id}/classification",
+	} {
+		rootMux.Handle(route, middleware.CorrelationHTTP(classificationMux))
+	}
+
+	// §5 — dynamic viewer watermark admin surface.
+	watermarkAdminMux := http.NewServeMux()
+	handler.NewWatermarkAdminHandler(svc, *log.Z()).Register(watermarkAdminMux)
+	for _, route := range []string{
+		"GET /api/v1/admin/watermark/config",
+		"PUT /api/v1/admin/watermark/config",
+		"GET /api/v1/admin/watermark/overrides",
+		"POST /api/v1/admin/watermark/overrides",
+		"DELETE /api/v1/admin/watermark/overrides/{id}",
+	} {
+		rootMux.Handle(route, middleware.CorrelationHTTP(watermarkAdminMux))
+	}
+
+	// §5/§8 — IRM protected-export license dashboard.
+	irmAdminMux := http.NewServeMux()
+	irmAdminHandler.Register(irmAdminMux)
+	for _, route := range []string{
+		"GET /api/v1/admin/irm/containers",
+		"GET /api/v1/admin/irm/containers/{id}/licenses",
+		"POST /api/v1/admin/irm/containers/{id}/revoke",
+		"POST /api/v1/admin/irm/licenses/{license_id}/revoke",
+	} {
+		rootMux.Handle(route, middleware.CorrelationHTTP(irmAdminMux))
+	}
+
 	// ADR 0059 — classification correction surface (single + bulk).
 	classifyCorrectionsMux := http.NewServeMux()
 	handler.NewClassifyCorrectionHandler(svc, *log.Z()).Register(classifyCorrectionsMux)
@@ -1134,6 +1297,24 @@ func main() {
 	rootMux.Handle("POST /api/v1/documents/{document_id}/move", apiKeyGatewayMutate("documents:write"))
 	rootMux.Handle("POST /api/v1/documents/batch/metadata", apiKeyGatewayMutate("documents:write"))
 
+	// §3/§5 sync delta + device API. Session (web UI) OR API key (headless sync
+	// agent, documents:read/write). Same SessionOrAPIKey + TenantHTTP chain as
+	// the ERP integration routes above so a vdms_… key works.
+	syncMux := http.NewServeMux()
+	handler.NewSyncHandler(svc, *log.Z()).Register(syncMux)
+	syncChain := func(scope string) http.Handler {
+		return middleware.CorrelationHTTP(
+			middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, scope)(
+				middleware.TenantHTTP(pool)(syncMux)))
+	}
+	rootMux.Handle("GET /api/v1/sync/delta", syncChain("documents:read"))
+	rootMux.Handle("GET /api/v1/sync/devices", syncChain("documents:read"))
+	rootMux.Handle("GET /api/v1/sync/devices/{id}", syncChain("documents:read"))
+	rootMux.Handle("POST /api/v1/sync/devices", syncChain("documents:write"))
+	rootMux.Handle("PUT /api/v1/sync/devices/{id}/cursor", syncChain("documents:write"))
+	rootMux.Handle("PUT /api/v1/sync/devices/{id}/folders", syncChain("documents:write"))
+	rootMux.Handle("DELETE /api/v1/sync/devices/{id}", syncChain("documents:write"))
+
 	// Stable external key (Workstream "Stable external key + upsert-by-
 	// external-key"). The ERP create-or-versions + resolves documents by its
 	// own business key. upsert reuses the SAME SessionOrAPIKey + TenantHTTP +
@@ -1214,6 +1395,17 @@ func main() {
 	// param (see wopi_handler.go IssueWOPIToken).
 	wopiAndRoot := http.NewServeMux()
 	wopiAndRoot.Handle("/wopi/", wopiMux)
+	// ADR 0119 — analytics READS use POST for their JSON specs but are
+	// semantically reads: they must stay available during license
+	// grace ("reads stay open so a tenant can export + wind down"),
+	// so they mount outside LicenseWriteGate with the same auth chain.
+	// Saved-report CRUD stays inside the gate (writes lock like any
+	// other write).
+	analyticsReadChain := middleware.RequireGatewaySignature()(
+		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(
+			middleware.CorrelationHTTP(analyticsMux)))
+	wopiAndRoot.Handle("POST /api/v1/analytics/query", analyticsReadChain)
+	wopiAndRoot.Handle("POST /api/v1/analytics/reports/{id}/run", analyticsReadChain)
 	// FIX-1 (2026-05-31): wrap rootMux with SessionAuthOptional so every
 	// authenticated request lands at downstream handlers with a
 	// populated auth.UserInfo on ctx (trusted DB-derived role/tenant/
@@ -1268,6 +1460,17 @@ func main() {
 		}
 	} else {
 		log.Warn(ctx).Msg("temporal client unavailable; WS3 ingestion auto-routing disabled (items stage but won't route)")
+	}
+
+	// ---- §8 classification denormalisation --------------------------------
+	// Mirror the compliance scan (PII/PHI, ADR 0054) onto the documents row so
+	// the read-path classification gate can evaluate sensitivity without a
+	// cross-table join. Best-effort: without NATS the gate still works off any
+	// manually-set classification.
+	if js != nil {
+		if cerr := classification.NewConsumer(js, pool, repos, *log.Z()).Start(); cerr != nil {
+			log.Error(ctx).Err(cerr).Msg("classification denorm consumer start failed; sensitivity won't auto-sync from scans")
+		}
 	}
 
 	// ---- Orphan-document GC -----------------------------------------------

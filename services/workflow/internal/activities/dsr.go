@@ -80,11 +80,11 @@ func (a *Activities) SubjectHasHeldDocuments(ctx context.Context, tenantID, subj
 // CollectSubjectData (export's manifest header) and the result_summary
 // JSONB written to privacy_dsr_requests on completion.
 type DSRSubjectSummary struct {
-	SubjectID       string `json:"subject_id"`
-	DocumentsOwned  int    `json:"documents_owned"`
-	TasksAssigned   int    `json:"tasks_assigned"`
-	AuditEvents     int    `json:"audit_events"`
-	HeldDocuments   int    `json:"held_documents"`
+	SubjectID      string `json:"subject_id"`
+	DocumentsOwned int    `json:"documents_owned"`
+	TasksAssigned  int    `json:"tasks_assigned"`
+	AuditEvents    int    `json:"audit_events"`
+	HeldDocuments  int    `json:"held_documents"`
 }
 
 // CollectSubjectData walks the document service's tables counting

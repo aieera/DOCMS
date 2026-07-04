@@ -32,6 +32,120 @@ func NewEDiscoveryHandler(svc *service.DocumentService, log zerolog.Logger) *EDi
 
 func (h *EDiscoveryHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/ediscovery/export", h.export)
+	// Hold-scoped async export.
+	mux.HandleFunc("GET /api/v1/admin/ediscovery/scope", h.scope)
+	mux.HandleFunc("POST /api/v1/admin/ediscovery/jobs", h.createJob)
+	mux.HandleFunc("GET /api/v1/admin/ediscovery/jobs", h.listJobs)
+	mux.HandleFunc("GET /api/v1/admin/ediscovery/jobs/{id}", h.jobStatus)
+	mux.HandleFunc("GET /api/v1/admin/ediscovery/jobs/{id}/download", h.download)
+}
+
+// scope previews what a hold-scoped export will contain (doc count + size).
+func (h *EDiscoveryHandler) scope(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := callers(w, r); !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	holdID, err := uuid.Parse(r.URL.Query().Get("hold_id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("hold_id", "invalid uuid"))
+		return
+	}
+	out, err := h.svc.ResolveHoldScope(r.Context(), holdID, r.URL.Query().Get("query"))
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, out)
+}
+
+type createJobBody struct {
+	HoldID string `json:"hold_id"`
+	Query  string `json:"query"`
+	Format string `json:"format"`
+}
+
+func (h *EDiscoveryHandler) createJob(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := callers(w, r); !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	var body createJobBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	holdID, err := uuid.Parse(body.HoldID)
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("hold_id", "invalid uuid"))
+		return
+	}
+	job, err := h.svc.CreateExportJob(r.Context(), holdID, body.Query, body.Format)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusAccepted, job)
+}
+
+func (h *EDiscoveryHandler) listJobs(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := callers(w, r); !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	jobs, err := h.svc.ListExportJobs(r.Context())
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"jobs": jobs})
+}
+
+func (h *EDiscoveryHandler) jobStatus(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := callers(w, r); !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	jobID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
+		return
+	}
+	job, err := h.svc.GetExportJob(r.Context(), jobID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, job)
+}
+
+func (h *EDiscoveryHandler) download(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := callers(w, r); !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
+	jobID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "invalid uuid"))
+		return
+	}
+	filename := fmt.Sprintf("ediscovery-export-%s.zip", time.Now().UTC().Format("20060102-150405"))
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	if err := h.svc.DownloadExportJob(r.Context(), jobID, w); err != nil {
+		h.log.Error().Err(err).Str("job", jobID.String()).Msg("ediscovery download failed")
+		return
+	}
 }
 
 type ediscoveryExportBody struct {
@@ -97,7 +211,3 @@ func sanitizeFilename(s string) string {
 	}
 	return strings.ToLower(r)
 }
-
-// Silence unused — kept for the follow-up slice that accepts query
-// params instead of JSON body (for presigned-URL use).
-var _ = uuid.Nil

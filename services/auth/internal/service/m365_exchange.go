@@ -49,6 +49,14 @@ type M365ExchangeResult struct {
 // Entra user's email. Handler translates to 404.
 var ErrM365NoVDMSUser = errors.New("m365: no SeDoc user with this email")
 
+// ErrM365NotConfigured is returned when SEDOC_M365_AUDIENCE /
+// SEDOC_M365_ALLOWED_TIDS are unset. Handler translates to 503.
+var ErrM365NotConfigured = errors.New("m365: exchange not configured")
+
+// ErrM365TokenInvalid wraps every Entra JWT rejection. Handler
+// translates to 401 so the add-in re-acquires a token and retries.
+var ErrM365TokenInvalid = errors.New("m365: invalid access token")
+
 // ErrM365MultipleTenants is returned when the email exists in more
 // than one SeDoc tenant. Handler translates to 409 + a list.
 type ErrM365MultipleTenants struct {
@@ -94,7 +102,10 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 	// eventual link-table migration.
 	verified, verr := s.m365.verify(ctx, msAccessToken)
 	if verr != nil {
-		return nil, fmt.Errorf("m365: token verification failed: %w", verr)
+		if errors.Is(verr, ErrM365NotConfigured) {
+			return nil, verr
+		}
+		return nil, fmt.Errorf("%w: %v", ErrM365TokenInvalid, verr)
 	}
 	email := verified.Email
 	if email == "" {

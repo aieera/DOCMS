@@ -57,6 +57,13 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	if err != nil {
 		return nil, err
 	}
+	if in.DocType == "" {
+		in.DocType = model.DocTypeFile
+	}
+	if !model.IsValidDocType(in.DocType) {
+		return nil, errInvalidInput("doc_type", "must be one of file|note|wiki")
+	}
+
 	doc := &model.Document{
 		TenantID:       tenantID,
 		ID:             id,
@@ -69,6 +76,7 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 		RegionPin:      in.RegionPin,
 		CustomMetadata: in.CustomMetadata,
 		Tags:           in.Tags,
+		DocType:        in.DocType,
 		CreatedBy:      userID,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedBy:      in.UpdatedBy,
@@ -131,8 +139,95 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 	return doc, nil
 }
 
+// CreateNote creates a note/wiki document — a normal document with DocType
+// set — so it inherits versioning, ACL, search, and audit. Content is added
+// later as a markdown version through the normal version path; the document
+// exists immediately so the collaborative (Yjs) editor can open on it, and
+// it emits dms.document.created.v1 like any other document.
+func (s *DocumentService) CreateNote(ctx context.Context, in CreateNoteInput) (*model.Document, error) {
+	docType := in.DocType
+	if docType == "" {
+		docType = model.DocTypeNote
+	}
+	if docType != model.DocTypeNote && docType != model.DocTypeWiki {
+		return nil, errInvalidInput("doc_type", "must be note or wiki")
+	}
+	title := in.Title
+	if title == "" {
+		title = "Untitled note"
+	}
+	return s.CreateDocument(ctx, &CreateDocumentInput{
+		WorkspaceID: in.WorkspaceID,
+		FolderID:    in.FolderID,
+		Title:       title,
+		DocType:     docType,
+	})
+}
+
 // GetDocument loads a document and computes the requesting user's 5-axis
 // permission summary with a single BatchCheckPermission call.
+// isHex64 reports whether s is a 64-character lowercase hex string (a
+// sha256 digest).
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// FindDuplicates returns existing documents whose content matches the
+// given sha256 — the pre-upload "possible duplicate" check. Scoped to a
+// workspace when workspaceID is non-nil (the common upload case).
+// Non-admin callers only see matches in folders they can access, so a
+// duplicate sitting in a private folder isn't leaked through the prompt.
+func (s *DocumentService) FindDuplicates(ctx context.Context, workspaceID uuid.UUID, sha256 string) ([]model.DuplicateMatch, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sha256 = strings.ToLower(strings.TrimSpace(sha256))
+	if !isHex64(sha256) {
+		return nil, vdmserr.Validation("sha256", "must be a 64-char hex sha256")
+	}
+	var matches []model.DuplicateMatch
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		found, ferr := s.repos.Documents.FindByContentHash(ctx, tx, tenantID, workspaceID, sha256, 50)
+		if ferr != nil {
+			return ferr
+		}
+		if s.callerIsTenantAdmin(ctx) || len(found) == 0 {
+			matches = found
+			return nil
+		}
+		// Permission filter: keep only matches in folders the caller can
+		// access, reusing the batch ACL check so private-folder titles
+		// aren't exposed via the duplicate prompt.
+		folderIDs := make([]uuid.UUID, 0, len(found))
+		for i := range found {
+			if found[i].FolderID != uuid.Nil {
+				folderIDs = append(folderIDs, found[i].FolderID)
+			}
+		}
+		accessible, aerr := s.repos.Folders.FilterAccessibleFolderIDs(ctx, tx, tenantID, folderIDs, userID, auth.GetUserGroups(ctx))
+		if aerr != nil {
+			return aerr
+		}
+		for i := range found {
+			if found[i].FolderID == uuid.Nil || accessible[found[i].FolderID] {
+				matches = append(matches, found[i])
+			}
+		}
+		return nil
+	})
+	return matches, err
+}
+
 func (s *DocumentService) GetDocument(ctx context.Context, id uuid.UUID) (*model.Document, *DocumentPermissions, error) {
 	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
@@ -161,6 +256,11 @@ func (s *DocumentService) GetDocument(ctx context.Context, id uuid.UUID) (*model
 	}
 	if !perms.CanView {
 		return nil, nil, vdmserr.ErrForbidden
+	}
+	// §8: ACL grants visibility; apply the classification/clearance gate and
+	// surface an explainable 403 on a block.
+	if err := s.enforceClassificationView(ctx, tenantID, userID, doc); err != nil {
+		return nil, nil, err
 	}
 	return doc, perms, nil
 }
@@ -198,6 +298,12 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			"lifecycle_state":  string(cur.LifecycleState),
 			"under_legal_hold": cur.LifecycleState == model.StateLegalHold,
 		}); err != nil {
+			return err
+		}
+
+		// Records immutability: a declared record's metadata is frozen until
+		// disposition.
+		if err := s.blockedByRecord(ctx, tenantID, cur.ID); err != nil {
 			return err
 		}
 
@@ -291,6 +397,15 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 			if held {
 				return vdmserr.ErrLegalHold
 			}
+		}
+		// Records immutability: a declared record is deletable only via
+		// disposition (records.Dispose), never the document delete path.
+		if err := s.blockedByRecord(ctx, tenantID, id); err != nil {
+			return err
+		}
+		// WORM object-lock: cannot delete before the retention date.
+		if err := s.blockedByWORM(ctx, tenantID, id); err != nil {
+			return err
 		}
 		if err := s.requirePermission(ctx, userID, "delete", "document", cur.ID, map[string]any{
 			"workspace_id":    cur.WorkspaceID.String(),
@@ -501,6 +616,9 @@ func (s *DocumentService) MoveDocument(ctx context.Context, in *MoveDocumentInpu
 		}
 		if model.IsLegalHoldBlocked(cur.LifecycleState, "move") {
 			return vdmserr.ErrLegalHold
+		}
+		if err := s.blockedByRecord(ctx, tenantID, cur.ID); err != nil {
+			return err
 		}
 
 		targetFolder, err := s.repos.Folders.GetByID(ctx, tx, tenantID, in.TargetFolderID)
@@ -759,17 +877,31 @@ func (s *DocumentService) ListDocuments(ctx context.Context, f model.DocumentFil
 // rows. Mirrors the OPA context built by requireDocPermission so workspace /
 // lifecycle / region / hold rules evaluate correctly per row.
 func (s *DocumentService) filterViewableDocuments(ctx context.Context, userID uuid.UUID, docs []model.Document) ([]model.Document, error) {
+	// §8: load the classification gate once so per-row checks also drop
+	// documents the caller lacks clearance for (no-op when gating is disabled).
+	var gate *classGate
+	if tid, terr := auth.GetTenantID(ctx); terr == nil && tid != uuid.Nil {
+		g, gerr := s.loadClassGate(ctx, tid, userID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		gate = g
+	}
 	checks := make([]*sedocv1.CheckPermissionRequest, 0, len(docs))
 	for i := range docs {
 		d := &docs[i]
-		ctxStruct, err := structpb.NewStruct(stringifyMap(map[string]any{
+		row := map[string]any{
 			"workspace_id":     d.WorkspaceID.String(),
 			"lifecycle_state":  string(d.LifecycleState),
 			"region_pin":       d.RegionPin,
 			"classification":   d.DocumentClass,
 			"under_legal_hold": d.LifecycleState == model.StateLegalHold,
 			"user_role":        auth.GetUserRole(ctx),
-		}))
+		}
+		for k, v := range gate.contextFor(d, "view") {
+			row[k] = v
+		}
+		ctxStruct, err := structpb.NewStruct(stringifyMap(row))
 		if err != nil {
 			return nil, fmt.Errorf("build context struct: %w", err)
 		}
@@ -872,8 +1004,33 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		if doc.DeletedAt != nil {
 			return vdmserr.ErrNotFound
 		}
+		// Optimistic concurrency (§sync): if the caller declared the version it
+		// based this edit on and the head has since moved, reject so the sync
+		// client can raise a conflict the user resolves. Re-read the head under a
+		// row lock (FOR UPDATE) so two writers on the same base can't both pass
+		// the check — the loser blocks, then sees the moved head and gets 409
+		// (rather than an opaque UNIQUE violation from the version insert).
+		if in.BaseVersionID != nil {
+			var cur *uuid.UUID
+			if err := tx.QueryRow(ctx,
+				`SELECT current_version_id FROM documents WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+				tenantID, doc.ID).Scan(&cur); err != nil {
+				return err
+			}
+			if StaleBaseVersion(in.BaseVersionID, cur) {
+				return vdmserr.Conflict("document was modified concurrently; base version is stale")
+			}
+		}
 		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
 			return vdmserr.ErrLegalHold
+		}
+		// Records immutability: no new versions on a declared record.
+		if err := s.blockedByRecord(ctx, tenantID, doc.ID); err != nil {
+			return err
+		}
+		// WORM object-lock: cannot overwrite (new version) before retention.
+		if err := s.blockedByWORM(ctx, tenantID, doc.ID); err != nil {
+			return err
 		}
 		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
 			"workspace_id":    doc.WorkspaceID.String(),
@@ -1029,6 +1186,14 @@ func (s *DocumentService) RestoreVersion(ctx context.Context, documentID, versio
 		}
 		if model.IsLegalHoldBlocked(doc.LifecycleState, "create_version") {
 			return vdmserr.ErrLegalHold
+		}
+		// Records immutability: no version restore on a declared record.
+		if err := s.blockedByRecord(ctx, tenantID, documentID); err != nil {
+			return err
+		}
+		// WORM object-lock: cannot overwrite (restore) before retention.
+		if err := s.blockedByWORM(ctx, tenantID, documentID); err != nil {
+			return err
 		}
 		if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
 			"workspace_id":    doc.WorkspaceID.String(),

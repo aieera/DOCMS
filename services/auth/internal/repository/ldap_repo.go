@@ -51,22 +51,26 @@ type LDAPGroupMappingRow struct {
 	LDAPConfigID uuid.UUID
 	LDAPGroupDN  string
 	DMSGroupID   uuid.UUID
-	CreatedAt    time.Time
+	// DMSRole optionally grants a SeDoc role (owner|admin|member|guest) to
+	// members of this AD group, in addition to the DMS group. Empty = no role
+	// contribution.
+	DMSRole   string
+	CreatedAt time.Time
 }
 
 // LDAPSyncHistoryRow describes one sync run.
 type LDAPSyncHistoryRow struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	LDAPConfigID  uuid.UUID
-	Trigger       string
-	StartedAt     time.Time
-	FinishedAt    *time.Time
-	Status        string
-	UsersSynced   int
-	GroupsSynced  int
-	Errors        int
-	ErrorSummary  *string
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	LDAPConfigID uuid.UUID
+	Trigger      string
+	StartedAt    time.Time
+	FinishedAt   *time.Time
+	Status       string
+	UsersSynced  int
+	GroupsSynced int
+	Errors       int
+	ErrorSummary *string
 }
 
 // LDAPRepository is the persistence interface for the LDAP feature.
@@ -282,7 +286,7 @@ func (r *ldapRepo) ListAllActiveAcrossTenants(ctx context.Context, pool interfac
 
 func (r *ldapRepo) ListMappings(ctx context.Context, tx pgx.Tx, tenantID, configID uuid.UUID) ([]LDAPGroupMappingRow, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT tenant_id, ldap_config_id, ldap_group_dn, dms_group_id, created_at
+		SELECT tenant_id, ldap_config_id, ldap_group_dn, dms_group_id, COALESCE(dms_role,''), created_at
 		  FROM ldap_group_mappings
 		 WHERE tenant_id = $1 AND ldap_config_id = $2`, tenantID, configID)
 	if err != nil {
@@ -292,7 +296,7 @@ func (r *ldapRepo) ListMappings(ctx context.Context, tx pgx.Tx, tenantID, config
 	var out []LDAPGroupMappingRow
 	for rows.Next() {
 		var m LDAPGroupMappingRow
-		if err := rows.Scan(&m.TenantID, &m.LDAPConfigID, &m.LDAPGroupDN, &m.DMSGroupID, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.TenantID, &m.LDAPConfigID, &m.LDAPGroupDN, &m.DMSGroupID, &m.DMSRole, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -301,11 +305,13 @@ func (r *ldapRepo) ListMappings(ctx context.Context, tx pgx.Tx, tenantID, config
 }
 
 func (r *ldapRepo) UpsertMapping(ctx context.Context, tx pgx.Tx, m *LDAPGroupMappingRow) error {
+	// ON CONFLICT DO UPDATE so re-mapping a group updates its role.
 	_, err := tx.Exec(ctx, `
-		INSERT INTO ldap_group_mappings (tenant_id, ldap_config_id, ldap_group_dn, dms_group_id)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tenant_id, ldap_config_id, ldap_group_dn, dms_group_id) DO NOTHING`,
-		m.TenantID, m.LDAPConfigID, m.LDAPGroupDN, m.DMSGroupID)
+		INSERT INTO ldap_group_mappings (tenant_id, ldap_config_id, ldap_group_dn, dms_group_id, dms_role)
+		VALUES ($1, $2, $3, $4, NULLIF($5,''))
+		ON CONFLICT (tenant_id, ldap_config_id, ldap_group_dn, dms_group_id)
+		DO UPDATE SET dms_role = EXCLUDED.dms_role`,
+		m.TenantID, m.LDAPConfigID, m.LDAPGroupDN, m.DMSGroupID, m.DMSRole)
 	return err
 }
 

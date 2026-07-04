@@ -738,6 +738,63 @@ func (r *folderRepo) HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uu
 	return has, mapPgError(err)
 }
 
+// ListEmptyFolders returns live (non-deleted) leaf folders that have no
+// live child folders and no live documents. See the interface doc for
+// the workspace / age scoping rules. Counts are forced to 0 in the
+// projection — these folders are empty by construction.
+func (r *folderRepo) ListEmptyFolders(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, olderThan time.Time, limit int) ([]model.Folder, error) {
+	if limit <= 0 {
+		limit = FolderPageDefaultLimit
+	}
+	if limit > FolderPageMaxLimit {
+		limit = FolderPageMaxLimit
+	}
+	q := `
+		SELECT f.id, f.tenant_id, f.workspace_id, f.parent_folder_id, f.path::text,
+		       f.name, f.depth, f.created_by, f.created_at, f.updated_at, f.deleted_at,
+		       f.visibility, f.owner_id,
+		       0::bigint, 0::bigint
+		FROM folders f
+		WHERE f.tenant_id = $1 AND f.deleted_at IS NULL
+		  AND NOT EXISTS (
+		      SELECT 1 FROM folders c
+		      WHERE c.tenant_id = f.tenant_id AND c.parent_folder_id = f.id AND c.deleted_at IS NULL
+		  )
+		  AND NOT EXISTS (
+		      SELECT 1 FROM documents d
+		      WHERE d.tenant_id = f.tenant_id AND d.folder_id = f.id AND d.deleted_at IS NULL
+		  )`
+	args := []any{tenantID}
+	if workspaceID != uuid.Nil {
+		q += fmt.Sprintf(` AND f.workspace_id = $%d`, len(args)+1)
+		args = append(args, workspaceID)
+	}
+	if !olderThan.IsZero() {
+		q += fmt.Sprintf(` AND f.created_at < $%d`, len(args)+1)
+		args = append(args, olderThan)
+	}
+	q += fmt.Sprintf(` ORDER BY f.depth DESC, f.id ASC LIMIT $%d`, len(args)+1)
+	args = append(args, limit)
+
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	var out []model.Folder
+	for rows.Next() {
+		f, serr := scanFolderWithCounts(rows)
+		if serr != nil {
+			return nil, serr
+		}
+		out = append(out, *f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+	return out, nil
+}
+
 func scanFolderWithCounts(r rowScanner) (*model.Folder, error) {
 	var (
 		f          model.Folder

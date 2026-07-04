@@ -319,6 +319,10 @@ class IntelligenceConsumer:
                         # text-PDFs (which would otherwise hit the pymupdf
                         # fast path and skip layout box capture).
                         "force_engine": data.get("force_engine", ""),
+                        # doc_type lets the OCR task resolve a per-doc-type
+                        # engine override (ocr_config.doc_type_overrides) when
+                        # no explicit force_engine is set.
+                        "doc_type": data.get("doc_type", ""),
                     },
                     queue="intelligence-ocr",
                 )

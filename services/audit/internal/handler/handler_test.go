@@ -32,7 +32,7 @@ func TestAuditHandler_ListEvents_RejectsWithoutTenant(t *testing.T) {
 	}
 	var body map[string]string
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	if !strings.Contains(body["error"], "X-Tenant-ID") {
+	if !strings.Contains(body["error"], "tenant") {
 		t.Errorf("error should mention tenant: %v", body)
 	}
 }

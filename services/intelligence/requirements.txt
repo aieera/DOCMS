@@ -9,6 +9,9 @@ httpx==0.26.0
 litellm==1.52.0
 PyMuPDF==1.24.10
 Pillow==10.2.0
+# Barcode / patch-code decode for the scan-capture separation pipeline
+# (app/capture). Pure-binding to the zxing-cpp C++ lib; reads from PIL images.
+zxing-cpp==2.2.0
 tiktoken>=0.7,<1.0
 numpy<2.0
 spacy==3.7.4

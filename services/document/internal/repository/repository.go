@@ -29,6 +29,11 @@ type DocumentRepository interface {
 	// concurrent version appends against the same key.
 	GetByExternalID(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, externalID string, forUpdate bool) (*model.Document, error)
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Document, error)
+	// FindByContentHash returns live documents whose any version carries
+	// the given sha256 (versions.sha256_hash is denormalized, so no join
+	// to content_blobs is needed). workspaceID == uuid.Nil searches the
+	// whole tenant. Powers the pre-upload duplicate prompt.
+	FindByContentHash(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, sha256 string, limit int) ([]model.DuplicateMatch, error)
 	Update(ctx context.Context, tx pgx.Tx, d *model.Document) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
@@ -98,6 +103,13 @@ type FolderRepository interface {
 	SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (*SubtreeDeleteResult, error)
 	RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error
 	HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
+	// ListEmptyFolders returns live leaf folders with no live child
+	// folders and no live documents — the orphaned empties that
+	// accumulate from aborted ingests. workspaceID == uuid.Nil scopes to
+	// the whole tenant; a zero olderThan disables the age filter.
+	// Ordered deepest-first so deleting within a single tx collapses
+	// nested empties on the next pass.
+	ListEmptyFolders(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, olderThan time.Time, limit int) ([]model.Folder, error)
 	// Phase 2 — visibility + folder-scoped ACL.
 	UpdateVisibility(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, visibility model.FolderVisibility, owner *uuid.UUID) error
 	ListGrants(ctx context.Context, tx pgx.Tx, tenantID, folderID uuid.UUID) ([]model.FolderGrant, error)
@@ -155,6 +167,23 @@ type LegalHoldRepository interface {
 	GetActiveByDocument(ctx context.Context, tx pgx.Tx, tenantID, documentID uuid.UUID) (*model.LegalHoldRecord, error)
 }
 
+type ReportRepository interface {
+	Create(ctx context.Context, tx pgx.Tx, s *model.SavedReport) error
+	Update(ctx context.Context, tx pgx.Tx, s *model.SavedReport) (bool, error)
+	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.SavedReport, error)
+	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.SavedReport, error)
+	Delete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
+	TouchLastRun(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+}
+
+type TemplateRepository interface {
+	Create(ctx context.Context, tx pgx.Tx, t *model.WorkspaceTemplate) error
+	Update(ctx context.Context, tx pgx.Tx, t *model.WorkspaceTemplate) (bool, error)
+	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.WorkspaceTemplate, error)
+	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.WorkspaceTemplate, error)
+	Delete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
+}
+
 type MetadataSchemaRepository interface {
 	Get(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]byte, error) // returns JSON-encoded JSON-Schema
 	Upsert(ctx context.Context, tx pgx.Tx, tenantID, updatedBy uuid.UUID, jsonSchema []byte) error
@@ -205,6 +234,8 @@ type Repositories struct {
 	ShareLinks          ShareLinkRepository
 	Tags                TagRepository
 	LegalHolds          LegalHoldRepository
+	Templates           TemplateRepository
+	Reports             ReportRepository
 	MetadataSchema      MetadataSchemaRepository
 	Outbox              OutboxRepository
 	Annotations         AnnotationRepository
@@ -226,6 +257,14 @@ type Repositories struct {
 	// WS3 — pre-commit ingestion pipeline.
 	Ingestion   IngestionRepository
 	ReviewQueue ReviewQueueRepository
+	// §8 — classification-based access control.
+	Classification ClassificationRepository
+	// §5 — dynamic viewer watermark config.
+	Watermark WatermarkRepository
+	// §5/§8 — IRM protected-container export.
+	IRM IRMRepository
+	// §3/§5 — sync delta + per-device state.
+	Sync SyncRepository
 }
 
 // New wires concrete repo implementations against a single pool.
@@ -239,6 +278,8 @@ func New(pool *pgxpool.Pool) *Repositories {
 		ShareLinks:          &shareLinkRepo{},
 		Tags:                &tagRepo{},
 		LegalHolds:          &legalHoldRepo{},
+		Templates:           &templateRepo{},
+		Reports:             &reportRepo{},
 		MetadataSchema:      &metadataSchemaRepo{},
 		Outbox:              &outboxRepo{},
 		Annotations:         NewAnnotationRepo(),
@@ -256,5 +297,9 @@ func New(pool *pgxpool.Pool) *Repositories {
 		Processing:          NewProcessingRepo(),
 		Ingestion:           &ingestionRepo{},
 		ReviewQueue:         &reviewQueueRepo{},
+		Classification:      NewClassificationRepo(),
+		Watermark:           NewWatermarkRepo(),
+		IRM:                 NewIRMRepo(),
+		Sync:                NewSyncRepo(),
 	}
 }

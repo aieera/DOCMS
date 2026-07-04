@@ -32,9 +32,9 @@ type LoginInput struct {
 //   - MFARequired=true → client prompts for TOTP, submits via MFA/verify with MFASessionToken
 //   - Session != nil   → client is fully logged in
 type LoginResult struct {
-	MFARequired      bool
-	MFASessionToken  string // plaintext, short-lived (5 min)
-	Session          *CreatedSession
+	MFARequired     bool
+	MFASessionToken string // plaintext, short-lived (5 min)
+	Session         *CreatedSession
 }
 
 // Login validates the credentials, handles rate limiting, branches on MFA.
@@ -164,16 +164,20 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 }
 
 // ErrMFAEnrollmentRequired — tenant policy is `required` but this
-// user has zero methods enrolled. Login refuses; an admin must
-// pre-provision a method out-of-band (or temporarily flip the policy
-// to `optional`) before the user can sign in.
+// user has zero methods enrolled. Login refuses (403); the user must
+// enroll a factor (or an admin pre-provisions one) before signing in.
 //
-// MUST use Conflict (not Forbidden) so the custom errors.Is in
-// pkg/errors — which compares on (Kind, Code) — doesn't match this
-// against ErrAccountLocked (also a Forbidden). The collision caused
-// every "needs to enrol MFA" response to be re-stamped to 429
-// "account temporarily locked" by the handler's special case.
-var ErrMFAEnrollmentRequired = vdmserr.Conflict("multi-factor authentication is required by your administrator; ask them to enroll a method on your account")
+// Forbidden (→ 403) with a DISTINCT code. The custom errors.Is in
+// pkg/errors compares on (Kind, Code), so a plain vdmserr.Forbidden
+// (Code "FORBIDDEN") would collide with ErrAccountLocked and get
+// re-stamped to 429 by the handler's special case. The unique code
+// "MFA_ENROLLMENT_REQUIRED" yields the correct 403 without matching
+// ErrAccountLocked.
+var ErrMFAEnrollmentRequired = &vdmserr.Error{
+	Kind:    vdmserr.KindForbidden,
+	Code:    "MFA_ENROLLMENT_REQUIRED",
+	Message: "multi-factor authentication is required by your administrator; enroll a method to sign in",
+}
 
 // finishLogin completes a successful authentication by creating a session,
 // writing the audit event, and updating last_login_at — all in one TX.

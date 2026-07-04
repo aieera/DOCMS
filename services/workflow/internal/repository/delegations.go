@@ -16,15 +16,15 @@ import (
 
 // DelegationRow mirrors the workflow_delegations row.
 type DelegationRow struct {
-	ID           string     `json:"id"`
-	TenantID     string     `json:"tenant_id"`
-	DelegatorID  string     `json:"delegator_id"`
-	DelegateID   string     `json:"delegate_id"`
-	StartsAt     time.Time  `json:"starts_at"`
-	EndsAt       time.Time  `json:"ends_at"`
-	Reason       string     `json:"reason,omitempty"`
-	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID          string     `json:"id"`
+	TenantID    string     `json:"tenant_id"`
+	DelegatorID string     `json:"delegator_id"`
+	DelegateID  string     `json:"delegate_id"`
+	StartsAt    time.Time  `json:"starts_at"`
+	EndsAt      time.Time  `json:"ends_at"`
+	Reason      string     `json:"reason,omitempty"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // CreateDelegation inserts a forward rule. Caller has already

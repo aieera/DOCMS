@@ -21,9 +21,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // SavedSearchAlertSubscriber — subset of model.SavedSearchSubscriber
@@ -184,22 +186,31 @@ type EmitMatchInput struct {
 	SavedSearchID   string   `json:"saved_search_id"`
 	SavedSearchName string   `json:"saved_search_name"`
 	SubscriberID    string   `json:"subscriber_id"`
-	Channel         string   `json:"channel"`
+	Channels        []string `json:"channels"`
 	MatchedDocIDs   []string `json:"matched_doc_ids"`
 }
 
-// EmitSavedSearchMatch publishes dms.notify.saved_search_match.v1
-// to JetStream. The CloudEvents `data` block is shaped to match the
-// notification service's DeliveryPayload struct so its existing
-// `dms.notify.>` consumer routes the in-app/email/digest delivery
-// without any notification-service-side change.
+// EmitSavedSearchMatch inserts dms.notify.saved_search_match.v1 into
+// the transactional OUTBOX (§4.7 / C5 — never a direct NATS publish
+// from service code). The shared outbox publisher wraps the payload in
+// the CloudEvents envelope and ships it; the notification service's
+// `dms.notify.>` consumer reads the DeliveryPayload-shaped data block.
 //
-// Channel preference is per-subscriber (one event per pairing),
-// surfaced in the in-app notification's resource_type so a future
-// digest worker can group across multiple matches.
+// One event per SUBSCRIBER, carrying the subscriber's chosen channels
+// as the DeliveryPayload `channels` consent hint — the notification
+// service delivers on those channels (in-app row exactly once,
+// email/digest per choice, still gated by snooze/DND/matrix disables).
 func (a *Activities) EmitSavedSearchMatch(ctx context.Context, in EmitMatchInput) error {
-	if a.JS == nil {
-		return errors.New("jetstream not configured on activities")
+	if a.Pool == nil || a.Outbox == nil {
+		return errors.New("outbox not configured on activities")
+	}
+	savedSearchUUID, err := uuid.Parse(in.SavedSearchID)
+	if err != nil {
+		return fmt.Errorf("saved_search_id: %w", err)
+	}
+	tenantUUID, err := uuid.Parse(in.TenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
 	}
 	count := len(in.MatchedDocIDs)
 	plural := "matches"
@@ -209,38 +220,28 @@ func (a *Activities) EmitSavedSearchMatch(ctx context.Context, in EmitMatchInput
 	title := fmt.Sprintf("New %s for %q", plural, in.SavedSearchName)
 	body := fmt.Sprintf("%d new %s in your saved search", count, plural)
 
-	envelope := map[string]any{
-		"specversion": "1.0",
-		"id":          uuid.New().String(),
-		"source":      "dms.workflow",
-		"type":        "dms.notify.saved_search_match.v1",
-		"subject":     "saved_search/" + in.SavedSearchID,
-		"time":        time.Now().UTC().Format(time.RFC3339),
-		// DeliveryPayload-shaped — notification service consumes this
-		// directly. saved_search_id rides along as resource_id so the
-		// in-app row can deep-link back to the saved-search detail.
-		"data": map[string]any{
-			"tenant_id":     in.TenantID,
-			"user_ids":      []string{in.SubscriberID},
-			"type":          "saved_search_match",
-			"title":         title,
-			"body":          body,
-			"resource_type": "saved_search",
-			"resource_id":   in.SavedSearchID,
-			// Sidecar fields below the DeliveryPayload schema —
-			// preserved verbatim by the notification service's
-			// fallback unmarshal but not required by it. A future
-			// digest worker reads matched_doc_ids to group + dedupe.
-			"channel":         in.Channel,
-			"matched_doc_ids": in.MatchedDocIDs,
-		},
-	}
-	payload, err := json.Marshal(envelope)
+	// DeliveryPayload-shaped — the saved_search_id rides as resource_id
+	// so the in-app row deep-links back to the saved search;
+	// matched_doc_ids is a sidecar for future grouping UIs.
+	data, err := json.Marshal(map[string]any{
+		"tenant_id":       in.TenantID,
+		"user_ids":        []string{in.SubscriberID},
+		"type":            "saved_search_match",
+		"title":           title,
+		"body":            body,
+		"resource_type":   "saved_search",
+		"resource_id":     in.SavedSearchID,
+		"channels":        in.Channels,
+		"matched_doc_ids": in.MatchedDocIDs,
+	})
 	if err != nil {
 		return err
 	}
-	_, err = a.JS.Publish("dms.notify.saved_search_match.v1", payload)
-	return err
+	evt := database.NewOutboxEvent(tenantUUID,
+		"dms.notify.saved_search_match.v1", "saved_search", savedSearchUUID, data)
+	return a.runTenant(ctx, in.TenantID, func(tx pgx.Tx) error {
+		return a.Outbox.Insert(ctx, tx, evt)
+	})
 }
 
 // UpdateCursorInput drives UpdateSavedSearchAlertCursor.

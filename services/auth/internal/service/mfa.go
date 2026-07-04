@@ -88,6 +88,9 @@ func (s *Service) ConfirmMFA(ctx context.Context, tenantID, userID uuid.UUID, co
 		if err := s.users.SetMFAEnabled(ctx, tx, tenantID, userID, true); err != nil {
 			return err
 		}
+		if err := s.emitMFAChanged(ctx, tx, tenantID, userID, "enrolled", "totp"); err != nil {
+			return err
+		}
 		return s.emitAuth(ctx, tx, tenantID, userID, "dms.auth.mfa_enabled.v1", map[string]any{
 			"user_id":   userID.String(),
 			"tenant_id": tenantID.String(),
@@ -126,11 +129,40 @@ func (s *Service) DisableMFA(ctx context.Context, tenantID, userID uuid.UUID, to
 		if err := s.users.ClearMFA(ctx, tx, tenantID, userID); err != nil {
 			return err
 		}
+		if err := s.emitMFAChanged(ctx, tx, tenantID, userID, "disabled", "totp"); err != nil {
+			return err
+		}
 		return s.emitAuth(ctx, tx, tenantID, userID, "dms.auth.mfa_disabled.v1", map[string]any{
 			"user_id":   userID.String(),
 			"tenant_id": tenantID.String(),
 		})
 	})
+}
+
+// emitMFAChanged writes dms.user.mfa_changed.v1 (contract event, parallel to
+// dms.user.mfa_reset.v1) inside the caller's txn. Counts the user's remaining
+// factors — TOTP (users.mfa_enabled) + passkeys + other methods — so audit/SIEM
+// can see whether the user still has MFA. action: enrolled|removed|disabled.
+func (s *Service) emitMFAChanged(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, action, method string) error {
+	var totpOn bool
+	var passkeys, methods int
+	// Best-effort counts (a schema variance must not fail the factor change).
+	_ = tx.QueryRow(ctx, `SELECT COALESCE(mfa_enabled,false) FROM users WHERE tenant_id=$1 AND id=$2`, tenantID, userID).Scan(&totpOn)
+	_ = tx.QueryRow(ctx, `SELECT count(*) FROM webauthn_credentials WHERE tenant_id=$1 AND user_id=$2`, tenantID, userID).Scan(&passkeys)
+	_ = tx.QueryRow(ctx, `SELECT count(*) FROM user_mfa_methods WHERE tenant_id=$1 AND user_id=$2 AND status='active'`, tenantID, userID).Scan(&methods)
+	count := passkeys + methods
+	if totpOn {
+		count++
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"user_id":                userID.String(),
+		"tenant_id":              tenantID.String(),
+		"action":                 action, // enrolled | removed | disabled
+		"method":                 method, // totp | passkey | email | sms | push
+		"remaining_factor_count": count,
+	})
+	evt := database.NewOutboxEvent(tenantID, "dms.user.mfa_changed.v1", "user", userID, payload)
+	return s.outbox.Insert(ctx, tx, evt)
 }
 
 // ---- MFA challenge flow (after password succeeds for an MFA-enabled user)
@@ -159,7 +191,7 @@ func (s *Service) issueMFASession(ctx context.Context, tenantID, userID uuid.UUI
 func mfaSessionKey(tenantID uuid.UUID, hash string) string {
 	return "mfa_session:" + tenantID.String() + ":" + hash
 }
-func mfaTenantKey(hash string) string   { return "mfa_tenant:" + hash }
+func mfaTenantKey(hash string) string { return "mfa_tenant:" + hash }
 func mfaAttemptsKey(tenantID uuid.UUID, hash string) string {
 	return "mfa_attempts:" + tenantID.String() + ":" + hash
 }
@@ -275,8 +307,8 @@ func (s *Service) VerifyRecoveryCode(ctx context.Context, mfaSessionToken, recov
 	}
 
 	var (
-		user         *model.User
-		matchedHash  string
+		user        *model.User
+		matchedHash string
 	)
 	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, tenantID, userID)

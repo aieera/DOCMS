@@ -31,6 +31,11 @@ class S3:
     def download_to(self, bucket: str, key: str, dest_path: str) -> None:
         _client().download_file(bucket, key, dest_path)
 
+    def get_bytes(self, bucket: str, key: str) -> bytes:
+        """Read an object fully into memory. Used by the watermark stamper to
+        fetch the cached base page image before overlaying identity."""
+        return _client().get_object(Bucket=bucket, Key=key)["Body"].read()
+
     def upload_file(self, src_path: str, bucket: str, key: str, content_type: str) -> None:
         _client().upload_file(
             Filename=src_path,

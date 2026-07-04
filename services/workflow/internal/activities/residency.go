@@ -174,11 +174,11 @@ func (a *Activities) MoveDocumentRegion(ctx context.Context, tenantID, migration
 			"type":        "dms.residency.migrated.v1",
 			"source":      "/vaultdms/workflow/residency",
 			"data": map[string]string{
-				"tenant_id":      tenantID,
-				"document_id":    documentID,
-				"migration_id":   migrationID,
-				"source_region":  prev,
-				"target_region":  targetRegion,
+				"tenant_id":     tenantID,
+				"document_id":   documentID,
+				"migration_id":  migrationID,
+				"source_region": prev,
+				"target_region": targetRegion,
 			},
 		})
 		evt := database.NewOutboxEvent(tenantUUID, "dms.residency.migrated.v1", "document", docUUID, payload)
@@ -231,9 +231,9 @@ func (a *Activities) MarkItemFailed(ctx context.Context, tenantID, migrationID, 
 
 // ResidencyStats is the per-region summary powering the dashboard.
 type ResidencyStats struct {
-	Region     string `json:"region"`
-	DocCount   int64  `json:"doc_count"`
-	BlobBytes  int64  `json:"blob_bytes"`
+	Region    string `json:"region"`
+	DocCount  int64  `json:"doc_count"`
+	BlobBytes int64  `json:"blob_bytes"`
 }
 
 // QueryResidencyStats returns per-region counts for the tenant.

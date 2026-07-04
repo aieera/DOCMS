@@ -12,12 +12,29 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 )
 
-type Repository struct{ pool *pgxpool.Pool }
+type Repository struct {
+	pool   *pgxpool.Pool
+	outbox *database.OutboxRepository
+}
 
-func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+func New(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, outbox: database.NewOutboxRepository()}
+}
+
+// EmitOutbox writes a domain event to the transactional outbox (§4.7), which
+// the connector's NewOutboxPublisher forwards to NATS. Used for
+// dms.connector.synced.v1 — never a direct NATS publish. Runs in a tenant tx
+// so the outbox table's RLS insert policy passes.
+func (r *Repository) EmitOutbox(ctx context.Context, tenantID uuid.UUID, eventType, aggregateType string, aggregateID uuid.UUID, payload []byte) error {
+	ev := database.NewOutboxEvent(tenantID, eventType, aggregateType, aggregateID, payload)
+	return database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		return r.outbox.Insert(ctx, tx, ev)
+	})
+}
 
 func newID() string { id, _ := uuid.NewV7(); return id.String() }
 
@@ -94,10 +111,11 @@ func (r *Repository) RotateSecret(ctx context.Context, tenantID, id, newSecret s
 // Schema column-name mapping (the model fields kept their original
 // Go names for back-compat with handlers, but the table uses the
 // per-000037-migration names):
-//   model.StatusCode    ← http_status
-//   model.ResponseBody  ← error_message  (closest semantic match)
-//   model.DeadLettered  ← (status = 'dead_letter')
-//   model.DeliveredAt   ← (status = 'delivered' ? last_attempt_at : NULL)
+//
+//	model.StatusCode    ← http_status
+//	model.ResponseBody  ← error_message  (closest semantic match)
+//	model.DeadLettered  ← (status = 'dead_letter')
+//	model.DeliveredAt   ← (status = 'delivered' ? last_attempt_at : NULL)
 func (r *Repository) GetDelivery(ctx context.Context, tenantID, deliveryID string) (*model.WebhookDelivery, error) {
 	d := &model.WebhookDelivery{}
 	var status string

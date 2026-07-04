@@ -5,9 +5,9 @@ import "time"
 
 // SearchRequest is the service-layer input for a full-text search.
 type SearchRequest struct {
-	TenantID  string
-	UserID    string
-	GroupIDs  []string
+	TenantID string
+	UserID   string
+	GroupIDs []string
 	// ShareToken — when non-empty, the request is from an unauthenticated
 	// share-link follower. Mapped to a `terms share_tokens [token]`
 	// match clause in addition to the user/group clauses, so a share
@@ -68,7 +68,7 @@ type SearchFilters struct {
 	// CreatedByName is the display-name field; the §7.2 "author"
 	// facet maps to it. Filter shape mirrors the symbolic facet
 	// name to keep URLs self-consistent.
-	CreatedByName  []string
+	CreatedByName []string
 	// RegionPin is the data-residency keyword. Top-level field on
 	// the index — cannot be routed through CustomMetadata which
 	// adds the `custom_metadata.` prefix.
@@ -86,17 +86,17 @@ type SearchFilters struct {
 // response header so dashboards can surface the rate at which
 // semantic results are silently missing from the fusion.
 type SearchResult struct {
-	Results    []DocumentHit          `json:"results"`
+	Results    []DocumentHit            `json:"results"`
 	Facets     map[string][]FacetBucket `json:"facets,omitempty"`
-	TotalCount int64                  `json:"total_count"`
-	PageToken  string                 `json:"page_token,omitempty"`
-	LatencyMS  int64                  `json:"latency_ms"`
-	SearchMode string                 `json:"search_mode"`
+	TotalCount int64                    `json:"total_count"`
+	PageToken  string                   `json:"page_token,omitempty"`
+	LatencyMS  int64                    `json:"latency_ms"`
+	SearchMode string                   `json:"search_mode"`
 	// Degraded names the mode that actually ran. Empty string when
 	// the requested mode matched what executed; otherwise the value
 	// is the fallback mode the response was served with (typically
 	// "lexical"). Surfaces as X-Search-Mode-Degraded in HTTP.
-	Degraded   string                 `json:"degraded,omitempty"`
+	Degraded string `json:"degraded,omitempty"`
 }
 
 // DocumentHit is one search-result row.
@@ -116,14 +116,14 @@ type DocumentHit struct {
 	// format the mapper doesn't recognise) renders as null on the
 	// frontend instead of the Go zero time (0001-01-01T00:00:00Z),
 	// which formatRelativeTime previously surfaced as "2025 years ago".
-	CreatedAt      *time.Time          `json:"created_at,omitempty"`
-	UpdatedAt      *time.Time          `json:"updated_at,omitempty"`
-	SizeBytes      int64               `json:"size_bytes"`
-	MimeType       string              `json:"mime_type"`
-	HasThumbnail   bool                `json:"has_thumbnail"`
-	VersionCount   int                 `json:"version_count"`
-	Score          float64             `json:"score"`
-	ContentSnippet string              `json:"content_snippet,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
+	SizeBytes      int64      `json:"size_bytes"`
+	MimeType       string     `json:"mime_type"`
+	HasThumbnail   bool       `json:"has_thumbnail"`
+	VersionCount   int        `json:"version_count"`
+	Score          float64    `json:"score"`
+	ContentSnippet string     `json:"content_snippet,omitempty"`
 }
 
 // FacetBucket is one aggregation bucket.
@@ -191,81 +191,92 @@ type SavedSearch struct {
 	// AlertFrequencyCron — optional cron expression. When set, the
 	// alert workflow uses it instead of NotifyIntervalMinutes. ADR
 	// 0068 §"Cron".
-	AlertFrequencyCron    string                  `json:"alert_frequency_cron,omitempty"`
+	AlertFrequencyCron string `json:"alert_frequency_cron,omitempty"`
 	// WorkflowID — Temporal handle the alert is bound to. Empty
 	// when notify=false. Set by the service layer when an alert
 	// is started; cleared on stop.
-	WorkflowID            string                  `json:"workflow_id,omitempty"`
+	WorkflowID string `json:"workflow_id,omitempty"`
 	// LastMatchDocIDs — diff cursor, written by the alert
 	// workflow. Not exposed to API callers in plaintext (the JSON
 	// tag is on the response shape; keeping the field on the model
 	// for serialization). Empty until the first run lands.
-	LastMatchDocIDs       []string                `json:"last_match_doc_ids,omitempty"`
-	CreatedAt             time.Time               `json:"created_at"`
-	LastRunAt             *time.Time              `json:"last_run_at,omitempty"`
+	LastMatchDocIDs []string   `json:"last_match_doc_ids,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
 	// Subscribers — embedded on GET responses. Owner is always
 	// implicitly subscribed when notify=true; explicit subscribers
 	// fan out to a team.
-	Subscribers           []SavedSearchSubscriber `json:"subscribers,omitempty"`
-	SubscriberCount       int                     `json:"subscriber_count"`
+	Subscribers     []SavedSearchSubscriber `json:"subscribers,omitempty"`
+	SubscriberCount int                     `json:"subscriber_count"`
 	// ADR 0100 — smart folder fields. Default values (is_smart_folder=
 	// false, tree_visibility="private") mean a vanilla saved search
 	// continues to behave exactly as before; smart-folder display is
 	// opt-in via /promote.
-	IsSmartFolder   bool       `json:"is_smart_folder"`
-	TreeVisibility  string     `json:"tree_visibility"`             // private | workspace | public
-	WorkspaceID     *string    `json:"workspace_id,omitempty"`      // required when tree_visibility = workspace
-	Icon            string     `json:"icon"`                        // lucide icon name; default 'sparkles'
-	SmartFolderAt   *time.Time `json:"smart_folder_at,omitempty"`
+	IsSmartFolder  bool       `json:"is_smart_folder"`
+	TreeVisibility string     `json:"tree_visibility"`        // private | workspace | public
+	WorkspaceID    *string    `json:"workspace_id,omitempty"` // required when tree_visibility = workspace
+	Icon           string     `json:"icon"`                   // lucide icon name; default 'sparkles'
+	SmartFolderAt  *time.Time `json:"smart_folder_at,omitempty"`
 }
 
 // SavedSearchSubscriber is one row in saved_search_subscribers.
 // Channels carries the per-user delivery preference; valid values
 // mirror the notifications service: "in_app", "email", "digest".
 type SavedSearchSubscriber struct {
-	UserID        string    `json:"user_id"`
-	Channels      []string  `json:"channels"`
-	SubscribedBy  string    `json:"subscribed_by"`
-	SubscribedAt  time.Time `json:"subscribed_at"`
+	UserID       string    `json:"user_id"`
+	Channels     []string  `json:"channels"`
+	SubscribedBy string    `json:"subscribed_by"`
+	SubscribedAt time.Time `json:"subscribed_at"`
 }
 
 // IndexDocument is the shape upserted into OpenSearch. Field names match
 // the index mapping exactly.
+// INVARIANT — one row per DOCUMENT, keyed by document_id (see
+// opensearch.RealClient.Index: PUT /_doc/{document_id}). Versions are
+// NOT indexed separately: ocr_completed overwrites `content` in place
+// with the newest version's text and version_count is a plain field.
+// Consequently an OpenSearch field-collapse on document_id is a no-op
+// by construction — a 5-version document already returns exactly one
+// hit. The web search page's "N versions" expander therefore fetches
+// GET /documents/{id}/versions lazily instead of expanding collapse
+// groups. Indexing per-version rows (to make OLD version content
+// searchable) would be a mapping change + full reindex + per-version
+// ACL/delete handling — its own project, not a query flag.
 type IndexDocument struct {
-	TenantID          string             `json:"tenant_id"`
-	DocumentID        string             `json:"document_id"`
-	WorkspaceID       string             `json:"workspace_id"`
-	FolderID          string             `json:"folder_id,omitempty"`
-	FolderPath        string             `json:"folder_path,omitempty"`
-	Title             string             `json:"title"`
-	Description       string             `json:"description,omitempty"`
-	Content           string             `json:"content,omitempty"`
-	ContentSnippet    string             `json:"content_snippet,omitempty"`
-	Tags              []string           `json:"tags,omitempty"`
-	DocumentClass     string             `json:"document_class,omitempty"`
-	LifecycleState    string             `json:"lifecycle_state"`
-	RegionPin         string             `json:"region_pin,omitempty"`
-	MimeType          string             `json:"mime_type,omitempty"`
-	SizeBytes         int64              `json:"size_bytes"`
-	CreatedBy         string             `json:"created_by"`
-	CreatedByName     string             `json:"created_by_name"`
-	CreatedAt         time.Time          `json:"created_at"`
-	UpdatedAt         *time.Time         `json:"updated_at,omitempty"`
-	CustomMetadata    map[string]any     `json:"custom_metadata,omitempty"`
+	TenantID       string         `json:"tenant_id"`
+	DocumentID     string         `json:"document_id"`
+	WorkspaceID    string         `json:"workspace_id"`
+	FolderID       string         `json:"folder_id,omitempty"`
+	FolderPath     string         `json:"folder_path,omitempty"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description,omitempty"`
+	Content        string         `json:"content,omitempty"`
+	ContentSnippet string         `json:"content_snippet,omitempty"`
+	Tags           []string       `json:"tags,omitempty"`
+	DocumentClass  string         `json:"document_class,omitempty"`
+	LifecycleState string         `json:"lifecycle_state"`
+	RegionPin      string         `json:"region_pin,omitempty"`
+	MimeType       string         `json:"mime_type,omitempty"`
+	SizeBytes      int64          `json:"size_bytes"`
+	CreatedBy      string         `json:"created_by"`
+	CreatedByName  string         `json:"created_by_name"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      *time.Time     `json:"updated_at,omitempty"`
+	CustomMetadata map[string]any `json:"custom_metadata,omitempty"`
 	// ReadableBy is the legacy mixed field — user_ids, group_ids,
 	// and "everyone" all in one keyword. Kept populated for the
 	// migration window so docs indexed before ADR 0083 still match
 	// queries from clients that already use the split fields.
-	ReadableBy        []string           `json:"readable_by"`
+	ReadableBy []string `json:"readable_by"`
 	// ReadableByUsers — direct grants + group memberships expanded
 	// to individual user_ids. Owned by the document service's
 	// publish-time expansion (ADR 0083 §"Indexer split"). Falls back
 	// to ReadableBy when an upstream hasn't been updated yet.
-	ReadableByUsers   []string           `json:"readable_by_users,omitempty"`
+	ReadableByUsers []string `json:"readable_by_users,omitempty"`
 	// ReadableByGroups — group_ids the doc grants access to (no
 	// expansion). Used so a query for a user newly added to a group
 	// matches without having to wait for the doc's reindex.
-	ReadableByGroups  []string           `json:"readable_by_groups,omitempty"`
+	ReadableByGroups []string `json:"readable_by_groups,omitempty"`
 	// ShareTokens — opaque token strings for unauthenticated shared
 	// links. Separate from user/group access so revoking a share
 	// link doesn't have to re-publish the whole readable_by set.

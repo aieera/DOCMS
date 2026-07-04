@@ -1,6 +1,7 @@
 package scim
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -103,6 +104,7 @@ type userCreateBody struct {
 	Schemas     []string `json:"schemas"`
 	UserName    string   `json:"userName"`
 	DisplayName string   `json:"displayName"`
+	ExternalID  string   `json:"externalId,omitempty"`
 	Active      *bool    `json:"active,omitempty"`
 	Emails      []Email  `json:"emails,omitempty"`
 }
@@ -128,7 +130,29 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		h.writeDomainErr(w, err)
 		return
 	}
+	h.repo.LogProvisioning(r.Context(), tenantID, "provisioned", "user", body.ExternalID, &u.ID, email)
 	h.writeJSON(w, http.StatusCreated, h.userToProto(*u))
+}
+
+// applyUserUpdate persists a SCIM user change. A status→deactivated update is a
+// deprovision — it routes through DeactivateUser (revoke sessions + API keys,
+// emit dms.user.deprovisioned.v1, log) rather than a bare status write, so
+// IdPs that deprovision via PATCH/PUT active:false get the full side effects.
+func (h *Handler) applyUserUpdate(ctx context.Context, tenantID, id uuid.UUID, updates map[string]any) (*UserRow, error) {
+	if s, _ := updates["status"].(string); s == "deactivated" {
+		if err := h.repo.DeactivateUser(ctx, tenantID, id); err != nil {
+			return nil, err
+		}
+		delete(updates, "status") // side effects done; don't re-write status
+	}
+	if len(updates) == 0 {
+		return h.repo.GetUser(ctx, tenantID, id)
+	}
+	u, err := h.repo.UpdateUser(ctx, tenantID, id, updates)
+	if err == nil {
+		h.repo.LogProvisioning(ctx, tenantID, "updated", "user", "", &id, "")
+	}
+	return u, err
 }
 
 // replaceUser is PUT /Users/{id}. SCIM requires a full representation;
@@ -156,7 +180,7 @@ func (h *Handler) replaceUser(w http.ResponseWriter, r *http.Request) {
 			updates["status"] = "deactivated"
 		}
 	}
-	u, err := h.repo.UpdateUser(r.Context(), tenantID, id, updates)
+	u, err := h.applyUserUpdate(r.Context(), tenantID, id, updates)
 	if err != nil {
 		h.writeDomainErr(w, err)
 		return
@@ -193,11 +217,11 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 					updates["status"] = "deactivated"
 				}
 			}
-		// Unknown paths are ignored — RFC 7644 allows targeted PATCH to
-		// no-op unhandled attributes.
+			// Unknown paths are ignored — RFC 7644 allows targeted PATCH to
+			// no-op unhandled attributes.
 		}
 	}
-	u, err := h.repo.UpdateUser(r.Context(), tenantID, id, updates)
+	u, err := h.applyUserUpdate(r.Context(), tenantID, id, updates)
 	if err != nil {
 		h.writeDomainErr(w, err)
 		return
@@ -317,9 +341,9 @@ func (h *Handler) patchGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		newName   *string
-		newDesc   *string
-		members   []uuid.UUID = append([]uuid.UUID{}, current.MemberIDs...)
+		newName        *string
+		newDesc        *string
+		members        []uuid.UUID = append([]uuid.UUID{}, current.MemberIDs...)
 		replaceMembers bool
 	)
 
@@ -382,13 +406,13 @@ func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) serviceProviderConfig(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"schemas":      []string{SchemaSPConfig},
-		"patch":        map[string]bool{"supported": true},
-		"bulk":         map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
-		"filter":       map[string]any{"supported": true, "maxResults": 200},
+		"schemas":        []string{SchemaSPConfig},
+		"patch":          map[string]bool{"supported": true},
+		"bulk":           map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
+		"filter":         map[string]any{"supported": true, "maxResults": 200},
 		"changePassword": map[string]bool{"supported": false},
-		"sort":         map[string]bool{"supported": false},
-		"etag":         map[string]bool{"supported": false},
+		"sort":           map[string]bool{"supported": false},
+		"etag":           map[string]bool{"supported": false},
 		"authenticationSchemes": []map[string]string{{
 			"type":        "oauthbearertoken",
 			"name":        "Bearer Token",
@@ -399,7 +423,7 @@ func (h *Handler) serviceProviderConfig(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) resourceTypes(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"schemas": []string{SchemaListResp},
+		"schemas":      []string{SchemaListResp},
 		"totalResults": 2,
 		"Resources": []map[string]any{
 			{"schemas": []string{SchemaResType}, "id": "User", "name": "User", "endpoint": "/Users", "schema": SchemaUser},

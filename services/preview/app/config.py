@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     service_version: str = "dev"
     log_level: str = "INFO"
     port: int = 8080
+    # Shared secret gating the internal /previews/internal/* stamping
+    # endpoints. Those are called service-to-service by the document service
+    # (which owns viewer identity + watermark config), never exposed through
+    # the public gateway. Empty => internal endpoints reject every request
+    # (fail-closed).
+    service_api_key: str = ""
 
     # --- Broker / cache -----------------------------------------------------
     celery_broker_url: str = "redis://redis:6379/1"

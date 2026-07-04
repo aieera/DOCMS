@@ -2,6 +2,7 @@ package scim
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
@@ -138,26 +140,96 @@ func (r *Repo) UpdateUser(ctx context.Context, tenantID, id uuid.UUID, updates m
 // DeactivateUser is our idempotent SCIM DELETE: set status='deactivated'.
 // Also revokes all of the user's active sessions.
 func (r *Repo) DeactivateUser(ctx context.Context, tenantID, id uuid.UUID) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return mapPgError(err)
+	// WithTenantTx sets app.current_tenant so the FORCE-RLS api_keys write is
+	// authorised (users/sessions are ENABLE-only; api_keys is FORCE).
+	return database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`UPDATE users SET status = 'deactivated', updated_at = now()
+			 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+			tenantID, id); err != nil {
+			return mapPgError(err)
+		}
+		// Deprovision side effects: revoke every active session AND API key.
+		if _, err := tx.Exec(ctx,
+			`UPDATE sessions SET revoked_at = now()
+			 WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+			tenantID, id); err != nil {
+			return mapPgError(err)
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE api_keys SET revoked_at = now()
+			 WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+			tenantID, id); err != nil {
+			return mapPgError(err)
+		}
+		// dms.user.deprovisioned.v1 — durable via the transactional outbox
+		// (routed to NATS by the publisher, audited via dms.user.>).
+		payload, _ := json.Marshal(map[string]any{
+			"user_id":   id.String(),
+			"tenant_id": tenantID.String(),
+			"reason":    "scim_deactivate",
+		})
+		evt := database.NewOutboxEvent(tenantID, "dms.user.deprovisioned.v1", "user", id, payload)
+		if err := database.NewOutboxRepository().Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		// Provisioning log entry (same txn).
+		_, err := tx.Exec(ctx,
+			`INSERT INTO scim_provisioning_log (tenant_id, action, resource_type, user_id, detail)
+			 VALUES ($1, 'deprovisioned', 'user', $2, $3)`,
+			tenantID, id, "sessions + API keys revoked")
+		return err
+	})
+}
+
+// LogProvisioning records a SCIM action best-effort (own txn so a log write
+// never fails the SCIM operation). Used for provision/update from the handler.
+func (r *Repo) LogProvisioning(ctx context.Context, tenantID uuid.UUID, action, resourceType, externalID string, userID *uuid.UUID, detail string) {
+	_ = database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`INSERT INTO scim_provisioning_log (tenant_id, action, resource_type, external_id, user_id, detail)
+			 VALUES ($1, $2, $3, NULLIF($4,''), $5, $6)`,
+			tenantID, action, resourceType, externalID, userID, detail)
+		return err
+	})
+}
+
+// ProvisioningLogRow is one provisioning-log entry for the admin panel.
+type ProvisioningLogRow struct {
+	ID           uuid.UUID  `json:"id"`
+	Action       string     `json:"action"`
+	ResourceType string     `json:"resource_type"`
+	ExternalID   string     `json:"external_id,omitempty"`
+	UserID       *uuid.UUID `json:"user_id,omitempty"`
+	Detail       string     `json:"detail,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// RecentProvisioning returns the most recent provisioning-log entries.
+func (r *Repo) RecentProvisioning(ctx context.Context, tenantID uuid.UUID, limit int) ([]ProvisioningLogRow, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`UPDATE users SET status = 'deactivated', updated_at = now()
-		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
-		tenantID, id,
-	); err != nil {
-		return mapPgError(err)
-	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE sessions SET revoked_at = now()
-		 WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-		tenantID, id,
-	); err != nil {
-		return mapPgError(err)
-	}
-	return tx.Commit(ctx)
+	out := []ProvisioningLogRow{}
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, action, resource_type, COALESCE(external_id,''), user_id, COALESCE(detail,''), created_at
+			  FROM scim_provisioning_log WHERE tenant_id = $1
+			 ORDER BY created_at DESC LIMIT $2`, tenantID, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var e ProvisioningLogRow
+			if err := rows.Scan(&e.ID, &e.Action, &e.ResourceType, &e.ExternalID, &e.UserID, &e.Detail, &e.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, e)
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // ---- Groups ---------------------------------------------------------------

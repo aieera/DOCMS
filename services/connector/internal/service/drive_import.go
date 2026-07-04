@@ -10,6 +10,9 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/aieera/sedoc/pkg/esign"
 	"github.com/aieera/sedoc/services/connector/internal/model"
@@ -117,6 +120,29 @@ func (s *Service) ImportDriveFolder(
 		Int("skipped", res.Skipped).
 		Int("failed", res.Failed).
 		Msg("drive import complete")
+
+	// Emit dms.connector.synced.v1 (outbox → NATS, §4.7) so the platform
+	// learns a connector sync ran. Best-effort: the import already
+	// succeeded, so a failed emit is logged, not fatal.
+	if tid, perr := uuid.Parse(tenantID); perr == nil {
+		runID, _ := uuid.NewV7()
+		payload, _ := stdjson.Marshal(map[string]any{
+			"tenant_id":     tenantID,
+			"provider":      "google",
+			"source":        "drive",
+			"source_folder": driveFolderID,
+			"workspace_id":  workspaceID,
+			"folder_id":     destFolderID,
+			"imported":      res.Imported,
+			"skipped":       res.Skipped,
+			"failed":        res.Failed,
+			"truncated":     res.Truncated,
+			"synced_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+		if err := s.repo.EmitOutbox(ctx, tid, "dms.connector.synced.v1", "connector", runID, payload); err != nil {
+			s.log.Warn().Err(err).Str("tenant_id", tenantID).Msg("connector.synced emit failed (sync itself succeeded)")
+		}
+	}
 	return res, nil
 }
 

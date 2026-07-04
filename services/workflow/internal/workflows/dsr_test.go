@@ -16,26 +16,26 @@ import (
 )
 
 type dsrStub struct {
-	subjectID    string
-	held         bool
-	summary      *activities.DSRSubjectSummary
-	rows         int
-	verifyError  error // non-nil makes VerifyDSRToken fail
-	events       []string
-	ledger       []string
-	requests     []string
+	subjectID   string
+	held        bool
+	summary     *activities.DSRSubjectSummary
+	rows        int
+	verifyError error // non-nil makes VerifyDSRToken fail
+	events      []string
+	ledger      []string
+	requests    []string
 }
 
-func (s *dsrStub) Resolve(_ context.Context, _, _ string) (string, error)        { return s.subjectID, nil }
-func (s *dsrStub) Held(_ context.Context, _, _ string) (bool, error)             { return s.held, nil }
+func (s *dsrStub) Resolve(_ context.Context, _, _ string) (string, error) { return s.subjectID, nil }
+func (s *dsrStub) Held(_ context.Context, _, _ string) (bool, error)      { return s.held, nil }
 func (s *dsrStub) Collect(_ context.Context, _, _ string) (*activities.DSRSubjectSummary, error) {
 	if s.summary == nil {
 		return &activities.DSRSubjectSummary{SubjectID: s.subjectID}, nil
 	}
 	return s.summary, nil
 }
-func (s *dsrStub) Overwrite(_ context.Context, _, _, _, _ string) (int, error)   { return s.rows, nil }
-func (s *dsrStub) VerifyToken(_ context.Context, _, _, _ string) error           { return s.verifyError }
+func (s *dsrStub) Overwrite(_ context.Context, _, _, _, _ string) (int, error) { return s.rows, nil }
+func (s *dsrStub) VerifyToken(_ context.Context, _, _, _ string) error         { return s.verifyError }
 func (s *dsrStub) Ledger(_ context.Context, _, _, _, action, outcome string, _ map[string]any) (string, error) {
 	s.ledger = append(s.ledger, action+":"+outcome)
 	return "ledger-id", nil

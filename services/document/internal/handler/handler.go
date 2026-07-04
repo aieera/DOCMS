@@ -389,11 +389,19 @@ func (h *Handler) CreateVersion(ctx context.Context, req *sedocv1.CreateVersionR
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}
-	v, err := h.svc.CreateVersion(ctx, &service.CreateVersionInput{
+	in := &service.CreateVersionInput{
 		DocumentID:    doc,
 		ContentBlobID: blob,
 		ChangeSummary: req.GetChangeSummary(),
-	})
+	}
+	if bv := req.GetBaseVersionId(); bv != "" {
+		base, perr := parseUUID("base_version_id", bv)
+		if perr != nil {
+			return nil, vdmserr.ToGRPCError(perr)
+		}
+		in.BaseVersionID = &base
+	}
+	v, err := h.svc.CreateVersion(ctx, in)
 	if err != nil {
 		return nil, vdmserr.ToGRPCError(err)
 	}

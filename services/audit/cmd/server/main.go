@@ -26,6 +26,7 @@ import (
 	"github.com/aieera/sedoc/services/audit/internal/handler"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
 	"github.com/aieera/sedoc/services/audit/internal/service"
+	"github.com/aieera/sedoc/services/audit/internal/siem"
 )
 
 const serviceName = "audit"
@@ -75,10 +76,26 @@ func main() {
 	defer nc.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(service.Config{Repo: repo, Redis: rdb, Logger: *log.Z()})
+	// SEDOC_AUDIT_SIGNING_KEY: base64 of a 32-byte Ed25519 seed used to
+	// sign tamper-evidence checkpoints (generate: head -c32 /dev/urandom |
+	// base64). Empty disables checkpoint signing.
+	svc := service.New(service.Config{
+		Repo:              repo,
+		Redis:             rdb,
+		Logger:            *log.Z(),
+		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
+	})
 
 	if err := svc.StartConsumer(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
+	}
+
+	// §15 — SIEM forwarding. An independent durable consumer (siem-* durables)
+	// forwards normalised events to per-tenant sinks (syslog/Splunk/Sentinel),
+	// separate from the hash-chain consumer so a slow sink can't block ingest.
+	siemSvc := siem.New(pool, *log.Z())
+	if err := siemSvc.StartConsumer(ctx, js); err != nil {
+		log.Error(ctx).Err(err).Msg("start siem consumer (forwarding disabled)")
 	}
 
 	hs := health.NewServerWithMeta("audit", cfg.Region, pool, rdb, nc, nil)
@@ -113,6 +130,7 @@ func main() {
 	mux := http.NewServeMux()
 	h := handler.New(svc, *log.Z())
 	h.Register(mux)
+	handler.NewSIEMHandler(siemSvc, *log.Z()).Register(mux)
 	// §3.1 / B2.3 — reject unsigned traffic. See pkg/middleware/gatewaysig.go.
 	// FIX-1 follow-up: Kong now strips X-Auth-Tenant-ID + X-User-*
 	// at the edge, so audit handlers must read identity from the

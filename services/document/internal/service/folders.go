@@ -492,6 +492,129 @@ func (s *DocumentService) DeleteFolder(ctx context.Context, id uuid.UUID) error 
 	})
 }
 
+// EmptyFolderCleanupResult summarizes a cleanup run / dry-run.
+type EmptyFolderCleanupResult struct {
+	// Folders is the set that was (or, for a dry-run, would be) deleted.
+	Folders []model.Folder
+	// Deleted is the count actually soft-deleted (0 for a dry-run).
+	Deleted int
+	// MoreRemaining is true when the run hit its max cap and another run
+	// may find more (e.g. deeper nesting beyond the cap).
+	MoreRemaining bool
+}
+
+// emptyFolderCleanupMaxBatch bounds a single repo scan; emptyFolderCleanupHardCap
+// bounds a whole execute call so an admin can't accidentally soft-delete an
+// unbounded number of folders in one request.
+const (
+	emptyFolderCleanupMaxBatch = 500
+	emptyFolderCleanupHardCap  = 20000
+)
+
+// ListEmptyFolders returns live leaf folders with no documents and no
+// child folders — a dry-run preview for the cleanup tool. Owner/admin
+// only (handler enforces role; this re-checks for defense in depth).
+// workspaceID == uuid.Nil scans the whole tenant; olderThanDays <= 0
+// disables the age filter.
+func (s *DocumentService) ListEmptyFolders(ctx context.Context, workspaceID uuid.UUID, olderThanDays, limit int) ([]model.Folder, error) {
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !s.callerIsTenantAdmin(ctx) {
+		return nil, vdmserr.Forbidden("empty-folder cleanup is owner/admin only")
+	}
+	if limit <= 0 || limit > emptyFolderCleanupMaxBatch {
+		limit = emptyFolderCleanupMaxBatch
+	}
+	var olderThan time.Time
+	if olderThanDays > 0 {
+		olderThan = time.Now().UTC().AddDate(0, 0, -olderThanDays)
+	}
+	var out []model.Folder
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		out, err = s.repos.Folders.ListEmptyFolders(ctx, tx, tenantID, workspaceID, olderThan, limit)
+		return err
+	})
+	return out, err
+}
+
+// CleanupEmptyFolders soft-deletes empty leaf folders, looping within a
+// single transaction so that removing leaves collapses now-empty parents
+// on the next pass (nested empties fully drain). Each deletion emits a
+// dms.folder.deleted.v1 event so the action is audited and the folders
+// land in Trash (recoverable). Owner/admin only.
+//
+// max bounds the total deleted in one call (defaulted + hard-capped).
+func (s *DocumentService) CleanupEmptyFolders(ctx context.Context, workspaceID uuid.UUID, olderThanDays, max int) (*EmptyFolderCleanupResult, error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !s.callerIsTenantAdmin(ctx) {
+		return nil, vdmserr.Forbidden("empty-folder cleanup is owner/admin only")
+	}
+	if max <= 0 {
+		max = emptyFolderCleanupMaxBatch
+	}
+	if max > emptyFolderCleanupHardCap {
+		max = emptyFolderCleanupHardCap
+	}
+	var olderThan time.Time
+	if olderThanDays > 0 {
+		olderThan = time.Now().UTC().AddDate(0, 0, -olderThanDays)
+	}
+	res := &EmptyFolderCleanupResult{}
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		for res.Deleted < max {
+			batch := max - res.Deleted
+			if batch > emptyFolderCleanupMaxBatch {
+				batch = emptyFolderCleanupMaxBatch
+			}
+			// Re-query each pass: prior passes' soft-deletes are visible
+			// inside this tx, so a parent whose children we just removed
+			// now qualifies as an empty leaf.
+			empties, lerr := s.repos.Folders.ListEmptyFolders(ctx, tx, tenantID, workspaceID, olderThan, batch)
+			if lerr != nil {
+				return lerr
+			}
+			if len(empties) == 0 {
+				break
+			}
+			for i := range empties {
+				f := &empties[i]
+				del, derr := s.repos.Folders.SoftDeleteSubtree(ctx, tx, tenantID, f.ID, userID)
+				if derr != nil {
+					return derr
+				}
+				evt, eerr := model.NewOutboxEvent(tenantID, "dms.folder.deleted.v1", "folder", f.ID, map[string]any{
+					"folder_id":    f.ID.String(),
+					"workspace_id": f.WorkspaceID.String(),
+					"cohort_id":    del.CohortID.String(),
+					"deleted_by":   userID.String(),
+					"reason":       "empty_folder_cleanup",
+					"folder_ids":   []string{f.ID.String()},
+					"document_ids": []string{},
+				})
+				if eerr != nil {
+					return eerr
+				}
+				if ierr := s.repos.Outbox.Insert(ctx, tx, evt); ierr != nil {
+					return ierr
+				}
+				res.Folders = append(res.Folders, *f)
+				res.Deleted++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	res.MoreRemaining = res.Deleted >= max
+	return res, nil
+}
+
 // TrashedFolder is the per-row shape the Trash UI renders for
 // soft-deleted folders. Carries the cohort id + per-cohort doc count
 // so the admin can see "delete a folder, get N docs back with it"

@@ -2,16 +2,16 @@
 //
 // Three jobs:
 //
-//   1. Seal/unseal the per-tenant bind password using the same KEK
-//      flow the MFA secrets use.
-//   2. AuthenticateLDAP — called from Login when the tenant has an
-//      active config. On success, JIT-upserts the local user and
-//      reconciles group memberships. On LDAP_INVALID_CREDENTIALS
-//      with fallback_to_local=true the caller falls through to
-//      bcryptCompare.
-//   3. SyncTenant — pulls every mapped AD group, reconciles
-//      group_members against the membership the directory reports,
-//      and records an ldap_sync_history row.
+//  1. Seal/unseal the per-tenant bind password using the same KEK
+//     flow the MFA secrets use.
+//  2. AuthenticateLDAP — called from Login when the tenant has an
+//     active config. On success, JIT-upserts the local user and
+//     reconciles group memberships. On LDAP_INVALID_CREDENTIALS
+//     with fallback_to_local=true the caller falls through to
+//     bcryptCompare.
+//  3. SyncTenant — pulls every mapped AD group, reconciles
+//     group_members against the membership the directory reports,
+//     and records an ldap_sync_history row.
 package service
 
 import (
@@ -121,10 +121,13 @@ func (s *Service) AuthenticateLDAP(ctx context.Context, tenantID uuid.UUID, user
 		groups = nil
 	}
 
-	// JIT upsert user + reconcile group memberships in one tx.
+	// JIT upsert user + reconcile group memberships in one tx. The SeDoc role
+	// is resolved from the user's LDAP groups via the config's group→role
+	// mappings (default member; existing users untouched when nothing matches).
 	var localUser *model.User
 	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		u, err := s.upsertLDAPUser(ctx, tx, tenantID, user.Email, user.DisplayName)
+		role, matched := s.resolveLDAPRole(ctx, tx, tenantID, cfg.ID, groups)
+		u, err := s.upsertLDAPUser(ctx, tx, tenantID, user.Email, user.DisplayName, role, matched)
 		if err != nil {
 			return err
 		}
@@ -242,7 +245,64 @@ func (s *Service) unsealBindPassword(sealed []byte) (string, error) {
 // upsertLDAPUser is the LDAP-flavored sibling of FindOrCreateSAMLUser.
 // Same JIT semantics — find by email, create with role=member if
 // absent. A fresh display_name is propagated.
-func (s *Service) upsertLDAPUser(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, email, displayName string) (*model.User, error) {
+// ldapRoleRank orders SeDoc roles for precedence (higher = more privileged).
+func ldapRoleRank(role string) int {
+	switch role {
+	case "owner":
+		return 3
+	case "admin":
+		return 2
+	case "member":
+		return 1
+	case "guest":
+		return 0
+	}
+	return -1
+}
+
+// resolveRoleFromMappings picks the highest-precedence role among the
+// group→role mappings whose LDAP DN matches one of the user's groups
+// (case-insensitive). Pure + testable. Returns (role, matched=false when no
+// mapping contributed a role).
+func resolveRoleFromMappings(mappings []repository.LDAPGroupMappingRow, userGroupDNs []string) (model.Role, bool) {
+	inGroup := make(map[string]bool, len(userGroupDNs))
+	for _, dn := range userGroupDNs {
+		inGroup[strings.ToLower(strings.TrimSpace(dn))] = true
+	}
+	best, bestRank := "", -1
+	for _, m := range mappings {
+		if m.DMSRole == "" || !inGroup[strings.ToLower(strings.TrimSpace(m.LDAPGroupDN))] {
+			continue
+		}
+		if r := ldapRoleRank(m.DMSRole); r > bestRank {
+			best, bestRank = m.DMSRole, r
+		}
+	}
+	if bestRank < 0 {
+		return model.RoleMember, false
+	}
+	return model.Role(best), true
+}
+
+// resolveLDAPRole loads the config's group mappings and resolves the SeDoc
+// role for a user from their LDAP groups.
+func (s *Service) resolveLDAPRole(ctx context.Context, tx pgx.Tx, tenantID, configID uuid.UUID, groups []string) (model.Role, bool) {
+	if len(groups) == 0 || s.ldap.Repo == nil {
+		return model.RoleMember, false
+	}
+	mappings, err := s.ldap.Repo.ListMappings(ctx, tx, tenantID, configID)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("ldap role resolve: list mappings failed")
+		return model.RoleMember, false
+	}
+	return resolveRoleFromMappings(mappings, groups)
+}
+
+// upsertLDAPUser JIT-creates/updates the local user. role is the SeDoc role
+// resolved from the user's LDAP groups; applyRole is true only when a group→role
+// mapping actually matched — so a directory with no role mapping never demotes
+// an existing (possibly hand-promoted) user to member.
+func (s *Service) upsertLDAPUser(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, email, displayName string, role model.Role, applyRole bool) (*model.User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, vdmserr.Validation("email", "required")
@@ -267,16 +327,32 @@ func (s *Service) upsertLDAPUser(ctx context.Context, tx pgx.Tx, tenantID uuid.U
 			}
 			existing.DisplayName = displayName
 		}
+		// LDAP is directory-of-record: when a group→role mapping matched,
+		// reconcile the role on each login.
+		if applyRole && role != "" && role != existing.Role {
+			if _, err := tx.Exec(ctx,
+				`UPDATE users SET role = $3, updated_at = now()
+				   WHERE tenant_id = $1 AND id = $2`,
+				tenantID, existing.ID, string(role),
+			); err != nil {
+				return nil, err
+			}
+			existing.Role = role
+		}
 		return existing, nil
 	case vdmserr.KindOf(err) == vdmserr.KindNotFound:
 		id, err := newUUID()
 		if err != nil {
 			return nil, err
 		}
+		newRole := model.RoleMember
+		if applyRole && role != "" {
+			newRole = role
+		}
 		u := &model.User{
 			TenantID: tenantID, ID: id,
 			Email: email, DisplayName: displayName,
-			Role: model.RoleMember, Status: model.StatusActive,
+			Role: newRole, Status: model.StatusActive,
 			CreatedAt: s.clock(), UpdatedAt: s.clock(),
 		}
 		if err := s.enforceSeatLimit(ctx, tx, tenantID); err != nil {
@@ -569,7 +645,9 @@ func (s *Service) runSync(ctx context.Context, tenantID uuid.UUID, cfg *reposito
 				if ent.Email == "" {
 					continue
 				}
-				u, err := s.upsertLDAPUser(ctx, tx, tenantID, ent.Email, ent.DisplayName)
+				// Sync reconciles GROUP membership, not role — role is
+				// resolved at login where the full group set is known.
+				u, err := s.upsertLDAPUser(ctx, tx, tenantID, ent.Email, ent.DisplayName, model.RoleMember, false)
 				if err != nil {
 					return err
 				}

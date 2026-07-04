@@ -11,6 +11,7 @@ import (
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/auth/internal/model"
+	"github.com/aieera/sedoc/services/auth/internal/sso"
 )
 
 // FindOrCreateSAMLUser is called by the SSO layer (SAML or OIDC) after it
@@ -28,7 +29,7 @@ import (
 // `subject` may be empty for legacy IdPs that send no stable id; the
 // flow then degrades to the old email-only behavior (less secure, but
 // keeps those IdPs working). A fresh session is created in all cases.
-func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, provider, subject, email, displayName string, _ []string, ip, ua string) (string, time.Time, error) {
+func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, provider, subject, email, displayName string, groups []string, ip, ua string) (string, time.Time, error) {
 	provider = strings.TrimSpace(provider)
 	subject = strings.TrimSpace(subject)
 	email = strings.ToLower(strings.TrimSpace(email))
@@ -39,6 +40,11 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 		displayName = emailLocalPart(email)
 	}
 	hasSubject := subject != "" && provider != ""
+
+	// Resolve the JIT role from the IdP's group/role claim → role mapping.
+	// Applied only when creating a new user (below); existing users keep
+	// their role so an admin's manual promotion isn't clobbered on login.
+	jitRole := s.resolveSSORole(ctx, tenantID, provider, groups)
 
 	var (
 		user       *model.User
@@ -102,7 +108,7 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 					ID:          id,
 					Email:       email,
 					DisplayName: displayName,
-					Role:        model.RoleMember,
+					Role:        jitRole,
 					Status:      model.StatusActive,
 					CreatedAt:   s.clock(),
 					UpdatedAt:   s.clock(),
@@ -180,6 +186,21 @@ func (s *Service) FindOrCreateSAMLUser(ctx context.Context, tenantID uuid.UUID, 
 		return "", time.Time{}, err
 	}
 	return sessionTok, expiresAt, nil
+}
+
+// resolveSSORole loads the tenant's active IdP config for the provider and maps
+// the incoming group/role claim values to a SeDoc role (JIT). Any lookup/parse
+// failure fails safe to member.
+func (s *Service) resolveSSORole(ctx context.Context, tenantID uuid.UUID, provider string, groups []string) model.Role {
+	pt := sso.ProviderSAML
+	if provider == "oidc" {
+		pt = sso.ProviderOIDC
+	}
+	cfg, err := sso.NewConfigRepo().GetActiveByTenantProvider(ctx, s.pool, tenantID, pt)
+	if err != nil || cfg == nil {
+		return model.RoleMember
+	}
+	return model.Role(sso.ResolveRole(sso.RoleMappingFromConfig(cfg.Config), groups))
 }
 
 // emailLocalPart returns everything before @ for use as a display-name

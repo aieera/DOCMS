@@ -950,6 +950,65 @@ async def update_workspace_ai_settings_endpoint(
     )
 
 
+# ---- OCR engine config (per tenant / doc-type) ------------------------
+
+class OcrEngineConfigBody(BaseModel):
+    # engine: auto | printed | handwriting. doc_type_overrides maps a
+    # document type to an engine, e.g. {"contract": "printed", "form": "handwriting"}.
+    engine: str = "auto"
+    doc_type_overrides: dict[str, str] = {}
+
+
+def _engine_for_config(value: str) -> str:
+    """Normalize to a stored-config engine: auto | printed | handwriting.
+    The 'surya' force alias collapses to 'printed' (it's a per-document
+    layout override, not a meaningful default)."""
+    from app.tasks.ocr import _normalize_engine
+    norm = _normalize_engine(value)
+    return "printed" if norm == "surya" else norm
+
+
+@router.get("/ocr/engine-config")
+async def get_ocr_engine_config(x_tenant_id: str = Depends(get_tenant_id)):
+    """Return the tenant's default OCR engine + per-doc-type overrides. This is
+    the same Redis key (ocr_config:{tenant_id}) the OCR worker reads when no
+    explicit force_engine is set, so saving here changes future OCR routing."""
+    tenant = _require_tenant(x_tenant_id)
+    from app.llm_gateway import _get_redis
+    raw = _get_redis().get(f"ocr_config:{tenant}")
+    if raw:
+        cfg = json.loads(raw)
+        return {
+            "engine": _engine_for_config(cfg.get("engine", "auto")),
+            "doc_type_overrides": {
+                k: _engine_for_config(v) for k, v in (cfg.get("doc_type_overrides") or {}).items()
+            },
+        }
+    return {"engine": "auto", "doc_type_overrides": {}}
+
+
+@router.put("/ocr/engine-config")
+async def put_ocr_engine_config(
+    body: OcrEngineConfigBody,
+    x_tenant_id: str = Depends(get_tenant_id),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+):
+    """Admin-only — set the tenant default OCR engine + per-doc-type overrides.
+    Values are normalized to auto|printed|handwriting before persisting."""
+    tenant = _require_tenant(x_tenant_id)
+    if x_user_role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner|admin required")
+    cfg = {
+        "engine": _engine_for_config(body.engine),
+        "doc_type_overrides": {
+            k: _engine_for_config(v) for k, v in (body.doc_type_overrides or {}).items() if k
+        },
+    }
+    from app.llm_gateway import _get_redis
+    _get_redis().set(f"ocr_config:{tenant}", json.dumps(cfg))
+    return cfg
+
+
 # ---- LLM usage admin --------------------------------------------------
 
 @admin_router.get("/llm-usage")
@@ -1016,3 +1075,56 @@ async def llm_usage(
             "cost_usd": round(grand_cost, 6),
         },
     }
+
+
+# ---- Scan capture: barcode/patch-code separation (capture pipeline) -------
+# Service-to-service (called by the Go connector's capture orchestrator). The
+# bundle rides as base64 to keep the JSON contract simple; for very large
+# scans the connector can switch to multipart later without changing the
+# segmentation core.
+
+class CaptureAnalyzeRequest(BaseModel):
+    bundle_b64: str
+    mime: str = "application/pdf"
+    mode: str = "separator_sheet"          # separator_sheet | zonal
+    separator_pattern: Optional[str] = None
+    zone: Optional[list[float]] = None     # [x0,y0,x1,y1] fractions; zonal mode
+
+
+class CaptureSplitRequest(BaseModel):
+    bundle_b64: str
+    mime: str = "application/pdf"
+    page_groups: list[list[int]]           # user-corrected grouping from analyze
+
+
+@internal_router.post("/capture/analyze")
+def capture_analyze_endpoint(body: CaptureAnalyzeRequest):
+    import base64 as _b64
+    from app.capture import pipeline
+
+    try:
+        data = _b64.b64decode(body.bundle_b64)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="bundle_b64 not valid base64")
+    zone = tuple(body.zone) if body.zone and len(body.zone) == 4 else None
+    res = pipeline.analyze(data, body.mime, body.mode, body.separator_pattern, zone)
+    return {
+        "page_count": res.page_count,
+        "page_barcodes": res.page_barcodes,
+        "page_thumbnails": res.page_thumbnails,
+        "segments": [s.to_dict() for s in res.segments],
+    }
+
+
+@internal_router.post("/capture/split")
+def capture_split_endpoint(body: CaptureSplitRequest):
+    import base64 as _b64
+    from app.capture import pipeline
+
+    try:
+        data = _b64.b64decode(body.bundle_b64)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="bundle_b64 not valid base64")
+    parts = pipeline.split(data, body.mime, body.page_groups)
+    return {"documents": [{"pdf_b64": _b64.b64encode(p).decode("ascii"), "page_count": len(g)}
+                          for p, g in zip(parts, body.page_groups)]}

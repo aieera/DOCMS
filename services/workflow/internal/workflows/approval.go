@@ -156,7 +156,7 @@ func executeStep(ctx workflow.Context, input model.ApprovalInput, idx int, step 
 		return executeStep(ctx, input, idx, model.Step{
 			ID: step.ID, Name: step.Name, Type: "approval",
 			AssigneeID: signal.DelegateTo,
-			SLAHours: step.SLAHours, TimeoutHours: step.TimeoutHours,
+			SLAHours:   step.SLAHours, TimeoutHours: step.TimeoutHours,
 			EscalateToID: step.EscalateToID, OnExpire: step.OnExpire,
 			Escalation: step.Escalation,
 		})
@@ -174,8 +174,8 @@ func executeStep(ctx workflow.Context, input model.ApprovalInput, idx int, step 
 		return executeStep(ctx, input, idx, model.Step{
 			ID: step.ID, Name: step.Name + " (escalated)", Type: "approval",
 			AssigneeID: nextAssignee,
-			SLAHours: timeoutHours * 2, // bump the timer for the escalated assignee
-			OnExpire: step.OnExpire, Escalation: decrementMax(step.Escalation),
+			SLAHours:   timeoutHours * 2, // bump the timer for the escalated assignee
+			OnExpire:   step.OnExpire, Escalation: decrementMax(step.Escalation),
 		})
 	case "recall":
 		// ADR 0064 — initiator recalled BEFORE this approver acted.

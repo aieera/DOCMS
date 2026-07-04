@@ -72,11 +72,11 @@ func MethodStrength(m MFAMethod) int {
 // EnrolledMethod is what the login picker sees: just enough to draw
 // the row and let the user pick.
 type EnrolledMethod struct {
-	Method      MFAMethod `json:"method"`
-	Strength    int       `json:"strength"`
+	Method   MFAMethod `json:"method"`
+	Strength int       `json:"strength"`
 	// Mask of the destination — last 4 of phone, masked email, etc.
 	// Never the full secret. Empty for totp / push.
-	Destination string    `json:"destination,omitempty"`
+	Destination string `json:"destination,omitempty"`
 }
 
 // TenantMFAPolicy mirrors the tenant_mfa_policy row.
@@ -538,11 +538,13 @@ func (s *Service) SaveMFAPolicy(ctx context.Context, tenantID, actorID uuid.UUID
 // regenerated here — the caller orchestrates recovery-code lifecycle.
 func (s *Service) DisableMethod(ctx context.Context, tenantID, userID uuid.UUID, m MFAMethod) error {
 	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			UPDATE user_mfa_methods SET status = 'suspended', updated_at = now()
 			 WHERE tenant_id = $1 AND user_id = $2 AND method = $3`,
-			tenantID, userID, string(m))
-		return err
+			tenantID, userID, string(m)); err != nil {
+			return err
+		}
+		return s.emitMFAChanged(ctx, tx, tenantID, userID, "removed", string(m))
 	})
 }
 

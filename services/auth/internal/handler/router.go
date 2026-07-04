@@ -22,7 +22,7 @@ type SCIMWiring struct {
 }
 
 // Router wires all auth HTTP routes. Each optional subsystem may be nil.
-func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, tenantAdmin *TenantAdminHandler, ldapAdmin *LDAPAdminHandler) http.Handler {
+func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, scimAdmin *SCIMAdminHandler, encAdmin *EncryptionAdminHandler, tenantAdmin *TenantAdminHandler, ldapAdmin *LDAPAdminHandler) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
@@ -42,6 +42,10 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		// this IS the entry point that establishes auth, and the body
 		// carries an Entra ID token we validate via Graph.
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/m365/exchange", h.ExchangeM365)
+		// ADR 0116 — Google Workspace add-on SSO exchange. Same
+		// public-entry-point rationale: the body carries a Google
+		// OIDC ID token we verify against Google’s JWKS.
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/google/exchange", h.ExchangeGoogle)
 
 		// ADR 0063 — multi-method MFA, public (post-password,
 		// gated by mfa_session_token).
@@ -158,6 +162,26 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Use(vdmsmw.CSRFDoubleSubmit())
 			r.Use(h.RequireRole("admin", "owner"))
 			ssoAdmin.Mount(r)
+		})
+	}
+
+	// ---- Admin SCIM (base URL, token rotate, provisioning log) -----------
+	if scimAdmin != nil {
+		r.Route("/api/v1/admin/scim", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Use(vdmsmw.CSRFDoubleSubmit())
+			r.Use(h.RequireRole("admin", "owner"))
+			scimAdmin.Mount(r)
+		})
+	}
+
+	// ---- Admin encryption / external KMS --------------------------------
+	if encAdmin != nil {
+		r.Route("/api/v1/admin/encryption", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Use(vdmsmw.CSRFDoubleSubmit())
+			r.Use(h.RequireRole("admin", "owner"))
+			encAdmin.Mount(r)
 		})
 	}
 

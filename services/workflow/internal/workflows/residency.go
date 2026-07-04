@@ -2,13 +2,13 @@
 //
 // Resumable pattern:
 //
-//   1. Enumerate — INSERT ... ON CONFLICT DO NOTHING into
-//      residency_migration_items, so a resume is idempotent.
-//   2. Loop — NextPendingMigrationDoc returns up to BatchSize ids,
-//      workflow calls MoveDocumentRegion on each. Both activities
-//      are idempotent.
-//   3. Finalize — FinalizeMigration computes terminal status from
-//      the item rows.
+//  1. Enumerate — INSERT ... ON CONFLICT DO NOTHING into
+//     residency_migration_items, so a resume is idempotent.
+//  2. Loop — NextPendingMigrationDoc returns up to BatchSize ids,
+//     workflow calls MoveDocumentRegion on each. Both activities
+//     are idempotent.
+//  3. Finalize — FinalizeMigration computes terminal status from
+//     the item rows.
 //
 // If the worker crashes between steps 2 and 3, Temporal replay
 // restarts at the top of the loop; NextPendingMigrationDoc returns

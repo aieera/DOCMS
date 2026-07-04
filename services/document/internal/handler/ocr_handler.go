@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,33 +43,39 @@ func NewOCRHandler(pool *pgxpool.Pool, log zerolog.Logger) *OCRHandler {
 func (h *OCRHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/documents/{id}/versions/{vid}/ocr", h.list)
 	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/ocr/rerun", h.rerun)
+	mux.HandleFunc("PATCH /api/v1/documents/{id}/versions/{vid}/ocr/{page}", h.correct)
 }
 
 // OCRPage is the wire shape returned to the frontend. Mirrors the
 // ocr_results columns plus a denormalized engine string so the UI
 // can show "Surya · 96.2%" without joining anything else.
 type OCRPage struct {
-	ID               string  `json:"id"`
-	VersionID        string  `json:"version_id"`
-	PageNumber       int     `json:"page_number"`
-	TextContent      string  `json:"text_content"`
-	Confidence       float32 `json:"confidence"`
-	Language         string  `json:"language,omitempty"`
-	BoundingBoxes    json.RawMessage `json:"bounding_boxes"`
+	ID            string          `json:"id"`
+	VersionID     string          `json:"version_id"`
+	PageNumber    int             `json:"page_number"`
+	TextContent   string          `json:"text_content"`
+	Confidence    float32         `json:"confidence"`
+	Language      string          `json:"language,omitempty"`
+	BoundingBoxes json.RawMessage `json:"bounding_boxes"`
 	// WordBoxes carries the per-word PDF coordinates the entity
 	// overlay needs (ADR 0078 follow-up). Empty array when the
 	// engine doesn't produce them (Surya line-only path).
 	WordBoxes        json.RawMessage `json:"word_boxes"`
-	ProcessingTimeMS *int    `json:"processing_time_ms,omitempty"`
-	Engine           string  `json:"engine,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ProcessingTimeMS *int            `json:"processing_time_ms,omitempty"`
+	Engine           string          `json:"engine,omitempty"`
+	// CorrectedText is the human-corrected transcription when a reviewer
+	// has edited this page; null/empty otherwise. The UI shows it in the
+	// manual-correction field and prefers it over TextContent.
+	CorrectedText *string    `json:"corrected_text,omitempty"`
+	CorrectedAt   *time.Time `json:"corrected_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type ocrListResponse struct {
-	Pages       []OCRPage `json:"pages"`
-	Status      string    `json:"status"` // pending | running | completed | failed | unknown
-	TotalPages  int       `json:"total_pages"`
-	AvgConfidence float32 `json:"avg_confidence"`
+	Pages         []OCRPage `json:"pages"`
+	Status        string    `json:"status"` // pending | running | completed | failed | unknown
+	TotalPages    int       `json:"total_pages"`
+	AvgConfidence float32   `json:"avg_confidence"`
 }
 
 func (h *OCRHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +126,7 @@ func (h *OCRHandler) queryOCR(ctx context.Context, tenantID, versionID uuid.UUID
 			       COALESCE(word_boxes, '[]'::jsonb) AS word_boxes,
 			       processing_time_ms,
 			       COALESCE(engine, '') AS engine,
+			       corrected_text, corrected_at,
 			       created_at
 			FROM ocr_results
 			WHERE tenant_id = $1 AND version_id = $2
@@ -134,7 +142,7 @@ func (h *OCRHandler) queryOCR(ctx context.Context, tenantID, versionID uuid.UUID
 				&p.ID, &p.VersionID, &p.PageNumber,
 				&p.TextContent, &p.Confidence, &p.Language,
 				&p.BoundingBoxes, &p.WordBoxes, &p.ProcessingTimeMS,
-				&p.Engine, &p.CreatedAt,
+				&p.Engine, &p.CorrectedText, &p.CorrectedAt, &p.CreatedAt,
 			); scanErr != nil {
 				return scanErr
 			}
@@ -247,24 +255,28 @@ func (h *OCRHandler) rerun(w http.ResponseWriter, r *http.Request) {
 	}
 	storageURI := "s3://" + bucket + "/" + storageKey
 	payload := map[string]any{
-		"event_id":           eventID.String(),
-		"tenant_id":          tenantID.String(),
-		"document_id":        docID.String(),
-		"version_id":         versionID.String(),
-		"version_number":     versionNum,
-		"content_blob_id":    blobID,
-		"storage_uri":        storageURI,
-		"mime_type":          mimeType,
-		"size_bytes":         sizeBytes,
-		"sha256":             sha256Hash,
+		"event_id":            eventID.String(),
+		"tenant_id":           tenantID.String(),
+		"document_id":         docID.String(),
+		"version_id":          versionID.String(),
+		"version_number":      versionNum,
+		"content_blob_id":     blobID,
+		"storage_uri":         storageURI,
+		"mime_type":           mimeType,
+		"size_bytes":          sizeBytes,
+		"sha256":              sha256Hash,
 		"uploaded_by_user_id": "",
-		"uploaded_at":        time.Now().UTC().Format(time.RFC3339),
-		"reason":             "manual_rerun",
+		"uploaded_at":         time.Now().UTC().Format(time.RFC3339),
+		"reason":              "manual_rerun",
 	}
-	// ?force=surya bypasses the pymupdf text-extraction fast path on
-	// the worker so the layout viewer can get real bounding boxes.
-	if r.URL.Query().Get("force") == "surya" {
-		payload["force_engine"] = "surya"
+	// ?force=<engine> overrides engine selection for this re-OCR. surya
+	// bypasses the pymupdf text fast path for layout boxes; handwriting
+	// routes the doc through TrOCR (ICR) merged with printed OCR; printed
+	// forces Surya/Paddle; auto defers to the per-tenant/doc-type config.
+	// Unknown values are ignored (the worker then resolves from config).
+	switch fe := r.URL.Query().Get("force"); fe {
+	case "surya", "printed", "handwriting", "auto":
+		payload["force_engine"] = fe
 	}
 	body, _ := json.Marshal(payload)
 	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
@@ -280,7 +292,79 @@ func (h *OCRHandler) rerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{
-		"status":    "queued",
-		"event_id":  eventID.String(),
+		"status":   "queued",
+		"event_id": eventID.String(),
 	})
+}
+
+// correct stores a human-corrected transcription for one OCR page. The
+// engine output in text_content is left untouched; corrected_text +
+// corrected_by + corrected_at capture the override. Gated to the same
+// roles as rerun (review is an admin/compliance action); tenant isolation
+// is enforced by RLS. A document-level edit-permission check is a follow-up
+// (this handler isn't wired to the document service).
+//
+//	PATCH /api/v1/documents/{id}/versions/{vid}/ocr/{page}
+//	body: {"corrected_text": "..."}
+func (h *OCRHandler) correct(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := auth.GetTenantID(r.Context())
+	if err != nil || tenantID == uuid.Nil {
+		writeErr(w, r, vdmserr.ErrUnauthorized)
+		return
+	}
+	role := auth.GetUserRole(r.Context())
+	if role != "owner" && role != "admin" && role != "compliance_officer" {
+		writeErr(w, r, vdmserr.ErrForbidden)
+		return
+	}
+	versionID, err := uuid.Parse(r.PathValue("vid"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("version_id", "not a uuid"))
+		return
+	}
+	pageNo, err := strconv.Atoi(r.PathValue("page"))
+	if err != nil || pageNo < 1 {
+		writeErr(w, r, vdmserr.Validation("page", "must be a positive integer"))
+		return
+	}
+	var body struct {
+		CorrectedText string `json:"corrected_text"`
+	}
+	if derr := json.NewDecoder(r.Body).Decode(&body); derr != nil {
+		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
+		return
+	}
+	if len(body.CorrectedText) > 1<<20 {
+		writeErr(w, r, vdmserr.Validation("corrected_text", "too large (max 1 MiB)"))
+		return
+	}
+	// corrected_by is nullable — record the user when present, else leave null.
+	var correctedBy *uuid.UUID
+	if uid, uerr := auth.GetUserID(r.Context()); uerr == nil && uid != uuid.Nil {
+		correctedBy = &uid
+	}
+	ctx := r.Context()
+	var updated int64
+	err = database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+		ct, eerr := tx.Exec(ctx, `
+			UPDATE ocr_results
+			   SET corrected_text = $3, corrected_by = $4, corrected_at = NOW()
+			 WHERE tenant_id = $1 AND version_id = $2 AND page_number = $5
+		`, tenantID, versionID, body.CorrectedText, correctedBy, pageNo)
+		if eerr != nil {
+			return eerr
+		}
+		updated = ct.RowsAffected()
+		return nil
+	})
+	if err != nil {
+		h.log.Error().Err(err).Str("version", versionID.String()).Int("page", pageNo).Msg("ocr correct failed")
+		writeErr(w, r, err)
+		return
+	}
+	if updated == 0 {
+		writeErr(w, r, vdmserr.NotFound("ocr page not found"))
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]any{"status": "saved", "page_number": pageNo})
 }

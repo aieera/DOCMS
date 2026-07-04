@@ -96,21 +96,31 @@ func (r *Repository) UnreadCount(ctx context.Context, tenantID, userID string) (
 
 // GetPreference returns user notification preferences.
 func (r *Repository) GetPreference(ctx context.Context, tenantID, userID string) (*model.UserPreference, error) {
+	// notification_user_prefs is the FLAT per-user row (notification
+	// migration 000003). The similarly-named notification_preferences
+	// table is the ADR 0086 MATRIX — selecting flat columns from it
+	// errored on every call and silently zeroed the email/push gates.
 	p := &model.UserPreference{}
 	err := r.pool.QueryRow(ctx,
 		`SELECT tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to
-		 FROM notification_preferences WHERE tenant_id = $1 AND user_id = $2`,
+		 FROM notification_user_prefs WHERE tenant_id = $1 AND user_id = $2`,
 		tenantID, userID).Scan(&p.TenantID, &p.UserID, &p.EmailEnabled, &p.PushEnabled, &p.SlackEnabled, &p.SMSEnabled, &p.QuietHoursFrom, &p.QuietHoursTo)
 	if err == pgx.ErrNoRows {
 		return &model.UserPreference{TenantID: tenantID, UserID: userID, EmailEnabled: true, PushEnabled: true}, nil
 	}
-	return p, err
+	if err != nil {
+		// Surface hard failures as (nil, err) so callers can apply an
+		// explicit default instead of trusting a zero-value struct
+		// whose false switches silently disable delivery.
+		return nil, err
+	}
+	return p, nil
 }
 
 // UpsertPreference saves user notification preferences.
 func (r *Repository) UpsertPreference(ctx context.Context, p *model.UserPreference) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO notification_preferences (tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to)
+		INSERT INTO notification_user_prefs (tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
 			email_enabled = EXCLUDED.email_enabled, push_enabled = EXCLUDED.push_enabled,

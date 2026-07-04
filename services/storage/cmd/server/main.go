@@ -175,6 +175,10 @@ func main() {
 		// docs/audit/04-antipatterns.md; target design + migration plan in
 		// docs/tech-debt/per-tenant-kek.md.
 		TenantKEKID: "vaultdms-storage-default",
+		// Fail-closed when a configured scanner errors. Opt out with
+		// SEDOC_STORAGE_SCAN_FAIL_OPEN=true (e.g. environments that
+		// knowingly accept unscanned bytes during a clamd outage).
+		ScanFailOpen: parseScanFailOpen(),
 	})
 
 	// ---- Health ------------------------------------------------------------
@@ -185,6 +189,7 @@ func main() {
 	// KMS+S3 wiring the service owns.
 	hs.Handle("/internal/v1/reencrypt-blob", handler.NewReencryptHTTPHandler(svc))
 	hs.Handle("/internal/v1/rewrap-dek", handler.NewRewrapDEKHTTPHandler(svc))
+	hs.Handle("/internal/v1/worm-lock", handler.NewWORMHTTPHandler(svc))
 	go func() {
 		if err := hs.Start(fmt.Sprintf(":%d", cfg.HealthPort)); err != nil {
 			log.Error(ctx).Err(err).Msg("health server")
@@ -262,6 +267,19 @@ func parseEncryptAtRest(kmsWired bool) bool {
 // CompleteUpload — meant for dev where the scan adds 5–7s per upload.
 func parseSkipVirusScan() bool {
 	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SEDOC_STORAGE_SKIP_VIRUS_SCAN")))
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// parseScanFailOpen reads SEDOC_STORAGE_SCAN_FAIL_OPEN. Defaults to
+// false (fail-closed): when a configured scanner errors, the upload is
+// rejected rather than silently completing as clean. Truthy values
+// restore the legacy permissive behaviour.
+func parseScanFailOpen() bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("SEDOC_STORAGE_SCAN_FAIL_OPEN")))
 	switch raw {
 	case "1", "true", "yes", "on":
 		return true

@@ -9,6 +9,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/events"
@@ -19,9 +20,10 @@ import (
 
 // SealConsumer auto-triggers the server-seal when a workflow signature completes.
 type SealConsumer struct {
-	js  nats.JetStreamContext
-	svc *Service
-	log zerolog.Logger
+	js   nats.JetStreamContext
+	svc  *Service
+	log  zerolog.Logger
+	base context.Context // process-lifetime ctx from Start; per-message ctxs derive from it (C4)
 }
 
 // NewSealConsumer constructs the consumer. svc must have a configured sealer
@@ -32,7 +34,8 @@ func NewSealConsumer(js nats.JetStreamContext, svc *Service, log zerolog.Logger)
 
 // Start binds the durable subscription. Non-fatal for the caller: log + skip
 // if it can't subscribe (e.g. the stream isn't provisioned in this env).
-func (c *SealConsumer) Start() error {
+func (c *SealConsumer) Start(ctx context.Context) error {
+	c.base = ctx
 	_, err := c.js.Subscribe("dms.signature.completed.v1", c.handle,
 		nats.Durable("signature-seal"),
 		nats.ManualAck(),
@@ -51,6 +54,7 @@ func (c *SealConsumer) handle(msg *nats.Msg) {
 	var data struct {
 		DocumentID  string `json:"document_id"`
 		VersionID   string `json:"version_id"`
+		RequestID   string `json:"request_id"`
 		InitiatedBy string `json:"initiated_by"`
 	}
 	_ = json.Unmarshal(env.Data, &data)
@@ -69,12 +73,42 @@ func (c *SealConsumer) handle(msg *nats.Msg) {
 
 	// System-seal identity: admin role so the storage OPA owner/admin rule
 	// fires; the acting user is the workflow initiator.
-	ctx := auth.WithUser(context.Background(), auth.UserInfo{
+	ctx := auth.WithUser(c.base, auth.UserInfo{
 		TenantID: tenantUUID, ID: actor, Role: "admin",
 	})
-	res, err := c.svc.SealVersion(ctx, env.TenantID, data.DocumentID, data.VersionID,
-		data.InitiatedBy, "SeDoc Workflow Seal", "Sealed on workflow signature completion")
+	// Idempotency: claim the seal so a redelivery (at-least-once) can't produce
+	// a duplicate sealed version. If we don't win the claim, another delivery
+	// already sealed (or is sealing) — ack + skip.
+	if claimed, cerr := c.svc.ClaimSeal(ctx, env.TenantID, data.RequestID); cerr != nil {
+		c.log.Error().Err(cerr).Str("request_id", data.RequestID).Msg("seal consumer: claim failed; will redeliver")
+		_ = msg.Nak()
+		return
+	} else if !claimed {
+		c.log.Info().Str("request_id", data.RequestID).Msg("seal consumer: already sealed; skipping (idempotent)")
+		_ = msg.Ack()
+		return
+	}
+
+	// Per-signer PAdES revisions + final org seal when we can resolve the
+	// ceremony's signers; otherwise a single organizational seal.
+	var signers []CeremonySigner
+	if data.RequestID != "" {
+		if s, serr := c.svc.CeremonySigners(ctx, env.TenantID, data.RequestID); serr != nil {
+			c.log.Warn().Err(serr).Str("request_id", data.RequestID).Msg("seal consumer: could not load signers; falling back to org seal")
+		} else {
+			signers = s
+		}
+	}
+	res, err := c.svc.SealCeremony(ctx, env.TenantID, data.DocumentID, data.VersionID, data.InitiatedBy, signers)
 	if err != nil {
+		// Release the claim so the redelivery re-attempts the seal. The
+		// release runs on a cancellation-DETACHED context: when the seal
+		// failed because of shutdown (c.base cancelled mid-ceremony), a
+		// release on the same dead ctx would fail too, leaving the claim
+		// held and the redelivery Ack-skipping a seal that never happened.
+		rctx, rcancel := context.WithTimeout(context.WithoutCancel(c.base), 10*time.Second)
+		c.svc.ReleaseSeal(rctx, env.TenantID, data.RequestID)
+		rcancel()
 		c.log.Error().Err(err).
 			Str("document_id", data.DocumentID).Str("version_id", data.VersionID).
 			Msg("seal consumer: seal failed; will redeliver")

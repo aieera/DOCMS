@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,9 +38,7 @@ func TestRedact_Forbidden403_NonCompliance(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x","regions":[{"page":1}]}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
-	req.Header.Set("X-User-Role", "member")
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New(), Role: "member"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	require.Equal(t, http.StatusForbidden, w.Code)
@@ -49,9 +49,7 @@ func TestRedact_BadDocUUID400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/not-a-uuid/redact",
 		bytes.NewBufferString(`{"reason":"x","regions":[{"page":1}]}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
-	req.Header.Set("X-User-Role", "compliance_officer")
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New(), Role: "compliance_officer"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
@@ -62,9 +60,7 @@ func TestRedact_MissingReason400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"regions":[{"page":1}]}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
-	req.Header.Set("X-User-Role", "compliance_officer")
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New(), Role: "compliance_officer"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
@@ -75,9 +71,7 @@ func TestRedact_EmptyRegionsAndEntities400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x"}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
-	req.Header.Set("X-User-Role", "compliance_officer")
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New(), Role: "compliance_officer"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
@@ -88,9 +82,7 @@ func TestRedact_BadVersionID400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/documents/"+uuid.New().String()+"/redact",
 		bytes.NewBufferString(`{"reason":"x","version_id":"bad","regions":[{"page":1}]}`))
-	req.Header.Set("X-Auth-Tenant-ID", uuid.New().String())
-	req.Header.Set("X-User-ID", uuid.New().String())
-	req.Header.Set("X-User-Role", "compliance_officer")
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), ID: uuid.New(), Role: "compliance_officer"}))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)

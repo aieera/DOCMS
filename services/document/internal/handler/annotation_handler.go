@@ -12,6 +12,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -108,6 +109,27 @@ func (h *AnnotationsHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// Opt-in keyset pagination: ?limit=N (&cursor=…). Without ?limit we
+	// return every annotation — the overlay needs the full set to render
+	// the page, so paginating unconditionally would hide later rows.
+	if ls := r.URL.Query().Get("limit"); ls != "" {
+		limit, err := strconv.Atoi(ls)
+		if err != nil || limit < 0 {
+			writeErr(w, r, vdmserr.Validation("limit", "must be a non-negative integer"))
+			return
+		}
+		page, err := h.svc.ListAnnotationsPage(ctx, docID, versionID, limit, r.URL.Query().Get("cursor"))
+		if err != nil {
+			writeErr(w, r, err)
+			return
+		}
+		items := page.Items
+		if items == nil {
+			items = []model.Annotation{}
+		}
+		writeJSONStatus(w, http.StatusOK, map[string]any{"annotations": items, "next_cursor": page.NextCursor})
+		return
+	}
 	items, err := h.svc.ListAnnotations(ctx, docID, versionID)
 	if err != nil {
 		writeErr(w, r, err)
