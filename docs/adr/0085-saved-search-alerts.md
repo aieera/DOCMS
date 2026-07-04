@@ -127,3 +127,41 @@ notification row.
   shape don't pay the cron-parse complexity. The workflow's
   next-interval logic prefers `alert_frequency_cron` when set, else
   `notify_interval_minutes`.
+
+## Amendment (2026-07-03) — implementation notes + hardening
+
+The shipped implementation diverged from two details above, and a
+hardening pass closed three gaps found in review:
+
+1. **Scheduling is Temporal Schedules, not a cron-child loop.** One
+   Schedule per alert (`saved-search-alert-<id>`), synced to the
+   `notify` flag by a 60s reconcile loop in the workflow worker
+   (`saved_search_alert_schedule.go`). The `workflow_id` column the
+   original design called for is vestigial and unused.
+2. **Emission goes through the transactional outbox (C5).** The
+   original code direct-published `dms.notify.saved_search_match.v1`
+   via `JS.Publish` from the activity, bypassing the outbox (and
+   evading the case-sensitive C5 archtest, which is now
+   case-insensitive). `EmitSavedSearchMatch` now inserts an outbox row
+   in a tenant tx; the shared outbox publisher ships it.
+3. **Subscriber channels actually reach delivery.** The event now
+   carries the subscriber's chosen channels as
+   `DeliveryPayload.channels` — per-event channel consent the
+   notification service's `Decide` honors (delivering on a consented
+   channel even without a matrix cell, but never overriding snooze,
+   DND, an explicit matrix disable, or the flat per-channel switch;
+   `"digest"` folds email through the ADR 0086 digest table). One
+   event per subscriber (previously one per (subscriber, channel),
+   which also duplicated in-app rows). The digest flusher passes the
+   same hint so digest summaries deliver on their folded channel.
+4. **Cursor-first ordering.** `last_match_doc_ids` is written BEFORE
+   emission and its failure is fatal (Temporal retries the idempotent
+   update). Previously emission ran first and a cursor-write failure
+   re-notified every subscriber next tick — the comment claiming a
+   notification-side `(saved_search_id, doc_id, day)` dedup was
+   wrong; no such dedup exists. Delivery is now at-most-once per
+   window: a crash between cursor write and emission skips that
+   batch's notifications (the documents remain in the app).
+5. **Alert-at-save.** The web save-search flow offers "Alert me when
+   new documents match" (+ interval) at creation instead of requiring
+   a second step on the manage page.
