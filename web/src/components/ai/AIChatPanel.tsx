@@ -57,8 +57,8 @@ export function AIChatPanel({ open, onClose, scope, scopeId }: Props) {
           {loading && <div className="flex gap-2"><Bot className="h-5 w-5 text-[var(--color-primary)]" /><Spinner /></div>}
         </div>
         <div className="flex gap-2 border-t border-[var(--color-border)] pt-3">
-          <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a question..." onKeyDown={(e) => e.key === 'Enter' && send()} className="flex-1" />
-          <Button onClick={send} disabled={loading || !input.trim()}><Send className="h-4 w-4" /></Button>
+          <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a question..." aria-label="Ask a question" onKeyDown={(e) => e.key === 'Enter' && send()} className="flex-1" />
+          <Button onClick={send} disabled={loading || !input.trim()} aria-label="Send message"><Send className="h-4 w-4" /></Button>
         </div>
       </div>
       </SheetContent>

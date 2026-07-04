@@ -59,6 +59,8 @@ export interface LDAPTestBindResult {
 export interface LDAPMapping {
   ldap_group_dn: string
   dms_group_id: string
+  /** Optional SeDoc role (owner|admin|member|guest) this AD group grants. */
+  dms_role?: string
 }
 
 export interface LDAPSyncHistoryRow {
@@ -129,8 +131,9 @@ export async function addLDAPMapping(
   configId: string,
   ldap_group_dn: string,
   dms_group_id: string,
+  dms_role?: string,
 ): Promise<void> {
-  await api.post(`/admin/ldap/configs/${configId}/mappings`, { ldap_group_dn, dms_group_id })
+  await api.post(`/admin/ldap/configs/${configId}/mappings`, { ldap_group_dn, dms_group_id, dms_role })
 }
 
 export async function deleteLDAPMapping(

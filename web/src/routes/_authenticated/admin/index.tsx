@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileSearch, KeyRound, Link2, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, Tags as TagsIcon, Upload, UserCog, Users, Workflow, Database, type LucideIcon } from 'lucide-react'
+import { Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileKey, FileSearch, FolderSync, FolderTree, KeyRound, Link2, Lock, MapPinned, Plug, Radio, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Stamp, Tags as TagsIcon, Upload, UserCog, Users, Workflow, Database, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
@@ -31,14 +31,23 @@ const TENANT_GROUP: SectionGroup = {
   description: 'People, policy, and tenant-wide configuration.',
   sections: [
     { to: '/admin/identity', icon: Users, label: 'Identity & Access', desc: 'Users, groups, roles, SSO, LDAP/AD' },
+    { to: '/admin/scim', icon: UserCog, label: 'SCIM provisioning', desc: 'IdP user/group provisioning + deprovision + log' },
     { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
     { to: '/admin/data-governance', icon: ShieldAlert, label: 'Data governance', desc: 'Compliance overview + residency migrations' },
     { to: '/admin/tenant/license', icon: ScrollText, label: 'License', desc: 'JWT claims, seats, feature flags, expiry' },
+    { to: '/admin/tenant/classification', icon: ShieldCheck, label: 'Classification & access', desc: 'Sensitivity rules · per-user clearance · PHI/PII gating' },
+    { to: '/admin/tenant/watermark', icon: Stamp, label: 'Watermark', desc: 'Dynamic viewer watermark — template, opacity, tiling, per-classification' },
+    { to: '/admin/tenant/irm', icon: FileKey, label: 'Protected exports', desc: 'IRM licenses — recipients, expiry, opens, revoke' },
+    { to: '/admin/tenant/sync', icon: FolderSync, label: 'Devices & Sync', desc: 'Selective-sync devices, folders, status, revoke' },
+    { to: '/admin/tenant/encryption', icon: Lock, label: 'Encryption & keys', desc: 'External KMS (Vault/AWS/Azure) · rotation · break-glass revoke' },
     { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
     { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
     { to: '/admin/retention', icon: Archive, label: 'Retention', desc: 'Retention policies' },
     { to: '/admin/legal-holds', icon: Scale, label: 'Legal holds', desc: 'Active holds' },
+    { to: '/admin/ediscovery', icon: FileSearch, label: 'E-discovery', desc: 'Hold-scoped export: docs + metadata + audit' },
+    { to: '/admin/records', icon: FolderTree, label: 'Records', desc: 'File plan · retention schedules · disposition' },
     { to: '/admin/audit-log', icon: ScrollText, label: 'Audit log', desc: 'Activity history' },
+    { to: '/admin/siem', icon: Radio, label: 'SIEM forwarding', desc: 'Forward events to syslog / Splunk / Sentinel' },
     { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
     { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
     { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },

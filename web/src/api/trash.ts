@@ -65,3 +65,42 @@ export async function listTrashedFolders(): Promise<TrashedFolder[]> {
 export async function restoreFolderFromTrash(folderId: string): Promise<void> {
   await api.post(`/folders/${folderId}/restore`)
 }
+
+// ---- Empty-folder cleanup (admin maintenance) -----------------------
+// Removes the orphaned empty folders that accumulate from aborted
+// ingests / integration runs. Deletions are soft (land in Trash above,
+// restorable) and audited.
+
+export interface EmptyFolder {
+  id: string
+  name: string
+  workspace_id: string
+  path: string
+  depth: number
+  created_at: string
+}
+
+export interface EmptyFolderScan {
+  items: EmptyFolder[]
+  count: number
+  truncated: boolean
+}
+
+// listEmptyFolders is the dry-run: what WOULD be removed.
+export async function listEmptyFolders(limit = 200): Promise<EmptyFolderScan> {
+  const { data } = await api.get<EmptyFolderScan>('/admin/folders/empty', {
+    params: { limit: String(limit) },
+  })
+  return data
+}
+
+export interface EmptyFolderCleanupResult {
+  deleted: number
+  more_remaining: boolean
+  items: EmptyFolder[]
+}
+
+export async function cleanupEmptyFolders(max = 2000): Promise<EmptyFolderCleanupResult> {
+  const { data } = await api.post<EmptyFolderCleanupResult>('/admin/folders/cleanup', { max })
+  return data
+}

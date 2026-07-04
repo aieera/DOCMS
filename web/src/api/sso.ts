@@ -12,6 +12,15 @@ export interface SSOConfig {
   updated_at: string
 }
 
+export interface RoleRule {
+  claim_value: string
+  role: string
+}
+export interface RoleMapping {
+  rules?: RoleRule[]
+  default_role?: string
+}
+
 export interface SAMLConfigBody {
   idp_metadata_url?: string
   idp_metadata_xml?: string
@@ -24,6 +33,7 @@ export interface SAMLConfigBody {
   require_signed_assertion?: boolean
   require_signed_response?: boolean
   clock_skew_seconds?: number
+  role_mapping?: RoleMapping
 }
 
 export interface OIDCConfigBody {
@@ -32,6 +42,7 @@ export interface OIDCConfigBody {
   client_secret: string
   redirect_url: string
   scopes?: string[]
+  role_mapping?: RoleMapping
 }
 
 export interface ValidateResult {

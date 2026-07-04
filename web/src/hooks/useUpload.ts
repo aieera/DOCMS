@@ -2,9 +2,10 @@ import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
-import { createDocument, createVersion, deleteDocument } from '@/api/documents'
+import { createDocument, createVersion, deleteDocument, findDuplicateDocuments } from '@/api/documents'
 import { getFolders, createFolder } from '@/api/workspaces'
 import { sendFilingFeedback } from '@/api/predictiveFiling'
+import { sha256HexOfFile } from '@/lib/hash'
 import { randomId } from '@/lib/id'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
@@ -64,7 +65,7 @@ export function preflightFile(file: File): string | null {
 // description blank; tags empty. The UI can grow a "rename / metadata"
 // pre-upload dialog later.
 export function useUpload(workspaceId?: string, folderId?: string) {
-  const { addUpload, updateProgress, setStatus } = useUploadStore()
+  const { addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision } = useUploadStore()
   const qc = useQueryClient()
 
   // ADR 0102 — optional per-file filing decisions from
@@ -160,6 +161,31 @@ export function useUpload(workspaceId?: string, folderId?: string) {
       let createdDocId: string | null = null
 
       try {
+        // Step 0: content hash. Drives both the pre-upload duplicate
+        // prompt and storage-side early dedup. Null for very large files
+        // or insecure contexts — those fall back to the no-hash path.
+        const sha256 = await sha256HexOfFile(file)
+
+        // Step 0b: warn on an exact-content duplicate before creating a
+        // document row. If the user skips, drop the upload entirely so
+        // no redundant document is created. Best-effort: a failed lookup
+        // must not block uploads, so we swallow its error and proceed.
+        if (sha256) {
+          try {
+            const dups = await findDuplicateDocuments(sha256, workspaceId)
+            if (dups.length > 0) {
+              const proceed = await requestDuplicateDecision(file.name, dups)
+              if (!proceed) {
+                removeUpload(id)
+                toast.info(`${file.name} — skipped (duplicate)`)
+                continue
+              }
+            }
+          } catch (e) {
+            console.warn('duplicate check failed; proceeding with upload', e)
+          }
+        }
+
         // Step 1: create the document row.
         const doc = await createDocument({
           workspace_id: workspaceId,
@@ -180,6 +206,10 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           filename: file.name,
           mime_type: file.type || 'application/octet-stream',
           size_bytes: file.size,
+          // Supplying the hash activates storage-side early dedup: when
+          // the content already exists the server skips the S3 PUT and
+          // returns the existing blob id (session.deduplicated below).
+          ...(sha256 ? { sha256_hash: sha256 } : {}),
           workspace_id: workspaceId,
           folder_id: targetFolderId,
         })
@@ -222,8 +252,9 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           (pct) => updateProgress(id, pct),
         )
 
-        // Step 4: complete the upload (scan + persist blob).
-        const completion = await completeUpload(session.upload_id)
+        // Step 4: complete the upload (scan + persist blob). Pass the
+        // client hash so the server verifies the uploaded bytes match.
+        const completion = await completeUpload(session.upload_id, sha256 ?? undefined)
         const blobID = (completion as { content_blob_id?: string } | null)?.content_blob_id
           ?? (session as { content_blob_id?: string }).content_blob_id
           ?? session.existing_blob_id
@@ -312,7 +343,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         toast.error(`${file.name} — ${detail}`)
       }
     }
-  }, [workspaceId, folderId, addUpload, updateProgress, setStatus, qc])
+  }, [workspaceId, folderId, addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision, qc])
 
   return { uploadFiles }
 }

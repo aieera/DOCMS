@@ -66,8 +66,19 @@ export interface Document {
   title: string
   description?: string
   document_class?: string
+  /** §8 classification-based access control. Sensitivity level gating access
+   *  (unclassified|internal|confidential|restricted; empty = unset), plus the
+   *  PII/PHI flags denormalised from the compliance scan. Drive the
+   *  sensitivity badge. */
+  security_classification?: '' | 'unclassified' | 'internal' | 'confidential' | 'restricted'
+  has_phi?: boolean
+  has_pii?: boolean
   lifecycle_state: string
   mime_type: string
+  /** 'file' (default), 'note', or 'wiki'. Present on the createNote
+   *  response; the gateway GET/List proto does not yet carry it, so treat
+   *  as optional and fall back to mime (text/markdown) for recognition. */
+  doc_type?: 'file' | 'note' | 'wiki'
   /** Sum of every version's blob size. Wire field is `total_size_bytes`
    *  on the document service (proto field 15). Empty/zero on legacy
    *  documents whose versions never recomputed the rollup. */
@@ -149,6 +160,9 @@ export interface SearchHit {
   updated_at?: string
   size_bytes: number
   mime_type: string
+  /** Total versions on the document (the index is one row per document;
+   *  the search page's "N versions" expander fetches the list lazily). */
+  version_count?: number
   has_thumbnail: boolean
   score: number
 }

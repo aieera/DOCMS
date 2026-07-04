@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { CompliancePage } from './compliance'
 import { ResidencyPage } from './residency'
+import { CertificationDashboard } from '@/components/records/CertificationDashboard'
 
 // Consolidated admin surface — Compliance + Residency merged per the
 // 2026-05-29 admin-consolidation plan. They already showed overlapping
@@ -14,7 +15,7 @@ import { ResidencyPage } from './residency'
 // (/admin/compliance, /admin/residency) still resolve and render the
 // same components for bookmark compatibility.
 
-type Tab = 'compliance' | 'residency'
+type Tab = 'compliance' | 'residency' | 'certification'
 
 interface DGSearch {
   tab?: Tab
@@ -36,12 +37,16 @@ function DataGovernancePage() {
         <TabsList>
           <TabsTrigger value="compliance">Compliance</TabsTrigger>
           <TabsTrigger value="residency">Residency</TabsTrigger>
+          <TabsTrigger value="certification">Records certification</TabsTrigger>
         </TabsList>
         <TabsContent value="compliance" className="mt-4">
           <CompliancePage />
         </TabsContent>
         <TabsContent value="residency" className="mt-4">
           <ResidencyPage />
+        </TabsContent>
+        <TabsContent value="certification" className="mt-4">
+          <CertificationDashboard />
         </TabsContent>
       </Tabs>
     </div>
@@ -52,7 +57,7 @@ export const Route = createFileRoute('/_authenticated/admin/data-governance')({
   component: DataGovernancePage,
   validateSearch: (raw: Record<string, unknown>): DGSearch => {
     const t = raw.tab
-    if (t === 'compliance' || t === 'residency') return { tab: t }
+    if (t === 'compliance' || t === 'residency' || t === 'certification') return { tab: t }
     return {}
   },
 })

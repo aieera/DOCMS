@@ -188,7 +188,7 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
         <div className="border-b border-border px-4 py-2 text-xs">
           <div className="mb-1 text-muted-foreground">Previous conversations</div>
           {(history?.conversations ?? []).length === 0 ? (
-            <div className="text-muted-foreground/70">No history yet.</div>
+            <div className="text-muted-foreground">No history yet.</div>
           ) : (
             <ul className="space-y-1">
               {history!.conversations.map((c) => (

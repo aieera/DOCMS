@@ -17,7 +17,9 @@
     "inbox": "صندوق الوارد",
     "settings": "الإعدادات",
     "workspace": "مساحة العمل",
-    "integrations": "التكاملات"
+    "integrations": "التكاملات",
+    "templates": "القوالب",
+    "reports": "التقارير"
   },
   "search_placeholder": "ابحث في المستندات…",
   "user_menu": {

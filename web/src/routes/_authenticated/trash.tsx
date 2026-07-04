@@ -12,12 +12,15 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { TypedConfirmDialog } from '@/components/ui/shadcn/typed-confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import {
   listTrash,
   listTrashedFolders,
   purgeFromTrash,
   restoreFolderFromTrash,
   restoreFromTrash,
+  listEmptyFolders,
+  cleanupEmptyFolders,
   type TrashedFolder,
   type TrashEntry,
 } from '@/api/trash'
@@ -86,6 +89,30 @@ function TrashPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Permanent delete failed'),
   })
 
+  // Empty-folder cleanup (admin maintenance). The dry-run scan runs on
+  // load so the operator sees the count; cleanup soft-deletes them into
+  // the folder trash above (restorable + audited).
+  const [confirmCleanup, setConfirmCleanup] = useState(false)
+  const emptyScan = useQuery({
+    queryKey: ['empty-folders-scan'],
+    queryFn: () => listEmptyFolders(200),
+    enabled: canManage,
+  })
+  const cleanup = useAppMutation({
+    mutationFn: () => cleanupEmptyFolders(2000),
+    onSuccess: (res) => {
+      setConfirmCleanup(false)
+      toast.success(
+        `Removed ${res.deleted} empty folder${res.deleted === 1 ? '' : 's'}` +
+          (res.more_remaining ? ' (more remain — run again)' : ''),
+      )
+      qc.invalidateQueries({ queryKey: ['empty-folders-scan'] })
+      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
+      qc.invalidateQueries({ queryKey: ['folders'] })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't clean up empty folders"),
+  })
+
   if (!canManage) {
     return (
       <div>
@@ -107,6 +134,35 @@ function TrashPage() {
         title="Trash"
         description="Soft-deleted folders and documents across the tenant. Restoring a folder brings its entire cascade back together; permanent delete removes files from object storage and cannot be undone."
       />
+
+      {/* ---- Maintenance: empty-folder cleanup ------------------- */}
+      <section data-testid="empty-folder-cleanup">
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <FolderClosed className="h-4 w-4" /> Maintenance
+        </h2>
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Empty folders</p>
+            <p className="text-xs text-muted-foreground">
+              {emptyScan.isLoading
+                ? 'Scanning…'
+                : emptyScan.data
+                  ? emptyScan.data.count === 0
+                    ? 'No empty folders found.'
+                    : `${emptyScan.data.count}${emptyScan.data.truncated ? '+' : ''} empty folder${emptyScan.data.count === 1 ? '' : 's'} (no documents, no subfolders). Cleanup is soft — they move to Trash here and can be restored.`
+                  : 'Could not scan.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={!emptyScan.data || emptyScan.data.count === 0 || cleanup.isPending}
+            onClick={() => setConfirmCleanup(true)}
+            data-testid="cleanup-empty-folders"
+          >
+            {cleanup.isPending ? 'Cleaning…' : 'Clean up empty folders'}
+          </Button>
+        </Card>
+      </section>
 
       {/* ---- Folders ---------------------------------------------- */}
       {!foldersEmpty && (
@@ -249,6 +305,16 @@ function TrashPage() {
         </Card>
       )}
       </section>
+
+      <ConfirmDialog
+        open={confirmCleanup}
+        onOpenChange={setConfirmCleanup}
+        title="Clean up empty folders?"
+        description={`This soft-deletes ${emptyScan.data?.count ?? 0}${emptyScan.data?.truncated ? '+' : ''} folders that contain no documents and no subfolders. They move to the folder Trash above and can be restored. The action is audited.`}
+        confirmLabel="Clean up"
+        loading={cleanup.isPending}
+        onConfirm={() => cleanup.mutate()}
+      />
 
       {purgeTarget && (
         <TypedConfirmDialog

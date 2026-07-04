@@ -2,6 +2,30 @@ import { api } from './client'
 import { unwrapList } from '@/lib/unwrapList'
 import type { Document, Version, PaginatedResponse } from '@/types/api'
 
+// DuplicateMatch is an existing document whose content (by version
+// sha256) matches a file about to be uploaded.
+export interface DuplicateMatch {
+  document_id: string
+  title: string
+  workspace_id: string
+  folder_id?: string
+  created_at: string
+}
+
+// findDuplicateDocuments asks the backend whether any existing document
+// already holds this content hash, scoped to the target workspace. The
+// server permission-filters the result to folders the caller can access.
+export async function findDuplicateDocuments(
+  sha256: string,
+  workspaceId?: string,
+): Promise<DuplicateMatch[]> {
+  const { data } = await api.get<{ matches: DuplicateMatch[]; count: number }>(
+    '/documents/duplicates',
+    { params: { sha256, ...(workspaceId ? { workspace_id: workspaceId } : {}) } },
+  )
+  return data.matches ?? []
+}
+
 export async function getDocuments(workspaceId: string, params: Record<string, string> = {}) {
   const { data } = await api.get<PaginatedResponse<Document>>(
     `/workspaces/${workspaceId}/documents`,
@@ -30,6 +54,20 @@ export async function createDocument(input: {
   tags?: string[]
 }) {
   const { data } = await api.post<Document>('/documents', input)
+  return data
+}
+
+/** Create a note/wiki — a document (doc_type=note|wiki) with no file upload.
+ *  Content is added later as a collaborative markdown version. Returns the
+ *  new document (incl. doc_type) so the caller can navigate + open the
+ *  editor. */
+export async function createNote(input: {
+  workspace_id: string
+  folder_id: string
+  title?: string
+  doc_type?: 'note' | 'wiki'
+}) {
+  const { data } = await api.post<Document>('/notes', input)
   return data
 }
 

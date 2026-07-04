@@ -252,7 +252,7 @@ function Field({
     <div className="space-y-1">
       <label className="block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
-      {help && <p className="text-[10px] text-muted-foreground/70">{help}</p>}
+      {help && <p className="text-[10px] text-muted-foreground">{help}</p>}
     </div>
   )
 }

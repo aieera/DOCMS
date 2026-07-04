@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , LayoutTemplate , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -47,6 +47,10 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/saved-searches', icon: Bookmark, labelKey: 'sidebar.saved_searches' },
       // ADR 0104 — clause library.
       { to: '/clauses',        icon: BookOpen,  labelKey: 'sidebar.clauses' },
+      // ADR 0118 — workspace templates gallery.
+      { to: '/templates',      icon: LayoutTemplate, labelKey: 'sidebar.templates' },
+      // ADR 0119 — analytics report builder (admin-gated backend-side).
+      { to: '/reports',        icon: BarChart3, labelKey: 'sidebar.reports', roles: ['admin', 'owner'] },
     ],
   },
   {
@@ -143,7 +147,7 @@ function NavGroupBlock({ group, collapsed, pathname, isFirst }: { group: NavGrou
   return (
     <div className={cn('space-y-0.5', !isFirst && !collapsed && 'mt-3 border-t border-white/10 pt-3')}>
       {!collapsed && (
-        <div className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/45">
+        <div className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/70">
           {t(group.labelKey)}
         </div>
       )}
@@ -173,7 +177,7 @@ function SmartFoldersBlock({ collapsed }: { collapsed: boolean }) {
   if (!data || data.length === 0) return null
   return (
     <div className="space-y-0.5">
-      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
+      <div className="flex items-center gap-1 px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/70">
         <Sparkles className="h-3 w-3" />
         {t('sidebar.smart_folders')}
       </div>

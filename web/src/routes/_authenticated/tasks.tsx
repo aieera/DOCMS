@@ -475,9 +475,19 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="create-task-dialog">
+    // Hand-rolled overlay (predates the shared Dialog): give it the
+    // dialog contract keyboard/AT users rely on — role+aria-modal,
+    // a label, and Escape-to-close (review/a11y-gate finding).
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      data-testid="create-task-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-task-title"
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+    >
       <div className="w-full max-w-md space-y-3 rounded-lg border border-border bg-card p-4">
-        <h3 className="text-sm font-semibold">New task</h3>
+        <h3 id="create-task-title" className="text-sm font-semibold">New task</h3>
         <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus data-testid="task-title" />
         <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
         <Select

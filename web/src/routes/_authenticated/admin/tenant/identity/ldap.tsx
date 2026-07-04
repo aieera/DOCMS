@@ -392,16 +392,25 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
 
   const [ldapDN, setLdapDN] = useState('')
   const [dmsId, setDmsId] = useState('')
+  const [dmsRole, setDmsRole] = useState('')
 
   const add = useAppMutation({
-    mutationFn: () => addLDAPMapping(config.id, ldapDN, dmsId),
+    mutationFn: () => addLDAPMapping(config.id, ldapDN, dmsId, dmsRole || undefined),
     onSuccess: () => {
-      setLdapDN(''); setDmsId('')
+      setLdapDN(''); setDmsId(''); setDmsRole('')
       toast.success('Mapping added')
       qc.invalidateQueries({ queryKey: ['admin', 'ldap', 'mappings', config.id] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not add mapping'),
   })
+
+  const roleOptions = [
+    { value: '', label: '(no role)' },
+    { value: 'member', label: 'member' },
+    { value: 'admin', label: 'admin' },
+    { value: 'owner', label: 'owner' },
+    { value: 'guest', label: 'guest' },
+  ]
 
   const del = useAppMutation({
     mutationFn: (m: { ldap_group_dn: string; dms_group_id: string }) =>
@@ -413,13 +422,14 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
 
   return (
     <Section icon={<Network className="h-5 w-5" />} title="Group mappings"
-      hint="Map AD/LDAP group DNs to DMS groups. Unmapped LDAP groups are ignored.">
+      hint="Map AD/LDAP group DNs to DMS groups, and optionally a SeDoc role. On login, the highest-precedence mapped role (owner > admin > member > guest) is assigned; unmapped LDAP groups are ignored.">
       <div className="overflow-hidden rounded border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
               <th className="px-3 py-2 text-start">LDAP group DN</th>
               <th className="px-3 py-2 text-start">DMS group</th>
+              <th className="px-3 py-2 text-start">Role</th>
               <th className="w-12" />
             </tr>
           </thead>
@@ -430,6 +440,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
                 <tr key={`${m.ldap_group_dn}|${m.dms_group_id}`} className="border-t border-border">
                   <td className="px-3 py-2 font-mono text-xs">{m.ldap_group_dn}</td>
                   <td className="px-3 py-2">{dms?.name ?? <code className="text-xs">{m.dms_group_id}</code>}</td>
+                  <td className="px-3 py-2">{m.dms_role ? <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{m.dms_role}</span> : <span className="text-muted-foreground">—</span>}</td>
                   <td className="px-3 py-2 text-end">
                     <button
                       onClick={() => del.mutate(m)}
@@ -444,7 +455,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
               )
             })}
             {!mappings?.length && (
-              <tr><td colSpan={3} className="px-3 py-8 text-center text-muted-foreground">No mappings yet.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">No mappings yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -460,6 +471,13 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
           options={dmsOptions}
           placeholder="DMS group"
           className="min-w-[12rem]"
+        />
+        <Select
+          value={dmsRole}
+          onValueChange={setDmsRole}
+          options={roleOptions}
+          placeholder="Role (optional)"
+          className="min-w-[10rem]"
         />
         <Button onClick={() => add.mutate()} disabled={!ldapDN || !dmsId || add.isPending}>
           <Plus className="h-4 w-4" /> Add mapping

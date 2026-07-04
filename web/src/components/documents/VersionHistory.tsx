@@ -115,6 +115,7 @@ function VersionRow({ version, documentId }: { version: Version; documentId: str
                   if (e.key === 'Escape') cancelEdit()
                 }}
                 placeholder="Name this version (optional)"
+                aria-label="Version label"
                 maxLength={200}
                 autoFocus
                 className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs"
@@ -168,8 +169,8 @@ function VersionRow({ version, documentId }: { version: Version; documentId: str
             </>
           ) : (
             <>
-              <Button variant="ghost" size="sm" className="h-6 px-1.5"><Download className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="sm" className="h-6 px-1.5"><RotateCcw className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="sm" className="h-6 px-1.5" aria-label={`Download version ${version.version_number}`}><Download className="h-3 w-3" /></Button>
+              <Button variant="ghost" size="sm" className="h-6 px-1.5" aria-label={`Revert to version ${version.version_number}`}><RotateCcw className="h-3 w-3" /></Button>
               {version.label && (
                 <Button
                   variant="ghost"

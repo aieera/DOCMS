@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ChevronDown, RefreshCw } from 'lucide-react'
 
-import { rerunOCR } from '@/api/ocr'
+import { rerunOCR, type ForceEngine } from '@/api/ocr'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/shadcn/dropdown-menu'
 import { Spinner } from '@/components/ui/Spinner'
 
-type ForceEngine = 'surya'
+// Explicit engine the menu can force (undefined = Auto / per-config default).
+type ForcibleEngine = Exclude<ForceEngine, 'auto'>
 
 /**
  * Re-run OCR with an optional forced engine.
@@ -66,14 +67,15 @@ export function RerunOcrButton({
 }: Props) {
   const qc = useQueryClient()
 
-  const rerun = useAppMutation<unknown, unknown, ForceEngine | undefined>({
+  const rerun = useAppMutation<unknown, unknown, ForcibleEngine | undefined>({
     mutationFn: (engine) =>
       rerunOCR(documentId, versionId, engine ? { forceEngine: engine } : {}),
     onSuccess: (_data, engine) => {
+      const labels: Record<ForcibleEngine, string> = {
+        surya: 'Surya', printed: 'printed', handwriting: 'handwriting (ICR)',
+      }
       toast.success(
-        engine === 'surya'
-          ? `${successMessage} (forced engine: Surya)`
-          : successMessage,
+        engine ? `${successMessage} (engine: ${labels[engine]})` : successMessage,
       )
       qc.invalidateQueries({ queryKey: ['ocr', documentId, versionId] })
       onRerunSuccess?.()
@@ -122,12 +124,21 @@ export function RerunOcrButton({
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => rerun.mutate('surya')}
-            data-testid={`${testId}-engine-surya`}
+            onSelect={() => rerun.mutate('printed')}
+            data-testid={`${testId}-engine-printed`}
           >
             <div>
-              <p className="text-sm font-medium">Surya (force)</p>
-              <p className="text-xs text-muted-foreground">Bypass the fast path; always run full Surya detection + recognition.</p>
+              <p className="text-sm font-medium">Printed (force)</p>
+              <p className="text-xs text-muted-foreground">Bypass the fast path; always run full Surya/Paddle detection + recognition.</p>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => rerun.mutate('handwriting')}
+            data-testid={`${testId}-engine-handwriting`}
+          >
+            <div>
+              <p className="text-sm font-medium">Handwriting (ICR)</p>
+              <p className="text-xs text-muted-foreground">Route through TrOCR for handwritten ink, merged with printed OCR. Best for forms &amp; notes.</p>
             </div>
           </DropdownMenuItem>
         </DropdownMenuContent>

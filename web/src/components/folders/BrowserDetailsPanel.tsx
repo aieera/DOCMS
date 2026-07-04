@@ -49,7 +49,7 @@ function EmptyState({ workspace }: { workspace?: Workspace }) {
         <div className="mt-6 w-full space-y-3 text-start">
           <Head>Info</Head>
           <Row k="Type" v="Workspace" />
-          <Row k="Documents" v={workspace.document_count.toLocaleString()} />
+          <Row k="Documents" v={(workspace.document_count ?? 0).toLocaleString()} />
           <Row k="Members" v={(workspace.member_count ?? 0).toLocaleString()} />
           <Row k="Created" v={formatDateTime(workspace.created_at)} />
         </div>
@@ -152,7 +152,7 @@ const Name = ({ children }: { children: React.ReactNode }) => (
   <p className="mb-7 mt-3.5 truncate text-center text-lg font-bold tracking-tight text-foreground">{children}</p>
 )
 const Head = ({ children }: { children: React.ReactNode }) => (
-  <div className="mb-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">{children}</div>
+  <div className="mb-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{children}</div>
 )
 const Divider = () => <div className="my-6 h-px bg-border" />
 function Row({ k, v, link }: { k: string; v: string; link?: boolean }) {

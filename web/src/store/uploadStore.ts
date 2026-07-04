@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { DuplicateMatch } from '@/api/documents'
 
 export interface UploadItem {
   id: string
@@ -8,6 +9,16 @@ export interface UploadItem {
   error?: string
 }
 
+// DuplicatePrompt is an in-flight "this file already exists — upload
+// anyway?" decision. uploadFiles awaits the resolver; a globally-mounted
+// dialog renders the prompt and resolves it. Uploads are sequential so
+// at most one prompt is pending at a time.
+export interface DuplicatePrompt {
+  fileName: string
+  matches: DuplicateMatch[]
+  resolve: (proceed: boolean) => void
+}
+
 interface UploadState {
   uploads: Map<string, UploadItem>
   addUpload: (item: UploadItem) => void
@@ -15,9 +26,13 @@ interface UploadState {
   setStatus: (id: string, status: UploadItem['status'], error?: string) => void
   removeUpload: (id: string) => void
   clearCompleted: () => void
+  // Duplicate-confirmation handshake.
+  duplicatePrompt: DuplicatePrompt | null
+  requestDuplicateDecision: (fileName: string, matches: DuplicateMatch[]) => Promise<boolean>
+  resolveDuplicate: (proceed: boolean) => void
 }
 
-export const useUploadStore = create<UploadState>((set) => ({
+export const useUploadStore = create<UploadState>((set, get) => ({
   uploads: new Map(),
   addUpload: (item) =>
     set((s) => { const m = new Map(s.uploads); m.set(item.id, item); return { uploads: m } }),
@@ -43,4 +58,14 @@ export const useUploadStore = create<UploadState>((set) => ({
       for (const [k, v] of m) { if (v.status === 'completed') m.delete(k) }
       return { uploads: m }
     }),
+  duplicatePrompt: null,
+  requestDuplicateDecision: (fileName, matches) =>
+    new Promise<boolean>((resolve) => {
+      set({ duplicatePrompt: { fileName, matches, resolve } })
+    }),
+  resolveDuplicate: (proceed) => {
+    const cur = get().duplicatePrompt
+    cur?.resolve(proceed)
+    set({ duplicatePrompt: null })
+  },
 }))

@@ -55,7 +55,7 @@ function WorkspacesPage() {
       {!isLoading && (data?.length ?? 0) > 0 && (
         <div className="flex items-center justify-between gap-3">
           <div className="relative w-full max-w-sm">
-            <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground/70" />
+            <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground" />
             <Input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}

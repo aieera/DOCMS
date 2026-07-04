@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useDroppable } from '@dnd-kit/core'
 import { ChevronRight, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/cn'
@@ -26,7 +27,7 @@ export function BrowserTreeSidebar({ workspaceId, currentFolderId, onNavigate, w
   return (
     <aside className="hidden w-[252px] flex-none flex-col border-e border-border lg:flex">
       <div className="flex items-center justify-between px-5 pb-3 pt-5">
-        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Folders</span>
+        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Folders</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3">
@@ -95,16 +96,45 @@ function TreeNode({
   const [open, setOpen] = useState(false)
   const hasChildren = (folder.child_folder_count ?? folder.children_count ?? 0) > 0
   const active = folder.id === currentFolderId
+  // Drop target: a dragged doc/folder can land on this tree node. The dragged
+  // item rides in active.data; a folder dropped on itself is invalid.
+  const { setNodeRef, isOver, active: dragActive } = useDroppable({ id: `tree-drop:${folder.id}`, data: { folderId: folder.id } })
+  const dragged = dragActive?.data.current as { kind?: string; id?: string } | undefined
+  const invalidDrop = isOver && dragged?.kind === 'folder' && dragged.id === folder.id
+  const validDrop = isOver && !invalidDrop
+  // Auto-expand on hover: pause ~700ms over a collapsed node mid-drag, then
+  // reveal its children so you can drill into a deep target without dropping.
+  const expandTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (isOver && hasChildren && !open) {
+      expandTimer.current = setTimeout(() => setOpen(true), 700)
+      return () => { if (expandTimer.current) clearTimeout(expandTimer.current) }
+    }
+  }, [isOver, hasChildren, open])
   return (
     <div>
       <div
+        ref={setNodeRef}
         role="button"
         tabIndex={0}
+        aria-current={active ? 'page' : undefined}
+        // role="button" (not <button>) because this row contains the
+        // expand <button> and nesting buttons is invalid HTML. A real
+        // button responds to Enter AND Space, so we mirror that here —
+        // previously only Enter worked (WCAG 2.1.1 keyboard).
         onClick={() => onNavigate(folder.id)}
-        onKeyDown={(e) => { if (e.key === 'Enter') onNavigate(folder.id) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onNavigate(folder.id)
+          }
+        }}
         className={cn(
           'flex h-10 cursor-pointer items-center gap-2 rounded-xl px-2 text-sm transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           active ? 'bg-primary/10 font-semibold text-primary' : 'font-medium text-foreground hover:bg-accent/40',
+          validDrop && 'ring-2 ring-primary',
+          invalidDrop && 'cursor-not-allowed ring-2 ring-red-400',
         )}
       >
         {hasChildren ? (
@@ -113,6 +143,7 @@ function TreeNode({
             onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
             className="grid h-5 w-5 flex-none place-items-center rounded text-muted-foreground hover:text-foreground"
             aria-label={open ? 'Collapse' : 'Expand'}
+            aria-expanded={open}
           >
             <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
           </button>

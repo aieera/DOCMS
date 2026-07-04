@@ -11,6 +11,8 @@ import {
   updateSSOConfig,
   validateSSOConfig,
   type OIDCConfigBody,
+  type RoleRule,
+  type RoleMapping,
   type Provider,
   type SAMLConfigBody,
   type SSOConfig,
@@ -144,7 +146,16 @@ function Wizard({ onDone }: { onDone: () => void }) {
   const [redirectURL, setRedirectURL] = useState('')
   const [scopesText, setScopesText] = useState('openid profile email')
 
+  // Claim → role mapping (shared by SAML + OIDC).
+  const [roleRules, setRoleRules] = useState<RoleRule[]>([])
+  const [defaultRole, setDefaultRole] = useState('member')
+
   const [validation, setValidation] = useState<ValidateResult | null>(null)
+
+  const roleMapping = (): RoleMapping => ({
+    rules: roleRules.filter((r) => r.claim_value.trim() && r.role),
+    default_role: defaultRole,
+  })
 
   const buildConfig = (): SAMLConfigBody | OIDCConfigBody => {
     if (provider === 'saml') {
@@ -154,6 +165,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           display_name: attrName || undefined,
           groups: attrGroups || undefined,
         },
+        role_mapping: roleMapping(),
       }
       if (metaSource === 'url') cfg.idp_metadata_url = metaURL
       else cfg.idp_metadata_xml = metaXML
@@ -165,6 +177,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       client_secret: clientSecret,
       redirect_url: redirectURL,
       scopes: scopesText.split(/\s+/).filter(Boolean),
+      role_mapping: roleMapping(),
     }
     return cfg
   }
@@ -380,6 +393,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
               onChange={(e) => setAttrGroups(e.target.value)}
             />
           </Field>
+          <RoleMappingEditor rules={roleRules} setRules={setRoleRules} defaultRole={defaultRole} setDefaultRole={setDefaultRole} />
           <WizardNav
             onBack={() => setStep('configure')}
             onNext={() => validate.mutate()}
@@ -396,6 +410,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
             OIDC uses standard claims (<code>email</code>, <code>name</code>, <code>groups</code>).
             No attribute mapping is required — click Validate to check the issuer's discovery doc.
           </p>
+          <RoleMappingEditor rules={roleRules} setRules={setRoleRules} defaultRole={defaultRole} setDefaultRole={setDefaultRole} />
           <WizardNav
             onBack={() => setStep('configure')}
             onNext={() => validate.mutate()}
@@ -492,6 +507,53 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>
+  )
+}
+
+const ROLE_OPTIONS = ['owner', 'admin', 'member', 'guest']
+
+// RoleMappingEditor: map IdP group/role claim values → SeDoc roles for
+// JIT-provisioned users. First matching rule wins; else the default role.
+function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
+  rules: RoleRule[]
+  setRules: (r: RoleRule[]) => void
+  defaultRole: string
+  setDefaultRole: (r: string) => void
+}) {
+  const roleSelect = 'rounded-md border border-border bg-background px-2 py-1 text-sm'
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">Claim → role mapping</p>
+      <p className="text-xs text-muted-foreground">
+        Map a group/role claim value to a SeDoc role for JIT-provisioned users. First match wins; otherwise the default applies.
+      </p>
+      {rules.map((r, i) => (
+        <div key={i} className="flex items-center gap-2" data-testid={`role-rule-${i}`}>
+          <input
+            className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
+            placeholder="claim value (e.g. Admins)"
+            value={r.claim_value}
+            onChange={(e) => setRules(rules.map((x, k) => (k === i ? { ...x, claim_value: e.target.value } : x)))}
+          />
+          <span className="text-muted-foreground">→</span>
+          <select className={roleSelect} value={r.role}
+            onChange={(e) => setRules(rules.map((x, k) => (k === i ? { ...x, role: e.target.value } : x)))}>
+            {ROLE_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+          <button type="button" className="text-destructive" onClick={() => setRules(rules.filter((_, k) => k !== i))}>✕</button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <button type="button" className="text-xs font-medium text-primary" data-testid="add-role-rule"
+          onClick={() => setRules([...rules, { claim_value: '', role: 'member' }])}>
+          + Add rule
+        </button>
+        <span className="ms-auto text-xs text-muted-foreground">Default role</span>
+        <select className={roleSelect} value={defaultRole} onChange={(e) => setDefaultRole(e.target.value)} data-testid="default-role">
+          {ROLE_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+      </div>
+    </div>
   )
 }
 

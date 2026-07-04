@@ -266,6 +266,11 @@ function renderAnnotation(a: Annotation): JSX.Element | null {
       )
     case 'drawing':
       return <div key={a.id} role="listitem" data-testid={`pdf-annotation-${a.id}`} className="absolute rounded border-2 border-emerald-500" style={style} />
+    case 'redaction':
+      // Non-destructive redaction MARKER — an opaque black box signalling
+      // intended redaction. The permanent burn-in lives in the separate
+      // document_redactions pipeline; this overlay just marks the region.
+      return <div key={a.id} role="listitem" aria-label="Redaction marker" data-testid={`pdf-annotation-${a.id}`} className="absolute rounded-sm bg-black" style={style} />
     case 'note':
     case 'stamp':
       return (
@@ -296,6 +301,7 @@ function DragPreview({ kind, x, y, w, h }: { kind: PDFMode; x: number; y: number
     kind === 'highlight' ? 'bg-yellow-300/40 rounded-sm' :
     kind === 'underline' ? 'border-b-2 border-blue-500' :
     kind === 'strikethrough' ? 'border-t-2 border-red-500' :
+    kind === 'redaction' ? 'bg-black/70 rounded-sm' :
     'rounded border-2 border-emerald-500 border-dashed'
   return <div className={`pointer-events-none absolute ${cls}`} style={style} />
 }

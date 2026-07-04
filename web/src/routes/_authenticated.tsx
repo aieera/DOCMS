@@ -2,11 +2,16 @@ import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { AppLayout } from '@/components/layout/app-layout'
 import { useAuthStore } from '@/store/authStore'
 import { getCurrentUser } from '@/api/auth'
+import { DuplicateUploadDialog } from '@/components/documents/DuplicateUploadDialog'
 
 function AuthenticatedLayout() {
   return (
     <AppLayout>
       <Outlet />
+      {/* Global mount: the upload flow (useUpload) raises a duplicate
+          prompt via the upload store from any page, so the dialog lives
+          here rather than at each upload call site. */}
+      <DuplicateUploadDialog />
     </AppLayout>
   )
 }

@@ -1,13 +1,19 @@
 import { useMemo, useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Upload, Settings as SettingsIcon, Search, FolderOpen } from 'lucide-react'
+import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
 
 import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
-import { getFolder, getWorkspace } from '@/api/workspaces'
-import { updateDocument } from '@/api/documents'
+import { getFolder, getWorkspace, updateFolder } from '@/api/workspaces'
+import { updateDocument, deleteDocument, getVersions, getDownloadURL, createNote, moveDocument } from '@/api/documents'
+import { cn } from '@/lib/cn'
 import { useCreateFolder, useFolders } from '@/hooks/useFolders'
+import {
+  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors, pointerWithin,
+  type DragStartEvent, type DragEndEvent,
+} from '@dnd-kit/core'
+import { DraggableTile, DroppableFolder, DragOverlayContent, type DragData, type DropData } from '@/components/folders/dnd'
 import { readErrorMessage } from '@/api/client'
 import { predictFiling, sendFilingFeedback, type PredictResponse } from '@/api/predictiveFiling'
 
@@ -19,6 +25,10 @@ import { BrowserTreeSidebar } from '@/components/folders/BrowserTreeSidebar'
 import { BrowserDetailsPanel, type Selection } from '@/components/folders/BrowserDetailsPanel'
 import { DocumentActionsMenu } from '@/components/documents/DocumentActionsMenu'
 import { DocumentViewerModal } from '@/components/documents/DocumentViewerModal'
+import { MoveDocumentDialog } from '@/components/documents/MoveDocumentDialog'
+import { BulkTagDialog } from '@/components/documents/BulkTagDialog'
+import { BulkActionBar } from '@/components/documents/BulkActionBar'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { WorkspaceSettingsDialog } from '@/components/workspaces/WorkspaceSettingsDialog'
 import { UploadEnrichmentDialog, type EnrichmentDecision } from '@/components/documents/UploadEnrichmentDialog'
 import { Button } from '@/components/ui/shadcn/button'
@@ -26,6 +36,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from 'sonner'
+import { runBatched } from '@/lib/runBatched'
 import type { Document as ApiDocument } from '@/types/api'
 
 interface EnrichmentItem { file: File; docId: string; prediction: PredictResponse | null }
@@ -40,6 +51,7 @@ function WorkspacePage() {
   const openDoc = (id: string) => navigate({ search: (s: Record<string, unknown>) => ({ ...s, doc: id }) })
   const navigateToFolder = (folderId: string | null) => {
     setSelection(null)
+    setSelectedIds(new Set())
     navigate({ search: (s: Record<string, unknown>) => ({ ...s, folder: folderId ?? undefined }) })
   }
 
@@ -56,6 +68,25 @@ function WorkspacePage() {
   const [dragOver, setDragOver] = useState(false)
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<Selection>(null)
+  // Multi-select for bulk operations (separate from the single-select
+  // details panel above).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Anchor row for shift-click range selection (index into shownDocs order).
+  const [anchorId, setAnchorId] = useState<string | null>(null)
+  // Drag-and-drop: active overlay preview + ids optimistically hidden while a
+  // move is in flight (restored on failure → rollback). Pointer needs 6px of
+  // travel before a drag starts so click-to-select still works; KeyboardSensor
+  // is a bonus — the MoveDocumentDialog is the primary keyboard-accessible move.
+  const [activeDrag, setActiveDrag] = useState<{ label: string; count: number } | null>(null)
+  const [movingIds, setMovingIds] = useState<Set<string>>(new Set())
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  )
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false)
+  const [bulkTagOpen, setBulkTagOpen] = useState(false)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const createFolder = useCreateFolder()
   const dragCounter = useRef(0)
 
@@ -73,6 +104,185 @@ function WorkspacePage() {
   const shownFolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders
   const shownDocs = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
   const usedBytes = useMemo(() => docs.reduce((sum, d) => sum + (Number(d.total_size_bytes) || 0), 0), [docs])
+
+  // ── multi-select bulk operations ──
+  const selectedDocs = useMemo(() => docs.filter((d) => selectedIds.has(d.id)), [docs, selectedIds])
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const clearSelection = () => { setSelectedIds(new Set()); setAnchorId(null) }
+
+  // File-manager selection: shift-click selects the contiguous range from the
+  // anchor in display order; ctrl/cmd or a plain click toggles one row and
+  // re-anchors. The MouseEvent carries the modifier keys (checkbox onChange
+  // doesn't), so the work happens in onClick.
+  const handleSelectClick = (id: string, e: React.MouseEvent) => {
+    if (e.shiftKey && anchorId) {
+      const ids = shownDocs.map((d) => d.id)
+      const a = ids.indexOf(anchorId)
+      const b = ids.indexOf(id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a]
+        setSelectedIds((prev) => {
+          const next = new Set(prev)
+          for (let i = lo; i <= hi; i++) next.add(ids[i])
+          return next
+        })
+        return
+      }
+    }
+    toggleSelect(id)
+    setAnchorId(id)
+  }
+
+  const refreshAfterBulk = () => {
+    qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+    qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
+    qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
+  }
+
+  // docTitle resolves a selected id to a human label for failure summaries.
+  const docTitle = (id: string) => docs.find((d) => d.id === id)?.title ?? id
+
+  const bulkDelete = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    const tid = toast.loading(`Deleting 0/${ids.length}…`)
+    // Concurrency-capped so a large selection doesn't fire hundreds of
+    // requests at once (freeze) — progress updates as each completes.
+    const results = await runBatched(ids, (id) => deleteDocument(id), {
+      concurrency: 5,
+      onProgress: (done, total) => toast.loading(`Deleting ${done}/${total}…`, { id: tid }),
+    })
+    setBulkBusy(false)
+    const failed = results.filter((r) => !r.ok)
+    if (failed.length === 0) {
+      toast.success(`Deleted ${ids.length} document${ids.length === 1 ? '' : 's'}`, { id: tid })
+    } else {
+      const okCount = ids.length - failed.length
+      toast.error(`${okCount}/${ids.length} deleted — ${failed.length} failed`, {
+        id: tid,
+        description: failed.slice(0, 5).map((f) => docTitle(ids[f.index])).join(', ') + (failed.length > 5 ? ', …' : ''),
+      })
+    }
+    setBulkDeleteOpen(false)
+    clearSelection()
+    refreshAfterBulk()
+  }
+
+  // Download loops the single-document signed-URL path (no server-side zip
+  // endpoint). Kept sequential so the browser doesn't drop concurrent
+  // navigations; a live progress toast + per-item failure summary keep
+  // large selections legible.
+  const bulkDownload = async () => {
+    const targets = selectedDocs
+    if (targets.length === 0) return
+    setBulkBusy(true)
+    const tid = toast.loading(`Preparing 0/${targets.length} download${targets.length === 1 ? '' : 's'}…`)
+    const failed: string[] = []
+    let done = 0
+    for (const d of targets) {
+      try {
+        const versions = await getVersions(d.id)
+        const latest = [...(versions ?? [])].sort((a, b) => b.version_number - a.version_number)[0]
+        if (!latest?.id) { failed.push(d.title); continue }
+        const { url } = await getDownloadURL(d.id, latest.id)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = d.title
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        await new Promise((r) => setTimeout(r, 400))
+      } catch {
+        failed.push(d.title)
+      }
+      done++
+      toast.loading(`Preparing ${done}/${targets.length} download${targets.length === 1 ? '' : 's'}…`, { id: tid })
+    }
+    setBulkBusy(false)
+    if (failed.length === 0) {
+      toast.success(`Started ${targets.length} download${targets.length === 1 ? '' : 's'}`, { id: tid })
+    } else {
+      toast.error(`${targets.length - failed.length}/${targets.length} started — ${failed.length} failed`, {
+        id: tid,
+        description: failed.slice(0, 5).join(', ') + (failed.length > 5 ? ', …' : ''),
+      })
+    }
+  }
+
+  // Export the selected docs' metadata as NDJSON (one JSON object per line),
+  // client-side from the rows already in memory. The server BulkExport is
+  // resource-scoped (whole workspace/folder, ADR 0075), not a selection, so
+  // this covers "export these N docs" with no backend change. Metadata only,
+  // not blob content.
+  const exportSelected = () => {
+    const targets = selectedDocs
+    if (targets.length === 0) return
+    const ndjson = targets.map((d) => JSON.stringify(d)).join('\n')
+    const blob = new Blob([ndjson], { type: 'application/x-ndjson' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `export-${targets.length}-documents.ndjson`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${targets.length} document${targets.length === 1 ? '' : 's'} (metadata)`)
+  }
+
+  // ── drag-and-drop move ──
+  const onDragStart = (e: DragStartEvent) => {
+    const data = e.active.data.current as DragData | undefined
+    if (!data) return
+    const count = data.kind === 'doc' && selectedIds.has(data.id) ? selectedIds.size : 1
+    setActiveDrag({ label: data.label, count })
+  }
+
+  const onDragEnd = async (e: DragEndEvent) => {
+    setActiveDrag(null)
+    const data = e.active.data.current as DragData | undefined
+    const target = e.over?.data.current as DropData | undefined
+    if (!data || !target) return
+    const targetFolderId = target.folderId
+    if (data.kind === 'folder' && data.id === targetFolderId) return // can't drop a folder onto itself
+    // Multi-item: dragging a *selected* doc moves the whole selection.
+    const docIds = data.kind === 'doc' ? (selectedIds.has(data.id) ? [...selectedIds] : [data.id]) : []
+    const folderIds = data.kind === 'folder' ? [data.id] : []
+    const ops: Array<readonly ['doc' | 'folder', string]> = [
+      ...docIds.map((id) => ['doc', id] as const),
+      ...folderIds.map((id) => ['folder', id] as const),
+    ]
+    if (ops.length === 0) return
+
+    setMovingIds(new Set(ops.map(([, id]) => id))) // optimistic: hide from the current view
+    const tid = toast.loading(`Moving ${ops.length} item${ops.length === 1 ? '' : 's'}…`)
+    const results = await runBatched(
+      ops,
+      async ([kind, id]) => {
+        if (kind === 'doc') await moveDocument(id, targetFolderId)
+        else await updateFolder(id, { new_parent_folder_id: targetFolderId })
+      },
+      { concurrency: 5 },
+    )
+    const failed = results.filter((r) => !r.ok)
+    if (failed.length === 0) {
+      toast.success(`Moved ${ops.length} item${ops.length === 1 ? '' : 's'}`, { id: tid })
+    } else {
+      // Server rejected some (e.g. folder into its own descendant) → rollback:
+      // clearing movingIds un-hides them and the invalidation below restores truth.
+      toast.error(`${ops.length - failed.length}/${ops.length} moved — ${failed.length} failed (rolled back)`, { id: tid })
+    }
+    clearSelection()
+    setMovingIds(new Set())
+    refreshAfterBulk() // resync tiles, counts, and breadcrumb from the server
+  }
 
   // ── upload + predictive-filing enrichment (unchanged from the prior view) ──
   const [enrichmentQueue, setEnrichmentQueue] = useState<EnrichmentItem[]>([])
@@ -132,6 +342,19 @@ function WorkspacePage() {
     }).catch((e) => console.warn('filing feedback failed', e))
   }
 
+  // New note: create a note document in the current folder, then open the
+  // collaborative editor on it (the ?doctype hint mounts the editor before
+  // the first markdown version exists). Notes need a folder to live in.
+  const onNewNote = async () => {
+    if (!currentFolderId) return
+    const note = await createNote({ workspace_id: workspaceId, folder_id: currentFolderId, doc_type: 'note' })
+    navigate({
+      to: '/workspaces/$workspaceId/documents/$documentId',
+      params: { workspaceId, documentId: note.id },
+      search: { doctype: 'note' },
+    })
+  }
+
   const onPick = () => fileInputRef.current?.click()
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -162,6 +385,7 @@ function WorkspacePage() {
     >
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onChange} />
 
+      <DndContext sensors={dndSensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveDrag(null)}>
       {/* ── left: folder tree + storage ── */}
       <BrowserTreeSidebar
         workspaceId={workspaceId}
@@ -199,6 +423,16 @@ function WorkspacePage() {
               className="h-12 rounded-xl border-border bg-muted/40 ps-11 focus-visible:bg-card"
             />
           </div>
+          <Button
+            onClick={onNewNote}
+            disabled={!currentFolderId}
+            variant="outline"
+            className="h-12 gap-2 rounded-xl px-5"
+            title={currentFolderId ? 'Create a collaborative note' : 'Open a folder to add a note'}
+            data-testid="new-note"
+          >
+            <StickyNote className="h-[18px] w-[18px]" /> New note
+          </Button>
           <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-sm hover:shadow-md" data-testid="open-upload">
             <Upload className="h-[18px] w-[18px]" /> Upload
           </Button>
@@ -209,15 +443,19 @@ function WorkspacePage() {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4">
             {foldersLoading ? loadingTiles(4) : (
               <>
-                {shownFolders.map((f) => (
-                  <FolderActionsMenu key={f.id} folder={f} canManage={isAdmin} onOpen={() => navigateToFolder(f.id)}>
-                    <FolderTile
-                      folder={f}
-                      selected={selection?.type === 'folder' && selection.folder.id === f.id}
-                      onSelect={() => setSelection({ type: 'folder', folder: f })}
-                      onOpen={() => navigateToFolder(f.id)}
-                    />
-                  </FolderActionsMenu>
+                {shownFolders.filter((f) => !movingIds.has(f.id)).map((f) => (
+                  <DroppableFolder key={f.id} folderId={f.id}>
+                    <DraggableTile dndId={`folder:${f.id}`} data={{ kind: 'folder', id: f.id, label: f.name }}>
+                      <FolderActionsMenu folder={f} canManage={isAdmin} onOpen={() => navigateToFolder(f.id)}>
+                        <FolderTile
+                          folder={f}
+                          selected={selection?.type === 'folder' && selection.folder.id === f.id}
+                          onSelect={() => setSelection({ type: 'folder', folder: f })}
+                          onOpen={() => navigateToFolder(f.id)}
+                        />
+                      </FolderActionsMenu>
+                    </DraggableTile>
+                  </DroppableFolder>
                 ))}
                 {!q && <NewFolderTile onClick={() => setNewFolderOpen(true)} />}
               </>
@@ -226,16 +464,45 @@ function WorkspacePage() {
 
           <h2 className="mb-4 mt-9 px-0.5 text-lg font-bold tracking-tight text-foreground">Files</h2>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4">
-            {isLoading ? loadingTiles(4) : shownDocs.map((d) => (
-              <DocumentActionsMenu key={d.id} doc={d} onOpen={() => openDoc(d.id)}>
-                <FileTile
-                  doc={d}
-                  selected={selection?.type === 'file' && selection.doc.id === d.id}
-                  onSelect={() => setSelection({ type: 'file', doc: d })}
-                  onOpen={() => openDoc(d.id)}
-                />
-              </DocumentActionsMenu>
-            ))}
+            {isLoading ? loadingTiles(4) : shownDocs.filter((d) => !movingIds.has(d.id)).map((d) => {
+              const checked = selectedIds.has(d.id)
+              return (
+                <div key={d.id} className="group/sel relative">
+                  {/* Accessible multi-select checkbox, overlaid top-start.
+                      Visible on hover/focus, or whenever a selection is
+                      active. stopPropagation so toggling doesn't open the
+                      doc or change the details-panel selection. */}
+                  <div
+                    className={cn(
+                      'absolute start-2 top-2 z-10 transition-opacity',
+                      checked || selectedIds.size > 0
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover/sel:opacity-100 focus-within:opacity-100',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {}}
+                      onClick={(e) => { e.stopPropagation(); handleSelectClick(d.id, e) }}
+                      aria-label={`Select ${d.title} (shift-click to select a range)`}
+                      data-testid={`select-doc-${d.id}`}
+                      className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                    />
+                  </div>
+                  <DraggableTile dndId={`doc:${d.id}`} data={{ kind: 'doc', id: d.id, label: d.title }}>
+                    <DocumentActionsMenu doc={d} onOpen={() => openDoc(d.id)}>
+                      <FileTile
+                        doc={d}
+                        selected={checked || (selection?.type === 'file' && selection.doc.id === d.id)}
+                        onSelect={() => setSelection({ type: 'file', doc: d })}
+                        onOpen={() => openDoc(d.id)}
+                      />
+                    </DocumentActionsMenu>
+                  </DraggableTile>
+                </div>
+              )
+            })}
             {!isLoading && shownDocs.length === 0 && !nothingHere && (
               <p className="col-span-full py-6 text-sm text-muted-foreground">No files here yet.</p>
             )}
@@ -250,6 +517,8 @@ function WorkspacePage() {
           )}
         </div>
       </section>
+      <DragOverlay>{activeDrag ? <DragOverlayContent label={activeDrag.label} count={activeDrag.count} /> : null}</DragOverlay>
+      </DndContext>
 
       {/* ── right: details ── */}
       <BrowserDetailsPanel
@@ -297,6 +566,48 @@ function WorkspacePage() {
         onOpenChange={(o) => { if (!o) closeViewer() }}
         documentId={search.doc ?? null}
         workspaceId={workspaceId}
+      />
+
+      {/* ── bulk operations ── */}
+      <BulkActionBar
+        count={selectedIds.size}
+        onMove={() => setBulkMoveOpen(true)}
+        onTag={() => setBulkTagOpen(true)}
+        onDownload={bulkDownload}
+        onExport={exportSelected}
+        onDelete={() => setBulkDeleteOpen(true)}
+        onClear={clearSelection}
+      />
+
+      {bulkMoveOpen && (
+        <MoveDocumentDialog
+          open={bulkMoveOpen}
+          onOpenChange={setBulkMoveOpen}
+          documentId=""
+          documentIds={[...selectedIds]}
+          workspaceId={workspaceId}
+          currentFolderId={currentFolderId ?? undefined}
+          onDone={clearSelection}
+        />
+      )}
+
+      <BulkTagDialog
+        open={bulkTagOpen}
+        onOpenChange={setBulkTagOpen}
+        documents={selectedDocs.map((d) => ({ id: d.id, tags: d.tags }))}
+        workspaceId={workspaceId}
+        onDone={clearSelection}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selectedIds.size} document${selectedIds.size === 1 ? '' : 's'}?`}
+        description="The selected documents move to Trash, where an admin can restore them."
+        confirmLabel="Delete"
+        destructive
+        loading={bulkBusy}
+        onConfirm={bulkDelete}
       />
 
       {dragOver && (

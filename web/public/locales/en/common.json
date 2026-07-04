@@ -17,7 +17,9 @@
     "inbox": "Inbox",
     "settings": "Settings",
     "workspace": "Workspace",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "templates": "Templates",
+    "reports": "Reports"
   },
   "search_placeholder": "Search documents…",
   "user_menu": {

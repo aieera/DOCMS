@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useCopyDocument, useMoveDocument } from '@/hooks/useDocuments'
 import { getFolders } from '@/api/workspaces'
+import { moveDocument } from '@/api/documents'
 import { cn } from '@/lib/cn'
 import type { Folder as FolderType } from '@/types/api'
 
@@ -24,6 +25,11 @@ interface Props {
   // rule differ (a copy back to the current folder is still legal,
   // it just produces a clone). Defaults to 'move' for back-compat.
   mode?: 'move' | 'copy'
+  // documentIds, when set, switches the dialog to bulk move: every id is
+  // moved to the chosen folder (mode is forced to 'move'). documentId is
+  // ignored in that case. onDone fires after a bulk move completes.
+  documentIds?: string[]
+  onDone?: () => void
 }
 
 // Picker walks the folder tree lazily — each expanded folder fires a
@@ -104,13 +110,16 @@ function FolderRow({
 }
 
 export function MoveDocumentDialog({
-  open, onOpenChange, documentId, workspaceId, currentFolderId, mode = 'move',
+  open, onOpenChange, documentId, workspaceId, currentFolderId, mode = 'move', documentIds, onDone,
 }: Props) {
   const [selected, setSelected] = useState<string | undefined>(undefined)
+  const [bulkPending, setBulkPending] = useState(false)
   const move = useMoveDocument()
   const copy = useCopyDocument()
-  const isCopy = mode === 'copy'
-  const pending = isCopy ? copy.isPending : move.isPending
+  const qc = useQueryClient()
+  const isBulk = !!documentIds && documentIds.length > 0
+  const isCopy = mode === 'copy' && !isBulk // bulk is move-only
+  const pending = bulkPending || (isCopy ? copy.isPending : move.isPending)
 
   const roots = useQuery({
     queryKey: ['folders', workspaceId, 'root'],
@@ -125,11 +134,30 @@ export function MoveDocumentDialog({
     !!selected &&
     (isCopy || selected !== currentFolderId)
 
+  const finalize = () => {
+    onOpenChange(false)
+    setSelected(undefined)
+  }
+
+  const submitBulk = async (target: string) => {
+    setBulkPending(true)
+    const results = await Promise.allSettled((documentIds ?? []).map((id) => moveDocument(id, target)))
+    setBulkPending(false)
+    const failed = results.filter((r) => r.status === 'rejected').length
+    const ok = results.length - failed
+    if (ok > 0) toast.success(`Moved ${ok} document${ok === 1 ? '' : 's'}`)
+    if (failed > 0) toast.error(`${failed} could not be moved`)
+    qc.invalidateQueries({ queryKey: ['documents'] })
+    qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
+    onDone?.()
+    finalize()
+  }
+
   const submit = () => {
     if (!canSubmit || !selected) return
-    const finalize = () => {
-      onOpenChange(false)
-      setSelected(undefined)
+    if (isBulk) {
+      void submitBulk(selected)
+      return
     }
     if (isCopy) {
       copy.mutate(
@@ -154,7 +182,9 @@ export function MoveDocumentDialog({
     }
   }
 
-  const title = isCopy ? 'Copy document' : 'Move document'
+  const title = isBulk
+    ? `Move ${documentIds?.length} documents`
+    : isCopy ? 'Copy document' : 'Move document'
   const submitLabel = isCopy ? 'Copy' : 'Move'
 
   return (

@@ -20,6 +20,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   tasks: 'Tasks',
   notifications: 'Notifications',
   'saved-searches': 'Saved searches',
+  templates: 'Templates',
+  reports: 'Reports',
   settings: 'Settings',
   security: 'Security',
   mfa: 'MFA',

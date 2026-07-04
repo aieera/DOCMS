@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Send, Activity } from 'lucide-react'
 
 import { SignatureValidityBadge } from '@/components/shared/SignatureValidityBadge'
+import { SigningProgressTracker } from '@/components/signatures/SigningProgressTracker'
 import { api } from '@/api/client'
 import type { SignatureRequest } from '@/api/signatures'
 
@@ -70,13 +71,19 @@ export function SignaturesPanel({ documentId }: Props) {
       {pending.length > 0 && (
         <div data-testid="pending-signature-requests">
           <p className="mb-1 text-xs font-medium text-[var(--color-text-secondary)]">In progress</p>
-          <ul className="space-y-1 text-xs">
+          <ul className="space-y-3 text-xs">
             {pending.map((r) => (
-              <li key={r.id} className="flex items-center justify-between" data-testid={`pending-req-${r.id}`}>
-                <span className="inline-flex items-center gap-1">
-                  <Activity className="h-3 w-3" /> {prettyProvider(r.provider)}
-                </span>
-                <span className="text-[var(--color-text-secondary)]">{r.signers?.length ?? 0} signer(s)</span>
+              <li key={r.id} className="space-y-2" data-testid={`pending-req-${r.id}`}>
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1">
+                    <Activity className="h-3 w-3" /> {prettyProvider(r.provider)}
+                  </span>
+                  <span className="text-[var(--color-text-secondary)]">{r.signers?.length ?? 0} signer(s)</span>
+                </div>
+                {/* Reuse the already-fetched request object — no
+                    duplicate fetch — to show the ordered ceremony
+                    progress timeline for this open request. */}
+                <SigningProgressTracker request={r} />
               </li>
             ))}
           </ul>

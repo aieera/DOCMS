@@ -31,7 +31,8 @@
     --foreground: 222 24% 19%;
 
     --muted: 220 16% 93%;
-    --muted-foreground: 220 9% 46%;
+    /* ≥4.5:1 on --background/--muted (was 46% → 4.38:1, an AA hair-miss). */
+    --muted-foreground: 220 10% 39%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 222 24% 19%;
@@ -44,7 +45,9 @@
 
     /* Emerald — the primary call-to-action (the reference's green
      * "Upgrade Plan" button). */
-    --primary: 152 46% 43%;
+    /* Darkened from 43% so BOTH white-on-primary and primary-as-text
+     * clear 4.5:1 (AA). Same emerald hue. */
+    --primary: 152 46% 29%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 16% 94%;
@@ -59,12 +62,15 @@
     --destructive-foreground: 0 0% 100%;
 
     /* Success shares the emerald family. */
-    --success: 152 46% 40%;
+    --success: 152 46% 31%;
     --success-foreground: 0 0% 100%;
 
-    /* Amber warning. */
+    /* Amber warning. --warning stays a SURFACE tone (paired with the
+     * dark warning-foreground); --warning-strong is the AA-safe TEXT
+     * tone for amber text on tinted/light backgrounds (badges). */
     --warning: 38 92% 50%;
     --warning-foreground: 30 40% 14%;
+    --warning-strong: 35 90% 27%;
 
     /* Indigo info — matches the reference's "02 / Branding" card. */
     --info: 234 50% 56%;
@@ -141,6 +147,7 @@
 
     --warning: 35 85% 55%;
     --warning-foreground: 0 0% 10%;
+    --warning-strong: 35 85% 65%;
 
     --info: 200 55% 55%;
     --info-foreground: 0 0% 10%;
@@ -220,5 +227,19 @@
   select option {
     background-color: hsl(var(--popover));
     color: hsl(var(--popover-foreground));
+  }
+}
+
+/* WCAG 2.3.3 / ADR 0120 — global reduced-motion support. Individual
+ * components also use motion-reduce: variants; this backstop catches
+ * every animation/transition that forgot one. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

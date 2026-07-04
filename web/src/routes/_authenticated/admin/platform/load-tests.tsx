@@ -127,7 +127,7 @@ function ReportDetail({ report }: { report: LoadTestReport }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{label}</dt>
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</dt>
       <dd className="truncate font-mono text-[12px] text-foreground">{value || '—'}</dd>
     </div>
   )

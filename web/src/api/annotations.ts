@@ -14,7 +14,7 @@ export type AnnotationType =
 
 // PDF markup: kind picks the renderer.
 export interface PDFMarkupData {
-  kind: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'drawing'
+  kind: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'drawing' | 'redaction'
   page: number
   rects?: Array<{ x: number; y: number; w: number; h: number }>
   color?: string

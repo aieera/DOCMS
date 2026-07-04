@@ -15,6 +15,7 @@ import { readErrorMessage } from '@/api/client'
 
 import {
   getPermissions, grantPermission, revokePermission, checkPermission,
+  getEffectiveAccess,
   type Permission,
 } from '@/api/permissions'
 import { getUsers } from '@/api/admin'
@@ -131,6 +132,15 @@ export function ManageAccessDialog({
     enabled: open && canManage.data === true,
   })
 
+  // Effective access — "who can see this and why". Admin-gated (the
+  // backend requires admin on the resource). Composes the same cascade
+  // the authorization decision uses, so it reflects real access.
+  const effective = useQuery({
+    queryKey: ['effective-access', resourceType, resourceId, workspaceId ?? '', folderId ?? ''],
+    queryFn: () => getEffectiveAccess(resourceType, resourceId, { workspaceId, folderId }),
+    enabled: open && canManage.data === true,
+  })
+
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['permissions', resourceType, resourceId] })
   }
@@ -224,11 +234,18 @@ export function ManageAccessDialog({
   }, [principalMode, usersQuery.data, groupsQuery.data, directGranteeIds])
 
   function principalLabel(perm: Permission): { name: string; sub?: string; isGroup: boolean } {
-    if (perm.principal_type === 'group') {
-      const g = (groupsQuery.data ?? []).find((g: Group) => g.id === perm.principal_id)
+    return resolvePrincipal(perm.principal_type, perm.principal_id)
+  }
+
+  // resolvePrincipal maps a (type, id) to a display name using the already-
+  // loaded users/groups lists. Shared by the direct/inherited rows and the
+  // effective-access panel.
+  function resolvePrincipal(ptype: string, pid: string): { name: string; sub?: string; isGroup: boolean } {
+    if (ptype === 'group') {
+      const g = (groupsQuery.data ?? []).find((g: Group) => g.id === pid)
       return { name: g?.name ?? 'Unknown group', sub: 'Group', isGroup: true }
     }
-    const u = (usersQuery.data ?? []).find((u: User) => u.id === perm.principal_id)
+    const u = (usersQuery.data ?? []).find((u: User) => u.id === pid)
     return { name: u?.display_name ?? 'Unknown user', sub: u?.email, isGroup: false }
   }
 
@@ -484,6 +501,71 @@ export function ManageAccessDialog({
                     })}
                   </ul>
                 )}
+              </section>
+            )}
+
+            {/* --- Effective access: who can see this & why ----------- */}
+            {isAdmin && (
+              <section className="space-y-2" data-testid="effective-access">
+                <h3 className="text-sm font-semibold">Who can see this</h3>
+                <p className="text-xs text-muted-foreground">
+                  The effective set of users and groups with access, resolved across direct grants, folder, and workspace — and why.
+                </p>
+                {effective.isLoading ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : effective.data ? (
+                  <div className="space-y-2">
+                    <ul className="space-y-1">
+                      {effective.data.org_admins_have_access && (
+                        <li className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          Organisation owners &amp; admins always have full access.
+                        </li>
+                      )}
+                      {effective.data.workspace_baseline_view_workspace_id && (
+                        <li className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                          <UsersIcon className="h-3.5 w-3.5" />
+                          Every member of this workspace can at least view it.
+                        </li>
+                      )}
+                      {effective.data.private_folder && (
+                        <li className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          This sits in a private folder — only its owner and explicit grantees have access.
+                        </li>
+                      )}
+                    </ul>
+                    {effective.data.principals.length === 0 ? (
+                      <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                        No named grantees beyond the categories above.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-border rounded-lg border border-border bg-muted/30" data-testid="effective-access-list">
+                        {effective.data.principals.map((pr) => {
+                          const p = resolvePrincipal(pr.principal_type, pr.principal_id)
+                          return (
+                            <li
+                              key={`${pr.principal_type}:${pr.principal_id}`}
+                              className="flex items-center gap-3 px-3 py-2"
+                              data-testid={`effective-access-${pr.principal_id}`}
+                            >
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                                {p.isGroup ? <UsersIcon className="h-4 w-4" /> : <UserIcon className="h-4 w-4" />}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{p.name}</p>
+                                <p className="truncate text-xs text-muted-foreground" title={pr.reasons.join(' · ')}>
+                                  {pr.reasons.join(' · ')}
+                                </p>
+                              </div>
+                              <Badge variant="default">{capabilityLabel(pr.capability)}</Badge>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
               </section>
             )}
           </>

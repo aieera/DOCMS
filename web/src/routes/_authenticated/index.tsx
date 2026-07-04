@@ -165,7 +165,7 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
         {href && (
           <DirectionalIcon
             name="ChevronRight"
-            className="h-4 w-4 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
+            className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground"
           />
         )}
       </div>

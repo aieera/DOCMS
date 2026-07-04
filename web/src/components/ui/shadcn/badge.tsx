@@ -23,14 +23,14 @@ const badgeVariants = cva(
         // Lifecycle / state variants — colour-on-tinted-bg to read
         // legibly in light + dark without per-variant dark: classes.
         draft: 'border-transparent bg-muted text-muted-foreground',
-        in_review: 'border-transparent bg-warning/15 text-warning',
+        in_review: 'border-transparent bg-warning/15 text-warning-strong',
         active: 'border-transparent bg-success/15 text-success',
         superseded: 'border-transparent bg-info/15 text-info',
         archived: 'border-transparent bg-muted text-muted-foreground',
         disposed: 'border-transparent bg-destructive/15 text-destructive',
         info: 'border-transparent bg-info/15 text-info',
         success: 'border-transparent bg-success/15 text-success',
-        warning: 'border-transparent bg-warning/15 text-warning',
+        warning: 'border-transparent bg-warning/15 text-warning-strong',
       },
     },
     defaultVariants: { variant: 'default' },

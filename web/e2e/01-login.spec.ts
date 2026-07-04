@@ -57,7 +57,7 @@ test.describe('Journey 01 — Login', () => {
 
     await page.getByLabel(/email/i).fill('alice@example.com')
     await page.getByLabel(/password/i).fill('correct-horse-battery-staple')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Routed to dashboard.
     await expect(page).toHaveURL('/')
@@ -78,7 +78,7 @@ test.describe('Journey 01 — Login', () => {
     await page.goto('/login')
     await page.getByLabel(/email/i).fill('alice@example.com')
     await page.getByLabel(/password/i).fill('wrong')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Stay on /login and surface an error. Either a toast or
     // an inline message — accept either as long as the

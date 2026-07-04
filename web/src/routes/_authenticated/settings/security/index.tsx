@@ -98,7 +98,7 @@ function Field({ label, value, icon, mono, title }: {
         className={`break-all text-sm font-medium ${mono ? 'font-mono text-xs text-muted-foreground' : 'break-words'}`}
         title={title}
       >
-        {value || <em className="font-normal text-muted-foreground/70">not set</em>}
+        {value || <em className="font-normal text-muted-foreground">not set</em>}
       </dd>
     </div>
   )

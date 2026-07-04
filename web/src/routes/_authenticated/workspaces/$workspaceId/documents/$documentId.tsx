@@ -36,6 +36,7 @@ import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
 import { RealtimePresence } from '@/components/documents/RealtimePresence'
+import { CollaborativeEditor } from '@/components/documents/CollaborativeEditor'
 import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
 import { WorkflowTab } from '@/components/workflows/WorkflowTab'
 import { WorkflowStatusBadge } from '@/components/workflows/WorkflowStatusBadge'
@@ -51,6 +52,9 @@ import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as ShadcnSelect } from '@/components/ui/shadcn/select'
 import { useUpdateDocument } from '@/hooks/useDocuments'
 import { RerunOcrButton } from '@/components/intelligence/RerunOcrButton'
+import { OcrTextReview } from '@/components/intelligence/OcrTextReview'
+import { DeclareRecordButton } from '@/components/records/DeclareRecordButton'
+import { DocumentIntegrity } from '@/components/records/DocumentIntegrity'
 import { getMetadataSchema } from '@/api/metadataSchema'
 import type { Document } from '@/types/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -250,6 +254,15 @@ export function DocumentDetailBody({
           move are disabled in the actions menu. */}
       <LegalHoldBanner doc={doc} />
 
+      {/* Records management: declare this document as a record (freezes it
+          immutable until disposition) or show its record status. */}
+      <div className="flex justify-end">
+        <DeclareRecordButton documentId={documentId} canManage={isAdminCaller} />
+      </div>
+
+      {/* Audit integrity (Merkle proof) + WORM object-lock status/action. */}
+      <DocumentIntegrity documentId={documentId} canManage={isAdminCaller} />
+
       {/* ADR 0053 — banner appears only when smart_route produced
           pending suggestions for this doc. Self-hides otherwise. */}
       <RouteSuggestionBanner documentId={documentId} />
@@ -323,6 +336,21 @@ export function DocumentDetailBody({
               the actual text. Self-hides when the scorer hasn't run. */}
           {tab === 'text' && (
             <OcrQualityPanel documentId={documentId} />
+          )}
+
+          {/* Recognition heat-map + per-page manual correction + engine
+              re-run (auto/printed/handwriting). Admin-gated: it edits the
+              recognised text and triggers expensive re-OCR. */}
+          {tab === 'text' && isAdminCaller && versionId && (
+            <div className="mt-4 rounded-lg border border-border p-3">
+              <h3 className="mb-2 text-sm font-semibold">Recognition heat-map &amp; correction</h3>
+              <OcrTextReview
+                documentId={documentId}
+                versionId={versionId}
+                canCorrect={isAdminCaller}
+                canRerun={isAdminCaller}
+              />
+            </div>
           )}
         </div>
 
@@ -472,6 +500,10 @@ function DocumentSidebar({
   documentId: string
   versionId?: string
 }) {
+  // `?doctype=note|wiki` lets a freshly-created note open the collaborative
+  // editor before its first markdown version exists (the gateway GET doesn't
+  // yet return doc_type). Loose read so it's harmless in the modal context.
+  const { doctype: composeDocType } = useSearch({ strict: false }) as { doctype?: 'note' | 'wiki' }
   const [taskOpen, setTaskOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
@@ -633,6 +665,20 @@ function DocumentSidebar({
 
       {/* ADR 0096 — live presence: who else is viewing this doc. */}
       <RealtimePresence documentId={documentId} />
+
+      {/* §17.4 / note — live collaborative editing for text documents and
+          notes/wikis (CRDT, no merge dialogs). Office types edit via the WOPI
+          iframe (CoauthorEditor); binary/PDF/image types have no text surface. */}
+      {(doc.mime_type?.startsWith('text/') ||
+        doc.doc_type === 'note' || doc.doc_type === 'wiki' ||
+        composeDocType === 'note' || composeDocType === 'wiki') && (
+        <Card className="p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {doc.doc_type === 'wiki' || composeDocType === 'wiki' ? 'Wiki' : 'Note'}
+          </h3>
+          <CollaborativeEditor documentId={documentId} />
+        </Card>
+      )}
 
       {/* ADR 0066 — comments side panel. */}
       <CommentsPanel documentId={documentId} />
@@ -1440,7 +1486,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
                 <>
                   OCR is running — text will appear here when complete.
                   {elapsedMin != null && (
-                    <div className="mt-1 text-xs text-muted-foreground/70">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       Started {formatRelativeTime(uploadedAt!)}
                     </div>
                   )}
@@ -1659,10 +1705,16 @@ export const Route = createFileRoute('/_authenticated/workspaces/$workspaceId/do
   // `?page=N` deep-links straight to a page in the PDF layout viewer.
   // Citations on the Ask page link with this so a [1:p4] marker lands
   // on page 4 instead of page 1. Invalid/absent → undefined (page 1).
-  validateSearch: (search: Record<string, unknown>): { page?: number } => {
+  validateSearch: (search: Record<string, unknown>): { page?: number; doctype?: 'note' | 'wiki' } => {
     const raw = search.page
     const n = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN
-    return Number.isFinite(n) && n >= 1 ? { page: Math.floor(n) } : {}
+    const out: { page?: number; doctype?: 'note' | 'wiki' } = {}
+    if (Number.isFinite(n) && n >= 1) out.page = Math.floor(n)
+    // `?doctype=note|wiki` lets "New note" open the collaborative editor on a
+    // brand-new note before its first markdown version exists (the gateway
+    // GET doesn't yet return doc_type). Survives refetch because it's in the URL.
+    if (search.doctype === 'note' || search.doctype === 'wiki') out.doctype = search.doctype
+    return out
   },
   component: DocumentDetailPage,
 })

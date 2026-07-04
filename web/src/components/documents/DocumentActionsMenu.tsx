@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   MoreVertical, Download, Pencil, FolderInput, Share2, Trash2,
-  Copy, ListTodo, ShieldCheck, Eye,
+  Copy, ListTodo, ShieldCheck, Eye, Lock,
 } from 'lucide-react'
 
 import {
@@ -23,6 +23,7 @@ import { readErrorMessage } from '@/api/client'
 import { RenameDocumentDialog } from './RenameDocumentDialog'
 import { MoveDocumentDialog } from './MoveDocumentDialog'
 import { ShareDialog } from './ShareDialog'
+import { ProtectShareDialog } from './ProtectShareDialog'
 import { AddToTaskDialog } from './AddToTaskDialog'
 import { ManageAccessDialog } from './ManageAccessDialog'
 
@@ -84,6 +85,7 @@ export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
   const [moveOpen, setMoveOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [protectOpen, setProtectOpen] = useState(false)
   const [taskOpen, setTaskOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [manageAccessOpen, setManageAccessOpen] = useState(false)
@@ -120,6 +122,7 @@ export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
     },
     { kind: 'action', key: 'download', label: 'Download', icon: <Download className="h-4 w-4" />, onSelect: () => { void onDownload() } },
     { kind: 'action', key: 'share', label: 'Share…', icon: <Share2 className="h-4 w-4" />, onSelect: () => setShareOpen(true) },
+    { kind: 'action', key: 'protect-share', label: 'Protect & share…', icon: <Lock className="h-4 w-4" />, onSelect: () => setProtectOpen(true) },
     { kind: 'action', key: 'add-to-task', label: 'Add to task…', icon: <ListTodo className="h-4 w-4" />, onSelect: () => setTaskOpen(true) },
     {
       kind: 'action', key: 'manage-access', label: 'Manage access…',
@@ -210,8 +213,12 @@ export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
               // hover, instead of the previous hover-only reveal.
               className="h-7 w-7 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
               // The card body is itself a navigable link. Stop bubbling
-              // so opening the menu doesn't also navigate.
-              onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+              // so opening the menu doesn't also navigate. NO
+              // preventDefault here: Radix composes the trigger's click
+              // handler with checkForDefaultPrevented, so preventing
+              // default killed keyboard (Enter/Space) opening — pointer
+              // still worked via pointerdown, masking the bug.
+              onClick={(e) => e.stopPropagation()}
               aria-label="Document actions"
               data-testid={`document-actions-trigger-${doc.id}`}
             >
@@ -249,6 +256,12 @@ export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
       <ShareDialog
         open={shareOpen}
         onOpenChange={setShareOpen}
+        documentId={doc.id}
+        documentTitle={doc.title}
+      />
+      <ProtectShareDialog
+        open={protectOpen}
+        onOpenChange={setProtectOpen}
         documentId={doc.id}
         documentTitle={doc.title}
       />

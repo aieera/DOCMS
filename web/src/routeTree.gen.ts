@@ -17,11 +17,14 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as ZtTokenRouteImport } from './routes/zt.$token'
 import { Route as SharedTokenRouteImport } from './routes/shared.$token'
+import { Route as ProtectedContainerIdRouteImport } from './routes/protected.$containerId'
 import { Route as AuthenticatedTrashRouteImport } from './routes/_authenticated/trash'
+import { Route as AuthenticatedTemplatesRouteImport } from './routes/_authenticated/templates'
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AuthenticatedSharedWithMeRouteImport } from './routes/_authenticated/shared-with-me'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedSavedSearchesRouteImport } from './routes/_authenticated/saved-searches'
+import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedAskRouteImport } from './routes/_authenticated/ask'
 import { Route as AuthenticatedWorkspacesIndexRouteImport } from './routes/_authenticated/workspaces/index'
@@ -41,11 +44,14 @@ import { Route as AuthenticatedAdminTenantSettingsRouteImport } from './routes/_
 import { Route as AuthenticatedAdminTagsRouteImport } from './routes/_authenticated/admin/tags'
 import { Route as AuthenticatedAdminTaggingRouteImport } from './routes/_authenticated/admin/tagging'
 import { Route as AuthenticatedAdminSsoRouteImport } from './routes/_authenticated/admin/sso'
+import { Route as AuthenticatedAdminSiemRouteImport } from './routes/_authenticated/admin/siem'
 import { Route as AuthenticatedAdminShareLinksRouteImport } from './routes/_authenticated/admin/share-links'
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
+import { Route as AuthenticatedAdminScimRouteImport } from './routes/_authenticated/admin/scim'
 import { Route as AuthenticatedAdminRoutingRouteImport } from './routes/_authenticated/admin/routing'
 import { Route as AuthenticatedAdminRetentionRouteImport } from './routes/_authenticated/admin/retention'
 import { Route as AuthenticatedAdminResidencyRouteImport } from './routes/_authenticated/admin/residency'
+import { Route as AuthenticatedAdminRecordsRouteImport } from './routes/_authenticated/admin/records'
 import { Route as AuthenticatedAdminPrivacyRouteImport } from './routes/_authenticated/admin/privacy'
 import { Route as AuthenticatedAdminPiiScanningRouteImport } from './routes/_authenticated/admin/pii-scanning'
 import { Route as AuthenticatedAdminPiiRouteImport } from './routes/_authenticated/admin/pii'
@@ -60,9 +66,11 @@ import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_au
 import { Route as AuthenticatedAdminIngestionRouteImport } from './routes/_authenticated/admin/ingestion'
 import { Route as AuthenticatedAdminIdentityRouteImport } from './routes/_authenticated/admin/identity'
 import { Route as AuthenticatedAdminGroupsRouteImport } from './routes/_authenticated/admin/groups'
+import { Route as AuthenticatedAdminEdiscoveryRouteImport } from './routes/_authenticated/admin/ediscovery'
 import { Route as AuthenticatedAdminDataGovernanceRouteImport } from './routes/_authenticated/admin/data-governance'
 import { Route as AuthenticatedAdminConnectorsRouteImport } from './routes/_authenticated/admin/connectors'
 import { Route as AuthenticatedAdminComplianceRouteImport } from './routes/_authenticated/admin/compliance'
+import { Route as AuthenticatedAdminCaptureRouteImport } from './routes/_authenticated/admin/capture'
 import { Route as AuthenticatedAdminBulkRouteImport } from './routes/_authenticated/admin/bulk'
 import { Route as AuthenticatedAdminBillingRouteImport } from './routes/_authenticated/admin/billing'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
@@ -81,8 +89,13 @@ import { Route as AuthenticatedSignaturesSendDocumentIdRouteImport } from './rou
 import { Route as AuthenticatedSignInPersonRequestIdRouteImport } from './routes/_authenticated/sign.in-person.$requestId'
 import { Route as AuthenticatedSignRequestIdSignerIdRouteImport } from './routes/_authenticated/sign.$requestId.$signerId'
 import { Route as AuthenticatedSettingsSecurityMfaRouteImport } from './routes/_authenticated/settings/security/mfa'
+import { Route as AuthenticatedAdminTenantWatermarkRouteImport } from './routes/_authenticated/admin/tenant/watermark'
 import { Route as AuthenticatedAdminTenantUploadPolicyRouteImport } from './routes/_authenticated/admin/tenant/upload-policy'
+import { Route as AuthenticatedAdminTenantSyncRouteImport } from './routes/_authenticated/admin/tenant/sync'
 import { Route as AuthenticatedAdminTenantLicenseRouteImport } from './routes/_authenticated/admin/tenant/license'
+import { Route as AuthenticatedAdminTenantIrmRouteImport } from './routes/_authenticated/admin/tenant/irm'
+import { Route as AuthenticatedAdminTenantEncryptionRouteImport } from './routes/_authenticated/admin/tenant/encryption'
+import { Route as AuthenticatedAdminTenantClassificationRouteImport } from './routes/_authenticated/admin/tenant/classification'
 import { Route as AuthenticatedAdminTenantAiRouteImport } from './routes/_authenticated/admin/tenant/ai'
 import { Route as AuthenticatedAdminPlatformSupportSearchRouteImport } from './routes/_authenticated/admin/platform/support-search'
 import { Route as AuthenticatedAdminPlatformLoadTestsRouteImport } from './routes/_authenticated/admin/platform/load-tests'
@@ -148,9 +161,19 @@ const SharedTokenRoute = SharedTokenRouteImport.update({
   path: '/shared/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProtectedContainerIdRoute = ProtectedContainerIdRouteImport.update({
+  id: '/protected/$containerId',
+  path: '/protected/$containerId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedTrashRoute = AuthenticatedTrashRouteImport.update({
   id: '/trash',
   path: '/trash',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedTemplatesRoute = AuthenticatedTemplatesRouteImport.update({
+  id: '/templates',
+  path: '/templates',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
@@ -175,6 +198,11 @@ const AuthenticatedSavedSearchesRoute =
     path: '/saved-searches',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedNotificationsRoute =
   AuthenticatedNotificationsRouteImport.update({
     id: '/notifications',
@@ -283,6 +311,11 @@ const AuthenticatedAdminSsoRoute = AuthenticatedAdminSsoRouteImport.update({
   path: '/admin/sso',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminSiemRoute = AuthenticatedAdminSiemRouteImport.update({
+  id: '/admin/siem',
+  path: '/admin/siem',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminShareLinksRoute =
   AuthenticatedAdminShareLinksRouteImport.update({
     id: '/admin/share-links',
@@ -295,6 +328,11 @@ const AuthenticatedAdminSettingsRoute =
     path: '/admin/settings',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminScimRoute = AuthenticatedAdminScimRouteImport.update({
+  id: '/admin/scim',
+  path: '/admin/scim',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminRoutingRoute =
   AuthenticatedAdminRoutingRouteImport.update({
     id: '/admin/routing',
@@ -311,6 +349,12 @@ const AuthenticatedAdminResidencyRoute =
   AuthenticatedAdminResidencyRouteImport.update({
     id: '/admin/residency',
     path: '/admin/residency',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminRecordsRoute =
+  AuthenticatedAdminRecordsRouteImport.update({
+    id: '/admin/records',
+    path: '/admin/records',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminPrivacyRoute =
@@ -395,6 +439,12 @@ const AuthenticatedAdminGroupsRoute =
     path: '/admin/groups',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminEdiscoveryRoute =
+  AuthenticatedAdminEdiscoveryRouteImport.update({
+    id: '/admin/ediscovery',
+    path: '/admin/ediscovery',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminDataGovernanceRoute =
   AuthenticatedAdminDataGovernanceRouteImport.update({
     id: '/admin/data-governance',
@@ -411,6 +461,12 @@ const AuthenticatedAdminComplianceRoute =
   AuthenticatedAdminComplianceRouteImport.update({
     id: '/admin/compliance',
     path: '/admin/compliance',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminCaptureRoute =
+  AuthenticatedAdminCaptureRouteImport.update({
+    id: '/admin/capture',
+    path: '/admin/capture',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminBulkRoute = AuthenticatedAdminBulkRouteImport.update({
@@ -519,16 +575,46 @@ const AuthenticatedSettingsSecurityMfaRoute =
     path: '/settings/security/mfa',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminTenantWatermarkRoute =
+  AuthenticatedAdminTenantWatermarkRouteImport.update({
+    id: '/admin/tenant/watermark',
+    path: '/admin/tenant/watermark',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminTenantUploadPolicyRoute =
   AuthenticatedAdminTenantUploadPolicyRouteImport.update({
     id: '/admin/tenant/upload-policy',
     path: '/admin/tenant/upload-policy',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminTenantSyncRoute =
+  AuthenticatedAdminTenantSyncRouteImport.update({
+    id: '/admin/tenant/sync',
+    path: '/admin/tenant/sync',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminTenantLicenseRoute =
   AuthenticatedAdminTenantLicenseRouteImport.update({
     id: '/admin/tenant/license',
     path: '/admin/tenant/license',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminTenantIrmRoute =
+  AuthenticatedAdminTenantIrmRouteImport.update({
+    id: '/admin/tenant/irm',
+    path: '/admin/tenant/irm',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminTenantEncryptionRoute =
+  AuthenticatedAdminTenantEncryptionRouteImport.update({
+    id: '/admin/tenant/encryption',
+    path: '/admin/tenant/encryption',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminTenantClassificationRoute =
+  AuthenticatedAdminTenantClassificationRouteImport.update({
+    id: '/admin/tenant/classification',
+    path: '/admin/tenant/classification',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminTenantAiRoute =
@@ -690,11 +776,14 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/tasks': typeof AuthenticatedTasksRoute
+  '/templates': typeof AuthenticatedTemplatesRoute
   '/trash': typeof AuthenticatedTrashRoute
+  '/protected/$containerId': typeof ProtectedContainerIdRoute
   '/shared/$token': typeof SharedTokenRoute
   '/zt/$token': typeof ZtTokenRoute
   '/admin/ai': typeof AuthenticatedAdminAiRoute
@@ -702,9 +791,11 @@ export interface FileRoutesByFullPath {
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/bulk': typeof AuthenticatedAdminBulkRoute
+  '/admin/capture': typeof AuthenticatedAdminCaptureRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
+  '/admin/ediscovery': typeof AuthenticatedAdminEdiscoveryRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/identity': typeof AuthenticatedAdminIdentityRoute
   '/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
@@ -719,11 +810,14 @@ export interface FileRoutesByFullPath {
   '/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/admin/records': typeof AuthenticatedAdminRecordsRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/admin/routing': typeof AuthenticatedAdminRoutingRoute
+  '/admin/scim': typeof AuthenticatedAdminScimRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
+  '/admin/siem': typeof AuthenticatedAdminSiemRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/admin/tagging': typeof AuthenticatedAdminTaggingRoute
   '/admin/tags': typeof AuthenticatedAdminTagsRoute
@@ -762,8 +856,13 @@ export interface FileRoutesByFullPath {
   '/admin/platform/load-tests': typeof AuthenticatedAdminPlatformLoadTestsRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/admin/tenant/classification': typeof AuthenticatedAdminTenantClassificationRoute
+  '/admin/tenant/encryption': typeof AuthenticatedAdminTenantEncryptionRoute
+  '/admin/tenant/irm': typeof AuthenticatedAdminTenantIrmRoute
   '/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/admin/tenant/sync': typeof AuthenticatedAdminTenantSyncRoute
   '/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
+  '/admin/tenant/watermark': typeof AuthenticatedAdminTenantWatermarkRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRoute
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -789,11 +888,14 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/ask': typeof AuthenticatedAskRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/search': typeof AuthenticatedSearchRoute
   '/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/tasks': typeof AuthenticatedTasksRoute
+  '/templates': typeof AuthenticatedTemplatesRoute
   '/trash': typeof AuthenticatedTrashRoute
+  '/protected/$containerId': typeof ProtectedContainerIdRoute
   '/shared/$token': typeof SharedTokenRoute
   '/zt/$token': typeof ZtTokenRoute
   '/': typeof AuthenticatedIndexRoute
@@ -802,9 +904,11 @@ export interface FileRoutesByTo {
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/admin/bulk': typeof AuthenticatedAdminBulkRoute
+  '/admin/capture': typeof AuthenticatedAdminCaptureRoute
   '/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
+  '/admin/ediscovery': typeof AuthenticatedAdminEdiscoveryRoute
   '/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/admin/identity': typeof AuthenticatedAdminIdentityRoute
   '/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
@@ -818,11 +922,14 @@ export interface FileRoutesByTo {
   '/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/admin/records': typeof AuthenticatedAdminRecordsRoute
   '/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/admin/routing': typeof AuthenticatedAdminRoutingRoute
+  '/admin/scim': typeof AuthenticatedAdminScimRoute
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
+  '/admin/siem': typeof AuthenticatedAdminSiemRoute
   '/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/admin/tagging': typeof AuthenticatedAdminTaggingRoute
   '/admin/tags': typeof AuthenticatedAdminTagsRoute
@@ -861,8 +968,13 @@ export interface FileRoutesByTo {
   '/admin/platform/load-tests': typeof AuthenticatedAdminPlatformLoadTestsRoute
   '/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/admin/tenant/classification': typeof AuthenticatedAdminTenantClassificationRoute
+  '/admin/tenant/encryption': typeof AuthenticatedAdminTenantEncryptionRoute
+  '/admin/tenant/irm': typeof AuthenticatedAdminTenantIrmRoute
   '/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/admin/tenant/sync': typeof AuthenticatedAdminTenantSyncRoute
   '/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
+  '/admin/tenant/watermark': typeof AuthenticatedAdminTenantWatermarkRoute
   '/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRoute
   '/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -890,11 +1002,14 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/ask': typeof AuthenticatedAskRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/saved-searches': typeof AuthenticatedSavedSearchesRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/shared-with-me': typeof AuthenticatedSharedWithMeRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
+  '/_authenticated/templates': typeof AuthenticatedTemplatesRoute
   '/_authenticated/trash': typeof AuthenticatedTrashRoute
+  '/protected/$containerId': typeof ProtectedContainerIdRoute
   '/shared/$token': typeof SharedTokenRoute
   '/zt/$token': typeof ZtTokenRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -903,9 +1018,11 @@ export interface FileRoutesById {
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/billing': typeof AuthenticatedAdminBillingRoute
   '/_authenticated/admin/bulk': typeof AuthenticatedAdminBulkRoute
+  '/_authenticated/admin/capture': typeof AuthenticatedAdminCaptureRoute
   '/_authenticated/admin/compliance': typeof AuthenticatedAdminComplianceRoute
   '/_authenticated/admin/connectors': typeof AuthenticatedAdminConnectorsRoute
   '/_authenticated/admin/data-governance': typeof AuthenticatedAdminDataGovernanceRoute
+  '/_authenticated/admin/ediscovery': typeof AuthenticatedAdminEdiscoveryRoute
   '/_authenticated/admin/groups': typeof AuthenticatedAdminGroupsRoute
   '/_authenticated/admin/identity': typeof AuthenticatedAdminIdentityRoute
   '/_authenticated/admin/ingestion': typeof AuthenticatedAdminIngestionRoute
@@ -920,11 +1037,14 @@ export interface FileRoutesById {
   '/_authenticated/admin/pii': typeof AuthenticatedAdminPiiRoute
   '/_authenticated/admin/pii-scanning': typeof AuthenticatedAdminPiiScanningRoute
   '/_authenticated/admin/privacy': typeof AuthenticatedAdminPrivacyRoute
+  '/_authenticated/admin/records': typeof AuthenticatedAdminRecordsRoute
   '/_authenticated/admin/residency': typeof AuthenticatedAdminResidencyRoute
   '/_authenticated/admin/retention': typeof AuthenticatedAdminRetentionRoute
   '/_authenticated/admin/routing': typeof AuthenticatedAdminRoutingRoute
+  '/_authenticated/admin/scim': typeof AuthenticatedAdminScimRoute
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/_authenticated/admin/share-links': typeof AuthenticatedAdminShareLinksRoute
+  '/_authenticated/admin/siem': typeof AuthenticatedAdminSiemRoute
   '/_authenticated/admin/sso': typeof AuthenticatedAdminSsoRoute
   '/_authenticated/admin/tagging': typeof AuthenticatedAdminTaggingRoute
   '/_authenticated/admin/tags': typeof AuthenticatedAdminTagsRoute
@@ -963,8 +1083,13 @@ export interface FileRoutesById {
   '/_authenticated/admin/platform/load-tests': typeof AuthenticatedAdminPlatformLoadTestsRoute
   '/_authenticated/admin/platform/support-search': typeof AuthenticatedAdminPlatformSupportSearchRoute
   '/_authenticated/admin/tenant/ai': typeof AuthenticatedAdminTenantAiRoute
+  '/_authenticated/admin/tenant/classification': typeof AuthenticatedAdminTenantClassificationRoute
+  '/_authenticated/admin/tenant/encryption': typeof AuthenticatedAdminTenantEncryptionRoute
+  '/_authenticated/admin/tenant/irm': typeof AuthenticatedAdminTenantIrmRoute
   '/_authenticated/admin/tenant/license': typeof AuthenticatedAdminTenantLicenseRoute
+  '/_authenticated/admin/tenant/sync': typeof AuthenticatedAdminTenantSyncRoute
   '/_authenticated/admin/tenant/upload-policy': typeof AuthenticatedAdminTenantUploadPolicyRoute
+  '/_authenticated/admin/tenant/watermark': typeof AuthenticatedAdminTenantWatermarkRoute
   '/_authenticated/settings/security/mfa': typeof AuthenticatedSettingsSecurityMfaRoute
   '/_authenticated/sign/$requestId/$signerId': typeof AuthenticatedSignRequestIdSignerIdRoute
   '/_authenticated/sign/in-person/$requestId': typeof AuthenticatedSignInPersonRequestIdRoute
@@ -993,11 +1118,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/ask'
     | '/notifications'
+    | '/reports'
     | '/saved-searches'
     | '/search'
     | '/shared-with-me'
     | '/tasks'
+    | '/templates'
     | '/trash'
+    | '/protected/$containerId'
     | '/shared/$token'
     | '/zt/$token'
     | '/admin/ai'
@@ -1005,9 +1133,11 @@ export interface FileRouteTypes {
     | '/admin/audit-log'
     | '/admin/billing'
     | '/admin/bulk'
+    | '/admin/capture'
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/data-governance'
+    | '/admin/ediscovery'
     | '/admin/groups'
     | '/admin/identity'
     | '/admin/ingestion'
@@ -1022,11 +1152,14 @@ export interface FileRouteTypes {
     | '/admin/pii'
     | '/admin/pii-scanning'
     | '/admin/privacy'
+    | '/admin/records'
     | '/admin/residency'
     | '/admin/retention'
     | '/admin/routing'
+    | '/admin/scim'
     | '/admin/settings'
     | '/admin/share-links'
+    | '/admin/siem'
     | '/admin/sso'
     | '/admin/tagging'
     | '/admin/tags'
@@ -1065,8 +1198,13 @@ export interface FileRouteTypes {
     | '/admin/platform/load-tests'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
+    | '/admin/tenant/classification'
+    | '/admin/tenant/encryption'
+    | '/admin/tenant/irm'
     | '/admin/tenant/license'
+    | '/admin/tenant/sync'
     | '/admin/tenant/upload-policy'
+    | '/admin/tenant/watermark'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
@@ -1092,11 +1230,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/ask'
     | '/notifications'
+    | '/reports'
     | '/saved-searches'
     | '/search'
     | '/shared-with-me'
     | '/tasks'
+    | '/templates'
     | '/trash'
+    | '/protected/$containerId'
     | '/shared/$token'
     | '/zt/$token'
     | '/'
@@ -1105,9 +1246,11 @@ export interface FileRouteTypes {
     | '/admin/audit-log'
     | '/admin/billing'
     | '/admin/bulk'
+    | '/admin/capture'
     | '/admin/compliance'
     | '/admin/connectors'
     | '/admin/data-governance'
+    | '/admin/ediscovery'
     | '/admin/groups'
     | '/admin/identity'
     | '/admin/ingestion'
@@ -1121,11 +1264,14 @@ export interface FileRouteTypes {
     | '/admin/pii'
     | '/admin/pii-scanning'
     | '/admin/privacy'
+    | '/admin/records'
     | '/admin/residency'
     | '/admin/retention'
     | '/admin/routing'
+    | '/admin/scim'
     | '/admin/settings'
     | '/admin/share-links'
+    | '/admin/siem'
     | '/admin/sso'
     | '/admin/tagging'
     | '/admin/tags'
@@ -1164,8 +1310,13 @@ export interface FileRouteTypes {
     | '/admin/platform/load-tests'
     | '/admin/platform/support-search'
     | '/admin/tenant/ai'
+    | '/admin/tenant/classification'
+    | '/admin/tenant/encryption'
+    | '/admin/tenant/irm'
     | '/admin/tenant/license'
+    | '/admin/tenant/sync'
     | '/admin/tenant/upload-policy'
+    | '/admin/tenant/watermark'
     | '/settings/security/mfa'
     | '/sign/$requestId/$signerId'
     | '/sign/in-person/$requestId'
@@ -1192,11 +1343,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/ask'
     | '/_authenticated/notifications'
+    | '/_authenticated/reports'
     | '/_authenticated/saved-searches'
     | '/_authenticated/search'
     | '/_authenticated/shared-with-me'
     | '/_authenticated/tasks'
+    | '/_authenticated/templates'
     | '/_authenticated/trash'
+    | '/protected/$containerId'
     | '/shared/$token'
     | '/zt/$token'
     | '/_authenticated/'
@@ -1205,9 +1359,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/audit-log'
     | '/_authenticated/admin/billing'
     | '/_authenticated/admin/bulk'
+    | '/_authenticated/admin/capture'
     | '/_authenticated/admin/compliance'
     | '/_authenticated/admin/connectors'
     | '/_authenticated/admin/data-governance'
+    | '/_authenticated/admin/ediscovery'
     | '/_authenticated/admin/groups'
     | '/_authenticated/admin/identity'
     | '/_authenticated/admin/ingestion'
@@ -1222,11 +1378,14 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/pii'
     | '/_authenticated/admin/pii-scanning'
     | '/_authenticated/admin/privacy'
+    | '/_authenticated/admin/records'
     | '/_authenticated/admin/residency'
     | '/_authenticated/admin/retention'
     | '/_authenticated/admin/routing'
+    | '/_authenticated/admin/scim'
     | '/_authenticated/admin/settings'
     | '/_authenticated/admin/share-links'
+    | '/_authenticated/admin/siem'
     | '/_authenticated/admin/sso'
     | '/_authenticated/admin/tagging'
     | '/_authenticated/admin/tags'
@@ -1265,8 +1424,13 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/platform/load-tests'
     | '/_authenticated/admin/platform/support-search'
     | '/_authenticated/admin/tenant/ai'
+    | '/_authenticated/admin/tenant/classification'
+    | '/_authenticated/admin/tenant/encryption'
+    | '/_authenticated/admin/tenant/irm'
     | '/_authenticated/admin/tenant/license'
+    | '/_authenticated/admin/tenant/sync'
     | '/_authenticated/admin/tenant/upload-policy'
+    | '/_authenticated/admin/tenant/watermark'
     | '/_authenticated/settings/security/mfa'
     | '/_authenticated/sign/$requestId/$signerId'
     | '/_authenticated/sign/in-person/$requestId'
@@ -1292,6 +1456,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  ProtectedContainerIdRoute: typeof ProtectedContainerIdRoute
   SharedTokenRoute: typeof SharedTokenRoute
   ZtTokenRoute: typeof ZtTokenRoute
 }
@@ -1354,11 +1519,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SharedTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/protected/$containerId': {
+      id: '/protected/$containerId'
+      path: '/protected/$containerId'
+      fullPath: '/protected/$containerId'
+      preLoaderRoute: typeof ProtectedContainerIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/trash': {
       id: '/_authenticated/trash'
       path: '/trash'
       fullPath: '/trash'
       preLoaderRoute: typeof AuthenticatedTrashRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/templates': {
+      id: '/_authenticated/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof AuthenticatedTemplatesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/tasks': {
@@ -1387,6 +1566,13 @@ declare module '@tanstack/react-router' {
       path: '/saved-searches'
       fullPath: '/saved-searches'
       preLoaderRoute: typeof AuthenticatedSavedSearchesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/reports': {
+      id: '/_authenticated/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthenticatedReportsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/notifications': {
@@ -1522,6 +1708,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminSsoRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/siem': {
+      id: '/_authenticated/admin/siem'
+      path: '/admin/siem'
+      fullPath: '/admin/siem'
+      preLoaderRoute: typeof AuthenticatedAdminSiemRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/share-links': {
       id: '/_authenticated/admin/share-links'
       path: '/admin/share-links'
@@ -1534,6 +1727,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AuthenticatedAdminSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/scim': {
+      id: '/_authenticated/admin/scim'
+      path: '/admin/scim'
+      fullPath: '/admin/scim'
+      preLoaderRoute: typeof AuthenticatedAdminScimRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/routing': {
@@ -1555,6 +1755,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/residency'
       fullPath: '/admin/residency'
       preLoaderRoute: typeof AuthenticatedAdminResidencyRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/records': {
+      id: '/_authenticated/admin/records'
+      path: '/admin/records'
+      fullPath: '/admin/records'
+      preLoaderRoute: typeof AuthenticatedAdminRecordsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/privacy': {
@@ -1655,6 +1862,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminGroupsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/ediscovery': {
+      id: '/_authenticated/admin/ediscovery'
+      path: '/admin/ediscovery'
+      fullPath: '/admin/ediscovery'
+      preLoaderRoute: typeof AuthenticatedAdminEdiscoveryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/data-governance': {
       id: '/_authenticated/admin/data-governance'
       path: '/admin/data-governance'
@@ -1674,6 +1888,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/compliance'
       fullPath: '/admin/compliance'
       preLoaderRoute: typeof AuthenticatedAdminComplianceRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/capture': {
+      id: '/_authenticated/admin/capture'
+      path: '/admin/capture'
+      fullPath: '/admin/capture'
+      preLoaderRoute: typeof AuthenticatedAdminCaptureRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/bulk': {
@@ -1802,6 +2023,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsSecurityMfaRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/tenant/watermark': {
+      id: '/_authenticated/admin/tenant/watermark'
+      path: '/admin/tenant/watermark'
+      fullPath: '/admin/tenant/watermark'
+      preLoaderRoute: typeof AuthenticatedAdminTenantWatermarkRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/tenant/upload-policy': {
       id: '/_authenticated/admin/tenant/upload-policy'
       path: '/admin/tenant/upload-policy'
@@ -1809,11 +2037,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTenantUploadPolicyRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/tenant/sync': {
+      id: '/_authenticated/admin/tenant/sync'
+      path: '/admin/tenant/sync'
+      fullPath: '/admin/tenant/sync'
+      preLoaderRoute: typeof AuthenticatedAdminTenantSyncRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/tenant/license': {
       id: '/_authenticated/admin/tenant/license'
       path: '/admin/tenant/license'
       fullPath: '/admin/tenant/license'
       preLoaderRoute: typeof AuthenticatedAdminTenantLicenseRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/tenant/irm': {
+      id: '/_authenticated/admin/tenant/irm'
+      path: '/admin/tenant/irm'
+      fullPath: '/admin/tenant/irm'
+      preLoaderRoute: typeof AuthenticatedAdminTenantIrmRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/tenant/encryption': {
+      id: '/_authenticated/admin/tenant/encryption'
+      path: '/admin/tenant/encryption'
+      fullPath: '/admin/tenant/encryption'
+      preLoaderRoute: typeof AuthenticatedAdminTenantEncryptionRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/tenant/classification': {
+      id: '/_authenticated/admin/tenant/classification'
+      path: '/admin/tenant/classification'
+      fullPath: '/admin/tenant/classification'
+      preLoaderRoute: typeof AuthenticatedAdminTenantClassificationRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/tenant/ai': {
@@ -2024,10 +2280,12 @@ const AuthenticatedAdminIntegrationsRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAskRoute: typeof AuthenticatedAskRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSavedSearchesRoute: typeof AuthenticatedSavedSearchesRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSharedWithMeRoute: typeof AuthenticatedSharedWithMeRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
+  AuthenticatedTemplatesRoute: typeof AuthenticatedTemplatesRoute
   AuthenticatedTrashRoute: typeof AuthenticatedTrashRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminAiRoute: typeof AuthenticatedAdminAiRoute
@@ -2035,9 +2293,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminBillingRoute: typeof AuthenticatedAdminBillingRoute
   AuthenticatedAdminBulkRoute: typeof AuthenticatedAdminBulkRoute
+  AuthenticatedAdminCaptureRoute: typeof AuthenticatedAdminCaptureRoute
   AuthenticatedAdminComplianceRoute: typeof AuthenticatedAdminComplianceRoute
   AuthenticatedAdminConnectorsRoute: typeof AuthenticatedAdminConnectorsRoute
   AuthenticatedAdminDataGovernanceRoute: typeof AuthenticatedAdminDataGovernanceRoute
+  AuthenticatedAdminEdiscoveryRoute: typeof AuthenticatedAdminEdiscoveryRoute
   AuthenticatedAdminGroupsRoute: typeof AuthenticatedAdminGroupsRoute
   AuthenticatedAdminIdentityRoute: typeof AuthenticatedAdminIdentityRoute
   AuthenticatedAdminIngestionRoute: typeof AuthenticatedAdminIngestionRoute
@@ -2052,11 +2312,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminPiiRoute: typeof AuthenticatedAdminPiiRoute
   AuthenticatedAdminPiiScanningRoute: typeof AuthenticatedAdminPiiScanningRoute
   AuthenticatedAdminPrivacyRoute: typeof AuthenticatedAdminPrivacyRoute
+  AuthenticatedAdminRecordsRoute: typeof AuthenticatedAdminRecordsRoute
   AuthenticatedAdminResidencyRoute: typeof AuthenticatedAdminResidencyRoute
   AuthenticatedAdminRetentionRoute: typeof AuthenticatedAdminRetentionRoute
   AuthenticatedAdminRoutingRoute: typeof AuthenticatedAdminRoutingRoute
+  AuthenticatedAdminScimRoute: typeof AuthenticatedAdminScimRoute
   AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
   AuthenticatedAdminShareLinksRoute: typeof AuthenticatedAdminShareLinksRoute
+  AuthenticatedAdminSiemRoute: typeof AuthenticatedAdminSiemRoute
   AuthenticatedAdminSsoRoute: typeof AuthenticatedAdminSsoRoute
   AuthenticatedAdminTaggingRoute: typeof AuthenticatedAdminTaggingRoute
   AuthenticatedAdminTagsRoute: typeof AuthenticatedAdminTagsRoute
@@ -2091,8 +2354,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminPlatformLoadTestsRoute: typeof AuthenticatedAdminPlatformLoadTestsRoute
   AuthenticatedAdminPlatformSupportSearchRoute: typeof AuthenticatedAdminPlatformSupportSearchRoute
   AuthenticatedAdminTenantAiRoute: typeof AuthenticatedAdminTenantAiRoute
+  AuthenticatedAdminTenantClassificationRoute: typeof AuthenticatedAdminTenantClassificationRoute
+  AuthenticatedAdminTenantEncryptionRoute: typeof AuthenticatedAdminTenantEncryptionRoute
+  AuthenticatedAdminTenantIrmRoute: typeof AuthenticatedAdminTenantIrmRoute
   AuthenticatedAdminTenantLicenseRoute: typeof AuthenticatedAdminTenantLicenseRoute
+  AuthenticatedAdminTenantSyncRoute: typeof AuthenticatedAdminTenantSyncRoute
   AuthenticatedAdminTenantUploadPolicyRoute: typeof AuthenticatedAdminTenantUploadPolicyRoute
+  AuthenticatedAdminTenantWatermarkRoute: typeof AuthenticatedAdminTenantWatermarkRoute
   AuthenticatedSettingsSecurityMfaRoute: typeof AuthenticatedSettingsSecurityMfaRoute
   AuthenticatedSignRequestIdSignerIdRoute: typeof AuthenticatedSignRequestIdSignerIdRoute
   AuthenticatedSignInPersonRequestIdRoute: typeof AuthenticatedSignInPersonRequestIdRoute
@@ -2114,10 +2382,12 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAskRoute: AuthenticatedAskRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSavedSearchesRoute: AuthenticatedSavedSearchesRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSharedWithMeRoute: AuthenticatedSharedWithMeRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
+  AuthenticatedTemplatesRoute: AuthenticatedTemplatesRoute,
   AuthenticatedTrashRoute: AuthenticatedTrashRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminAiRoute: AuthenticatedAdminAiRoute,
@@ -2125,9 +2395,11 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminBillingRoute: AuthenticatedAdminBillingRoute,
   AuthenticatedAdminBulkRoute: AuthenticatedAdminBulkRoute,
+  AuthenticatedAdminCaptureRoute: AuthenticatedAdminCaptureRoute,
   AuthenticatedAdminComplianceRoute: AuthenticatedAdminComplianceRoute,
   AuthenticatedAdminConnectorsRoute: AuthenticatedAdminConnectorsRoute,
   AuthenticatedAdminDataGovernanceRoute: AuthenticatedAdminDataGovernanceRoute,
+  AuthenticatedAdminEdiscoveryRoute: AuthenticatedAdminEdiscoveryRoute,
   AuthenticatedAdminGroupsRoute: AuthenticatedAdminGroupsRoute,
   AuthenticatedAdminIdentityRoute: AuthenticatedAdminIdentityRoute,
   AuthenticatedAdminIngestionRoute: AuthenticatedAdminIngestionRoute,
@@ -2144,11 +2416,14 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminPiiRoute: AuthenticatedAdminPiiRoute,
   AuthenticatedAdminPiiScanningRoute: AuthenticatedAdminPiiScanningRoute,
   AuthenticatedAdminPrivacyRoute: AuthenticatedAdminPrivacyRoute,
+  AuthenticatedAdminRecordsRoute: AuthenticatedAdminRecordsRoute,
   AuthenticatedAdminResidencyRoute: AuthenticatedAdminResidencyRoute,
   AuthenticatedAdminRetentionRoute: AuthenticatedAdminRetentionRoute,
   AuthenticatedAdminRoutingRoute: AuthenticatedAdminRoutingRoute,
+  AuthenticatedAdminScimRoute: AuthenticatedAdminScimRoute,
   AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
   AuthenticatedAdminShareLinksRoute: AuthenticatedAdminShareLinksRoute,
+  AuthenticatedAdminSiemRoute: AuthenticatedAdminSiemRoute,
   AuthenticatedAdminSsoRoute: AuthenticatedAdminSsoRoute,
   AuthenticatedAdminTaggingRoute: AuthenticatedAdminTaggingRoute,
   AuthenticatedAdminTagsRoute: AuthenticatedAdminTagsRoute,
@@ -2199,9 +2474,17 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminPlatformSupportSearchRoute:
     AuthenticatedAdminPlatformSupportSearchRoute,
   AuthenticatedAdminTenantAiRoute: AuthenticatedAdminTenantAiRoute,
+  AuthenticatedAdminTenantClassificationRoute:
+    AuthenticatedAdminTenantClassificationRoute,
+  AuthenticatedAdminTenantEncryptionRoute:
+    AuthenticatedAdminTenantEncryptionRoute,
+  AuthenticatedAdminTenantIrmRoute: AuthenticatedAdminTenantIrmRoute,
   AuthenticatedAdminTenantLicenseRoute: AuthenticatedAdminTenantLicenseRoute,
+  AuthenticatedAdminTenantSyncRoute: AuthenticatedAdminTenantSyncRoute,
   AuthenticatedAdminTenantUploadPolicyRoute:
     AuthenticatedAdminTenantUploadPolicyRoute,
+  AuthenticatedAdminTenantWatermarkRoute:
+    AuthenticatedAdminTenantWatermarkRoute,
   AuthenticatedSettingsSecurityMfaRoute: AuthenticatedSettingsSecurityMfaRoute,
   AuthenticatedSignRequestIdSignerIdRoute:
     AuthenticatedSignRequestIdSignerIdRoute,
@@ -2243,6 +2526,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  ProtectedContainerIdRoute: ProtectedContainerIdRoute,
   SharedTokenRoute: SharedTokenRoute,
   ZtTokenRoute: ZtTokenRoute,
 }

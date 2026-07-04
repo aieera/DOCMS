@@ -37,6 +37,7 @@ export function TagEditor({ documentId, tags }: { documentId: string; tags: stri
           onBlur={addTag}
           className="h-6 w-20 rounded border border-[var(--color-border)] bg-transparent px-1.5 text-xs outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
           placeholder="tag..."
+          aria-label="Add a tag"
         />
       ) : (
         <button onClick={() => setAdding(true)} className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600">

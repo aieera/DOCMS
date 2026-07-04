@@ -408,6 +408,7 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSubmit()
         }}
         placeholder={placeholder}
+        aria-label={placeholder}
         className="w-full rounded border border-border bg-background p-2 text-sm"
         data-testid={`${testid}-input`}
       />

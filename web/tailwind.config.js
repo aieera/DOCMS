@@ -45,6 +45,7 @@ export default {
         warning: {
           DEFAULT: 'hsl(var(--warning) / <alpha-value>)',
           foreground: 'hsl(var(--warning-foreground) / <alpha-value>)',
+          strong: 'hsl(var(--warning-strong) / <alpha-value>)',
         },
         info: {
           DEFAULT: 'hsl(var(--info) / <alpha-value>)',

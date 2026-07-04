@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, Download, ExternalLink, FileText } from 'lucide-react'
+import { AlertCircle, Download, ExternalLink, FileText, Stamp } from 'lucide-react'
 
 import { getDownloadURL } from '@/api/documents'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/shadcn/button'
+import { WatermarkedPreview } from './WatermarkedPreview'
 
 interface Props {
   documentId: string
@@ -87,7 +89,9 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
   const mime = (mimeType ?? '').toLowerCase()
 
   if (mime === 'application/pdf' || mime.endsWith('/pdf')) {
-    return <PdfPreview url={url} title={title} />
+    // versionId is guaranteed defined here — the top-of-component guard
+    // returns early when it's missing.
+    return <PdfPreviewSwitcher documentId={documentId} versionId={versionId!} url={url} title={title} />
   }
 
   if (mime.startsWith('image/')) {
@@ -146,6 +150,61 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
         Download to open
       </a>
     </Card>
+  )
+}
+
+// ---- PDF preview: watermarked (default) vs. original --------------------
+//
+// PdfPreviewSwitcher makes the server-rendered, per-viewer watermarked
+// pages the DEFAULT view for PDFs, with a toggle back to the "Original"
+// native iframe render. The original path preserves the react-pdf /
+// annotation / OCR-overlay workflows (PDFLayoutViewer lives on the OCR
+// tab and is unaffected — this toggle only governs the Preview tab's PDF
+// surface). The watermark is burned server-side so it can't be stripped
+// client-side.
+function PdfPreviewSwitcher({
+  documentId,
+  versionId,
+  url,
+  title,
+}: {
+  documentId: string
+  versionId: string
+  url: string
+  title?: string
+}) {
+  const [mode, setMode] = useState<'watermarked' | 'original'>('watermarked')
+
+  return (
+    <div className="space-y-2" data-testid="pdf-preview-switcher">
+      <div className="flex items-center justify-end gap-1 rounded-md bg-muted/60 p-1 text-xs sm:w-fit sm:ms-auto">
+        <Button
+          variant={mode === 'watermarked' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 gap-1.5"
+          onClick={() => setMode('watermarked')}
+          data-testid="pdf-mode-watermarked"
+          aria-pressed={mode === 'watermarked'}
+        >
+          <Stamp className="h-3.5 w-3.5" /> Watermarked
+        </Button>
+        <Button
+          variant={mode === 'original' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 gap-1.5"
+          onClick={() => setMode('original')}
+          data-testid="pdf-mode-original"
+          aria-pressed={mode === 'original'}
+        >
+          <FileText className="h-3.5 w-3.5" /> Original
+        </Button>
+      </div>
+      {mode === 'watermarked' ? (
+        <WatermarkedPreview documentId={documentId} versionId={versionId} />
+      ) : (
+        <PdfPreview url={url} title={title} />
+      )}
+    </div>
   )
 }
 

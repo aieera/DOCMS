@@ -4,12 +4,15 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
+import { getVersions } from '@/api/documents'
 import {
   useSavedSearches,
   useCreateSavedSearch,
   useDeleteSavedSearch,
 } from '@/hooks/useSavedSearches'
+import { useWorkspaces } from '@/hooks/useWorkspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -27,6 +30,32 @@ import type { SavedSearch } from '@/api/savedSearches'
 
 const DEFAULT_FACETS = ['tag', 'author', 'classification', 'lifecycle_state', 'doc_type']
 
+// Sort options surface the backend's sort_by/sort_order support
+// (relevance | created_at | updated_at | title | size_bytes). Kept as a
+// single URL token (?sort=newest) so the choice is bookmarkable.
+const SORT_OPTIONS: { value: string; label: string; sortBy?: string; sortOrder?: string }[] = [
+  { value: 'relevance', label: 'Relevance' },
+  { value: 'newest', label: 'Newest first', sortBy: 'created_at', sortOrder: 'desc' },
+  { value: 'oldest', label: 'Oldest first', sortBy: 'created_at', sortOrder: 'asc' },
+  { value: 'updated', label: 'Recently updated', sortBy: 'updated_at', sortOrder: 'desc' },
+  { value: 'title', label: 'Title (A–Z)', sortBy: 'title', sortOrder: 'asc' },
+  { value: 'largest', label: 'Largest first', sortBy: 'size_bytes', sortOrder: 'desc' },
+  { value: 'smallest', label: 'Smallest first', sortBy: 'size_bytes', sortOrder: 'asc' },
+]
+
+// Size presets map to the backend's size_min_bytes / size_max_bytes
+// range filter. Single URL token (?size=1m-10m) for bookmarkability.
+const KB = 1024
+const MB = 1024 * 1024
+const SIZE_OPTIONS: { value: string; label: string; min?: number; max?: number }[] = [
+  { value: '', label: 'Any size' },
+  { value: 'lt100k', label: 'Under 100 KB', max: 100 * KB },
+  { value: '100k-1m', label: '100 KB – 1 MB', min: 100 * KB, max: MB },
+  { value: '1m-10m', label: '1 MB – 10 MB', min: MB, max: 10 * MB },
+  { value: '10m-100m', label: '10 MB – 100 MB', min: 10 * MB, max: 100 * MB },
+  { value: 'gt100m', label: 'Over 100 MB', min: 100 * MB },
+]
+
 interface SearchParams {
   q?: string
   // Facet display: comma-separated list of facet names to render.
@@ -39,6 +68,14 @@ interface SearchParams {
   lifecycle_state?: string[]
   mime_type?: string[]
   workspace_id?: string
+  // Date-range filter (inclusive). YYYY-MM-DD in the URL; converted to
+  // RFC3339 at request-build time.
+  created_after?: string
+  created_before?: string
+  // Size preset key (see SIZE_OPTIONS).
+  size?: string
+  // Sort key (see SORT_OPTIONS); absent = relevance.
+  sort?: string
   // Open/closed sidebar groups (ux state, NOT a filter — kept in URL
   // so reload preserves the user's expansion choices).
   closed?: string[]
@@ -114,22 +151,39 @@ function SearchPage() {
     if (authors.length) filters.created_by_name = authors
     if (regions.length) filters.region_pin = regions
     if (params.workspace_id) filters.workspace_id = params.workspace_id
+    // Date range: YYYY-MM-DD → RFC3339, widening to whole-day bounds so
+    // a single picked day is inclusive on both ends.
+    if (params.created_after) filters.created_after = `${params.created_after}T00:00:00Z`
+    if (params.created_before) filters.created_before = `${params.created_before}T23:59:59Z`
+    // Size preset → byte bounds the backend understands.
+    const sizeOpt = SIZE_OPTIONS.find((o) => o.value === params.size)
+    if (sizeOpt?.min != null) filters.size_min_bytes = sizeOpt.min
+    if (sizeOpt?.max != null) filters.size_max_bytes = sizeOpt.max
     // Hybrid mode fuses BM25 with dense-vector (Qdrant) results so the
     // page delivers the "Full-text + semantic" search the dashboard
     // advertises. The backend degrades to lexical-only when the vector
     // path is unavailable (no embeddings yet, intelligence down), so
     // this is always safe — worst case it behaves like the old lexical
     // default.
-    return { query, facets: facetsToShow, filters, highlight: true, search_mode: 'hybrid' }
+    const body: Record<string, unknown> = { query, facets: facetsToShow, filters, highlight: true, search_mode: 'hybrid' }
+    const sortOpt = SORT_OPTIONS.find((o) => o.value === params.sort)
+    if (sortOpt?.sortBy) {
+      body.sort_by = sortOpt.sortBy
+      body.sort_order = sortOpt.sortOrder
+    }
+    return body
   }, [
     query, facetsToShow,
     params.tag, params.author, params.classification, params.region_pin,
     params.lifecycle_state, params.mime_type, params.workspace_id,
+    params.created_after, params.created_before, params.size, params.sort,
   ])
 
   const enabled = (query?.length ?? 0) >= 2 || asArray(params.tag).length > 0
     || asArray(params.author).length > 0 || asArray(params.classification).length > 0
     || asArray(params.region_pin).length > 0 || asArray(params.lifecycle_state).length > 0
+    || asArray(params.mime_type).length > 0 || !!params.workspace_id
+    || !!params.created_after || !!params.created_before || !!params.size
   // keepPreviousData prevents the results list from collapsing to a
   // spinner on every keystroke; the previous page stays visible until
   // the new one resolves so the user can see what changed instead of
@@ -188,6 +242,12 @@ function SearchPage() {
     })
   }
 
+  // Set (or clear, when value is falsy) a single scalar URL param —
+  // used by the workspace select, date inputs, size + sort dropdowns.
+  const setParam = (key: keyof SearchParams, value: string | undefined) => {
+    navigate({ search: (s: SearchParams) => ({ ...s, [key]: value || undefined }) })
+  }
+
   const toggleGroup = (facet: string) => {
     navigate({
       search: (s: SearchParams) => {
@@ -200,20 +260,40 @@ function SearchPage() {
   }
 
   const clearAllFilters = () => {
-    navigate({ search: () => ({ q: query || undefined }) })
+    // Sort is a presentation choice, not a filter — preserve it across
+    // a filter clear.
+    navigate({ search: () => ({ q: query || undefined, sort: params.sort }) })
   }
 
-  const handleSave = async () => {
-    const name = prompt('Name this saved search:', query || 'untitled')
-    if (!name?.trim()) return
+  const [saveOpen, setSaveOpen] = useState(false)
+  // Per-hit inline versions expander ("N versions" affordance). The
+  // index is one row per document (collapse-by-construction), so the
+  // version list is fetched lazily from the document service on expand.
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
+  const toggleVersions = (documentID: string) => {
+    setExpandedVersions((prev) => {
+      const next = new Set(prev)
+      if (next.has(documentID)) next.delete(documentID)
+      else next.add(documentID)
+      return next
+    })
+  }
+
+  const handleSave = async (name: string, alertMe: boolean, intervalMinutes: number) => {
     try {
       await createSavedMut.mutateAsync({
         name: name.trim(),
         query: query || '',
         filters: searchBody.filters as Record<string, unknown>,
         workspace_id: params.workspace_id,
+        // ADR 0085 — saving with the alert toggle creates the alert in
+        // one step; the workflow service's reconcile loop picks up the
+        // notify flag and creates the Temporal schedule.
+        notify: alertMe,
+        notify_interval_minutes: alertMe ? intervalMinutes : undefined,
       })
-      toast.success('Saved')
+      setSaveOpen(false)
+      toast.success(alertMe ? 'Saved — alerting on new matches' : 'Saved')
     } catch {
       toast.error('Failed to save')
     }
@@ -231,6 +311,9 @@ function SearchPage() {
         author:          arrayOf(f.created_by_name),
         region_pin:      arrayOf(f.region_pin),
         workspace_id:    s.workspace_id ? String(s.workspace_id) : undefined,
+        created_after:   typeof f.created_after === 'string' ? f.created_after.slice(0, 10) : undefined,
+        created_before:  typeof f.created_before === 'string' ? f.created_before.slice(0, 10) : undefined,
+        size:            sizeKeyFromBytes(f.size_min_bytes, f.size_max_bytes),
       }),
     })
   }
@@ -241,7 +324,15 @@ function SearchPage() {
     asArray(params.classification).length +
     asArray(params.region_pin).length +
     asArray(params.lifecycle_state).length +
-    asArray(params.mime_type).length
+    asArray(params.mime_type).length +
+    (params.workspace_id ? 1 : 0) +
+    (params.created_after ? 1 : 0) +
+    (params.created_before ? 1 : 0) +
+    (params.size ? 1 : 0)
+
+  const { data: workspaces } = useWorkspaces()
+  const workspaceName = (id: string) =>
+    workspaces?.find((w) => w.id === id)?.name ?? id
 
   return (
     <div className="grid grid-cols-[260px_1fr] gap-6">
@@ -269,6 +360,73 @@ function SearchPage() {
             Start typing in the search bar (or pick a filter once results load) to see facets like tags, authors, and classifications here.
           </p>
         )}
+
+        {/* Structured filters — always available, not gated on facet
+            buckets returning. Each maps to a backend filter the index
+            already supports (workspace_id, created_after/before,
+            size_min/max_bytes). */}
+        {workspaces && workspaces.length > 0 && (
+          <div className="rounded-md border border-border bg-card p-3" data-testid="filter-workspace">
+            <label htmlFor="ws-select" className="mb-1.5 block text-sm font-medium">Workspace</label>
+            <select
+              id="ws-select"
+              value={params.workspace_id ?? ''}
+              onChange={(e) => setParam('workspace_id', e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              data-testid="filter-workspace-select"
+            >
+              <option value="">All workspaces</option>
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="rounded-md border border-border bg-card p-3" data-testid="filter-date">
+          <span className="mb-1.5 block text-sm font-medium">Created</span>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <label htmlFor="date-from" className="w-9 text-[11px] text-muted-foreground">From</label>
+              <input
+                id="date-from"
+                type="date"
+                value={params.created_after ?? ''}
+                max={params.created_before || undefined}
+                onChange={(e) => setParam('created_after', e.target.value)}
+                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                data-testid="filter-date-from"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="date-to" className="w-9 text-[11px] text-muted-foreground">To</label>
+              <input
+                id="date-to"
+                type="date"
+                value={params.created_before ?? ''}
+                min={params.created_after || undefined}
+                onChange={(e) => setParam('created_before', e.target.value)}
+                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                data-testid="filter-date-to"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-card p-3" data-testid="filter-size">
+          <label htmlFor="size-select" className="mb-1.5 block text-sm font-medium">Size</label>
+          <select
+            id="size-select"
+            value={params.size ?? ''}
+            onChange={(e) => setParam('size', e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            data-testid="filter-size-select"
+          >
+            {SIZE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
 
         {facetsToShow.map((facet) => {
           const buckets = data?.facets?.[facet] ?? []
@@ -342,16 +500,29 @@ function SearchPage() {
           </div>
           <Button
             variant="outline"
-            onClick={handleSave}
+            onClick={() => setSaveOpen(true)}
             disabled={(!query && activeFilterCount === 0) || createSavedMut.isPending}
             data-testid="save-search"
             className="h-12 gap-2"
           >
             <Bookmark className="h-4 w-4" /> Save
           </Button>
+          {saveOpen && (
+            <SaveSearchDialog
+              defaultName={query || 'untitled'}
+              saving={createSavedMut.isPending}
+              onClose={() => setSaveOpen(false)}
+              onSave={handleSave}
+            />
+          )}
         </div>
 
-        <ActiveFilterChips params={params} onRemove={removeFilter} />
+        <ActiveFilterChips
+          params={params}
+          onRemove={removeFilter}
+          onClearScalar={(k) => setParam(k as keyof SearchParams, undefined)}
+          workspaceName={workspaceName}
+        />
 
         {savedSearches && savedSearches.length > 0 && (
           <div className="mb-6 flex flex-wrap gap-2" data-testid="saved-searches">
@@ -425,9 +596,25 @@ function SearchPage() {
 
         {data && (data.results?.length ?? 0) > 0 && (
           <div className="space-y-2" data-testid="search-results">
-            <p className="mb-3 text-sm text-muted-foreground">
-              {data.total_count} results in {data.latency_ms}ms
-            </p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                {data.total_count} results in {data.latency_ms}ms
+              </p>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="sort-select" className="text-xs text-muted-foreground">Sort</label>
+                <select
+                  id="sort-select"
+                  value={params.sort ?? 'relevance'}
+                  onChange={(e) => setParam('sort', e.target.value === 'relevance' ? undefined : e.target.value)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  data-testid="sort-select"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {(data.results ?? []).map((hit) => {
               // Each hit links to the workspace's document viewer.
               // A valid document always has a workspace_id, but an
@@ -482,13 +669,30 @@ function SearchPage() {
                       const when = real(hit.created_at) ?? real(hit.updated_at)
                       return when ? <span className="text-xs text-muted-foreground">{formatRelativeTime(when)}</span> : null
                     })()}
+                    {(hit.version_count ?? 0) > 1 && (
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-primary hover:underline"
+                        data-testid={`versions-toggle-${hit.document_id}`}
+                        onClick={(e) => {
+                          // The whole card is a <Link> — the expander
+                          // must not navigate.
+                          e.preventDefault()
+                          e.stopPropagation()
+                          toggleVersions(hit.document_id)
+                        }}
+                      >
+                        {expandedVersions.has(hit.document_id)
+                          ? 'Hide versions'
+                          : `${hit.version_count} versions`}
+                      </button>
+                    )}
                   </div>
                 </div>
                 </>
               )
-              return hit.workspace_id ? (
+              const card = hit.workspace_id ? (
                 <Link
-                  key={hit.document_id}
                   to="/workspaces/$workspaceId/documents/$documentId"
                   params={{ workspaceId: hit.workspace_id, documentId: hit.document_id }}
                   className={cardClass}
@@ -497,12 +701,16 @@ function SearchPage() {
                   {inner}
                 </Link>
               ) : (
-                <div
-                  key={hit.document_id}
-                  className={cardClass}
-                  data-testid={`search-hit-${hit.document_id}`}
-                >
+                <div className={cardClass} data-testid={`search-hit-${hit.document_id}`}>
                   {inner}
+                </div>
+              )
+              return (
+                <div key={hit.document_id}>
+                  {card}
+                  {expandedVersions.has(hit.document_id) && (
+                    <VersionsInline documentId={hit.document_id} />
+                  )}
                 </div>
               )
             })}
@@ -519,11 +727,17 @@ function SearchPage() {
 function ActiveFilterChips({
   params,
   onRemove,
+  onClearScalar,
+  workspaceName,
 }: {
   params: SearchParams
   onRemove: (key: string, value: string) => void
+  onClearScalar: (key: string) => void
+  workspaceName: (id: string) => string
 }) {
-  type ChipDef = { key: string; display: string; value: string }
+  // `scalar` chips clear the whole param (workspace/date/size); the
+  // others remove a single value from a repeated param.
+  type ChipDef = { key: string; display: string; value: string; scalar?: boolean }
   const chips: ChipDef[] = []
 
   const addChips = (
@@ -544,6 +758,20 @@ function ActiveFilterChips({
   addChips('region_pin', 'Region', asArray(params.region_pin))
   addChips('classification', 'Class', asArray(params.classification))
 
+  if (params.workspace_id) {
+    chips.push({ key: 'workspace_id', display: `Workspace: ${workspaceName(params.workspace_id)}`, value: params.workspace_id, scalar: true })
+  }
+  if (params.created_after) {
+    chips.push({ key: 'created_after', display: `From: ${params.created_after}`, value: params.created_after, scalar: true })
+  }
+  if (params.created_before) {
+    chips.push({ key: 'created_before', display: `To: ${params.created_before}`, value: params.created_before, scalar: true })
+  }
+  if (params.size) {
+    const label = SIZE_OPTIONS.find((o) => o.value === params.size)?.label ?? params.size
+    chips.push({ key: 'size', display: `Size: ${label}`, value: params.size, scalar: true })
+  }
+
   if (chips.length === 0) return null
 
   return (
@@ -556,7 +784,7 @@ function ActiveFilterChips({
           {chip.display}
           <button
             type="button"
-            onClick={() => onRemove(chip.key, chip.value)}
+            onClick={() => (chip.scalar ? onClearScalar(chip.key) : onRemove(chip.key, chip.value))}
             aria-label={`Remove ${chip.display} filter`}
             className="ms-0.5 text-primary/70 hover:text-primary"
           >
@@ -575,6 +803,15 @@ function arrayOf(v: unknown): string[] | undefined {
   if (!v) return undefined
   if (Array.isArray(v)) return v.length ? v.map(String) : undefined
   return [String(v)]
+}
+
+// Recover the size-preset URL key from a saved search's byte bounds so
+// applying a saved search restores the Size dropdown selection.
+function sizeKeyFromBytes(min: unknown, max: unknown): string | undefined {
+  const m = typeof min === 'number' ? min : undefined
+  const x = typeof max === 'number' ? max : undefined
+  if (m == null && x == null) return undefined
+  return SIZE_OPTIONS.find((o) => o.min === m && o.max === x)?.value || undefined
 }
 
 export const Route = createFileRoute('/_authenticated/search')({
@@ -603,7 +840,108 @@ export const Route = createFileRoute('/_authenticated/search')({
       lifecycle_state: arr('lifecycle_state'),
       mime_type: arr('mime_type'),
       workspace_id: str('workspace_id'),
+      created_after: str('created_after'),
+      created_before: str('created_before'),
+      size: str('size'),
+      sort: str('sort'),
       closed: arr('closed'),
     }
   },
 })
+
+function SaveSearchDialog({
+  defaultName, saving, onClose, onSave,
+}: {
+  defaultName: string
+  saving: boolean
+  onClose: () => void
+  onSave: (name: string, alertMe: boolean, intervalMinutes: number) => void
+}) {
+  const [name, setName] = useState(defaultName)
+  const [alertMe, setAlertMe] = useState(false)
+  const [interval, setInterval] = useState('15')
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title="Save this search">
+      <div className="space-y-3">
+        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} data-testid="save-name" />
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={alertMe}
+            onChange={(e) => setAlertMe(e.target.checked)}
+            data-testid="save-alert-me"
+          />
+          Alert me when new documents match
+        </label>
+        {alertMe && (
+          <Input
+            label="Check every (minutes)"
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) => setInterval(e.target.value)}
+            data-testid="save-alert-interval"
+          />
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => onSave(name, alertMe, Math.max(1, Number(interval) || 15))}
+            disabled={saving || !name.trim()}
+            data-testid="save-confirm"
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+// Inline version list under an expanded search hit. Lazy: mounts (and
+// fetches) only when the user opens the "N versions" affordance —
+// relevance ranking is untouched because the search response itself
+// never changes.
+function VersionsInline({ documentId }: { documentId: string }) {
+  const { data: versions, isLoading, isError } = useQuery({
+    queryKey: ['search-hit-versions', documentId],
+    queryFn: () => getVersions(documentId),
+    staleTime: 60_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="ms-8 mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-3" data-testid={`versions-panel-${documentId}`}>
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+      </div>
+    )
+  }
+  if (isError || !versions) {
+    return (
+      <div className="ms-8 mt-1 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground" data-testid={`versions-panel-${documentId}`}>
+        Could not load versions.
+      </div>
+    )
+  }
+  return (
+    <ul className="ms-8 mt-1 divide-y divide-border rounded-md border border-border bg-muted/40" data-testid={`versions-panel-${documentId}`}>
+      {versions.map((v) => (
+        <li key={v.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+          <span className="font-medium">v{v.version_number}</span>
+          {v.label ? <Badge variant="secondary">{v.label}</Badge> : null}
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            {v.change_summary || '—'}
+          </span>
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {formatFileSize(v.size_bytes)}
+          </span>
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {v.created_by_name ? `${v.created_by_name} · ` : ''}{formatRelativeTime(v.created_at)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}

@@ -178,7 +178,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
           >
             <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
             <code className="flex-1 truncate text-xs">{shareUrl}</code>
-            <Button variant="ghost" size="sm" onClick={copyLink}><Copy className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={copyLink} aria-label="Copy share link"><Copy className="h-4 w-4" /></Button>
           </div>
         ) : (
           <Button onClick={handleCreate} disabled={creating} className="w-full">

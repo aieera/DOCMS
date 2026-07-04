@@ -270,7 +270,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
           )}
         </div>
         {n.body && (
-          <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground/70' : 'text-muted-foreground'}`}>
+          <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
             {n.body}
           </p>
         )}

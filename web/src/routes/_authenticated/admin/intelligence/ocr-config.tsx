@@ -9,6 +9,7 @@ import {
   updateOcrQualityConfig,
   type OcrQualityConfig,
 } from '@/api/ocr-quality'
+import { getOcrEngineConfig, updateOcrEngineConfig, type OcrEngine } from '@/api/ocr'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -184,6 +185,8 @@ export function OcrConfigPage() {
           </div>
         </div>
       )}
+
+      <EngineDefaultCard canEdit={canEdit} />
 
       <div className="mt-6 space-y-6 rounded-lg border border-border bg-card p-5" data-testid="ocr-config-form">
         <Toggle
@@ -375,6 +378,66 @@ function ThresholdRow({
           className={`w-20 rounded-md border bg-background px-2 py-1 text-right text-sm ${outOfRange ? 'border-destructive' : 'border-border'}`}
         />
         <span className="text-xs text-muted-foreground">%</span>
+      </div>
+    </div>
+  )
+}
+
+// Per-tenant default OCR engine (auto/printed/handwriting). Self-contained:
+// reads/writes the intelligence service's ocr_config:{tenant} via /api/v1/
+// intelligence/ocr/engine-config — the same key the OCR worker resolves
+// against, so a change here re-routes future OCR jobs.
+const ENGINES: { value: OcrEngine; label: string; help: string }[] = [
+  { value: 'auto', label: 'Auto', help: 'Printed OCR; pages below the handwriting floor are re-tried with ICR and merged.' },
+  { value: 'printed', label: 'Printed', help: 'Surya/Paddle only — fastest, best for typed documents.' },
+  { value: 'handwriting', label: 'Handwriting (ICR)', help: 'TrOCR for ink, merged with printed OCR — best for forms & notes.' },
+]
+
+function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['ocr-engine-config'], queryFn: getOcrEngineConfig })
+  const [engine, setEngine] = useState<OcrEngine | null>(null)
+  useEffect(() => {
+    if (data && engine === null) setEngine(data.engine)
+  }, [data, engine])
+
+  const save = useAppMutation({
+    mutationFn: (next: OcrEngine) =>
+      updateOcrEngineConfig({ engine: next, doc_type_overrides: data?.doc_type_overrides ?? {} }),
+    onSuccess: (saved) => {
+      qc.setQueryData(['ocr-engine-config'], saved)
+      setEngine(saved.engine)
+      toast.success('Default OCR engine saved')
+    },
+    defaultErrorMessage: 'Could not save OCR engine',
+  })
+
+  const current = engine ?? data?.engine ?? 'auto'
+  return (
+    <div className="mt-6 space-y-3 rounded-lg border border-border bg-card p-5" data-testid="ocr-engine-config">
+      <div>
+        <h3 className="text-sm font-semibold">Default OCR engine</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Applied to new uploads when no per-document engine is forced. Handwriting routes through
+          TrOCR (ICR); the engine that actually ran is recorded on every page and the OCR-completed event.
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {ENGINES.map((e) => (
+          <button
+            key={e.value}
+            type="button"
+            disabled={!canEdit || save.isPending}
+            onClick={() => { setEngine(e.value); save.mutate(e.value) }}
+            className={`rounded-md border p-3 text-left text-sm transition-colors disabled:opacity-60 ${
+              current === e.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/40'
+            }`}
+            data-testid={`ocr-engine-${e.value}`}
+          >
+            <p className="font-medium">{e.label}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{e.help}</p>
+          </button>
+        ))}
       </div>
     </div>
   )
