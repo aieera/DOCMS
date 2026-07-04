@@ -6,9 +6,9 @@
 // the CSRF cookie and echoes it back in the `X-CSRF-Token` header.
 // The middleware rejects the request unless:
 //
-//   * the CSRF cookie is present AND non-empty, AND
-//   * the header is present AND non-empty, AND
-//   * they compare equal (constant-time).
+//   - the CSRF cookie is present AND non-empty, AND
+//   - the header is present AND non-empty, AND
+//   - they compare equal (constant-time).
 //
 // Safe methods (GET / HEAD / OPTIONS) are exempt.
 //
@@ -55,6 +55,20 @@ func CSRFDoubleSubmit() func(http.Handler) http.Handler {
 			if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer vdms_") {
 				next.ServeHTTP(w, r)
 				return
+			}
+			// Bearer-SESSION callers with NO session cookie (mobile app,
+			// add-ins — ADR 0117) are likewise exempt: CSRF rides ambient
+			// cookies, and a cookie-less request authenticates only via
+			// the Authorization header the caller attached explicitly
+			// (forms can't set it; cross-origin fetch needs a CORS
+			// preflight). The no-cookie guard keeps the exemption from
+			// ever bypassing the check for a browser that DOES hold a
+			// session cookie.
+			if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+				if _, err := r.Cookie("dms_session"); err != nil {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
 			c, err := r.Cookie(CSRFCookieName)
 			if err != nil || c == nil || c.Value == "" {

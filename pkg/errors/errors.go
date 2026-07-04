@@ -73,7 +73,14 @@ var (
 	ErrRateLimited     = &Error{Kind: KindRateLimited, Code: "RATE_LIMITED", Message: "rate limit exceeded"}
 	ErrRegionViolation = &Error{Kind: KindRegionViolation, Code: "REGION_VIOLATION", Message: "region policy violation"}
 	ErrLegalHold       = &Error{Kind: KindLegalHold, Code: "LEGAL_HOLD", Message: "document is under legal hold"}
-	ErrInternal        = &Error{Kind: KindInternal, Code: "INTERNAL", Message: "internal error"}
+	// ErrRecordDeclared blocks mutation of a document declared as a record
+	// (records management). Maps to 423 Locked like legal hold — the document
+	// is immutable until a certified disposition.
+	ErrRecordDeclared = &Error{Kind: KindLegalHold, Code: "RECORD_DECLARED", Message: "document is a declared record; immutable until disposition"}
+	// ErrWORMLocked blocks overwrite/delete of a document whose blob is under
+	// S3 object-lock (WORM) retention. Maps to 423 Locked like legal hold.
+	ErrWORMLocked = &Error{Kind: KindLegalHold, Code: "WORM_LOCKED", Message: "document is WORM-locked until its retention date"}
+	ErrInternal   = &Error{Kind: KindInternal, Code: "INTERNAL", Message: "internal error"}
 )
 
 // Validation constructs a validation error for a single field.
@@ -187,7 +194,14 @@ func ToGRPCError(err error) error {
 		return status.Error(codes.Unauthenticated, e.Message)
 	case KindValidation:
 		return status.Error(codes.InvalidArgument, e.Error())
-	case KindConflict, KindLegalHold:
+	case KindConflict:
+		// Aborted, not FailedPrecondition: optimistic-concurrency
+		// conflicts (e.g. CreateVersion's stale base_version_id) must
+		// surface as HTTP 409 through the grpc-gateway, whose default
+		// mapping sends FailedPrecondition to 400. Clients (Word add-in,
+		// dms-sync, integration BFF) key their conflict handling on 409.
+		return status.Error(codes.Aborted, e.Message)
+	case KindLegalHold:
 		return status.Error(codes.FailedPrecondition, e.Message)
 	case KindRateLimited:
 		return status.Error(codes.ResourceExhausted, e.Message)
@@ -202,11 +216,11 @@ func ToGRPCError(err error) error {
 
 // HTTPError is the canonical HTTP error body returned to clients.
 type HTTPError struct {
-	Code          int       `json:"-"`
-	Type          string    `json:"type"`
-	Message       string    `json:"message"`
-	Field         string    `json:"field,omitempty"`
-	CorrelationID string    `json:"correlation_id,omitempty"`
+	Code          int    `json:"-"`
+	Type          string `json:"type"`
+	Message       string `json:"message"`
+	Field         string `json:"field,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
 // ToHTTPError maps a domain error to an HTTPError. The caller is responsible
@@ -238,7 +252,8 @@ func ToHTTPError(err error, correlationID string) HTTPError {
 	case KindLegalHold:
 		// Wave 8 P8.2 DoD: held documents return 423 Locked (not 409),
 		// matching RFC 4918 semantics. gRPC translation stays
-		// FailedPrecondition (same as CONFLICT bucket there).
+		// FailedPrecondition (CONFLICT moved to Aborted so the
+		// grpc-gateway emits 409 for it; legal hold keeps its own code).
 		out.Code = http.StatusLocked
 	case KindForbidden:
 		out.Code = http.StatusForbidden

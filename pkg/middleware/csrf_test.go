@@ -93,15 +93,29 @@ func TestCSRF_APIKeyBearerBypasses(t *testing.T) {
 	}
 }
 
-func TestCSRF_SessionBearerDoesNotBypass(t *testing.T) {
-	// Bearer session (non-vdms_) does NOT bypass — spec allows 30-day
-	// back-compat for clients, but CSRF protection still applies to
-	// session-cookie-paired mutations.
+func TestCSRF_CookielessSessionBearerBypasses(t *testing.T) {
+	// ADR 0117 (mobile) — a Bearer-session caller with NO session
+	// cookie is exempt: there is no ambient credential a cross-site
+	// request could ride, and the Authorization header can only be
+	// attached by code already holding the token.
 	w := runCSRF(t, "POST", func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer randomsessiontoken")
 	})
+	if w.Code != http.StatusOK {
+		t.Errorf("cookie-less session bearer must bypass CSRF; got %d", w.Code)
+	}
+}
+
+func TestCSRF_BearerWithSessionCookieStillEnforced(t *testing.T) {
+	// The exemption must NOT fire when a dms_session cookie is present:
+	// a browser holding the ambient cookie stays fully CSRF-checked
+	// even if some header smuggling added an Authorization value.
+	w := runCSRF(t, "POST", func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer randomsessiontoken")
+		r.AddCookie(&http.Cookie{Name: "dms_session", Value: "ambient"})
+	})
 	if w.Code != http.StatusForbidden {
-		t.Errorf("non-api-key bearer must NOT bypass CSRF; got %d", w.Code)
+		t.Errorf("bearer + session cookie must still enforce CSRF; got %d", w.Code)
 	}
 }
 

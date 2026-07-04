@@ -56,7 +56,9 @@ func TestToGRPCError(t *testing.T) {
 		{"validation", Validation("x", "bad"), codes.InvalidArgument},
 		{"not found", NotFound("missing"), codes.NotFound},
 		{"already exists", ErrAlreadyExists, codes.AlreadyExists},
-		{"conflict", Conflict("foo"), codes.FailedPrecondition},
+		// Aborted (not FailedPrecondition) so the grpc-gateway's default
+		// mapping emits HTTP 409 — clients key conflict handling on 409.
+		{"conflict", Conflict("foo"), codes.Aborted},
 		{"legal hold", ErrLegalHold, codes.FailedPrecondition},
 		{"region violation", ErrRegionViolation, codes.FailedPrecondition},
 		{"forbidden", Forbidden("denied"), codes.PermissionDenied},

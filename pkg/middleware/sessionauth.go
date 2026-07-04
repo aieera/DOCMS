@@ -1,4 +1,4 @@
-// Package middleware: SessionAuth — a session-cookie → UserInfo middleware
+// Package middleware: SessionAuth — a session → UserInfo middleware
 // shared by every non-auth service that exposes user-facing REST endpoints.
 //
 // The auth service has its own richer middleware (Redis fast-path + API-key
@@ -8,7 +8,12 @@
 // depending on the auth service's internal packages.
 //
 // How it works:
-//  1. Read the session cookie (default name: "dms_session").
+//  1. Read the session token: the session cookie (default name:
+//     "dms_session") first; when no cookie is present, fall back to
+//     `Authorization: Bearer <token>` for cookie-less clients (the mobile
+//     app, ADR 0117; the Office/Google add-ins hold the same shape of
+//     token). `Bearer vdms_…` is NEVER treated as a session — that prefix
+//     is reserved for API keys (APIKeyAuth / SessionOrAPIKey dispatch).
 //  2. SHA-256 the plaintext token.
 //  3. SELECT sessions JOIN users on the shared Postgres by token_hash.
 //     token_hash is globally unique, so no tenant GUC is needed.
@@ -22,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,9 +67,30 @@ func loadUserGroups(r *http.Request, pool *pgxpool.Pool, tenantID, userID uuid.U
 	return out
 }
 
-// SessionAuth returns an http middleware that validates the session cookie
-// and attaches a UserInfo to the request context. Unauthenticated requests
-// are rejected with 401.
+// sessionTokenFromRequest extracts the plaintext session token: cookie
+// first (the web path — unchanged precedence), then a non-vdms_ Bearer
+// (cookie-less clients: mobile, add-ins). Returns "" when neither is
+// present. vdms_ bearers are API keys and are deliberately not returned —
+// SessionOrAPIKey dispatches those to APIKeyAuth before SessionAuth runs,
+// and a vdms_ key would never hash-match a session row anyway; skipping it
+// here keeps the 401 reason accurate.
+func sessionTokenFromRequest(r *http.Request, cookieName string) string {
+	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
+		return c.Value
+	}
+	authz := r.Header.Get("Authorization")
+	if tok, ok := strings.CutPrefix(authz, "Bearer "); ok {
+		tok = strings.TrimSpace(tok)
+		if tok != "" && !strings.HasPrefix(tok, "vdms_") {
+			return tok
+		}
+	}
+	return ""
+}
+
+// SessionAuth returns an http middleware that validates the session token
+// (cookie or Bearer) and attaches a UserInfo to the request context.
+// Unauthenticated requests are rejected with 401.
 func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 	cookie := cfg.CookieName
 	if cookie == "" {
@@ -72,12 +99,12 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 	pool := cfg.Pool
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c, err := r.Cookie(cookie)
-			if err != nil || c.Value == "" {
+			token := sessionTokenFromRequest(r, cookie)
+			if token == "" {
 				writeUnauthorized(w, r, "authentication required")
 				return
 			}
-			hash := sha256HexSession(c.Value)
+			hash := sha256HexSession(token)
 
 			// token_hash is globally unique; tenant GUC not required.
 			var (
@@ -87,7 +114,7 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 				role     string
 				expires  time.Time
 			)
-			err = pool.QueryRow(r.Context(), `
+			err := pool.QueryRow(r.Context(), `
 				SELECT s.tenant_id, s.user_id, u.email, u.role, s.expires_at
 				FROM sessions s
 				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id
@@ -138,12 +165,12 @@ func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler 
 	pool := cfg.Pool
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c, err := r.Cookie(cookie)
-			if err != nil || c.Value == "" {
+			token := sessionTokenFromRequest(r, cookie)
+			if token == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			hash := sha256HexSession(c.Value)
+			hash := sha256HexSession(token)
 			var (
 				tenantID uuid.UUID
 				userID   uuid.UUID
@@ -151,7 +178,7 @@ func SessionAuthOptional(cfg SessionAuthConfig) func(http.Handler) http.Handler 
 				role     string
 				expires  time.Time
 			)
-			err = pool.QueryRow(r.Context(), `
+			err := pool.QueryRow(r.Context(), `
 				SELECT s.tenant_id, s.user_id, u.email, u.role, s.expires_at
 				FROM sessions s
 				JOIN users u ON u.tenant_id = s.tenant_id AND u.id = s.user_id

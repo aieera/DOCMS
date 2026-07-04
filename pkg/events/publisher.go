@@ -6,6 +6,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -73,8 +74,11 @@ var DefaultStreams = []StreamSpec{
 	// messages routed into documents land here. Bound to DOC_EVENTS
 	// because the lifecycle of an ingested email IS a document
 	// lifecycle event from the system's perspective.
-	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>"}},
-	{Name: "USER_EVENTS", Subjects: []string{"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>"}},
+	// dms.irm.> covers IRM protected-container license lifecycle
+	// (dms.irm.license_issued/opened/revoked.v1) — a document-security event.
+	{Name: "DOC_EVENTS", Subjects: []string{"dms.document.>", "dms.version.>", "dms.workspace.>", "dms.email.>", "dms.irm.>", "dms.template.>", "dms.report.>"}},
+	// dms.tenant.> covers per-tenant KEK/KMS events (dms.tenant.key_rotated.v1).
+	{Name: "USER_EVENTS", Subjects: []string{"dms.user.>", "dms.session.>", "dms.apikey.>", "dms.auth.>", "dms.tenant.>"}},
 	{Name: "POLICY_EVENTS", Subjects: []string{"dms.policy.>", "dms.permission.>"}},
 	{Name: "BILLING_EVENTS", Subjects: []string{"dms.billing.>", "dms.subscription.>", "dms.usage.>"}},
 	{Name: "AUDIT_EVENTS", Subjects: []string{"dms.audit.>"}},
@@ -117,9 +121,16 @@ var DefaultStreams = []StreamSpec{
 	// dms.retention.> covers archive/dispose-candidate sweep events.
 	// dms.dsr.> covers GDPR subject-rights requested/completed/blocked/failed.
 	// dms.ediscovery.> covers cross-tenant eDiscovery export emissions.
+	// dms.record.> covers records-management declared/disposed events
+	// (services/document/internal/records); dms.record.disposed.v1 is the
+	// tamper-evident disposition certificate appended to the audit hash chain.
+	// dms.export.> covers async hold-scoped e-discovery export completion
+	// (services/document ediscovery_hold.go); audited as chain-of-custody.
 	{Name: "COMPLIANCE_EVENTS", Subjects: []string{
 		"dms.hold.>", "dms.residency.>", "dms.compliance.>",
-		"dms.retention.>", "dms.dsr.>", "dms.ediscovery.>",
+		"dms.retention.>", "dms.dsr.>", "dms.ediscovery.>", "dms.record.>", "dms.export.>",
+		// dms.idp.configured.v1 — SSO/IdP registration (auth service admin).
+		"dms.idp.>",
 	}},
 	// Signature lifecycle events emitted by services/signature and the
 	// workflow signature_stub activity (completed, declined).
@@ -159,7 +170,7 @@ var DefaultStreams = []StreamSpec{
 	// dms.intelligence.*). Remove once every emitter is migrated.
 	{Name: "LEGACY_EVENTS", Subjects: []string{
 		"dms.sharelink.>", "dms.folder.>", "dms.intelligence.>",
-		"dms.rotation.>", "dms.webhook.>",
+		"dms.rotation.>", "dms.webhook.>", "dms.connector.>",
 	}},
 }
 
@@ -183,7 +194,46 @@ func ConnectNATS(url string) (*nats.Conn, nats.JetStreamContext, error) {
 		nc.Close()
 		return nil, nil, err
 	}
+	// §4: fail fast if any subject we declare has no live stream home.
+	// EnsureStreams just provisioned DefaultStreams, but a stream deleted
+	// out-of-band (or a drifted deploy) would otherwise let the broker
+	// accept and silently discard those publishes. Refuse to boot instead.
+	if err := AssertLiveCoverage(js, PublishedSubjects, DefaultStreams); err != nil {
+		nc.Close()
+		return nil, nil, err
+	}
 	return nc, js, nil
+}
+
+// AssertLiveCoverage verifies, against the streams that actually exist in
+// the live JetStream account, that every subject in `subjects` is bound by
+// a provisioned stream. Unlike the build-time gate in coverage_test.go
+// (which checks the static DefaultStreams config), this runs at startup so
+// a service refuses to boot into a drifted topology — e.g. a stream deleted
+// out-of-band — that would silently drop its events (§4). It inspects the
+// streams named in `specs` (the set this codebase provisions), reads their
+// *live* subject filters, and reports any subject left without a home.
+func AssertLiveCoverage(js nats.JetStreamContext, subjects []string, specs []StreamSpec) error {
+	live := make([]StreamSpec, 0, len(specs))
+	for _, s := range specs {
+		info, err := js.StreamInfo(s.Name)
+		if err != nil {
+			if errors.Is(err, nats.ErrStreamNotFound) {
+				// Missing entirely → its subjects are unbound. Leave it out
+				// of `live`; CheckCoverage reports any subject that needed it.
+				continue
+			}
+			return fmt.Errorf("live coverage: stream info %s: %w", s.Name, err)
+		}
+		live = append(live, StreamSpec{Name: info.Config.Name, Subjects: info.Config.Subjects})
+	}
+	if missing := CheckCoverage(subjects, live); len(missing) > 0 {
+		return fmt.Errorf(
+			"startup coverage check: %d published subject(s) have no live JetStream stream "+
+				"and would be silently dropped: %s",
+			len(missing), strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // BootstrapReport is the diff returned by EnsureStreams so callers can

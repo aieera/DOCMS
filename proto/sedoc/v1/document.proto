@@ -49,6 +49,14 @@ message Document {
   // Set on create + upsert; surfaced on reads. See the documents:upsert
   // and documents:byExternalKey REST routes.
   string                    external_id              = 23;
+  // §8 classification-based access control. security_classification is the
+  // sensitivity level gating access (unclassified|internal|confidential|
+  // restricted; empty = unset). has_phi/has_pii are denormalised from the
+  // intelligence compliance scan (ADR 0054) and drive the sensitivity badge +
+  // the OPA clearance gate.
+  string                    security_classification  = 24;
+  bool                      has_phi                  = 25;
+  bool                      has_pii                  = 26;
 }
 
 message DocumentWorkflowInstance {
@@ -272,6 +280,12 @@ message CreateVersionRequest {
   string document_id     = 1;
   string content_blob_id = 2;
   string change_summary  = 3;
+  // base_version_id is the version the client based this edit on (optimistic
+  // concurrency, §sync). When set and it no longer matches the document's
+  // current version, the write is rejected with 409 Conflict so a sync client
+  // can surface a concurrent-edit conflict. Empty = skip the check (unchanged
+  // last-write-wins behaviour for existing callers).
+  string base_version_id = 4;
 }
 message ListVersionsRequest {
   string            document_id = 1;

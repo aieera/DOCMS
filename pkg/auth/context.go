@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/google/uuid"
 	"github.com/aieera/sedoc/pkg/logger"
+	"github.com/google/uuid"
 )
 
 // ErrMissing is returned by getters when the requested field is not present
@@ -138,6 +138,32 @@ func WithClientIP(ctx context.Context, ip string) context.Context {
 // if the ctx didn't originate from an HTTP request.
 func GetClientIP(ctx context.Context) string {
 	if s, ok := ctx.Value(clientIPKey{}).(string); ok {
+		return s
+	}
+	return ""
+}
+
+// userAgentKey identifies the request's User-Agent header on a context.
+// Populated by HTTP middleware (CorrelationHTTP). Empty for ctx without
+// a request (background jobs, cron, NATS consumers) and for non-browser
+// callers that send no User-Agent.
+type userAgentKey struct{}
+
+// WithUserAgent stamps the caller's User-Agent onto ctx so downstream
+// layers can persist it on outbox rows / audit events without re-reading
+// the request. No-op for an empty string so getters stay consistent with
+// "absent" semantics.
+func WithUserAgent(ctx context.Context, ua string) context.Context {
+	if ua == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, userAgentKey{}, ua)
+}
+
+// GetUserAgent returns the User-Agent stamped by WithUserAgent, or empty
+// if the ctx didn't originate from an HTTP request.
+func GetUserAgent(ctx context.Context) string {
+	if s, ok := ctx.Value(userAgentKey{}).(string); ok {
 		return s
 	}
 	return ""

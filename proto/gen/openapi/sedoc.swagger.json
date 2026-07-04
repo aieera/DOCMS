@@ -52,6 +52,10 @@
     },
     "DocumentServiceCreateVersionBody": {
       "properties": {
+        "baseVersionId": {
+          "description": "base_version_id is the version the client based this edit on (optimistic\nconcurrency, \u00a7sync). When set and it no longer matches the document's\ncurrent version, the write is rejected with 409 Conflict so a sync client\ncan surface a concurrent-edit conflict. Empty = skip the check (unchanged\nlast-write-wins behaviour for existing callers).",
+          "type": "string"
+        },
         "changeSummary": {
           "type": "string"
         },
@@ -1483,6 +1487,12 @@
         "folderId": {
           "type": "string"
         },
+        "hasPhi": {
+          "type": "boolean"
+        },
+        "hasPii": {
+          "type": "boolean"
+        },
         "id": {
           "type": "string"
         },
@@ -1497,6 +1507,10 @@
         },
         "regionPin": {
           "$ref": "#/definitions/v1RegionPin"
+        },
+        "securityClassification": {
+          "description": "\u00a78 classification-based access control. security_classification is the\nsensitivity level gating access (unclassified|internal|confidential|\nrestricted; empty = unset). has_phi/has_pii are denormalised from the\nintelligence compliance scan (ADR 0054) and drive the sensitivity badge +\nthe OPA clearance gate.",
+          "type": "string"
         },
         "sha256Hash": {
           "type": "string"
@@ -1886,6 +1900,13 @@
     },
     "v1InitiateUploadResponse": {
       "properties": {
+        "deduplicated": {
+          "description": "When the bytes already exist in this region (same tenant + sha256), the\nserver dedups: presigned_put_url is empty, deduplicated=true, and\nexisting_blob_id holds the blob to link directly (no PUT/complete needed).\nWithout these the client can't tell a dedup hit from a missing URL and\nPUTs to an empty URL.",
+          "type": "boolean"
+        },
+        "existingBlobId": {
+          "type": "string"
+        },
         "expiresAt": {
           "format": "date-time",
           "type": "string"

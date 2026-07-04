@@ -258,5 +258,8 @@
     "additionalDirectories": [
       "C:\\Users\\dell"
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }

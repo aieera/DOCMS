@@ -52,6 +52,13 @@ message InitiateUploadResponse {
   string                    storage_key      = 4;
   google.protobuf.Timestamp expires_at       = 5;
   map<string, string>       required_headers = 6;
+  // When the bytes already exist in this region (same tenant + sha256), the
+  // server dedups: presigned_put_url is empty, deduplicated=true, and
+  // existing_blob_id holds the blob to link directly (no PUT/complete needed).
+  // Without these the client can't tell a dedup hit from a missing URL and
+  // PUTs to an empty URL.
+  bool                      deduplicated     = 7;
+  string                    existing_blob_id = 8;
 }
 
 message CompleteUploadRequest {

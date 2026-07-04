@@ -75,13 +75,13 @@ func NewS3Client(endpoint, accessKey, secretKey string, useSSL bool) (*S3Client,
 
 // NewS3ClientWithPublicEndpoint is the full-shape constructor.
 //
-//   internalEndpoint: address the storage service uses for direct ops.
-//   publicEndpoint:   address presigned URLs are signed against; "" =
-//                     same as internal (production default).
-//   useSSL: applies to BOTH endpoints. If your public endpoint is
-//           HTTPS but internal is HTTP (or vice versa), call NewS3Client
-//           and call SetPresignClient yourself. We chose not to add a
-//           second SSL flag to keep the common signature small.
+//	internalEndpoint: address the storage service uses for direct ops.
+//	publicEndpoint:   address presigned URLs are signed against; "" =
+//	                  same as internal (production default).
+//	useSSL: applies to BOTH endpoints. If your public endpoint is
+//	        HTTPS but internal is HTTP (or vice versa), call NewS3Client
+//	        and call SetPresignClient yourself. We chose not to add a
+//	        second SSL flag to keep the common signature small.
 func NewS3ClientWithPublicEndpoint(internalEndpoint, publicEndpoint, accessKey, secretKey string, useSSL bool) (*S3Client, error) {
 	creds, err := resolveCreds(accessKey, secretKey)
 	if err != nil {
@@ -220,14 +220,14 @@ func (s *S3Client) GeneratePresignedGetURL(
 //
 // Three S3 query overrides we now set:
 //
-//   * response-content-disposition  inline|attachment + filename
-//   * response-content-type         e.g. application/pdf — necessary
-//                                    when objects were stored as
-//                                    application/octet-stream and we
-//                                    want the browser to actually treat
-//                                    them as their real type. Without
-//                                    this, some Windows/Chrome combos
-//                                    auto-download PDFs in iframes.
+//   - response-content-disposition  inline|attachment + filename
+//   - response-content-type         e.g. application/pdf — necessary
+//     when objects were stored as
+//     application/octet-stream and we
+//     want the browser to actually treat
+//     them as their real type. Without
+//     this, some Windows/Chrome combos
+//     auto-download PDFs in iframes.
 //
 // The empty-string defaults mean "let MinIO derive from the stored
 // metadata" — works fine when the upload set the correct
@@ -273,6 +273,43 @@ func (s *S3Client) CreateBucket(ctx context.Context, bucket, region string) erro
 	}
 	if err := s.c.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: region}); err != nil {
 		return fmt.Errorf("make bucket %s: %w", bucket, err)
+	}
+	return nil
+}
+
+// EnsureObjectLockBucket makes an object-lock (WORM) bucket if absent.
+// ObjectLocking implies versioning — required for S3 retention. Once a bucket
+// is created with object-locking it cannot be turned off, which is the point.
+func (s *S3Client) EnsureObjectLockBucket(ctx context.Context, bucket, region string) error {
+	exists, err := s.c.BucketExists(ctx, bucket)
+	if err != nil {
+		return fmt.Errorf("bucket exists: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if err := s.c.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: region, ObjectLocking: true}); err != nil {
+		return fmt.Errorf("make object-lock bucket %s: %w", bucket, err)
+	}
+	return nil
+}
+
+// SetObjectRetention applies an S3 object-lock retention to one object until
+// retainUntil. mode is "GOVERNANCE" (privileged users with s3:BypassGovernance
+// can still delete) or "COMPLIANCE" (no one can delete/overwrite before the
+// date, not even root) — the latter is true WORM. Errors unless the bucket was
+// created with object-locking enabled.
+func (s *S3Client) SetObjectRetention(ctx context.Context, bucket, key, mode string, retainUntil time.Time) error {
+	m := minio.Governance
+	if mode == "COMPLIANCE" {
+		m = minio.Compliance
+	}
+	until := retainUntil
+	if err := s.c.PutObjectRetention(ctx, bucket, key, minio.PutObjectRetentionOptions{
+		Mode:            &m,
+		RetainUntilDate: &until,
+	}); err != nil {
+		return fmt.Errorf("put retention %s/%s: %w", bucket, key, err)
 	}
 	return nil
 }

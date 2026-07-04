@@ -31,6 +31,39 @@ func TestPhaseC2_NoAuthTokenInBrowserStorage(t *testing.T) {
 	}
 }
 
+// TestPhaseC2_NoAuthTokenInMobileInsecureStorage is the §8.1 analogue
+// for the mobile app (ADR 0117): the session token lives in
+// expo-secure-store (Keychain / EncryptedSharedPreferences), NEVER in
+// AsyncStorage — which is a plaintext file readable on a rooted device
+// or from a backup. AsyncStorage is fine for the display cache
+// (react-query persister); it must not hold anything auth-shaped.
+func TestPhaseC2_NoAuthTokenInMobileInsecureStorage(t *testing.T) {
+	mobileDir := filepath.Join(findRepoRoot(t), "mobile")
+
+	re := regexp.MustCompile(`AsyncStorage\s*\.\s*(getItem|setItem|removeItem|mergeItem)\s*\(\s*['"][^'"]*(token|bearer|session|auth|credential|password)[^'"]*['"]`)
+
+	hits := grepTree(t, mobileDir, ".ts", ".tsx", re)
+	if len(hits) > 0 {
+		t.Fatalf("C2 regression (mobile) — auth-like key(s) found in AsyncStorage (per §8.1/ADR 0117, the session lives in expo-secure-store only):\n  %s",
+			strings.Join(hits, "\n  "))
+	}
+
+	// The literal-key regex can't see a constant-keyed call
+	// (setItemAsync(KEY_TOKEN, …)), so additionally pin the token
+	// store itself: the file that persists the session must not
+	// reference AsyncStorage at all — swapping SecureStore out for
+	// AsyncStorage there is the exact regression this test exists
+	// to catch.
+	authStore := filepath.Join(mobileDir, "store", "authStore.ts")
+	if b, err := os.ReadFile(authStore); err == nil {
+		// Match the IMPORT, not the word — the file's own doc comment
+		// legitimately says "never touches AsyncStorage".
+		if strings.Contains(string(b), "@react-native-async-storage") {
+			t.Fatalf("C2 regression (mobile) — %s imports AsyncStorage; the session store must use expo-secure-store only", authStore)
+		}
+	}
+}
+
 // --- C3 — no math/rand in SAML signer ------------------------------
 
 func TestPhaseC3_NoMathRandInSAMLSigner(t *testing.T) {
@@ -100,7 +133,10 @@ func TestPhaseC4_NoContextBackgroundInHandlers(t *testing.T) {
 func TestPhaseC5_NoDirectNATSPublish(t *testing.T) {
 	servicesDir := filepath.Join(findRepoRoot(t), "services")
 
-	re := regexp.MustCompile(`\b(nats|nc|js)\.Publish(?:Msg)?\s*\(`)
+	// (?i): receivers are fields as often as locals (a.JS, p.Nats) —
+	// the earlier case-sensitive form let `JS.Publish` slip through,
+	// which is exactly how the ADR 0085 emit bypassed this test.
+	re := regexp.MustCompile(`(?i)\b(nats|nc|js)\.Publish(?:Msg)?\s*\(`)
 
 	hits := grepTreeFiltered(t, servicesDir, []string{".go"}, re, func(path, line string) bool {
 		if strings.HasSuffix(path, "_test.go") {
@@ -120,6 +156,13 @@ func TestPhaseC5_NoDirectNATSPublish(t *testing.T) {
 		// guarantee. Whitelist the package the same way pkg/database
 		// is whitelisted upstream by living outside services/.
 		if strings.Contains(filepath.ToSlash(path), "/internal/eventstream/") {
+			return false
+		}
+		// Same rationale for the SIEM forwarder's DLQ park: a NATS
+		// consumer that fails to deliver to an external sink republishes
+		// the poisoned message JetStream→JetStream (…_DLQ stream). There
+		// is no DB commit in that path, so the outbox isn't applicable.
+		if strings.Contains(filepath.ToSlash(path), "/internal/siem/") {
 			return false
 		}
 		return true

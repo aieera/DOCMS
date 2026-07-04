@@ -36,6 +36,7 @@ type OutboxEvent struct {
 	ActorID   *uuid.UUID
 	ActorName string
 	IPAddress string
+	UserAgent string
 }
 
 // NewOutboxEvent builds an event with a fresh UUIDv7 id and the current UTC
@@ -103,6 +104,7 @@ func (r *OutboxRepository) Insert(ctx context.Context, tx pgx.Tx, event *OutboxE
 		actorID   any
 		actorName any
 		ipAddr    any
+		userAgent any
 	)
 	if uid, err := auth.GetUserID(ctx); err == nil && uid != uuid.Nil {
 		actorID = uid
@@ -113,15 +115,18 @@ func (r *OutboxRepository) Insert(ctx context.Context, tx pgx.Tx, event *OutboxE
 	if ip := auth.GetClientIP(ctx); ip != "" {
 		ipAddr = ip
 	}
+	if ua := auth.GetUserAgent(ctx); ua != "" {
+		userAgent = ua
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id,
 		                    payload, published, created_at,
-		                    actor_id, actor_name, ip_address)
-		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10)
+		                    actor_id, actor_name, ip_address, user_agent)
+		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10, $11)
 	`,
 		event.ID, event.TenantID, event.EventType, event.AggregateType,
 		event.AggregateID, event.Payload, event.CreatedAt,
-		actorID, actorName, ipAddr,
+		actorID, actorName, ipAddr, userAgent,
 	)
 	if err != nil {
 		return fmt.Errorf("outbox insert: %w", err)

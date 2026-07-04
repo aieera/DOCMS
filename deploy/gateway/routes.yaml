@@ -33,6 +33,16 @@ routes:
     methods: [GET]
     auth: required
   - service: auth
+    prefix: /api/v1/auth/m365/exchange
+    methods: [POST]
+    auth: public           # ADR 0112: the exchange IS the auth entry point
+    rate: auth-login
+  - service: auth
+    prefix: /api/v1/auth/google/exchange
+    methods: [POST]
+    auth: public           # ADR 0116: Google add-on analogue of m365/exchange
+    rate: auth-login
+  - service: auth
     prefix: /api/v1/auth/mfa/verify
     methods: [POST]
     auth: public           # pre-session: verifying after password succeeded
@@ -81,11 +91,19 @@ routes:
     methods: []
     auth: admin
   - service: auth
+    prefix: /api/v1/admin/scim         # SCIM admin: base URL, token rotate, provisioning log
+    methods: []
+    auth: admin
+  - service: auth
     prefix: /api/v1/admin/sso-configs
     methods: []
     auth: admin
   - service: auth
     prefix: /api/v1/admin/tenants
+    methods: []
+    auth: admin
+  - service: auth
+    prefix: /api/v1/admin/encryption      # external-KMS / KEK admin (§5)
     methods: []
     auth: admin
   - service: auth
@@ -113,6 +131,14 @@ routes:
   # needed; the document service's main.go pins them explicitly.
   - service: document
     prefix: /api/v1/admin/documents
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/classification   # §8 classification-based access rules
+    methods: []
+    auth: admin
+  - service: document
+    prefix: /api/v1/admin/watermark        # §5 dynamic viewer watermark config
     methods: []
     auth: admin
   - service: document
@@ -156,6 +182,23 @@ routes:
     methods: []
     auth: public
     rate: shared
+  - service: document
+    prefix: /api/v1/sync              # §3/§5 sync delta + device API (session or vdms_ key)
+    methods: []
+    auth: required
+  - service: document
+    prefix: /api/v1/irm/export        # §5/§8 protect & share (creator, session)
+    methods: []
+    auth: required
+  - service: document
+    prefix: /api/v1/irm/licenses       # license-check callback + content (token-auth; external recipients)
+    methods: []
+    auth: public
+    rate: shared
+  - service: document
+    prefix: /api/v1/admin/irm          # protected-export license dashboard
+    methods: []
+    auth: admin
 
   # ---- storage --------------------------------------------------------
   - service: storage
@@ -189,6 +232,10 @@ routes:
   # ---- audit ----------------------------------------------------------
   - service: audit
     prefix: /api/v1/audit
+    methods: []
+    auth: admin
+  - service: audit
+    prefix: /api/v1/admin/siem       # SIEM forwarding sink config (§15)
     methods: []
     auth: admin
 
@@ -255,9 +302,20 @@ routes:
   - { service: document, prefix: /api/v1/contracts, methods: [], auth: required }
   - { service: document, prefix: /api/v1/compare, methods: [], auth: required }
   - { service: document, prefix: /api/v1/folders, methods: [], auth: required }
+  - { service: document, prefix: /api/v1/notes, methods: [], auth: required }   # note/wiki create (POST /notes)
+  - { service: document, prefix: /api/v1/records, methods: [], auth: required }  # records mgmt: file plan + declare/dispose
+  # ADR 0118 — workspace templates (gallery CRUD is admin-gated backend-side;
+  # provision requires edit on the target workspace).
+  - { service: document, prefix: /api/v1/templates, methods: [], auth: required }
+  # ADR 0119 — analytics query API + saved reports (admin/owner-gated
+  # backend-side; aggregate analytics reveal tenant-wide facts).
+  - { service: document, prefix: /api/v1/analytics, methods: [], auth: admin }
   # ERP pre-commit ingestion (WS3) + native review queue (WS4). Session (admin
   # review UI) or Bearer API key (ERP worker /ingest, explorer BFF review).
   - { service: document, prefix: /api/v1/ingest, methods: [], auth: required }
+  # ADR 0112/0116 — add-in email filing (session bearer; body carries
+  # base64 attachments).
+  - { service: document, prefix: /api/v1/integrations/m365, methods: [], auth: required }
   - { service: document, prefix: /api/v1/review-queue, methods: [], auth: required }
   - { service: document, prefix: /api/v1/uploads/predict, methods: [], auth: required }
   - { service: document, prefix: /api/v1/zt, methods: [], auth: required }
@@ -266,6 +324,7 @@ routes:
   - { service: document, prefix: /api/v1/admin/compliance, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/trash, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/bulk, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/ediscovery, methods: [], auth: admin }  # hold-scoped e-discovery export
   - { service: document, prefix: /api/v1/admin/models, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/training-examples, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/active-learning, methods: [], auth: admin }

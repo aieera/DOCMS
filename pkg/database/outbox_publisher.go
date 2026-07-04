@@ -15,11 +15,11 @@ import (
 // PublisherConfig tunes the outbox → NATS bridge. Zero values pick safe
 // defaults matching the spec (100ms poll, 100-event batch, 24h retention).
 type PublisherConfig struct {
-	PollInterval     time.Duration
-	BatchSize        int
-	RetainPublished  time.Duration
-	CleanupInterval  time.Duration
-	PublishTimeout   time.Duration
+	PollInterval    time.Duration
+	BatchSize       int
+	RetainPublished time.Duration
+	CleanupInterval time.Duration
+	PublishTimeout  time.Duration
 }
 
 // OutboxPublisher is a background goroutine that polls the `outbox` table,
@@ -146,7 +146,7 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	// is exactly what the outbox event consumer wants anyway.
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
-		       payload, created_at, actor_id, actor_name, ip_address::text
+		       payload, created_at, actor_id, actor_name, ip_address::text, user_agent
 		FROM outbox
 		WHERE NOT published
 		ORDER BY created_at, id
@@ -164,11 +164,12 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 			actorID   *uuid.UUID
 			actorName *string
 			ipAddress *string
+			userAgent *string
 		)
 		if err := rows.Scan(
 			&e.ID, &e.TenantID, &e.EventType, &e.AggregateType,
 			&e.AggregateID, &e.Payload, &e.CreatedAt,
-			&actorID, &actorName, &ipAddress,
+			&actorID, &actorName, &ipAddress, &userAgent,
 		); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan: %w", err)
@@ -179,6 +180,9 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		}
 		if ipAddress != nil {
 			e.IPAddress = *ipAddress
+		}
+		if userAgent != nil {
+			e.UserAgent = *userAgent
 		}
 		batch = append(batch, e)
 	}
@@ -231,6 +235,7 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 		Data:            e.Payload,
 		VDMSActorName:   e.ActorName,
 		VDMSClientIP:    e.IPAddress,
+		VDMSUserAgent:   e.UserAgent,
 	}
 	if e.ActorID != nil {
 		envelope.VDMSActorID = e.ActorID.String()
@@ -291,5 +296,5 @@ type cloudEvent struct {
 	VDMSActorID   string `json:"vdmsactorid,omitempty"`
 	VDMSActorName string `json:"vdmsactorname,omitempty"`
 	VDMSClientIP  string `json:"vdmsclientip,omitempty"`
+	VDMSUserAgent string `json:"vdmsuseragent,omitempty"`
 }
-

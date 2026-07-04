@@ -89,15 +89,29 @@ var PublishedSubjects = []string{
 	"dms.annotation.created.v1",
 	"dms.annotation.updated.v1",
 	"dms.annotation.deleted.v1",
+	// connector
+	"dms.connector.synced.v1",
 	// document
 	"dms.document.created.v1",
 	"dms.document.deleted.v1",
+	"dms.document.edited.v1", // collaborative-edit snapshot (collaboration svc, §17.4)
 	"dms.document.moved.v1",
 	"dms.document.state_changed.v1",
 	"dms.document.updated.v1",
+	// irm — protected-container license lifecycle (§5/§8)
+	"dms.irm.license_issued.v1",
+	"dms.irm.opened.v1",
+	"dms.irm.revoked.v1",
 	// folder
 	"dms.folder.created.v1",
 	"dms.folder.moved.v1",
+
+	// workspace templates (ADR 0118)
+	"dms.template.provisioned.v1",
+
+	// analytics reports (ADR 0119)
+	"dms.report.generated.v1",
+	"dms.notify.report_ready.v1",
 	// hold
 	"dms.hold.applied.v1",
 	"dms.hold.released.v1",
@@ -113,10 +127,12 @@ var PublishedSubjects = []string{
 	// sharelink
 	"dms.sharelink.created.v1",
 	// signature
+	"dms.signature.applied.v1",
 	"dms.signature.completed.v1",
 	// user
 	"dms.user.invited.v1",
 	"dms.user.mfa_reset.v1",
+	"dms.user.mfa_changed.v1",
 	"dms.user.suspended.v1",
 	// version
 	"dms.version.restored.v1",
