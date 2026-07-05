@@ -105,13 +105,23 @@ var DefaultStreams = []StreamSpec{
 	// Without this binding it was an infinite outbox-retry bomb halting the
 	// batch — same shape as the others above; surfaced once the lang_detect
 	// task was repaired (2026-06-05) and actually started emitting.
+	// dms.translation.> (translate.py, ADR 0057) and dms.training_example.>
+	// (training_collector.py, reachable via the common dms.classify.corrected.v1
+	// path) are Python shared-outbox emitters — unbound they were the same
+	// outbox-retry bomb as the incidents above (STATE 2026-07-03 §C).
+	// coverage_python_test.go now harvests Python subjects so the next one
+	// cannot ship unbound.
 	{Name: "INTEL_EVENTS", Subjects: []string{
 		"dms.ocr.>", "dms.classify.>", "dms.embed.>", "dms.ner.>",
 		"dms.model.>", "dms.redaction.>",
 		"dms.routing.>", "dms.anomaly.>", "dms.autotag.>",
 		"dms.entity.>", "dms.ner_config.>", "dms.language.>",
+		"dms.translation.>", "dms.training_example.>",
 	}},
-	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>"}},
+	// dms.notification.> covers the Python compliance_scan/ocr_quality
+	// "send a notification" requests (dms.notification.send.v1) — distinct
+	// from the Go dms.notify.* fan-out subjects but same stream domain.
+	{Name: "NOTIFY_EVENTS", Subjects: []string{"dms.notify.>", "dms.notification.>"}},
 	// Compliance + lifecycle events emitted by services/document/internal/compliance
 	// (legal holds) and services/workflow/internal/activities/residency.
 	// dms.compliance.> covers the PII/PHI scan emit + admin rescan trigger
