@@ -111,6 +111,26 @@ jobs:
         working-directory: pkg
         run: go test -count=1 -run TestSubjectCov ./events/...
 
+  # ADR 0121 — cross-service migration ordering gate. Every service's
+  # migration chain must apply against a brand-new empty Postgres in
+  # isolation (pre-existing couplings are allow-listed IN THE TEST with
+  # tracking issues #80-#83; a listed chain that starts passing fails as
+  # stale), and the document<->intelligence shared-DB application orders
+  # must both work. This is what turns the 000021 class ("works only if
+  # another service migrated first") into a PR-time failure.
+  migration-isolation:
+    name: Migrations (isolated per service + both orders)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Isolated + ordering migration tests
+        run: go test -tags integration -run 'TestMigrationOrdering|TestMigrationIsolation' -timeout 12m ./pkg/database/
+
   integration-tests:
     name: Integration tests (-tags integration)
     runs-on: ubuntu-latest
