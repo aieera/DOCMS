@@ -37,11 +37,10 @@ from app.config import settings
 from app.events.publisher import publish_cloudevent
 from app.tasks.ner import detect_entities
 from app.worker import celery_app
+from app.events.subjects import REDACTION_APPLIED_SUBJECT, VERSION_UPLOADED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-REDACTION_APPLIED_SUBJECT = "dms.redaction.applied.v1"
-VERSION_UPLOADED_SUBJECT = "dms.version.uploaded.v1"
 
 
 def _s3():

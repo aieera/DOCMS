@@ -35,10 +35,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import TRANSLATION_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-TRANSLATION_COMPLETED_SUBJECT = "dms.translation.completed.v1"
 CONSUMER = "translate"
 
 CHUNK_SIZE_CHARS = 12_000   # ~3000 tokens; well under any modern context

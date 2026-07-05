@@ -37,10 +37,10 @@ from app.metrics import (
 from app.persist import replace_entities
 from app.tasks.ner_llm import extract_via_llm, load_ner_config
 from app.worker import celery_app
+from app.events.subjects import NER_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-NER_COMPLETED_SUBJECT = "dms.ner.completed.v1"
 CONSUMER = "ner"
 
 # ---- Regex matchers (deterministic, fast) --------------------------------

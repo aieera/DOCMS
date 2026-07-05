@@ -30,10 +30,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import COLLECTED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-COLLECTED_SUBJECT = "dms.training_example.collected.v1"
 CONSUMER = "training_collector"
 
 DEFAULT_CONFIG = {
