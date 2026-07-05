@@ -111,6 +111,26 @@ jobs:
         working-directory: pkg
         run: go test -count=1 -run TestSubjectCov ./events/...
 
+  # Prod-posture lane (Wave A, STATE 2026-07-03): runs the
+  # TestProdPosture_* integration tests against a dms_app NOBYPASSRLS
+  # role (testcontainers; pkg/testutil.NewProdPostureDB) with the RLS
+  # posture gate ARMED and no SEDOC_ALLOW_BYPASS_RLS. Known-failing
+  # audit gaps are allow-listed in ci/prod-posture-allowlist.txt; each
+  # Wave A fix PR removes its entry. The lane fails on any unlisted
+  # failure, any stale (now-passing) entry, or a missing repro test.
+  prod-posture:
+    name: Prod-posture (NOBYPASSRLS) lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run prod-posture lane
+        run: ./scripts/prod-posture-lane.sh
+
   integration-tests:
     name: Integration tests (-tags integration)
     runs-on: ubuntu-latest

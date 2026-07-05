@@ -1,0 +1,65 @@
+# Prod-posture override — run the local stack the way PRODUCTION runs:
+# services connect as the dms_app role (NOBYPASSRLS, created by
+# scripts/init-db.sql) and the dev RLS-bypass opt-in is disarmed, so the
+# boot-time posture gate (pkg/database/rls_posture.go) is armed and every
+# FORCE-RLS query without app.current_tenant FAILS CLOSED — exactly like
+# prod under helm (postgres-cluster.yaml postInit ALTER ROLE ... NOBYPASSRLS).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod-posture.yml up -d
+#
+# Use this to reproduce the audit's RLS tenant-context gaps locally
+# (docs/STATE_OF_THE_PROJECT.md 2026-07-03): under this posture the
+# known-broken paths (see ci/prod-posture-allowlist.txt) return empty
+# results or RLS errors instead of silently working.
+#
+# Notes:
+# - Migrations still run as the `sedoc` superuser (make migrate-up is
+#   untouched); init-db.sql's ALTER DEFAULT PRIVILEGES gives dms_app DML
+#   on every table the migrations create.
+# - This is an override file, not a profile: compose profiles can only
+#   include/exclude services, they cannot change the environment of
+#   services defined in the base file.
+# - SEDOC_ALLOW_BYPASS_RLS is set to "0" (not removed) because compose
+#   env merging cannot unset a key inherited from the base file; the
+#   gate only honors the exact string "1".
+
+x-prod-posture-env: &prod-posture-env
+  SEDOC_ALLOW_BYPASS_RLS: "0"
+  SEDOC_DATABASE_URL: "postgres://dms_app:devpassword@postgres:5432/sedoc?sslmode=disable"
+
+services:
+  audit:
+    environment: *prod-posture-env
+  auth:
+    environment: *prod-posture-env
+  billing:
+    environment: *prod-posture-env
+  collaboration:
+    environment: *prod-posture-env
+  connector:
+    environment: *prod-posture-env
+  document:
+    environment: *prod-posture-env
+  graphql-gateway:
+    environment: *prod-posture-env
+  intelligence:
+    environment: *prod-posture-env
+  intelligence-worker:
+    environment: *prod-posture-env
+  intelligence-worker-misc:
+    environment: *prod-posture-env
+  mcp-server:
+    environment: *prod-posture-env
+  notification:
+    environment: *prod-posture-env
+  policy:
+    environment: *prod-posture-env
+  search:
+    environment: *prod-posture-env
+  signature:
+    environment: *prod-posture-env
+  storage:
+    environment: *prod-posture-env
+  workflow:
+    environment: *prod-posture-env

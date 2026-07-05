@@ -108,6 +108,47 @@ contribute a "healthy" status).
 
 See `make help` for the full list.
 
+### The two RLS postures (read this before touching a repository layer)
+
+SeDoc's tenant isolation is Postgres row-level security: every tenant table
+is `FORCE ROW LEVEL SECURITY` and policies match
+`current_setting('app.current_tenant', true)`. There are two postures, and
+they behave very differently:
+
+| | Dev (default compose) | Prod / prod-posture |
+|---|---|---|
+| DB role | `sedoc` superuser (**BYPASSRLS**) | `dms_app` / `vaultdms` (**NOBYPASSRLS**) |
+| `SEDOC_ALLOW_BYPASS_RLS` | `1` (docker-compose.yml) | unset — boot gate armed (`pkg/database/rls_posture.go`) |
+| Query without tenant context | **works** (RLS bypassed) | **fails closed** — 0 rows, RLS write rejection, or a `''::uuid` cast error |
+
+The dev posture masks RLS bugs: a repository that queries the raw pool
+without `database.WithTenantTx` works locally and silently returns nothing
+(or errors) in prod. This is the audit's worst defect class
+(docs/STATE_OF_THE_PROJECT.md 2026-07-03, "systemic RLS tenant-context gap").
+
+**Run the stack in the prod posture locally:**
+
+```
+docker compose -f docker-compose.yml -f docker-compose.prod-posture.yml up -d
+```
+
+**Run the prod-posture test lane** (also a CI job, `prod-posture`):
+
+```
+./scripts/prod-posture-lane.sh
+```
+
+The lane runs the `TestProdPosture_*` integration tests against a
+`dms_app` NOBYPASSRLS testcontainer (`pkg/testutil.NewProdPostureDB`) with
+no bypass env — `testutil.AssertProdPosture(t)` hard-fails otherwise. The
+known Wave A gaps are allow-listed in `ci/prod-posture-allowlist.txt`;
+the lane fails on any unlisted failure, on an allow-listed test that now
+passes (remove its line in the fixing PR — the repro then becomes the
+permanent regression guard), or on a missing repro. When you fix an RLS
+gap: use `database.WithTenantTx` (see `services/document`, the reference
+service), run the lane, and delete your entry from the allow-list in the
+same PR.
+
 ## Intelligence pipeline
 
 | Stage | Trigger | Task | Persists to | Emits |
