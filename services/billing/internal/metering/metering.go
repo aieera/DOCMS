@@ -61,9 +61,26 @@ func (m *Meter) collect(ctx context.Context) {
 	since := periodStart.AddDate(0, -1, 0) // 30-day window for OCR/users
 
 	for _, tid := range tenants {
-		storageGB, _ := m.repo.MeterStorage(ctx, tid)
-		ocrPages, _ := m.repo.MeterOCRPages(ctx, tid, since)
-		activeUsers, _ := m.repo.MeterActiveUsers(ctx, tid, since)
+		// Meter-read failures skip the tenant's insert for this cycle
+		// rather than overwriting a good record with zeros — and they
+		// are LOGGED: the silent discards here are how a broken column
+		// reference metered active_users as 0 indefinitely without a
+		// single log line (Wave A.1.c).
+		storageGB, err := m.repo.MeterStorage(ctx, tid)
+		if err != nil {
+			m.log.Error().Err(err).Str("tenant", tid).Msg("metering: storage")
+			continue
+		}
+		ocrPages, err := m.repo.MeterOCRPages(ctx, tid, since)
+		if err != nil {
+			m.log.Error().Err(err).Str("tenant", tid).Msg("metering: ocr pages")
+			continue
+		}
+		activeUsers, err := m.repo.MeterActiveUsers(ctx, tid, since)
+		if err != nil {
+			m.log.Error().Err(err).Str("tenant", tid).Msg("metering: active users")
+			continue
+		}
 
 		// AI tokens — read from Redis aggregate (set by intelligence service).
 		var aiTokens int64 // placeholder; would read from redis llm_usage:{tid}

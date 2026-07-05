@@ -13,7 +13,6 @@
 # the repro test — it becomes the permanent regression guard.
 
 TestProdPosture_ConnectorRepo           https://github.com/aieera/DOCMS/issues/71
-TestProdPosture_BillingRepo             https://github.com/aieera/DOCMS/issues/72
 TestProdPosture_NotificationPrefs       https://github.com/aieera/DOCMS/issues/73
 TestProdPosture_AuditRepo               https://github.com/aieera/DOCMS/issues/74
 TestProdPosture_AuthPreTenantReads      https://github.com/aieera/DOCMS/issues/75
