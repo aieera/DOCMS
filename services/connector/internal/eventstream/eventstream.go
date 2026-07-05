@@ -65,16 +65,16 @@ type Service struct {
 	pool      *pgxpool.Pool
 	js        nats.JetStreamContext
 	log       zerolog.Logger
-	operator  nkeys.KeyPair       // operator seed; nil → JWTs unsigned in dev
+	operator  nkeys.KeyPair // operator seed; nil → JWTs unsigned in dev
 	mu        sync.Mutex
 	streamSet map[string]struct{} // streams we know exist
 }
 
 // Config is DI.
 type Config struct {
-	Pool     *pgxpool.Pool
-	JS       nats.JetStreamContext
-	Logger   zerolog.Logger
+	Pool   *pgxpool.Pool
+	JS     nats.JetStreamContext
+	Logger zerolog.Logger
 	// OperatorSeed (NKey "O..." seed) signs user JWTs. Empty in dev — issuance
 	// still produces a JWT, but it's self-signed by an ephemeral operator
 	// and will be rejected by a production NATS server in operator mode.
@@ -298,31 +298,53 @@ func (s *Service) RevokeToken(ctx context.Context, tenantID, tokenID string) err
 
 // LookupTokenTenant resolves a bearer to the tenant it grants. Returns
 // "" if the token is unknown, revoked, or expired.
+//
+// This is a PRE-tenant lookup (the token IS how we learn the tenant) on
+// a FORCE-RLS table, so it iterates tenants from the organizations
+// registry and probes each under that tenant's context (Wave A.1,
+// issue #71 — the raw-pool version failed closed in prod and event-
+// stream auth was dead). O(tenants) per SSE connect/poll-auth, which is
+// acceptable at current scale; the long-term shape is a non-RLS
+// token→tenant lookup table (same design work as the auth pre-tenant
+// reads, issue #75).
 func (s *Service) LookupTokenTenant(ctx context.Context, bearer string) (string, error) {
 	hash := hashBearer(bearer)
-	var tenantID string
-	err := s.pool.QueryRow(ctx, `
-		SELECT tenant_id::text FROM tenant_event_tokens
-		 WHERE token_hash = $1
-		   AND revoked_at IS NULL
-		   AND (expires_at IS NULL OR expires_at > now())`,
-		hash,
-	).Scan(&tenantID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
+	tenants, err := database.ListTenantIDs(ctx, s.pool)
 	if err != nil {
 		return "", err
 	}
-	// Best-effort last-used touch. Ignore errors — auth shouldn't fail
-	// because we couldn't update an analytics field.
-	go func() {
-		ctx2, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_, _ = s.pool.Exec(ctx2,
-			`UPDATE tenant_event_tokens SET last_used_at = now() WHERE token_hash = $1`, hash)
-	}()
-	return tenantID, nil
+	for _, tid := range tenants {
+		var tenantID string
+		err := database.WithTenantTx(ctx, s.pool, tid, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT tenant_id::text FROM tenant_event_tokens
+				 WHERE token_hash = $1
+				   AND revoked_at IS NULL
+				   AND (expires_at IS NULL OR expires_at > now())`,
+				hash,
+			).Scan(&tenantID)
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		// Best-effort last-used touch under the found tenant's context.
+		// Ignore errors — auth shouldn't fail on an analytics field.
+		touchTenant := tid
+		go func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = database.WithTenantTx(ctx2, s.pool, touchTenant, func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx2,
+					`UPDATE tenant_event_tokens SET last_used_at = now() WHERE token_hash = $1`, hash)
+				return err
+			})
+		}()
+		return tenantID, nil
+	}
+	return "", nil
 }
 
 // ---- Reads / polling ------------------------------------------------------
