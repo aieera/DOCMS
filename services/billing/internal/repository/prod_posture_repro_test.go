@@ -207,4 +207,43 @@ func TestProdPosture_BillingRepo(t *testing.T) {
 	require.NotNil(t, got,
 		"GetSubscription must see the tenant's subscription (raw-pool read currently fails closed to 0 rows)")
 	require.Equal(t, "standard", got.PlanID)
+
+	// ---- Per-tenant isolation (Wave A.1.c DoD) ------------------------
+	// A second tenant must see neither the first tenant's subscription
+	// nor its usage rows — and its own writes must not leak back.
+	tenantB := uuid.Must(uuid.NewV7())
+	_, err = db.Super.Exec(ctx,
+		`INSERT INTO organizations (id, name, slug, plan) VALUES ($1, 'Prod Posture Org B', $2, 'standard')`,
+		tenantB, "prodposture-b-"+tenantB.String())
+	require.NoError(t, err)
+
+	gotB, err := repo.GetSubscription(ctx, tenantB.String())
+	require.NoError(t, err)
+	require.Nil(t, gotB, "tenant B must not see tenant A's subscription")
+
+	subB := &model.Subscription{
+		TenantID:           tenantB.String(),
+		PlanID:             "enterprise",
+		Status:             "active",
+		CurrentPeriodStart: now,
+		CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+		CreatedAt:          now,
+	}
+	require.NoError(t, repo.UpsertSubscription(ctx, subB))
+
+	// Each tenant reads exactly its own plan back.
+	gotA, err := repo.GetSubscription(ctx, tenant.String())
+	require.NoError(t, err)
+	require.Equal(t, "standard", gotA.PlanID)
+	gotB, err = repo.GetSubscription(ctx, tenantB.String())
+	require.NoError(t, err)
+	require.Equal(t, "enterprise", gotB.PlanID)
+
+	// Tenant B's context must see zero of A's usage rows (RLS, not just
+	// the SQL predicate).
+	var crossRows int
+	require.NoError(t, database.WithTenantTx(ctx, db.App, tenantB, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT COUNT(*) FROM usage_records`).Scan(&crossRows)
+	}))
+	require.Zero(t, crossRows, "tenant B's context must not see tenant A's usage rows")
 }

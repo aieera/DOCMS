@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/tenant"
 	"github.com/aieera/sedoc/services/billing/internal/model"
 	"github.com/aieera/sedoc/services/billing/internal/repository"
@@ -139,11 +142,19 @@ func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest)
 }
 
 func (p *Provisioner) createAdminUser(ctx context.Context, tenantID, email string) (string, error) {
+	// users is FORCE RLS — the insert must run under the new tenant's
+	// context or it is rejected in prod (Wave A.1.c, issue #72).
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("tenant_id: %w", err)
+	}
 	var userID string
-	err := p.pool.QueryRow(ctx, `
-		INSERT INTO users (id, tenant_id, email, password_hash, display_name, role, status, created_at)
-		VALUES (gen_random_uuid(), $1, $2, '', 'Admin', 'org_admin', 'active', now())
-		RETURNING id
-	`, tenantID, email).Scan(&userID)
+	err = database.WithTenantTx(ctx, p.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			INSERT INTO users (id, tenant_id, email, password_hash, display_name, role, status, created_at)
+			VALUES (gen_random_uuid(), $1, $2, '', 'Admin', 'org_admin', 'active', now())
+			RETURNING id
+		`, tenantID, email).Scan(&userID)
+	})
 	return userID, err
 }
