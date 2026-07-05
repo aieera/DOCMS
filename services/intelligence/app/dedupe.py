@@ -20,6 +20,7 @@ from typing import Optional
 
 from app.db.pool import get_pool
 from app.events.publisher import publish_cloudevent
+from app.events.subjects import OCR_FAILED_SUBJECT
 from app.metrics import ocr_dedupe_hits_total, ocr_dlq_total
 from app.storage_uri import parse_storage_uri  # re-exported for callers
 
@@ -148,7 +149,7 @@ async def publish_dlq(
         "specversion": "1.0",
         "id": str(uuid.uuid4()),
         "source": "dms.intelligence",
-        "type": "dms.ocr.failed.v1",
+        "type": OCR_FAILED_SUBJECT,
         "subject": f"version/{version_id}",
         "time": datetime.now(timezone.utc).isoformat(),
         "datacontenttype": "application/json",

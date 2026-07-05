@@ -42,10 +42,10 @@ from app.tasks.ocr import (
     ocr_file,
 )
 from app.worker import celery_app
+from app.events.subjects import INGESTION_PROCESSED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-INGESTION_PROCESSED_SUBJECT = "dms.ingestion.processed.v1"
 
 
 def _best_doc_number(fields: list[dict]) -> tuple[str, float]:

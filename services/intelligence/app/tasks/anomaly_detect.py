@@ -39,10 +39,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import ANOMALY_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-ANOMALY_COMPLETED_SUBJECT = "dms.anomaly.completed.v1"
 CONSUMER = "anomaly_detect"
 
 WORKSPACE_DOC_CAP = 50_000  # ADR 0058 — cap to bound memory

@@ -105,6 +105,72 @@ func findRepoRootFromWD(t *testing.T) string {
 	return ""
 }
 
+// pyManifestRe matches the canonical constant declarations in the
+// Python subjects manifest (services/intelligence/app/events/subjects.py).
+var pyManifestRe = regexp.MustCompile(`(?m)^([A-Z0-9_]+)\s*=\s*"(dms\.[a-z0-9_.]+\.v[0-9]+)"`)
+
+func harvestPythonManifest(t *testing.T) []string {
+	t.Helper()
+	root := findRepoRootFromWD(t)
+	path := filepath.Join(root, "services", "intelligence", "app", "events", "subjects.py")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read python subjects manifest: %v (the manifest is the "+
+			"single source of truth for intelligence-emitted subjects; "+
+			"if it moved, update this path)", err)
+	}
+	seen := map[string]bool{}
+	for _, m := range pyManifestRe.FindAllStringSubmatch(string(data), -1) {
+		seen[m[2]] = true
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	if len(out) < 20 {
+		t.Fatalf("python manifest harvest found only %d subjects (%v) — parser or manifest broken", len(out), out)
+	}
+	return out
+}
+
+// TestSubjectCoverage_PythonManifestBound gates the manifest itself:
+// declaring a new subject in app/events/subjects.py without binding it
+// in DefaultStreams AND listing it in PublishedSubjects fails the build.
+// Together with the intelligence-side AST lint (which forbids inline
+// subject literals in app/tasks/), this makes "Python task emits an
+// unbound subject" unshippable — the exact escape path of the
+// shared-outbox jam (STATE 2026-07-03 §C).
+func TestSubjectCoverage_PythonManifestBound(t *testing.T) {
+	manifest := harvestPythonManifest(t)
+	if missing := CheckCoverage(manifest, DefaultStreams); len(missing) > 0 {
+		t.Fatalf(
+			"python manifest subjects not covered by any stream in "+
+				"DefaultStreams — an outbox row carrying one of these would "+
+				"wedge the shared drain in prod. Bind each in "+
+				"pkg/events/publisher.go:\n  %s",
+			strings.Join(missing, "\n  "),
+		)
+	}
+	listed := map[string]bool{}
+	for _, s := range PublishedSubjects {
+		listed[s] = true
+	}
+	var missing []string
+	for _, s := range manifest {
+		if !listed[s] {
+			missing = append(missing, s)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf(
+			"python manifest subjects missing from PublishedSubjects "+
+				"(add them so AssertLiveCoverage defends them at boot):\n  %s",
+			strings.Join(missing, "\n  "),
+		)
+	}
+}
+
 // TestSubjectCoverage_PythonSubjectsHaveStreams is the wedge-preventer:
 // any Python-referenced subject with no stream binding fails the build,
 // because an outbox row carrying it would halt the shared drain in prod.

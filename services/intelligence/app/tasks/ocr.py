@@ -39,6 +39,7 @@ from app.metrics import (
 )
 from app.models.ocr_model import paddle_ocr_page, surya_ocr_page, trocr_ocr_page
 from app.worker import celery_app
+from app.events.subjects import OCR_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +103,6 @@ OCR_MIMES = {
     "image/webp", "image/gif", "image/bmp",
 }
 
-OCR_COMPLETED_SUBJECT = "dms.version.ocr_completed.v1"
 
 # Cap the full_text payload to 10 MiB so a single pathological PDF cannot
 # blow up the NATS message or the downstream search index doc.

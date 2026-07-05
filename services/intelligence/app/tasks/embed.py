@@ -46,10 +46,10 @@ from app.metrics import (
 )
 from app.models.embedder import embed
 from app.worker import celery_app
+from app.events.subjects import EMBED_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-EMBED_COMPLETED_SUBJECT = "dms.embed.completed.v1"
 CONSUMER = "embed"
 
 # Per spec: 32 embeddings per batch. Concurrency cap 4 is a no-op for

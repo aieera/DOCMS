@@ -11,6 +11,7 @@ import litellm
 import redis
 
 from app.config import settings
+from app.events.subjects import BILLING_LLM_USAGE_SUBJECT
 
 log = logging.getLogger(__name__)
 
@@ -261,7 +262,7 @@ def _emit_billing_usage(
         "specversion": "1.0",
         "id": str(_uuid.uuid4()),
         "source": "dms.intelligence",
-        "type": "dms.billing.llm.usage.v1",
+        "type": BILLING_LLM_USAGE_SUBJECT,
         "subject": f"tenant/{tenant_id}",
         "time": datetime.now(timezone.utc).isoformat(),
         "datacontenttype": "application/json",
@@ -279,7 +280,7 @@ def _emit_billing_usage(
     }
     try:
         from app.events.publisher import publish_cloudevent
-        asyncio.run(publish_cloudevent("dms.billing.llm.usage.v1", envelope))
+        asyncio.run(publish_cloudevent(BILLING_LLM_USAGE_SUBJECT, envelope))
     except Exception as e:  # noqa: BLE001 — explicitly fire-and-forget
         log.warning("billing.llm.usage publish failed: %s", e)
 
