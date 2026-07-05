@@ -49,46 +49,64 @@ type SavedSearchAlertLoaded struct {
 	Subscribers     []SavedSearchAlertSubscriber `json:"subscribers"`
 }
 
-// LoadSavedSearchAlert fetches the saved-search row + the subscriber
-// list in one round-trip. The "owner is implicitly subscribed"
-// semantic is applied here so the workflow body stays simple.
-func (a *Activities) LoadSavedSearchAlert(ctx context.Context, savedSearchID string) (*SavedSearchAlertLoaded, error) {
-	out := &SavedSearchAlertLoaded{}
-	var (
-		filtersJSON   []byte
-		lastMatchJSON []byte
-		notify        bool
-	)
-	row := a.Pool.QueryRow(ctx, `
-		SELECT tenant_id::text, user_id::text, name, query,
-		       filters, notify,
-		       COALESCE(last_match_doc_ids, '[]'::jsonb)
-		  FROM saved_searches
-		 WHERE id = $1
-	`, savedSearchID)
-	if err := row.Scan(&out.TenantID, &out.OwnerUserID, &out.Name, &out.Query,
-		&filtersJSON, &notify, &lastMatchJSON); err != nil {
-		return nil, fmt.Errorf("load saved search %s: %w", savedSearchID, err)
-	}
-	out.NotifyEnabled = notify
-	_ = json.Unmarshal(filtersJSON, &out.Filters)
-	_ = json.Unmarshal(lastMatchJSON, &out.LastMatchDocIDs)
+// LoadSavedSearchAlertInput identifies the alert to load. TenantID is
+// REQUIRED: the tables are FORCE RLS, so the read must run under the
+// tenant's app.current_tenant (Wave A.1.a, issue #70 — the raw-pool
+// version of this read returned no rows in prod and alerts never
+// fired). Tenant rides in the Temporal schedule args, so the workflow
+// always has it before the first DB touch.
+type LoadSavedSearchAlertInput struct {
+	SavedSearchID string `json:"saved_search_id"`
+	TenantID      string `json:"tenant_id"`
+}
 
-	rows, err := a.Pool.Query(ctx, `
-		SELECT user_id::text, channels
-		  FROM saved_search_subscribers
-		 WHERE saved_search_id = $1
-	`, savedSearchID)
-	if err != nil {
-		return nil, fmt.Errorf("load subscribers: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var s SavedSearchAlertSubscriber
-		if err := rows.Scan(&s.UserID, &s.Channels); err != nil {
-			return nil, err
+// LoadSavedSearchAlert fetches the saved-search row + the subscriber
+// list in one tenant-scoped transaction. The "owner is implicitly
+// subscribed" semantic is applied here so the workflow body stays
+// simple.
+func (a *Activities) LoadSavedSearchAlert(ctx context.Context, in LoadSavedSearchAlertInput) (*SavedSearchAlertLoaded, error) {
+	out := &SavedSearchAlertLoaded{}
+	var notify bool
+	err := a.runTenant(ctx, in.TenantID, func(tx pgx.Tx) error {
+		var (
+			filtersJSON   []byte
+			lastMatchJSON []byte
+		)
+		row := tx.QueryRow(ctx, `
+			SELECT tenant_id::text, user_id::text, name, query,
+			       filters, notify,
+			       COALESCE(last_match_doc_ids, '[]'::jsonb)
+			  FROM saved_searches
+			 WHERE id = $1
+		`, in.SavedSearchID)
+		if err := row.Scan(&out.TenantID, &out.OwnerUserID, &out.Name, &out.Query,
+			&filtersJSON, &notify, &lastMatchJSON); err != nil {
+			return fmt.Errorf("load saved search %s: %w", in.SavedSearchID, err)
 		}
-		out.Subscribers = append(out.Subscribers, s)
+		out.NotifyEnabled = notify
+		_ = json.Unmarshal(filtersJSON, &out.Filters)
+		_ = json.Unmarshal(lastMatchJSON, &out.LastMatchDocIDs)
+
+		rows, err := tx.Query(ctx, `
+			SELECT user_id::text, channels
+			  FROM saved_search_subscribers
+			 WHERE saved_search_id = $1
+		`, in.SavedSearchID)
+		if err != nil {
+			return fmt.Errorf("load subscribers: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s SavedSearchAlertSubscriber
+			if err := rows.Scan(&s.UserID, &s.Channels); err != nil {
+				return err
+			}
+			out.Subscribers = append(out.Subscribers, s)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
 	// Owner is implicitly subscribed when alert is enabled. Add to
 	// the list IFF not already explicit. Default channels: in_app.
@@ -244,25 +262,29 @@ func (a *Activities) EmitSavedSearchMatch(ctx context.Context, in EmitMatchInput
 	})
 }
 
-// UpdateCursorInput drives UpdateSavedSearchAlertCursor.
+// UpdateCursorInput drives UpdateSavedSearchAlertCursor. TenantID is
+// required — the write runs under the tenant's RLS context (issue #70).
 type UpdateCursorInput struct {
 	SavedSearchID   string   `json:"saved_search_id"`
+	TenantID        string   `json:"tenant_id"`
 	LastMatchDocIDs []string `json:"last_match_doc_ids"`
 }
 
 // UpdateSavedSearchAlertCursor writes last_match_doc_ids + last_run_at
-// at the end of each tick.
+// at the end of each tick, tenant-scoped.
 func (a *Activities) UpdateSavedSearchAlertCursor(ctx context.Context, in UpdateCursorInput) error {
 	b, err := json.Marshal(in.LastMatchDocIDs)
 	if err != nil {
 		return err
 	}
-	_, err = a.Pool.Exec(ctx,
-		`UPDATE saved_searches
-		    SET last_match_doc_ids = $2,
-		        last_run_at        = now()
-		  WHERE id = $1`, in.SavedSearchID, b)
-	return err
+	return a.runTenant(ctx, in.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE saved_searches
+			    SET last_match_doc_ids = $2,
+			        last_run_at        = now()
+			  WHERE id = $1`, in.SavedSearchID, b)
+		return err
+	})
 }
 
 // joinAlertCSV is a local helper — comma-joined string for the

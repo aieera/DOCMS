@@ -62,7 +62,10 @@ func SavedSearchAlertWorkflow(ctx workflow.Context, in SavedSearchAlertInput) (*
 	// activity at dispatch time from the worker's registry).
 	var loaded activities.SavedSearchAlertLoaded
 	if err := workflow.ExecuteActivity(ctx,
-		"LoadSavedSearchAlert", in.SavedSearchID).Get(ctx, &loaded); err != nil {
+		"LoadSavedSearchAlert", activities.LoadSavedSearchAlertInput{
+			SavedSearchID: in.SavedSearchID,
+			TenantID:      in.TenantID,
+		}).Get(ctx, &loaded); err != nil {
 		return nil, err
 	}
 	if !loaded.NotifyEnabled {
@@ -118,6 +121,7 @@ func SavedSearchAlertWorkflow(ctx workflow.Context, in SavedSearchAlertInput) (*
 		"UpdateSavedSearchAlertCursor",
 		activities.UpdateCursorInput{
 			SavedSearchID:   in.SavedSearchID,
+			TenantID:        in.TenantID,
 			LastMatchDocIDs: matched,
 		}).Get(ctx, nil); err != nil {
 		return nil, err
