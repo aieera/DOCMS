@@ -42,17 +42,22 @@ package repository_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/pkg/testutil"
+	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
+	"github.com/aieera/sedoc/services/connector/internal/webhook"
 )
 
 func TestProdPosture_ConnectorRepo(t *testing.T) {
@@ -75,7 +80,8 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 	// part: they are exactly what prod enforces against dms_app.
 	_, err := db.Super.Exec(ctx, `
 		CREATE TABLE organizations (
-			id UUID PRIMARY KEY
+			id         UUID PRIMARY KEY,
+			deleted_at TIMESTAMPTZ
 		);
 		CREATE TABLE users (
 			tenant_id UUID NOT NULL REFERENCES organizations(id),
@@ -161,7 +167,8 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 		-- Grants dms_app would have from migration 000065 / init-db.sql;
 		-- NewProdPostureDB's blanket grant ran before these tables existed.
 		GRANT SELECT, INSERT, UPDATE, DELETE ON
-			webhook_subscriptions, webhook_deliveries, connector_configs
+			webhook_subscriptions, webhook_deliveries, connector_configs,
+			users, organizations
 			TO dms_app;
 	`)
 	require.NoError(t, err, "base connector tables (schema of record)")
@@ -178,6 +185,7 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 	tenant := uuid.Must(uuid.NewV7())
 	webhookID := uuid.Must(uuid.NewV7())
 	deliveryID := uuid.Must(uuid.NewV7())
+	seedUser := uuid.Must(uuid.NewV7())
 
 	// Org row is out-of-band ops seeding (superuser), like prod.
 	_, err = db.Super.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, tenant)
@@ -185,10 +193,14 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 
 	require.NoError(t, database.WithTenantTx(ctx, db.App, tenant, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO webhook_subscriptions (id, tenant_id, url, secret, events, active, created_at)
+			INSERT INTO users (tenant_id, id) VALUES ($1, $2)`, tenant, seedUser); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO webhook_subscriptions (id, tenant_id, url, secret, events, active, created_by, created_at)
 			VALUES ($1, $2, 'https://example.com/hook', 'hmac-secret',
-			        '["dms.document.created.v1"]'::jsonb, true, now())`,
-			webhookID, tenant); err != nil {
+			        '["dms.document.created.v1"]'::jsonb, true, $3, now())`,
+			webhookID, tenant, seedUser); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -256,4 +268,99 @@ func TestProdPosture_ConnectorRepo(t *testing.T) {
 			"(RLS fail-closed: background scan runs without tenant context)") {
 		assert.Equal(t, deliveryID.String(), pending[0].ID)
 	}
+
+	// ---- Provider token round-trip (OAuth-token loads, issue #71) -----
+	sealedTokens := []byte("sealed-oauth-token-bytes")
+	require.NoError(t, repo.UpdateConnectorTokens(ctx, tenant.String(), "sap", sealedTokens),
+		"token write must succeed under NOBYPASSRLS")
+	cc, err = repo.GetConnector(ctx, tenant.String(), "sap")
+	require.NoError(t, err)
+	require.NotNil(t, cc)
+	require.Equal(t, sealedTokens, cc.OAuthTokensEncrypted,
+		"OAuth tokens must round-trip through the tenant-scoped repo")
+	require.Equal(t, "authorized", cc.SyncStatus)
+
+	// ---- Real webhook delivery under NOBYPASSRLS (DoD) ---------------
+	// A webhook configured by tenant A must actually DELIVER: the
+	// worker's per-tenant pending scan finds the row, fetches the
+	// subscription, POSTs with HMAC headers, and marks it delivered.
+	received := make(chan *http.Request, 4)
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clone := r.Clone(context.Background())
+		received <- clone
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(stub.Close)
+
+	liveHookID := uuid.Must(uuid.NewV7())
+	require.NoError(t, repo.CreateWebhook(ctx, &model.WebhookSubscription{
+		ID: liveHookID.String(), TenantID: tenant.String(), URL: stub.URL,
+		Secret: "delivery-secret", Events: []string{"dms.document.created.v1"},
+		Active: true, CreatedBy: seedUser.String(), CreatedAt: time.Now().UTC(),
+	}))
+	liveDeliveryID := uuid.Must(uuid.NewV7())
+	require.NoError(t, repo.InsertDelivery(ctx, &model.WebhookDelivery{
+		ID: liveDeliveryID.String(), SubscriptionID: liveHookID.String(),
+		TenantID: tenant.String(), EventType: "dms.document.created.v1",
+		Payload: []byte(`{"hello":"tenant-a"}`), CreatedAt: time.Now().UTC(),
+	}))
+
+	// Deactivate the earlier example.com webhook first: its pending
+	// delivery dead-letters immediately (inactive subscription) instead
+	// of making a real outbound HTTP call from the test.
+	require.NoError(t, database.WithTenantTx(ctx, db.App, tenant, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE webhook_subscriptions SET active = false WHERE tenant_id = $1 AND id = $2`,
+			tenant, webhookID)
+		return err
+	}))
+
+	worker := webhook.NewDeliveryWorker(repo, zerolog.Nop())
+	wctx, wcancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); worker.Start(wctx) }()
+	worker.Kick()
+
+	select {
+	case req := <-received:
+		require.Equal(t, "dms.document.created.v1", req.Header.Get("X-DMS-Event"))
+		require.NotEmpty(t, req.Header.Get("X-DMS-Signature"),
+			"delivery must be HMAC-signed")
+	case <-time.After(20 * time.Second):
+		t.Fatal("webhook was never delivered under NOBYPASSRLS — the delivery pipeline is still fail-closed")
+	}
+
+	// The delivery row must be marked delivered, tenant-scoped — checked
+	// while the worker is still running (the status write happens after
+	// the HTTP call returns).
+	require.Eventually(t, func() bool {
+		d, err := repo.GetDelivery(ctx, tenant.String(), liveDeliveryID.String())
+		return err == nil && d != nil && d.DeliveredAt != nil
+	}, 15*time.Second, 250*time.Millisecond,
+		"UpdateDelivery must persist the delivered status under NOBYPASSRLS")
+
+	wcancel()
+	<-done
+
+	// ---- Cross-tenant isolation (DoD) ---------------------------------
+	// Tenant B: A's webhook is invisible — list, get, and no deliveries.
+	tenantB := uuid.Must(uuid.NewV7())
+	_, err = db.Super.Exec(ctx, `INSERT INTO organizations (id) VALUES ($1)`, tenantB)
+	require.NoError(t, err)
+
+	bHooks, err := repo.ListWebhooks(ctx, tenantB.String())
+	require.NoError(t, err)
+	require.Empty(t, bHooks, "tenant B must not see tenant A's webhooks")
+
+	ghost, err := repo.GetWebhook(ctx, tenantB.String(), liveHookID.String())
+	require.NoError(t, err)
+	require.Nil(t, ghost, "tenant B must not fetch tenant A's webhook by id")
+
+	bCC, err := repo.GetConnector(ctx, tenantB.String(), "sap")
+	require.NoError(t, err)
+	require.Nil(t, bCC, "tenant B must not see tenant A's connector config")
+
+	bDeliveries, err := repo.ListDeliveries(ctx, tenantB.String(), liveHookID.String(), 10)
+	require.NoError(t, err)
+	require.Empty(t, bDeliveries, "tenant B must not see tenant A's deliveries")
 }
