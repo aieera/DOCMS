@@ -138,6 +138,11 @@ func applyServiceTo(t *testing.T, dsn, service string, version uint) error {
 // the fixing PR removes the entry — a listed chain that starts passing
 // fails this test as a stale entry.
 var knownCoupledChains = map[string]string{
+	// auth's migration (PR #93, issue #75) adds SECURITY DEFINER lookup
+	// FUNCTIONS over document-owned api_keys/sessions/users; they can't be
+	// created before those tables exist, so the auth chain can't apply
+	// standalone — coupled BY DESIGN, not a defect (no tracking issue).
+	"auth":         "SECURITY DEFINER lookups over document-owned api_keys/sessions/users (by design, #75)",
 	"audit":        "https://github.com/aieera/DOCMS/issues/80 (ALTERs document-owned audit_events)",
 	"billing":      "https://github.com/aieera/DOCMS/issues/81 (reshapes document-owned subscriptions_billing/usage_meters)",
 	"intelligence": "https://github.com/aieera/DOCMS/issues/82 (FK to document-owned organizations)",
