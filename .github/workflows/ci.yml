@@ -338,6 +338,8 @@ jobs:
         run: bash scripts/check-no-background-in-handlers.sh
       - name: Outbox-only publishing (Wave 6 Prompt 6.5)
         run: bash scripts/check-outbox-only-publishing.sh
+      - name: No RLS bypass in services (Wave A.1, issues #75/#76)
+        run: bash scripts/check-no-rls-bypass.sh
 
   security-semgrep:
     name: Semgrep SAST

@@ -2,25 +2,25 @@
 //
 // The Outlook add-in obtains an Entra ID token via
 // OfficeRuntime.auth.getAccessToken and posts it here. We:
-//   1. Call Graph /me with the bearer to verify the token + read
-//      the authenticated user's primary email.
-//   2. Look up SeDoc users by that email. If exactly one match,
-//      issue a session and return its plaintext token. If >1, surface
-//      a 409 with the candidate list so the add-in can prompt.
-//   3. If zero matches, 404. We DO NOT auto-provision — that would
-//      bypass the tenant-admin invite flow + the SSO mapping that
-//      ADR 0061 + 0062 already provide.
+//  1. Call Graph /me with the bearer to verify the token + read
+//     the authenticated user's primary email.
+//  2. Look up SeDoc users by that email. If exactly one match,
+//     issue a session and return its plaintext token. If >1, surface
+//     a 409 with the candidate list so the add-in can prompt.
+//  3. If zero matches, 404. We DO NOT auto-provision — that would
+//     bypass the tenant-admin invite flow + the SSO mapping that
+//     ADR 0061 + 0062 already provide.
 //
 // Why call Graph instead of validating the JWT?
-//   * The auth service already speaks HTTPS to outside the cluster
+//   - The auth service already speaks HTTPS to outside the cluster
 //     for SAML/OIDC; adding Graph is a small marginal cost.
-//   * Validating the Entra JWT means keeping JWKS up to date,
+//   - Validating the Entra JWT means keeping JWKS up to date,
 //     handling key rollover, and minting a JWT validator per Entra
 //     tenant (since the multi-tenant `common` audience changes per
 //     directory). The Graph round-trip dodges all of that —
 //     Microsoft validates the token for us as a side-effect of
 //     the /me read.
-//   * Cost: one 100-300 ms round-trip on session establishment,
+//   - Cost: one 100-300 ms round-trip on session establishment,
 //     which the add-in caches for the lifetime of the taskpane.
 package service
 
@@ -165,31 +165,25 @@ func (s *Service) ExchangeM365Token(ctx context.Context, msAccessToken, ip, user
 	}, nil
 }
 
-// findUsersByEmailAcrossTenants scans the users table for matches.
-// `preferredTenantID`, when non-empty, narrows the search.
+// findUsersByEmailAcrossTenants resolves an email to its tenant(s) for
+// the m365/Outlook exchange. `preferredTenantID`, when non-empty,
+// narrows the search.
 //
-// We deliberately don't widen UserRepository with a cross-tenant
-// method — its other calls are careful to demand tenant_id. This
-// is a one-off privileged read; we run it via the pool with no
-// tenant GUC set. RLS today uses the current_setting('app.current_tenant')
-// pattern which simply yields zero rows when unset, but the auth
-// service uses a `BYPASSRLS` role specifically for cross-tenant
-// operations like this one (see pkg/database session setup).
+// This is a legitimately cross-tenant PRE-TENANT read (an email may
+// exist in multiple tenants → 409 disambiguation). users is FORCE RLS,
+// so under the dms_app (NOBYPASSRLS) role a raw read yields zero rows
+// and every exchange 404s. Route through the SECURITY DEFINER
+// exact-match function (auth migration 000001, issue #75) — the earlier
+// "auth uses a BYPASSRLS role" comment was wrong; the prod app role is
+// NOBYPASSRLS and this function is the sanctioned, minimal bypass.
 func (s *Service) findUsersByEmailAcrossTenants(ctx context.Context, email, preferredTenantID string) ([]M365TenantCandidate, error) {
-	q := `
-		SELECT u.tenant_id::text, o.slug, o.name, u.id::text
-		  FROM users u
-		  JOIN organizations o ON o.id = u.tenant_id
-		 WHERE lower(u.email) = lower($1)
-		   AND u.deleted_at IS NULL
-		   AND o.deleted_at IS NULL`
-	args := []any{email}
+	var pref any // NULL narrows nothing
 	if preferredTenantID != "" {
-		q += " AND u.tenant_id = $2"
-		args = append(args, preferredTenantID)
+		pref = preferredTenantID
 	}
-	q += " ORDER BY o.created_at"
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.pool.Query(ctx,
+		`SELECT tenant_id, tenant_slug, tenant_name, user_id
+		 FROM auth_lookup_users_by_email($1, $2)`, email, pref)
 	if err != nil {
 		return nil, err
 	}
