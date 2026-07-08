@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/storage/internal/model"
 )
@@ -92,26 +93,31 @@ func (r *contentBlobRepo) DecrementRefCount(ctx context.Context, tx pgx.Tx, tena
 	return nil
 }
 
-// ListZeroRefOlderThan returns blobs with reference_count=0 created before
-// cutoff, across all tenants. The 24h grace window is the caller's
-// responsibility — pass now.Add(-24*time.Hour). Runs `SET LOCAL
-// row_security = off` so the reaper sees rows regardless of RLS tenant
-// scope; requires the DB role to have BYPASSRLS (or the NOBYPASSRLS role
-// to own the table's policies such that row_security=off takes effect).
+// ListZeroRefOlderThan returns up to `limit` blobs with reference_count=0
+// created before cutoff (24h grace is the caller's responsibility — pass
+// now.Add(-24*time.Hour)). Every content_blobs row carries a tenant_id
+// (there are no ownerless blobs), so this is legitimately per-tenant
+// work, not a cross-tenant scan: it enumerates tenants from the
+// organizations registry and reads each tenant's zero-ref blobs under
+// that tenant's app.current_tenant (Wave A.1, issue #76). The former
+// `SET LOCAL row_security = off` ERRORED under the prod dms_app
+// (NOBYPASSRLS) role — the reaper died every cycle. No bypass now;
+// index idx_content_blobs_refcount_zero(tenant_id) WHERE reference_count=0
+// supports the per-tenant predicate.
 func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time, limit int) ([]*model.ContentBlob, error) {
-	var out []*model.ContentBlob
-	err := pgx.BeginTxFunc(ctx, pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, "SET LOCAL row_security = off"); err != nil {
-			return err
+	out := make([]*model.ContentBlob, 0, limit)
+	err := database.ForEachTenant(ctx, pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		if len(out) >= limit {
+			return nil // batch already full; remaining tenants are no-ops
 		}
 		rows, err := tx.Query(ctx,
-			selectContentBlobSQL+` WHERE reference_count = 0 AND created_at < $1 ORDER BY created_at ASC LIMIT $2`,
-			cutoff, limit)
+			selectContentBlobSQL+` WHERE tenant_id = $1 AND reference_count = 0 AND created_at < $2
+			                       ORDER BY created_at ASC LIMIT $3`,
+			tenantID, cutoff, limit-len(out))
 		if err != nil {
 			return mapPgError(err)
 		}
 		defer rows.Close()
-		out = make([]*model.ContentBlob, 0, limit)
 		for rows.Next() {
 			b, err := scanContentBlob(rows)
 			if err != nil {
@@ -121,7 +127,10 @@ func (r *contentBlobRepo) ListZeroRefOlderThan(ctx context.Context, pool *pgxpoo
 		}
 		return rows.Err()
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateMigration rotates the storage location + envelope fields
@@ -177,10 +186,10 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanContentBlob(r rowScanner) (*model.ContentBlob, error) {
 	var (
-		b        model.ContentBlob
-		encDEK   []byte
-		nonce    []byte
-		created  time.Time
+		b       model.ContentBlob
+		encDEK  []byte
+		nonce   []byte
+		created time.Time
 	)
 	if err := r.Scan(
 		&b.ID, &b.TenantID, &b.SHA256Hash, &b.StorageRegion, &b.StorageBucket, &b.StorageKey,

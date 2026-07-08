@@ -152,9 +152,41 @@ func TestProdPosture_AuthPreTenantReads(t *testing.T) {
 		CREATE POLICY api_keys_tenant_isolation_insert ON api_keys
 		    FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
-		GRANT SELECT, INSERT, UPDATE, DELETE ON organizations, users, api_keys TO dms_app;
+		CREATE TABLE sessions (
+		    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		    tenant_id        UUID NOT NULL REFERENCES organizations(id),
+		    user_id          UUID NOT NULL,
+		    token_hash       TEXT NOT NULL UNIQUE,
+		    ip_address       INET,
+		    user_agent       TEXT,
+		    expires_at       TIMESTAMPTZ NOT NULL,
+		    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+		    revoked_at       TIMESTAMPTZ
+		);
+		ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE sessions FORCE  ROW LEVEL SECURITY;
+		CREATE POLICY sessions_tenant_isolation ON sessions
+		    USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+		CREATE POLICY sessions_tenant_isolation_insert ON sessions
+		    FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+		GRANT SELECT, INSERT, UPDATE, DELETE ON organizations, users, api_keys, sessions TO dms_app;
 	`)
 	require.NoError(t, err, "seed auth schema (verbatim from document 000001)")
+
+	// Run the REAL auth migration on top: it creates the dms_auth_lookup
+	// definer role + the three SECURITY DEFINER exact-match functions the
+	// fixed pre-tenant reads call. The tables above must exist first
+	// (check_function_bodies validates the function SQL at creation).
+	require.NoError(t,
+		database.RunServiceMigrations(db.SuperDSN, "../../migrations", "auth"),
+		"auth migration 000001 (pre-tenant lookup functions)")
+	// Re-grant: the migration created no tables, but re-issue to be safe
+	// alongside any objects it added.
+	_, err = db.Super.Exec(ctx,
+		`GRANT SELECT, INSERT, UPDATE, DELETE ON organizations, users, api_keys, sessions TO dms_app;`)
+	require.NoError(t, err)
 
 	tenantID := uuid.Must(uuid.NewV7())
 	userID := uuid.Must(uuid.NewV7())
@@ -208,27 +240,71 @@ func TestProdPosture_AuthPreTenantReads(t *testing.T) {
 		return nil
 	}))
 
-	// Drop idle connections so the pre-tenant read below runs on a fresh
+	// Seed a session for the fallback path — out-of-band, tenant-correct.
+	sessionID := uuid.Must(uuid.NewV7())
+	tokenHash := hex.EncodeToString(func() []byte { h := sha256.Sum256([]byte("session-token-prodposture")); return h[:] }())
+	require.NoError(t, database.WithTenantTx(ctx, db.App, tenantID, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+			INSERT INTO sessions (id, tenant_id, user_id, token_hash, expires_at)
+			VALUES ($1, $2, $3, $4, now() + interval '1 hour')`,
+			sessionID, tenantID, userID, tokenHash)
+		return e
+	}), "seed session")
+
+	// Drop idle connections so each pre-tenant read below runs on a fresh
 	// connection with app.current_tenant genuinely unset (NULL) — the
-	// state a prod middleware conn is in. Without this, the test would
-	// reuse the seeding connection, where the committed set_config leaves
-	// the GUC as '' and the policy errors with `invalid input syntax for
-	// type uuid: ""` (22P02) instead — a sibling manifestation of the
-	// same pre-tenant-read bug on recycled prod connections, but we pin
-	// the canonical fail-closed mode: zero rows -> not found.
+	// state a prod middleware conn is in. Without this, the test reuses
+	// the seeding connection, where the committed set_config leaves the
+	// GUC as '' and the FORCE-RLS policy errors `invalid input syntax for
+	// type uuid: ""` (22P02) — a sibling manifestation of the same bug;
+	// we pin the canonical fail-closed mode instead.
 	db.App.Reset()
 
-	// THE REPRO. Production middleware validates an API key BEFORE any
-	// tenant is known — Service.ValidateAPIKey (service/apikey.go:150)
-	// calls GetByHash on the raw pool with no tenant GUC. This asserts
-	// the correct post-fix behavior: the key is found. Under today's
-	// prod posture (dms_app NOBYPASSRLS + FORCE RLS on api_keys) the
-	// policy filters every row and this fails with not-found — the exact
-	// fail-closed mode that 404s all API-key auth in prod.
-	got, err := repo.GetByHash(ctx, db.App, keyHash)
-	require.NoError(t, err,
-		"pre-tenant GetByHash on the dms_app pool must find the key "+
-			"(prod bug: RLS fail-closed makes API-key auth 404 — issue #75)")
-	require.Equal(t, key.ID, got.ID)
-	require.Equal(t, tenantID, got.TenantID, "the row itself must yield the tenant for auth context")
+	sessRepo := repository.NewSessionRepo()
+
+	// Each read runs pre-tenant on the dms_app (NOBYPASSRLS) pool exactly
+	// as prod middleware does, then the SECURITY DEFINER function yields
+	// the row + its tenant. Before the fix each fails closed (not found).
+
+	t.Run("APIKeyAuth", func(t *testing.T) {
+		got, err := repo.GetByHash(ctx, db.App, keyHash)
+		require.NoError(t, err,
+			"pre-tenant GetByHash must find the key (RLS fail-closed 404s all API-key auth — #75)")
+		require.Equal(t, key.ID, got.ID)
+		require.Equal(t, tenantID, got.TenantID, "the row must yield the tenant for auth context")
+	})
+
+	t.Run("SessionCacheMissFallback", func(t *testing.T) {
+		got, err := sessRepo.GetByTokenHash(ctx, db.App, tokenHash)
+		require.NoError(t, err,
+			"pre-tenant GetByTokenHash must find the session (RLS fail-closed logs users out on Redis miss — #75)")
+		require.NotNil(t, got)
+		require.Equal(t, sessionID, got.ID)
+		require.Equal(t, tenantID, got.TenantID)
+	})
+
+	t.Run("M365EmailExchange", func(t *testing.T) {
+		// The m365 exchange resolves email→tenant via the same SECURITY
+		// DEFINER function the service method now calls
+		// (findUsersByEmailAcrossTenants → auth_lookup_users_by_email).
+		var gotTenant, gotUser string
+		err := db.App.QueryRow(ctx,
+			`SELECT tenant_id, user_id FROM auth_lookup_users_by_email($1, $2)`,
+			"posture@example.com", nil).Scan(&gotTenant, &gotUser)
+		require.NoError(t, err,
+			"pre-tenant email lookup must resolve (RLS fail-closed kills m365 exchange — #75)")
+		require.Equal(t, tenantID.String(), gotTenant)
+		require.Equal(t, userID.String(), gotUser)
+	})
+
+	t.Run("CrossTenantIsolation", func(t *testing.T) {
+		// A different tenant's context must not see this tenant's key via
+		// the in-tenant read path (the definer functions are exact-match
+		// on globally-unique columns; ordinary tenant-scoped reads still
+		// isolate). Confirm the FORCE-RLS policy still holds for non-lookup
+		// reads: a raw pool read with no tenant GUC sees nothing.
+		var n int
+		require.NoError(t, db.App.QueryRow(ctx, `SELECT count(*) FROM api_keys`).Scan(&n))
+		require.Zero(t, n, "ordinary (non-definer) reads must stay RLS fail-closed — no general bypass")
+	})
 }

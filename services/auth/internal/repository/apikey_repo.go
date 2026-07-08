@@ -42,13 +42,15 @@ func (r *apiKeyRepo) Create(ctx context.Context, tx pgx.Tx, k *model.APIKey) err
 }
 
 func (r *apiKeyRepo) GetByHash(ctx context.Context, pool *pgxpool.Pool, hash string) (*model.APIKey, error) {
-	row := pool.QueryRow(ctx, `
-		SELECT tenant_id, id, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid),
-		       name, key_hash, key_prefix, scopes,
-		       last_used_at, expires_at, created_at, revoked_at
-		FROM api_keys
-		WHERE key_hash = $1 AND revoked_at IS NULL
-	`, hash)
+	// PRE-TENANT lookup (the key_hash IS how the tenant is learned).
+	// api_keys is FORCE RLS, so a raw read fails closed under the dms_app
+	// NOBYPASSRLS role. Route through the SECURITY DEFINER exact-match
+	// function (auth migration 000001, issue #75): O(1), no general
+	// bypass — dms_app can only call this fixed function.
+	row := pool.QueryRow(ctx,
+		`SELECT tenant_id, id, user_id, name, key_hash, key_prefix, scopes,
+		        last_used_at, expires_at, created_at, revoked_at
+		 FROM auth_lookup_api_key_by_hash($1)`, hash)
 	return scanAPIKey(row)
 }
 

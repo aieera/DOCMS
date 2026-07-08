@@ -66,7 +66,8 @@ func TestProdPosture_StorageBlobReaper(t *testing.T) {
 	// columns the repo scans. organizations is reduced to the FK target.
 	_, err := db.Super.Exec(ctx, `
 		CREATE TABLE organizations (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			deleted_at TIMESTAMPTZ
 		);
 		CREATE TABLE content_blobs (
 			id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -96,6 +97,7 @@ func TestProdPosture_StorageBlobReaper(t *testing.T) {
 		CREATE POLICY content_blobs_tenant_isolation_insert ON content_blobs
 			FOR INSERT WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid);
 		GRANT SELECT, INSERT, UPDATE, DELETE ON content_blobs TO dms_app;
+		GRANT SELECT ON organizations TO dms_app;
 	`)
 	require.NoError(t, err, "content_blobs fixture DDL")
 
