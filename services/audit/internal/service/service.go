@@ -222,18 +222,61 @@ func (s *Service) IngestEvent(ctx context.Context, subject string, raw []byte) e
 		CreatedAt:     time.Now().UTC(),
 	}
 
-	// Hash chain: acquire per-tenant lock, fetch previous hash, compute new.
-	unlock := s.lockTenant(ctx, tenantID)
+	return s.appendChained(ctx, event)
+}
+
+// appendChained links `event` into its tenant's hash chain and persists
+// it: acquire the per-tenant lock, read the previous hash, compute this
+// event's hash, insert. The shared primitive behind IngestEvent and
+// RecordAccessDenied so every appended row — including denials — is
+// hash-chained identically. event.TenantID must be set.
+func (s *Service) appendChained(ctx context.Context, event *model.AuditEvent) error {
+	// Truncate to microseconds BEFORE hashing: Postgres timestamptz has
+	// microsecond resolution, so a nanosecond-precision now() would hash
+	// one value at ingest and store/return a truncated one — making
+	// VerifyIntegrity's re-derived hash mismatch on every event. This was
+	// masked while the raw-pool reads failed closed (verify looped over
+	// zero rows and passed vacuously); the RLS read fix unmasks it, so
+	// the two must land together (issue #74).
+	event.CreatedAt = event.CreatedAt.Truncate(time.Microsecond)
+
+	unlock := s.lockTenant(ctx, event.TenantID)
 	defer unlock()
 
-	prevHash, err := s.repo.GetLastHash(ctx, tenantID)
+	prevHash, err := s.repo.GetLastHash(ctx, event.TenantID)
 	if err != nil {
 		return fmt.Errorf("get last hash: %w", err)
 	}
 	event.PreviousHash = prevHash
-	event.EventHash = computeHash(prevHash, tenantID, event.Actor, event.Action, event.ResourceID, event.CreatedAt)
+	event.EventHash = computeHash(prevHash, event.TenantID, event.Actor, event.Action, event.ResourceID, event.CreatedAt)
 
 	return s.repo.Insert(ctx, event)
+}
+
+// RecordAccessDenied appends a self-audit event when an RBAC gate denies
+// access to an audit endpoint (issue #74 — "audit the denial itself").
+// The audit trail records every attempt to read or redact it. Recorded
+// through the same hash-chain primitive as any other event, so a denial
+// is tamper-evident too. Best-effort at the call site: a failure to log
+// the denial must not change the 403 the caller already returns.
+func (s *Service) RecordAccessDenied(ctx context.Context, tenantID, actor, actorName, action, endpoint, role string) error {
+	if tenantID == "" {
+		return fmt.Errorf("record access denied: empty tenant")
+	}
+	details, _ := json.Marshal(map[string]string{
+		"endpoint":      endpoint,
+		"actual_role":   role,
+		"required_role": "admin|owner",
+	})
+	return s.appendChained(ctx, &model.AuditEvent{
+		ID:        newID(),
+		TenantID:  tenantID,
+		Actor:     actor,
+		ActorName: actorName,
+		Action:    "audit." + action + ".denied",
+		Details:   details,
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 // List returns paginated audit events.
