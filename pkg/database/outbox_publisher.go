@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
@@ -20,6 +21,14 @@ type PublisherConfig struct {
 	RetainPublished time.Duration
 	CleanupInterval time.Duration
 	PublishTimeout  time.Duration
+	// MaxAttempts is how many times a single row is retried before it is
+	// dead-lettered to outbox_dlq. Default 5.
+	MaxAttempts int
+	// BaseBackoff is the first retry delay; each subsequent attempt waits
+	// min(BaseBackoff*2^(attempts-1), MaxBackoff). Default 2s / 5m. Tests
+	// set BaseBackoff=0 to retry immediately.
+	BaseBackoff time.Duration
+	MaxBackoff  time.Duration
 }
 
 // OutboxPublisher is a background goroutine that polls the `outbox` table,
@@ -71,6 +80,14 @@ func NewOutboxPublisherWithConfig(
 	}
 	if cfg.PublishTimeout <= 0 {
 		cfg.PublishTimeout = 5 * time.Second
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = 5
+	}
+	// BaseBackoff==0 is a legitimate test setting (retry immediately), so
+	// only default MaxBackoff.
+	if cfg.MaxBackoff <= 0 {
+		cfg.MaxBackoff = 5 * time.Minute
 	}
 	return &OutboxPublisher{
 		pool:        pool,
@@ -125,10 +142,17 @@ func (p *OutboxPublisher) Stop() {
 	<-p.done
 }
 
-// drainBatch does one poll cycle: lock a batch of unpublished rows with
-// SKIP LOCKED, publish each in order, and mark the successfully-delivered
-// rows published. Partial failure stops the batch early; unpublished rows
-// are retried on the next tick, preserving per-aggregate ordering.
+// drainBatch does one poll cycle: lock a batch of DUE unpublished rows
+// with SKIP LOCKED and publish each. Crucially it does NOT stop on the
+// first failure — a single unbound-subject row must not wedge the whole
+// shared outbox (Wave 0.2). Per row:
+//   - success            → mark published.
+//   - failure, attempts+1 < MaxAttempts → bump attempts + last_error and
+//     defer via next_attempt_at = now + backoff(attempts); a later row
+//     still publishes this same cycle.
+//   - failure, attempts+1 >= MaxAttempts → move the row to outbox_dlq
+//     with the error and remove it from the active outbox so the drain
+//     advances forever.
 func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
@@ -136,19 +160,16 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// BUG: pgx in binary mode can't decode `inet` (OID 869) into a
-	// *string scan target. Any outbox row with ip_address IS NOT NULL
-	// crash-loops the drain batch and blocks every subsequent event
-	// behind it (the FOR UPDATE SKIP LOCKED never advances past the
-	// failing row because the scan error rolls back the tx). Cast
-	// to text at the SELECT site so the existing *string scan
-	// continues to work; the text form of inet (e.g. "172.19.0.1")
-	// is exactly what the outbox event consumer wants anyway.
+	// ip_address::text — pgx binary mode can't decode inet into *string.
+	// WHERE also excludes backoff-deferred rows (next_attempt_at in the
+	// future) so a failing row yields the lock to the rows behind it.
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
-		       payload, created_at, actor_id, actor_name, ip_address::text, user_agent
+		       payload, created_at, actor_id, actor_name, ip_address::text, user_agent,
+		       attempts
 		FROM outbox
 		WHERE NOT published
+		  AND (next_attempt_at IS NULL OR next_attempt_at <= now())
 		ORDER BY created_at, id
 		LIMIT $1
 		FOR UPDATE SKIP LOCKED
@@ -157,56 +178,74 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		return fmt.Errorf("select unpublished: %w", err)
 	}
 
-	var batch []OutboxEvent
+	type row struct {
+		e        OutboxEvent
+		attempts int
+	}
+	var batch []row
 	for rows.Next() {
 		var (
-			e         OutboxEvent
+			r         row
 			actorID   *uuid.UUID
 			actorName *string
 			ipAddress *string
 			userAgent *string
 		)
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.EventType, &e.AggregateType,
-			&e.AggregateID, &e.Payload, &e.CreatedAt,
-			&actorID, &actorName, &ipAddress, &userAgent,
+			&r.e.ID, &r.e.TenantID, &r.e.EventType, &r.e.AggregateType,
+			&r.e.AggregateID, &r.e.Payload, &r.e.CreatedAt,
+			&actorID, &actorName, &ipAddress, &userAgent, &r.attempts,
 		); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan: %w", err)
 		}
-		e.ActorID = actorID
+		r.e.ActorID = actorID
 		if actorName != nil {
-			e.ActorName = *actorName
+			r.e.ActorName = *actorName
 		}
 		if ipAddress != nil {
-			e.IPAddress = *ipAddress
+			r.e.IPAddress = *ipAddress
 		}
 		if userAgent != nil {
-			e.UserAgent = *userAgent
+			r.e.UserAgent = *userAgent
 		}
-		batch = append(batch, e)
+		batch = append(batch, r)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("rows err: %w", err)
 	}
-	if len(batch) == 0 {
-		return nil
-	}
 
 	published := make([]uuid.UUID, 0, len(batch))
-	for _, e := range batch {
-		if err := p.publishOne(ctx, e); err != nil {
-			// Stop on first failure so later events don't jump the queue;
-			// next tick retries from this point.
-			p.log.Error().
-				Err(err).
-				Str("event_id", e.ID.String()).
-				Str("event_type", e.EventType).
-				Msg("nats publish failed; batch halted")
-			break
+	for _, r := range batch {
+		perr := p.publishOne(ctx, r.e)
+		if perr == nil {
+			published = append(published, r.e.ID)
+			continue
 		}
-		published = append(published, e.ID)
+		// A failure never halts the batch — the whole point of Wave 0.2.
+		outboxPublishFailures.WithLabelValues(p.serviceName, r.e.EventType).Inc()
+		attempts := r.attempts + 1
+		if attempts >= p.cfg.MaxAttempts {
+			if err := p.deadLetter(ctx, tx, r.e, attempts, perr.Error()); err != nil {
+				return fmt.Errorf("dead-letter %s: %w", r.e.ID, err)
+			}
+			outboxDLQTotal.WithLabelValues(p.serviceName, r.e.EventType).Inc()
+			p.log.Error().Err(perr).
+				Str("event_id", r.e.ID.String()).Str("event_type", r.e.EventType).
+				Int("attempts", attempts).Msg("outbox row dead-lettered after max attempts")
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE outbox
+			   SET attempts = $2, last_error = $3, next_attempt_at = now() + $4
+			 WHERE id = $1
+		`, r.e.ID, attempts, perr.Error(), p.backoff(attempts)); err != nil {
+			return fmt.Errorf("record retry %s: %w", r.e.ID, err)
+		}
+		p.log.Warn().Err(perr).
+			Str("event_id", r.e.ID.String()).Str("event_type", r.e.EventType).
+			Int("attempts", attempts).Msg("outbox publish failed; will retry")
 	}
 
 	if len(published) > 0 {
@@ -217,7 +256,80 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 			return fmt.Errorf("mark published: %w", err)
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	p.observe(ctx)
+	return nil
+}
+
+// deadLetter moves an exhausted row out of outbox into outbox_dlq (with
+// the last error) so the active drain never sees it again. Runs in the
+// drain tx so the move + removal are atomic.
+func (p *OutboxPublisher) deadLetter(ctx context.Context, tx pgx.Tx, e OutboxEvent, attempts int, errMsg string) error {
+	var actorID any
+	if e.ActorID != nil {
+		actorID = e.ActorID
+	}
+	nullIf := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO outbox_dlq (
+			id, tenant_id, event_type, aggregate_type, aggregate_id, payload,
+			created_at, actor_id, actor_name, ip_address, user_agent,
+			attempts, last_error)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::inet,$11,$12,$13)
+	`, e.ID, e.TenantID, e.EventType, e.AggregateType, e.AggregateID, e.Payload,
+		e.CreatedAt, actorID, nullIf(e.ActorName), e.IPAddress, nullIf(e.UserAgent),
+		attempts, errMsg); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `DELETE FROM outbox WHERE id = $1`, e.ID)
+	return err
+}
+
+// backoff returns the delay before the next attempt: BaseBackoff *
+// 2^(attempts-1), capped at MaxBackoff. BaseBackoff==0 → 0 (tests).
+func (p *OutboxPublisher) backoff(attempts int) time.Duration {
+	if p.cfg.BaseBackoff <= 0 {
+		return 0
+	}
+	d := p.cfg.BaseBackoff
+	for i := 1; i < attempts; i++ {
+		d *= 2
+		if d >= p.cfg.MaxBackoff {
+			return p.cfg.MaxBackoff
+		}
+	}
+	if d > p.cfg.MaxBackoff {
+		d = p.cfg.MaxBackoff
+	}
+	return d
+}
+
+// observe refreshes the DLQ-depth and drain-lag gauges. Best-effort:
+// a metrics-read failure must not fail the drain.
+func (p *OutboxPublisher) observe(ctx context.Context) {
+	var depth int64
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM outbox_dlq`).Scan(&depth); err == nil {
+		outboxDLQDepth.WithLabelValues(p.serviceName).Set(float64(depth))
+	}
+	var lag *float64
+	if err := p.pool.QueryRow(ctx, `
+		SELECT EXTRACT(EPOCH FROM (now() - min(created_at)))
+		FROM outbox
+		WHERE NOT published AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+	`).Scan(&lag); err == nil {
+		if lag == nil {
+			outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(0)
+		} else {
+			outboxDrainLagSeconds.WithLabelValues(p.serviceName).Set(*lag)
+		}
+	}
 }
 
 // publishOne wraps the row in a CloudEvents v1.0 envelope and publishes to

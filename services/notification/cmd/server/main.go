@@ -103,6 +103,11 @@ func main() {
 	if err := svc.StartConsumer(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
 	}
+	// Wave 0.2 — deliver role-targeted dms.notification.send.v1 events
+	// emitted by the Python intelligence tasks (compliance_scan etc.).
+	if err := svc.StartNotificationSendConsumer(ctx, js); err != nil {
+		log.Fatal(ctx).Err(err).Msg("start notification.send consumer")
+	}
 
 	// ADR 0086 — 1-minute sweep that flushes ripe digest rows.
 	// Cancels with the service lifecycle ctx; no separate Stop().
