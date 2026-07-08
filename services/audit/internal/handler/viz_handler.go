@@ -15,14 +15,14 @@ import (
 	"errors"
 	"net/http"
 	"time"
-
-	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func (h *Handler) documentAuditViz(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+	// Reading a document's audit aggregate exposes the same trail data
+	// as /audit/events (actor names, action counts), so it takes the
+	// same admin gate (issue #74).
+	tenantID, ok := h.requireAuditAdmin(w, r, "read")
+	if !ok {
 		return
 	}
 	docID := r.PathValue("document_id")
