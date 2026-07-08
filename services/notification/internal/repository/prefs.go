@@ -10,67 +10,75 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // ListMatrix returns every cell saved for (tenant, user). Empty slice
 // (not nil) when no rows — caller treats that as "use defaults".
 func (r *Repository) ListMatrix(ctx context.Context, tenantID, userID string) ([]model.PrefCell, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT tenant_id, user_id, channel, event_type, is_enabled, digest_enabled
-		FROM notification_preferences
-		WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	out := make([]model.PrefCell, 0)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT tenant_id, user_id, channel, event_type, is_enabled, digest_enabled
+			FROM notification_preferences
+			WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var c model.PrefCell
+			if err := rows.Scan(&c.TenantID, &c.UserID, &c.Channel, &c.EventType, &c.IsEnabled, &c.DigestEnabled); err != nil {
+				return err
+			}
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make([]model.PrefCell, 0)
-	for rows.Next() {
-		var c model.PrefCell
-		if err := rows.Scan(&c.TenantID, &c.UserID, &c.Channel, &c.EventType, &c.IsEnabled, &c.DigestEnabled); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // UpsertCell writes one matrix cell. Insert + ON CONFLICT keeps the
 // flat-prefs back-compat path untouched.
 func (r *Repository) UpsertCell(ctx context.Context, c model.PrefCell) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO notification_preferences (tenant_id, user_id, channel, event_type, is_enabled, digest_enabled)
-		VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (tenant_id, user_id, channel, event_type)
-		DO UPDATE SET is_enabled = EXCLUDED.is_enabled, digest_enabled = EXCLUDED.digest_enabled`,
-		c.TenantID, c.UserID, c.Channel, c.EventType, c.IsEnabled, c.DigestEnabled)
-	return err
+	return r.withTenant(ctx, c.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO notification_preferences (tenant_id, user_id, channel, event_type, is_enabled, digest_enabled)
+			VALUES ($1,$2,$3,$4,$5,$6)
+			ON CONFLICT (tenant_id, user_id, channel, event_type)
+			DO UPDATE SET is_enabled = EXCLUDED.is_enabled, digest_enabled = EXCLUDED.digest_enabled`,
+			c.TenantID, c.UserID, c.Channel, c.EventType, c.IsEnabled, c.DigestEnabled)
+		return err
+	})
 }
 
 // ReplaceMatrix bulk-writes all cells in one tx, removing any
 // previously-saved cells that aren't in the new set. Used by the
 // PUT /matrix endpoint.
 func (r *Repository) ReplaceMatrix(ctx context.Context, tenantID, userID string, cells []model.PrefCell) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM notification_preferences WHERE tenant_id = $1 AND user_id = $2`,
-		tenantID, userID); err != nil {
-		return err
-	}
-	for _, c := range cells {
-		c.TenantID, c.UserID = tenantID, userID
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO notification_preferences (tenant_id, user_id, channel, event_type, is_enabled, digest_enabled)
-			VALUES ($1,$2,$3,$4,$5,$6)`,
-			c.TenantID, c.UserID, c.Channel, c.EventType, c.IsEnabled, c.DigestEnabled); err != nil {
+	// The former bare pool.BeginTx never set app.current_tenant; the
+	// tenant tx IS the transaction now.
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM notification_preferences WHERE tenant_id = $1 AND user_id = $2`,
+			tenantID, userID); err != nil {
 			return err
 		}
-	}
-	return tx.Commit(ctx)
+		for _, c := range cells {
+			c.TenantID, c.UserID = tenantID, userID
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO notification_preferences (tenant_id, user_id, channel, event_type, is_enabled, digest_enabled)
+				VALUES ($1,$2,$3,$4,$5,$6)`,
+				c.TenantID, c.UserID, c.Channel, c.EventType, c.IsEnabled, c.DigestEnabled); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ----- Snoozes ----------------------------------------------------
@@ -82,12 +90,15 @@ func (r *Repository) CreateSnooze(ctx context.Context, s model.Snooze, duration 
 		return nil, errors.New("duration must be positive")
 	}
 	until := time.Now().UTC().Add(duration)
-	row := r.pool.QueryRow(ctx, `
-		INSERT INTO notification_snoozes (tenant_id, user_id, event_type, until_at, reason)
-		VALUES ($1,$2,$3,$4,NULLIF($5,''))
-		RETURNING id, until_at, created_at`,
-		s.TenantID, s.UserID, s.EventType, until, s.Reason)
-	if err := row.Scan(&s.ID, &s.UntilAt, &s.CreatedAt); err != nil {
+	err := r.withTenant(ctx, s.TenantID, func(tx pgx.Tx) error {
+		row := tx.QueryRow(ctx, `
+			INSERT INTO notification_snoozes (tenant_id, user_id, event_type, until_at, reason)
+			VALUES ($1,$2,$3,$4,NULLIF($5,''))
+			RETURNING id, until_at, created_at`,
+			s.TenantID, s.UserID, s.EventType, until, s.Reason)
+		return row.Scan(&s.ID, &s.UntilAt, &s.CreatedAt)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -96,90 +107,112 @@ func (r *Repository) CreateSnooze(ctx context.Context, s model.Snooze, duration 
 // ListActiveSnoozes returns all of a user's snoozes whose until_at is
 // in the future. Used to render the "Active snoozes" UI block.
 func (r *Repository) ListActiveSnoozes(ctx context.Context, tenantID, userID string) ([]model.Snooze, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, user_id, event_type, until_at, COALESCE(reason,''), created_at
-		FROM notification_snoozes
-		WHERE tenant_id = $1 AND user_id = $2 AND until_at > now()
-		ORDER BY until_at ASC`, tenantID, userID)
+	out := make([]model.Snooze, 0)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, tenant_id, user_id, event_type, until_at, COALESCE(reason,''), created_at
+			FROM notification_snoozes
+			WHERE tenant_id = $1 AND user_id = $2 AND until_at > now()
+			ORDER BY until_at ASC`, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s model.Snooze
+			if err := rows.Scan(&s.ID, &s.TenantID, &s.UserID, &s.EventType, &s.UntilAt, &s.Reason, &s.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, s)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make([]model.Snooze, 0)
-	for rows.Next() {
-		var s model.Snooze
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.UserID, &s.EventType, &s.UntilAt, &s.Reason, &s.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // IsSnoozed reports whether (user, event_type) has an active snooze.
 // Matches both exact event_type and the wildcard '*' row.
 func (r *Repository) IsSnoozed(ctx context.Context, tenantID, userID, eventType string) (bool, error) {
 	var exists bool
-	err := r.pool.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM notification_snoozes
-			WHERE tenant_id = $1 AND user_id = $2
-			  AND (event_type = $3 OR event_type = '*')
-			  AND until_at > now()
-		)`, tenantID, userID, eventType).Scan(&exists)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM notification_snoozes
+				WHERE tenant_id = $1 AND user_id = $2
+				  AND (event_type = $3 OR event_type = '*')
+				  AND until_at > now()
+			)`, tenantID, userID, eventType).Scan(&exists)
+	})
 	return exists, err
 }
 
 // DeleteSnooze cancels a snooze early.
 func (r *Repository) DeleteSnooze(ctx context.Context, tenantID, userID, id string) error {
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM notification_snoozes WHERE tenant_id = $1 AND user_id = $2 AND id = $3`,
-		tenantID, userID, id)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`DELETE FROM notification_snoozes WHERE tenant_id = $1 AND user_id = $2 AND id = $3`,
+			tenantID, userID, id)
+		return err
+	})
 }
 
 // ----- DND --------------------------------------------------------
 
 // GetDND returns the user's DND row or nil if none set.
 func (r *Repository) GetDND(ctx context.Context, tenantID, userID string) (*model.DND, error) {
-	var d model.DND
-	var startT, endT time.Time
-	err := r.pool.QueryRow(ctx, `
-		SELECT tenant_id, user_id, dnd_start, dnd_end, timezone, updated_at
-		FROM notification_dnd
-		WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID).
-		Scan(&d.TenantID, &d.UserID, &startT, &endT, &d.Timezone, &d.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
+	var out *model.DND
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var d model.DND
+		var startT, endT time.Time
+		err := tx.QueryRow(ctx, `
+			SELECT tenant_id, user_id, dnd_start, dnd_end, timezone, updated_at
+			FROM notification_dnd
+			WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID).
+			Scan(&d.TenantID, &d.UserID, &startT, &endT, &d.Timezone, &d.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // preserve (nil, nil) not-found contract
+		}
+		if err != nil {
+			return err
+		}
+		d.DNDStart = fmt.Sprintf("%02d:%02d", startT.Hour(), startT.Minute())
+		d.DNDEnd = fmt.Sprintf("%02d:%02d", endT.Hour(), endT.Minute())
+		out = &d
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	d.DNDStart = fmt.Sprintf("%02d:%02d", startT.Hour(), startT.Minute())
-	d.DNDEnd = fmt.Sprintf("%02d:%02d", endT.Hour(), endT.Minute())
-	return &d, nil
+	return out, nil
 }
 
 // UpsertDND saves the user's DND window. start/end are "HH:MM".
 func (r *Repository) UpsertDND(ctx context.Context, d model.DND) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO notification_dnd (tenant_id, user_id, dnd_start, dnd_end, timezone)
-		VALUES ($1,$2,$3::time,$4::time,$5)
-		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-			dnd_start = EXCLUDED.dnd_start,
-			dnd_end   = EXCLUDED.dnd_end,
-			timezone  = EXCLUDED.timezone,
-			updated_at = now()`,
-		d.TenantID, d.UserID, d.DNDStart, d.DNDEnd, d.Timezone)
-	return err
+	return r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO notification_dnd (tenant_id, user_id, dnd_start, dnd_end, timezone)
+			VALUES ($1,$2,$3::time,$4::time,$5)
+			ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+				dnd_start = EXCLUDED.dnd_start,
+				dnd_end   = EXCLUDED.dnd_end,
+				timezone  = EXCLUDED.timezone,
+				updated_at = now()`,
+			d.TenantID, d.UserID, d.DNDStart, d.DNDEnd, d.Timezone)
+		return err
+	})
 }
 
 // DeleteDND clears the user's DND row.
 func (r *Repository) DeleteDND(ctx context.Context, tenantID, userID string) error {
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM notification_dnd WHERE tenant_id = $1 AND user_id = $2`,
-		tenantID, userID)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`DELETE FROM notification_dnd WHERE tenant_id = $1 AND user_id = $2`,
+			tenantID, userID)
+		return err
+	})
 }
 
 // ----- Digests ----------------------------------------------------
@@ -197,18 +230,24 @@ func (r *Repository) UpsertDigestEvent(ctx context.Context, d model.Digest, even
 	if windowSec <= 0 {
 		windowSec = 300
 	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO notification_digests (
-			tenant_id, user_id, event_type, channel,
-			events, count, flush_after_at
-		)
-		VALUES ($1,$2,$3,$4, jsonb_build_array($5::jsonb), 1, now() + ($6 || ' seconds')::interval)
-		ON CONFLICT (tenant_id, user_id, event_type, channel) WHERE flushed_at IS NULL
-		DO UPDATE SET
-			events = notification_digests.events || EXCLUDED.events,
-			count  = notification_digests.count + 1`,
-		d.TenantID, d.UserID, d.EventType, d.Channel, string(raw), windowSec)
-	return err
+	// make_interval(secs => $6) takes the int directly; the previous
+	// ($6 || ' seconds')::interval form made pgx try to encode the int
+	// into a TEXT concatenation operand, which fails on every call —
+	// digest accumulation had never actually worked (Wave A.1, #73).
+	return r.withTenant(ctx, d.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO notification_digests (
+				tenant_id, user_id, event_type, channel,
+				events, count, flush_after_at
+			)
+			VALUES ($1,$2,$3,$4, jsonb_build_array($5::jsonb), 1, now() + make_interval(secs => $6))
+			ON CONFLICT (tenant_id, user_id, event_type, channel) WHERE flushed_at IS NULL
+			DO UPDATE SET
+				events = notification_digests.events || EXCLUDED.events,
+				count  = notification_digests.count + 1`,
+			d.TenantID, d.UserID, d.EventType, d.Channel, string(raw), windowSec)
+		return err
+	})
 }
 
 // ClaimReadyDigests atomically marks ripe digests flushed and returns
@@ -218,29 +257,48 @@ func (r *Repository) ClaimReadyDigests(ctx context.Context, batchSize int) ([]mo
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	rows, err := r.pool.Query(ctx, `
-		UPDATE notification_digests
-		SET flushed_at = now()
-		WHERE id IN (
-			SELECT id FROM notification_digests
-			WHERE flushed_at IS NULL AND flush_after_at <= now()
-			ORDER BY flush_after_at ASC
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING id, tenant_id, user_id, event_type, channel, events, count, flush_after_at`,
-		batchSize)
+	// Legitimately cross-tenant (the flusher sweeps every tenant's ripe
+	// digests) — sanctioned enumerate-tenants shape (Wave A.1, issue
+	// #73): the raw global claim returned nothing under prod
+	// NOBYPASSRLS and digests never flushed. Per-tenant failures don't
+	// stall other tenants: claimed rows are returned alongside the
+	// first error so the flusher can deliver what it got.
+	tenants, err := database.ListTenantIDs(ctx, r.pool)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := make([]model.Digest, 0)
-	for rows.Next() {
-		var d model.Digest
-		if err := rows.Scan(&d.ID, &d.TenantID, &d.UserID, &d.EventType, &d.Channel, &d.Events, &d.Count, &d.FlushAfterAt); err != nil {
-			return nil, err
+	var firstErr error
+	for _, tid := range tenants {
+		err := database.WithTenantTx(ctx, r.pool, tid, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `
+				UPDATE notification_digests
+				SET flushed_at = now()
+				WHERE id IN (
+					SELECT id FROM notification_digests
+					WHERE tenant_id = $1 AND flushed_at IS NULL AND flush_after_at <= now()
+					ORDER BY flush_after_at ASC
+					LIMIT $2
+					FOR UPDATE SKIP LOCKED
+				)
+				RETURNING id, tenant_id, user_id, event_type, channel, events, count, flush_after_at`,
+				tid, batchSize)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var d model.Digest
+				if err := rows.Scan(&d.ID, &d.TenantID, &d.UserID, &d.EventType, &d.Channel, &d.Events, &d.Count, &d.FlushAfterAt); err != nil {
+					return err
+				}
+				out = append(out, d)
+			}
+			return rows.Err()
+		})
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("claim digests for tenant %s: %w", tid, err)
 		}
-		out = append(out, d)
 	}
-	return out, rows.Err()
+	return out, firstErr
 }
