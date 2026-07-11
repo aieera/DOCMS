@@ -926,6 +926,15 @@ func main() {
 	rootMux.Handle("POST /internal/v1/records/cutoff-sweep",
 		middleware.CorrelationHTTP(recordsSweepMux))
 
+	// Search reconcile — rebuilds a tenant's OpenSearch projection from
+	// source of truth via dms.document.reindexed.v1 outbox events. Run
+	// once after deploying the indexer partial-update fix (see
+	// docs/runbooks/search-reindex.md); kept for future drift repair.
+	searchReindexMux := http.NewServeMux()
+	handler.NewSearchReindexHandler(svc, *log.Z()).RegisterInternal(searchReindexMux)
+	rootMux.Handle("POST /internal/v1/search/reindex",
+		middleware.CorrelationHTTP(searchReindexMux))
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)

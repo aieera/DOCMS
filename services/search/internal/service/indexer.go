@@ -62,8 +62,18 @@ func (ix *Indexer) Start(parent context.Context) error {
 		subject string
 		handler nats.MsgHandler
 	}{
-		{"dms.document.created.v1", ix.onDocCreatedOrUpdated},
-		{"dms.document.updated.v1", ix.onDocCreatedOrUpdated},
+		{"dms.document.created.v1", ix.onDocCreated},
+		// updated.v1 is a SPARSE diff ({changed_fields, changed values})
+		// — routing it through the full-replace path wiped readable_by
+		// + content on every metadata edit (the doc then matched no
+		// user's ACL filter and vanished from search). Partial handler
+		// only.
+		{"dms.document.updated.v1", ix.onDocUpdated},
+		// reindexed.v1 is the reconcile event: the document service
+		// rebuilds the FULL payload from source of truth (Postgres:
+		// documents + ocr_results + folder ACL) — full replace is the
+		// point. Emitted by POST /internal/v1/search/reindex.
+		{"dms.document.reindexed.v1", ix.onDocCreated},
 		{"dms.document.deleted.v1", ix.onDocDeleted},
 		{"dms.version.ocr_completed.v1", ix.onOCRCompleted},
 		{"dms.permission.changed.v1", ix.onPermissionChanged},
@@ -105,7 +115,14 @@ func (ix *Indexer) Stop() {
 
 // ---- handlers -------------------------------------------------------------
 
-func (ix *Indexer) onDocCreatedOrUpdated(msg *nats.Msg) {
+// onDocCreated handles the two events whose payload is the FULL
+// authoritative document projection: dms.document.created.v1 (built at
+// create time, incl. the FIX-4 readable_by materialisation) and
+// dms.document.reindexed.v1 (rebuilt from source of truth by the
+// reconcile job). Both full-replace the index doc — which is only safe
+// BECAUSE the payload is complete. Sparse updated.v1 events go through
+// onDocUpdated instead.
+func (ix *Indexer) onDocCreated(msg *nats.Msg) {
 	data, ok := ix.parseData(msg)
 	if !ok {
 		return
@@ -157,6 +174,89 @@ func (ix *Indexer) onDocCreatedOrUpdated(msg *nats.Msg) {
 	defer cancel()
 	if err := ix.svc.IndexDocument(ctx, doc); err != nil {
 		ix.log.Error().Err(err).Str("document_id", doc.DocumentID).Msg("index failed")
+		_ = msg.Nak()
+		return
+	}
+	_ = msg.Ack()
+}
+
+// docUpdateWhitelist maps updated.v1 `changed` keys onto index fields
+// the partial path is allowed to touch. Pipeline-owned fields — content
+// / content_snippet (OCR), readable_by* (permission events), extracted_
+// entities (NER) — are deliberately absent: an updated.v1 event can
+// never drop them, whatever the payload claims.
+var docUpdateWhitelist = map[string]struct{}{
+	"title":           {},
+	"description":     {},
+	"tags":            {},
+	"custom_metadata": {},
+	"folder_id":       {},
+	"folder_path":     {},
+	"lifecycle_state": {},
+	"document_class":  {},
+}
+
+// onDocUpdated applies a dms.document.updated.v1 diff as a PARTIAL
+// OpenSearch update (_update doc-merge). Only whitelisted fields present
+// in the payload's `changed` map are written; payload-level readable_by
+// fields (the FIX-4 folder-move contract) propagate too. A legacy event
+// that names changed_fields but ships no values updates nothing — the
+// reconcile job (dms.document.reindexed.v1) repairs those, never a
+// destructive guess here.
+func (ix *Indexer) onDocUpdated(msg *nats.Msg) {
+	data, ok := ix.parseData(msg)
+	if !ok {
+		return
+	}
+	tenantID := strField(data, "tenant_id")
+	docID := strField(data, "document_id")
+	if tenantID == "" || docID == "" {
+		ix.log.Warn().Msg("doc.updated missing tenant_id or document_id")
+		_ = msg.Term()
+		return
+	}
+
+	fields := map[string]any{}
+	if changed, ok := data["changed"].(map[string]any); ok {
+		for k, v := range changed {
+			if _, allowed := docUpdateWhitelist[k]; allowed {
+				fields[k] = v
+			}
+		}
+	}
+	// Folder moves ride the ACL projection on the event itself
+	// (DocumentUpdatedPayload.ReadableBy*, FIX-4).
+	if rb := strSliceField(data, "readable_by"); rb != nil {
+		fields["readable_by"] = rb
+	}
+	if rbu := strSliceField(data, "readable_by_users"); rbu != nil {
+		fields["readable_by_users"] = rbu
+	}
+	if rbg := strSliceField(data, "readable_by_groups"); rbg != nil {
+		fields["readable_by_groups"] = rbg
+	}
+
+	if len(fields) == 0 {
+		// Legacy publisher (changed_fields without values) or a diff
+		// touching only non-indexed fields. Nothing safe to write —
+		// ack rather than guess. The doc keeps its current projection
+		// until the next value-carrying event or a reconcile pass.
+		ix.log.Debug().Str("document_id", docID).Msg("doc.updated carried no applicable values; skipping")
+		_ = msg.Ack()
+		return
+	}
+
+	ctx, cancel := handlerCtx(ix.parent, msg)
+	defer cancel()
+	if err := ix.svc.PartialUpdate(ctx, tenantID, docID, fields); err != nil {
+		// Same backfill semantics as onVersionUploaded: the index doc
+		// not existing yet is a skip, not a retry loop.
+		if strings.Contains(err.Error(), "document_missing_exception") || strings.Contains(err.Error(), "404") {
+			ix.log.Debug().Str("document_id", docID).Msg("doc.updated: index doc missing; skipping")
+			_ = msg.Ack()
+			return
+		}
+		ix.log.Error().Err(err).Str("document_id", docID).Msg("doc.updated partial update failed")
 		_ = msg.Nak()
 		return
 	}

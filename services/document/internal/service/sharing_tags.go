@@ -524,6 +524,7 @@ func (s *DocumentService) BatchUpdateMetadata(ctx context.Context, in *BatchUpda
 				model.DocumentUpdatedPayload{
 					DocumentID:    doc.ID.String(),
 					ChangedFields: []string{"custom_metadata"},
+					Changed:       map[string]any{"custom_metadata": doc.CustomMetadata},
 					UpdatedBy:     userID.String(),
 				})
 			if err == nil {
