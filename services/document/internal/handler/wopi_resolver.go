@@ -226,10 +226,20 @@ func (res *DBWOPIResolver) SaveAs(_ *http.Request, _ *WOPIClaims, _ string, _ st
 
 // SaveFromURL is the OnlyOffice save-back: the Document Server hands us
 // a URL to the edited bytes; we download and commit through the same
-// save core as WOPI PutFile. allowedHost guards SSRF — the URL must
-// point at the configured Document Server (empty allowedHost = any
-// http/https host; only used when SEDOC_ONLYOFFICE_URL is unset).
+// save core as WOPI PutFile.
+//
+// SSRF posture (defense-in-depth behind the callback's JWT check):
+//   - FAIL-CLOSED: allowedHost is required — without a configured
+//     Document Server host there is nothing legitimate to fetch from.
+//   - The URL's host:port must equal the configured DS exactly.
+//   - Redirects are refused, so an allowed host can't bounce the fetch
+//     to an internal address.
+//   - We deliberately do NOT reject private/loopback IPs: the primary
+//     deployment reaches the DS via in-cluster DNS, which IS private.
 func (res *DBWOPIResolver) SaveFromURL(ctx context.Context, claims *WOPIClaims, fileURL, allowedHost, changeSummary string) error {
+	if allowedHost == "" {
+		return errors.New("document server host not configured (set SEDOC_ONLYOFFICE_URL); refusing to fetch save-back URL")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
 		return fmt.Errorf("bad download url: %w", err)
@@ -237,10 +247,17 @@ func (res *DBWOPIResolver) SaveFromURL(ctx context.Context, claims *WOPIClaims, 
 	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 		return fmt.Errorf("download url scheme %q not allowed", req.URL.Scheme)
 	}
-	if allowedHost != "" && !strings.EqualFold(req.URL.Host, allowedHost) {
+	if !strings.EqualFold(req.URL.Host, allowedHost) {
 		return fmt.Errorf("download url host %q does not match the configured document server %q", req.URL.Host, allowedHost)
 	}
-	httpc := &http.Client{Timeout: 60 * time.Second}
+	httpc := &http.Client{
+		Timeout: 60 * time.Second,
+		// The DS serves cache files directly; any redirect is a bypass
+		// attempt (allowed host → arbitrary target), not a legit flow.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("redirects not allowed on save-back downloads")
+		},
+	}
 	resp, err := httpc.Do(req)
 	if err != nil {
 		return fmt.Errorf("download edited file: %w", err)
