@@ -926,9 +926,22 @@ func main() {
 	rootMux.Handle("POST /internal/v1/records/cutoff-sweep",
 		middleware.CorrelationHTTP(recordsSweepMux))
 
+	// ADR 0065 — the concrete WOPI file resolver: token → (tenant, doc,
+	// version), GetFile streams (decrypting) blobs, PutFile commits a
+	// NEW version through storage upload + CreateVersion (permission,
+	// legal hold, WORM, outbox events). Shared with the OnlyOffice
+	// callback below so both editors save through one write path.
+	wopiResolver := handler.NewDBWOPIResolver(pool, s3c, docKMS, storageClient, svc, *log.Z())
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
-	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
+	onlyOfficeH := handler.NewOnlyOfficeHandler(*log.Z())
+	// Status 2/6 (ready-to-save / force-save) download-and-commit. Redis
+	// carries the WOPI locks so a version locked by another editor
+	// session rejects the save-back.
+	onlyOfficeH.Saver = wopiResolver
+	onlyOfficeH.Redis = rdb
+	onlyOfficeH.Register(onlyOfficeMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config",
 		middleware.CorrelationHTTP(onlyOfficeMux))
 	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback",
@@ -950,11 +963,11 @@ func main() {
 	// session_started / session_ended events flow through the same
 	// publisher every other audit row uses.
 	wopiH.Auditor = handler.NewOutboxWOPIAuditor(pool, database.NewOutboxRepository(), *log.Z())
+	// The resolver that makes CheckFileInfo/GetFile/PutFile real —
+	// previously left nil, which 503'd every WOPI file route and made
+	// edit-in-Collabora dead on arrival.
+	wopiH.FileResolver = wopiResolver
 	wopiH.Register(wopiMux)
-	// File resolver wiring is intentionally deferred — the default
-	// Resolve/Open/Save impl ties to storage + policy gRPC and is
-	// kept out of this PR to limit scope. When the deploy hasn't
-	// wired one, GetFile/PutFile return 503 with a clear message.
 
 	// ADR 0065 — POST /api/v1/documents/{id}/versions/{vid}/coauth/start
 	// mints WOPI access_tokens for the calling user and returns the

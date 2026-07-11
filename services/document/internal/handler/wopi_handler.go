@@ -410,19 +410,28 @@ func (h *WOPIHandler) putFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read-only token", http.StatusUnauthorized)
 		return
 	}
+	// Lock enforcement (WOPI spec): fetch the CURRENT lock
+	// unconditionally. The previous shape only compared when the caller
+	// supplied X-WOPI-Lock, so a PutFile with a missing header sailed
+	// past an existing lock — a non-holder could overwrite a locked
+	// file. Now: locked file + missing/mismatched header → 409 carrying
+	// the current lock; unlocked file + a stale header → 409 "no lock".
 	wantLock := r.Header.Get("X-WOPI-Lock")
-	if wantLock != "" {
-		got, err := h.rdb.Get(r.Context(), wopiLockKey(c.FileID)).Result()
-		if err == redis.Nil {
+	got, err := h.rdb.Get(r.Context(), wopiLockKey(c.FileID)).Result()
+	switch {
+	case err == redis.Nil:
+		if wantLock != "" {
 			// 409 with empty X-WOPI-Lock means "no lock; require one".
 			http.Error(w, "no lock", http.StatusConflict)
 			return
 		}
-		if err == nil && got != wantLock {
-			w.Header().Set("X-WOPI-Lock", got)
-			http.Error(w, "lock mismatch", http.StatusConflict)
-			return
-		}
+	case err != nil:
+		http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
+		return
+	case got != wantLock:
+		w.Header().Set("X-WOPI-Lock", got)
+		http.Error(w, "lock mismatch", http.StatusConflict)
+		return
 	}
 	if h.FileResolver == nil {
 		http.Error(w, "wopi resolver not wired", http.StatusServiceUnavailable)
