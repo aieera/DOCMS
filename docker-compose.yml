@@ -526,6 +526,9 @@ services:
       WS_PORT: "8083"
       REDIS_URL: "redis://redis:6379"
       AUTH_SERVICE_URL: "http://auth:8080"
+      # WS comment mutations persist through the document service's
+      # comments API (create/update/delete + room-load hydration).
+      DOCUMENT_SERVICE_URL: "http://document:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
       SEDOC_NATS_URL: "nats://nats:4222"
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
