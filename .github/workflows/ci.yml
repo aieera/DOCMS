@@ -111,6 +111,28 @@ jobs:
         working-directory: pkg
         run: go test -count=1 -run TestSubjectCov ./events/...
 
+  # ADR 0091 MCP server — the LLM-facing tool surface. Runs its unit +
+  # dispatch/validation/limit tests and a short fuzz budget on argument
+  # parsing on every PR. The prod-posture tenant-isolation tests
+  # (TestProdPosture_MCP*) run in the prod-posture lane above (module
+  # iteration picks up services/mcp-server automatically). `./...` is not
+  # used from the repo root under go.work, so this job scopes to the module.
+  mcp-server-tests:
+    name: MCP server tests + fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Unit tests (dispatch, tenant propagation, validation, limits)
+        working-directory: services/mcp-server
+        run: go test -race -count=1 ./internal/...
+      - name: Fuzz argument parsing (short budget)
+        working-directory: services/mcp-server
+        run: go test -run='^$' -fuzz='^FuzzToolArguments$' -fuzztime=30s ./internal/tools/
+
   # Prod-posture lane (Wave A, STATE 2026-07-03): runs the
   # TestProdPosture_* integration tests against a dms_app NOBYPASSRLS
   # role (testcontainers; pkg/testutil.NewProdPostureDB) with the RLS
