@@ -10,13 +10,20 @@
       in XML and not yet 1:1 in JSON.
   Migration to JSON happens when mobile + macOS catch up.
 
-  Placeholders the operator MUST replace before sideloading:
-    * <Id>                     — generate via `uuidgen` (one per
-                                  environment so dev/staging/prod
-                                  add-ins don't fight in the catalog).
-    * https://addin.vaultdms… — the HTTPS host serving the static
-                                  bundle (production: CDN; dev: HTTPS
-                                  loopback from `npm run dev`).
+  Build-time substitution (see webpack.config.js — copy-webpack-plugin
+  transform): the ${...} tokens below are replaced from env at build time
+  so no per-deployment value is committed:
+    * ${SEDOC_ADDIN_HOST}      — the HTTPS host serving the static bundle
+                                  (prod: CDN; dev: HTTPS loopback from
+                                  `npm run dev`). Defaults to
+                                  addin.vaultdms.example.com when unset.
+    * ${SEDOC_AAD_CLIENT_ID}   — the Microsoft Entra (Azure AD) application
+                                  (client) ID of the SeDoc API app
+                                  registration. Per-tenant; the operator's
+                                  own app registration.
+  The add-in <Id> below is a STABLE canonical GUID (the add-in's identity).
+  Override it via ${SEDOC_ADDIN_ID} only when sideloading multiple envs on
+  one machine (Outlook refuses a duplicate GUID in the same catalog).
 -->
 <OfficeApp
   xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
@@ -25,18 +32,18 @@
   xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.1"
   xsi:type="MailApp">
 
-  <!-- A unique identifier per environment. Generate one for dev, one
-       for staging, one for prod. Reusing the same GUID across envs
-       makes Outlook refuse to install a second copy. -->
-  <Id>00000000-0000-0000-0000-000000000111</Id>
+  <!-- Canonical add-in identity (stable). ${SEDOC_ADDIN_ID} lets a dev
+       machine override it to avoid a duplicate-GUID clash when sideloading
+       multiple environments at once. -->
+  <Id>${SEDOC_ADDIN_ID:-2bcd772e-ec09-4254-bbb5-2919adab8523}</Id>
   <Version>0.1.0.0</Version>
   <ProviderName>SeDoc</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Save to SeDoc" />
   <Description DefaultValue="Save the open email and its attachments to a SeDoc workspace." />
-  <IconUrl DefaultValue="https://addin.vaultdms.example.com/assets/icon-64.png" />
-  <HighResolutionIconUrl DefaultValue="https://addin.vaultdms.example.com/assets/icon-128.png" />
-  <SupportUrl DefaultValue="https://docs.vaultdms.example.com/outlook-addin" />
+  <IconUrl DefaultValue="https://${SEDOC_ADDIN_HOST}/assets/icon-64.png" />
+  <HighResolutionIconUrl DefaultValue="https://${SEDOC_ADDIN_HOST}/assets/icon-128.png" />
+  <SupportUrl DefaultValue="https://${SEDOC_DOCS_HOST:-docs.vaultdms.example.com}/outlook-addin" />
 
   <!-- Read-mode only. Save during compose lands in Phase 2. -->
   <Hosts>
@@ -51,7 +58,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://addin.vaultdms.example.com/taskpane.html" />
+        <SourceLocation DefaultValue="https://${SEDOC_ADDIN_HOST}/taskpane.html" />
         <RequestedHeight>320</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -81,8 +88,8 @@
            server-side for a SeDoc session, so the Graph scopes
            don't need to live on this app registration). -->
       <WebApplicationInfo>
-        <Id>00000000-0000-0000-0000-000000000222</Id>
-        <Resource>api://vaultdms.example.com/00000000-0000-0000-0000-000000000222</Resource>
+        <Id>${SEDOC_AAD_CLIENT_ID}</Id>
+        <Resource>api://${SEDOC_ADDIN_HOST}/${SEDOC_AAD_CLIENT_ID}</Resource>
         <Scopes>
           <Scope>openid</Scope>
           <Scope>profile</Scope>
@@ -130,13 +137,13 @@
 
       <Resources>
         <bt:Images>
-          <bt:Image id="icon16" DefaultValue="https://addin.vaultdms.example.com/assets/icon-16.png" />
-          <bt:Image id="icon32" DefaultValue="https://addin.vaultdms.example.com/assets/icon-32.png" />
-          <bt:Image id="icon80" DefaultValue="https://addin.vaultdms.example.com/assets/icon-80.png" />
+          <bt:Image id="icon16" DefaultValue="https://${SEDOC_ADDIN_HOST}/assets/icon-16.png" />
+          <bt:Image id="icon32" DefaultValue="https://${SEDOC_ADDIN_HOST}/assets/icon-32.png" />
+          <bt:Image id="icon80" DefaultValue="https://${SEDOC_ADDIN_HOST}/assets/icon-80.png" />
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="commandsFile.url" DefaultValue="https://addin.vaultdms.example.com/commands.html" />
-          <bt:Url id="taskpaneURL"      DefaultValue="https://addin.vaultdms.example.com/taskpane.html" />
+          <bt:Url id="commandsFile.url" DefaultValue="https://${SEDOC_ADDIN_HOST}/commands.html" />
+          <bt:Url id="taskpaneURL"      DefaultValue="https://${SEDOC_ADDIN_HOST}/taskpane.html" />
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="groupLabel"   DefaultValue="SeDoc" />

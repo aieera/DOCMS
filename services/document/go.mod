@@ -16,6 +16,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
+	go.temporal.io/api v1.32.0
 	go.temporal.io/sdk v1.26.1
 	golang.org/x/crypto v0.50.0
 	google.golang.org/grpc v1.80.0
@@ -118,7 +119,6 @@ require (
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	go.temporal.io/api v1.32.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect

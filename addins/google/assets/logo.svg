@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SeDoc add-in brand mark. Source of truth for the raster icon-*.png
+     sizes (16/32/64/80/128) the manifest references. Regenerate the PNGs
+     with `go run tools/genicons.go` if this changes. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="#2563EB"/>
+  <path d="M42 34 h30 l18 18 v42 a4 4 0 0 1 -4 4 H42 a4 4 0 0 1 -4 -4 V38 a4 4 0 0 1 4 -4 z"
+        fill="#FFFFFF"/>
+  <path d="M72 34 v14 a4 4 0 0 0 4 4 h14 z" fill="#BFD3F9"/>
+  <g fill="#93B4F5">
+    <rect x="49" y="70" width="30" height="6" rx="3"/>
+    <rect x="49" y="82" width="30" height="6" rx="3"/>
+    <rect x="49" y="94" width="18" height="6" rx="3"/>
+  </g>
+</svg>

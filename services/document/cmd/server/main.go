@@ -580,7 +580,7 @@ func main() {
 	// the /auth/m365/exchange endpoint and then attaches it as a
 	// Bearer header on this route.
 	m365IngestMux := http.NewServeMux()
-	handler.NewM365IngestHandler(pool, svc).Register(m365IngestMux)
+	handler.NewM365IngestHandler(pool, svc, storageClient, s3c, *log.Z()).Register(m365IngestMux)
 	// Per-IP rate limit so a compromised Outlook session can't spam
 	// document creation and exhaust tenant storage quota. 60 req/min
 	// is plenty for an honest user (the add-in only POSTs on explicit
