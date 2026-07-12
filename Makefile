@@ -20,7 +20,7 @@ LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
 
-SERVICES := document storage search auth policy workflow notification audit signature billing connector
+SERVICES := document storage search auth policy workflow notification audit signature billing connector mcp-server
 
 # ---- Help ------------------------------------------------------------------
 
@@ -44,7 +44,7 @@ build: ## Build all service binaries into ./bin
 test: ## Run all tests with race detector
 	$(GO) test -race -timeout 5m ./...
 
-.PHONY: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow test-services
+.PHONY: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow test-mcp-server test-services
 test-audit:        ; $(GO) test -race -cover ./services/audit/... ## Run audit tests
 test-billing:      ; $(GO) test -race -cover ./services/billing/... ## Run billing tests
 test-connector:    ; $(GO) test -race -cover ./services/connector/... ## Run connector tests
@@ -52,7 +52,8 @@ test-notification: ; $(GO) test -race -cover ./services/notification/... ## Run 
 test-signature:    ; $(GO) test -race -cover ./services/signature/... ## Run signature tests
 test-storage:      ; $(GO) test -race -cover ./services/storage/... ## Run storage tests
 test-workflow:     ; $(GO) test -race -cover ./services/workflow/... ## Run workflow tests
-test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow ## Run every Go service's unit tests
+test-mcp-server:   ; $(GO) test -race -cover ./services/mcp-server/internal/... ## Run MCP server (ADR 0091) tests
+test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow test-mcp-server ## Run every Go service's unit tests
 
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report
