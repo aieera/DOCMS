@@ -109,13 +109,16 @@ func main() {
 		Outbox: database.NewOutboxRepository(),
 		Redis:  rdb,
 		// Wave 12.4: cross-service erase targets. Empty = soft no-op.
+		// "signature" (ADR 0025 Wave 9): the SignatureWorkflow's seal activity.
 		ServiceURLs: map[string]string{
 			"search":    os.Getenv("SEDOC_SEARCH_URL"),
 			"qdrant":    os.Getenv("SEDOC_QDRANT_URL"),
 			"connector": os.Getenv("SEDOC_CONNECTOR_URL"),
+			"signature": os.Getenv("SEDOC_SIGNATURE_URL"),
 		},
-		JS:  js,
-		Log: *log.Z(),
+		InternalKey: os.Getenv("SEDOC_INTERNAL_API_KEY"),
+		JS:          js,
+		Log:         *log.Z(),
 	}
 	w := worker.New(tc, queue, worker.Options{})
 	w.RegisterWorkflow(workflows.ApprovalWorkflow)
