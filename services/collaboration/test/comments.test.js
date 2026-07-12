@@ -10,21 +10,21 @@
  * unauthorized session can neither mutate nor see anything.
  */
 
-import test from 'node:test';
+import { test, onTestFinished } from 'vitest';
 import assert from 'node:assert/strict';
 
 import { startHarness, TestClient } from './harness.js';
 
 const DOC = 'doc-aaaa';
 
-test('create/update/delete round-trip: two clients + persistence', async (t) => {
-  const { api, server } = await startHarness(t);
+test('create/update/delete round-trip: two clients + persistence', async () => {
+  const { api, server } = await startHarness();
   api.addUser('tok-alice', { name: 'Alice' });
   api.addUser('tok-bob', { name: 'Bob' });
 
   const alice = await new TestClient(server.url).open();
   const bob = await new TestClient(server.url).open();
-  t.after(() => { alice.close(); bob.close(); });
+  onTestFinished(() => { alice.close(); bob.close(); });
   await alice.auth('tok-alice');
   await bob.auth('tok-bob');
   await alice.subscribe(DOC);
@@ -56,13 +56,13 @@ test('create/update/delete round-trip: two clients + persistence', async (t) => 
     'delete must persist, not just broadcast');
 });
 
-test('rejoin sees persisted state (room-load reconcile)', async (t) => {
-  const { api, server } = await startHarness(t);
+test('rejoin sees persisted state (room-load reconcile)', async () => {
+  const { api, server } = await startHarness();
   api.addUser('tok-alice', { name: 'Alice' });
   api.addUser('tok-carol', { name: 'Carol' });
 
   const alice = await new TestClient(server.url).open();
-  t.after(() => alice.close());
+  onTestFinished(() => alice.close());
   await alice.auth('tok-alice');
   await alice.subscribe(DOC);
 
@@ -78,15 +78,15 @@ test('rejoin sees persisted state (room-load reconcile)', async (t) => {
 
   // Late joiner: the subscribe snapshot must reflect update + delete.
   const carol = await new TestClient(server.url).open();
-  t.after(() => carol.close());
+  onTestFinished(() => carol.close());
   await carol.auth('tok-carol');
   const snapshot = await carol.subscribe(DOC);
   assert.equal(snapshot.comments.length, 1, 'deleted comment must not reappear');
   assert.equal(snapshot.comments[0].body, 'v2 (edited)', 'late joiner sees the EDITED body');
 });
 
-test('unauthorized sessions are rejected', async (t) => {
-  const { api, server } = await startHarness(t);
+test('unauthorized sessions are rejected', async () => {
+  const { api, server } = await startHarness();
   api.addUser('tok-alice', { name: 'Alice' });
 
   // Bad token → connection closed 4001, nothing persisted.
@@ -99,7 +99,7 @@ test('unauthorized sessions are rejected', async (t) => {
   // nothing persisted, nothing broadcast to the room.
   const alice = await new TestClient(server.url).open();
   const rogue = await new TestClient(server.url).open();
-  t.after(() => { alice.close(); rogue.close(); });
+  onTestFinished(() => { alice.close(); rogue.close(); });
   await alice.auth('tok-alice');
   await alice.subscribe(DOC);
 
@@ -113,14 +113,14 @@ test('unauthorized sessions are rejected', async (t) => {
     'sanity: alice did get her own room-load snapshot');
 });
 
-test('persistence failure sends comment_error and broadcasts nothing', async (t) => {
-  const { api, server } = await startHarness(t);
+test('persistence failure sends comment_error and broadcasts nothing', async () => {
+  const { api, server } = await startHarness();
   api.addUser('tok-alice', { name: 'Alice' });
   api.addUser('tok-bob', { name: 'Bob' });
 
   const alice = await new TestClient(server.url).open();
   const bob = await new TestClient(server.url).open();
-  t.after(() => { alice.close(); bob.close(); });
+  onTestFinished(() => { alice.close(); bob.close(); });
   await alice.auth('tok-alice');
   await bob.auth('tok-bob');
   await alice.subscribe(DOC);
