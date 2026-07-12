@@ -302,8 +302,11 @@ func main() {
 	// gateway strips client-supplied internal keys so external callers can't.
 	sealMux := http.NewServeMux()
 	h.RegisterSeal(sealMux)
-	mux.Handle("/api/v1/signatures/internal/seal",
-		middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "signatures:write")(sealMux))
+	sealAuth := middleware.SessionOrAPIKey(middleware.SessionAuthConfig{Pool: pool}, "signatures:write")(sealMux)
+	// Exact-path mounts (Go ServeMux without a trailing slash matches exactly):
+	// the org seal and the workflow-owned ceremony seal (ADR 0025 Wave 9).
+	mux.Handle("/api/v1/signatures/internal/seal", sealAuth)
+	mux.Handle("/api/v1/signatures/internal/seal-ceremony", sealAuth)
 
 	// ADR 0090 — iPaaS trigger endpoint (Zapier / Make / n8n). Lives
 	// on its own sub-mux wrapped with APIKeyAuth so the bearer-token
