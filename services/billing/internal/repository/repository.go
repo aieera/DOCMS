@@ -148,6 +148,91 @@ func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, tenantID, sta
 	})
 }
 
+// ---- Stripe → tenant mapping (non-RLS, pre-tenant lookup) ------------------
+//
+// stripe_customer_map is platform metadata (no RLS), so these run on the
+// raw pool and WORK under prod NOBYPASSRLS — unlike a read of the
+// FORCE-RLS subscriptions table before the tenant is known. The webhook
+// resolves the tenant here, then does the tenant-scoped subscription
+// write via withTenant.
+
+// UpsertCustomerMap records the Stripe customer → tenant mapping (and the
+// subscription id when known). Written at checkout.session.completed and
+// at provision time. Idempotent on stripe_customer_id.
+func (r *Repository) UpsertCustomerMap(ctx context.Context, stripeCustomerID, stripeSubID, tenantID string) error {
+	if stripeCustomerID == "" || tenantID == "" {
+		return fmt.Errorf("customer map: stripe_customer_id and tenant_id required")
+	}
+	var subArg any
+	if stripeSubID != "" {
+		subArg = stripeSubID
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO stripe_customer_map (stripe_customer_id, stripe_subscription_id, tenant_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (stripe_customer_id) DO UPDATE SET
+			-- keep an existing subscription id if this event didn't carry one
+			stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, stripe_customer_map.stripe_subscription_id),
+			tenant_id  = EXCLUDED.tenant_id,
+			updated_at = now()`,
+		stripeCustomerID, subArg, tenantID)
+	return err
+}
+
+// TenantByStripeCustomer resolves the tenant (+ subscription id) for a
+// Stripe customer. found=false when unmapped.
+func (r *Repository) TenantByStripeCustomer(ctx context.Context, stripeCustomerID string) (tenantID, subID string, found bool, err error) {
+	var sub *string
+	err = r.pool.QueryRow(ctx,
+		`SELECT tenant_id::text, stripe_subscription_id FROM stripe_customer_map WHERE stripe_customer_id = $1`,
+		stripeCustomerID).Scan(&tenantID, &sub)
+	if err == pgx.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	if sub != nil {
+		subID = *sub
+	}
+	return tenantID, subID, true, nil
+}
+
+// TenantByStripeSubscription resolves the tenant for a Stripe
+// subscription id (subscription.*/invoice.* events carry the sub, not the
+// customer). found=false when unmapped.
+func (r *Repository) TenantByStripeSubscription(ctx context.Context, stripeSubID string) (tenantID string, found bool, err error) {
+	err = r.pool.QueryRow(ctx,
+		`SELECT tenant_id::text FROM stripe_customer_map WHERE stripe_subscription_id = $1`,
+		stripeSubID).Scan(&tenantID)
+	if err == pgx.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return tenantID, true, nil
+}
+
+// MarkStripeEventProcessed records a fully-processed Stripe event id.
+// Returns firstTime=false when the id was already recorded (a redelivery)
+// so the caller can no-op. Non-RLS.
+func (r *Repository) StripeEventAlreadyProcessed(ctx context.Context, eventID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM stripe_processed_events WHERE event_id = $1)`, eventID).Scan(&exists)
+	return exists, err
+}
+
+// MarkStripeEventProcessed records the event id after successful
+// processing. Idempotent (ON CONFLICT DO NOTHING).
+func (r *Repository) MarkStripeEventProcessed(ctx context.Context, eventID, eventType string) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO stripe_processed_events (event_id, event_type) VALUES ($1, $2)
+		 ON CONFLICT (event_id) DO NOTHING`, eventID, eventType)
+	return err
+}
+
 // ---- Usage ----------------------------------------------------------------
 
 func (r *Repository) InsertUsage(ctx context.Context, u *model.UsageRecord) error {
