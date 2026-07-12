@@ -15,11 +15,11 @@ import (
 // PublisherConfig tunes the outbox → NATS bridge. Zero values pick safe
 // defaults matching the spec (100ms poll, 100-event batch, 24h retention).
 type PublisherConfig struct {
-	PollInterval     time.Duration
-	BatchSize        int
-	RetainPublished  time.Duration
-	CleanupInterval  time.Duration
-	PublishTimeout   time.Duration
+	PollInterval    time.Duration
+	BatchSize       int
+	RetainPublished time.Duration
+	CleanupInterval time.Duration
+	PublishTimeout  time.Duration
 }
 
 // OutboxPublisher is a background goroutine that polls the `outbox` table,
@@ -146,7 +146,8 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	// is exactly what the outbox event consumer wants anyway.
 	rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, event_type, aggregate_type, aggregate_id,
-		       payload, created_at, actor_id, actor_name, ip_address::text
+		       payload, created_at, actor_id, actor_name, ip_address::text,
+		       trace_context
 		FROM outbox
 		WHERE NOT published
 		ORDER BY created_at, id
@@ -160,15 +161,16 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 	var batch []OutboxEvent
 	for rows.Next() {
 		var (
-			e         OutboxEvent
-			actorID   *uuid.UUID
-			actorName *string
-			ipAddress *string
+			e          OutboxEvent
+			actorID    *uuid.UUID
+			actorName  *string
+			ipAddress  *string
+			traceBytes []byte
 		)
 		if err := rows.Scan(
 			&e.ID, &e.TenantID, &e.EventType, &e.AggregateType,
 			&e.AggregateID, &e.Payload, &e.CreatedAt,
-			&actorID, &actorName, &ipAddress,
+			&actorID, &actorName, &ipAddress, &traceBytes,
 		); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan: %w", err)
@@ -179,6 +181,9 @@ func (p *OutboxPublisher) drainBatch(ctx context.Context) error {
 		}
 		if ipAddress != nil {
 			e.IPAddress = *ipAddress
+		}
+		if len(traceBytes) > 0 {
+			_ = json.Unmarshal(traceBytes, &e.TraceContext)
 		}
 		batch = append(batch, e)
 	}
@@ -241,10 +246,17 @@ func (p *OutboxPublisher) publishOne(ctx context.Context, e OutboxEvent) error {
 	}
 	pubCtx, cancel := context.WithTimeout(ctx, p.cfg.PublishTimeout)
 	defer cancel()
+	header := nats.Header{"Nats-Msg-Id": []string{e.ID.String()}}
+	// Restore the producing request's trace context onto the message so a
+	// consumer's span links back to it (distributed trace across the
+	// async outbox→NATS boundary). Empty when the event had no active span.
+	for k, v := range e.TraceContext {
+		header[k] = []string{v}
+	}
 	_, err = p.js.PublishMsg(&nats.Msg{
 		Subject: e.EventType,
 		Data:    body,
-		Header:  nats.Header{"Nats-Msg-Id": []string{e.ID.String()}},
+		Header:  header,
 	}, nats.Context(pubCtx))
 	if err != nil {
 		return fmt.Errorf("js publish: %w", err)
@@ -292,4 +304,3 @@ type cloudEvent struct {
 	VDMSActorName string `json:"vdmsactorname,omitempty"`
 	VDMSClientIP  string `json:"vdmsclientip,omitempty"`
 }
-
