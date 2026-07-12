@@ -86,7 +86,11 @@ func (s *Service) ImportDriveFolder(
 			continue
 		}
 
-		data, filename, contentType, derr := conn.DownloadDriveFile(ctx, tokens, fileID, name, mimeType)
+		// Declared size + checksums ride the listing; the download
+		// fails fast on oversized files and verifies the bytes against
+		// this metadata — an oversized or corrupt transfer is a
+		// per-item FAILURE (visible below), never a silent truncation.
+		data, filename, contentType, derr := conn.DownloadDriveFile(ctx, tokens, fileID, name, mimeType, google.DriveMetaFromFile(f))
 		if errors.Is(derr, google.ErrUnsupportedDriveType) {
 			res.Skipped++
 			continue
@@ -126,6 +130,13 @@ func (s *Service) ImportDriveFolder(
 	// succeeded, so a failed emit is logged, not fatal.
 	if tid, perr := uuid.Parse(tenantID); perr == nil {
 		runID, _ := uuid.NewV7()
+		// Per-item failures ride the sync-history event (bounded) so an
+		// oversized/corrupt file is visible in the audit trail, not just
+		// the synchronous HTTP response.
+		errsForHistory := res.Errors
+		if len(errsForHistory) > 20 {
+			errsForHistory = errsForHistory[:20]
+		}
 		payload, _ := stdjson.Marshal(map[string]any{
 			"tenant_id":     tenantID,
 			"provider":      "google",
@@ -137,6 +148,7 @@ func (s *Service) ImportDriveFolder(
 			"skipped":       res.Skipped,
 			"failed":        res.Failed,
 			"truncated":     res.Truncated,
+			"errors":        errsForHistory,
 			"synced_at":     time.Now().UTC().Format(time.RFC3339),
 		})
 		if err := s.repo.EmitOutbox(ctx, tid, "dms.connector.synced.v1", "connector", runID, payload); err != nil {
