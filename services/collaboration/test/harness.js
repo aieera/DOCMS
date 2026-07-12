@@ -18,6 +18,7 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { onTestFinished } from 'vitest';
 
 import { ConnectionManager } from '../src/connections.js';
 import { handleMessage } from '../src/handler.js';
@@ -219,14 +220,18 @@ export class TestClient {
   }
 }
 
-/** Boot both fixtures with env pointed at the API stub. */
-export async function startHarness(t) {
+/**
+ * Boot both fixtures with env pointed at the API stub. Cleanup is
+ * registered on the currently-running test via vitest's onTestFinished,
+ * so callers don't have to thread a test context through.
+ */
+export async function startHarness() {
   const api = await startFixtureAPI();
   process.env.AUTH_SERVICE_URL = api.url;
   process.env.DOCUMENT_SERVICE_URL = api.url;
   process.env.SEDOC_GATEWAY_SECRET = 'test-gateway-secret';
   const server = await startWSServer();
-  t.after(async () => {
+  onTestFinished(async () => {
     await server.close();
     await api.close();
   });

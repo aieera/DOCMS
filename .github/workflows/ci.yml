@@ -375,11 +375,11 @@ jobs:
           path: web/coverage
 
   collaboration-tests:
-    # First tests the collaboration WS service has ever had (audit
-    # finding): comment create/update/delete round-trip, room-load
-    # hydration, unauthorized-session rejection. node:test — no extra
-    # test framework.
-    name: Collaboration WS tests (node:test)
+    # Collaboration WS service test suite (Vitest — same framework + gate as
+    # web-tests): comment create/update/delete round-trip + room-load
+    # hydration; Yjs CRDT convergence; session/tenant/doc-ACL auth rejection;
+    # ADR-0096 snapshot persist + restore on rejoin; idle room cleanup.
+    name: Collaboration WS tests (Vitest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -391,9 +391,15 @@ jobs:
       - name: Install deps
         working-directory: services/collaboration
         run: npm ci
-      - name: Run tests
+      - name: Vitest (with coverage)
         working-directory: services/collaboration
-        run: npm test
+        run: npm run test:ci
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collaboration-coverage
+          path: services/collaboration/coverage
 
   security-npm:
     name: npm audit
