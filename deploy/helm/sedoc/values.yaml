@@ -92,6 +92,17 @@ global:
     internalAPIKeyKey: api-key
     stripeWebhookSecretKey: webhook-secret
 
+  # Shared service-to-service key (X-Service-Key). Provisioned to every
+  # backend so the document→preview watermark call authenticates against
+  # the preview service's internal stamping endpoints. `optional: true`
+  # so a deployment without the secret still boots (preview client stays
+  # disabled rather than crash-looping).
+  serviceApiKey:
+    existingSecret: sedoc-service-secrets
+    key: service-api-key
+  # In-cluster preview API base URL for the document watermark client.
+  previewURL: "http://sedoc-preview:8080"
+
 # ============================================================================
 # External Secrets Operator (ADR 0092)
 # ============================================================================

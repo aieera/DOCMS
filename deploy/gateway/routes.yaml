@@ -126,6 +126,18 @@ routes:
     methods: []
     auth: required
     rate: doc-rw
+  # Preview service — thumbnails / page images / status for the viewer.
+  # Same content auth class as /api/v1/documents (a viewer must be
+  # authenticated). The /api/v1/previews/internal/* stamping endpoints
+  # are service-to-service only: the gateway strips X-Service-Key
+  # (kong.yaml request-transformer), so an external caller reaching the
+  # internal subpath through this route fails closed at the preview
+  # service's key check.
+  - service: preview
+    prefix: /api/v1/previews
+    methods: []
+    auth: required
+    rate: doc-rw
   # §10.3 / E6 OnlyOffice sub-paths (/config, /callback) live under
   # the existing /api/v1/documents prefix — no separate gateway rule
   # needed; the document service's main.go pins them explicitly.
@@ -146,21 +158,18 @@ routes:
     methods: []
     auth: admin
   - service: document
-    prefix: /api/v1/admin/settings
-    methods: []
-    auth: admin
-  - service: document
     prefix: /api/v1/admin/share-links
     methods: []
     auth: admin
-  - service: document
+  # Groups admin is served by the auth service (GroupsHandler) — this
+  # entry was mis-attached to document. The stale document-attributed
+  # /api/v1/admin/settings (billing owns it; correct entry below) and
+  # /api/v1/permissions/matrix (covered by the policy service's
+  # /api/v1/permissions prefix) duplicates are removed.
+  - service: auth
     prefix: /api/v1/admin/groups
     methods: []
     auth: admin
-  - service: document
-    prefix: /api/v1/permissions/matrix
-    methods: [GET]
-    auth: required
   - service: document
     prefix: /api/v1/compliance/holds
     methods: []
@@ -201,7 +210,10 @@ routes:
     auth: admin
 
   # ---- storage --------------------------------------------------------
-  - service: storage
+  # The storage service is gRPC-only; the document service hosts the
+  # HTTP facade for /api/v1/storage (see document cmd/server main.go),
+  # which is where Kong routes it too.
+  - service: document
     prefix: /api/v1/storage
     methods: []
     auth: required
@@ -323,6 +335,7 @@ routes:
   - { service: document, prefix: /api/v1/compliance, methods: [], auth: required }
   - { service: document, prefix: /api/v1/admin/compliance, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/trash, methods: [], auth: admin }
+  - { service: document, prefix: /api/v1/admin/folders, methods: [], auth: admin }  # empty-folder scan + cleanup (Trash page tool)
   - { service: document, prefix: /api/v1/admin/bulk, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/ediscovery, methods: [], auth: admin }  # hold-scoped e-discovery export
   - { service: document, prefix: /api/v1/admin/models, methods: [], auth: admin }

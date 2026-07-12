@@ -19,6 +19,13 @@ x-go-env: &go-env
   # used by /internal/v1/retention/sweep. The gateway strips inbound
   # X-Internal-Service-Key so only in-cluster services can present it.
   SEDOC_INTERNAL_API_KEY: "${SEDOC_INTERNAL_API_KEY:-dev-internal-service-key-rotate-in-prod}"
+  # Service-to-service key (X-Service-Key) for the document→preview
+  # watermark call. The preview service reads the same value to gate its
+  # internal stamping endpoints (fail-closed when empty). SEDOC_PREVIEW_URL
+  # points the document watermark client at the preview API directly (not
+  # through the gateway — service-to-service).
+  SEDOC_SERVICE_API_KEY: "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
+  SEDOC_PREVIEW_URL: "http://preview:8080"
   SEDOC_DATABASE_URL: "postgres://sedoc:devpassword@postgres:5432/sedoc?sslmode=disable"
   # FIX-7 (audit C6) — dev opt-in for the BYPASSRLS connection role.
   # Prod must connect as `dms_app` (NOBYPASSRLS) and leave this unset
@@ -526,6 +533,9 @@ services:
       WS_PORT: "8083"
       REDIS_URL: "redis://redis:6379"
       AUTH_SERVICE_URL: "http://auth:8080"
+      # WS comment mutations persist through the document service's
+      # comments API (create/update/delete + room-load hydration).
+      DOCUMENT_SERVICE_URL: "http://document:8080"
       # §17.3 / D10 WS fan-out — annotation events bridged from NATS.
       SEDOC_NATS_URL: "nats://nats:4222"
       # ADR 0096 — Yjs snapshot persistence + gateway-sig for auth calls.
@@ -702,6 +712,41 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Preview HTTP API (uvicorn). Serves /api/v1/previews/* (viewer) and the
+  # service-authed /api/v1/previews/internal/* stamping endpoints. The
+  # Kong gateway routes /api/v1/previews here (`http://preview:8080`);
+  # without this container the gateway route had no upstream.
+  preview:
+    build:
+      context: services/preview
+      dockerfile: Dockerfile
+    container_name: sedoc-preview-api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      SEDOC_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_S3_ACCESS_KEY: "minioadmin"
+      SEDOC_S3_SECRET_KEY: "minioadmin"
+      SEDOC_REDIS_CACHE_URL: "redis://redis:6379/3"
+      SEDOC_CELERY_BROKER_URL: "redis://redis:6379/2"
+      SEDOC_NATS_URL: "nats://nats:4222"
+      # Same value as the Go x-go-env anchor so the document→preview
+      # watermark call authenticates.
+      SEDOC_SERVICE_API_KEY: "${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
+    # Host port for the deploy-shaped smoke (scripts/preview-gateway-smoke.sh)
+    # to reach the service-authed internal watermark path directly, as the
+    # document service does in-cluster. Public traffic goes via the gateway.
+    ports: ["8087:8080"]
+    depends_on:
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz').status==200 else 1)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   preview-worker:
     build:
       context: services/preview
@@ -718,6 +763,8 @@ services:
     environment:
       SEDOC_CELERY_BROKER_URL: "redis://redis:6379/2"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
+      SEDOC_S3_ACCESS_KEY: "minioadmin"
+      SEDOC_S3_SECRET_KEY: "minioadmin"
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:
