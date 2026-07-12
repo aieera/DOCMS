@@ -142,7 +142,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
           s === 'active'
             ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
             : s === 'suspended'
-              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              ? 'border-destructive/40 bg-destructive/10 text-red-700 dark:text-red-300'
               : 'border-border bg-muted text-muted-foreground'
         const label = !row.original.last_login_at && s === 'active' ? 'Never logged in' : s
         return (
