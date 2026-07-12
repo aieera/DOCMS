@@ -182,6 +182,21 @@ type TemplateRepository interface {
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.WorkspaceTemplate, error)
 	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) ([]model.WorkspaceTemplate, error)
 	Delete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
+	// GetProvisionRecord returns the stored idempotency record for a
+	// (tenant, idempotency_key) provisioning request, or nil when none.
+	GetProvisionRecord(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, key string) (*ProvisionRecord, error)
+	// SaveProvisionRecord claims the idempotency key for this provision +
+	// stores its result, in the caller's transaction. Returns inserted=false
+	// when the key was already claimed (a concurrent duplicate lost the race).
+	SaveProvisionRecord(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, key, digest string, result []byte) (inserted bool, err error)
+}
+
+// ProvisionRecord is the persisted idempotency record for a
+// ProvisionFromTemplate call: the input digest (to reject key reuse with a
+// different request) + the serialized ProvisionResult replayed on retry.
+type ProvisionRecord struct {
+	Digest string
+	Result []byte
 }
 
 type MetadataSchemaRepository interface {
