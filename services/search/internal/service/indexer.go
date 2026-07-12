@@ -8,8 +8,10 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/tracing"
 	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
@@ -17,30 +19,50 @@ import (
 // NATS consumer slot. Matches AckWait (60s) with headroom for commit.
 const indexerHandlerTimeout = 30 * time.Second
 
-// handlerCtx builds the per-message context: 30s timeout + correlation-id
-// propagation from the NATS header, so downstream logs stay threaded.
+// handlerCtx builds the per-message context: a CONSUMER span linked to the
+// producing request + 30s timeout + correlation-id propagation from the NATS
+// header, so downstream logs and traces stay threaded.
+//
+// The outbox publisher stamps the producing request's W3C trace context onto
+// the NATS message headers (traceparent/tracestate). Extracting it here makes
+// this handler's span a child of the upload that produced the event — the one
+// async hop NATS can't instrument on its own. Messages with no trace header
+// (background sweeps) simply start a fresh root span. The returned CancelFunc
+// ends the span as well as cancelling the timeout, so callers keep their
+// existing `defer cancel()` and get span lifecycle for free.
 //
 // Wave 6 Prompt 6.4: the parent context is the service lifecycle ctx —
 // cancelling it on SIGTERM cascades into every in-flight handler so
 // shutdown drains cleanly without leaked goroutines.
 func handlerCtx(parent context.Context, msg *nats.Msg) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(parent, indexerHandlerTimeout)
+	carrier := make(map[string]string, len(msg.Header))
+	for k := range msg.Header {
+		carrier[k] = msg.Header.Get(k)
+	}
+	spanCtx, span := tracing.ConsumerContext(parent, carrier, "search.index "+msg.Subject,
+		attribute.String("messaging.system", "nats"),
+		attribute.String("messaging.destination", msg.Subject),
+	)
+	ctx, cancel := context.WithTimeout(spanCtx, indexerHandlerTimeout)
 	if corrID := msg.Header.Get("correlation-id"); corrID != "" {
 		ctx = auth.SetCorrelationID(ctx, corrID)
 	}
-	return ctx, cancel
+	return ctx, func() {
+		cancel()
+		span.End()
+	}
 }
 
 // Indexer subscribes to NATS subjects and drives index mutations through
 // the Service layer. Each handler acks on success, naks (redelivery) on
 // transient errors, and terms malformed messages.
 type Indexer struct {
-	svc        *Service
-	debouncer  *PermissionDebouncer // ADR 0083 — coalesces permission events
-	js         nats.JetStreamContext
-	log        zerolog.Logger
-	subs       []*nats.Subscription
-	parent     context.Context
+	svc       *Service
+	debouncer *PermissionDebouncer // ADR 0083 — coalesces permission events
+	js        nats.JetStreamContext
+	log       zerolog.Logger
+	subs      []*nats.Subscription
+	parent    context.Context
 }
 
 // NewIndexer creates the consumer. Call Start to begin receiving.

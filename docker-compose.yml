@@ -141,6 +141,18 @@ x-go-env: &go-env
   SEDOC_WEBAUTHN_DISPLAY_NAME: "${SEDOC_WEBAUTHN_DISPLAY_NAME:-SeDoc}"
   SEDOC_WEBAUTHN_HMAC_SECRET:  "${SEDOC_WEBAUTHN_HMAC_SECRET:-}"
 
+  # Distributed tracing (OpenTelemetry). pkg/tracing.Enabled() is true
+  # when SEDOC_TRACING_ENABLED=1 OR OTEL_EXPORTER_OTLP_ENDPOINT is set;
+  # here we point every Go service at the jaeger all-in-one OTLP/HTTP
+  # receiver (:4318) and default it ON for local dev so a golden trace
+  # (upload → document → outbox → search) is visible in the Jaeger UI at
+  # http://localhost:16686 out of the box. Sampling defaults to 1% in
+  # code; dev overrides to 100% so every request shows up. Set
+  # SEDOC_TRACING_ENABLED=0 to turn it off entirely.
+  SEDOC_TRACING_ENABLED:        "${SEDOC_TRACING_ENABLED:-1}"
+  OTEL_EXPORTER_OTLP_ENDPOINT:  "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}"
+  SEDOC_TRACE_SAMPLE_RATIO:     "${SEDOC_TRACE_SAMPLE_RATIO:-1.0}"
+
 x-go-depends: &go-depends
   postgres: { condition: service_healthy }
   redis:    { condition: service_healthy }
@@ -436,6 +448,29 @@ services:
       - qdrantdata:/qdrant/storage
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Distributed-tracing backend. jaeger all-in-one bundles an OTLP
+  # receiver (:4318 HTTP, :4317 gRPC), in-memory storage, and the trace
+  # UI (:16686). Every Go service exports here via OTEL_EXPORTER_OTLP_ENDPOINT
+  # (set in the x-go-env anchor). Not a hard dependency of any service: the
+  # OTLP batch exporter tolerates the collector being down, so boot order
+  # is unaffected. View the golden trace (upload → document → outbox →
+  # search) at http://localhost:16686 — see docs/observability/tracing.md.
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: sedoc-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP (what pkg/tracing exports to)
+      - "4317:4317"     # OTLP gRPC
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:14269/ || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5

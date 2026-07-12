@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	temporalclient "go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,10 +35,11 @@ import (
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/pkg/tracing"
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
-	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
+	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
 	"github.com/aieera/sedoc/services/document/internal/janitor"
 	"github.com/aieera/sedoc/services/document/internal/repository"
@@ -59,6 +61,25 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Distributed tracing (OpenTelemetry). No-op unless SEDOC_TRACING_ENABLED
+	// or OTEL_EXPORTER_OTLP_ENDPOINT is set, so a deploy with no collector
+	// pays nothing. Init installs the global TracerProvider + W3C propagator;
+	// the outbox Insert then stamps trace context onto each row so the
+	// async NATS hop stays connected (see pkg/tracing docs). Sampling is
+	// env-configurable via SEDOC_TRACE_SAMPLE_RATIO (default 1%).
+	if tracing.Enabled() {
+		shutdownTracing, terr := tracing.Init(ctx, serviceName, cfg.ServiceVersion)
+		if terr != nil {
+			log.Warn(ctx).Err(terr).Msg("tracing init failed; continuing without traces")
+		} else {
+			defer func() {
+				sc, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = shutdownTracing(sc)
+			}()
+		}
+	}
 
 	// ADR 0095 — license validation. Init reads SEDOC_LICENSE_JWT (or
 	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
@@ -719,11 +740,11 @@ func main() {
 	clMux := http.NewServeMux()
 	handler.NewClausesHandler(pool).Register(clMux)
 	clauseAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(clMux)
-	rootMux.Handle("GET /api/v1/clauses",            middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("GET /api/v1/clauses/{id}",       middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("POST /api/v1/clauses",           middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("PATCH /api/v1/clauses/{id}",     middleware.CorrelationHTTP(clauseAuth))
-	rootMux.Handle("DELETE /api/v1/clauses/{id}",    middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("GET /api/v1/clauses", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("GET /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("POST /api/v1/clauses", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("PATCH /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
+	rootMux.Handle("DELETE /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
 
 	// ADR 0099 — contract intelligence graph. GET is read-only and
 	// uses SessionAuth (so the tenant + user context is set); the
@@ -792,32 +813,32 @@ func main() {
 	// dms.comment.* outbox subjects we emit on every transition.
 	commentsMux := http.NewServeMux()
 	handler.NewCommentsHandler(svc, *log.Z()).Register(commentsMux)
-	rootMux.Handle("POST /api/v1/documents/{id}/comments",    middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("GET /api/v1/documents/{id}/comments",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/replies",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("PATCH /api/v1/comments/{cid}",            middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("DELETE /api/v1/comments/{cid}",           middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/resolve",     middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/unresolve",   middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("POST /api/v1/comments/{cid}/reactions",   middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/documents/{id}/comments", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/documents/{id}/comments", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/replies", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("PATCH /api/v1/comments/{cid}", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("DELETE /api/v1/comments/{cid}", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/resolve", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/unresolve", middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("POST /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 	rootMux.Handle("DELETE /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
-	rootMux.Handle("GET /api/v1/comments/{cid}/reactions",    middleware.CorrelationHTTP(commentsMux))
+	rootMux.Handle("GET /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 
 	// ADR 0068 — lightweight tasks. Distinct from workflow_tasks
 	// (approval-step state) which lives in services/workflow.
 	tasksMux := http.NewServeMux()
 	handler.NewTasksHandler(svc, *log.Z()).Register(tasksMux)
-	rootMux.Handle("POST /api/v1/tasks",                   middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/mine",               middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks",                    middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/{id}",               middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("PATCH /api/v1/tasks/{id}",             middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/assign",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/unassign",     middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/complete",     middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/reopen",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/cancel",       middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("DELETE /api/v1/tasks/{id}",            middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/mine", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("GET /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("PATCH /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/assign", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/unassign", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/complete", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/reopen", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("POST /api/v1/tasks/{id}/cancel", middleware.CorrelationHTTP(tasksMux))
+	rootMux.Handle("DELETE /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
 
 	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at
 	// on tasks crossing the 24h-out and overdue thresholds; emits one
@@ -1065,9 +1086,12 @@ func main() {
 			),
 		))
 
+	// otelhttp extracts the inbound W3C trace context and opens a SERVER
+	// span per request. Inert (global no-op provider/propagator) unless
+	// tracing.Init ran above, so it's safe to wrap unconditionally.
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           wopiAndRoot,
+		Handler:           otelhttp.NewHandler(wopiAndRoot, "document.http"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
