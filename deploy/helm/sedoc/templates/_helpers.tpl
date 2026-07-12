@@ -1,4 +1,27 @@
 {{/*
+Chart name + fully-qualified release name. Standard Helm boilerplate —
+these were referenced by templates/gateway/* (sedoc.fullname / sedoc.name)
+but never defined, so `helm template`/`helm install` failed for the WHOLE
+chart with "no template sedoc.fullname". Defining them makes the chart
+render (and unblocks the env golden test below).
+*/}}
+{{- define "sedoc.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- define "sedoc.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common labels
 */}}
 {{- define "sedoc.labels" -}}
@@ -52,16 +75,23 @@ Common environment variables injected into every Go service
     secretKeyRef:
       name: {{ .Values.gateway.secret.name | default "sedoc-gateway" }}
       key:  {{ .Values.gateway.secret.sharedSecretKey | default "shared-secret" }}
-- name: SEDOC_MINIO_ENDPOINT
+# Object storage. Canonical env spelling is SEDOC_S3_* — that's what
+# compose + ansible inject, what the Python services (preview,
+# intelligence) read via pydantic, and the PREFERRED binding in the Go
+# pkg/config (which accepts SEDOC_MINIO_* only as a legacy fallback).
+# This chart used to inject SEDOC_MINIO_*, which the Python services
+# never read — so the preview/intelligence boto3 clients had no creds in
+# cluster. Emit SEDOC_S3_* so every service, Go and Python, gets them.
+- name: SEDOC_S3_ENDPOINT
   value: {{ .Values.global.s3.endpoint | quote }}
-- name: SEDOC_MINIO_USE_SSL
+- name: SEDOC_S3_USE_SSL
   value: {{ .Values.global.s3.useSSL | quote }}
-- name: SEDOC_MINIO_ACCESS_KEY
+- name: SEDOC_S3_ACCESS_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.s3.accessKeySecret }}
       key: {{ .Values.global.s3.accessKeyKey }}
-- name: SEDOC_MINIO_SECRET_KEY
+- name: SEDOC_S3_SECRET_KEY
   valueFrom:
     secretKeyRef:
       name: {{ .Values.global.s3.accessKeySecret }}
@@ -84,6 +114,20 @@ Common environment variables injected into every Go service
       name: {{ .Values.global.encryption.existingSecret }}
       key: local-kek
       optional: true
+# Service-to-service key (X-Service-Key). Preview reads it to gate its
+# internal /watermark stamping endpoints; the document service reads it
+# as the PreviewClient credential. Both must share this value, so it is
+# in commonEnv. Optional so a missing secret leaves the preview client
+# disabled instead of crash-looping.
+- name: SEDOC_SERVICE_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.serviceApiKey.existingSecret }}
+      key: {{ .Values.global.serviceApiKey.key }}
+      optional: true
+# In-cluster preview API base URL for the document watermark client.
+- name: SEDOC_PREVIEW_URL
+  value: {{ .Values.global.previewURL | default "http://sedoc-preview:8080" | quote }}
 {{- end }}
 
 {{/*

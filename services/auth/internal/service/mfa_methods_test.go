@@ -16,7 +16,7 @@ import (
 
 func TestMethodStrength_ADROrdering(t *testing.T) {
 	cases := []struct {
-		m       MFAMethod
+		m        MFAMethod
 		stronger []MFAMethod
 	}{
 		{MethodPasskey, nil},

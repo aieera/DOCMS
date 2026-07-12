@@ -94,7 +94,7 @@ function ScimPage() {
       <h3 className="mt-6 text-sm font-semibold">Recent provisioning activity</h3>
       <div className="mt-2 overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+          <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
             <tr><th className="p-2 w-8" /><th className="p-2">Action</th><th className="p-2">Detail</th><th className="p-2">When</th></tr>
           </thead>
           <tbody>

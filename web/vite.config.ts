@@ -107,6 +107,25 @@ export default defineConfig(({ command, mode }) => {
             '/api/v1/admin/documents':          wsig('http://localhost:8182'),
             // Admin Trash — list soft-deleted, restore, permanent purge.
             '/api/v1/admin/trash':              wsig('http://localhost:8182'),
+            // Empty-folder scan + cleanup (Trash page maintenance tool).
+            // Document service owns it; without this entry the request
+            // falls into the /api/v1/admin auth catch-all and 404s.
+            '/api/v1/admin/folders':            wsig('http://localhost:8182'),
+            // Document-service admin surfaces that would otherwise fall
+            // into the /api/v1/admin auth catch-all and 404 (same class
+            // of bug as the templates/analytics gaps fixed 2026-07-04;
+            // the guard test in src/test/devProxyCoverage.test.ts now
+            // pins every routes.yaml prefix to the right host port).
+            '/api/v1/admin/classification':     wsig('http://localhost:8182'),
+            '/api/v1/admin/watermark':          wsig('http://localhost:8182'),
+            '/api/v1/admin/irm':                wsig('http://localhost:8182'),
+            '/api/v1/admin/ediscovery':         wsig('http://localhost:8182'),
+            // SIEM forwarding config lives in the audit service.
+            '/api/v1/admin/siem':               wsig('http://localhost:8185'),
+            // Auth tenant admin. MUST come before the /api/v1/admin/tenant
+            // (intelligence) entry below: proxy keys match by insertion-
+            // order startsWith, so "tenant" would swallow "tenants".
+            '/api/v1/admin/tenants':            wsig('http://localhost:8180'),
             // Admin Compliance overview — live docs/storage/encryption.
             '/api/v1/admin/compliance':         wsig('http://localhost:8182'),
             // ADR 0094 — DB driver+capability matrix (document svc owns it).
@@ -200,6 +219,23 @@ export default defineConfig(({ command, mode }) => {
             // service. Without this entry /api/v1/tasks/mine falls
             // through to the auth catch-all (8180) and 404s.
             '/api/v1/tasks':                    wsig('http://localhost:8182'),
+            // ADR 0118 — workspace templates, saved reports/analytics,
+            // records management, and notes/wiki (all document service).
+            // Kong got these routes on 2026-07-02 but the host-mode
+            // proxy was never updated, so they 404'd against the auth
+            // catch-all in dev.
+            '/api/v1/templates':                wsig('http://localhost:8182'),
+            '/api/v1/analytics':                wsig('http://localhost:8182'),
+            '/api/v1/records':                  wsig('http://localhost:8182'),
+            '/api/v1/notes':                    wsig('http://localhost:8182'),
+            // More document-service prefixes that fell to the /api auth
+            // catch-all: selective sync, IRM protected exports, ingestion
+            // pipeline, add-in email filing, and the review queue.
+            '/api/v1/sync':                     wsig('http://localhost:8182'),
+            '/api/v1/irm':                      wsig('http://localhost:8182'),
+            '/api/v1/ingest':                   wsig('http://localhost:8182'),
+            '/api/v1/integrations/m365':        wsig('http://localhost:8182'),
+            '/api/v1/review-queue':             wsig('http://localhost:8182'),
             '/api/v1/signatures':               wsig('http://localhost:8188'),
             // ADR 0074 — GraphQL read gateway. Host-mode port 8191
             // matches scripts/run-all-services.sh's graphql-gateway

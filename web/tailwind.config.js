@@ -119,5 +119,5 @@ export default {
   //     natively (`ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`,
   //     `border-s/e`, `rounded-s/e`, `text-start/end`); the plugin
   //     supplements rather than duplicates them.
-  plugins: [require('tailwindcss-animate'), require('tailwindcss-rtl')],
+  plugins: [require('tailwindcss-animate'), require('tailwindcss-rtl'), require('@tailwindcss/typography')],
 }

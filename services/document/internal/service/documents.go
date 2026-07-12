@@ -308,16 +308,22 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 		}
 
 		changed := []string{}
+		// changedVals mirrors `changed` with the NEW values — the search
+		// indexer applies them as a partial update (a name-only diff
+		// used to full-replace the index doc and wipe content + ACL).
+		changedVals := map[string]any{}
 		if in.Title != nil && *in.Title != cur.Title {
 			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_title") {
 				return vdmserr.ErrLegalHold
 			}
 			cur.Title = *in.Title
 			changed = append(changed, "title")
+			changedVals["title"] = cur.Title
 		}
 		if in.Description != nil && *in.Description != cur.Description {
 			cur.Description = *in.Description
 			changed = append(changed, "description")
+			changedVals["description"] = cur.Description
 		}
 		if in.CustomMetadata != nil {
 			if model.IsLegalHoldBlocked(cur.LifecycleState, "update_metadata") {
@@ -332,13 +338,16 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			}
 			cur.CustomMetadata = in.CustomMetadata
 			changed = append(changed, "custom_metadata")
+			changedVals["custom_metadata"] = cur.CustomMetadata
 		}
 		if in.ClearTags {
 			cur.Tags = []string{}
 			changed = append(changed, "tags")
+			changedVals["tags"] = cur.Tags
 		} else if in.Tags != nil {
 			cur.Tags = in.Tags
 			changed = append(changed, "tags")
+			changedVals["tags"] = cur.Tags
 		}
 
 		if len(changed) == 0 {
@@ -354,6 +363,7 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, in *UpdateDocument
 			model.DocumentUpdatedPayload{
 				DocumentID:    cur.ID.String(),
 				ChangedFields: changed,
+				Changed:       changedVals,
 				UpdatedBy:     userID.String(),
 			})
 		if err != nil {

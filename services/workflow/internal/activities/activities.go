@@ -27,9 +27,13 @@ type Activities struct {
 	// error in that case.
 	Redis *redis.Client
 	// ServiceURLs maps service name → base URL for cross-service
-	// activities (Wave 12.4). Keys: "search", "qdrant", "connector".
-	// Empty map or missing key → activity soft-no-ops + logs.
+	// activities (Wave 12.4). Keys: "search", "qdrant", "connector",
+	// "signature". Empty map or missing key → activity soft-no-ops + logs.
 	ServiceURLs map[string]string
+	// InternalKey is SEDOC_INTERNAL_API_KEY, presented as
+	// X-Internal-Service-Key on service-to-service activity calls that hit
+	// an internal endpoint (e.g. the signature seal-ceremony seal, ADR 0025).
+	InternalKey string
 	// JS is the JetStream context for emitting CloudEvents from
 	// activities. ADR 0085 saved-search alert workflow uses this
 	// to publish dms.notify.saved_search_match.v1. nil is accepted;
@@ -50,14 +54,63 @@ func (a *Activities) CreateTask(ctx context.Context, tenantID, instanceID, docum
 	})
 }
 
-// CompleteTask marks a task as completed with outcome.
-func (a *Activities) CompleteTask(ctx context.Context, tenantID, instanceID string, stepIndex int, status, notes string) error {
+// taskStatusFor maps a raw workflow outcome (what approval/review/signature
+// send: "approve"/"approved"/"reject"/"sign"/"decline"/"cancelled"/…) onto
+// the closed set the workflow_tasks.status CHECK constraint allows
+// (pending, in_progress, completed, rejected, delegated, escalated,
+// skipped). Writing the raw outcome as status violated the CHECK; the raw
+// value is preserved separately in the `outcome` column. The mapping is
+// total: any unrecognized outcome falls through to 'completed' (a terminal
+// state) with the raw value still recorded, because failing the activity
+// here would re-wedge the very task-completion path this fixes.
+func taskStatusFor(outcome string) string {
+	switch outcome {
+	case "approve", "approved", "sign", "signed", "complete", "completed":
+		return "completed"
+	case "reject", "rejected", "decline", "declined", "deny", "denied":
+		return "rejected"
+	case "escalate", "escalated":
+		return "escalated"
+	case "delegate", "delegated":
+		return "delegated"
+	case "skip", "skipped", "cancel", "cancelled", "canceled", "recall", "recalled":
+		return "skipped"
+	case "pending", "in_progress":
+		return outcome
+	default:
+		return "completed"
+	}
+}
+
+// CompleteTask marks the instance's pending task completed, mapping the raw
+// outcome to a CHECK-legal status and preserving the raw outcome verbatim.
+//
+// The task is targeted by an explicit-id subquery rather than a bare
+// `UPDATE … ORDER BY … LIMIT` (which Postgres rejects as a syntax error —
+// the original defect). The caller has only (instance, step), not a task id
+// — CreateTask doesn't return one — so we pick the instance's oldest
+// pending task. FOR UPDATE SKIP LOCKED is load-bearing, not decoration:
+// review and signature run reviewers/signers in PARALLEL, so multiple
+// pending tasks can exist for one instance and several CompleteTask
+// activities can run at once; SKIP LOCKED makes each claim a DISTINCT row,
+// so N decisions complete N tasks. (Per-assignee targeting — matching the
+// decision to its exact reviewer's row rather than the oldest — needs the
+// activity to carry the assignee/task id and is tracked as a follow-up;
+// stepIndex is retained in the signature for that work.)
+func (a *Activities) CompleteTask(ctx context.Context, tenantID, instanceID string, stepIndex int, outcome, notes string) error {
+	status := taskStatusFor(outcome)
 	return a.runTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			UPDATE workflow_tasks SET status = $1, notes = $2, completed_at = $3
-			WHERE tenant_id = $4 AND instance_id = $5 AND status = 'pending'
-			ORDER BY created_at ASC LIMIT 1
-		`, status, notes, time.Now().UTC(), tenantID, instanceID)
+			UPDATE workflow_tasks
+			   SET status = $1, outcome = $2, notes = $3, completed_at = $4
+			 WHERE tenant_id = $5 AND id = (
+			     SELECT id FROM workflow_tasks
+			      WHERE tenant_id = $5 AND instance_id = $6 AND status = 'pending'
+			      ORDER BY created_at ASC
+			      LIMIT 1
+			      FOR UPDATE SKIP LOCKED
+			 )
+		`, status, outcome, notes, time.Now().UTC(), tenantID, instanceID)
 		return err
 	})
 }

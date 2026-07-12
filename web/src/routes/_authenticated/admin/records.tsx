@@ -112,7 +112,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
 
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+          <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
             <tr><th className="p-2">Name</th><th className="p-2">Trigger</th><th className="p-2">Retention</th><th className="p-2">Action</th><th /></tr>
           </thead>
           <tbody>
@@ -122,7 +122,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
                 <td className="p-2">{s.trigger_event}</td>
                 <td className="p-2 tabular-nums">{s.retention_period_days} days</td>
                 <td className="p-2">{s.disposition_action}</td>
-                <td className="p-2 text-right">
+                <td className="p-2 text-end">
                   {canWrite && (
                     <button onClick={() => remove.mutate(s.id)} className="text-destructive" aria-label="Delete schedule">
                       <Trash2 className="h-3.5 w-3.5" />

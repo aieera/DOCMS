@@ -251,8 +251,8 @@ function SchemaPreview({
                   <span
                     aria-hidden
                     className={cn(
-                      'absolute top-0.5 inline-block h-3 w-3 rounded-full bg-background shadow-sm transition-[left]',
-                      isRequired ? 'left-[14px]' : 'left-0.5',
+                      'absolute top-0.5 inline-block h-3 w-3 rounded-full bg-background shadow-sm transition-[inset-inline-start]',
+                      isRequired ? 'start-[14px]' : 'start-0.5',
                     )}
                   />
                 </button>

@@ -104,10 +104,10 @@ func (h *LicenseHandler) get(w http.ResponseWriter, r *http.Request) {
 			"when SEDOC_REQUIRE_LICENSE=true. Contact BD ops for a new license."
 	}
 
-	// seats_used is intentionally omitted in this phase — counting active
-	// users requires the auth service's users table and a tenant-scoped
-	// query that doesn't fit document service. Phase 4 (ADR 0095) adds
-	// the 5-min background job that populates it.
+	// seats_used is omitted here — counting active users requires the
+	// auth service's users table, which this service cannot see. The
+	// frontend License page fetches it from the auth service instead:
+	// GET /api/v1/admin/users/seat-usage (ADR 0095 Phase 4).
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

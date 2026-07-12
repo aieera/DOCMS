@@ -31,10 +31,14 @@
 package handler
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -42,9 +46,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/pkg/middleware"
+	pkgstorage "github.com/aieera/sedoc/pkg/storage"
+	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
@@ -53,12 +62,38 @@ import (
 type M365IngestHandler struct {
 	pool *pgxpool.Pool
 	svc  *service.DocumentService
+	// storage + s3 drive the server-side blob-upload pipeline (ADR 0112
+	// completion): the email body + each attachment are pushed through
+	// InitiateUpload → S3 put → CompleteUpload → CreateVersion, exactly like
+	// the WOPI save path. nil (storage not configured in this deploy) falls
+	// back to the metadata-only ingest with pending=true.
+	storage sedocv1.StorageServiceClient
+	s3      objectPutter
+	log     zerolog.Logger
 }
 
-// NewM365IngestHandler builds the handler.
-func NewM365IngestHandler(pool *pgxpool.Pool, svc *service.DocumentService) *M365IngestHandler {
-	return &M365IngestHandler{pool: pool, svc: svc}
+// objectPutter is the one S3 operation the ingest pipeline needs.
+// *pkgstorage.S3Client satisfies it; tests inject a fake to exercise the
+// full upload path without a live object store.
+type objectPutter interface {
+	PutObject(ctx context.Context, bucket, key string, reader io.Reader, size int64, contentType string) error
 }
+
+// NewM365IngestHandler builds the handler. storageClient + s3 may be nil (dev
+// deploys without object storage); then ingest persists document rows only.
+func NewM365IngestHandler(pool *pgxpool.Pool, svc *service.DocumentService, storageClient sedocv1.StorageServiceClient, s3 *pkgstorage.S3Client, log zerolog.Logger) *M365IngestHandler {
+	// Store as the interface, but keep a nil interface when the concrete
+	// client is nil (avoid the typed-nil-in-interface trap so storageReady
+	// stays correct).
+	var putter objectPutter
+	if s3 != nil {
+		putter = s3
+	}
+	return &M365IngestHandler{pool: pool, svc: svc, storage: storageClient, s3: putter, log: log}
+}
+
+// storageReady reports whether the blob-upload pipeline is wired.
+func (h *M365IngestHandler) storageReady() bool { return h.storage != nil && h.s3 != nil }
 
 // Register mounts the handler on the provided stdlib mux.
 func (h *M365IngestHandler) Register(mux *http.ServeMux) {
@@ -162,6 +197,15 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 		}
 		parentID = parent.ID
 		parentIDStr = parent.ID.String()
+
+		// Persist the email body as the parent document's first version.
+		if h.storageReady() {
+			if data, filename, mime := m365BodyBytes(&body, subject); len(data) > 0 {
+				if err := h.uploadBlobAndVersion(r.Context(), tenantID, userID, parentID, parent.RegionPin, filename, mime, data); err != nil {
+					h.log.Error().Err(err).Str("document_id", parentIDStr).Msg("m365 ingest: email body blob upload failed")
+				}
+			}
+		}
 	}
 
 	// 2. Attachment documents. Best-effort — a single failure does
@@ -170,16 +214,17 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 	// response for the add-in to surface.
 	attachIDs := make([]string, 0, len(body.Attachments))
 	for _, a := range body.Attachments {
-		// We validate the base64 here even though we don't persist
-		// it yet — better to fail fast on a malformed payload
-		// than queue a broken row for the future sweep.
+		// Decode up front so a malformed payload fails fast (skip the
+		// attachment) rather than persisting a broken row.
+		var decoded []byte
 		if a.ContentB64 != "" {
-			if _, derr := base64.StdEncoding.DecodeString(a.ContentB64); derr != nil {
-				// Skip silently — the add-in shouldn't have sent
-				// something we can't decode, but a partial save is
-				// preferable to a 500 here.
+			d, derr := base64.StdEncoding.DecodeString(a.ContentB64)
+			if derr != nil {
+				// The add-in shouldn't have sent something we can't
+				// decode; a partial save beats a 500.
 				continue
 			}
+			decoded = d
 		}
 		child, cerr := h.svc.CreateDocument(r.Context(), &service.CreateDocumentInput{
 			WorkspaceID:    wsID,
@@ -191,11 +236,23 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 			UpdatedBy:      userID,
 		})
 		if cerr != nil {
-			// Log via the handler's writer would clobber; the
-			// CreateDocument call already records its own logs.
+			// CreateDocument records its own logs; a single failure
+			// doesn't abort the batch.
 			continue
 		}
 		attachIDs = append(attachIDs, child.ID.String())
+
+		// Persist the attachment bytes as the child document's version.
+		if h.storageReady() && len(decoded) > 0 {
+			mime := a.MimeType
+			if mime == "" {
+				mime = "application/octet-stream"
+			}
+			if err := h.uploadBlobAndVersion(r.Context(), tenantID, userID, child.ID, child.RegionPin, a.Name, mime, decoded); err != nil {
+				h.log.Error().Err(err).Str("document_id", child.ID.String()).Str("filename", a.Name).
+					Msg("m365 ingest: attachment blob upload failed")
+			}
+		}
 	}
 
 	// 3. Audit event in its own short-lived tx — fire-and-forget at
@@ -228,8 +285,121 @@ func (h *M365IngestHandler) ingestEmail(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, m365IngestResp{
 		DocumentID:            parentIDStr,
 		AttachmentDocumentIDs: attachIDs,
-		Pending:               true, // blob upload + OCR pending — see file header.
+		// Blobs + versions are persisted inline when storage is wired; only a
+		// storage-less deploy still defers (metadata-only rows). OCR +
+		// classification then fire off the dms.version.uploaded.v1 events
+		// CreateVersion emits.
+		Pending: !h.storageReady(),
 	})
+}
+
+// uploadBlobAndVersion pushes bytes through the storage service pipeline
+// (InitiateUpload → direct S3 put at the returned coordinates → CompleteUpload:
+// hash verify + MIME sniff + virus scan + envelope encryption + content_blobs
+// row) and links the resulting blob as a new version on docID. Mirrors the
+// WOPI save path (handler/wopi_resolver.go). RegionPin is honored via the
+// InitiateUpload request (C.4 residency).
+func (h *M365IngestHandler) uploadBlobAndVersion(ctx context.Context, tenantID, userID, docID uuid.UUID, regionPin, filename, mime string, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	sum := sha256.Sum256(data)
+	sha := hex.EncodeToString(sum[:])
+
+	// The storage-side permission check reads tenant/user/document from gRPC
+	// metadata (same keys the browser upload proxy forwards).
+	md := metadata.Pairs(
+		middleware.TenantMetadataKey, tenantID.String(),
+		"x-user-id", userID.String(),
+		"x-document-id", docID.String(),
+	)
+	octx, cancel := context.WithTimeout(metadata.NewOutgoingContext(ctx, md), 60*time.Second)
+	defer cancel()
+
+	init, err := h.storage.InitiateUpload(octx, &sedocv1.InitiateUploadRequest{
+		RegionPin:      regionPin,
+		Filename:       filename,
+		MimeType:       mime,
+		SizeBytes:      int64(len(data)),
+		ChecksumSha256: sha,
+	})
+	if err != nil {
+		return fmt.Errorf("initiate upload: %w", err)
+	}
+
+	var blobID uuid.UUID
+	if init.GetDeduplicated() {
+		// Identical bytes already stored for this tenant — reuse the blob.
+		blobID, err = uuid.Parse(init.GetExistingBlobId())
+		if err != nil {
+			return fmt.Errorf("dedup blob id: %w", err)
+		}
+	} else {
+		if err := h.s3.PutObject(ctx, init.GetStorageBucket(), init.GetStorageKey(),
+			bytes.NewReader(data), int64(len(data)), mime); err != nil {
+			return fmt.Errorf("put object: %w", err)
+		}
+		if _, err := h.storage.CompleteUpload(octx, &sedocv1.CompleteUploadRequest{
+			UploadId:       init.GetUploadId(),
+			ChecksumSha256: sha,
+			SizeBytes:      int64(len(data)),
+		}); err != nil {
+			return fmt.Errorf("complete upload: %w", err)
+		}
+		// CompleteUpload doesn't return the blob id; resolve by (tenant, sha).
+		if err := database.WithTenantTx(ctx, h.pool, tenantID, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT id FROM content_blobs
+				WHERE tenant_id = $1 AND sha256_hash = $2
+				ORDER BY created_at DESC LIMIT 1`, tenantID, sha).Scan(&blobID)
+		}); err != nil {
+			return fmt.Errorf("resolve blob id by sha: %w", err)
+		}
+	}
+
+	if _, err := h.svc.CreateVersion(ctx, &service.CreateVersionInput{
+		DocumentID:    docID,
+		ContentBlobID: blobID,
+		SizeBytes:     int64(len(data)),
+		MimeType:      mime,
+		SHA256Hash:    sha,
+		ChangeSummary: "Saved from Outlook (m365 ingest)",
+	}); err != nil {
+		return fmt.Errorf("create version: %w", err)
+	}
+	return nil
+}
+
+// m365BodyBytes renders the email body to a persistable blob: HTML preferred
+// (what Outlook sends for rich mail), plain text as a fallback. Empty when the
+// email carried no body (attachments-only ingest).
+func m365BodyBytes(b *m365IngestReq, subject string) (data []byte, filename, mime string) {
+	if strings.TrimSpace(b.BodyHTML) != "" {
+		return []byte(b.BodyHTML), safeFilename(subject) + ".html", "text/html; charset=utf-8"
+	}
+	if strings.TrimSpace(b.BodyText) != "" {
+		return []byte(b.BodyText), safeFilename(subject) + ".txt", "text/plain; charset=utf-8"
+	}
+	return nil, "", ""
+}
+
+// safeFilename strips path/URL-hostile characters from an email subject so it
+// can serve as a blob filename.
+func safeFilename(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "email"
+	}
+	repl := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "-", "?", "-",
+		"\"", "'", "<", "(", ">", ")", "|", "-", "\n", " ", "\r", " ")
+	out := strings.TrimSpace(repl.Replace(s))
+	if len(out) > 120 {
+		out = out[:120]
+	}
+	if out == "" {
+		return "email"
+	}
+	return out
 }
 
 // ---- helpers ------------------------------------------------------

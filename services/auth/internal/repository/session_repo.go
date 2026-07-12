@@ -43,13 +43,15 @@ func (r *sessionRepo) Create(ctx context.Context, tx pgx.Tx, s *model.Session) e
 }
 
 func (r *sessionRepo) GetByTokenHash(ctx context.Context, pool *pgxpool.Pool, tokenHash string) (*model.Session, error) {
-	row := pool.QueryRow(ctx, `
-		SELECT id, tenant_id, user_id, token_hash,
-		       COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
-		       expires_at, last_activity_at, created_at, revoked_at
-		FROM sessions
-		WHERE token_hash = $1 AND revoked_at IS NULL
-	`, tokenHash)
+	// PRE-TENANT lookup (token_hash IS how the tenant is learned) on the
+	// FORCE-RLS sessions table. A raw read fails closed under dms_app
+	// (NOBYPASSRLS) — a Redis cache-miss would then spuriously log the
+	// user out. Route through the SECURITY DEFINER exact-match function
+	// (auth migration 000001, issue #75).
+	row := pool.QueryRow(ctx,
+		`SELECT id, tenant_id, user_id, token_hash, ip_address, user_agent,
+		        expires_at, last_activity_at, created_at, revoked_at
+		 FROM auth_lookup_session_by_token($1)`, tokenHash)
 	return scanSession(row)
 }
 
@@ -146,8 +148,8 @@ func (r *sessionRepo) DeleteOldestForUser(ctx context.Context, tx pgx.Tx, tenant
 
 func scanSession(s scanner) (*model.Session, error) {
 	var (
-		ss        model.Session
-		revoked   *time.Time
+		ss      model.Session
+		revoked *time.Time
 	)
 	if err := s.Scan(
 		&ss.ID, &ss.TenantID, &ss.UserID, &ss.TokenHash,

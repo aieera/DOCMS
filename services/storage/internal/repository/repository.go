@@ -43,8 +43,13 @@ func New(pool *pgxpool.Pool) *Bundle {
 type UploadRepo interface {
 	Create(ctx context.Context, tx pgx.Tx, u *model.UploadSession) error
 	GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.UploadSession, error)
+	// GetByIDForUpdate locks the session row (SELECT … FOR UPDATE) so
+	// concurrent CompleteUpload claims serialize on it.
+	GetByIDForUpdate(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.UploadSession, error)
 	UpdateStatus(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, status model.UploadStatus) error
-	Complete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) error
+	// Complete finalizes the session and records the produced blob —
+	// the reference idempotent re-completes replay.
+	Complete(ctx context.Context, tx pgx.Tx, tenantID, id, blobID uuid.UUID, at time.Time) error
 	MarkExpired(ctx context.Context, pool *pgxpool.Pool, before time.Time) (int64, error)
 }
 

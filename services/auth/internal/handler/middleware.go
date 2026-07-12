@@ -105,4 +105,3 @@ func (h *Handler) RequireScope(scope string) func(http.Handler) http.Handler {
 		})
 	}
 }
-

@@ -17,7 +17,7 @@ interface Props {
 // current folder. Each crumb is clickable — clicking a parent flips
 // the URL ?folder= back to that id (or null for the workspace root)
 // so the workspace view re-fetches. RTL: the chevrons use a
-// directional character so Arabic renders right-to-left without an
+// directional character so Arabic renders RTL without an
 // extra branch.
 export function FolderBreadcrumbs({ ancestors, current, workspaceName, onNavigate }: Props) {
   const { t } = useTranslation('folders')

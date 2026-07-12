@@ -101,9 +101,9 @@ type MCPToolCall struct {
 
 // MCPToolResult is a JSON-RPC response.
 type MCPToolResult struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      any    `json:"id"`
-	Result  any    `json:"result,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      any       `json:"id"`
+	Result  any       `json:"result,omitempty"`
 	Error   *MCPError `json:"error,omitempty"`
 }
 

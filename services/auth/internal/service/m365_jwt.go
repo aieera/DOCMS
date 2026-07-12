@@ -4,13 +4,13 @@
 // with ANY Entra-issued bearer token impersonate any SeDoc user
 // whose email happened to match. Now every exchange must produce a
 // JWT that:
-//   1. Has a valid RS256 signature against the issuing tenant's JWKS
-//      (handled by go-oidc, which caches keys + handles rollover).
-//   2. Has `aud` equal to the configured SeDoc Entra application
-//      ID (SEDOC_M365_AUDIENCE).
-//   3. Has `tid` on the allow-list of Entra directories that SeDoc
-//      accepts (SEDOC_M365_ALLOWED_TIDS, CSV).
-//   4. Has unexpired `exp` / valid `nbf` (go-oidc enforces these).
+//  1. Has a valid RS256 signature against the issuing tenant's JWKS
+//     (handled by go-oidc, which caches keys + handles rollover).
+//  2. Has `aud` equal to the configured SeDoc Entra application
+//     ID (SEDOC_M365_AUDIENCE).
+//  3. Has `tid` on the allow-list of Entra directories that SeDoc
+//     accepts (SEDOC_M365_ALLOWED_TIDS, CSV).
+//  4. Has unexpired `exp` / valid `nbf` (go-oidc enforces these).
 //
 // We surface the *verified* `tid` + `oid` claims (not the unverified
 // `mail` field) so callers can key authentication off Microsoft-issued

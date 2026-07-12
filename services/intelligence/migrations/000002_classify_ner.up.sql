@@ -43,7 +43,16 @@ CREATE POLICY document_classifications_tenant_isolation
     USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
 
 
-CREATE TABLE document_entities (
+-- OWNERSHIP (ADR 0121, 2026-07-05): the DOCUMENT schema owns this base
+-- table now — document 000021 carries an identical guarded definition,
+-- because document reads the table (ner_repo.go) and evolves its
+-- taxonomy there. This side is IF NOT EXISTS so either application
+-- order works on a shared database. Editing this already-applied file
+-- is safe: golang-migrate tracks version numbers, not checksums, and
+-- environments that already ran it never re-run it. Keep the definition
+-- column-for-column identical to document 000021 — the ordering test
+-- (pkg/database/migration_ordering_integration_test.go) pins both orders.
+CREATE TABLE IF NOT EXISTS document_entities (
     tenant_id      UUID        NOT NULL REFERENCES organizations(id),
     id             UUID        NOT NULL DEFAULT gen_random_uuid(),
     version_id     UUID        NOT NULL,
@@ -58,18 +67,26 @@ CREATE TABLE document_entities (
     PRIMARY KEY (tenant_id, id)
 );
 
-CREATE INDEX idx_document_entities_version
+CREATE INDEX IF NOT EXISTS idx_document_entities_version
     ON document_entities (tenant_id, version_id);
-CREATE INDEX idx_document_entities_type
+CREATE INDEX IF NOT EXISTS idx_document_entities_type
     ON document_entities (tenant_id, version_id, entity_type);
-CREATE INDEX idx_document_entities_pii
+CREATE INDEX IF NOT EXISTS idx_document_entities_pii
     ON document_entities (tenant_id, version_id)
     WHERE is_pii = true;
 
 ALTER TABLE document_entities ENABLE ROW LEVEL SECURITY;
-CREATE POLICY document_entities_tenant_isolation
-    ON document_entities
-    USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+DO $$ BEGIN
+  IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE tablename = 'document_entities'
+        AND policyname = 'document_entities_tenant_isolation'
+  ) THEN
+    CREATE POLICY document_entities_tenant_isolation
+        ON document_entities
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+  END IF;
+END $$;
 
 
 CREATE TABLE intel_processed_events (

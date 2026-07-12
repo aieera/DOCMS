@@ -3,12 +3,12 @@
 //
 // Three responsibilities:
 //
-//   1. Authenticate a user against the directory (bind-as-user).
-//   2. Resolve the user's effective group memberships, including
-//      nested groups (AD's LDAP_MATCHING_RULE_IN_CHAIN, OpenLDAP
-//      recursive fallback with depth cap + visited set).
-//   3. Provide a per-tenant connection pool for the search/scheduler
-//      paths so each request doesn't pay TCP+TLS+bind setup cost.
+//  1. Authenticate a user against the directory (bind-as-user).
+//  2. Resolve the user's effective group memberships, including
+//     nested groups (AD's LDAP_MATCHING_RULE_IN_CHAIN, OpenLDAP
+//     recursive fallback with depth cap + visited set).
+//  3. Provide a per-tenant connection pool for the search/scheduler
+//     paths so each request doesn't pay TCP+TLS+bind setup cost.
 //
 // Plain ldap:// without STARTTLS is rejected unless the config
 // explicitly opts in via AllowInsecure — this is surfaced in the

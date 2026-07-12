@@ -16,9 +16,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // SavedSearchAlertScheduleID returns the deterministic schedule id
@@ -106,6 +110,74 @@ func DeleteSavedSearchAlertSchedule(
 	return fmt.Errorf("delete alert schedule %s: %w", id, err)
 }
 
+// SavedSearchAlertRow is one alert row collected by the per-tenant
+// sweep — the minimal fields Reconcile/Register need.
+type SavedSearchAlertRow struct {
+	ID          string
+	TenantID    string
+	Notify      bool
+	CronExpr    string
+	IntervalMin int
+}
+
+// CollectSavedSearchAlertRows gathers every tenant's saved-search rows
+// for the schedule sweeps. saved_searches is FORCE RLS, so a raw
+// cross-tenant scan fails closed under the prod NOBYPASSRLS role
+// (Wave A.1.a, issue #70) — and SET row_security=off is forbidden.
+// The sanctioned shape: enumerate tenants from the organizations
+// registry (deliberately no RLS — it IS the tenant list), then read
+// each tenant's rows under its own app.current_tenant.
+func CollectSavedSearchAlertRows(ctx context.Context, pool *pgxpool.Pool, notifyOnly bool) ([]SavedSearchAlertRow, error) {
+	tenantRows, err := pool.Query(ctx, `SELECT id FROM organizations`)
+	if err != nil {
+		return nil, fmt.Errorf("enumerate tenants: %w", err)
+	}
+	var tenants []uuid.UUID
+	for tenantRows.Next() {
+		var id uuid.UUID
+		if err := tenantRows.Scan(&id); err != nil {
+			tenantRows.Close()
+			return nil, err
+		}
+		tenants = append(tenants, id)
+	}
+	tenantRows.Close()
+	if err := tenantRows.Err(); err != nil {
+		return nil, err
+	}
+
+	q := `SELECT id::text, tenant_id::text, notify,
+	             COALESCE(alert_frequency_cron, ''),
+	             COALESCE(notify_interval_minutes, 15)
+	        FROM saved_searches`
+	if notifyOnly {
+		q += ` WHERE notify = true`
+	}
+
+	var out []SavedSearchAlertRow
+	for _, tenant := range tenants {
+		err := database.WithTenantTx(ctx, pool, tenant, func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, q)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var r SavedSearchAlertRow
+				if err := rows.Scan(&r.ID, &r.TenantID, &r.Notify, &r.CronExpr, &r.IntervalMin); err != nil {
+					return err
+				}
+				out = append(out, r)
+			}
+			return rows.Err()
+		})
+		if err != nil {
+			return nil, fmt.Errorf("collect alerts for tenant %s: %w", tenant, err)
+		}
+	}
+	return out, nil
+}
+
 // ReconcileSavedSearchAlertSchedules walks the saved_searches table
 // and brings the Temporal Schedule set in sync with the database:
 //   - notify=true rows missing a schedule  → CreateSchedule
@@ -123,48 +195,33 @@ func DeleteSavedSearchAlertSchedule(
 //
 // Returns (created, deleted, err) for logging.
 func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool, tc client.Client, taskQueue string) (int, int, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id::text, tenant_id::text, notify,
-		       COALESCE(alert_frequency_cron, ''),
-		       COALESCE(notify_interval_minutes, 15)
-		  FROM saved_searches
-	`)
+	alerts, err := CollectSavedSearchAlertRows(ctx, pool, false)
 	if err != nil {
 		return 0, 0, err
 	}
-	defer rows.Close()
 
 	created, deleted := 0, 0
 	existing := map[string]bool{} // every saved-search id seen this scan
 	sc := tc.ScheduleClient()
-	for rows.Next() {
-		var id, tenantID, cronExpr string
-		var notify bool
-		var intervalMin int
-		if err := rows.Scan(&id, &tenantID, &notify, &cronExpr, &intervalMin); err != nil {
-			return created, deleted, err
-		}
-		existing[id] = true
-		schedID := SavedSearchAlertScheduleID(id)
+	for _, r := range alerts {
+		existing[r.ID] = true
+		schedID := SavedSearchAlertScheduleID(r.ID)
 		handle := sc.GetHandle(ctx, schedID)
 		_, descErr := handle.Describe(ctx)
 		exists := descErr == nil
 
 		switch {
-		case notify && !exists:
-			if err := CreateSavedSearchAlertSchedule(ctx, tc, taskQueue, id, tenantID, cronExpr, intervalMin); err != nil {
+		case r.Notify && !exists:
+			if err := CreateSavedSearchAlertSchedule(ctx, tc, taskQueue, r.ID, r.TenantID, r.CronExpr, r.IntervalMin); err != nil {
 				return created, deleted, err
 			}
 			created++
-		case !notify && exists:
-			if err := DeleteSavedSearchAlertSchedule(ctx, tc, id); err != nil {
+		case !r.Notify && exists:
+			if err := DeleteSavedSearchAlertSchedule(ctx, tc, r.ID); err != nil {
 				return created, deleted, err
 			}
 			deleted++
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return created, deleted, err
 	}
 
 	// Orphan sweep: any saved-search-alert schedule whose row was deleted
@@ -200,37 +257,25 @@ func ReconcileSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool,
 // created. Failure here is logged-but-not-fatal in the worker (the
 // data-plane workflow runs are still served on demand).
 func RegisterSavedSearchAlertSchedules(ctx context.Context, pool *pgxpool.Pool, tc client.Client, taskQueue string) (int, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id::text, tenant_id::text,
-		       COALESCE(alert_frequency_cron, ''),
-		       COALESCE(notify_interval_minutes, 15)
-		  FROM saved_searches
-		 WHERE notify = true
-	`)
+	alerts, err := CollectSavedSearchAlertRows(ctx, pool, true)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
 
 	created := 0
-	for rows.Next() {
-		var id, tenantID, cronExpr string
-		var intervalMin int
-		if err := rows.Scan(&id, &tenantID, &cronExpr, &intervalMin); err != nil {
-			return created, err
-		}
+	for _, r := range alerts {
 		// Existing-schedule path returns nil; only count actual creates.
 		// Probe with a Describe before Create so the count is accurate.
 		// (AlreadyExists path inside Create still works as the
 		// idempotency net.)
-		handle := tc.ScheduleClient().GetHandle(ctx, SavedSearchAlertScheduleID(id))
+		handle := tc.ScheduleClient().GetHandle(ctx, SavedSearchAlertScheduleID(r.ID))
 		if _, err := handle.Describe(ctx); err == nil {
 			continue // already exists; not newly created
 		}
-		if err := CreateSavedSearchAlertSchedule(ctx, tc, taskQueue, id, tenantID, cronExpr, intervalMin); err != nil {
+		if err := CreateSavedSearchAlertSchedule(ctx, tc, taskQueue, r.ID, r.TenantID, r.CronExpr, r.IntervalMin); err != nil {
 			return created, err
 		}
 		created++
 	}
-	return created, rows.Err()
+	return created, nil
 }

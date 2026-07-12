@@ -44,21 +44,28 @@ type CachedSession struct {
 	Role      Role        `json:"role"`
 	Groups    []uuid.UUID `json:"groups"`
 	ExpiresAt time.Time   `json:"expires_at"`
+	// LastChecked is when this cache entry was last confirmed against
+	// Postgres (revoked_at + user status). The fast path re-validates
+	// once it is older than FastPathRevalidateInterval, so a missed
+	// active invalidation self-heals. Zero value (legacy cache entries
+	// written before this field) reads as "never checked" → forces an
+	// immediate revalidation on first use.
+	LastChecked time.Time `json:"last_checked,omitempty"`
 }
 
 // APIKey is an alternative authentication primitive with scopes.
 type APIKey struct {
-	TenantID    uuid.UUID
-	ID          uuid.UUID
-	UserID      uuid.UUID
-	Name        string
-	KeyHash     string // SHA-256 hex
-	KeyPrefix   string // first 12 chars of plaintext — safe to display
-	Scopes      []string
-	LastUsedAt  *time.Time
-	ExpiresAt   *time.Time
-	CreatedAt   time.Time
-	RevokedAt   *time.Time
+	TenantID   uuid.UUID
+	ID         uuid.UUID
+	UserID     uuid.UUID
+	Name       string
+	KeyHash    string // SHA-256 hex
+	KeyPrefix  string // first 12 chars of plaintext — safe to display
+	Scopes     []string
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	CreatedAt  time.Time
+	RevokedAt  *time.Time
 }
 
 // APIKeyIssued is what we return on POST /api-keys. The Key field holds the

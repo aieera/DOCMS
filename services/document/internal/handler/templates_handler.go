@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -189,6 +190,7 @@ type provisionBody struct {
 	WorkspaceID    string            `json:"workspace_id"`
 	ParentFolderID string            `json:"parent_folder_id,omitempty"`
 	Variables      map[string]string `json:"variables,omitempty"`
+	IdempotencyKey string            `json:"idempotency_key,omitempty"`
 }
 
 func (h *TemplatesHandler) provision(w http.ResponseWriter, r *http.Request) {
@@ -213,6 +215,13 @@ func (h *TemplatesHandler) provision(w http.ResponseWriter, r *http.Request) {
 		TemplateID:  id,
 		WorkspaceID: wsID,
 		Variables:   body.Variables,
+	}
+	// Idempotency key: standard header wins, body field is the fallback for
+	// clients that can't set headers. Empty = provision every time.
+	if key := strings.TrimSpace(r.Header.Get("Idempotency-Key")); key != "" {
+		in.IdempotencyKey = key
+	} else {
+		in.IdempotencyKey = strings.TrimSpace(body.IdempotencyKey)
 	}
 	if body.ParentFolderID != "" {
 		pid, err := uuid.Parse(body.ParentFolderID)

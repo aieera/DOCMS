@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/tracing"
 )
 
 // OutboxEvent is the minimal shape of an `outbox` row. The fields are
@@ -37,6 +38,13 @@ type OutboxEvent struct {
 	ActorName string
 	IPAddress string
 	UserAgent string
+	// TraceContext is the W3C trace context (traceparent/tracestate) of
+	// the request that produced this event, captured at Insert time. The
+	// publisher injects it onto the NATS message so a consumer's span is
+	// a child of the producing request's span — this is how a distributed
+	// trace crosses the async outbox→NATS boundary. Empty for events
+	// produced without an active span.
+	TraceContext map[string]string
 }
 
 // NewOutboxEvent builds an event with a fresh UUIDv7 id and the current UTC
@@ -118,15 +126,26 @@ func (r *OutboxRepository) Insert(ctx context.Context, tx pgx.Tx, event *OutboxE
 	if ua := auth.GetUserAgent(ctx); ua != "" {
 		userAgent = ua
 	}
+	// Capture the current trace context so the publisher can restore it
+	// on the NATS message. Stored as JSONB (nullable — no active span → NULL).
+	var traceArg any
+	if event.TraceContext == nil {
+		event.TraceContext = tracing.InjectToMap(ctx)
+	}
+	if len(event.TraceContext) > 0 {
+		if b, mErr := json.Marshal(event.TraceContext); mErr == nil {
+			traceArg = b
+		}
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO outbox (id, tenant_id, event_type, aggregate_type, aggregate_id,
 		                    payload, published, created_at,
-		                    actor_id, actor_name, ip_address, user_agent)
-		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10, $11)
+		                    actor_id, actor_name, ip_address, user_agent, trace_context)
+		VALUES ($1, $2, $3, $4, $5, $6, false, $7, $8, $9, $10, $11, $12)
 	`,
 		event.ID, event.TenantID, event.EventType, event.AggregateType,
 		event.AggregateID, event.Payload, event.CreatedAt,
-		actorID, actorName, ipAddr, userAgent,
+		actorID, actorName, ipAddr, userAgent, traceArg,
 	)
 	if err != nil {
 		return fmt.Errorf("outbox insert: %w", err)

@@ -38,7 +38,8 @@ func (r *Repository) Viz(
 	}
 
 	var out []byte
-	err := r.pool.QueryRow(ctx, `
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
 		WITH base AS (
 		    SELECT ae.actor, ae.actor_name, ae.action, ae.created_at
 		      FROM audit_events ae
@@ -77,8 +78,9 @@ func (r *Repository) Viz(
 		  'heatmap',       COALESCE((SELECT json_agg(json_build_object('dow', dow, 'hour', hr, 'count', count)) FROM heatmap), '[]'::json),
 		  'total_events',  (SELECT COUNT(*) FROM base)
 		)::text`,
-		tenantID, resourceID, since, string(bucket),
-	).Scan(&out)
+			tenantID, resourceID, since, string(bucket),
+		).Scan(&out)
+	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}

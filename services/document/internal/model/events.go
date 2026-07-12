@@ -45,6 +45,14 @@ type DocumentUpdatedPayload struct {
 	DocumentID    string   `json:"document_id"`
 	ChangedFields []string `json:"changed_fields"`
 	UpdatedBy     string   `json:"updated_by"`
+	// Changed carries the NEW VALUES of the changed fields, keyed by
+	// field name. The search indexer applies these as a PARTIAL
+	// OpenSearch update. Before this field existed the event was
+	// name-only, and the indexer's full-replace path rebuilt the index
+	// doc from an empty projection — wiping readable_by + content on
+	// every metadata edit. Additive/optional: consumers that ignore it
+	// keep working, so the event stays at v1.
+	Changed map[string]any `json:"changed,omitempty"`
 	// FIX-4 — same projection on update. Folder moves (changed_fields
 	// includes "folder_id") flip the doc into a new ACL scope; carry
 	// readable_by so the indexer rewrites without a separate event.

@@ -27,13 +27,13 @@ type Provider interface {
 
 // BaseOAuth provides common OAuth2 token exchange and refresh logic.
 type BaseOAuth struct {
-	ProviderName string
-	AuthEndpoint string
+	ProviderName  string
+	AuthEndpoint  string
 	TokenEndpoint string
-	Scopes       []string
-	ClientID     string
-	ClientSecret string
-	Log          zerolog.Logger
+	Scopes        []string
+	ClientID      string
+	ClientSecret  string
+	Log           zerolog.Logger
 }
 
 // AuthURL returns the OAuth2 authorization URL.

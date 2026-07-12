@@ -56,8 +56,14 @@ type UploadSession struct {
 	CreatedAt      time.Time
 	CompletedAt    *time.Time
 	ExpiresAt      time.Time
-	StorageBucket  string // derived from region + tier; not persisted on every row
-	StorageKey     string // content-addressable path in the bucket
+	// ContentBlobID is set when the session completes (migration
+	// 000095) and points at the blob it produced — the blob an
+	// idempotent re-complete replays. Dedup completions point at the
+	// pre-existing blob, whose storage key differs from the session's,
+	// so this cannot be derived. Nil on legacy/pre-completion rows.
+	ContentBlobID *uuid.UUID
+	StorageBucket string // derived from region + tier; not persisted on every row
+	StorageKey    string // content-addressable path in the bucket
 }
 
 // ScanRecord is one row in scan_results.

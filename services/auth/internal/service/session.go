@@ -19,9 +19,9 @@ import (
 // CreatedSession bundles what a successful auth flow returns: the plaintext
 // token (returned to the client once, never persisted) plus the session row.
 type CreatedSession struct {
-	Token     string // plaintext; callers set cookie + echo in response
-	Session   *model.Session
-	UserView  model.PublicView
+	Token    string // plaintext; callers set cookie + echo in response
+	Session  *model.Session
+	UserView model.PublicView
 }
 
 // createSessionInTx writes a session row + primes the Redis cache, inside
@@ -67,11 +67,12 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 	// Prime Redis cache. Best-effort; if Redis is down, the next read will
 	// fall through to Postgres.
 	s.cacheSession(ctx, tokenHash, &model.CachedSession{
-		UserID:    user.ID,
-		TenantID:  user.TenantID,
-		Email:     user.Email,
-		Role:      user.Role,
-		ExpiresAt: session.ExpiresAt,
+		UserID:      user.ID,
+		TenantID:    user.TenantID,
+		Email:       user.Email,
+		Role:        user.Role,
+		ExpiresAt:   session.ExpiresAt,
+		LastChecked: now,
 	})
 
 	return &CreatedSession{Token: plaintext, Session: session, UserView: user.ToPublic()}, nil
@@ -79,11 +80,11 @@ func (s *Service) createSessionInTx(ctx context.Context, tx pgx.Tx, user *model.
 
 // ValidateSession is the hot path that every other service hits via its
 // session-validation middleware. Order of operations:
-//   1. hash the presented token
-//   2. Redis GET session:{hash} — if present, return immediately
-//   3. on Redis miss, fall through to Postgres via sessions table
-//   4. if found and within SessionSlidingThreshold of expiry, extend
-//   5. if absolute lifetime exceeded, reject
+//  1. hash the presented token
+//  2. Redis GET session:{hash} — if present, return immediately
+//  3. on Redis miss, fall through to Postgres via sessions table
+//  4. if found and within SessionSlidingThreshold of expiry, extend
+//  5. if absolute lifetime exceeded, reject
 //
 // Returns a CachedSession populated from whichever source served the read.
 func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*model.CachedSession, error) {
@@ -92,13 +93,22 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	}
 	hash := sha256Hex(plaintextToken)
 
-	// 1. Redis fast path.
+	// 1. Redis fast path — trusted only within FastPathRevalidateInterval
+	//    of its last Postgres confirmation. A stale entry (or one older
+	//    than the window) falls through to the Postgres path below, which
+	//    filters revoked_at + re-checks user status, so a revoked session
+	//    or deactivated user cannot ride the cache for longer than the
+	//    window even if active invalidation was missed.
 	if cached, err := s.readCachedSession(ctx, hash); err == nil && cached != nil {
-		if s.clock().After(cached.ExpiresAt) {
+		now := s.clock()
+		if now.After(cached.ExpiresAt) {
 			s.deleteCachedSession(ctx, hash)
 			return nil, vdmserr.ErrUnauthorized
 		}
-		return cached, nil
+		if now.Sub(cached.LastChecked) < FastPathRevalidateInterval {
+			return cached, nil
+		}
+		// Trust window elapsed: fall through and re-validate.
 	}
 
 	// 2. Postgres fallback.
@@ -147,11 +157,12 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	_ = s.sessions.TouchActivity(ctx, s.pool, sess.ID, now)
 
 	cached := &model.CachedSession{
-		UserID:    user.ID,
-		TenantID:  user.TenantID,
-		Email:     user.Email,
-		Role:      user.Role,
-		ExpiresAt: sess.ExpiresAt,
+		UserID:      user.ID,
+		TenantID:    user.TenantID,
+		Email:       user.Email,
+		Role:        user.Role,
+		ExpiresAt:   sess.ExpiresAt,
+		LastChecked: now,
 	}
 	s.cacheSession(ctx, hash, cached)
 	return cached, nil
@@ -199,9 +210,13 @@ func (s *Service) RevokeAllOtherSessions(ctx context.Context, tenantID, userID u
 		n = cnt
 		return err
 	})
-	// Best-effort Redis cleanup: we don't know every token_hash here, so
-	// we rely on the expires-at check in ValidateSession catching revoked
-	// rows on next read (Redis TTL ≤ SessionTTL).
+	// Actively drop the user's cached sessions so revocation takes
+	// effect within seconds. This over-invalidates the kept session
+	// (exceptID) too — harmless: its next request re-validates against
+	// Postgres (still non-revoked) and re-primes the cache.
+	if err == nil {
+		s.invalidateUserSessions(ctx, tenantID, userID)
+	}
 	return n, err
 }
 
@@ -232,24 +247,39 @@ func (s *Service) ListUserSessions(ctx context.Context, tenantID, userID uuid.UU
 
 // RevokeSession deletes a specific session, asserting ownership.
 func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, id uuid.UUID) error {
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		return s.sessions.RevokeByID(ctx, tx, tenantID, userID, id)
-	})
+	}); err != nil {
+		return err
+	}
+	// We hold the session id, not its token hash, so drop the whole
+	// user's cache via the index. The user's other sessions re-validate
+	// against Postgres once (cheap) and re-prime.
+	s.invalidateUserSessions(ctx, tenantID, userID)
+	return nil
 }
 
 // ---- Redis cache helpers --------------------------------------------------
 //
 // Keys:
-//   session:{tenantID}:{hash}    → JSON CachedSession (tenant-scoped, defense-in-depth)
-//   session_tenant:{hash}        → tenantID (indirection used by ValidateSession fast
-//                                  path, which arrives with only the token hash)
-// Both keys are written/deleted together and share the same TTL.
+//   session:{tenantID}:{hash}     → JSON CachedSession (tenant-scoped, defense-in-depth)
+//   session_tenant:{hash}         → tenantID (indirection used by ValidateSession fast
+//                                   path, which arrives with only the token hash)
+//   user_sessions:{tenantID}:{userID} → SET of token hashes for that user's cached
+//                                   sessions. The index that lets revoke/suspend
+//                                   ACTIVELY delete a user's cache entries — without
+//                                   it, revocation could only wait out the TTL.
+// The three are written together and share the same TTL.
 
 func sessionKey(tenantID uuid.UUID, hash string) string {
 	return "session:" + tenantID.String() + ":" + hash
 }
 
 func sessionTenantKey(hash string) string { return "session_tenant:" + hash }
+
+func userSessionsKey(tenantID, userID uuid.UUID) string {
+	return "user_sessions:" + tenantID.String() + ":" + userID.String()
+}
 
 func (s *Service) cacheSession(ctx context.Context, hash string, c *model.CachedSession) {
 	b, err := json.Marshal(c)
@@ -260,9 +290,37 @@ func (s *Service) cacheSession(ctx context.Context, hash string, c *model.Cached
 	if ttl <= 0 {
 		return
 	}
+	idxKey := userSessionsKey(c.TenantID, c.UserID)
 	pipe := s.rdb.Pipeline()
 	pipe.Set(ctx, sessionKey(c.TenantID, hash), b, ttl)
 	pipe.Set(ctx, sessionTenantKey(hash), c.TenantID.String(), ttl)
+	// Index this token under its user so invalidateUserSessions can find
+	// it. Refresh the index TTL to the longest live session's horizon.
+	pipe.SAdd(ctx, idxKey, hash)
+	pipe.Expire(ctx, idxKey, ttl)
+	_, _ = pipe.Exec(ctx)
+}
+
+// invalidateUserSessions actively deletes every CACHED session for a
+// user via the user→sessions index, forcing each of the user's tokens
+// onto the Postgres path (which filters revoked_at + user status) on its
+// next request. Called by every revoke/suspend/deactivate path so a
+// security action takes effect within seconds, not on TTL expiry. The
+// Postgres revocation is the source of truth; this just stops the cache
+// from masking it. Best-effort — a Redis failure is covered by the
+// FastPathRevalidateInterval self-heal.
+func (s *Service) invalidateUserSessions(ctx context.Context, tenantID, userID uuid.UUID) {
+	idxKey := userSessionsKey(tenantID, userID)
+	hashes, err := s.rdb.SMembers(ctx, idxKey).Result()
+	if err != nil {
+		return
+	}
+	pipe := s.rdb.Pipeline()
+	for _, h := range hashes {
+		pipe.Del(ctx, sessionKey(tenantID, h))
+		pipe.Del(ctx, sessionTenantKey(h))
+	}
+	pipe.Del(ctx, idxKey)
 	_, _ = pipe.Exec(ctx)
 }
 
@@ -292,16 +350,30 @@ func (s *Service) readCachedSession(ctx context.Context, hash string) (*model.Ca
 	return &c, nil
 }
 
-// deleteCachedSession removes both cache entries. Tenant ID is resolved
-// via the sess_tenant lookup if the caller doesn't already know it.
+// deleteCachedSession removes one session's cache entries. Tenant ID is
+// resolved via the sess_tenant lookup if the caller doesn't already know
+// it; the cached blob then yields the user id so we can also drop the
+// index membership (leaving a stale hash in the set is harmless — the
+// session key is already gone — but pruning keeps it tight).
 func (s *Service) deleteCachedSession(ctx context.Context, hash string) {
 	tenantStr, err := s.rdb.Get(ctx, sessionTenantKey(hash)).Result()
+	var tid uuid.UUID
+	var haveTenant bool
+	if err == nil {
+		if parsed, perr := uuid.Parse(tenantStr); perr == nil {
+			tid, haveTenant = parsed, true
+		}
+	}
 	pipe := s.rdb.Pipeline()
 	pipe.Del(ctx, sessionTenantKey(hash))
-	if err == nil {
-		if tid, perr := uuid.Parse(tenantStr); perr == nil {
-			pipe.Del(ctx, sessionKey(tid, hash))
+	if haveTenant {
+		if b, gerr := s.rdb.Get(ctx, sessionKey(tid, hash)).Bytes(); gerr == nil {
+			var c model.CachedSession
+			if json.Unmarshal(b, &c) == nil && c.UserID != uuid.Nil {
+				pipe.SRem(ctx, userSessionsKey(tid, c.UserID), hash)
+			}
 		}
+		pipe.Del(ctx, sessionKey(tid, hash))
 	}
 	_, _ = pipe.Exec(ctx)
 }

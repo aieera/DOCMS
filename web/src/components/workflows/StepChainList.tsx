@@ -112,7 +112,7 @@ function SortableChip({ step, isSelected, hasIssue, isLast, onSelect }: ChipProp
       {!isLast && (
         <span
           aria-hidden
-          className="absolute left-4 top-9 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
+          className="absolute start-4 top-9 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
         />
       )}
       <span

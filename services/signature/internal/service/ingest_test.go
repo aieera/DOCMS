@@ -89,7 +89,7 @@ func TestIngestPipeline_PutFailsAborts(t *testing.T) {
 	fake := &fakeIngestClient{putErr: errors.New("storage 503")}
 	p := &ingestPipeline{client: fake}
 	_, _, err := p.PutAndCreateVersion(context.Background(),
-		PutSignedBlobInput{TenantID: "t-1", Bytes: []byte("x")},
+		PutSignedBlobInput{TenantID: "t-1", Bytes: []byte("x"), RegionPin: "us-east-1"},
 		"doc-7", "u-1", "summary")
 	if err == nil {
 		t.Fatal("expected error")
@@ -103,7 +103,7 @@ func TestIngestPipeline_CreateVersionFails(t *testing.T) {
 	fake := &fakeIngestClient{createErr: errors.New("doc service 503")}
 	p := &ingestPipeline{client: fake}
 	_, _, err := p.PutAndCreateVersion(context.Background(),
-		PutSignedBlobInput{TenantID: "t-1", Bytes: []byte("x")},
+		PutSignedBlobInput{TenantID: "t-1", Bytes: []byte("x"), RegionPin: "us-east-1"},
 		"doc-7", "u-1", "summary")
 	if err == nil {
 		t.Fatal("expected error")

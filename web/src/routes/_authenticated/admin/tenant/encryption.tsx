@@ -262,7 +262,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Version</th>
                 <th className="px-3 py-2">Provider</th>
@@ -280,7 +280,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
                     <StatusBadge v={v} />
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{fmt(v.created_at)}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-end">
                     {!v.revoked_at && (
                       <Button
                         variant="ghost"

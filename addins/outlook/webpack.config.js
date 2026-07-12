@@ -21,6 +21,32 @@ const path = require('path')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
 
+// substituteManifestTokens replaces ${VAR} and ${VAR:-default} with the env
+// value (or the inline default). Deployment-specific values — the Entra
+// (Azure AD) client id and the bundle host — live in env, never in the repo.
+// In production a token with neither an env value nor a default is a hard
+// error so a store submission can't ship a literal "${...}".
+function substituteManifestTokens(content, isProd) {
+  const sub = (s) =>
+    s.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, name, def) => {
+      const val = process.env[name]
+      if (val !== undefined && val !== '') return val
+      if (def !== undefined) return def
+      if (isProd) {
+        throw new Error(
+          `manifest: ${name} is unset and has no default — set it in the build env ` +
+            `(e.g. SEDOC_ADDIN_HOST, SEDOC_AAD_CLIENT_ID) before a production build`,
+        )
+      }
+      return '' // dev: leave empty rather than a literal token
+    })
+  // Tokens inside XML comments are documentation — leave them verbatim.
+  return content
+    .split(/(<!--[\s\S]*?-->)/)
+    .map((p) => (p.startsWith('<!--') ? p : sub(p)))
+    .join('')
+}
+
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production'
   return {
@@ -55,8 +81,19 @@ module.exports = (env, argv) => {
       }),
       new CopyWebpackPlugin({
         patterns: [
-          { from: 'manifest.xml', to: '.' },
-          { from: 'assets',       to: 'assets' },
+          {
+            from: 'manifest.xml',
+            to: '.',
+            // Substitute ${VAR} / ${VAR:-default} tokens from env at build
+            // time, so no per-deployment value (Entra client id, host) is
+            // committed. In production mode a token with no env value AND no
+            // default fails the build rather than shipping a literal
+            // "${SEDOC_AAD_CLIENT_ID}" into a store submission.
+            transform(content) {
+              return substituteManifestTokens(content.toString(), isProd);
+            },
+          },
+          { from: 'assets', to: 'assets' },
         ],
       }),
     ],

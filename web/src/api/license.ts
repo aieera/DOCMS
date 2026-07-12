@@ -33,3 +33,16 @@ export async function getLicense(): Promise<LicenseResponse> {
   const { data } = await api.get<LicenseResponse>('/admin/tenant/license')
   return data
 }
+
+// Live "seats in use" count. Served by the auth service (which owns the
+// users table) rather than the license endpoint above (document service,
+// which only sees the JWT claims). ADR 0095 Phase 4.
+export interface SeatUsageResponse {
+  seats_used: number
+  seat_limit?: number
+}
+
+export async function getSeatUsage(): Promise<SeatUsageResponse> {
+  const { data } = await api.get<SeatUsageResponse>('/admin/users/seat-usage')
+  return data
+}

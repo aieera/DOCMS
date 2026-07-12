@@ -87,6 +87,13 @@ func (c *GRPCIngestClient) PutSignedBlob(ctx context.Context, in PutSignedBlobIn
 	if c.storage == nil {
 		return nil, errors.New("ingest: storage gRPC client not configured")
 	}
+	// Residency choke point: EVERY signature storage write funnels
+	// through here, so refuse an unset region rather than let the
+	// storage service apply its own default. Callers resolve the pin via
+	// ingestPipeline.ResolveRegionOrFail.
+	if in.RegionPin == "" {
+		return nil, errors.New("ingest: region_pin required on every signed-blob write (data residency)")
+	}
 	sha := hashBytes(in.Bytes)
 	size := int64(len(in.Bytes))
 	mdCtx := withTenantMetadata(ctx, in.TenantID, in.UserID)

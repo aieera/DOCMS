@@ -3,6 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
+import { AnswerMarkdown } from '@/components/ai/AnswerMarkdown'
 import { Send, Bot, User } from 'lucide-react'
 import { askQuestion } from '@/api/intelligence'
 import type { AIAnswer } from '@/types/api'
@@ -44,7 +45,11 @@ export function AIChatPanel({ open, onClose, scope, scopeId }: Props) {
             <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
               {m.role === 'assistant' && <Bot className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-primary)]" />}
               <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'bg-[var(--color-primary)] text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
-                <p className="whitespace-pre-wrap">{m.content}</p>
+                {m.role === 'assistant' ? (
+                  <AnswerMarkdown text={m.content} className="prose prose-sm max-w-none dark:prose-invert" />
+                ) : (
+                  <p className="whitespace-pre-wrap">{m.content}</p>
+                )}
                 {m.sources && m.sources.length > 0 && (
                   <div className="mt-2 border-t border-white/20 pt-1.5 text-xs opacity-80">
                     Sources: {m.sources.map((s, j) => <span key={j} className="underline">{s.document_id.slice(0, 8)}</span>).reduce((a, b) => <>{a}, {b}</>)}

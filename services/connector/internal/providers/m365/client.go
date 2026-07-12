@@ -32,17 +32,17 @@ const graphBaseURL = "https://graph.microsoft.com/v1.0"
 // row is intentionally NOT supported — the admin chooses one mode at
 // connect time.
 type Client struct {
-	conn       *Connector
-	tokens     *model.OAuthTokens
-	httpc      *http.Client
-	tokensMu   sync.Mutex // serialises refresh; we never want two
-	                     // concurrent refresh calls because Entra
-	                     // can issue different refresh_tokens for
-	                     // each, leaving one stale.
-	onRefresh  func(*model.OAuthTokens) // optional callback the
-	                                    // service layer uses to
-	                                    // re-seal the new tokens
-	                                    // into connector_configs.
+	conn     *Connector
+	tokens   *model.OAuthTokens
+	httpc    *http.Client
+	tokensMu sync.Mutex // serialises refresh; we never want two
+	// concurrent refresh calls because Entra
+	// can issue different refresh_tokens for
+	// each, leaving one stale.
+	onRefresh func(*model.OAuthTokens) // optional callback the
+	// service layer uses to
+	// re-seal the new tokens
+	// into connector_configs.
 }
 
 // NewClient builds a Client around the given tokens. The Connector
@@ -93,35 +93,35 @@ type Site struct {
 // DriveItem covers both folders and files. The shape mirrors Graph's
 // driveItem resource; we keep only the fields the connector needs.
 type DriveItem struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	WebURL      string    `json:"webUrl"`
-	Size        int64     `json:"size"`
-	MimeType    string    `json:"mimeType,omitempty"`
-	IsFolder    bool      `json:"is_folder"`
-	IsFile      bool      `json:"is_file"`
-	LastMod     time.Time `json:"lastModifiedDateTime"`
-	ParentPath  string    `json:"parent_path,omitempty"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	WebURL     string    `json:"webUrl"`
+	Size       int64     `json:"size"`
+	MimeType   string    `json:"mimeType,omitempty"`
+	IsFolder   bool      `json:"is_folder"`
+	IsFile     bool      `json:"is_file"`
+	LastMod    time.Time `json:"lastModifiedDateTime"`
+	ParentPath string    `json:"parent_path,omitempty"`
 }
 
 // Message is one Outlook mail item (minimal projection).
 type Message struct {
-	ID        string    `json:"id"`
-	Subject   string    `json:"subject"`
-	FromAddr  string    `json:"from"`
-	Received  time.Time `json:"receivedDateTime"`
-	BodyType  string    `json:"body_type"` // "html" | "text"
-	BodyText  string    `json:"body"`
-	IsRead    bool      `json:"isRead"`
+	ID       string    `json:"id"`
+	Subject  string    `json:"subject"`
+	FromAddr string    `json:"from"`
+	Received time.Time `json:"receivedDateTime"`
+	BodyType string    `json:"body_type"` // "html" | "text"
+	BodyText string    `json:"body"`
+	IsRead   bool      `json:"isRead"`
 }
 
 // SendMailRequest is the input to SendMail. Only the minimum surface
 // — full Graph parity is out of scope for this prompt.
 type SendMailRequest struct {
-	From    string   // optional; defaults to the connected user's mailbox
-	To      []string // required, ≥1 address
-	CC      []string
-	Subject string
+	From     string   // optional; defaults to the connected user's mailbox
+	To       []string // required, ≥1 address
+	CC       []string
+	Subject  string
 	BodyHTML string
 }
 
@@ -271,8 +271,8 @@ func (c *Client) SendMail(ctx context.Context, msg SendMailRequest, actingAs str
 	}
 	body := map[string]any{
 		"message": map[string]any{
-			"subject": msg.Subject,
-			"body":    map[string]any{"contentType": "HTML", "content": msg.BodyHTML},
+			"subject":      msg.Subject,
+			"body":         map[string]any{"contentType": "HTML", "content": msg.BodyHTML},
 			"toRecipients": toRecipients(msg.To),
 			"ccRecipients": toRecipients(msg.CC),
 		},

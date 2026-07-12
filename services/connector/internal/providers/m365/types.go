@@ -6,16 +6,16 @@ import "time"
 // DriveItem (client.go) is a flatter projection — we materialize one
 // from the other in materialize().
 type rawDriveItem struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	WebURL     string    `json:"webUrl"`
-	Size       int64     `json:"size"`
-	LastMod    time.Time `json:"lastModifiedDateTime"`
-	Folder     *struct{} `json:"folder,omitempty"`
-	File       *struct {
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	WebURL  string    `json:"webUrl"`
+	Size    int64     `json:"size"`
+	LastMod time.Time `json:"lastModifiedDateTime"`
+	Folder  *struct{} `json:"folder,omitempty"`
+	File    *struct {
 		MimeType string `json:"mimeType,omitempty"`
 	} `json:"file,omitempty"`
-	ParentRef  *struct {
+	ParentRef *struct {
 		Path string `json:"path"`
 	} `json:"parentReference,omitempty"`
 }
@@ -41,9 +41,9 @@ func (r rawDriveItem) materialize() DriveItem {
 
 // rawMessage is Graph's wire shape for /messages.
 type rawMessage struct {
-	ID       string    `json:"id"`
-	Subject  string    `json:"subject"`
-	From     *struct {
+	ID      string `json:"id"`
+	Subject string `json:"subject"`
+	From    *struct {
 		EmailAddress struct {
 			Address string `json:"address"`
 		} `json:"emailAddress"`

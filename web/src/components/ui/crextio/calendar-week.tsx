@@ -62,7 +62,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
             {monthLabel}
           </span>
           {nextMonth && (
-            <span className="ml-auto text-[12.5px] font-medium text-[#B9AC95]">{nextMonth}</span>
+            <span className="ms-auto text-[12.5px] font-medium text-[#B9AC95]">{nextMonth}</span>
           )}
         </header>
 
@@ -97,7 +97,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
           {hours.map((h, i) => (
             <span
               key={`h-${i}`}
-              className="border-b border-dashed border-[rgba(26,26,26,0.08)] pr-2 pt-1.5 text-right font-mono text-[10.5px] text-[#8C8273]"
+              className="border-b border-dashed border-[rgba(26,26,26,0.08)] pe-2 pt-1.5 text-end font-mono text-[10.5px] text-[#8C8273]"
               style={{ gridColumn: 1, gridRow: i + 1 }}
             >
               {h}
@@ -109,7 +109,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
             days.map((_, dayIdx) => (
               <span
                 key={`c-${hourIdx}-${dayIdx}`}
-                className="border-b border-l border-dashed border-[rgba(26,26,26,0.08)]"
+                className="border-b border-s border-dashed border-[rgba(26,26,26,0.08)]"
                 style={{ gridColumn: dayIdx + 2, gridRow: hourIdx + 1 }}
               />
             )),
@@ -170,7 +170,7 @@ export const StackedAvatar = forwardRef<HTMLSpanElement, StackedAvatarProps>(
     <span
       ref={ref}
       className={cn(
-        'inline-flex h-[22px] w-[22px] -mr-1.5 items-center justify-center rounded-full',
+        'inline-flex h-[22px] w-[22px] -me-1.5 items-center justify-center rounded-full',
         'border-2 text-[10px] font-semibold text-[#1A1A1A]',
         TONE[tone],
         className,

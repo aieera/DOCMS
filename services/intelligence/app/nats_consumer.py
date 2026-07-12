@@ -36,7 +36,11 @@ from app.tasks.compliance_scan import compliance_scan
 from app.tasks.lang_detect import lang_detect
 from app.tasks.model_retrain import retrain as model_retrain
 from app.tasks.ocr_quality import score as ocr_quality_score
-from app.tasks.redact import apply_redaction_job, populate_candidates as redact_populate
+from app.tasks.redact import (
+    apply_redaction_job,
+    apply_document_redaction,
+    populate_candidates as redact_populate,
+)
 from app.tasks.smart_route import smart_route
 from app.tasks.training_collector import collect as training_collect
 from app.tasks.classify import classify_document
@@ -798,6 +802,7 @@ class IntelligenceConsumer:
             await msg.term()
             return
 
+        correlation_id = self._header(msg, "correlation-id")
         try:
             from app.db.pool import get_pool
             pool = await get_pool()
@@ -811,12 +816,15 @@ class IntelligenceConsumer:
                 )
                 row = await conn.fetchrow(
                     """
-                    SELECT r.regions, r.entity_types, r.status,
-                           dv.content_blob_id
+                    SELECT r.regions, r.entity_types, r.status, r.version_id,
+                           r.applied_by, cb.storage_bucket, cb.storage_key
                       FROM document_redactions r
                       LEFT JOIN document_versions dv
                         ON dv.tenant_id = r.tenant_id
                        AND dv.id = r.version_id
+                      LEFT JOIN content_blobs cb
+                        ON cb.tenant_id = dv.tenant_id
+                       AND cb.id = dv.content_blob_id
                      WHERE r.tenant_id = $1::uuid AND r.id = $2::uuid
                     """,
                     tenant_id, redaction_id,
@@ -829,26 +837,52 @@ class IntelligenceConsumer:
                     # Idempotent replay — already done.
                     await msg.ack()
                     return
+                bucket = row["storage_bucket"] or ""
+                key = row["storage_key"] or ""
+                if not (bucket and key):
+                    # Can't redact bytes we can't locate. Mark failed
+                    # (never applied) so the operator sees it didn't work.
+                    log.error("redaction: no storage location for redaction_id=%s", redaction_id)
+                    await conn.execute(
+                        """UPDATE document_redactions
+                              SET status = 'failed',
+                                  error_message = 'source PDF storage location not found',
+                                  completed_at = now()
+                            WHERE tenant_id = $1::uuid AND id = $2::uuid""",
+                        tenant_id, redaction_id,
+                    )
+                    await msg.ack()
+                    return
+                regions = row["regions"] or []
+                if isinstance(regions, (str, bytes, bytearray)):
+                    try:
+                        regions = json.loads(regions)
+                    except (TypeError, ValueError):
+                        regions = []
+                entity_types = list(row["entity_types"] or [])
+                version_id = str(row["version_id"]) if row["version_id"] else ""
+                applied_by = str(row["applied_by"]) if row["applied_by"] else ""
 
-                # Mark applied. Real PDF processing would go here
-                # (resolve storage_bucket/storage_key via content_blobs,
-                # download, apply redactions, re-upload). That
-                # integration is Wave 12.5b; today we close the audit
-                # loop: the row flips to 'applied' so the UI can show
-                # the operator their redaction completed.
-                await conn.execute(
-                    """
-                    UPDATE document_redactions
-                       SET status = 'applied', completed_at = now()
-                     WHERE tenant_id = $1::uuid AND id = $2::uuid
-                    """,
-                    tenant_id, redaction_id,
-                )
-            log.info(
-                "redaction applied (audit-only; PyMuPDF fan-out deferred to Wave 12.5b) "
-                "redaction_id=%s",
-                redaction_id,
+            # Dispatch the REAL burn+verify worker. It owns the status
+            # transition — 'applied' only after a verified redacted
+            # artifact is stored, 'failed' on any error. The consumer no
+            # longer flips status itself (the old rubber-stamp).
+            apply_document_redaction.apply_async(
+                kwargs={
+                    "tenant_id": tenant_id,
+                    "document_id": document_id,
+                    "redaction_id": redaction_id,
+                    "version_id": version_id,
+                    "storage_bucket": bucket,
+                    "storage_key": key,
+                    "regions": regions,
+                    "entity_types": entity_types,
+                    "applied_by": applied_by,
+                    "correlation_id": correlation_id,
+                },
+                queue="intelligence",
             )
+            log.info("redaction dispatched to burn worker redaction_id=%s", redaction_id)
             await msg.ack()
         except Exception:
             log.exception("apply redaction failed")

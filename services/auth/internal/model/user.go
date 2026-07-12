@@ -36,7 +36,7 @@ type User struct {
 	ID                uuid.UUID
 	Email             string
 	DisplayName       string
-	PasswordHash      string   // never serialized
+	PasswordHash      string // never serialized
 	AvatarURL         string
 	Role              Role
 	Status            Status
@@ -54,13 +54,13 @@ type User struct {
 
 // PublicView is the safe projection for API responses.
 type PublicView struct {
-	ID          uuid.UUID  `json:"id"`
-	TenantID    uuid.UUID  `json:"tenant_id"`
-	Email       string     `json:"email"`
-	DisplayName string     `json:"display_name"`
-	Role        Role       `json:"role"`
-	Status      Status     `json:"status"`
-	MFAEnabled  bool       `json:"mfa_enabled"`
+	ID          uuid.UUID `json:"id"`
+	TenantID    uuid.UUID `json:"tenant_id"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"display_name"`
+	Role        Role      `json:"role"`
+	Status      Status    `json:"status"`
+	MFAEnabled  bool      `json:"mfa_enabled"`
 	// ADR 0106 — i18n. UI language preference (en|ar today). Always
 	// populated; defaults to 'en' at the DB layer.
 	Locale      string     `json:"locale"`

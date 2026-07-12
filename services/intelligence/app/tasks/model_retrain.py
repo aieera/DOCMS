@@ -38,10 +38,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import MODEL_TRAINED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-MODEL_TRAINED_SUBJECT = "dms.model.trained.v1"
 CONSUMER = "model_retrain"
 
 BASE_MODEL = "distilbert-base-uncased"

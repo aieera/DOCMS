@@ -237,7 +237,7 @@ function RulesTable({
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">At/above</th>
                 <th className="px-3 py-2">Action</th>
@@ -255,7 +255,7 @@ function RulesTable({
                   <td className="px-3 py-2 font-mono">{r.required_clearance}</td>
                   <td className="px-3 py-2">{r.applies_to_phi ? 'yes' : '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{r.description || '—'}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-end">
                     <Button
                       variant="ghost"
                       size="sm"

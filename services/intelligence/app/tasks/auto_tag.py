@@ -48,10 +48,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import AUTOTAG_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-AUTOTAG_COMPLETED_SUBJECT = "dms.autotag.completed.v1"
 CONSUMER = "auto_tag"
 
 DEFAULT_CONFIG = {

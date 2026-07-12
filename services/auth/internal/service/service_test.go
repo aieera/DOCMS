@@ -32,12 +32,12 @@ func TestValidatePassword(t *testing.T) {
 		require.NoError(t, validatePassword(p), p)
 	}
 	bad := map[string]string{
-		"short":         "short1A!",
-		"no_upper":      "abcdef1!abcdef",
-		"no_lower":      "ABCDEF1!ABCDEF",
-		"no_digit":      "Abcdefx!abcdef",
-		"no_special":    "Abcdef1abcdef1",
-		"too_long":      string(make([]byte, 200)),
+		"short":      "short1A!",
+		"no_upper":   "abcdef1!abcdef",
+		"no_lower":   "ABCDEF1!ABCDEF",
+		"no_digit":   "Abcdefx!abcdef",
+		"no_special": "Abcdef1abcdef1",
+		"too_long":   string(make([]byte, 200)),
 	}
 	for name, p := range bad {
 		require.Error(t, validatePassword(p), name)

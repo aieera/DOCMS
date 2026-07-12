@@ -5,10 +5,10 @@
 // m365.Client on demand.
 //
 // Why a thin getter and not a long-lived Client cached on Service?
-//   * Tokens belong to the request — a hot path that resolves a
+//   - Tokens belong to the request — a hot path that resolves a
 //     Client per call re-reads connector_configs and naturally
 //     picks up token refreshes from another process.
-//   * Cache invalidation across pods is a noisier problem than the
+//   - Cache invalidation across pods is a noisier problem than the
 //     per-request Postgres read; we'll revisit when latency calls
 //     for it.
 package service

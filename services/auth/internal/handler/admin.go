@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/services/auth/internal/model"
 	"github.com/aieera/sedoc/services/auth/internal/service"
 )
@@ -65,6 +66,37 @@ func (h *Handler) ListUsersAdmin(w http.ResponseWriter, r *http.Request) {
 		out.Users = append(out.Users, toAdminUserDTO(u))
 	}
 	h.writeJSON(w, http.StatusOK, out)
+}
+
+// ---- GET /api/v1/admin/users/seat-usage ------------------------------------
+
+type seatUsageResponse struct {
+	SeatsUsed int  `json:"seats_used"`
+	SeatLimit *int `json:"seat_limit,omitempty"` // absent when unlicensed or unlimited plan
+}
+
+// SeatUsageAdmin handles GET /api/v1/admin/users/seat-usage — the live
+// "seats in use" count for the Admin → License page (ADR 0095 Phase 4).
+// Auth owns the users table, so the count is served here rather than by
+// the document service's license endpoint, which reports the JWT claims
+// but cannot see users. Counts the same active/non-deleted set that
+// enforceSeatLimit gates user creation on.
+func (h *Handler) SeatUsageAdmin(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	used, err := h.svc.SeatUsage(r.Context(), tenantID)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	resp := seatUsageResponse{SeatsUsed: used}
+	if c := license.Current(); c != nil && c.SeatLimit > 0 {
+		resp.SeatLimit = &c.SeatLimit
+	}
+	h.writeJSON(w, http.StatusOK, resp)
 }
 
 // ---- POST /api/v1/admin/users/invite --------------------------------------

@@ -5,10 +5,10 @@
 // These are the two acceptance tests deferred from Wave 5 Prompt 5.1
 // (remediation 12a, DoD row 3 + rollback). They pin:
 //
-//   1. CreateVersion → `dms.version.uploaded.v1` lands on NATS within 2 s
-//      with the full 12-field VersionUploadedV1 payload.
-//   2. If the outbox insert fails, the version row is rolled back (no
-//      partial commit, no lost event).
+//  1. CreateVersion → `dms.version.uploaded.v1` lands on NATS within 2 s
+//     with the full 12-field VersionUploadedV1 payload.
+//  2. If the outbox insert fails, the version row is rolled back (no
+//     partial commit, no lost event).
 //
 // Run with: go test -tags integration ./services/document/internal/service/...
 package service_test
@@ -54,7 +54,12 @@ func TestCreateVersion_PublishesVersionUploadedEventViaOutbox(t *testing.T) {
 
 	require.NoError(t, database.RunMigrations(dsn, "../../migrations"))
 
-	pool, err := database.NewPool(ctx, dsn, database.DefaultPoolConfig())
+	// Testcontainer superuser has BYPASSRLS — skip the posture gate like
+	// the sibling integration tests do (latent here until ADR 0121
+	// unblocked the migration chain and this code became reachable).
+	poolCfg := database.DefaultPoolConfig()
+	poolCfg.SkipRLSPostureCheck = true
+	pool, err := database.NewPool(ctx, dsn, poolCfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 
@@ -187,7 +192,12 @@ func TestCreateVersion_RollsBackWhenOutboxInsertFails(t *testing.T) {
 
 	require.NoError(t, database.RunMigrations(dsn, "../../migrations"))
 
-	pool, err := database.NewPool(ctx, dsn, database.DefaultPoolConfig())
+	// Testcontainer superuser has BYPASSRLS — skip the posture gate like
+	// the sibling integration tests do (latent here until ADR 0121
+	// unblocked the migration chain and this code became reachable).
+	poolCfg := database.DefaultPoolConfig()
+	poolCfg.SkipRLSPostureCheck = true
+	pool, err := database.NewPool(ctx, dsn, poolCfg)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 

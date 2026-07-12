@@ -187,7 +187,7 @@ function SignerRow({
       {!isLast && (
         <span
           aria-hidden
-          className="absolute left-3.5 top-8 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
+          className="absolute start-3.5 top-8 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
         />
       )}
       {/* status dot on the timeline rail */}

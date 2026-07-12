@@ -9,18 +9,18 @@
 // intake_ingested_files. Re-dropping the same bytes lands once.
 //
 // Per-file flow:
-//   1. fsnotify (or fallback 30s poll) reports a new path.
-//   2. Wait 2s for the file to settle (scanners write in chunks).
-//   3. SHA-256 + MIME detect.
-//   4. INSERT ON CONFLICT DO NOTHING — duplicate drops move to
-//      `processed/` and exit.
-//   5. Call the shared ingest pipeline to create the document + version
-//      (the same client the email worker + Drive import use), which fires
-//      dms.version.uploaded.v1 → OCR + embed + index.
-//   6. On success: move source file to `processed/`, stamp status
-//      = "ingested" with the document_id.
-//   7. On failure: move source file to `quarantine/`, stamp status
-//      = "failed" with the error message.
+//  1. fsnotify (or fallback 30s poll) reports a new path.
+//  2. Wait 2s for the file to settle (scanners write in chunks).
+//  3. SHA-256 + MIME detect.
+//  4. INSERT ON CONFLICT DO NOTHING — duplicate drops move to
+//     `processed/` and exit.
+//  5. Call the shared ingest pipeline to create the document + version
+//     (the same client the email worker + Drive import use), which fires
+//     dms.version.uploaded.v1 → OCR + embed + index.
+//  6. On success: move source file to `processed/`, stamp status
+//     = "ingested" with the document_id.
+//  7. On failure: move source file to `quarantine/`, stamp status
+//     = "failed" with the error message.
 package intake
 
 import (
@@ -49,22 +49,22 @@ import (
 
 // Folder is what the admin REST surface returns for one watched dir.
 type Folder struct {
-	ID                string    `json:"id"`
-	TenantID          string    `json:"tenant_id"`
-	Label             string    `json:"label"`
-	Active            bool      `json:"active"`
-	HostPath          string    `json:"host_path"`
-	TargetWorkspaceID string    `json:"target_workspace_id,omitempty"`
-	TargetFolderID    string    `json:"target_folder_id,omitempty"`
-	QuarantineSubdir  string    `json:"quarantine_subdir"`
-	ProcessedSubdir   string    `json:"processed_subdir"`
-	Recurse           bool      `json:"recurse"`
-	ExtensionsCSV     string    `json:"extensions_csv,omitempty"`
+	ID                string     `json:"id"`
+	TenantID          string     `json:"tenant_id"`
+	Label             string     `json:"label"`
+	Active            bool       `json:"active"`
+	HostPath          string     `json:"host_path"`
+	TargetWorkspaceID string     `json:"target_workspace_id,omitempty"`
+	TargetFolderID    string     `json:"target_folder_id,omitempty"`
+	QuarantineSubdir  string     `json:"quarantine_subdir"`
+	ProcessedSubdir   string     `json:"processed_subdir"`
+	Recurse           bool       `json:"recurse"`
+	ExtensionsCSV     string     `json:"extensions_csv,omitempty"`
 	LastSeenAt        *time.Time `json:"last_seen_at,omitempty"`
-	FilesIngested     int64     `json:"files_ingested"`
-	LastError         string    `json:"last_error,omitempty"`
-	CreatedBy         string    `json:"created_by,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	FilesIngested     int64      `json:"files_ingested"`
+	LastError         string     `json:"last_error,omitempty"`
+	CreatedBy         string     `json:"created_by,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // CreateInput is the POST body shape.
@@ -452,32 +452,43 @@ func detectMIME(path string) (string, error) {
 
 // ---- DB helpers -----------------------------------------------------
 
+// listActiveFolders is legitimately cross-tenant (the reconcile loop
+// watches every tenant's drop folders), so it uses the sanctioned
+// enumerate-tenants shape (Wave A.1, issue #71): the former global
+// scan returned 0 rows under prod NOBYPASSRLS and intake silently
+// stopped watching everything.
 func (s *Service) listActiveFolders(ctx context.Context) ([]Folder, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, tenant_id::text, label, active, host_path,
-		       COALESCE(target_workspace_id::text, ''),
-		       COALESCE(target_folder_id::text, ''),
-		       quarantine_subdir, processed_subdir, recurse, extensions_csv,
-		       last_seen_at, files_ingested, COALESCE(last_error, ''),
-		       COALESCE(created_by::text, ''), created_at
-		  FROM intake_drop_folders WHERE active = TRUE`)
+	var out []Folder
+	err := database.ForEachTenant(ctx, s.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id::text, tenant_id::text, label, active, host_path,
+			       COALESCE(target_workspace_id::text, ''),
+			       COALESCE(target_folder_id::text, ''),
+			       quarantine_subdir, processed_subdir, recurse, extensions_csv,
+			       last_seen_at, files_ingested, COALESCE(last_error, ''),
+			       COALESCE(created_by::text, ''), created_at
+			  FROM intake_drop_folders WHERE tenant_id = $1 AND active = TRUE`, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			f := Folder{}
+			if err := rows.Scan(&f.ID, &f.TenantID, &f.Label, &f.Active, &f.HostPath,
+				&f.TargetWorkspaceID, &f.TargetFolderID,
+				&f.QuarantineSubdir, &f.ProcessedSubdir, &f.Recurse, &f.ExtensionsCSV,
+				&f.LastSeenAt, &f.FilesIngested, &f.LastError,
+				&f.CreatedBy, &f.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, f)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Folder
-	for rows.Next() {
-		f := Folder{}
-		if err := rows.Scan(&f.ID, &f.TenantID, &f.Label, &f.Active, &f.HostPath,
-			&f.TargetWorkspaceID, &f.TargetFolderID,
-			&f.QuarantineSubdir, &f.ProcessedSubdir, &f.Recurse, &f.ExtensionsCSV,
-			&f.LastSeenAt, &f.FilesIngested, &f.LastError,
-			&f.CreatedBy, &f.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, f)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Service) recordPending(ctx context.Context, f Folder, path, sha string, size int64) (string, bool, error) {
@@ -561,10 +572,20 @@ func (s *Service) markFailed(ctx context.Context, f Folder, rowID, msg string) {
 
 func (s *Service) recordError(ctx context.Context, f Folder, msg string) {
 	s.log.Warn().Str("folder_id", f.ID).Str("err", msg).Msg("intake")
-	_, _ = s.pool.Exec(ctx,
-		`UPDATE intake_drop_folders SET last_error = $3, last_seen_at = now()
-		  WHERE tenant_id = $1 AND id = $2`,
-		f.TenantID, f.ID, msg)
+	tid, err := uuid.Parse(f.TenantID)
+	if err != nil {
+		s.log.Error().Err(err).Str("folder_id", f.ID).Msg("intake: record error tenant parse")
+		return
+	}
+	if err := database.WithTenantTx(ctx, s.pool, tid, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE intake_drop_folders SET last_error = $3, last_seen_at = now()
+			  WHERE tenant_id = $1 AND id = $2`,
+			f.TenantID, f.ID, msg)
+		return err
+	}); err != nil {
+		s.log.Error().Err(err).Str("folder_id", f.ID).Msg("intake: record error stamp failed")
+	}
 }
 
 // ---- public REST surface --------------------------------------------

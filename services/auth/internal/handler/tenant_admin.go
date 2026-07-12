@@ -170,11 +170,11 @@ func (h *TenantAdminHandler) scheduleCMKDeletion(w http.ResponseWriter, r *http.
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id":               target.String(),
-		"scheduled_deletion_at":   deleteAt.Format(time.RFC3339),
-		"grace_hours":             body.GraceHours,
-		"cancel_before":           deleteAt.Format(time.RFC3339),
-		"note":                    "existing ciphertext becomes unreadable after this timestamp; cancel to abort within the grace window",
+		"tenant_id":             target.String(),
+		"scheduled_deletion_at": deleteAt.Format(time.RFC3339),
+		"grace_hours":           body.GraceHours,
+		"cancel_before":         deleteAt.Format(time.RFC3339),
+		"note":                  "existing ciphertext becomes unreadable after this timestamp; cancel to abort within the grace window",
 	})
 }
 

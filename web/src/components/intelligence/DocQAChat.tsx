@@ -11,6 +11,7 @@ import {
   type QAStreamEvent,
 } from '@/api/doc-qa'
 import { Button } from '@/components/ui/shadcn/button'
+import { AnswerMarkdown } from '@/components/ai/AnswerMarkdown'
 import { CitationList } from './CitationHighlight'
 import { SuggestedQuestions } from './SuggestedQuestions'
 
@@ -274,9 +275,18 @@ function Bubble({
             : 'bg-muted text-foreground',
         ].join(' ')}
       >
-        <div className="whitespace-pre-wrap">
-          {message.content || (message.pending ? <TypingDots /> : '')}
-        </div>
+        {!isUser && message.content ? (
+          // Assistant answers arrive as Markdown — render it instead of
+          // showing raw `**bold**` / `-` syntax. User bubbles stay plain.
+          <AnswerMarkdown
+            text={message.content}
+            className="prose prose-sm max-w-none dark:prose-invert"
+          />
+        ) : (
+          <div className="whitespace-pre-wrap">
+            {message.content || (message.pending ? <TypingDots /> : '')}
+          </div>
+        )}
         {!isUser && message.citations && message.citations.length > 0 && (
           <CitationList
             citations={message.citations}

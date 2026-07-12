@@ -32,7 +32,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // IngestSignedClient abstracts the upload + version-create round
@@ -86,6 +90,9 @@ type CreateVersionFromBlobInput struct {
 type ingestPipeline struct {
 	pool   *pgxpool.Pool
 	client IngestSignedClient
+	// regionFn overrides the DB region lookup in tests. nil → the real
+	// tenant-scoped documents.region_pin query.
+	regionFn func(ctx context.Context, tenantID, documentID string) (string, error)
 }
 
 // PutAndCreateVersion runs the full upload → create-version sequence.
@@ -100,10 +107,13 @@ func (p *ingestPipeline) PutAndCreateVersion(ctx context.Context, in PutSignedBl
 	if in.MimeType == "" {
 		in.MimeType = "application/pdf"
 	}
+	// FAIL CLOSED on an unset region. The old code silently defaulted to
+	// us-east-1, which forced every signed blob into that region and
+	// violated data residency for any non-us-east tenant/document. There
+	// is no safe default for a residency pin — the caller must resolve
+	// it (ResolveRegionOrFail) and pass it explicitly.
 	if in.RegionPin == "" {
-		// Documents always have a region_pin; if caller didn't
-		// resolve it, fall back to a sentinel storage understands.
-		in.RegionPin = "us-east-1"
+		return "", "", errors.New("region_pin required: refusing to write a signed blob without an explicit residency region")
 	}
 	if in.DocumentID == "" {
 		in.DocumentID = documentID // scope the upload-permission check
@@ -123,19 +133,46 @@ func (p *ingestPipeline) PutAndCreateVersion(ctx context.Context, in PutSignedBl
 	return versionID, put.ContentBlobID, nil
 }
 
-// ResolveDocumentRegion looks up documents.region_pin from the same
-// pool — both signature service and document service share the DB
-// under tenant RLS. Returns "" + error when the document doesn't
-// exist or RLS hides it.
+// ResolveDocumentRegion looks up documents.region_pin. documents is
+// FORCE-RLS, so the read MUST run inside a tenant tx (SET LOCAL
+// app.current_tenant) — a raw pool read under dms_app (NOBYPASSRLS)
+// fails closed to 0 rows, which would then reject every seal. Returns
+// "" + error when the document doesn't exist or RLS hides it.
 func (p *ingestPipeline) ResolveDocumentRegion(ctx context.Context, tenantID, documentID string) (string, error) {
 	if p.pool == nil {
 		return "", errors.New("pool not configured")
 	}
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return "", fmt.Errorf("tenant_id: %w", err)
+	}
 	var region string
-	err := p.pool.QueryRow(ctx,
-		`SELECT COALESCE(region_pin, '') FROM documents WHERE tenant_id = $1 AND id = $2`,
-		tenantID, documentID).Scan(&region)
+	err = database.WithTenantTx(ctx, p.pool, tid, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT COALESCE(region_pin, '') FROM documents WHERE tenant_id = $1 AND id = $2`,
+			tenantID, documentID).Scan(&region)
+	})
 	return region, err
+}
+
+// ResolveRegionOrFail resolves the document's residency region and
+// REJECTS (never defaults) when it can't be honored — the single choke
+// point every signature storage write must call so a region decision is
+// explicit. An unresolvable or empty region_pin is a hard error: writing
+// the blob to a default region would breach residency.
+func (p *ingestPipeline) ResolveRegionOrFail(ctx context.Context, tenantID, documentID string) (string, error) {
+	resolve := p.regionFn
+	if resolve == nil {
+		resolve = p.ResolveDocumentRegion
+	}
+	region, err := resolve(ctx, tenantID, documentID)
+	if err != nil {
+		return "", fmt.Errorf("resolve region pin for document %s: %w", documentID, err)
+	}
+	if region == "" {
+		return "", fmt.Errorf("document %s has no region_pin; refusing to write a sealed blob (data residency)", documentID)
+	}
+	return region, nil
 }
 
 // hashBytes is exported here (lowercase wrapper around sha256) so

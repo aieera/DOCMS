@@ -174,6 +174,10 @@ function TrashPage() {
             <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
           ) : (
             <Card className="overflow-hidden">
+              {/* Same overflow-x-auto treatment as the documents table
+                  below — without it the Card clips the Actions column
+                  at narrow viewports with no scroll affordance. */}
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
@@ -195,6 +199,7 @@ function TrashPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </Card>
           )}
         </section>

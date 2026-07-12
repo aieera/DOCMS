@@ -40,25 +40,25 @@ const (
 
 // Config is a per-tenant ingestion configuration.
 type Config struct {
-	ID                    string    `json:"id"`
-	TenantID              string    `json:"tenant_id"`
-	Source                Source    `json:"source"`
-	Label                 string    `json:"label"`
-	Active                bool      `json:"active"`
-	OAuthProvider         string    `json:"oauth_provider,omitempty"`
-	IMAPHost              string    `json:"imap_host,omitempty"`
-	IMAPPort              int       `json:"imap_port,omitempty"`
-	IMAPUseTLS            bool      `json:"imap_use_tls"`
-	IMAPUsername          string    `json:"imap_username,omitempty"`
-	TargetWorkspaceID     string    `json:"target_workspace_id,omitempty"`
-	TargetFolderID        string    `json:"target_folder_id,omitempty"`
-	PollIntervalSeconds   int       `json:"poll_interval_seconds"`
-	LastRunAt             *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt         *time.Time `json:"last_success_at,omitempty"`
-	LastError             string    `json:"last_error,omitempty"`
-	MessagesIngested      int64     `json:"messages_ingested"`
-	CreatedBy             string    `json:"created_by,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
+	ID                  string     `json:"id"`
+	TenantID            string     `json:"tenant_id"`
+	Source              Source     `json:"source"`
+	Label               string     `json:"label"`
+	Active              bool       `json:"active"`
+	OAuthProvider       string     `json:"oauth_provider,omitempty"`
+	IMAPHost            string     `json:"imap_host,omitempty"`
+	IMAPPort            int        `json:"imap_port,omitempty"`
+	IMAPUseTLS          bool       `json:"imap_use_tls"`
+	IMAPUsername        string     `json:"imap_username,omitempty"`
+	TargetWorkspaceID   string     `json:"target_workspace_id,omitempty"`
+	TargetFolderID      string     `json:"target_folder_id,omitempty"`
+	PollIntervalSeconds int        `json:"poll_interval_seconds"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt       *time.Time `json:"last_success_at,omitempty"`
+	LastError           string     `json:"last_error,omitempty"`
+	MessagesIngested    int64      `json:"messages_ingested"`
+	CreatedBy           string     `json:"created_by,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // CreateConfigInput is the request body shape for POST /email-configs.
@@ -88,14 +88,14 @@ type PatchConfigInput struct {
 
 // Stats is what GET /email-configs/{id}/stats returns.
 type Stats struct {
-	ConfigID         string     `json:"config_id"`
-	MessagesTotal    int64      `json:"messages_total"`
-	MessagesPending  int64      `json:"messages_pending"`
-	MessagesFailed   int64      `json:"messages_failed"`
-	LastRunAt        *time.Time `json:"last_run_at,omitempty"`
-	LastSuccessAt    *time.Time `json:"last_success_at,omitempty"`
-	LastError        string     `json:"last_error,omitempty"`
-	NextRunAt        *time.Time `json:"next_run_at,omitempty"`
+	ConfigID        string     `json:"config_id"`
+	MessagesTotal   int64      `json:"messages_total"`
+	MessagesPending int64      `json:"messages_pending"`
+	MessagesFailed  int64      `json:"messages_failed"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	LastSuccessAt   *time.Time `json:"last_success_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
 }
 
 // Envelope is the source-agnostic shape providers return. Worker turns
@@ -151,6 +151,15 @@ func New(pool *pgxpool.Pool, nc *nats.Conn, ingestClient *ingest.Client, pollers
 	return &Service{pool: pool, nc: nc, ingest: ingestClient, log: log, pollers: m}
 }
 
+// withTenant opens a tenant-scoped transaction — the A.1.a template.
+func (s *Service) withTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx) error) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	return database.WithTenantTx(ctx, s.pool, tid, fn)
+}
+
 // ---- Worker --------------------------------------------------------------
 
 // Start runs the dispatcher loop. Ticks every 30s, claims due configs,
@@ -184,8 +193,13 @@ func (s *Service) tick(ctx context.Context) {
 
 // dueConfigs returns active configs whose last_run_at + poll_interval
 // is in the past. NULL last_run_at counts as due (fresh config).
+// Legitimately cross-tenant, so it uses the sanctioned enumerate-
+// tenants shape (Wave A.1, issue #71): the former global scan returned
+// 0 rows under prod NOBYPASSRLS and email ingestion silently stopped.
 func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
-	rows, err := s.pool.Query(ctx, `
+	var out []*Config
+	err := database.ForEachTenant(ctx, s.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
 		SELECT id::text, tenant_id::text, source, label, active,
 		       COALESCE(oauth_provider, ''),
 		       COALESCE(imap_host, ''), COALESCE(imap_port, 0), imap_use_tls,
@@ -196,26 +210,31 @@ func (s *Service) dueConfigs(ctx context.Context) ([]*Config, error) {
 		       COALESCE(last_error, ''), messages_ingested,
 		       COALESCE(created_by::text, ''), created_at
 		  FROM email_ingestion_configs
-		 WHERE active = TRUE
+		 WHERE tenant_id = $1
+		   AND active = TRUE
 		   AND (last_run_at IS NULL
-		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())`)
+		        OR last_run_at + (poll_interval_seconds || ' seconds')::interval <= now())`, tenantID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			c := &Config{}
+			if err := rows.Scan(&c.ID, &c.TenantID, &c.Source, &c.Label, &c.Active,
+				&c.OAuthProvider, &c.IMAPHost, &c.IMAPPort, &c.IMAPUseTLS,
+				&c.IMAPUsername, &c.TargetWorkspaceID, &c.TargetFolderID,
+				&c.PollIntervalSeconds, &c.LastRunAt, &c.LastSuccessAt,
+				&c.LastError, &c.MessagesIngested, &c.CreatedBy, &c.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []*Config
-	for rows.Next() {
-		c := &Config{}
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.Source, &c.Label, &c.Active,
-			&c.OAuthProvider, &c.IMAPHost, &c.IMAPPort, &c.IMAPUseTLS,
-			&c.IMAPUsername, &c.TargetWorkspaceID, &c.TargetFolderID,
-			&c.PollIntervalSeconds, &c.LastRunAt, &c.LastSuccessAt,
-			&c.LastError, &c.MessagesIngested, &c.CreatedBy, &c.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Service) runConfig(ctx context.Context, cfg *Config) {
@@ -373,22 +392,32 @@ func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (
 
 func (s *Service) recordError(ctx context.Context, cfg *Config, msg string) {
 	s.log.Warn().Str("config_id", cfg.ID).Str("source", string(cfg.Source)).Str("err", msg).Msg("email poll failed")
-	_, _ = s.pool.Exec(ctx,
-		`UPDATE email_ingestion_configs
-		    SET last_run_at = now(), last_error = $3, updated_at = now()
-		  WHERE tenant_id = $1 AND id = $2`,
-		cfg.TenantID, cfg.ID, msg)
+	if err := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE email_ingestion_configs
+			    SET last_run_at = now(), last_error = $3, updated_at = now()
+			  WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, cfg.ID, msg)
+		return err
+	}); err != nil {
+		s.log.Error().Err(err).Str("config_id", cfg.ID).Msg("email: record error stamp failed")
+	}
 }
 
 func (s *Service) recordSuccess(ctx context.Context, cfg *Config, ingested int) {
-	_, _ = s.pool.Exec(ctx,
-		`UPDATE email_ingestion_configs
-		    SET last_run_at = now(), last_success_at = now(),
-		        last_error = NULL,
-		        messages_ingested = messages_ingested + $3,
-		        updated_at = now()
-		  WHERE tenant_id = $1 AND id = $2`,
-		cfg.TenantID, cfg.ID, ingested)
+	if err := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE email_ingestion_configs
+			    SET last_run_at = now(), last_success_at = now(),
+			        last_error = NULL,
+			        messages_ingested = messages_ingested + $3,
+			        updated_at = now()
+			  WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, cfg.ID, ingested)
+		return err
+	}); err != nil {
+		s.log.Error().Err(err).Str("config_id", cfg.ID).Msg("email: record success stamp failed")
+	}
 }
 
 // RunOnce is the manual "poll now" path triggered by the admin UI.
@@ -638,19 +667,19 @@ func emailIngestedPayload(cfg *Config, env *Envelope, msgID string) []byte {
 	envelope := map[string]any{
 		"type": "dms.email.ingested.v1",
 		"data": map[string]any{
-			"tenant_id":            cfg.TenantID,
-			"config_id":            cfg.ID,
-			"message_id":           msgID,
-			"target_workspace_id":  cfg.TargetWorkspaceID,
-			"target_folder_id":     cfg.TargetFolderID,
-			"subject":              env.Subject,
-			"from":                 env.From,
-			"to":                   env.To,
-			"date":                 env.Date.Format(time.RFC3339),
-			"thread_id":            env.ThreadID,
-			"body_text":            env.BodyText,
-			"body_html":            env.BodyHTML,
-			"attachment_count":     len(env.Attachments),
+			"tenant_id":           cfg.TenantID,
+			"config_id":           cfg.ID,
+			"message_id":          msgID,
+			"target_workspace_id": cfg.TargetWorkspaceID,
+			"target_folder_id":    cfg.TargetFolderID,
+			"subject":             env.Subject,
+			"from":                env.From,
+			"to":                  env.To,
+			"date":                env.Date.Format(time.RFC3339),
+			"thread_id":           env.ThreadID,
+			"body_text":           env.BodyText,
+			"body_html":           env.BodyHTML,
+			"attachment_count":    len(env.Attachments),
 		},
 	}
 	b, _ := json.Marshal(envelope)

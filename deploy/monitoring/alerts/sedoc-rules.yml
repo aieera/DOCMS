@@ -75,6 +75,33 @@ groups:
           summary: "Event bus consumer lag >10K"
           description: "{{ $labels.topic }}/{{ $labels.group }} lag = {{ $value }}"
 
+      # Wave 0.2 — any dead-lettered outbox row means an event could not
+      # be published after MaxAttempts (e.g. an unbound JetStream subject).
+      # The drain no longer wedges on it, but a non-empty DLQ is data that
+      # never reached its consumer and needs operator triage + replay.
+      - alert: OutboxDLQNotEmpty
+        expr: max(outbox_dlq_depth) by (service) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Outbox dead-letter queue is non-empty"
+          description: "{{ $labels.service }} has {{ $value }} row(s) in outbox_dlq (failed to publish after retries). Inspect outbox_dlq.last_error and replay."
+          runbook: "https://wiki.vaultdms.io/runbooks/outbox-dlq"
+
+      # A steadily rising drain lag means the publisher is falling behind
+      # (or wedged on a slow/failing subject before the DLQ kicks in).
+      - alert: OutboxDrainLagHigh
+        expr: max(outbox_drain_lag_seconds) by (service) > 300
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Outbox drain lag >5m"
+          description: "{{ $labels.service }} oldest unpublished outbox row is {{ $value }}s old."
+
       - alert: DiskUsageHigh
         expr: >
           (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_avail_bytes{mountpoint="/"})

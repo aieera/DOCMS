@@ -1,23 +1,23 @@
 // Package m365 implements the Microsoft 365 / Microsoft Graph
 // connector. Owns:
 //
-//   * OAuth handshake (per-tenant client_id/secret, multi-tenant
+//   - OAuth handshake (per-tenant client_id/secret, multi-tenant
 //     Entra app by default — `tenant=common`).
-//   * Token refresh with the standard 60-second pre-expiry budget.
-//   * A Graph API Client (client.go) covering Sites, Drives,
+//   - Token refresh with the standard 60-second pre-expiry budget.
+//   - A Graph API Client (client.go) covering Sites, Drives,
 //     Messages, and Teams channels.
 //
 // Why a fresh package and not the older providers/microsoft?
 //
-//   The older package shipped a thin Connector covering PollInbox /
-//   SharePointListFiles / SendTeamsNotification with limited scopes
-//   and no 401-retry. The user-facing surface we now need
-//   (Outlook + Word + Excel + PowerPoint + Teams + SharePoint)
-//   requires the full Graph scope set + a robust client, and
-//   layering on top of the old package would have made the file
-//   too noisy. We leave providers/microsoft in place as the dev
-//   artifact behind the email poller until ADR 0112's deprecation
-//   window closes.
+//	The older package shipped a thin Connector covering PollInbox /
+//	SharePointListFiles / SendTeamsNotification with limited scopes
+//	and no 401-retry. The user-facing surface we now need
+//	(Outlook + Word + Excel + PowerPoint + Teams + SharePoint)
+//	requires the full Graph scope set + a robust client, and
+//	layering on top of the old package would have made the file
+//	too noisy. We leave providers/microsoft in place as the dev
+//	artifact behind the email poller until ADR 0112's deprecation
+//	window closes.
 package m365
 
 import (
@@ -35,9 +35,9 @@ import (
 const ProviderName = "m365"
 
 // Authorize / token endpoints. `{tenant}` resolves to either:
-//   * "common"  — the multi-tenant Entra ID app (default; works
+//   - "common"  — the multi-tenant Entra ID app (default; works
 //     for any tenant who consents to your app).
-//   * a directory (tenant) GUID — single-tenant deployments, where
+//   - a directory (tenant) GUID — single-tenant deployments, where
 //     the customer has insisted on hosting their own Entra app.
 const (
 	authzTmpl = "https://login.microsoftonline.com/%s/oauth2/v2.0/authorize"
@@ -78,11 +78,11 @@ type Connector struct {
 // Config is what callers pass to New(). Empty TenantID resolves to
 // "common"; pass a directory GUID for single-tenant Entra apps.
 type Config struct {
-	ClientID       string
-	ClientSecret   string
-	TenantID       string
-	ExtraScopes    []string // typically OptionalCalendarScopes
-	Log            zerolog.Logger
+	ClientID     string
+	ClientSecret string
+	TenantID     string
+	ExtraScopes  []string // typically OptionalCalendarScopes
+	Log          zerolog.Logger
 }
 
 // New constructs a Connector. Validates that ClientID/Secret are

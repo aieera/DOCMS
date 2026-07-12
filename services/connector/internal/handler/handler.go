@@ -62,10 +62,10 @@ func (h *Handler) Register(mux *http.ServeMux, webhookAuth func(http.Handler) ht
 	mux.HandleFunc("POST /api/v1/connectors/google/drive/import", h.importGoogleDrive)
 	// Microsoft 365 (ADR 0111). The unified /oauth/callback above
 	// dispatches by provider name; no separate callback here.
-	mux.HandleFunc("PUT /api/v1/connectors/m365/config",          h.putM365Config)
-	mux.HandleFunc("GET /api/v1/connectors/m365/auth-url",        h.m365AuthURL)
-	mux.HandleFunc("POST /api/v1/connectors/m365/disconnect",     h.disconnectM365)
-	mux.HandleFunc("GET /api/v1/connectors/m365/sites",           h.listM365Sites)
+	mux.HandleFunc("PUT /api/v1/connectors/m365/config", h.putM365Config)
+	mux.HandleFunc("GET /api/v1/connectors/m365/auth-url", h.m365AuthURL)
+	mux.HandleFunc("POST /api/v1/connectors/m365/disconnect", h.disconnectM365)
+	mux.HandleFunc("GET /api/v1/connectors/m365/sites", h.listM365Sites)
 	mux.HandleFunc("GET /api/v1/connectors/m365/drives/{drive_id}/items", h.listM365DriveItems)
 	// MCP
 	// MCP routes moved to services/mcp-server (ADR 0091).

@@ -1,12 +1,12 @@
 // Microsoft 365 → SeDoc session exchange — HTTP surface (ADR 0112).
 //
-//   POST /api/v1/auth/m365/exchange
-//     Body: { "ms_access_token": "...", "tenant_id": "..." (optional) }
-//     200:  { "vdms_session_token": "...", "user_id": "...", "tenant_id": "..." }
-//     401:  Entra token expired / revoked.
-//     404:  no SeDoc user with this email.
-//     409:  email exists in N tenants — body lists candidates so
-//           the add-in can prompt the user.
+//	POST /api/v1/auth/m365/exchange
+//	  Body: { "ms_access_token": "...", "tenant_id": "..." (optional) }
+//	  200:  { "vdms_session_token": "...", "user_id": "...", "tenant_id": "..." }
+//	  401:  Entra token expired / revoked.
+//	  404:  no SeDoc user with this email.
+//	  409:  email exists in N tenants — body lists candidates so
+//	        the add-in can prompt the user.
 //
 // The endpoint is intentionally UN-authenticated at the SeDoc
 // layer — it's the entry point that ESTABLISHES auth. The proof
@@ -35,8 +35,8 @@ type m365ExchangeResp struct {
 }
 
 type m365MultiTenantResp struct {
-	Error      string                          `json:"error"`
-	Candidates []service.M365TenantCandidate   `json:"candidates"`
+	Error      string                        `json:"error"`
+	Candidates []service.M365TenantCandidate `json:"candidates"`
 }
 
 // ExchangeM365 handles POST /api/v1/auth/m365/exchange.

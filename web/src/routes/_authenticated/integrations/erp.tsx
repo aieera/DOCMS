@@ -44,7 +44,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="truncate text-right text-foreground">{value}</dd>
+      <dd className="truncate text-end text-foreground">{value}</dd>
     </div>
   )
 }
@@ -204,7 +204,7 @@ function ErpExplorerPage() {
                     <button
                       onClick={() => setFolderId(f.id)}
                       className={cn(
-                        'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                        'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm transition-colors',
                         f.id === folderId ? 'bg-primary/10 text-primary' : 'hover:bg-muted',
                       )}
                     >
@@ -235,7 +235,7 @@ function ErpExplorerPage() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <tr className="border-b border-border text-start text-xs text-muted-foreground">
                     <th className="px-4 py-2 font-medium">Name</th>
                     <th className="px-4 py-2 font-medium">Type</th>
                     <th className="px-4 py-2 font-medium">Status</th>

@@ -284,6 +284,13 @@ func buildSignatureAppliedEvent(tenantUUID, aggID uuid.UUID, documentID, version
 // risk a duplicate seal on caller retry. Outbox-only per §4.7 (TestPhaseC5);
 // never publishes to NATS directly.
 func (s *Service) emitSignatureApplied(ctx context.Context, tenantID, documentID, versionID, userID, signerName, reason, level, fingerprint string) {
+	// Best-effort emit: never panic when the outbox path isn't wired
+	// (e.g. a signer-only deployment or a test harness). The seal itself
+	// has already succeeded.
+	if s.pool == nil || s.outbox == nil {
+		s.log.Warn().Str("document_id", documentID).Msg("signature.applied: pool/outbox not configured; event dropped")
+		return
+	}
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {
 		s.log.Error().Err(err).Str("tenant_id", tenantID).Msg("signature.applied: bad tenant id; event dropped")

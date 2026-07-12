@@ -641,8 +641,17 @@ func (s *Service) ingestSignedDocument(ctx context.Context, tenantID, requestID,
 	// transitions to completed; that's better than blocking on a
 	// dependency that doesn't exist in the local-dev environment.
 	var versionID, contentBlobID, cocBlobID string
-	if s.ingest != nil {
-		region, _ := s.ingest.ResolveDocumentRegion(ctx, tenantID, existing.DocumentID)
+	// Resolve the residency region; on failure we SKIP the storage
+	// writes entirely rather than default to us-east-1 (residency). The
+	// request still transitions to completed below — the version_id is
+	// left empty in the outbox event, which is observable, exactly as it
+	// is for any other ingest failure on this best-effort path.
+	region, regionErr := s.ingest.ResolveRegionOrFail(ctx, tenantID, existing.DocumentID)
+	if s.ingest != nil && regionErr != nil {
+		s.log.Error().Err(regionErr).Str("request_id", requestID).
+			Msg("esign ingest: cannot resolve residency region; skipping signed-PDF hand-off (no default-region write)")
+	}
+	if s.ingest != nil && regionErr == nil {
 		filename := "signed.pdf"
 		change := fmt.Sprintf("Signed via %s envelope %s", provider, envelopeID)
 		vID, blobID, err := s.ingest.PutAndCreateVersion(ctx, PutSignedBlobInput{

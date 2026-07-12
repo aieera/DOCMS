@@ -53,10 +53,10 @@ export const VerticalBarChart = forwardRef<HTMLDivElement, VerticalBarChartProps
               {d.tooltip && (
                 <span
                   className={cn(
-                    'absolute left-1/2 top-[-34px] -translate-x-1/2 whitespace-nowrap',
+                    'absolute start-1/2 top-[-34px] -translate-x-1/2 whitespace-nowrap',
                     'rounded-full bg-[#1A1A1A] px-2.5 py-1 font-mono text-[10.5px] font-semibold',
                     'tracking-[0.02em] text-[#FAFAFA]',
-                    'after:absolute after:bottom-[-4px] after:left-1/2 after:h-2 after:w-2',
+                    'after:absolute after:bottom-[-4px] after:start-1/2 after:h-2 after:w-2',
                     'after:-translate-x-1/2 after:rotate-45 after:bg-[#1A1A1A]',
                   )}
                 >

@@ -11,12 +11,12 @@ import "time"
 // PrefCell is one row of the matrix: (user, channel, event_type)
 // → enable + digest. Composite PK matches notification_preferences.
 type PrefCell struct {
-	TenantID       string `json:"tenant_id"`
-	UserID         string `json:"user_id"`
-	Channel        string `json:"channel"`
-	EventType      string `json:"event_type"`
-	IsEnabled      bool   `json:"is_enabled"`
-	DigestEnabled  bool   `json:"digest_enabled"`
+	TenantID      string `json:"tenant_id"`
+	UserID        string `json:"user_id"`
+	Channel       string `json:"channel"`
+	EventType     string `json:"event_type"`
+	IsEnabled     bool   `json:"is_enabled"`
+	DigestEnabled bool   `json:"digest_enabled"`
 }
 
 // Snooze is one explicit "mute event_type until X" override.
@@ -44,12 +44,12 @@ type DND struct {
 
 // Digest is one in-flight digest accumulator row.
 type Digest struct {
-	ID            string    `json:"id"`
-	TenantID      string    `json:"tenant_id"`
-	UserID        string    `json:"user_id"`
-	EventType     string    `json:"event_type"`
-	Channel       string    `json:"channel"`
-	Events        []byte    `json:"-"` // raw JSONB; service unmarshals
-	Count         int       `json:"count"`
-	FlushAfterAt  time.Time `json:"flush_after_at"`
+	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id"`
+	UserID       string    `json:"user_id"`
+	EventType    string    `json:"event_type"`
+	Channel      string    `json:"channel"`
+	Events       []byte    `json:"-"` // raw JSONB; service unmarshals
+	Count        int       `json:"count"`
+	FlushAfterAt time.Time `json:"flush_after_at"`
 }

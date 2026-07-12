@@ -35,6 +35,26 @@ func (s *Service) GetUser(ctx context.Context, tenantID, userID uuid.UUID) (*mod
 	return u, nil
 }
 
+// SeatUsage returns the tenant's seat-consuming user count — the same
+// active/non-deleted set enforceSeatLimit gates user creation on — so
+// the License page can show live "seats in use" next to the JWT's
+// seat_limit claim (ADR 0095 Phase 4).
+func (s *Service) SeatUsage(ctx context.Context, tenantID uuid.UUID) (int, error) {
+	var used int
+	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		n, err := s.users.CountActive(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		used = n
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return used, nil
+}
+
 // ListUsersFilter narrows the tenant-wide user list. Every field is optional.
 type ListUsersFilter struct {
 	Status string // "active" | "suspended" | "deactivated"
@@ -106,9 +126,9 @@ func (s *Service) ListUsers(ctx context.Context, tenantID uuid.UUID, f ListUsers
 
 		for rows.Next() {
 			var (
-				u          model.User
-				role, st   string
-				lastLogin  *time.Time
+				u         model.User
+				role, st  string
+				lastLogin *time.Time
 			)
 			if err := rows.Scan(
 				&u.TenantID, &u.ID, &u.Email, &u.DisplayName,
@@ -187,9 +207,9 @@ func (s *Service) InviteUser(ctx context.Context, in InviteInput) (*model.User, 
 		Role:        role,
 		Status:      model.StatusActive, // status='active', empty password_hash → login still fails
 		Settings: map[string]any{
-			"invite_token_hash":  tokenHash,
-			"invite_expires_at":  expiresAt.Format(time.RFC3339),
-			"invited_by":         in.InvitedBy.String(),
+			"invite_token_hash": tokenHash,
+			"invite_expires_at": expiresAt.Format(time.RFC3339),
+			"invited_by":        in.InvitedBy.String(),
 		},
 		CreatedAt: s.clock(),
 		UpdatedAt: s.clock(),
@@ -206,14 +226,14 @@ func (s *Service) InviteUser(ctx context.Context, in InviteInput) (*model.User, 
 			return err
 		}
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":            user.ID.String(),
-			"tenant_id":          user.TenantID.String(),
-			"email":              user.Email,
-			"display_name":       user.DisplayName,
-			"role":               string(user.Role),
-			"invited_by":         in.InvitedBy.String(),
-			"invite_token_hash":  tokenHash,
-			"invite_expires_at":  expiresAt.Format(time.RFC3339),
+			"user_id":           user.ID.String(),
+			"tenant_id":         user.TenantID.String(),
+			"email":             user.Email,
+			"display_name":      user.DisplayName,
+			"role":              string(user.Role),
+			"invited_by":        in.InvitedBy.String(),
+			"invite_token_hash": tokenHash,
+			"invite_expires_at": expiresAt.Format(time.RFC3339),
 		})
 		evt := database.NewOutboxEvent(in.TenantID, "dms.user.invited.v1", "user", user.ID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
@@ -402,6 +422,7 @@ func (s *Service) OrgSlugByID(ctx context.Context, id uuid.UUID) (string, error)
 //   - actor can't change their own role (prevents an owner accidentally
 //     demoting themselves out of admin access).
 //   - the last owner can't be demoted (locks tenant out otherwise).
+//
 // Emits dms.user.role_changed.v1 with the before/after pair.
 func (s *Service) ChangeUserRole(ctx context.Context, tenantID, actorID, userID uuid.UUID, role string) error {
 	switch role {
@@ -452,7 +473,7 @@ func (s *Service) SuspendUser(ctx context.Context, tenantID, actorID, userID uui
 	if userID == actorID {
 		return vdmserr.Validation("user_id", "cannot suspend yourself")
 	}
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, tenantID, userID)
 		if err != nil {
 			return err
@@ -463,15 +484,27 @@ func (s *Service) SuspendUser(ctx context.Context, tenantID, actorID, userID uui
 		if _, err := s.sessions.RevokeAllForUser(ctx, tx, tenantID, userID, nil); err != nil {
 			return err
 		}
+		// A suspended user's programmatic access must die with their
+		// sessions — ValidateAPIKey checks the key's revoked_at but not
+		// the owner's status, so an un-revoked key would keep working.
+		if _, err := s.apiKeys.RevokeAllForUser(ctx, tx, tenantID, userID); err != nil {
+			return err
+		}
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":     userID.String(),
-			"tenant_id":   tenantID.String(),
-			"email":       u.Email,
+			"user_id":      userID.String(),
+			"tenant_id":    tenantID.String(),
+			"email":        u.Email,
 			"suspended_by": actorID.String(),
 		})
 		evt := database.NewOutboxEvent(tenantID, "dms.user.suspended.v1", "user", userID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
-	})
+	}); err != nil {
+		return err
+	}
+	// Drop the user's cached sessions so the suspension is enforced
+	// within seconds rather than at TTL expiry.
+	s.invalidateUserSessions(ctx, tenantID, userID)
+	return nil
 }
 
 // ReactivateUser is the inverse of SuspendUser: flips status back to
@@ -509,7 +542,7 @@ func (s *Service) ReactivateUser(ctx context.Context, tenantID, actorID, userID 
 // next login. Active sessions are revoked so any already-authenticated
 // browser drops to the login screen.
 func (s *Service) ResetUserMFA(ctx context.Context, tenantID, actorID, userID uuid.UUID) error {
-	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+	if err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, tenantID, userID)
 		if err != nil {
 			return err
@@ -524,14 +557,19 @@ func (s *Service) ResetUserMFA(ctx context.Context, tenantID, actorID, userID uu
 			return err
 		}
 		payload, _ := json.Marshal(map[string]any{
-			"user_id":    userID.String(),
-			"tenant_id":  tenantID.String(),
-			"email":      u.Email,
-			"reset_by":   actorID.String(),
+			"user_id":   userID.String(),
+			"tenant_id": tenantID.String(),
+			"email":     u.Email,
+			"reset_by":  actorID.String(),
 		})
 		evt := database.NewOutboxEvent(tenantID, "dms.user.mfa_reset.v1", "user", userID, payload)
 		return s.outbox.Insert(ctx, tx, evt)
-	})
+	}); err != nil {
+		return err
+	}
+	// Enforce the "drop to login screen" intent within seconds.
+	s.invalidateUserSessions(ctx, tenantID, userID)
+	return nil
 }
 
 // ---- small internals ------------------------------------------------------
@@ -566,4 +604,3 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
-

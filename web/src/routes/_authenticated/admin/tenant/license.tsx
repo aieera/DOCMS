@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Shield, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 
-import { getLicense, type LicenseResponse, type LicenseStatus } from '@/api/license'
+import { getLicense, getSeatUsage, type LicenseResponse, type LicenseStatus } from '@/api/license'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
 
@@ -18,6 +18,13 @@ function LicensePage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['tenant-license'],
     queryFn: getLicense,
+    refetchInterval: 60_000,
+  })
+  // seats_used lives in the auth service (owner of the users table), not
+  // in the license JWT, so it's a separate fetch merged into the summary.
+  const seats = useQuery({
+    queryKey: ['tenant-seat-usage'],
+    queryFn: getSeatUsage,
     refetchInterval: 60_000,
   })
 
@@ -39,9 +46,9 @@ function LicensePage() {
         <>
           <StatusBanner data={data} />
           {data.status === 'unlicensed_dev_mode' ? (
-            <UnlicensedDevPlaceholder data={data} />
+            <UnlicensedDevPlaceholder data={data} seatsUsed={seats.data?.seats_used} />
           ) : (
-            <LicensedSummary data={data} />
+            <LicensedSummary data={data} seatsUsed={seats.data?.seats_used} />
           )}
         </>
       )}
@@ -102,13 +109,14 @@ function bannerConfig(status: LicenseStatus, daysRemaining?: number) {
   }
 }
 
-function UnlicensedDevPlaceholder({ data }: { data: LicenseResponse }) {
+function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; seatsUsed?: number }) {
   // Today's response carries no real claims. Render the future shape
-  // with `—` placeholders so the page structure is visible.
+  // with `—` placeholders so the page structure is visible. Seats used
+  // is real even without a license — it comes from the auth service.
   const placeholders = [
     { label: 'Tenant name', value: '—' },
     { label: 'Seat limit', value: '—' },
-    { label: 'Seats used', value: '—' },
+    { label: 'Seats used', value: seatsUsed != null ? String(seatsUsed) : '—' },
     { label: 'Expiry', value: '—' },
     { label: 'Issued to', value: '—' },
     { label: 'Issued by', value: '—' },
@@ -146,10 +154,11 @@ function UnlicensedDevPlaceholder({ data }: { data: LicenseResponse }) {
   )
 }
 
-function LicensedSummary({ data }: { data: LicenseResponse }) {
-  // Renders when status is active / grace / expired. Today this branch
-  // is unreachable; included so the future implementation can flip on
-  // without touching the page.
+function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed?: number }) {
+  // Renders when status is active / grace / expired. seats_used comes
+  // from the auth service's live count (falling back to the license
+  // payload, then an em dash while the count is still loading).
+  const used = seatsUsed ?? data.seats_used
   return (
     <>
       <section className="mb-6">
@@ -157,7 +166,7 @@ function LicensedSummary({ data }: { data: LicenseResponse }) {
         <div className="rounded-lg border border-border bg-card">
           <dl className="divide-y divide-border">
             <Row label="Tenant name" value={data.tenant_name ?? '—'} />
-            <Row label="Seat usage" value={`${data.seats_used ?? 0} / ${data.seat_limit ?? 0}`} />
+            <Row label="Seat usage" value={`${used ?? '—'} / ${data.seat_limit ?? 0}`} />
             <Row label="Expiry" value={data.expiry ?? '—'} />
             <Row
               label="Days remaining"

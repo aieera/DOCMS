@@ -3,23 +3,23 @@
 // follow-up — this file gets us through the connect handshake.
 //
 // Pattern mirrors the eSign per-tenant flow:
-//   1. Admin pastes client_id + client_secret in the modal → SaveGoogleConfig
-//      seals them into connector_configs.config_encrypted.
-//   2. Admin clicks "Connect" → StartGoogleOAuth resolves the saved
-//      config, builds the Google authorize URL with an HMAC-signed
-//      state, returns it; the browser is redirected.
-//   3. Google redirects back to /api/v1/connectors/google/oauth/callback
-//      with ?code=...&state=... — HandleGoogleOAuthCallback verifies
-//      state, exchanges the code for tokens, seals them into
-//      connector_configs.oauth_tokens_encrypted.
+//  1. Admin pastes client_id + client_secret in the modal → SaveGoogleConfig
+//     seals them into connector_configs.config_encrypted.
+//  2. Admin clicks "Connect" → StartGoogleOAuth resolves the saved
+//     config, builds the Google authorize URL with an HMAC-signed
+//     state, returns it; the browser is redirected.
+//  3. Google redirects back to /api/v1/connectors/google/oauth/callback
+//     with ?code=...&state=... — HandleGoogleOAuthCallback verifies
+//     state, exchanges the code for tokens, seals them into
+//     connector_configs.oauth_tokens_encrypted.
 package service
 
 import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	stdjson "encoding/json"
 	"encoding/hex"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -112,12 +112,12 @@ func (s *Service) GetGoogleConfigPublic(ctx context.Context, tenantID string) (*
 		return nil, err
 	}
 	return &GoogleConfigPublic{
-		ClientID:    plain.ClientID,
-		HasSecret:   plain.ClientSecret != "",
-		IsActive:    row.IsActive,
-		SyncStatus:  row.SyncStatus,
-		Authorized:  len(row.OAuthTokensEncrypted) > 0,
-		UpdatedAt:   row.UpdatedAt,
+		ClientID:   plain.ClientID,
+		HasSecret:  plain.ClientSecret != "",
+		IsActive:   row.IsActive,
+		SyncStatus: row.SyncStatus,
+		Authorized: len(row.OAuthTokensEncrypted) > 0,
+		UpdatedAt:  row.UpdatedAt,
 	}, nil
 }
 
@@ -218,4 +218,3 @@ func (s *Service) HandleGoogleOAuthCallback(ctx context.Context, code, state str
 func (s *Service) DisconnectGoogle(ctx context.Context, tenantID string) error {
 	return s.repo.UpdateConnectorTokens(ctx, tenantID, "google", nil)
 }
-

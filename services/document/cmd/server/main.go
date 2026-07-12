@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	temporalclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"google.golang.org/grpc"
@@ -37,6 +38,7 @@ import (
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/pkg/tracing"
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
@@ -87,6 +89,25 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Distributed tracing (OpenTelemetry). No-op unless SEDOC_TRACING_ENABLED
+	// or OTEL_EXPORTER_OTLP_ENDPOINT is set, so a deploy with no collector
+	// pays nothing. Init installs the global TracerProvider + W3C propagator;
+	// the outbox Insert then stamps trace context onto each row so the
+	// async NATS hop stays connected (see pkg/tracing docs). Sampling is
+	// env-configurable via SEDOC_TRACE_SAMPLE_RATIO (default 1%).
+	if tracing.Enabled() {
+		shutdownTracing, terr := tracing.Init(ctx, serviceName, cfg.ServiceVersion)
+		if terr != nil {
+			log.Warn(ctx).Err(terr).Msg("tracing init failed; continuing without traces")
+		} else {
+			defer func() {
+				sc, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = shutdownTracing(sc)
+			}()
+		}
+	}
 
 	// ADR 0095 — license validation. Init reads SEDOC_LICENSE_JWT (or
 	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
@@ -580,7 +601,7 @@ func main() {
 	// the /auth/m365/exchange endpoint and then attaches it as a
 	// Bearer header on this route.
 	m365IngestMux := http.NewServeMux()
-	handler.NewM365IngestHandler(pool, svc).Register(m365IngestMux)
+	handler.NewM365IngestHandler(pool, svc, storageClient, s3c, *log.Z()).Register(m365IngestMux)
 	// Per-IP rate limit so a compromised Outlook session can't spam
 	// document creation and exhaust tenant storage quota. 60 req/min
 	// is plenty for an honest user (the add-in only POSTs on explicit
@@ -926,9 +947,31 @@ func main() {
 	rootMux.Handle("POST /internal/v1/records/cutoff-sweep",
 		middleware.CorrelationHTTP(recordsSweepMux))
 
+	// Search reconcile — rebuilds a tenant's OpenSearch projection from
+	// source of truth via dms.document.reindexed.v1 outbox events. Run
+	// once after deploying the indexer partial-update fix (see
+	// docs/runbooks/search-reindex.md); kept for future drift repair.
+	searchReindexMux := http.NewServeMux()
+	handler.NewSearchReindexHandler(svc, *log.Z()).RegisterInternal(searchReindexMux)
+	rootMux.Handle("POST /internal/v1/search/reindex",
+		middleware.CorrelationHTTP(searchReindexMux))
+
+	// ADR 0065 — the concrete WOPI file resolver: token → (tenant, doc,
+	// version), GetFile streams (decrypting) blobs, PutFile commits a
+	// NEW version through storage upload + CreateVersion (permission,
+	// legal hold, WORM, outbox events). Shared with the OnlyOffice
+	// callback below so both editors save through one write path.
+	wopiResolver := handler.NewDBWOPIResolver(pool, s3c, docKMS, storageClient, svc, *log.Z())
+
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
-	handler.NewOnlyOfficeHandler(*log.Z()).Register(onlyOfficeMux)
+	onlyOfficeH := handler.NewOnlyOfficeHandler(*log.Z())
+	// Status 2/6 (ready-to-save / force-save) download-and-commit. Redis
+	// carries the WOPI locks so a version locked by another editor
+	// session rejects the save-back.
+	onlyOfficeH.Saver = wopiResolver
+	onlyOfficeH.Redis = rdb
+	onlyOfficeH.Register(onlyOfficeMux)
 	rootMux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config",
 		middleware.CorrelationHTTP(onlyOfficeMux))
 	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback",
@@ -950,11 +993,11 @@ func main() {
 	// session_started / session_ended events flow through the same
 	// publisher every other audit row uses.
 	wopiH.Auditor = handler.NewOutboxWOPIAuditor(pool, database.NewOutboxRepository(), *log.Z())
+	// The resolver that makes CheckFileInfo/GetFile/PutFile real —
+	// previously left nil, which 503'd every WOPI file route and made
+	// edit-in-Collabora dead on arrival.
+	wopiH.FileResolver = wopiResolver
 	wopiH.Register(wopiMux)
-	// File resolver wiring is intentionally deferred — the default
-	// Resolve/Open/Save impl ties to storage + policy gRPC and is
-	// kept out of this PR to limit scope. When the deploy hasn't
-	// wired one, GetFile/PutFile return 503 with a clear message.
 
 	// ADR 0065 — POST /api/v1/documents/{id}/versions/{vid}/coauth/start
 	// mints WOPI access_tokens for the calling user and returns the
@@ -1423,9 +1466,12 @@ func main() {
 			),
 		))
 
+	// otelhttp extracts the inbound W3C trace context and opens a SERVER
+	// span per request. Inert (global no-op provider/propagator) unless
+	// tracing.Init ran above, so it's safe to wrap unconditionally.
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           wopiAndRoot,
+		Handler:           otelhttp.NewHandler(wopiAndRoot, "document.http"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

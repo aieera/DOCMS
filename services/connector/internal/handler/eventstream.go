@@ -1,11 +1,12 @@
 // Package handler — eventstream routes (ADR 0077).
 //
 // Mounts:
-//   POST   /api/v1/admin/event-stream/tokens          — issue a token (returns plaintext once)
-//   GET    /api/v1/admin/event-stream/tokens          — list (no plaintext)
-//   DELETE /api/v1/admin/event-stream/tokens/{id}     — revoke
-//   GET    /api/v1/admin/event-stream/tail            — SSE live tail (60s window)
-//   GET    /api/v1/events                             — polling endpoint (bearer auth)
+//
+//	POST   /api/v1/admin/event-stream/tokens          — issue a token (returns plaintext once)
+//	GET    /api/v1/admin/event-stream/tokens          — list (no plaintext)
+//	DELETE /api/v1/admin/event-stream/tokens/{id}     — revoke
+//	GET    /api/v1/admin/event-stream/tail            — SSE live tail (60s window)
+//	GET    /api/v1/events                             — polling endpoint (bearer auth)
 package handler
 
 import (

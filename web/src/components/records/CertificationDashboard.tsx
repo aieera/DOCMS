@@ -112,7 +112,7 @@ export function CertificationDashboard() {
 
           <div className="overflow-hidden rounded-lg border border-border">
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+              <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
                 <tr><th className="p-2 w-8" /><th className="p-2">Requirement</th><th className="p-2">SeDoc mechanism</th><th className="p-2">Detail</th></tr>
               </thead>
               <tbody>

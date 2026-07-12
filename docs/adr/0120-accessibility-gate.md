@@ -90,3 +90,29 @@ primary auth/search surfaces.
 - WCAG items that need human judgment (screen-reader narration quality,
   focus order sensibility beyond mechanics) remain manual-test
   territory; the gate covers the machine-checkable layer.
+
+## Update (2026-07-12) — gate extended to the three unscanned areas
+
+The follow-ups flagged under Consequences are now done in `70-a11y.spec.ts`:
+
+- **Dark mode.** A `forceDark()` helper applies the (shipped-but-now-
+  unreachable) `.dark` palette after mount — theme-provider.tsx was since
+  pinned to light and the toggle removed, so the `.dark` token block ships
+  but never renders; the gate audits it directly. The dark palette itself
+  passed AA on every scanned surface; the dark-only failures were
+  component-level, not token-level.
+- **Document detail** (`/workspaces/:id/documents/:id`) and **admin**
+  (`/admin` landing + `/admin/users` table) are now scanned, light and dark.
+
+Fixes the scans caught:
+- Legacy alias `--color-primary` was still the pre-0120 `#34a06a` (3.29:1 as
+  text) while `--primary` had been darkened to AA — every
+  `text-[var(--color-primary)]` link (e.g. doc-detail "Send for signature")
+  missed AA. Alias now tracks `hsl(var(--primary))`.
+- `TranslationPanel`'s language `<select>` had no accessible name → `aria-label`.
+- User "suspended" status badge used `text-destructive` on its own tint
+  (3.79:1 light / 3.34:1 dark) → `text-red-700 dark:text-red-300`, matching
+  the sibling "active" badge.
+- The inline "Transfer ownership" link relied on colour alone at rest
+  (hover-only underline; 1.41:1 vs surrounding text in dark) → always
+  underlined.

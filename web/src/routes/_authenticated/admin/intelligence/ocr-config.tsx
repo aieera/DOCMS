@@ -375,7 +375,7 @@ function ThresholdRow({
             if (Number.isNaN(raw)) return
             onChange(frac(raw))
           }}
-          className={`w-20 rounded-md border bg-background px-2 py-1 text-right text-sm ${outOfRange ? 'border-destructive' : 'border-border'}`}
+          className={`w-20 rounded-md border bg-background px-2 py-1 text-end text-sm ${outOfRange ? 'border-destructive' : 'border-border'}`}
         />
         <span className="text-xs text-muted-foreground">%</span>
       </div>
@@ -429,7 +429,7 @@ function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
             type="button"
             disabled={!canEdit || save.isPending}
             onClick={() => { setEngine(e.value); save.mutate(e.value) }}
-            className={`rounded-md border p-3 text-left text-sm transition-colors disabled:opacity-60 ${
+            className={`rounded-md border p-3 text-start text-sm transition-colors disabled:opacity-60 ${
               current === e.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/40'
             }`}
             data-testid={`ocr-engine-${e.value}`}
