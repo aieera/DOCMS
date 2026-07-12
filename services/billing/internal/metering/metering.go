@@ -16,11 +16,21 @@ type Meter struct {
 	repo *repository.Repository
 	log  zerolog.Logger
 	stop chan struct{}
+	// nowFn supplies the current time. Defaults to time.Now().UTC(); tests
+	// override it to drive collect() across simulated hour boundaries
+	// (the period bucket is now.Truncate(time.Hour)). Production behavior
+	// is unchanged.
+	nowFn func() time.Time
 }
 
 // New creates a Meter.
 func New(repo *repository.Repository, log zerolog.Logger) *Meter {
-	return &Meter{repo: repo, log: log, stop: make(chan struct{})}
+	return &Meter{
+		repo:  repo,
+		log:   log,
+		stop:  make(chan struct{}),
+		nowFn: func() time.Time { return time.Now().UTC() },
+	}
 }
 
 // Start runs the metering loop (hourly). Call in a goroutine.
@@ -55,7 +65,7 @@ func (m *Meter) collect(ctx context.Context) {
 		m.log.Error().Err(err).Msg("metering: list tenants")
 		return
 	}
-	now := time.Now().UTC()
+	now := m.nowFn()
 	periodStart := now.Truncate(time.Hour)
 	periodEnd := periodStart.Add(time.Hour)
 	since := periodStart.AddDate(0, -1, 0) // 30-day window for OCR/users
