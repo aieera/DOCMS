@@ -101,8 +101,16 @@ func (r *Repository) GetPreference(ctx context.Context, tenantID, userID string)
 	// table is the ADR 0086 MATRIX — selecting flat columns from it
 	// errored on every call and silently zeroed the email/push gates.
 	p := &model.UserPreference{}
+	// quiet_hours_* are TIME columns; the model (and JSON contract)
+	// carries hour-of-day ints — EXTRACT bridges the two. Scanning TIME
+	// straight into int errored on EVERY existing row, which sent
+	// callers down the "pref lookup failed" fallback with default-
+	// enabled switches: a user's email_enabled=false was silently
+	// ignored.
 	err := r.pool.QueryRow(ctx,
-		`SELECT tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to
+		`SELECT tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled,
+		        COALESCE(EXTRACT(HOUR FROM quiet_hours_from)::int, 0),
+		        COALESCE(EXTRACT(HOUR FROM quiet_hours_to)::int, 0)
 		 FROM notification_user_prefs WHERE tenant_id = $1 AND user_id = $2`,
 		tenantID, userID).Scan(&p.TenantID, &p.UserID, &p.EmailEnabled, &p.PushEnabled, &p.SlackEnabled, &p.SMSEnabled, &p.QuietHoursFrom, &p.QuietHoursTo)
 	if err == pgx.ErrNoRows {
@@ -117,11 +125,14 @@ func (r *Repository) GetPreference(ctx context.Context, tenantID, userID string)
 	return p, nil
 }
 
-// UpsertPreference saves user notification preferences.
+// UpsertPreference saves user notification preferences. The hour-of-day
+// ints become TIME values via make_time — passing the raw ints failed
+// pgx encoding (int → OID 1083) on every call, so the flat prefs row
+// could never be written at all.
 func (r *Repository) UpsertPreference(ctx context.Context, p *model.UserPreference) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO notification_user_prefs (tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		VALUES ($1,$2,$3,$4,$5,$6, make_time($7::int, 0, 0), make_time($8::int, 0, 0))
 		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
 			email_enabled = EXCLUDED.email_enabled, push_enabled = EXCLUDED.push_enabled,
 			slack_enabled = EXCLUDED.slack_enabled, sms_enabled = EXCLUDED.sms_enabled,
