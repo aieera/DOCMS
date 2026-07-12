@@ -106,6 +106,7 @@ export function TranslationPanel({ documentId, versionId, availableLanguages }: 
       <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-zinc-900">
         <span className="text-zinc-500">Translate to:</span>
         <select
+          aria-label="Translate to language"
           className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-900"
           defaultValue=""
           onChange={(e) => {

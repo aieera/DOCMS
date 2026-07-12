@@ -102,8 +102,12 @@
     --color-bg-secondary: hsl(var(--card));
     --color-text: hsl(var(--foreground));
     --color-text-secondary: hsl(var(--muted-foreground));
-    --color-primary: #34a06a;
-    --color-primary-hover: #2c885a;
+    /* Track the AA-safe --primary token (ADR 0120 darkened it to 29% L so
+     * primary-as-text clears 4.5:1 on white). The old hardcoded #34a06a was
+     * only 3.29:1 as text — an AA miss on every `text-[var(--color-primary)]`
+     * link (e.g. the doc-detail "Send for signature" link the gate caught). */
+    --color-primary: hsl(var(--primary));
+    --color-primary-hover: hsl(152 46% 22%);
     --color-border: hsl(var(--border));
     --color-accent: hsl(var(--accent));
     --color-danger: hsl(var(--destructive));
