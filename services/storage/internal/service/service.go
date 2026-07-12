@@ -363,18 +363,46 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		return nil, vdmserr.Validation("upload_id", "required")
 	}
 
+	// Claim transaction — the state-machine gate (initiated/uploading →
+	// scanning → completed) behind a row lock, so a retry or concurrent
+	// duplicate can never re-enter the pipeline:
+	//
+	//   completed  → replay the ORIGINAL success (same blob refs) with
+	//                zero validation and zero mutation. The old shape
+	//                fell through here and re-ran everything against the
+	//                object envelope encryption had ALREADY overwritten
+	//                with ciphertext — the plaintext size check failed,
+	//                failUpload flipped the completed session to failed,
+	//                and the sha branch could even delete the stored
+	//                object. Retries after a client timeout are normal.
+	//   scanning   → another caller holds the claim; 409 so the client
+	//                retries (a crashed claimer resolves via expires_at).
+	//   quarantined→ 409, terminal.
+	//   expired    → failed + 409.
+	//   otherwise  → claim it (flip to scanning) and run the pipeline.
+	//
+	// GetByIDForUpdate serializes concurrent claims: the loser blocks on
+	// the row lock until the winner's claim commits, then sees scanning.
 	var session *model.UploadSession
+	var replay *CompleteUploadResult
 	err := database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
-		u, err := s.repos.Uploads.GetByID(ctx, tx, in.TenantID, in.UploadID)
+		u, err := s.repos.Uploads.GetByIDForUpdate(ctx, tx, in.TenantID, in.UploadID)
 		if err != nil {
 			return err
 		}
 		if u.Status == model.UploadCompleted {
-			session = u
-			return vdmserr.ErrAlreadyExists
+			r, rerr := s.replayCompleted(ctx, tx, u)
+			if rerr != nil {
+				return rerr
+			}
+			replay = r
+			return nil
 		}
 		if u.Status == model.UploadQuarantine {
 			return vdmserr.Conflict("upload quarantined")
+		}
+		if u.Status == model.UploadScanning {
+			return vdmserr.Conflict("upload completion already in progress; retry shortly")
 		}
 		if s.now().After(u.ExpiresAt) {
 			_ = s.repos.Uploads.UpdateStatus(ctx, tx, in.TenantID, u.ID, model.UploadFailed)
@@ -386,9 +414,11 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		session = u
 		return nil
 	})
-	// Idempotent re-complete returns the existing result instead of erroring.
-	if err != nil && !isIdempotentDupe(err) {
+	if err != nil {
 		return nil, err
+	}
+	if replay != nil {
+		return replay, nil
 	}
 	if session == nil {
 		return nil, vdmserr.ErrNotFound
@@ -399,6 +429,10 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
 
 	// 1. Sanity-check the object landed at the expected location + size.
+	//    TotalSize is the client's declared PLAINTEXT size, and this
+	//    check only ever sees the raw client-PUT object: the claim above
+	//    guarantees single entry, so the ciphertext that step 5 writes
+	//    back is never compared against a plaintext expectation.
 	info, err := s.s3.GetObjectInfo(ctx, bucket, key)
 	if err != nil {
 		s.failUpload(ctx, session, "object not found in storage after complete")
@@ -604,7 +638,7 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 				return insertErr
 			}
 		}
-		if err := s.repos.Uploads.Complete(ctx, tx, session.TenantID, session.ID, s.now().UTC()); err != nil {
+		if err := s.repos.Uploads.Complete(ctx, tx, session.TenantID, session.ID, blobID, s.now().UTC()); err != nil {
 			return err
 		}
 		return s.emit(ctx, tx, session.TenantID, session.ID, "dms.storage.upload_completed.v1", map[string]any{
@@ -631,6 +665,38 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		SHA256Hash:    actualSHA,
 		ScanResult:    scanRes.result,
 		Tier:          finalTier,
+	}, nil
+}
+
+// replayCompleted rebuilds the original CompleteUpload success from the
+// blob the session recorded at completion (upload_sessions.content_blob_id,
+// migration 000095) and its recorded scan result — no validation, no
+// mutation, no S3 traffic. Legacy sessions completed before the
+// migration have no blob reference; they return 409 rather than risking
+// the old destructive re-run.
+func (s *Service) replayCompleted(ctx context.Context, tx pgx.Tx, u *model.UploadSession) (*CompleteUploadResult, error) {
+	if u.ContentBlobID == nil {
+		return nil, vdmserr.Conflict("upload already completed (session predates idempotent replay)")
+	}
+	blob, err := s.repos.ContentBlobs.GetByID(ctx, tx, u.TenantID, *u.ContentBlobID)
+	if err != nil {
+		return nil, fmt.Errorf("replay completed upload %s: load blob: %w", u.ID, err)
+	}
+	// The scan outcome the original completion recorded. Missing record
+	// (shouldn't happen — Record runs in the completion tx) degrades to
+	// clean: a completed session cannot have been infected (those
+	// terminate as quarantined).
+	scanResult := model.ScanClean
+	if rec, serr := s.repos.Scans.GetByUpload(ctx, tx, u.TenantID, u.ID); serr == nil && rec != nil {
+		scanResult = rec.Result
+	}
+	return &CompleteUploadResult{
+		StorageBucket: blob.StorageBucket,
+		StorageKey:    blob.StorageKey,
+		SizeBytes:     blob.SizeBytes,
+		SHA256Hash:    blob.SHA256Hash,
+		ScanResult:    scanResult,
+		Tier:          blob.StorageClass,
 	}, nil
 }
 
