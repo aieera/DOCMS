@@ -112,11 +112,15 @@ func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest)
 		p.log.Warn().Err(err).Msg("set tenant route")
 	}
 
-	// 4. Create default subscription.
+	// 4. Create default subscription — carrying the Stripe ids when this
+	// provision was driven by a completed checkout, so who-is-subscribed
+	// is recorded at provision time (not silently dropped).
 	now := time.Now().UTC()
 	sub := &model.Subscription{
 		TenantID:           tenantID,
 		PlanID:             req.Plan,
+		StripeCustomerID:   req.StripeCustomerID,
+		StripeSubID:        req.StripeSubID,
 		Status:             "active",
 		CurrentPeriodStart: now,
 		CurrentPeriodEnd:   now.AddDate(0, 1, 0),
@@ -124,6 +128,14 @@ func (p *Provisioner) Provision(ctx context.Context, req model.ProvisionRequest)
 	}
 	if err := p.repo.UpsertSubscription(ctx, sub); err != nil {
 		p.log.Warn().Err(err).Msg("create subscription")
+	}
+	// Write the Stripe → tenant mapping so webhooks can resolve this
+	// tenant (the pre-tenant lookup anchor). Hard failure: without it the
+	// money-path webhooks are dead for this tenant.
+	if req.StripeCustomerID != "" {
+		if err := p.repo.UpsertCustomerMap(ctx, req.StripeCustomerID, req.StripeSubID, tenantID); err != nil {
+			return nil, fmt.Errorf("persist stripe customer map: %w", err)
+		}
 	}
 
 	// 5. Create admin user (insert directly — auth service handles hashing).

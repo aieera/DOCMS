@@ -86,6 +86,12 @@ type ProvisionRequest struct {
 	AdminEmail string `json:"admin_email"`
 	Plan       string `json:"plan"`
 	Region     string `json:"region"`
+	// StripeCustomerID / StripeSubID are set when provisioning is driven
+	// by a completed Stripe checkout — the provisioner persists them onto
+	// the subscription and writes the stripe→tenant map so the webhook
+	// can resolve this tenant. Empty for non-Stripe provisioning paths.
+	StripeCustomerID string `json:"stripe_customer_id,omitempty"`
+	StripeSubID      string `json:"stripe_subscription_id,omitempty"`
 }
 
 // ProvisionResult is returned after successful provisioning.
