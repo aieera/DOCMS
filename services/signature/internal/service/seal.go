@@ -92,6 +92,14 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 		return nil, fmt.Errorf("seal fetch: %w", err)
 	}
 
+	// Resolve the residency region BEFORE signing — fail closed if the
+	// document's region_pin can't be honored, rather than sealing bytes
+	// we'd then have to write to a default region (residency breach).
+	region, err := s.sealer.ingest.ResolveRegionOrFail(ctx, tenantID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("seal region: %w", err)
+	}
+
 	resp, err := s.sealer.signer.Sign(ctx, signer.Request{
 		PDFBytes:   pdf,
 		SignerName: signerName,
@@ -114,6 +122,7 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 		Filename:   "sealed.pdf",
 		MimeType:   "application/pdf",
 		Bytes:      resp.PDFBytes,
+		RegionPin:  region,
 		DocumentID: documentID,
 	}, documentID, userID, "Server seal ("+string(resp.Level)+")")
 	if err != nil {
@@ -155,6 +164,12 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 		return s.SealVersion(ctx, tenantID, documentID, versionID, userID, "SeDoc Organizational Seal", "Envelope completion seal")
 	}
 
+	// Residency region resolved + validated up front (fail closed).
+	region, err := s.sealer.ingest.ResolveRegionOrFail(ctx, tenantID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("ceremony region: %w", err)
+	}
+
 	pdf, err := s.sealer.fetchVersionPDF(ctx, tenantID, documentID, versionID)
 	if err != nil {
 		return nil, fmt.Errorf("seal fetch: %w", err)
@@ -171,6 +186,7 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 		Filename:   "signed.pdf",
 		MimeType:   "application/pdf",
 		Bytes:      pdf,
+		RegionPin:  region,
 		DocumentID: documentID,
 	}, documentID, userID, fmt.Sprintf("Signing ceremony (%d signers, %s)", len(signers), level))
 	if err != nil {
