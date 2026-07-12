@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/services/policy/internal/model"
 	"github.com/aieera/sedoc/services/policy/internal/opa"
@@ -67,7 +68,43 @@ func (s *Service) Check(ctx context.Context, in CheckInput) (model.CheckResult, 
 	if dur.Milliseconds() > 20 {
 		s.log.Warn().Dur("elapsed", dur).Int("perms", len(perms)).Msg("slow rego eval")
 	}
+	s.logDecision(ctx, in, result)
 	return result, nil
+}
+
+// logDecision writes the authorization decision log. Denies are recorded at
+// info level with the full who/what/why so a refused access is auditable
+// from the logs: WHO (tenant + subject), WHAT (action on resource), WHY (the
+// rego reason). Allows are debug-only — a decision log exists to explain
+// refusals, and denies are the security-relevant signal. Structured, not an
+// outbox row: authz is the hot path (p99 < 5ms) and a DB write per check
+// would wreck it; the emitted log line is the durable decision record.
+func (s *Service) logDecision(ctx context.Context, in CheckInput, result model.CheckResult) {
+	if result.Allowed {
+		s.log.Debug().
+			Str("decision", "allow").
+			Str("subject_id", in.SubjectID).
+			Str("action", in.Action).
+			Str("resource_type", in.ResourceType).
+			Str("resource_id", in.ResourceID).
+			Msg("authz decision")
+		return
+	}
+	reason := result.Reason
+	if reason == "" {
+		reason = "no matching grant"
+	}
+	s.log.Info().
+		Str("decision", "deny").
+		Str("tenant_id", in.TenantID.String()).
+		Str("subject_type", in.SubjectType). // who
+		Str("subject_id", in.SubjectID).     // who
+		Str("action", in.Action).            // what
+		Str("resource_type", in.ResourceType).
+		Str("resource_id", in.ResourceID). // what
+		Str("reason", reason).             // why
+		Str("correlation_id", auth.GetCorrelationID(ctx)).
+		Msg("authz decision: deny")
 }
 
 // BatchCheck runs up to 50 checks in parallel (bounded goroutine pool)
@@ -108,7 +145,7 @@ var (
 	// version after a candidate-review redaction has produced a
 	// redacted current version. Hierarchy rank 15, between view (10)
 	// and share (20); see services/policy/internal/opa/policy.rego.
-	validActions       = map[string]struct{}{"view": {}, "view_unredacted": {}, "share": {}, "edit": {}, "delete": {}, "admin": {}}
+	validActions = map[string]struct{}{"view": {}, "view_unredacted": {}, "share": {}, "edit": {}, "delete": {}, "admin": {}}
 )
 
 func validateCheck(in CheckInput) error {
