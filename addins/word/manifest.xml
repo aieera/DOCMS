@@ -8,27 +8,18 @@
   manifest is Word-on-the-web only as of mid-2026, and we want a
   single artifact across hosts.
 
-  Placeholders the operator MUST replace before sideloading:
-    * <Id>                     — generate via `uuidgen` (one per
-                                  environment so dev/staging/prod
-                                  add-ins don't collide in the
-                                  centralized deployment catalog).
-    * https://addin.vaultdms… — the HTTPS host serving the static
-                                  bundle (production: CDN; dev:
-                                  HTTPS loopback from npm run dev).
-    * The Entra Application ID in <WebApplicationInfo> — same
-                                  app the Outlook add-in uses for
-                                  SSO, OR a sibling app if you want
-                                  to rotate secrets independently.
+  Build-time substitution (webpack.config.js copy-webpack-plugin transform)
+  replaces the ${...} tokens from env so nothing per-deployment is committed:
+    * ${SEDOC_ADDIN_HOST}    — HTTPS host serving the bundle (default
+                                addin.vaultdms.example.com).
+    * ${SEDOC_AAD_CLIENT_ID} — Entra (Azure AD) application (client) ID of
+                                the SeDoc API app registration (per-tenant;
+                                the same app the Outlook add-in uses for SSO).
+  The add-in <Id> is a STABLE canonical GUID; override with ${SEDOC_ADDIN_ID}
+  only to sideload multiple envs on one machine.
 
-  Two ribbon actions per the prompt:
-    * "Open from SeDoc" — opens the task pane.
-    * "Save back to SeDoc" — also opens the task pane.
-  Both reuse the same task pane URL (different ?action= query
-  string) so the UI can branch on intent without us shipping two
-  separate bundles. A future Phase-2 split into a UI-less
-  "save with the current pane settings" command lives in
-  commands.ts.
+  Two ribbon actions: "Open from SeDoc" + "Save back to SeDoc", both opening
+  the task pane (branch on ?action=). See commands.ts.
 -->
 <OfficeApp
   xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
@@ -37,16 +28,17 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
 
-  <!-- Per-environment GUID — see file header. -->
-  <Id>00000000-0000-0000-0000-000000000113</Id>
+  <!-- Canonical add-in identity (stable); ${SEDOC_ADDIN_ID} overrides for
+       multi-env sideloading. -->
+  <Id>${SEDOC_ADDIN_ID:-c244db56-3f2c-4da1-a797-ccb752981b0c}</Id>
   <Version>0.1.0.0</Version>
   <ProviderName>SeDoc</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SeDoc for Word" />
   <Description DefaultValue="Open SeDoc documents in Word and save changes back as new versions." />
-  <IconUrl              DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-64.png" />
-  <HighResolutionIconUrl DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-128.png" />
-  <SupportUrl           DefaultValue="https://docs.vaultdms.example.com/word-addin" />
+  <IconUrl              DefaultValue="https://${SEDOC_ADDIN_HOST}/word/assets/icon-64.png" />
+  <HighResolutionIconUrl DefaultValue="https://${SEDOC_ADDIN_HOST}/word/assets/icon-128.png" />
+  <SupportUrl           DefaultValue="https://${SEDOC_DOCS_HOST:-docs.vaultdms.example.com}/word-addin" />
 
   <Hosts>
     <Host Name="Document" />
@@ -61,7 +53,7 @@
   </Requirements>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html" />
+    <SourceLocation DefaultValue="https://${SEDOC_ADDIN_HOST}/word/taskpane.html" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -74,8 +66,8 @@
       xsi:type="VersionOverridesV1_1">
 
       <WebApplicationInfo>
-        <Id>00000000-0000-0000-0000-000000000222</Id>
-        <Resource>api://vaultdms.example.com/00000000-0000-0000-0000-000000000222</Resource>
+        <Id>${SEDOC_AAD_CLIENT_ID}</Id>
+        <Resource>api://${SEDOC_ADDIN_HOST}/${SEDOC_AAD_CLIENT_ID}</Resource>
         <Scopes>
           <Scope>openid</Scope>
           <Scope>profile</Scope>
@@ -149,14 +141,14 @@
 
       <Resources>
         <bt:Images>
-          <bt:Image id="icon16" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-16.png" />
-          <bt:Image id="icon32" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-32.png" />
-          <bt:Image id="icon80" DefaultValue="https://addin.vaultdms.example.com/word/assets/icon-80.png" />
+          <bt:Image id="icon16" DefaultValue="https://${SEDOC_ADDIN_HOST}/word/assets/icon-16.png" />
+          <bt:Image id="icon32" DefaultValue="https://${SEDOC_ADDIN_HOST}/word/assets/icon-32.png" />
+          <bt:Image id="icon80" DefaultValue="https://${SEDOC_ADDIN_HOST}/word/assets/icon-80.png" />
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="commandsFile.url"  DefaultValue="https://addin.vaultdms.example.com/word/commands.html" />
-          <bt:Url id="taskpaneOpenURL"   DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html?action=open" />
-          <bt:Url id="taskpaneSaveURL"   DefaultValue="https://addin.vaultdms.example.com/word/taskpane.html?action=save" />
+          <bt:Url id="commandsFile.url"  DefaultValue="https://${SEDOC_ADDIN_HOST}/word/commands.html" />
+          <bt:Url id="taskpaneOpenURL"   DefaultValue="https://${SEDOC_ADDIN_HOST}/word/taskpane.html?action=open" />
+          <bt:Url id="taskpaneSaveURL"   DefaultValue="https://${SEDOC_ADDIN_HOST}/word/taskpane.html?action=save" />
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="customTabLabel" DefaultValue="SeDoc" />

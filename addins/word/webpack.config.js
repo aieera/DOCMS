@@ -6,6 +6,25 @@ const path = require('path')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const CopyWebpackPlugin = require('copy-webpack-plugin')
 
+// See addins/outlook/webpack.config.js for the rationale. Replaces
+// ${VAR}/${VAR:-default} manifest tokens from env at build time so no
+// per-deployment value (Entra client id, host) is committed.
+function substituteManifestTokens(content, isProd) {
+  const sub = (s) =>
+    s.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g, (_, name, def) => {
+      const val = process.env[name]
+      if (val !== undefined && val !== '') return val
+      if (def !== undefined) return def
+      if (isProd) throw new Error(`manifest: ${name} is unset and has no default`)
+      return ''
+    })
+  // Tokens inside XML comments are documentation — leave them verbatim.
+  return content
+    .split(/(<!--[\s\S]*?-->)/)
+    .map((p) => (p.startsWith('<!--') ? p : sub(p)))
+    .join('')
+}
+
 module.exports = (env, argv) => {
   const isProd = argv.mode === 'production'
   return {
@@ -38,7 +57,10 @@ module.exports = (env, argv) => {
       }),
       new CopyWebpackPlugin({
         patterns: [
-          { from: 'manifest.xml', to: '.' },
+          {
+            from: 'manifest.xml', to: '.',
+            transform(content) { return substituteManifestTokens(content.toString(), argv.mode === 'production') },
+          },
           { from: 'assets',       to: 'assets' },
         ],
       }),
