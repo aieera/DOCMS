@@ -374,6 +374,27 @@ jobs:
           name: web-coverage
           path: web/coverage
 
+  collaboration-tests:
+    # First tests the collaboration WS service has ever had (audit
+    # finding): comment create/update/delete round-trip, room-load
+    # hydration, unauthorized-session rejection. node:test — no extra
+    # test framework.
+    name: Collaboration WS tests (node:test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: services/collaboration/package-lock.json
+      - name: Install deps
+        working-directory: services/collaboration
+        run: npm ci
+      - name: Run tests
+        working-directory: services/collaboration
+        run: npm test
+
   security-npm:
     name: npm audit
     runs-on: ubuntu-latest
