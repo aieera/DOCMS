@@ -33,17 +33,28 @@ const (
 	SessionSlidingThreshold = 1 * time.Hour // extend when less than this remains
 	SessionMaxLifetime      = 7 * 24 * time.Hour
 	ConcurrentSessionLimit  = 5
+	// FastPathRevalidateInterval caps how long the Redis session fast
+	// path is trusted before it MUST re-validate against Postgres (which
+	// filters revoked_at + re-checks user status). Active invalidation
+	// on revoke/suspend clears the cache immediately; this is the
+	// defense-in-depth backstop so a MISSED invalidation (Redis blip,
+	// the user→sessions index lost, a code path that forgot to call it)
+	// self-heals within this window instead of lingering for the full
+	// 24h SessionTTL. 3 minutes bounds worst-case staleness tightly
+	// while costing at most one extra Postgres session read per active
+	// token per 3 min — negligible against the per-request hot path.
+	FastPathRevalidateInterval = 3 * time.Minute
 	// Login attempt budget. Raised from 5 → 10 in this 15-minute
 	// window so the MFA flow (login → MFA verify → MFA recovery) has
 	// headroom for normal user error without locking the account
 	// after a single failed enrol attempt. Still tight enough to
 	// shoulder-attack credential stuffing.
-	LoginAttemptsWindow     = 15 * time.Minute
-	LoginAttemptsMax        = 10
-	MFASessionTTL           = 5 * time.Minute
-	MFAAttemptsMax          = 3
-	APIKeyMaxPerUser        = 20
-	APIKeyPrefixLen         = 12 // chars of plaintext key shown for identification
+	LoginAttemptsWindow = 15 * time.Minute
+	LoginAttemptsMax    = 10
+	MFASessionTTL       = 5 * time.Minute
+	MFAAttemptsMax      = 3
+	APIKeyMaxPerUser    = 20
+	APIKeyPrefixLen     = 12 // chars of plaintext key shown for identification
 )
 
 // Service orchestrates repos + Redis for rate limiting and session cache.
@@ -78,8 +89,8 @@ type Service struct {
 	// shared between auth and notification services so the same
 	// password_sealed column unseals from either side.
 	notifSealKey []byte
-	log      zerolog.Logger
-	now      func() time.Time
+	log          zerolog.Logger
+	now          func() time.Time
 	// m365 holds the verifier for the Outlook/Word add-in token
 	// exchange. Configured via env (SEDOC_M365_AUDIENCE +
 	// SEDOC_M365_ALLOWED_TIDS). When unset, ExchangeM365Token

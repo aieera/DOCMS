@@ -18,6 +18,7 @@ type APIKeyRepository interface {
 	GetByHash(ctx context.Context, pool *pgxpool.Pool, hash string) (*model.APIKey, error)
 	ListByUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) ([]model.APIKey, error)
 	Revoke(ctx context.Context, tx pgx.Tx, tenantID, userID, id uuid.UUID) error
+	RevokeAllForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int64, error)
 	TouchLastUsed(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error
 	CountActiveByUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int, error)
 }
@@ -42,13 +43,15 @@ func (r *apiKeyRepo) Create(ctx context.Context, tx pgx.Tx, k *model.APIKey) err
 }
 
 func (r *apiKeyRepo) GetByHash(ctx context.Context, pool *pgxpool.Pool, hash string) (*model.APIKey, error) {
-	row := pool.QueryRow(ctx, `
-		SELECT tenant_id, id, COALESCE(user_id, '00000000-0000-0000-0000-000000000000'::uuid),
-		       name, key_hash, key_prefix, scopes,
-		       last_used_at, expires_at, created_at, revoked_at
-		FROM api_keys
-		WHERE key_hash = $1 AND revoked_at IS NULL
-	`, hash)
+	// PRE-TENANT lookup (the key_hash IS how the tenant is learned).
+	// api_keys is FORCE RLS, so a raw read fails closed under the dms_app
+	// NOBYPASSRLS role. Route through the SECURITY DEFINER exact-match
+	// function (auth migration 000001, issue #75): O(1), no general
+	// bypass — dms_app can only call this fixed function.
+	row := pool.QueryRow(ctx,
+		`SELECT tenant_id, id, user_id, name, key_hash, key_prefix, scopes,
+		        last_used_at, expires_at, created_at, revoked_at
+		 FROM auth_lookup_api_key_by_hash($1)`, hash)
 	return scanAPIKey(row)
 }
 
@@ -88,6 +91,20 @@ func (r *apiKeyRepo) Revoke(ctx context.Context, tx pgx.Tx, tenantID, userID, id
 func (r *apiKeyRepo) TouchLastUsed(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error {
 	_, err := pool.Exec(ctx, `UPDATE api_keys SET last_used_at = $2 WHERE id = $1`, id, at)
 	return mapPgError(err)
+}
+
+// RevokeAllForUser revokes every active API key owned by the user.
+// Used when a user is suspended/deactivated so their programmatic access
+// dies with their sessions. Returns the number revoked.
+func (r *apiKeyRepo) RevokeAllForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int64, error) {
+	ct, err := tx.Exec(ctx, `
+		UPDATE api_keys SET revoked_at = now()
+		WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
+	`, tenantID, userID)
+	if err != nil {
+		return 0, mapPgError(err)
+	}
+	return ct.RowsAffected(), nil
 }
 
 func (r *apiKeyRepo) CountActiveByUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int, error) {
