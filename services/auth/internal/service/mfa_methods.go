@@ -16,7 +16,10 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -428,9 +431,113 @@ func (s *Service) StartPushChallenge(ctx context.Context, mfaSessionToken, ip, u
 	return challengeID, nil
 }
 
-// VerifyPushChallenge consumes the ack — currently any non-empty ack
-// is treated as approval (the per-device HMAC ack arrives via mobile
-// SDK, not in scope today). On success completes the login.
+// ---- signed push acks (ADR 0122) ------------------------------------------
+//
+// The ack a device sends is `<device_id>.<hex hmac>` where the HMAC is
+// SHA-256 over "<challenge_id>.<device_id>" keyed with the per-device
+// ACK key handed out ONCE at registration (user_push_devices.
+// ack_key_sealed — the column was always documented as "the key the
+// device signs its push-ack with"; only this verification was stubbed).
+// Anything else — unsigned, malformed, wrong device, revoked device,
+// tampered signature — is ErrUnauthorized, and a FAILED attempt does
+// not consume the challenge (a forger must not be able to burn the
+// legitimate device's window).
+
+// signPushAck computes the signature a device produces for a challenge.
+// Exported to the device SDK contract via ADR 0122; used server-side
+// for the constant-time comparison (and by tests as the reference
+// implementation).
+func signPushAck(ackKey, challengeID, deviceID string) string {
+	mac := hmac.New(sha256.New, []byte(ackKey))
+	mac.Write([]byte(challengeID + "." + deviceID))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// parsePushAck splits "<device_id>.<signature>".
+func parsePushAck(ack string) (deviceID, sig string, ok bool) {
+	i := strings.IndexByte(ack, '.')
+	if i <= 0 || i == len(ack)-1 {
+		return "", "", false
+	}
+	return ack[:i], ack[i+1:], true
+}
+
+// validatePushAck is the security core of push-MFA verification: it
+// binds the ack to (challenge_id, device_id, signature, expiry,
+// one-time use) and consumes the challenge ONLY on success.
+func (s *Service) validatePushAck(ctx context.Context, tenantID, userID uuid.UUID, challengeID, ack string) error {
+	deviceIDStr, sig, ok := parsePushAck(ack)
+	if !ok {
+		return vdmserr.ErrUnauthorized
+	}
+	deviceID, err := uuid.Parse(deviceIDStr)
+	if err != nil {
+		return vdmserr.ErrUnauthorized
+	}
+
+	body, err := s.rdb.Get(ctx, pushChallengeKey(challengeID)).Bytes()
+	if err == redis.Nil {
+		return vdmserr.ErrUnauthorized
+	}
+	if err != nil {
+		return fmt.Errorf("redis push lookup: %w", err)
+	}
+	var ch notifications.PushChallenge
+	if err := json.Unmarshal(body, &ch); err != nil {
+		return vdmserr.ErrUnauthorized
+	}
+	if ch.ChallengeID != challengeID {
+		return vdmserr.ErrUnauthorized
+	}
+	if ch.TenantID != tenantID.String() || ch.UserID != userID.String() {
+		return vdmserr.ErrUnauthorized
+	}
+	if s.clock().Unix() > ch.ExpiresAt {
+		return vdmserr.ErrUnauthorized
+	}
+
+	// The signing key of THIS user's non-revoked device.
+	var sealed []byte
+	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT ack_key_sealed
+			  FROM user_push_devices
+			 WHERE tenant_id = $1 AND id = $2 AND user_id = $3 AND revoked_at IS NULL`,
+			tenantID, deviceID, userID).Scan(&sealed)
+	})
+	if err == pgx.ErrNoRows {
+		return vdmserr.ErrUnauthorized
+	}
+	if err != nil {
+		return fmt.Errorf("push device lookup: %w", err)
+	}
+	ackKey, err := s.unsealBindPassword(sealed)
+	if err != nil {
+		return fmt.Errorf("unseal ack key: %w", err)
+	}
+	want := signPushAck(ackKey, challengeID, deviceID.String())
+	if !hmac.Equal([]byte(want), []byte(sig)) {
+		return vdmserr.ErrUnauthorized
+	}
+
+	// Single-use: consume the challenge only AFTER the signature held.
+	_ = s.rdb.Del(ctx, pushChallengeKey(challengeID)).Err()
+	// Best-effort device bookkeeping for the security UI.
+	_ = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE user_push_devices SET last_used_at = now() WHERE tenant_id = $1 AND id = $2`,
+			tenantID, deviceID)
+		return err
+	})
+	return nil
+}
+
+// VerifyPushChallenge consumes a SIGNED device ack (ADR 0122) and, on
+// success, completes the login. The previous implementation treated any
+// non-empty ack as approval — with the MFA session token alone (i.e. a
+// stolen password) an attacker could approve their own push challenge
+// without possessing a device: a full MFA bypass. Now the ack must be
+// signed with the per-device key.
 func (s *Service) VerifyPushChallenge(ctx context.Context, mfaSessionToken, challengeID, ack, ip, ua string) (*CreatedSession, error) {
 	if challengeID == "" || ack == "" {
 		return nil, vdmserr.ErrUnauthorized
@@ -439,25 +546,9 @@ func (s *Service) VerifyPushChallenge(ctx context.Context, mfaSessionToken, chal
 	if err != nil {
 		return nil, err
 	}
-	body, err := s.rdb.Get(ctx, pushChallengeKey(challengeID)).Bytes()
-	if err == redis.Nil {
-		return nil, vdmserr.ErrUnauthorized
+	if err := s.validatePushAck(ctx, tenantID, userID, challengeID, ack); err != nil {
+		return nil, err
 	}
-	if err != nil {
-		return nil, fmt.Errorf("redis push lookup: %w", err)
-	}
-	var ch notifications.PushChallenge
-	if err := json.Unmarshal(body, &ch); err != nil {
-		return nil, vdmserr.ErrUnauthorized
-	}
-	if ch.TenantID != tenantID.String() || ch.UserID != userID.String() {
-		return nil, vdmserr.ErrUnauthorized
-	}
-	if time.Now().Unix() > ch.ExpiresAt {
-		return nil, vdmserr.ErrUnauthorized
-	}
-	// Single-use: drop the challenge before issuing the session.
-	_ = s.rdb.Del(ctx, pushChallengeKey(challengeID)).Err()
 
 	user, err := s.loadUser(ctx, tenantID, userID)
 	if err != nil {
