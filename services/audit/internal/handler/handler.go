@@ -47,6 +47,40 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/audit/documents/{document_id}/viz", h.documentAuditViz)
 }
 
+// requireAuditAdmin enforces the gateway's `auth: admin` route class in
+// the handler (the gateway class documents intent; role enforcement is
+// backend-side — same posture as siem_handler.go). Reading, exporting,
+// or redacting the audit trail requires admin/owner. Returns the tenant
+// id and true on success; on denial it writes 403, records the denial
+// into the audit chain itself (issue #74), and returns false.
+//
+// Coupling note (#74): this gate ships WITH the RLS read fix. Fixing the
+// raw-pool reads alone would have opened the trail to any tenant member;
+// the two defects masked each other (fail-closed RLS hid the missing
+// RBAC), so they must land together.
+func (h *Handler) requireAuditAdmin(w http.ResponseWriter, r *http.Request, action string) (string, bool) {
+	tenantID := auth.TenantIDString(r)
+	if tenantID == "" {
+		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+		return "", false
+	}
+	role := auth.RoleString(r)
+	switch role {
+	case "admin", "owner":
+		return tenantID, true
+	default:
+		// Record the denial into the tenant's own hash-chained trail
+		// before returning. Best-effort: a logging failure must not
+		// suppress the 403.
+		if err := h.svc.RecordAccessDenied(r.Context(), tenantID,
+			auth.UserIDString(r), auth.GetUserName(r.Context()), action, r.URL.Path, role); err != nil {
+			h.log.Error().Err(err).Str("action", action).Msg("failed to record audit access denial")
+		}
+		writeError(w, http.StatusForbidden, "admin role required")
+		return "", false
+	}
+}
+
 // parseExportFilter builds a ListFilter from the request's filter query
 // params (no pagination — the streamer drives that). Shared by the CSV
 // and NDJSON export paths and mirrors listEvents' parsing.
@@ -99,9 +133,8 @@ func (h *Handler) streamEvents(r *http.Request, base model.ListFilter, fn func(*
 }
 
 func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+	tenantID, ok := h.requireAuditAdmin(w, r, "read")
+	if !ok {
 		return
 	}
 	f := model.ListFilter{
@@ -138,9 +171,8 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+	tenantID, ok := h.requireAuditAdmin(w, r, "export")
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv")
@@ -198,9 +230,8 @@ type ndjsonEvent struct {
 }
 
 func (h *Handler) exportNDJSON(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+	tenantID, ok := h.requireAuditAdmin(w, r, "export")
+	if !ok {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -251,9 +282,8 @@ func (h *Handler) verifyIntegrity(w http.ResponseWriter, r *http.Request) {
 //
 //	GET /api/v1/audit/merkle-proof?resource_type=document&resource_id={id}
 func (h *Handler) merkleProof(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
-	if tenantID == "" {
-		writeError(w, http.StatusBadRequest, "unauthenticated: no tenant on session")
+	tenantID, ok := h.requireAuditAdmin(w, r, "read")
+	if !ok {
 		return
 	}
 	resourceID := r.URL.Query().Get("resource_id")
@@ -321,10 +351,13 @@ type subjectBody struct {
 }
 
 func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
+	tenantID, ok := h.requireAuditAdmin(w, r, "export")
+	if !ok {
+		return
+	}
 	var body subjectBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" {
+		writeError(w, http.StatusBadRequest, "subject_id required")
 		return
 	}
 	export, err := h.svc.ExportSubject(r.Context(), tenantID, body.SubjectID)
@@ -336,10 +369,13 @@ func (h *Handler) dataSubjectExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
-	tenantID := auth.TenantIDString(r)
+	tenantID, ok := h.requireAuditAdmin(w, r, "redact")
+	if !ok {
+		return
+	}
 	var body subjectBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" || tenantID == "" {
-		writeError(w, http.StatusBadRequest, "tenant_id and subject_id required")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectID == "" {
+		writeError(w, http.StatusBadRequest, "subject_id required")
 		return
 	}
 	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID)

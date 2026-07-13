@@ -92,6 +92,14 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 		return nil, fmt.Errorf("seal fetch: %w", err)
 	}
 
+	// Resolve the residency region BEFORE signing — fail closed if the
+	// document's region_pin can't be honored, rather than sealing bytes
+	// we'd then have to write to a default region (residency breach).
+	region, err := s.sealer.ingest.ResolveRegionOrFail(ctx, tenantID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("seal region: %w", err)
+	}
+
 	resp, err := s.sealer.signer.Sign(ctx, signer.Request{
 		PDFBytes:   pdf,
 		SignerName: signerName,
@@ -114,6 +122,7 @@ func (s *Service) SealVersion(ctx context.Context, tenantID, documentID, version
 		Filename:   "sealed.pdf",
 		MimeType:   "application/pdf",
 		Bytes:      resp.PDFBytes,
+		RegionPin:  region,
 		DocumentID: documentID,
 	}, documentID, userID, "Server seal ("+string(resp.Level)+")")
 	if err != nil {
@@ -155,6 +164,12 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 		return s.SealVersion(ctx, tenantID, documentID, versionID, userID, "SeDoc Organizational Seal", "Envelope completion seal")
 	}
 
+	// Residency region resolved + validated up front (fail closed).
+	region, err := s.sealer.ingest.ResolveRegionOrFail(ctx, tenantID, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("ceremony region: %w", err)
+	}
+
 	pdf, err := s.sealer.fetchVersionPDF(ctx, tenantID, documentID, versionID)
 	if err != nil {
 		return nil, fmt.Errorf("seal fetch: %w", err)
@@ -171,6 +186,7 @@ func (s *Service) SealCeremony(ctx context.Context, tenantID, documentID, versio
 		Filename:   "signed.pdf",
 		MimeType:   "application/pdf",
 		Bytes:      pdf,
+		RegionPin:  region,
 		DocumentID: documentID,
 	}, documentID, userID, fmt.Sprintf("Signing ceremony (%d signers, %s)", len(signers), level))
 	if err != nil {
@@ -273,6 +289,47 @@ func (s *Service) ReleaseSeal(ctx context.Context, tenantID, requestID string) {
 		s.log.Error().Err(err).Str("request_id", requestID).
 			Msg("seal release FAILED — claim still held; seal will not retry without manual intervention")
 	}
+}
+
+// SealCeremonyForRequest is the claim-guarded, request-driven ceremony seal
+// shared by the Temporal workflow's SealCeremony activity (the primary path,
+// ADR 0025 Wave 9) and the dms.signature.completed.v1 NATS consumer (the
+// fallback). It claims the seal for requestID — the single idempotency guard
+// across BOTH triggers plus NATS redelivery, so a ceremony is sealed exactly
+// once no matter which path fires first — loads the request's ordered signers,
+// and runs SealCeremony (per-signer PAdES-B-LT revisions + final org seal via
+// the DSS sidecar, RegionPin enforced inside).
+//
+// Returns alreadySealed=true (nil result) when another trigger already won the
+// claim: the caller treats that as an idempotent success and does nothing.
+func (s *Service) SealCeremonyForRequest(ctx context.Context, tenantID, documentID, versionID, initiatedBy, requestID string) (res *SealResult, alreadySealed bool, err error) {
+	claimed, cerr := s.ClaimSeal(ctx, tenantID, requestID)
+	if cerr != nil {
+		return nil, false, fmt.Errorf("claim seal: %w", cerr)
+	}
+	if !claimed {
+		return nil, true, nil
+	}
+	var signers []CeremonySigner
+	if requestID != "" {
+		if sg, serr := s.CeremonySigners(ctx, tenantID, requestID); serr != nil {
+			s.log.Warn().Err(serr).Str("request_id", requestID).
+				Msg("seal: could not load signers; falling back to org seal")
+		} else {
+			signers = sg
+		}
+	}
+	res, err = s.SealCeremony(ctx, tenantID, documentID, versionID, initiatedBy, signers)
+	if err != nil {
+		// Release the claim (on a cancellation-detached ctx) so the other
+		// trigger or a retry can re-attempt rather than Ack-skipping a seal
+		// that never happened.
+		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		s.ReleaseSeal(rctx, tenantID, requestID)
+		rcancel()
+		return nil, false, err
+	}
+	return res, false, nil
 }
 
 // CeremonySigners loads the ordered, non-cc signers of a request for

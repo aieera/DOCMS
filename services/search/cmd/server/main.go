@@ -20,6 +20,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 
 	"github.com/aieera/sedoc/pkg/config"
@@ -29,6 +30,7 @@ import (
 	"github.com/aieera/sedoc/pkg/license"
 	"github.com/aieera/sedoc/pkg/logger"
 	"github.com/aieera/sedoc/pkg/middleware"
+	"github.com/aieera/sedoc/pkg/tracing"
 	"github.com/aieera/sedoc/services/search/internal/handler"
 	"github.com/aieera/sedoc/services/search/internal/opensearch"
 	"github.com/aieera/sedoc/services/search/internal/repository"
@@ -51,6 +53,23 @@ func main() {
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Distributed tracing (OpenTelemetry). No-op unless SEDOC_TRACING_ENABLED
+	// or OTEL_EXPORTER_OTLP_ENDPOINT is set. The indexer's handlerCtx extracts
+	// the trace context the outbox publisher stamped onto each NATS message,
+	// so search-index spans link back to the upload that produced the event.
+	if tracing.Enabled() {
+		shutdownTracing, terr := tracing.Init(ctx, serviceName, cfg.ServiceVersion)
+		if terr != nil {
+			log.Warn(ctx).Err(terr).Msg("tracing init failed; continuing without traces")
+		} else {
+			defer func() {
+				sc, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = shutdownTracing(sc)
+			}()
+		}
+	}
 
 	// ADR 0095 — license validation. Init reads SEDOC_LICENSE_JWT (or
 	// /etc/vaultdms/license.jwt), verifies the RS256 signature against the
@@ -200,8 +219,9 @@ func main() {
 	searchAuth.Handle("/",
 		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
 	httpSrv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)),
+		Addr: fmt.Sprintf(":%d", cfg.HTTPPort),
+		// otelhttp opens a SERVER span per request (inert without tracing.Init).
+		Handler:           otelhttp.NewHandler(middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)), "search.http"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

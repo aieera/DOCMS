@@ -42,11 +42,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import COMPLIANCE_COMPLETED_SUBJECT, NOTIFICATION_SUBJECT
 
 log = logging.getLogger(__name__)
 
-COMPLIANCE_COMPLETED_SUBJECT = "dms.compliance.completed.v1"
-NOTIFICATION_SUBJECT = "dms.notification.send.v1"
 CONSUMER = "compliance_scan"
 
 PII_RISK_MAP: dict[str, str] = {

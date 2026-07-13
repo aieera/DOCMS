@@ -28,10 +28,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import LANGUAGE_DETECTED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-LANGUAGE_DETECTED_SUBJECT = "dms.language.detected.v1"
 CONSUMER = "lang_detect"
 
 # Minimum characters before we trust detection. Below this we still

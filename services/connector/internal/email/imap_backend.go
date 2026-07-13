@@ -22,19 +22,19 @@ import (
 // production-shape implementation.
 //
 // Wire shape:
-//   1. Look up the config row's encrypted password, decrypt under the
-//      deploy KEK (set up in crypto.go).
-//   2. Dial the server with TLS (port 993 default) or STARTTLS (143).
-//   3. LOGIN with the stored username + decrypted password.
-//   4. SELECT INBOX, then SEARCH SINCE <30d-ago> UNSEEN to pull only
-//      recent unread mail. Spec said "last 30 days"; we narrow further
-//      to UNSEEN so we don't re-replay the same backlog on every poll.
-//      Idempotency is still anchored on the (UIDVALIDITY, UID) → unique
-//      source_message_id key in email_messages, so a customer who marks
-//      mail read elsewhere doesn't lose ingestion.
-//   5. FETCH BODY[] + INTERNALDATE for each match; parse with net/mail
-//      to pull the envelope shape. Body part and attachments lift out
-//      of the MIME tree.
+//  1. Look up the config row's encrypted password, decrypt under the
+//     deploy KEK (set up in crypto.go).
+//  2. Dial the server with TLS (port 993 default) or STARTTLS (143).
+//  3. LOGIN with the stored username + decrypted password.
+//  4. SELECT INBOX, then SEARCH SINCE <30d-ago> UNSEEN to pull only
+//     recent unread mail. Spec said "last 30 days"; we narrow further
+//     to UNSEEN so we don't re-replay the same backlog on every poll.
+//     Idempotency is still anchored on the (UIDVALIDITY, UID) → unique
+//     source_message_id key in email_messages, so a customer who marks
+//     mail read elsewhere doesn't lose ingestion.
+//  5. FETCH BODY[] + INTERNALDATE for each match; parse with net/mail
+//     to pull the envelope shape. Body part and attachments lift out
+//     of the MIME tree.
 type IMAPBackend struct {
 	Pool *pgxpool.Pool
 	Log  zerolog.Logger
@@ -100,10 +100,10 @@ func (b *IMAPBackend) Fetch(ctx context.Context, cfg *Config) ([]*Envelope, erro
 		seqSet.AddNum(n)
 	}
 	fetchOpts := &imap.FetchOptions{
-		Envelope:      true,
-		InternalDate:  true,
-		BodySection:   []*imap.FetchItemBodySection{{}},
-		UID:           true,
+		Envelope:     true,
+		InternalDate: true,
+		BodySection:  []*imap.FetchItemBodySection{{}},
+		UID:          true,
 	}
 	fetchData := client.Fetch(seqSet, fetchOpts)
 	defer fetchData.Close()

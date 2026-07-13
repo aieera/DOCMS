@@ -20,24 +20,43 @@
 package handler
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
 )
 
+// OnlyOfficeSaver commits an edited file (fetched from the Document
+// Server's URL) as a new document version. Implemented by
+// DBWOPIResolver.SaveFromURL so OnlyOffice and WOPI saves share one
+// write path. Nil-safe: without a saver, status 2/6 events are
+// acknowledged-but-logged exactly like the pre-wiring behavior.
+type OnlyOfficeSaver interface {
+	SaveFromURL(ctx context.Context, claims *WOPIClaims, fileURL, allowedHost, changeSummary string) error
+}
+
 // OnlyOfficeHandler mounts the E6 endpoints.
 type OnlyOfficeHandler struct {
 	log zerolog.Logger
+	// Saver commits status-2/6 callbacks as new versions. Wired by main.
+	Saver OnlyOfficeSaver
+	// Redis holds the WOPI lock keys; the callback refuses a save-back
+	// while another editor session holds the version's lock. Optional —
+	// nil skips the check (unit tests without Redis).
+	Redis *redis.Client
 }
 
 // NewOnlyOfficeHandler constructs the handler. Secret and URL are
@@ -107,6 +126,21 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		publicBase = "http://localhost:8080"
 	}
 
+	// The callback is posted by the Document Server with no user
+	// session, so the save-back path needs its own caller identity.
+	// Mint the same HMAC token WOPI uses — (tenant, user, version,
+	// can_write, expiry) — and ride it on the CallbackURL; the DS
+	// echoes the URL verbatim on every status event. Signed with the
+	// OnlyOffice shared secret so no extra env is required. 24h expiry:
+	// a DS may hold the final save until the last co-editor closes.
+	callbackToken := IssueWOPIToken(secret, WOPIClaims{
+		TenantID:  tenantID,
+		UserID:    userID,
+		FileID:    versionID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		CanWrite:  true,
+	})
+
 	cfg := onlyOfficeConfig{
 		Document: oneOfficeDoc{
 			FileType: "docx",
@@ -128,7 +162,8 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 			Mode: "edit",
 			Lang: "en",
 			CallbackURL: publicBase + "/api/v1/documents/" + docID.String() +
-				"/versions/" + versionID.String() + "/onlyoffice/callback",
+				"/versions/" + versionID.String() + "/onlyoffice/callback" +
+				"?access_token=" + url.QueryEscape(callbackToken),
 			User: oneOfficeUser{
 				ID:   userID.String(),
 				Name: "User " + userID.String()[:8],
@@ -156,7 +191,10 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// OnlyOffice sends status events:
 	//   0 = no changes   1 = editing   2 = ready to save
 	//   3 = save error   4 = closed unchanged   6 = force save ready
-	// download-and-commit on status==2/6 is a follow-up.
+	//   7 = force-save error
+	// 2 and 6 carry a `url` to the edited bytes; we download and commit
+	// them as a NEW document version. Anything else is acknowledged
+	// without a write (silently dropping 2/6 was the data-loss bug).
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var body struct {
 		Status int    `json:"status"`
@@ -203,12 +241,97 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.log.Info().
-		Int("status", body.Status).
-		Str("key", body.Key).
-		Msg("onlyoffice callback (verified; download-and-commit is a follow-up)")
+	switch body.Status {
+	case 2, 6: // ready-to-save / force-save ready → commit a new version
+		if err := h.commitSave(r, body.Status, body.URL); err != nil {
+			h.log.Error().Err(err).
+				Int("status", body.Status).Str("key", body.Key).
+				Msg("onlyoffice save-back failed")
+			// Non-zero error tells the Document Server the save was NOT
+			// accepted, so it retries / keeps the cached copy instead of
+			// discarding the user's edits.
+			writeJSONStatus(w, http.StatusOK, map[string]any{"error": 1})
+			return
+		}
+		h.log.Info().Int("status", body.Status).Str("key", body.Key).
+			Msg("onlyoffice save-back committed as new version")
+	case 3, 7: // DS-side save error — surface loudly, nothing to commit
+		h.log.Error().Int("status", body.Status).Str("key", body.Key).
+			Msg("onlyoffice reported a save error")
+	default: // 0/1/4 — editing lifecycle noise; nothing to persist
+		h.log.Info().Int("status", body.Status).Str("key", body.Key).
+			Msg("onlyoffice callback acknowledged")
+	}
 
 	writeJSONStatus(w, http.StatusOK, map[string]any{"error": 0})
+}
+
+// commitSave authenticates the callback's access_token, refuses to write
+// over another editor's active WOPI lock, and downloads + commits the
+// edited bytes through the shared save path (new version, never
+// in-place).
+func (h *OnlyOfficeHandler) commitSave(r *http.Request, status int, fileURL string) error {
+	if h.Saver == nil {
+		return vdmserr.Internal("onlyoffice saver not wired; edited document NOT saved")
+	}
+	if fileURL == "" {
+		return vdmserr.Validation("url", "save event carried no download url")
+	}
+	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
+	if secret == "" {
+		return vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not set")
+	}
+
+	// The access_token minted by the config endpoint carries the caller
+	// identity (tenant, user, version). Without it a forged-but-JWT-less
+	// deployment (or a replayed URL) could write into an arbitrary
+	// version id — parse + validate exactly like WOPI authenticate.
+	claims, err := parseWOPIToken(secret, r.URL.Query().Get("access_token"))
+	if err != nil {
+		return vdmserr.Forbidden("callback access_token invalid: " + err.Error())
+	}
+	vid := r.PathValue("vid")
+	if vid != "" && vid != claims.FileID.String() {
+		return vdmserr.Forbidden("access_token/version mismatch")
+	}
+	if !claims.CanWrite {
+		return vdmserr.Forbidden("read-only session")
+	}
+
+	// Respect the WOPI check-out lock: if another editor session holds
+	// the version's lock (e.g. it is open in Collabora), a non-holder
+	// save-back must be rejected, not silently interleaved.
+	if h.Redis != nil {
+		if lock, lerr := h.Redis.Get(r.Context(), wopiLockKey(claims.FileID)).Result(); lerr == nil && lock != "" {
+			return vdmserr.Conflict("document version is locked by another editor session")
+		}
+	}
+
+	// Detach from the callback's request context: the DS only waits
+	// briefly for the ack, but the download+scan+encrypt+version write
+	// must run to completion regardless.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
+	defer cancel()
+
+	summary := "Edited in OnlyOffice"
+	if status == 6 {
+		summary = "Edited in OnlyOffice (force save)"
+	}
+	return h.Saver.SaveFromURL(ctx, claims, fileURL, onlyOfficeAllowedHost(), summary)
+}
+
+// onlyOfficeAllowedHost pins save-back downloads to the configured
+// Document Server (SSRF guard). Empty when no DS URL is configured —
+// SaveFromURL then only enforces http(s).
+func onlyOfficeAllowedHost() string {
+	for _, env := range []string{"SEDOC_ONLYOFFICE_URL", "SEDOC_COAUTH_URL"} {
+		if v := os.Getenv(env); v != "" {
+			if u, err := url.Parse(v); err == nil && u.Host != "" {
+				return u.Host
+			}
+		}
+	}
+	return ""
 }
 
 // verifyHS256 checks an OnlyOffice-issued JWT (header.payload.signature,

@@ -23,6 +23,21 @@ type Repository struct{ pool *pgxpool.Pool }
 // New constructs a Repository.
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
+// withTenant opens a tenant-scoped transaction (SET LOCAL
+// app.current_tenant) and runs fn inside it — the A.1.a template. The
+// read/export/redact methods below use it so the FORCE-RLS audit_events
+// table returns rows under the dms_app (NOBYPASSRLS) role; the raw-pool
+// versions fail closed in prod (empty reads → the hash chain never
+// links, issue #74). Writes (Insert/BatchInsert/checkpoints) were
+// already wrapped by FIX-7.
+func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx) error) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	return database.WithTenantTx(ctx, r.pool, tid, fn)
+}
+
 // Insert appends one event. Caller is responsible for computing event_hash.
 //
 // The schema's resource_id column is uuid + nullable, so events that
@@ -153,12 +168,15 @@ func (r *Repository) BatchInsert(ctx context.Context, events []*model.AuditEvent
 // GetLastHash returns the most recent event_hash for a tenant.
 func (r *Repository) GetLastHash(ctx context.Context, tenantID string) (string, error) {
 	var hash string
-	err := r.pool.QueryRow(ctx,
-		`SELECT event_hash FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
-		tenantID).Scan(&hash)
-	if err == pgx.ErrNoRows {
-		return "", nil
-	}
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		serr := tx.QueryRow(ctx,
+			`SELECT event_hash FROM audit_events WHERE tenant_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`,
+			tenantID).Scan(&hash)
+		if serr == pgx.ErrNoRows {
+			return nil // genuinely empty chain — ("", nil)
+		}
+		return serr
+	})
 	return hash, err
 }
 
@@ -222,23 +240,24 @@ func (r *Repository) List(ctx context.Context, f model.ListFilter) ([]*model.Aud
 		COALESCE(source_event, ''), created_at
 		FROM audit_events WHERE %s ORDER BY created_at DESC, id DESC LIMIT %d`, where, pageSize+1)
 
-	rows, err := r.pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, "", err
-	}
-	defer rows.Close()
-
 	var events []*model.AuditEvent
-	for rows.Next() {
-		e := &model.AuditEvent{}
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
-			&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
-			&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
-			return nil, "", err
+	if err := r.withTenant(ctx, f.TenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, query, args...)
+		if err != nil {
+			return err
 		}
-		events = append(events, e)
-	}
-	if err := rows.Err(); err != nil {
+		defer rows.Close()
+		for rows.Next() {
+			e := &model.AuditEvent{}
+			if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
+				&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
+				&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		return rows.Err()
+	}); err != nil {
 		return nil, "", err
 	}
 
@@ -253,69 +272,80 @@ func (r *Repository) List(ctx context.Context, f model.ListFilter) ([]*model.Aud
 
 // ListAll streams all events for a tenant in order (for integrity verification).
 func (r *Repository) ListAll(ctx context.Context, tenantID string) ([]*model.AuditEvent, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, event_hash,
-			COALESCE(previous_hash, ''), actor, actor_name, action,
-			COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
-			COALESCE(resource_title, ''), details,
-			COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
-			COALESCE(source_event, ''), created_at
-		FROM audit_events WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`,
-		tenantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var events []*model.AuditEvent
-	for rows.Next() {
-		e := &model.AuditEvent{}
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
-			&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
-			&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
-			return nil, err
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, tenant_id, event_hash,
+				COALESCE(previous_hash, ''), actor, actor_name, action,
+				COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+				COALESCE(resource_title, ''), details,
+				COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+				COALESCE(source_event, ''), created_at
+			FROM audit_events WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC`,
+			tenantID)
+		if err != nil {
+			return err
 		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
+		defer rows.Close()
+		for rows.Next() {
+			e := &model.AuditEvent{}
+			if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
+				&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
+				&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		return rows.Err()
+	})
+	return events, err
 }
 
 // ListBySubject returns all events where actor matches (for GDPR export).
 func (r *Repository) ListBySubject(ctx context.Context, tenantID, subjectID string) ([]*model.AuditEvent, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, event_hash,
-			COALESCE(previous_hash, ''), actor, actor_name, action,
-			COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
-			COALESCE(resource_title, ''), details,
-			COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
-			COALESCE(source_event, ''), created_at
-		FROM audit_events WHERE tenant_id = $1 AND actor = $2 ORDER BY created_at ASC`,
-		tenantID, subjectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var events []*model.AuditEvent
-	for rows.Next() {
-		e := &model.AuditEvent{}
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
-			&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
-			&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
-			return nil, err
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, tenant_id, event_hash,
+				COALESCE(previous_hash, ''), actor, actor_name, action,
+				COALESCE(resource_type, ''), COALESCE(resource_id::text, ''),
+				COALESCE(resource_title, ''), details,
+				COALESCE(host(ip_address), ''), COALESCE(user_agent, ''),
+				COALESCE(source_event, ''), created_at
+			FROM audit_events WHERE tenant_id = $1 AND actor = $2 ORDER BY created_at ASC`,
+			tenantID, subjectID)
+		if err != nil {
+			return err
 		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
+		defer rows.Close()
+		for rows.Next() {
+			e := &model.AuditEvent{}
+			if err := rows.Scan(&e.ID, &e.TenantID, &e.EventHash, &e.PreviousHash, &e.Actor, &e.ActorName,
+				&e.Action, &e.ResourceType, &e.ResourceID, &e.ResourceTitle, &e.Details, &e.IPAddress,
+				&e.UserAgent, &e.SourceEvent, &e.CreatedAt); err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		return rows.Err()
+	})
+	return events, err
 }
 
 // AnonymizeSubject replaces actor/actor_name with "REDACTED" for GDPR Art.17.
 func (r *Repository) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE audit_events SET actor = 'REDACTED', actor_name = 'REDACTED', ip_address = '', user_agent = ''
-		 WHERE tenant_id = $1 AND actor = $2`, tenantID, subjectID)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	var n int64
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE audit_events SET actor = 'REDACTED', actor_name = 'REDACTED', ip_address = '', user_agent = ''
+			 WHERE tenant_id = $1 AND actor = $2`, tenantID, subjectID)
+		if err != nil {
+			return err
+		}
+		n = tag.RowsAffected()
+		return nil
+	})
+	return n, err
 }
 
 // HeadAndCount returns the tenant's current event count and the

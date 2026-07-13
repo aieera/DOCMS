@@ -342,7 +342,7 @@ function OverridesTable({
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Classification</th>
                 <th className="px-3 py-2">Enabled</th>
@@ -362,7 +362,7 @@ function OverridesTable({
                   <td className="px-3 py-2">{o.tile == null ? '—' : o.tile ? 'tiled' : 'single'}</td>
                   <td className="px-3 py-2">{o.force ? 'forced' : '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{o.description || '—'}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-end">
                     <Button
                       variant="ghost"
                       size="sm"

@@ -39,12 +39,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import NOTIFICATION_SUBJECT, OCR_QUALITY_COMPLETED_SUBJECT, OCR_RETRY_REQUESTED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-OCR_QUALITY_COMPLETED_SUBJECT = "dms.ocr.quality.completed.v1"
-OCR_RETRY_REQUESTED_SUBJECT = "dms.version.ocr_retry_requested.v1"
-NOTIFICATION_SUBJECT = "dms.notification.send.v1"
 CONSUMER = "ocr_quality"
 
 QUALITY_WEIGHTS: dict[str, float] = {

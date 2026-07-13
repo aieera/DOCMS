@@ -22,7 +22,7 @@ export const HeadlineMetric = forwardRef<HTMLDivElement, HeadlineMetricProps>(
       ref={ref}
       className={cn(
         'flex flex-col gap-1',
-        withDivider && 'border-l border-[rgba(26,26,26,0.14)] pl-[14px]',
+        withDivider && 'border-s border-[rgba(26,26,26,0.14)] ps-[14px]',
         className,
       )}
       {...props}

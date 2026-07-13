@@ -21,7 +21,7 @@ interface Props {
   issues: ValidationIssue[]
 }
 
-// StepConfigPanel renders the right-hand pane of the template editor:
+// StepConfigPanel renders the end-side pane of the template editor:
 // label + step-type-specific fields + delete. Inline issue list at
 // the bottom mirrors the chip's red dot in StepChainList. The Step
 // ID is shown but read-only — changing it would break any conditional

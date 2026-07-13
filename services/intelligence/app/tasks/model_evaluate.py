@@ -33,11 +33,10 @@ from app.intel_dedupe import (
 )
 from app.worker import celery_app
 from app.db.pool import get_pool
+from app.events.subjects import EVALUATED_SUBJECT, PROMOTED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-EVALUATED_SUBJECT = "dms.model.evaluated.v1"
-PROMOTED_SUBJECT  = "dms.model.promoted.v1"
 CONSUMER = "model_evaluate"
 
 

@@ -137,6 +137,7 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		r.Use(vdmsmw.CSRFDoubleSubmit())
 		r.Use(h.RequireRole("admin", "owner"))
 		r.Get("/", h.ListUsersAdmin)
+		r.Get("/seat-usage", h.SeatUsageAdmin)
 		r.Post("/", h.CreateUserAdmin)
 		r.Post("/invite", h.InviteUserAdmin)
 		r.Post("/{id}/suspend", h.SuspendUserAdmin)

@@ -109,7 +109,7 @@ function TimelineRow({ task, isActive, isLast, canAct, isSignature, onAct, isAct
       {!isLast && (
         <span
           aria-hidden
-          className="absolute left-4 top-8 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
+          className="absolute start-4 top-8 -ms-px h-[calc(100%-1rem)] w-0.5 bg-border"
         />
       )}
       {/* status icon dot — sits on top of the connector */}

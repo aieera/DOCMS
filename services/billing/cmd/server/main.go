@@ -194,16 +194,31 @@ func enforceGracePeriod(ctx context.Context, repo *repository.Repository, _ *red
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tenants, _ := repo.ListAllTenants(ctx)
+			// Errors here were silently discarded (Wave A.1.c) — a
+			// suspended-tenant sweep that fails must say so.
+			tenants, err := repo.ListAllTenants(ctx)
+			if err != nil {
+				log.Error().Err(err).Msg("grace period: list tenants")
+				continue
+			}
 			now := time.Now().UTC()
 			for _, tid := range tenants {
 				sub, err := repo.GetSubscription(ctx, tid)
-				if err != nil || sub == nil {
+				if err != nil {
+					log.Error().Err(err).Str("tenant", tid).Msg("grace period: get subscription")
+					continue
+				}
+				if sub == nil {
 					continue
 				}
 				if sub.Status == "past_due" && sub.GracePeriodEnds != nil && now.After(*sub.GracePeriodEnds) {
-					_ = repo.UpdateSubscriptionStatus(ctx, tid, "suspended", nil)
-					_ = repo.SuspendOrg(ctx, tid)
+					if err := repo.UpdateSubscriptionStatus(ctx, tid, "suspended", nil); err != nil {
+						log.Error().Err(err).Str("tenant", tid).Msg("grace period: update status")
+						continue
+					}
+					if err := repo.SuspendOrg(ctx, tid); err != nil {
+						log.Error().Err(err).Str("tenant", tid).Msg("grace period: suspend org")
+					}
 					log.Warn().Str("tenant", tid).Msg("grace period expired, tenant suspended")
 				}
 			}

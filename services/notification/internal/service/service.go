@@ -51,6 +51,13 @@ func New(cfg Config) *Service {
 // Deliver creates in-app notifications and publishes to Redis for real-time.
 func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) error {
 	now := time.Now().UTC()
+	// Resolve recipient emails up front (one query for the whole batch).
+	// Best-effort: a lookup failure degrades the email channel for this
+	// delivery — in-app/push must not be held hostage by it.
+	emails, emailErr := s.repo.EmailsForUsers(ctx, payload.TenantID, payload.UserIDs)
+	if emailErr != nil {
+		s.log.Warn().Err(emailErr).Msg("user email lookup failed; email channel degraded for this delivery")
+	}
 	for _, uid := range payload.UserIDs {
 		// DSR verify tokens (Wave 11.4) put EMAIL ADDRESSES in
 		// user_ids — there is no user row, so every UUID-typed step
@@ -124,20 +131,33 @@ func (s *Service) Deliver(ctx context.Context, payload model.DeliveryPayload) er
 			s.log.Warn().Err(decideErr).Str("user_id", uid).Msg("push suppressed: preferences unavailable (fail-closed)")
 		}
 
-		// Email delivery. Wave 12.1: real SMTP when configured;
-		// otherwise the pre-existing "would send" log retains the
-		// observability breadcrumb for dev. Failure to send is
-		// logged at Error; we don't fail the whole Deliver loop
-		// because in-app notification has already landed. uid here is
-		// always a user UUID (email uids branched at the loop top) —
-		// the uid → email address lookup for direct user email is
-		// still the Wave 12 follow-up.
+		// Email delivery. uid here is always a user UUID (address-typed
+		// uids branched to deliverEmailOnly at the loop top); the batch
+		// lookup above resolved it against the shared users table.
+		// Deactivated / deleted / unknown / address-less users are
+		// SKIPPED with a log — never an error that would fail the rest
+		// of the batch (the in-app row has already landed). Send
+		// failures likewise log at Error and continue.
 		if emailAllowed && pref.EmailEnabled {
 			sender := s.smtpSenderForTenant(ctx, payload.TenantID)
-			if sender != nil && sender.Enabled() {
-				s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: user-id not an email (lookup pending)")
-			} else {
+			if sender == nil || !sender.Enabled() {
 				s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("would send email (SMTP not configured)")
+				continue
+			}
+			rec, found := emails[uid]
+			switch {
+			case !found:
+				s.log.Warn().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: no user row for id")
+			case !rec.Active:
+				s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: user deactivated")
+			case rec.Email == "":
+				s.log.Warn().Str("user_id", uid).Str("type", payload.Type).Msg("email skipped: user has no email address")
+			default:
+				if err := sender.Send(rec.Email, payload.Title, payload.Body); err != nil {
+					s.log.Error().Err(err).Str("user_id", uid).Str("type", payload.Type).Msg("smtp send failed")
+				} else {
+					s.log.Info().Str("user_id", uid).Str("type", payload.Type).Msg("email sent")
+				}
 			}
 		}
 	}

@@ -119,7 +119,7 @@ function CrextioSandbox() {
               </h3>
               <span className="text-[12.5px] text-white/75">UX/UI Designer</span>
             </div>
-            <span className="absolute bottom-4 right-4 rounded-full border border-white/35 bg-white/[0.18] px-4 py-2 font-mono text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] backdrop-blur-md">
+            <span className="absolute bottom-4 end-4 rounded-full border border-white/35 bg-white/[0.18] px-4 py-2 font-mono text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] backdrop-blur-md">
               $1,200
             </span>
           </WarmCard>
@@ -359,7 +359,7 @@ function DevicesPanel() {
           className="absolute inset-x-1 bottom-[5px] top-[3px] rounded"
           style={{ background: 'linear-gradient(135deg, #6E5E47, #3A302B)' }}
         />
-        <span className="absolute bottom-px left-1/2 h-0.5 w-3 -translate-x-1/2 rounded bg-[#877864]" />
+        <span className="absolute bottom-px start-1/2 h-0.5 w-3 -translate-x-1/2 rounded bg-[#877864]" />
       </div>
       <div>
         <div className="text-[13px] font-medium leading-tight">MacBook Air</div>

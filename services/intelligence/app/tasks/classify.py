@@ -33,10 +33,10 @@ from app.metrics import (
 )
 from app.persist import upsert_classification
 from app.worker import celery_app
+from app.events.subjects import CLASSIFY_COMPLETED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-CLASSIFY_COMPLETED_SUBJECT = "dms.classify.completed.v1"
 CONSUMER = "classify"
 
 RULES: dict[str, list[str]] = {

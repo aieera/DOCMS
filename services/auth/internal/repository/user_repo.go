@@ -279,11 +279,11 @@ type scanner interface{ Scan(...any) error }
 
 func scanUser(s scanner) (*model.User, error) {
 	var (
-		u         model.User
-		role, st  string
-		settings  []byte
-		last      *time.Time
-		deleted   *time.Time
+		u        model.User
+		role, st string
+		settings []byte
+		last     *time.Time
+		deleted  *time.Time
 	)
 	if err := s.Scan(
 		&u.TenantID, &u.ID, &u.Email, &u.DisplayName,

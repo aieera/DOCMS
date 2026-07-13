@@ -4,12 +4,12 @@
 // arrive via X-Auth-Tenant-ID and X-User-ID headers injected by the
 // frontend's axios interceptor):
 //
-//   PUT  /api/v1/connectors/m365/config           save client_id + secret + entra tenant
-//   GET  /api/v1/connectors/m365/auth-url         start OAuth (returns the authorize URL)
-//   POST /api/v1/connectors/m365/disconnect       clear tokens, keep config
-//   GET  /api/v1/connectors/m365/sites            list SharePoint sites
-//   GET  /api/v1/connectors/m365/drives/{drive}/items
-//                                                 list drive items (optional ?folder_id=)
+//	PUT  /api/v1/connectors/m365/config           save client_id + secret + entra tenant
+//	GET  /api/v1/connectors/m365/auth-url         start OAuth (returns the authorize URL)
+//	POST /api/v1/connectors/m365/disconnect       clear tokens, keep config
+//	GET  /api/v1/connectors/m365/sites            list SharePoint sites
+//	GET  /api/v1/connectors/m365/drives/{drive}/items
+//	                                              list drive items (optional ?folder_id=)
 //
 // The shared OAuth callback lives in google.go's
 // connectorOAuthCallback — it dispatches on the provider name embedded
@@ -98,7 +98,8 @@ func (h *Handler) listM365Sites(w http.ResponseWriter, r *http.Request) {
 }
 
 // listM365DriveItems — GET /api/v1/connectors/m365/drives/{drive_id}/items
-//                       [?folder_id=<id>][&acting_as=<user>]
+//
+//	[?folder_id=<id>][&acting_as=<user>]
 func (h *Handler) listM365DriveItems(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {

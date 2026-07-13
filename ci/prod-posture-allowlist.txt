@@ -1,0 +1,14 @@
+# Prod-posture lane — known-failing allow-list (Wave A, STATE 2026-07-03).
+#
+# Each line: <top-level test name> <tracking issue>
+# These tests reproduce the audit's RLS tenant-context gaps under the
+# enforced NOBYPASSRLS posture. They are EXPECTED to fail until their
+# Wave A fix lands. The lane (scripts/prod-posture-lane.sh) fails if:
+#   - a test NOT listed here fails            (new regression), or
+#   - a test listed here PASSES               (stale entry — the fix
+#     landed; delete the line in the same PR), or
+#   - a test listed here doesn't run at all   (renamed/deleted repro).
+#
+# Rule: every Wave A PR that fixes a gap removes its line here and keeps
+# the repro test — it becomes the permanent regression guard.
+

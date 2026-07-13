@@ -11,8 +11,56 @@
 -- LLM at read time, which the Entities tab uses to dim/highlight and
 -- which the redaction + DLP pipelines use for confidence policy.
 
+-- OWNERSHIP (ADR 0121, 2026-07-05): the DOCUMENT schema owns the
+-- document_entities base table. Historically only the intelligence
+-- service's migration 000002 created it, so this file exploded on any
+-- clean database unless intelligence happened to migrate first (the
+-- STATE 2026-07-03 "Migration blocker"). Document reads the table
+-- (internal/repository/ner_repo.go) and evolves its taxonomy here, so
+-- the base definition now lives in this chain, guarded so the
+-- intelligence-first order (existing deployments) is a clean no-op.
+-- intelligence 000002 keeps an IF NOT EXISTS copy for the same reason
+-- in reverse. The definition below is column-for-column identical to
+-- intelligence 000002 — change BOTH files together or the ordering
+-- test (pkg/database/migration_ordering_integration_test.go) fails.
+CREATE TABLE IF NOT EXISTS document_entities (
+    tenant_id      UUID        NOT NULL REFERENCES organizations(id),
+    id             UUID        NOT NULL DEFAULT gen_random_uuid(),
+    version_id     UUID        NOT NULL,
+    document_id    UUID        NOT NULL,
+    entity_type    TEXT        NOT NULL,
+    entity_value   TEXT        NOT NULL,
+    start_offset   INT         NOT NULL,
+    end_offset     INT         NOT NULL,
+    confidence     REAL        NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+    is_pii         BOOLEAN     NOT NULL DEFAULT false,
+    detected_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_entities_version
+    ON document_entities (tenant_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_document_entities_type
+    ON document_entities (tenant_id, version_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_document_entities_pii
+    ON document_entities (tenant_id, version_id)
+    WHERE is_pii = true;
+
+ALTER TABLE document_entities ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE tablename = 'document_entities'
+        AND policyname = 'document_entities_tenant_isolation'
+  ) THEN
+    CREATE POLICY document_entities_tenant_isolation
+        ON document_entities
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+  END IF;
+END $$;
+
 ALTER TABLE document_entities
-    ADD COLUMN source TEXT NOT NULL DEFAULT 'spacy'
+    ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'spacy'
         CHECK (source IN ('spacy','llm','regex','manual'));
 
 -- Existing rows mostly come from regex (email/phone/SSN/CC) or SpaCy.
@@ -20,7 +68,7 @@ ALTER TABLE document_entities
 -- were always regex (the regex matchers set is_pii). Patch those.
 UPDATE document_entities SET source = 'regex' WHERE is_pii = true;
 
-CREATE INDEX idx_document_entities_source
+CREATE INDEX IF NOT EXISTS idx_document_entities_source
     ON document_entities (tenant_id, version_id, source);
 
 -- ---- entity_corrections ---------------------------------------------------

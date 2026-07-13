@@ -16,17 +16,17 @@ import (
 // we re-check via magic bytes and quarantine if the real type is in this
 // list even when the declared type was benign.
 var ExecutableMIMEBlocklist = map[string]struct{}{
-	"application/x-msdownload":      {}, // .exe, .dll
-	"application/x-executable":      {},
-	"application/x-dosexec":         {},
+	"application/x-msdownload":                      {}, // .exe, .dll
+	"application/x-executable":                      {},
+	"application/x-dosexec":                         {},
 	"application/vnd.microsoft.portable-executable": {},
-	"application/x-msdos-program":   {},
-	"application/x-ms-installer":    {}, // .msi
-	"application/x-ms-shortcut":     {}, // .lnk
-	"application/x-bat":             {}, // .bat
-	"application/x-sh":              {}, // .sh
-	"application/x-python-code":     {}, // .pyc
-	"application/vnd.ms-cab-compressed": {},
+	"application/x-msdos-program":                   {},
+	"application/x-ms-installer":                    {}, // .msi
+	"application/x-ms-shortcut":                     {}, // .lnk
+	"application/x-bat":                             {}, // .bat
+	"application/x-sh":                              {}, // .sh
+	"application/x-python-code":                     {}, // .pyc
+	"application/vnd.ms-cab-compressed":             {},
 }
 
 // ExecutableExtensions are the filename suffixes we refuse. Checked in

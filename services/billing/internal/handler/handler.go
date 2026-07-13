@@ -15,10 +15,10 @@ import (
 
 // Handler holds HTTP route handlers.
 type Handler struct {
-	svc       *service.Service
-	stripeWH  *stripehandler.WebhookHandler
-	log       zerolog.Logger
-	apiKey    string
+	svc      *service.Service
+	stripeWH *stripehandler.WebhookHandler
+	log      zerolog.Logger
+	apiKey   string
 }
 
 // New constructs a Handler. apiKey is sourced from cfg.InternalAPIKey by

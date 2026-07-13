@@ -1,12 +1,13 @@
 // ADR 0061 — WebAuthn / Passkey HTTP handlers.
 //
 // Six routes:
-//   POST   /api/v1/auth/webauthn/registration/begin   (authenticated)
-//   POST   /api/v1/auth/webauthn/registration/finish  (authenticated)
-//   POST   /api/v1/auth/webauthn/login/begin          (public)
-//   POST   /api/v1/auth/webauthn/login/finish         (public)
-//   GET    /api/v1/auth/webauthn/credentials          (authenticated)
-//   DELETE /api/v1/auth/webauthn/credentials/{id}     (authenticated)
+//
+//	POST   /api/v1/auth/webauthn/registration/begin   (authenticated)
+//	POST   /api/v1/auth/webauthn/registration/finish  (authenticated)
+//	POST   /api/v1/auth/webauthn/login/begin          (public)
+//	POST   /api/v1/auth/webauthn/login/finish         (public)
+//	GET    /api/v1/auth/webauthn/credentials          (authenticated)
+//	DELETE /api/v1/auth/webauthn/credentials/{id}     (authenticated)
 //
 // Wire format: binary fields (credential_id, attestation, assertion)
 // move as base64url strings — that's what the browser produces from
@@ -228,10 +229,11 @@ func (h *Handler) WebAuthnDelete(w http.ResponseWriter, r *http.Request) {
 
 // writeWebAuthnError maps the service's typed errors to canonical
 // HTTP codes:
-//   ErrWebAuthnNotImplemented → 501
-//   ErrInvalidSession         → 400 (restart the flow)
-//   ErrNoPasskeysRegistered   → 404 (register one in Settings → Security)
-//   anything else             → writeError (typically 500)
+//
+//	ErrWebAuthnNotImplemented → 501
+//	ErrInvalidSession         → 400 (restart the flow)
+//	ErrNoPasskeysRegistered   → 404 (register one in Settings → Security)
+//	anything else             → writeError (typically 500)
 func (h *Handler) writeWebAuthnError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, service.ErrWebAuthnNotImplemented):

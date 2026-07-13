@@ -1,5 +1,9 @@
 fastapi==0.109.0
 uvicorn==0.27.0
+# Required by the internal /watermark/pdf endpoint (multipart form upload).
+# Without it FastAPI raises "Form data requires python-multipart" on every
+# download/print watermark burn-in call.
+python-multipart==0.0.9
 celery==5.3.6
 redis==5.0.1
 Pillow==10.2.0

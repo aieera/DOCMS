@@ -11,6 +11,7 @@ import {
 import { getWorkspaces } from '@/api/workspaces'
 import { queryRAG, sendRAGFeedback, type RAGCitation, type RAGQueryResponse, type RAGFeedback } from '@/api/rag'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { AnswerMarkdown } from '@/components/ai/AnswerMarkdown'
 import { Button } from '@/components/ui/shadcn/button'
 import { Textarea } from '@/components/ui/shadcn/textarea'
 import {
@@ -396,9 +397,12 @@ function AnswerView(props: {
               )}
             </div>
           ) : (
-            <div className="prose prose-sm max-w-none whitespace-pre-wrap text-foreground">
-              {renderAnswerWithInlineCitations(answer.answer, byDoc)}
-            </div>
+            <AnswerMarkdown
+              text={answer.answer}
+              className="prose prose-sm max-w-none text-foreground dark:prose-invert"
+              isCitation={(docId) => byDoc.has(docId)}
+              renderCitation={(token) => renderCitationChip(token, byDoc)}
+            />
           )}
           {!isUnknown && (
             <button
@@ -563,57 +567,17 @@ function CitationBadge({ group, page, snippet }: { group: CitationGroup; page?: 
   )
 }
 
-function renderAnswerWithInlineCitations(text: string, byDoc: Map<string, CitationGroup>) {
-  const parts: React.ReactNode[] = []
-  const re = /\[([0-9a-f-]{8,}(?::page_\d+)?)\]/gi
-  // Tighten a space the model leaves before trailing punctuation after a
-  // citation ("[1·p1] ." → "[1·p1].").
-  const tightenAfterChip = (s: string) => s.replace(/^[ \t]+([.,;:!?)\]…])/, '$1')
-  let lastIdx = 0
-  let m: RegExpExecArray | null
-  let key = 0
-  let prevChipKey: string | null = null // last rendered chip (doc:page) for adjacent-dedup
-  let prevWasChip = false
-  while ((m = re.exec(text)) !== null) {
-    let gap = text.slice(lastIdx, m.index)
-    const token = m[1]
-    const [docId, pagePart] = token.split(':page_')
-    const group = byDoc.get(docId)
-    const page = pagePart ? Number(pagePart) : undefined
-    const chipKey = group ? `${docId}:${page ?? ''}` : null
-
-    // Merge adjacent duplicate chips: same doc+page with only whitespace
-    // between them collapses to a single chip.
-    if (group && chipKey === prevChipKey && /^\s*$/.test(gap)) {
-      lastIdx = m.index + m[0].length
-      continue
-    }
-
-    if (gap) {
-      if (prevWasChip) gap = tightenAfterChip(gap)
-      parts.push(gap)
-      if (gap.trim()) { prevChipKey = null; prevWasChip = false }
-    }
-
-    if (group) {
-      const match = page != null ? group.pages.find((p) => p.page === page) : undefined
-      const snippet = match?.snippet ?? group.pages[0]?.snippet ?? ''
-      parts.push(<CitationBadge key={`cite-${key++}`} group={group} page={page} snippet={snippet} />)
-      prevChipKey = chipKey
-      prevWasChip = true
-    } else {
-      // Unmatched token (LLM referenced a doc not in citations) — keep
-      // the raw text rather than rendering a broken link.
-      parts.push(m[0])
-      prevChipKey = null
-      prevWasChip = false
-    }
-    lastIdx = m.index + m[0].length
-  }
-  if (lastIdx < text.length) {
-    parts.push(prevWasChip ? tightenAfterChip(text.slice(lastIdx)) : text.slice(lastIdx))
-  }
-  return parts
+// Renders the badge chip for one inline citation token. Token → chip
+// substitution (plus adjacent-dedup and punctuation tightening) happens
+// inside AnswerMarkdown so Markdown formatting and chips coexist.
+function renderCitationChip(token: string, byDoc: Map<string, CitationGroup>): React.ReactNode {
+  const [docId, pagePart] = token.split(':page_')
+  const group = byDoc.get(docId)
+  if (!group) return null
+  const page = pagePart ? Number(pagePart) : undefined
+  const match = page != null ? group.pages.find((p) => p.page === page) : undefined
+  const snippet = match?.snippet ?? group.pages[0]?.snippet ?? ''
+  return <CitationBadge group={group} page={page} snippet={snippet} />
 }
 
 function CitationsList({ groups, heading }: { groups: CitationGroup[]; heading: string }) {

@@ -141,4 +141,41 @@ var PublishedSubjects = []string{
 	"dms.workspace.created.v1",
 	"dms.workspace.deleted.v1",
 	"dms.workspace.updated.v1",
+
+	// python emitters (services/intelligence + services/preview).
+	// These reach the broker via the SHARED sedoc.outbox (drained by the
+	// Go OutboxPublisher) or direct JetStream publish, so they need the
+	// same stream coverage as Go subjects. Kept complete mechanically:
+	// coverage_python_test.go harvests every dms.*.vN literal from the
+	// Python services and fails the build if one is missing here or
+	// unbound in DefaultStreams.
+	"dms.anomaly.completed.v1",
+	"dms.autotag.completed.v1",
+	"dms.billing.llm.usage.v1",
+	"dms.classify.completed.v1",
+	"dms.classify.corrected.v1",
+	"dms.compliance.completed.v1",
+	"dms.compliance.rescan_requested.v1",
+	"dms.document.redacted.v1",
+	"dms.embed.completed.v1",
+	"dms.ingestion.processed.v1",
+	"dms.ingestion.received.v1",
+	"dms.language.detected.v1",
+	"dms.model.evaluated.v1",
+	"dms.model.promoted.v1",
+	"dms.model.retrain_requested.v1",
+	"dms.model.trained.v1",
+	"dms.ner.completed.v1",
+	"dms.notification.send.v1",
+	"dms.ocr.failed.v1",
+	"dms.ocr.quality.completed.v1",
+	"dms.redaction.applied.v1",
+	"dms.redaction.apply_requested.v1",
+	"dms.routing.completed.v1",
+	"dms.training_example.collected.v1",
+	"dms.translation.completed.v1",
+	"dms.version.fields_extracted.v1",
+	"dms.version.ocr_completed.v1",
+	"dms.version.ocr_retry_requested.v1",
+	"dms.version.preview_ready.v1",
 }

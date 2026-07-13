@@ -137,7 +137,7 @@ export function UsersPage() {
           </p>
           <p>
             Per-workspace role assignment lives under the individual workspace&rsquo;s{' '}
-            <Link to="/workspaces" className="text-primary underline-offset-2 hover:underline">Settings &rsaquo; Transfer ownership</Link> today; finer-grained
+            <Link to="/workspaces" className="text-primary underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link> today; finer-grained
             workspace ACL ships with Phase 7.
           </p>
         </div>

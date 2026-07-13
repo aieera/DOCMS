@@ -3,13 +3,13 @@
 // It runs the same 5-step flow the browser does in web/src/hooks/useUpload.ts,
 // but from inside the cluster:
 //
-//	1. CreateDocument         → documents row (document service, REST)
-//	2. InitiateUpload         → presigned PUT URL (storage service, gRPC)
-//	3. PUT bytes              → blob lands in MinIO
-//	4. CompleteUpload         → scan + persist content_blob (storage, gRPC)
-//	5. CreateVersion          → links blob → document, fires
-//	                            dms.version.uploaded.v1 (which drives OCR +
-//	                            embed + search indexing)
+//  1. CreateDocument         → documents row (document service, REST)
+//  2. InitiateUpload         → presigned PUT URL (storage service, gRPC)
+//  3. PUT bytes              → blob lands in MinIO
+//  4. CompleteUpload         → scan + persist content_blob (storage, gRPC)
+//  5. CreateVersion          → links blob → document, fires
+//     dms.version.uploaded.v1 (which drives OCR +
+//     embed + search indexing)
 //
 // Two cluster-only wrinkles the browser doesn't hit:
 //
@@ -294,9 +294,10 @@ func (c *Client) rollback(ctx context.Context, tenantID, actorID, authToken, doc
 //   - authToken set  → forward it as the dms_session cookie (acts AS that
 //     user; used by Drive import, which has the triggering user's session).
 //   - authToken empty → internal-service auth: present SEDOC_INTERNAL_API_KEY
-//     + the tenant/user the worker acts on behalf of in headers (used by the
+//   - the tenant/user the worker acts on behalf of in headers (used by the
 //     email + intake workers, which have no session). The gateway strips
 //     inbound X-Internal-Service-Key so only in-cluster callers can use this.
+//
 // RequireGatewaySignature still wraps the service, so the signature is always
 // required too.
 func (c *Client) doDocJSON(ctx context.Context, method, path, tenantID, actorID, authToken string, body []byte, out any) error {

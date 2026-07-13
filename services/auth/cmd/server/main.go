@@ -216,11 +216,16 @@ func main() {
 	})
 
 	// ---- SAML 2.0 (Phase A2) ----------------------------------------------
-	// Dev generates a self-signed SP key+cert on every boot. Prod callers
-	// should load from a secret store and pass via sso.LoadSPKeyMaterial.
-	spKM, err := sso.NewSelfSignedSP()
+	// Durable SP identity: operator-injected PEMs (K8s secret / Vault) if
+	// present, else the app-managed keypair persisted in saml_sp_keypair
+	// — generated once on first boot and reused across restarts, so the
+	// SP cert an IdP pins stays STABLE (fixes the every-boot regenerate
+	// that caused intermittent SSO outages). Logs the cert fingerprint.
+	spKM, err := sso.ResolveSPKeyMaterial(ctx, pool, localKEK,
+		os.Getenv("SEDOC_SAML_SP_KEY_PEM"), os.Getenv("SEDOC_SAML_SP_CERT_PEM"), *log.Z())
 	if err != nil {
 		log.Warn(ctx).Err(err).Msg("saml sp init failed; SSO routes will be disabled")
+		spKM = nil
 	}
 	var samlHandler *handler.SAMLHandler
 	if spKM != nil {

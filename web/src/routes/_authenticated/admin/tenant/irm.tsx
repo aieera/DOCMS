@@ -104,7 +104,7 @@ function ContainerRow({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 p-4 text-left hover:bg-accent/40"
+        className="flex w-full items-center gap-3 p-4 text-start hover:bg-accent/40"
         aria-expanded={expanded}
       >
         {expanded ? (
@@ -170,7 +170,7 @@ function LicenseList({ containerId }: { containerId: string }) {
         <p className="p-4 text-sm text-muted-foreground">No licenses on this container.</p>
       ) : (
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+          <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-3 py-2">Recipient</th>
               <th className="px-3 py-2">Expires</th>
@@ -203,7 +203,7 @@ function LicenseList({ containerId }: { containerId: string }) {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-end">
                   {!lic.revoked_at && (
                     <Button
                       variant="ghost"

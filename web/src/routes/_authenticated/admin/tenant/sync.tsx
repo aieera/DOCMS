@@ -193,7 +193,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2" />
                 <th className="px-3 py-2">Name</th>
@@ -237,7 +237,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                       <td className="px-3 py-2">
                         <CursorIndicator cursor={d.cursor} />
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-2 text-end">
                         <Button
                           variant="ghost"
                           size="sm"

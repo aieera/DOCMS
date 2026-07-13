@@ -27,7 +27,7 @@ type WebAuthnCredential struct {
 }
 
 // StepUpGrant is one fresh-presence window. The middleware looks up
-// (tenant, user) rows where expires_at > now() and (scope='' OR
+// (tenant, user) rows where expires_at > now() and (scope=” OR
 // scope=requested_scope).
 type StepUpGrant struct {
 	TenantID     uuid.UUID

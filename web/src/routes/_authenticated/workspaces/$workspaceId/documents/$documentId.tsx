@@ -1408,7 +1408,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
       {/* Layout-skipped notice (text-PDF fast path). Owns the
           'Run full layout analysis' action. Self-hides once boxes
           exist. Out of the controls row so the explanation reads
-          left-to-right without crowding the toolbar. */}
+          LTR without crowding the toolbar. */}
       {isPdf && totalBoxes === 0 && pages.length > 0 && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning"

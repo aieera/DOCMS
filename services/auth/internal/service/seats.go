@@ -33,8 +33,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/aieera/sedoc/pkg/license"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/license"
 )
 
 // enforceSeatLimit gates user creation against the license's SeatLimit

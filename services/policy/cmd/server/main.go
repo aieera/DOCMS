@@ -146,6 +146,18 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Permission-cache invalidator -------------------------------------
+	// Subscribes to dms.permission.> and drops the affected decision-cache
+	// entries so a grant/revoke/folder-ACL change (incl. the document
+	// service's dms.permission.changed.v1) reflects in authz immediately
+	// instead of at the 60s TTL. Non-fatal: on subscribe failure the service
+	// still serves and freshness falls back to the TTL.
+	permInvalidator := service.NewPermissionCacheInvalidator(js, pcache.New(rdb), *log.Z())
+	if err := permInvalidator.Start(ctx); err != nil {
+		log.Error(ctx).Err(err).Msg("permission cache invalidator failed to subscribe; cache freshness falls back to TTL")
+	}
+	defer permInvalidator.Stop()
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")

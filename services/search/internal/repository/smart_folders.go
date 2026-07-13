@@ -2,9 +2,10 @@
 //
 // A smart folder is a saved_searches row with is_smart_folder = true.
 // Visibility is one of:
-//   private    — only the owner sees it in the tree
-//   workspace  — visible to anyone with access to workspace_id
-//   public     — visible to every user in the tenant
+//
+//	private    — only the owner sees it in the tree
+//	workspace  — visible to anyone with access to workspace_id
+//	public     — visible to every user in the tenant
 //
 // We keep these queries in a dedicated file so the original
 // saved-search repository methods stay unchanged.
@@ -32,7 +33,9 @@ func (r *Repository) ListSmartFolders(
 	tenantID, userID string,
 	workspaceIDs []string,
 ) ([]*model.SavedSearch, error) {
-	rows, err := r.pool.Query(ctx, `
+	var out []*model.SavedSearch
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
 		SELECT id, tenant_id, user_id, name, query, filters,
 		       notify, notify_interval_minutes, created_at, last_run_at,
 		       is_smart_folder, tree_visibility, workspace_id, icon, smart_folder_at
@@ -45,21 +48,25 @@ func (r *Repository) ListSmartFolders(
 		   OR (tree_visibility = 'public')
 		  )
 		ORDER BY tree_visibility, name`,
-		tenantID, userID, workspaceIDs,
-	)
+			tenantID, userID, workspaceIDs,
+		)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			ss, err := scanSavedSearchWithSmartFolder(rows)
+			if err != nil {
+				return err
+			}
+			out = append(out, ss)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []*model.SavedSearch
-	for rows.Next() {
-		ss, err := scanSavedSearchWithSmartFolder(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ss)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // PromoteSmartFolder flips a saved search into a smart folder.
@@ -81,48 +88,77 @@ func (r *Repository) PromoteSmartFolder(
 	if visibility != "workspace" {
 		workspaceID = nil
 	}
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE saved_searches
-		SET is_smart_folder = true,
-		    tree_visibility = $4,
-		    workspace_id    = $5,
-		    icon            = $6,
-		    smart_folder_at = NOW()
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3`,
-		id, tenantID, userID, visibility, workspaceID, icon)
+	var out *model.SavedSearch
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE saved_searches
+			SET is_smart_folder = true,
+			    tree_visibility = $4,
+			    workspace_id    = $5,
+			    icon            = $6,
+			    smart_folder_at = NOW()
+			WHERE id = $1 AND tenant_id = $2 AND user_id = $3`,
+			id, tenantID, userID, visibility, workspaceID, icon)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return vdmserr.ErrNotFound
+		}
+		// Read back inside the same tenant tx.
+		out, err = getSmartFolderTx(ctx, tx, tenantID, id)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if tag.RowsAffected() == 0 {
-		return nil, vdmserr.ErrNotFound
-	}
-	return r.GetSmartFolder(ctx, tenantID, id)
+	return out, nil
 }
 
 // DemoteSmartFolder flips it back to a regular saved search.
 func (r *Repository) DemoteSmartFolder(ctx context.Context, tenantID, userID, id string) error {
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE saved_searches
-		SET is_smart_folder = false,
-		    tree_visibility = 'private',
-		    workspace_id    = NULL,
-		    smart_folder_at = NULL
-		WHERE id = $1 AND tenant_id = $2 AND user_id = $3`,
-		id, tenantID, userID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return vdmserr.ErrNotFound
-	}
-	return nil
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE saved_searches
+			SET is_smart_folder = false,
+			    tree_visibility = 'private',
+			    workspace_id    = NULL,
+			    smart_folder_at = NULL
+			WHERE id = $1 AND tenant_id = $2 AND user_id = $3`,
+			id, tenantID, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return vdmserr.ErrNotFound
+		}
+		return nil
+	})
 }
 
 // GetSmartFolder fetches by id, scoped to tenant (visibility is
 // checked at the API layer — callers may legitimately need to read
 // a non-owner-but-visible smart folder).
 func (r *Repository) GetSmartFolder(ctx context.Context, tenantID, id string) (*model.SavedSearch, error) {
-	row := r.pool.QueryRow(ctx, `
+	var out *model.SavedSearch
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		got, err := getSmartFolderTx(ctx, tx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		out = got
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// getSmartFolderTx is the tx-scoped read shared by GetSmartFolder and
+// PromoteSmartFolder (which reads back inside its own write tx).
+func getSmartFolderTx(ctx context.Context, tx pgx.Tx, tenantID, id string) (*model.SavedSearch, error) {
+	row := tx.QueryRow(ctx, `
 		SELECT id, tenant_id, user_id, name, query, filters,
 		       notify, notify_interval_minutes, created_at, last_run_at,
 		       is_smart_folder, tree_visibility, workspace_id, icon, smart_folder_at

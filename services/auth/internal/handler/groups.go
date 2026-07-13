@@ -70,9 +70,9 @@ type groupDTO struct {
 }
 
 type memberDTO struct {
-	UserID      string `json:"user_id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"display_name,omitempty"`
+	UserID      string    `json:"user_id"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"display_name,omitempty"`
 	AddedAt     time.Time `json:"added_at"`
 }
 
@@ -214,9 +214,9 @@ func (g *GroupsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.writeJSON(w, http.StatusCreated, map[string]any{
-		"id":          id.String(),
-		"name":        body.Name,
-		"description": body.Description,
+		"id":           id.String(),
+		"name":         body.Name,
+		"description":  body.Description,
 		"member_count": 0,
 	})
 }

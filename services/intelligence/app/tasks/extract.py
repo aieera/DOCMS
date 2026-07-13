@@ -28,10 +28,10 @@ from app.persist import (
 )
 from app.processing_stages import record_stage
 from app.worker import celery_app
+from app.events.subjects import FIELDS_EXTRACTED_SUBJECT
 
 log = logging.getLogger(__name__)
 
-FIELDS_EXTRACTED_SUBJECT = "dms.version.fields_extracted.v1"
 
 
 def _regex_extract(text: str, specs: list[FieldSpec]) -> dict[str, dict]:

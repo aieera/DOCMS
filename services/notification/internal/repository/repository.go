@@ -3,20 +3,37 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/notification/internal/model"
 )
 
 // Repository manages the notifications + notification_preferences tables.
+// RLS contract (Wave A.1, issue #73): notifications and the ADR-0086
+// preference tables are FORCE ROW LEVEL SECURITY — every method on them
+// runs inside database.WithTenantTx via withTenant (A.1.a template).
+// Deliberate raw-pool exceptions, documented in their DDL: push_devices
+// and notification_user_prefs (no RLS by convention).
 type Repository struct{ pool *pgxpool.Pool }
 
 // New constructs a Repository.
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+
+// withTenant opens a tenant-scoped transaction (SET LOCAL
+// app.current_tenant) and runs fn inside it.
+func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx) error) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	return database.WithTenantTx(ctx, r.pool, tid, fn)
+}
 
 // Insert stores a notification.
 func (r *Repository) Insert(ctx context.Context, n *model.Notification) error {
@@ -24,11 +41,13 @@ func (r *Repository) Insert(ctx context.Context, n *model.Notification) error {
 		id, _ := uuid.NewV7()
 		n.ID = id.String()
 	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO notifications (id, tenant_id, user_id, type, title, body, resource_type, resource_id, channel, read, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-	`, n.ID, n.TenantID, n.UserID, n.Type, n.Title, n.Body, n.ResourceType, n.ResourceID, n.Channel, false, n.CreatedAt)
-	return err
+	return r.withTenant(ctx, n.TenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO notifications (id, tenant_id, user_id, type, title, body, resource_type, resource_id, channel, read, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		`, n.ID, n.TenantID, n.UserID, n.Type, n.Title, n.Body, n.ResourceType, n.ResourceID, n.Channel, false, n.CreatedAt)
+		return err
+	})
 }
 
 // List returns notifications for a user, newest first.
@@ -52,45 +71,57 @@ func (r *Repository) List(ctx context.Context, tenantID, userID string, readFilt
 		args = append(args, *readFilter)
 	}
 	q += ` ORDER BY created_at DESC LIMIT ` + itoa(limit)
-	rows, err := r.pool.Query(ctx, q, args...)
+	var out []*model.Notification
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, q, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			n := &model.Notification{}
+			if err := rows.Scan(&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title, &n.Body,
+				&n.ResourceType, &n.ResourceID, &n.Channel, &n.Read, &n.DeliveredAt, &n.ReadAt, &n.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, n)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []*model.Notification
-	for rows.Next() {
-		n := &model.Notification{}
-		if err := rows.Scan(&n.ID, &n.TenantID, &n.UserID, &n.Type, &n.Title, &n.Body,
-			&n.ResourceType, &n.ResourceID, &n.Channel, &n.Read, &n.DeliveredAt, &n.ReadAt, &n.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // MarkRead marks one notification as read.
 func (r *Repository) MarkRead(ctx context.Context, tenantID, userID, id string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE notifications SET read = true, read_at = $1 WHERE tenant_id = $2 AND user_id = $3 AND id = $4`,
-		time.Now().UTC(), tenantID, userID, id)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE notifications SET read = true, read_at = $1 WHERE tenant_id = $2 AND user_id = $3 AND id = $4`,
+			time.Now().UTC(), tenantID, userID, id)
+		return err
+	})
 }
 
 // MarkAllRead marks all user's notifications as read.
 func (r *Repository) MarkAllRead(ctx context.Context, tenantID, userID string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE notifications SET read = true, read_at = $1 WHERE tenant_id = $2 AND user_id = $3 AND read = false`,
-		time.Now().UTC(), tenantID, userID)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE notifications SET read = true, read_at = $1 WHERE tenant_id = $2 AND user_id = $3 AND read = false`,
+			time.Now().UTC(), tenantID, userID)
+		return err
+	})
 }
 
 // UnreadCount returns the number of unread notifications.
 func (r *Repository) UnreadCount(ctx context.Context, tenantID, userID string) (int, error) {
 	var count int
-	err := r.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM notifications WHERE tenant_id = $1 AND user_id = $2 AND read = false`,
-		tenantID, userID).Scan(&count)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM notifications WHERE tenant_id = $1 AND user_id = $2 AND read = false`,
+			tenantID, userID).Scan(&count)
+	})
 	return count, err
 }
 
@@ -101,8 +132,16 @@ func (r *Repository) GetPreference(ctx context.Context, tenantID, userID string)
 	// table is the ADR 0086 MATRIX — selecting flat columns from it
 	// errored on every call and silently zeroed the email/push gates.
 	p := &model.UserPreference{}
+	// quiet_hours_* are TIME columns; the model (and JSON contract)
+	// carries hour-of-day ints — EXTRACT bridges the two. Scanning TIME
+	// straight into int errored on EVERY existing row, which sent
+	// callers down the "pref lookup failed" fallback with default-
+	// enabled switches: a user's email_enabled=false was silently
+	// ignored.
 	err := r.pool.QueryRow(ctx,
-		`SELECT tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to
+		`SELECT tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled,
+		        COALESCE(EXTRACT(HOUR FROM quiet_hours_from)::int, 0),
+		        COALESCE(EXTRACT(HOUR FROM quiet_hours_to)::int, 0)
 		 FROM notification_user_prefs WHERE tenant_id = $1 AND user_id = $2`,
 		tenantID, userID).Scan(&p.TenantID, &p.UserID, &p.EmailEnabled, &p.PushEnabled, &p.SlackEnabled, &p.SMSEnabled, &p.QuietHoursFrom, &p.QuietHoursTo)
 	if err == pgx.ErrNoRows {
@@ -117,11 +156,14 @@ func (r *Repository) GetPreference(ctx context.Context, tenantID, userID string)
 	return p, nil
 }
 
-// UpsertPreference saves user notification preferences.
+// UpsertPreference saves user notification preferences. The hour-of-day
+// ints become TIME values via make_time — passing the raw ints failed
+// pgx encoding (int → OID 1083) on every call, so the flat prefs row
+// could never be written at all.
 func (r *Repository) UpsertPreference(ctx context.Context, p *model.UserPreference) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO notification_user_prefs (tenant_id, user_id, email_enabled, push_enabled, slack_enabled, sms_enabled, quiet_hours_from, quiet_hours_to)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		VALUES ($1,$2,$3,$4,$5,$6, make_time($7::int, 0, 0), make_time($8::int, 0, 0))
 		ON CONFLICT (tenant_id, user_id) DO UPDATE SET
 			email_enabled = EXCLUDED.email_enabled, push_enabled = EXCLUDED.push_enabled,
 			slack_enabled = EXCLUDED.slack_enabled, sms_enabled = EXCLUDED.sms_enabled,

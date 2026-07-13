@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // OrphanGC sweeps documents rows whose upload never completed.
@@ -123,36 +125,32 @@ func (g *OrphanGC) sweep(ctx context.Context) {
 		Msg("orphan gc cycle done")
 }
 
-// listOrphans returns up to `limit` orphan rows across all tenants.
-//
-// The app role is NOBYPASSRLS, so a normal SELECT would return 0
-// rows unless app.current_tenant is set — which makes a cross-tenant
-// sweeper impossible. We follow the same `SET LOCAL row_security =
-// off` pattern that the storage BlobReaper uses (see
-// services/storage/internal/repository/content_blobs.go); the
-// migrations grant the table policies to a role whose ownership of
-// documents lets row_security=off take effect for this query.
-//
-// Read-only TX + a tight LIMIT bound the cost.
+// listOrphans returns up to `limit` orphan rows. Every documents row
+// carries a tenant_id, so this is per-tenant work: enumerate tenants
+// from the organizations registry and read each tenant's orphans under
+// that tenant's app.current_tenant (Wave A.1, issue #76 — same fix as
+// the storage BlobReaper). The former `SET LOCAL row_security = off`
+// ERRORED under the prod NOBYPASSRLS role, killing the sweep every
+// cycle. No bypass now.
 func (g *OrphanGC) listOrphans(ctx context.Context, cutoff time.Time, limit int) ([]orphan, error) {
-	var out []orphan
-	err := pgx.BeginTxFunc(ctx, g.pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, "SET LOCAL row_security = off"); err != nil {
-			return err
+	out := make([]orphan, 0, limit)
+	err := database.ForEachTenant(ctx, g.pool, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		if len(out) >= limit {
+			return nil // batch already full; remaining tenants are no-ops
 		}
 		rows, err := tx.Query(ctx, `
 			SELECT tenant_id, id
 			FROM documents
-			WHERE current_version_id IS NULL
+			WHERE tenant_id = $1
+			  AND current_version_id IS NULL
 			  AND deleted_at IS NULL
-			  AND created_at < $1
+			  AND created_at < $2
 			ORDER BY created_at ASC
-			LIMIT $2`, cutoff, limit)
+			LIMIT $3`, tenantID, cutoff, limit-len(out))
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
-		out = make([]orphan, 0, limit)
 		for rows.Next() {
 			var o orphan
 			if err := rows.Scan(&o.TenantID, &o.ID); err != nil {
@@ -162,7 +160,10 @@ func (g *OrphanGC) listOrphans(ctx context.Context, cutoff time.Time, limit int)
 		}
 		return rows.Err()
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // softDelete sets deleted_at under the tenant's RLS context. The

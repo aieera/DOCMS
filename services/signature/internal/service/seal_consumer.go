@@ -39,7 +39,7 @@ func (c *SealConsumer) Start(ctx context.Context) error {
 	_, err := c.js.Subscribe("dms.signature.completed.v1", c.handle,
 		nats.Durable("signature-seal"),
 		nats.ManualAck(),
-		nats.AckWait(2*60*1e9), // 2m — a B-LT DSS sign + upload can take a while
+		nats.AckWait(2*time.Minute), // a B-LT DSS sign + upload can take a while
 	)
 	return err
 }
@@ -76,49 +76,28 @@ func (c *SealConsumer) handle(msg *nats.Msg) {
 	ctx := auth.WithUser(c.base, auth.UserInfo{
 		TenantID: tenantUUID, ID: actor, Role: "admin",
 	})
-	// Idempotency: claim the seal so a redelivery (at-least-once) can't produce
-	// a duplicate sealed version. If we don't win the claim, another delivery
-	// already sealed (or is sealing) — ack + skip.
-	if claimed, cerr := c.svc.ClaimSeal(ctx, env.TenantID, data.RequestID); cerr != nil {
-		c.log.Error().Err(cerr).Str("request_id", data.RequestID).Msg("seal consumer: claim failed; will redeliver")
-		_ = msg.Nak()
-		return
-	} else if !claimed {
-		c.log.Info().Str("request_id", data.RequestID).Msg("seal consumer: already sealed; skipping (idempotent)")
-		_ = msg.Ack()
-		return
-	}
-
-	// Per-signer PAdES revisions + final org seal when we can resolve the
-	// ceremony's signers; otherwise a single organizational seal.
-	var signers []CeremonySigner
-	if data.RequestID != "" {
-		if s, serr := c.svc.CeremonySigners(ctx, env.TenantID, data.RequestID); serr != nil {
-			c.log.Warn().Err(serr).Str("request_id", data.RequestID).Msg("seal consumer: could not load signers; falling back to org seal")
-		} else {
-			signers = s
-		}
-	}
-	res, err := c.svc.SealCeremony(ctx, env.TenantID, data.DocumentID, data.VersionID, data.InitiatedBy, signers)
+	// Fallback path: seal the ceremony if the Temporal workflow's SealCeremony
+	// activity (the primary path, ADR 0025 Wave 9) hasn't already. The shared
+	// ClaimSeal guard makes this exactly-once across both triggers + NATS
+	// redelivery — alreadySealed=true means the workflow (or a prior delivery)
+	// won the claim, so this is an idempotent no-op.
+	res, alreadySealed, err := c.svc.SealCeremonyForRequest(ctx, env.TenantID, data.DocumentID, data.VersionID, data.InitiatedBy, data.RequestID)
 	if err != nil {
-		// Release the claim so the redelivery re-attempts the seal. The
-		// release runs on a cancellation-DETACHED context: when the seal
-		// failed because of shutdown (c.base cancelled mid-ceremony), a
-		// release on the same dead ctx would fail too, leaving the claim
-		// held and the redelivery Ack-skipping a seal that never happened.
-		rctx, rcancel := context.WithTimeout(context.WithoutCancel(c.base), 10*time.Second)
-		c.svc.ReleaseSeal(rctx, env.TenantID, data.RequestID)
-		rcancel()
 		c.log.Error().Err(err).
 			Str("document_id", data.DocumentID).Str("version_id", data.VersionID).
 			Msg("seal consumer: seal failed; will redeliver")
 		_ = msg.Nak()
 		return
 	}
+	if alreadySealed {
+		c.log.Info().Str("request_id", data.RequestID).Msg("seal consumer: already sealed (workflow-owned); skipping")
+		_ = msg.Ack()
+		return
+	}
 	c.log.Info().
 		Str("document_id", data.DocumentID).
 		Str("new_version_id", res.NewVersionID).
 		Str("level", res.Level).
-		Msg("workflow signature sealed")
+		Msg("workflow signature sealed (consumer fallback)")
 	_ = msg.Ack()
 }

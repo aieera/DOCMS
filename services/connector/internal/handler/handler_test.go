@@ -28,10 +28,10 @@ func newMux(t *testing.T) *http.ServeMux {
 
 func TestCreateWebhook_RequiresHeaders(t *testing.T) {
 	cases := []struct {
-		name       string
-		tenantID   string
-		userID     string
-		want       int
+		name     string
+		tenantID string
+		userID   string
+		want     int
 	}{
 		{"no headers", "", "", http.StatusBadRequest},
 		{"only tenant", "t1", "", http.StatusBadRequest},

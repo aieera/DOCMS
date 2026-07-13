@@ -4,8 +4,8 @@
 // arrive via X-Auth-Tenant-ID and X-User-ID headers injected by the
 // frontend's axios interceptor):
 //
-//   PUT  /api/v1/connectors/google/config         save client_id + secret
-//   POST /api/v1/connectors/google/disconnect     clear tokens, keep config
+//	PUT  /api/v1/connectors/google/config         save client_id + secret
+//	POST /api/v1/connectors/google/disconnect     clear tokens, keep config
 //
 // The shared connector routes (auth-url, oauth/callback) live in
 // handler.go and dispatch on the {provider} path param.
