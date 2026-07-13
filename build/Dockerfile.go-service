@@ -34,6 +34,7 @@ COPY go.work go.work.sum ./
 COPY pkg/             ./pkg/
 COPY proto/gen/go/    ./proto/gen/go/
 COPY cmd/dms-admin/   ./cmd/dms-admin/
+COPY cmd/dms-sync/    ./cmd/dms-sync/
 COPY cmd/license-gen/ ./cmd/license-gen/
 COPY scripts/seed/    ./scripts/seed/
 COPY services/        ./services/
