@@ -26,7 +26,25 @@
     </script>
   </head>
   <body class="antialiased">
-    <div id="root"></div>
+    <!--
+      Static boot spinner. main.tsx awaits initI18n() before the FIRST
+      ReactDOM render, so nothing React-side paints until the locale
+      bundle loads (1-2s on a cold navigation). Without markup here the
+      #root div is empty and the page is blank white until then. This
+      inline spinner (no JS, no external CSS — globals.css hasn't loaded
+      yet either) paints on the first frame and React replaces it on
+      mount. Gray-500 is deliberately theme-neutral so it reads on both
+      the light and dark canvas the theme <script> above may have set.
+    -->
+    <div id="root">
+      <div id="app-boot" aria-label="Loading" role="status" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;">
+        <div style="width:28px;height:28px;border-radius:9999px;border:3px solid currentColor;border-top-color:transparent;opacity:.5;animation:app-boot-spin .7s linear infinite;"></div>
+      </div>
+    </div>
+    <style>
+      @keyframes app-boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #app-boot > div { animation: none; } }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

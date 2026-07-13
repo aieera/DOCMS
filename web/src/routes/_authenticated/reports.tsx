@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { dimensionLabel } from '@/lib/reportFormat'
 
 export const Route = createFileRoute('/_authenticated/reports')({
   component: ReportsPage,
@@ -357,7 +358,7 @@ function ResultChart({ result, chartType, dimensionCount }: {
 }) {
   // First dimension(s) become the label; the first measure the value.
   const data = useMemo(() => result.rows.map((row) => ({
-    name: row.slice(0, dimensionCount).map((v) => String(v ?? '')).join(' · '),
+    name: row.slice(0, dimensionCount).map(dimensionLabel).join(' · '),
     value: Number(row[dimensionCount] ?? 0),
   })), [result, dimensionCount])
   const measureName = result.columns[dimensionCount] ?? 'value'

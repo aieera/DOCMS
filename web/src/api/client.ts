@@ -245,12 +245,55 @@ export function readErrorMessage(err: unknown): string | null {
   return null
 }
 
+// sessionIsDead answers the question a bare 401 can't: did OUR SeDoc
+// session actually expire, or did a downstream/integration endpoint
+// (e.g. the ERP Files-BFF proxy under /integrations/erp/*) return 401
+// for its own reasons while our session is perfectly valid? The
+// authoritative probe is a bare /auth/me — if it still returns a user
+// with a tenant, the session lives and the 401 was endpoint-specific.
+// Single-flighted so a burst of parallel 401s (a page's queries racing
+// on a hard reload) fires at most one probe.
+let sessionProbe: Promise<boolean> | null = null
+async function sessionIsDead(): Promise<boolean> {
+  if (!hasSessionCookie()) return true
+  if (!sessionProbe) {
+    sessionProbe = (async () => {
+      try {
+        // Bare axios (not `api`) so this probe never recurses back
+        // through the interceptor below.
+        const { data } = await axios.get<User>('/api/v1/auth/me', { withCredentials: true })
+        return !data?.tenant_id
+      } catch {
+        return true
+      }
+    })().finally(() => {
+      sessionProbe = null
+    })
+  }
+  return sessionProbe
+}
+
 api.interceptors.response.use(
   (r) => r,
-  (error) => {
+  async (error) => {
     const status = error.response?.status
     const detail = readErrorMessage(error)
     if (status === 401) {
+      // A 401 is NOT proof the session died. Force-logging-out on every
+      // 401 meant a single feature endpoint — notably the ERP
+      // integration proxy, which passes the ERP BFF's 401 straight
+      // through — could silently destroy a valid session and bounce the
+      // user to /login with no warning, unrecoverably (BUG: "Open" on
+      // the ERP card logs you out). Only tear the session down when a
+      // bare /auth/me CONFIRMS it's actually gone. /auth/* calls are the
+      // real identity signal (and getCurrentUser() rides `api`), so a
+      // 401 there IS a genuine expiry — skip the probe to avoid looping.
+      const url = error.config?.url ?? ''
+      const isAuthProbe = url.startsWith('/auth/')
+      if (!isAuthProbe && !(await sessionIsDead())) {
+        toast.error(detail || 'Not authorized for that request.')
+        return Promise.reject(error)
+      }
       useAuthStore.getState().logout()
       window.location.href = '/login'
     } else if (status === 403) {
