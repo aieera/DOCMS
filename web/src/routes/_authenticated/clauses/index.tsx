@@ -7,14 +7,17 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
-import { CheckCircle2, Edit3, FileText, Plus, Search, Tag, Trash2, X } from 'lucide-react'
+import { CheckCircle2, Copy, Edit3, FileText, Plus, Search, Tag, Trash2, X } from 'lucide-react'
 import { LabeledSelect } from '@/components/ui/shadcn/select'
 
 import {
+  approveClause,
   createClause,
   deleteClause,
+  getClauseVariations,
   listClauses,
   patchClause,
+  revokeClauseApproval,
   type Clause,
   type CreateClauseInput,
 } from '@/api/clauses'
@@ -23,6 +26,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { Dialog } from '@/components/ui/Dialog'
+import { useAuthStore } from '@/store/authStore'
 
 export const Route = createFileRoute('/_authenticated/clauses/')({
   component: ClausesPage,
@@ -41,6 +45,10 @@ function ClausesPage() {
   // staying on "No clause selected".
   const [pendingSelectId, setPendingSelectId] = useState<string | null>(null)
   const qc = useQueryClient()
+  const role = useAuthStore((s) => s.user?.role)
+  // Same admin/owner gate the Approve/Revoke action uses elsewhere in the
+  // app for clause-approval-adjacent surfaces.
+  const canManageApproval = role === 'admin' || role === 'owner'
 
   const { data, isLoading } = useQuery({
     queryKey: ['clauses', q, jurisdictionFilter, tagFilter],
@@ -63,13 +71,24 @@ function ClausesPage() {
     onError: () => toast.error('Delete failed'),
   })
 
+  // ADR 0104 approval — dedicated approve/revoke endpoints (Task 4),
+  // replacing the earlier patchClause({ approved: true }) shortcut.
   const approveMut = useAppMutation({
-    mutationFn: (id: string) => patchClause(id, { approved: true }),
+    mutationFn: (id: string) => approveClause(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
       toast.success('Clause approved')
     },
     onError: () => toast.error('Approve failed'),
+  })
+
+  const revokeMut = useAppMutation({
+    mutationFn: (id: string) => revokeClauseApproval(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clauses'] })
+      toast.success('Approval revoked')
+    },
+    onError: () => toast.error('Revoke failed'),
   })
 
   // Select the just-created clause once it lands in the refetched list.
@@ -154,7 +173,9 @@ function ClausesPage() {
           <ClauseDetail
             clause={selected}
             onClose={() => setSelected(null)}
+            canManage={canManageApproval}
             onApprove={() => approveMut.mutate(selected.id)}
+            onRevoke={() => revokeMut.mutate(selected.id)}
             onEdit={() => setEditing(selected)}
             onDelete={() => {
               if (confirm(`Delete "${selected.name}"?`)) delMut.mutate(selected.id)
@@ -269,28 +290,71 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
 function ClauseDetail({
   clause,
   onClose,
+  canManage,
   onApprove,
+  onRevoke,
   onEdit,
   onDelete,
 }: {
   clause: Clause
   onClose: () => void
+  canManage: boolean
   onApprove: () => void
+  onRevoke: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
+  // ADR 0104 Phase 4 — variation tracking: how many documents use this
+  // clause and how much each occurrence drifts from the canonical body.
+  const { data: variations } = useQuery({
+    queryKey: ['clause-variations', clause.id],
+    queryFn: () => getClauseVariations(clause.id),
+  })
+
   return (
     <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <header className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold">{clause.name}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{clause.name}</h2>
+            {clause.approved_at && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+                ✓ Approved
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             v{clause.version} · {clause.jurisdiction || 'no jurisdiction'} · updated {new Date(clause.updated_at).toLocaleString()}
           </p>
         </div>
-        <button onClick={onClose} aria-label="close" className="text-muted-foreground hover:text-foreground">
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Copy clause"
+            onClick={() =>
+              navigator.clipboard.writeText(clause.body_text).then(() => toast.success('Clause copied'))
+            }
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          {/* Approve/Revoke — admin/owner only, mirroring the manage
+              gate used for the admin-only actions elsewhere in the app. */}
+          {canManage && (
+            clause.approved_at ? (
+              <Button variant="outline" size="sm" onClick={onRevoke}>
+                Revoke
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={onApprove}>
+                <CheckCircle2 className="me-1 h-3.5 w-3.5" /> Approve
+              </Button>
+            )
+          )}
+          <button onClick={onClose} aria-label="close" className="text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-wrap gap-1 text-xs">
@@ -306,12 +370,34 @@ function ClauseDetail({
         <pre className="whitespace-pre-wrap font-sans text-sm">{clause.body_text}</pre>
       </div>
 
-      <footer className="flex flex-wrap items-center gap-2 text-xs">
-        {!clause.approved_at && (
-          <Button variant="outline" size="sm" onClick={onApprove}>
-            <CheckCircle2 className="me-1 h-3.5 w-3.5" /> Approve
-          </Button>
+      {/* Usage — ADR 0104 Phase 4 variation tracking across documents. */}
+      <div className="space-y-2 border-t border-border pt-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Usage</h3>
+        {variations && variations.variations.length > 0 ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Used in {variations.total_documents} document{variations.total_documents === 1 ? '' : 's'}
+            </p>
+            <ul className="space-y-1.5">
+              {variations.variations.map((v) => (
+                <li key={v.normalized_hash} className="rounded-md border border-border/60 p-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{v.occurrences}×</span>
+                    <span className="text-muted-foreground">
+                      {Math.round(v.min_similarity * 100)}–{Math.round(v.max_similarity * 100)}%
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-muted-foreground">{v.sample_text}</p>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">No detected uses yet.</p>
         )}
+      </div>
+
+      <footer className="flex flex-wrap items-center gap-2 text-xs">
         <Button variant="outline" size="sm" onClick={onEdit}>
           <Edit3 className="me-1 h-3.5 w-3.5" /> Edit
         </Button>

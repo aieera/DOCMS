@@ -82,6 +82,7 @@ import { CorrectClassificationButton } from '@/components/intelligence/CorrectCl
 import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
+import { MatchedClausesPanel } from '@/components/documents/MatchedClausesPanel'
 
 type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'redaction' | 'activity'
 
@@ -739,6 +740,11 @@ function DocumentSidebar({
           zero properties so docs in tenants that never configured
           custom metadata don't see an empty card. */}
       <CustomFieldsSidebarSlot doc={doc as Document} />
+
+      {/* ADR 0104 Phase 2 — clause-library matches detected in this
+          document. Self-hides when the detect_clauses task found
+          nothing. */}
+      <MatchedClausesPanel documentId={documentId} />
 
       {/* Intelligence panels — each component self-hides when it has
           nothing to render, so the sidebar stays compact for docs

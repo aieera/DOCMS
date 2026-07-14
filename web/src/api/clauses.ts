@@ -69,3 +69,50 @@ export async function patchClause(id: string, input: PatchClauseInput) {
 export async function deleteClause(id: string) {
   await api.delete(`/clauses/${id}`)
 }
+
+// ── ADR 0104 Phases 2/4 + approval ──────────────────────────────────
+
+export interface ClauseMatch {
+  clause_id: string
+  clause_name: string
+  jurisdiction: string
+  approved: boolean
+  similarity: number
+  chunk_index: number
+  matched_text: string
+  detected_at: string
+}
+
+export interface ClauseVariation {
+  normalized_hash: string
+  occurrences: number
+  sample_text: string
+  min_similarity: number
+  max_similarity: number
+  document_ids: string[]
+}
+
+export interface ClauseVariations {
+  variations: ClauseVariation[]
+  total_documents: number
+}
+
+export async function getDocumentClauseMatches(documentId: string): Promise<ClauseMatch[]> {
+  const { data } = await api.get<{ matches: ClauseMatch[] }>(
+    `/documents/${documentId}/clause-matches`,
+  )
+  return data?.matches ?? []
+}
+
+export async function getClauseVariations(clauseId: string): Promise<ClauseVariations> {
+  const { data } = await api.get<ClauseVariations>(`/clauses/${clauseId}/variations`)
+  return data
+}
+
+export async function approveClause(clauseId: string): Promise<void> {
+  await api.post(`/clauses/${clauseId}/approve`)
+}
+
+export async function revokeClauseApproval(clauseId: string): Promise<void> {
+  await api.delete(`/clauses/${clauseId}/approve`)
+}
