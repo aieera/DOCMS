@@ -66,3 +66,13 @@ def test_matched_text_falls_back_to_text_payload_key():
         clauses=[{"id": "a", "vector": [0.1]}], threshold=0.80,
     )
     assert out[0]["matched_text"] == "real payload key"
+
+
+def test_consumer_chains_detect_after_embed():
+    """detect_clauses must run AFTER embeddings exist in Qdrant, so the
+    consumer dispatches chain(embed → detect), not a parallel task."""
+    import inspect
+    from app import nats_consumer
+    src = inspect.getsource(nats_consumer)
+    assert "detect_clauses" in src, "consumer must dispatch clause detection"
+    assert "chain(" in src, "detection must be chained after embeddings"

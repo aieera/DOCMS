@@ -20,6 +20,7 @@ from collections import defaultdict
 from typing import Optional
 
 import nats
+from celery import chain
 from nats.aio.client import Client as NATS
 
 from app.config import settings
@@ -44,6 +45,7 @@ from app.tasks.redact import (
 from app.tasks.smart_route import smart_route
 from app.tasks.training_collector import collect as training_collect
 from app.tasks.classify import classify_document
+from app.tasks.clause_match import detect_clauses
 from app.tasks.duplicate import detect_duplicates
 from app.tasks.embed import generate_embeddings
 from app.tasks.extract import extract_fields
@@ -418,7 +420,16 @@ class IntelligenceConsumer:
             }
             classify_document.apply_async(kwargs=hardened_kwargs, queue="intelligence")
             detect_entities.apply_async(kwargs=hardened_kwargs, queue="intelligence")
-            generate_embeddings.apply_async(kwargs=hardened_kwargs, queue="intelligence-embed")
+            # Embeddings first, THEN clause detection (ADR 0104 Phase 2):
+            # detect_clauses searches this document's chunk vectors, so it
+            # must not race the upsert. .si() = immutable signature (no
+            # parent-result injection).
+            chain(
+                generate_embeddings.si(**hardened_kwargs).set(queue="intelligence-embed"),
+                detect_clauses.si(
+                    tenant_id=tid, document_id=did, version_id=vid,
+                ).set(queue="intelligence"),
+            ).apply_async()
 
             # detect_duplicates not yet hardened — keeps old signature.
             detect_duplicates.apply_async(kwargs={
