@@ -97,5 +97,9 @@ class Settings(BaseSettings):
     extraction_regex_confidence: float = 0.72
     extraction_llm_confidence: float = 0.86
 
+    # ADR 0104 Phase 2 — minimum cosine score for a clause-library match
+    # against a document chunk.
+    clause_match_threshold: float = 0.80
+
 
 settings = Settings()
