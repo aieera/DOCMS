@@ -916,6 +916,17 @@ func main() {
 	rootMux.Handle("PATCH /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
 	rootMux.Handle("DELETE /api/v1/clauses/{id}", middleware.CorrelationHTTP(clauseAuth))
 
+	// ADR 0104 Phases 2/4 + approval — detection results, variations,
+	// approve/revoke. Same SessionAuth chain as the CRUD routes;
+	// admin/owner gate for approve lives in the handler.
+	cmMux := http.NewServeMux()
+	handler.NewClauseMatchesHandler(pool).Register(cmMux)
+	clauseMatchAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(cmMux)
+	rootMux.Handle("GET /api/v1/documents/{id}/clause-matches", middleware.CorrelationHTTP(clauseMatchAuth))
+	rootMux.Handle("GET /api/v1/clauses/{id}/variations", middleware.CorrelationHTTP(clauseMatchAuth))
+	rootMux.Handle("POST /api/v1/clauses/{id}/approve", middleware.CorrelationHTTP(clauseMatchAuth))
+	rootMux.Handle("DELETE /api/v1/clauses/{id}/approve", middleware.CorrelationHTTP(clauseMatchAuth))
+
 	// ADR 0099 — contract intelligence graph. GET is read-only and
 	// uses SessionAuth (so the tenant + user context is set); the
 	// two mutating routes also require admin/owner role at the
