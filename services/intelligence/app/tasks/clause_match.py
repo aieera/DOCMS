@@ -30,19 +30,24 @@ def _body_sha(text: str) -> str:
 
 
 def _normalize_text(text: str) -> str:
-    """Lowercase + collapse whitespace. The document service's
-    variations endpoint groups by md5(this) — keep the two in sync."""
-    return re.sub(r"\s+", " ", text.strip().lower())
+    """Lowercase -> collapse whitespace runs to one space -> trim.
+    The document service's variations endpoint groups by
+    md5(btrim(regexp_replace(lower(matched_text), '\\s+', ' ', 'g'))) —
+    this function MUST stay byte-equivalent to that expression."""
+    return re.sub(r"\s+", " ", text.lower()).strip()
 
 
-def _matches_for_clauses(client, *, tenant_id: str, document_id: str,
+def _matches_for_clauses(client, *, tenant_id: str, document_id: str, version_id: str,
                          clauses: list[dict], threshold: float) -> list[dict]:
-    """One Qdrant search per clause, filtered to this document's chunks.
-    Returns match dicts for hits at/above threshold."""
+    """One Qdrant search per clause, filtered to this document VERSION's
+    chunks. version_id scoping matters: points from prior versions of the
+    same document persist in Qdrant (uuid5 ids per version), so an
+    unscoped top-1 could return a stale version's chunk (review finding)."""
     out: list[dict] = []
     flt = Filter(must=[
         FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
         FieldCondition(key="document_id", match=MatchValue(value=document_id)),
+        FieldCondition(key="version_id", match=MatchValue(value=version_id)),
     ])
     for c in clauses:
         hits = client.search(
@@ -162,7 +167,8 @@ def detect_clauses(self, tenant_id: str, document_id: str, version_id: str,
     client = _qdrant()
     matches = _matches_for_clauses(
         client, tenant_id=tenant_id, document_id=document_id,
-        clauses=clauses, threshold=settings.clause_match_threshold,
+        version_id=version_id, clauses=clauses,
+        threshold=settings.clause_match_threshold,
     )
     asyncio.run(_replace_matches(tenant_id, document_id, version_id, matches))
     log.info("clause detection: %d/%d matched for doc %s",
