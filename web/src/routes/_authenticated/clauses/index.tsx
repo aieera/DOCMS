@@ -77,6 +77,11 @@ function ClausesPage() {
     mutationFn: (id: string) => approveClause(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
+      // Keep the detail pane in sync immediately (same treatment the
+      // Edit flow applies via onSaved → setSelected). approveClause
+      // returns void, so stamp a client-side approved_at; the ['clauses']
+      // refetch then replaces it with the server's authoritative value.
+      setSelected((s) => (s ? { ...s, approved_at: new Date().toISOString() } : s))
       toast.success('Clause approved')
     },
     onError: () => toast.error('Approve failed'),
@@ -86,6 +91,9 @@ function ClausesPage() {
     mutationFn: (id: string) => revokeClauseApproval(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
+      // Mirror the approve path: clear approval locally so the badge
+      // and the Approve⇄Revoke toggle flip without a re-select.
+      setSelected((s) => (s ? { ...s, approved_at: null, approved_by: null } : s))
       toast.success('Approval revoked')
     },
     onError: () => toast.error('Revoke failed'),
@@ -333,7 +341,10 @@ function ClauseDetail({
             size="sm"
             aria-label="Copy clause"
             onClick={() =>
-              navigator.clipboard.writeText(clause.body_text).then(() => toast.success('Clause copied'))
+              navigator.clipboard
+                .writeText(clause.body_text)
+                .then(() => toast.success('Clause copied'))
+                .catch(() => toast.error('Copy failed'))
             }
           >
             <Copy className="h-3.5 w-3.5" />
