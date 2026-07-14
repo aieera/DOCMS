@@ -169,9 +169,50 @@ func seedDocument(ctx context.Context, t *testing.T, tenant uuid.UUID, title str
 		VALUES ($1, $2, $3, 1, $4, 1024, 'application/pdf', $5)`,
 		tenant, versionID, docID, blobID, sha)
 	require.NoError(t, err)
+	// Advance the head: the matches endpoint is scoped to
+	// documents.current_version_id, so the seeded version must be the
+	// current one or the panel query returns nothing.
+	_, err = testPool.Exec(ctx, `
+		UPDATE documents SET current_version_id = $3
+		 WHERE tenant_id = $1 AND id = $2`,
+		tenant, docID, versionID)
+	require.NoError(t, err)
 
 	docVersions[docID] = versionID
 	return docID
+}
+
+// seedStaleVersionMatch attaches a clause_matches row to a NEW, non-current
+// document_versions row for doc (version_number 0, i.e. an older version
+// whose detection rows persisted after a newer version became the head).
+// The matches endpoint is scoped to documents.current_version_id and must
+// exclude it.
+func seedStaleVersionMatch(ctx context.Context, t *testing.T, tenant, docID, clauseID uuid.UUID) {
+	t.Helper()
+	staleVersionID := uuid.Must(uuid.NewV7())
+	blobID := uuid.Must(uuid.NewV7())
+	_, err := testPool.Exec(ctx, `
+		INSERT INTO content_blobs
+			(id, tenant_id, sha256_hash, storage_region, storage_bucket, storage_key,
+			 storage_class, size_bytes, mime_type)
+		VALUES ($1, $2, $3, 'us-east-1', 'test-bucket', $4, 'hot', 512, 'application/pdf')`,
+		blobID, tenant, "sha-"+blobID.String(), "k/"+blobID.String())
+	require.NoError(t, err)
+	_, err = testPool.Exec(ctx, `
+		INSERT INTO document_versions
+			(tenant_id, id, document_id, version_number, content_blob_id, size_bytes, mime_type, sha256_hash)
+		VALUES ($1, $2, $3, 0, $4, 512, 'application/pdf', $5)`,
+		tenant, staleVersionID, docID, blobID, "sha-"+blobID.String())
+	require.NoError(t, err)
+	err = database.WithTenantTx(ctx, testPool, tenant, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `
+			INSERT INTO clause_matches
+				(tenant_id, document_id, version_id, clause_id, similarity, matched_text)
+			VALUES ($1, $2, $3, $4, 0.95, 'stale prior-version wording')`,
+			tenant, docID, staleVersionID, clauseID)
+		return e
+	})
+	require.NoError(t, err)
 }
 
 // seedClauseWorld creates a clause + two documents + three matches
@@ -239,6 +280,11 @@ func TestClauseMatches_ListForDocument(t *testing.T) {
 	ctx, tenant := newTestTenant(t)
 	clauseID, docA, _ := seedClauseWorld(ctx, t, tenant)
 
+	// Regression (version scoping): a match row attached to an older,
+	// non-current version of docA must be excluded from the panel —
+	// only the current head's single match may be returned.
+	seedStaleVersionMatch(ctx, t, tenant, docA, clauseID)
+
 	resp := doAuthedJSON(t, "GET", "/api/v1/documents/"+docA.String()+"/clause-matches", nil, "owner")
 	require.Equal(t, 200, resp.Code)
 	body := decodeMap(t, resp)
@@ -248,6 +294,8 @@ func TestClauseMatches_ListForDocument(t *testing.T) {
 	require.Equal(t, clauseID.String(), m["clause_id"])
 	require.Equal(t, "Confidentiality", m["clause_name"])
 	require.Equal(t, false, m["approved"])
+	require.Equal(t, "Each party shall keep  Confidential…", m["matched_text"],
+		"must be the current version's match, not the stale prior-version row")
 }
 
 func TestClauseVariations_GroupsNormalizedText(t *testing.T) {
@@ -268,7 +316,6 @@ func TestClauseVariations_GroupsNormalizedText(t *testing.T) {
 func TestClauseApprove_SetsAndRevokes(t *testing.T) {
 	ctx, tenant := newTestTenant(t)
 	clauseID, _, _ := seedClauseWorld(ctx, t, tenant)
-	_ = ctx
 
 	resp := doAuthedJSON(t, "POST", "/api/v1/clauses/"+clauseID.String()+"/approve", nil, "owner")
 	require.Equal(t, 200, resp.Code)
@@ -277,6 +324,14 @@ func TestClauseApprove_SetsAndRevokes(t *testing.T) {
 
 	resp = doAuthedJSON(t, "DELETE", "/api/v1/clauses/"+clauseID.String()+"/approve", nil, "owner")
 	require.Equal(t, 200, resp.Code)
+
+	// Revoke must actually clear the approval columns, not just 200.
+	var cleared bool
+	require.NoError(t, testPool.QueryRow(ctx, `
+		SELECT approved_by IS NULL AND approved_at IS NULL
+		  FROM clauses WHERE tenant_id = $1 AND id = $2`,
+		tenant, clauseID).Scan(&cleared))
+	require.True(t, cleared, "revoke must clear approved_by/approved_at")
 
 	resp = doAuthedJSON(t, "POST", "/api/v1/clauses/"+clauseID.String()+"/approve", nil, "member")
 	require.Equal(t, 403, resp.Code)

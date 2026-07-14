@@ -59,13 +59,20 @@ func (h *ClauseMatchesHandler) listForDocument(w http.ResponseWriter, r *http.Re
 	}
 	matches := []clauseMatchRow{}
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		// Version scoping: the detection task delete+reinserts only its
+		// OWN version's rows, so rows from prior versions persist by
+		// design. The panel must show the current head's matches only —
+		// join documents and filter on current_version_id (mirrors the
+		// version-scoped Qdrant filter on the Python detection side).
 		rows, e := tx.Query(r.Context(), `
 			SELECT m.clause_id, c.name, c.jurisdiction,
 			       (c.approved_at IS NOT NULL) AS approved,
 			       m.similarity, m.chunk_index, m.matched_text, m.detected_at
 			  FROM clause_matches m
-			  JOIN clauses c ON c.tenant_id = m.tenant_id AND c.id = m.clause_id
+			  JOIN clauses c   ON c.tenant_id = m.tenant_id AND c.id = m.clause_id
+			  JOIN documents d ON d.tenant_id = m.tenant_id AND d.id = m.document_id
 			 WHERE m.tenant_id = $1 AND m.document_id = $2
+			   AND m.version_id = d.current_version_id
 			   AND c.deleted_at IS NULL
 			 ORDER BY m.similarity DESC`,
 			tid, docID)
@@ -160,33 +167,26 @@ func (h *ClauseMatchesHandler) variations(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"variations": variations, "total_documents": totalDocs})
 }
 
-// requireAdminOwner mirrors the role gate the clause CRUD mutations use.
-func requireAdminOwner(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
+func (h *ClauseMatchesHandler) approve(w http.ResponseWriter, r *http.Request) {
 	tid, err := auth.GetTenantID(r.Context())
 	if err != nil || tid == uuid.Nil {
 		writeJSON(w, 401, map[string]string{"error": "no tenant"})
-		return uuid.Nil, uuid.Nil, false
-	}
-	u, _ := auth.User(r.Context())
-	if u.Role != "admin" && u.Role != "owner" {
-		writeJSON(w, 403, map[string]string{"error": "admin or owner role required"})
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tid, u.ID, true
-}
-
-func (h *ClauseMatchesHandler) approve(w http.ResponseWriter, r *http.Request) {
-	tid, uid, ok := requireAdminOwner(w, r)
-	if !ok {
 		return
 	}
+	// Same role gate as the package's other mutating endpoints
+	// (compliance_handler.requireRole) so the 403 body is uniform.
+	if !requireRole(w, r, "admin", "owner") {
+		return
+	}
+	u, _ := auth.User(r.Context())
+	uid := u.ID
 	clauseID, perr := uuid.Parse(r.PathValue("id"))
 	if perr != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid clause id"})
 		return
 	}
 	var approvedAt time.Time
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			UPDATE clauses
 			   SET approved_by = $3, approved_at = now(), updated_at = now()
@@ -204,13 +204,19 @@ func (h *ClauseMatchesHandler) approve(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"approved_by": uid.String(),
-		"approved_at": approvedAt,
+		// RFC3339 string, matching scanClauseWithRank's formatting of
+		// the same column in the clause CRUD responses.
+		"approved_at": approvedAt.UTC().Format(time.RFC3339),
 	})
 }
 
 func (h *ClauseMatchesHandler) revoke(w http.ResponseWriter, r *http.Request) {
-	tid, _, ok := requireAdminOwner(w, r)
-	if !ok {
+	tid, err := auth.GetTenantID(r.Context())
+	if err != nil || tid == uuid.Nil {
+		writeJSON(w, 401, map[string]string{"error": "no tenant"})
+		return
+	}
+	if !requireRole(w, r, "admin", "owner") {
 		return
 	}
 	clauseID, perr := uuid.Parse(r.PathValue("id"))
@@ -218,7 +224,7 @@ func (h *ClauseMatchesHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "invalid clause id"})
 		return
 	}
-	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
 		ct, e := tx.Exec(r.Context(), `
 			UPDATE clauses
 			   SET approved_by = NULL, approved_at = NULL, updated_at = now()
