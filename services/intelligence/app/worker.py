@@ -27,6 +27,10 @@ celery_app = Celery(
         "app.tasks.rag",
         "app.tasks.summarize",
         "app.tasks.redact",
+        # ADR 0104 Phase 2 — clause detection. Without this include the
+        # embed→detect chain silently no-ops: the dispatched task name
+        # is unknown to the worker (found dead in the Task 6 live e2e).
+        "app.tasks.clause_match",
     ],
 )
 
