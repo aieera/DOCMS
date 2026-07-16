@@ -53,12 +53,14 @@ export async function createClause(input: CreateClauseInput) {
   return data
 }
 
+// Approval state changes ONLY via approveClause/revokeClauseApproval
+// (admin/owner-gated dedicated endpoints) — PATCH deliberately has no
+// "approved" field.
 export interface PatchClauseInput {
   name?: string
   body_text?: string
   jurisdiction?: string
   tags?: string[]
-  approved?: boolean
 }
 
 export async function patchClause(id: string, input: PatchClauseInput) {

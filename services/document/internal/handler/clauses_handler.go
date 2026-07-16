@@ -239,7 +239,6 @@ type patchClauseReq struct {
 	BodyText     *string   `json:"body_text,omitempty"`
 	Jurisdiction *string   `json:"jurisdiction,omitempty"`
 	Tags         *[]string `json:"tags,omitempty"`
-	Approved     *bool     `json:"approved,omitempty"` // if true → set approved_by/at
 }
 
 func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
@@ -248,8 +247,7 @@ func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": "no tenant"})
 		return
 	}
-	uid, uerr := tenantOwnerOrFail(r, w)
-	if uerr != nil {
+	if _, uerr := tenantOwnerOrFail(r, w); uerr != nil {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -264,11 +262,14 @@ func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update — COALESCE keeps unspecified fields. version auto-bumps
-	// when any text/tags column changes; approval timestamp lands
-	// when the caller flips Approved=true.
+	// when any text/tags column changes. Approval state changes ONLY
+	// via POST/DELETE /api/v1/clauses/{id}/approve (admin/owner-gated,
+	// see clause_matches_handler.go); PATCH deliberately cannot touch
+	// approved_by/approved_at — tenantOwnerOrFail here checks
+	// authentication only, not role, so honoring an "approved" body
+	// field would let any tenant member self-approve a clause.
 	var out clauseRow
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		approvedSet := in.Approved != nil && *in.Approved
 		_, e := tx.Exec(r.Context(), `
 			UPDATE clauses
 			SET name         = COALESCE($3, name),
@@ -278,11 +279,9 @@ func (h *ClausesHandler) patch(w http.ResponseWriter, r *http.Request) {
 			    version      = CASE WHEN $3 IS NOT NULL OR $4 IS NOT NULL
 			                          OR $5 IS NOT NULL OR $6 IS NOT NULL
 			                        THEN version + 1 ELSE version END,
-			    approved_by  = CASE WHEN $7 THEN $8 ELSE approved_by END,
-			    approved_at  = CASE WHEN $7 THEN NOW() ELSE approved_at END,
 			    updated_at   = NOW()
 			WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
-			tid, id, in.Name, in.BodyText, in.Jurisdiction, in.Tags, approvedSet, uid,
+			tid, id, in.Name, in.BodyText, in.Jurisdiction, in.Tags,
 		)
 		if e != nil {
 			return e

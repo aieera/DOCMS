@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +114,7 @@ func newTestTenant(t *testing.T) (context.Context, uuid.UUID) {
 
 	mux := http.NewServeMux()
 	NewClauseMatchesHandler(pool).Register(mux)
+	NewClausesHandler(pool).Register(mux)
 
 	testPool = pool
 	testMux = mux
@@ -335,4 +337,39 @@ func TestClauseApprove_SetsAndRevokes(t *testing.T) {
 
 	resp = doAuthedJSON(t, "POST", "/api/v1/clauses/"+clauseID.String()+"/approve", nil, "member")
 	require.Equal(t, 403, resp.Code)
+}
+
+// TestClausePatch_CannotTouchApproval closes the gap where PATCH
+// /api/v1/clauses/{id} used to honor an "approved" body field gated only
+// by tenantOwnerOrFail (authentication only, despite the name — see
+// clauses_handler.go). Approval must flow ONLY through the dedicated,
+// admin/owner-gated POST/DELETE .../approve endpoints. This asserts the
+// field is inert for both an unprivileged member and an owner.
+func TestClausePatch_CannotTouchApproval(t *testing.T) {
+	ctx, tenant := newTestTenant(t)
+	clauseID, _, _ := seedClauseWorld(ctx, t, tenant)
+
+	// As "member": the rename applies (PATCH is authenticated-tenant-gated,
+	// not role-gated), but the approval flag is ignored.
+	resp := doAuthedJSON(t, "PATCH", "/api/v1/clauses/"+clauseID.String(),
+		strings.NewReader(`{"name":"Renamed","approved":true}`), "member")
+	require.Equal(t, 200, resp.Code)
+	body := decodeMap(t, resp)
+	require.Equal(t, "Renamed", body["name"])
+
+	var approvedAt *time.Time
+	require.NoError(t, testPool.QueryRow(ctx, `
+		SELECT approved_at FROM clauses WHERE tenant_id = $1 AND id = $2`,
+		tenant, clauseID).Scan(&approvedAt))
+	require.Nil(t, approvedAt, "member PATCH must not set approved_at")
+
+	// As "owner": still inert — the field is dead code, not role-gated.
+	resp = doAuthedJSON(t, "PATCH", "/api/v1/clauses/"+clauseID.String(),
+		strings.NewReader(`{"approved":true}`), "owner")
+	require.Equal(t, 200, resp.Code)
+
+	require.NoError(t, testPool.QueryRow(ctx, `
+		SELECT approved_at FROM clauses WHERE tenant_id = $1 AND id = $2`,
+		tenant, clauseID).Scan(&approvedAt))
+	require.Nil(t, approvedAt, "owner PATCH must not set approved_at either — approval is /approve-only")
 }

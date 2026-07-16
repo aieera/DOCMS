@@ -79,8 +79,10 @@ function ClausesPage() {
       qc.invalidateQueries({ queryKey: ['clauses'] })
       // Keep the detail pane in sync immediately (same treatment the
       // Edit flow applies via onSaved → setSelected). approveClause
-      // returns void, so stamp a client-side approved_at; the ['clauses']
-      // refetch then replaces it with the server's authoritative value.
+      // returns void, so stamp a client-side approved_at; `selected` is a
+      // disconnected local copy that the ['clauses'] refetch never
+      // touches, but only its truthiness (approved vs not) drives the UI
+      // here, so this optimistic patch is sufficient and stays correct.
       setSelected((s) => (s ? { ...s, approved_at: new Date().toISOString() } : s))
       toast.success('Clause approved')
     },

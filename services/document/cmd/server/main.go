@@ -905,8 +905,11 @@ func main() {
 	))
 
 	// ADR 0104 — clause library CRUD + search. Five routes share one
-	// SessionAuth chain; admin/owner role check is enforced inside
-	// the mutating handlers via tenantOwnerOrFail.
+	// SessionAuth chain; tenantOwnerOrFail (misleading name) only
+	// checks authentication, so mutating clause CRUD here is
+	// authenticated-tenant-gated, not role-gated. Approval state is
+	// separately admin/owner-gated via the dedicated POST/DELETE
+	// /api/v1/clauses/{id}/approve endpoints below.
 	clMux := http.NewServeMux()
 	handler.NewClausesHandler(pool).Register(clMux)
 	clauseAuth := middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(clMux)

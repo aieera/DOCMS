@@ -4,8 +4,8 @@ Chained AFTER generate_embeddings in the ocr_completed fan-out (the
 document's chunks must already be in Qdrant). For each non-deleted
 clause in the tenant's library: ensure a cached embedding
 (clause_embeddings, keyed by body_sha256 — self-healing on edit), run
-one Qdrant search filtered to this document's chunks, and record a
-clause_matches row when cosine score >= settings.clause_match_threshold.
+one Qdrant search filtered to this document version's chunks, and record
+a clause_matches row when cosine score >= settings.clause_match_threshold.
 Idempotent per (tenant, document, version): delete-then-insert.
 """
 from __future__ import annotations
