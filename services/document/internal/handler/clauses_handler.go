@@ -3,13 +3,16 @@
 // Five endpoints:
 //   GET    /api/v1/clauses           — list, with ?q=, ?jurisdiction=, ?tag=, ?limit=
 //   GET    /api/v1/clauses/{id}      — single
-//   POST   /api/v1/clauses           — create (admin/owner only at mount site)
-//   PATCH  /api/v1/clauses/{id}      — update + auto-bump version
+//   POST   /api/v1/clauses           — create
+//   PATCH  /api/v1/clauses/{id}      — update + auto-bump version (cannot
+//                                      touch approval state — that flows
+//                                      only through the admin/owner-gated
+//                                      /approve endpoints)
 //   DELETE /api/v1/clauses/{id}      — soft delete
 //
-// All routes use SessionAuth at the mount site (sets tenant + user
-// on ctx). RLS handles tenant isolation; admin/owner check is at the
-// mount layer for the mutating routes.
+// All routes use SessionAuth at the mount site (sets tenant + user on
+// ctx); mutations here are authenticated-tenant-gated (tenantOwnerOrFail
+// checks authentication only, NOT role). RLS handles tenant isolation.
 package handler
 
 import (
