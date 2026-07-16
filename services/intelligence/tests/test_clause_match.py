@@ -79,21 +79,12 @@ def test_consumer_chains_detect_after_embed():
 
 
 def test_detect_clauses_registered_with_celery():
-    """worker.py must include app.tasks.clause_match — without the
-    include, the chain dispatch silently no-ops (the task name is
-    unknown to the worker). This was a real production-dead bug: the
-    task existed but was never registered."""
-    from app.worker import celery_app
-    celery_app.loader.import_default_modules()
-    assert "app.tasks.clause_match.detect_clauses" in celery_app.tasks
-
-
-def test_detect_clauses_registered_with_celery():
     """worker.py must list app.tasks.clause_match in the Celery include —
-    without it, the embed→detect chain dispatch silently no-ops (the task
-    name is unknown to the worker). Real dead-in-production bug found in
-    the Task 6 live e2e. NOTE: assert on conf.include, NOT celery_app.tasks:
-    this test file's own imports register the task in the registry, so a
-    registry check passes even when the worker config is broken."""
+    without it, the embed→detect chain dies on dispatch (the worker logs
+    a KeyError for the unregistered task name and the chain never runs).
+    Real dead-in-production bug found in the Task 6 live e2e. NOTE:
+    assert on conf.include, NOT celery_app.tasks: this test file's own
+    imports register the task in the registry, so a registry check
+    passes even when the worker config is broken."""
     from app.worker import celery_app
     assert "app.tasks.clause_match" in celery_app.conf.include

@@ -267,3 +267,10 @@ scoped — see below.
   measurably dilutes the mean-pooled sentence-embedding similarity
   below the 0.80 threshold — a real multi-page contract naturally
   avoids this because each clause-sized window becomes its own chunk.
+
+Known limitation found in the same live pass (not clause-specific):
+the intelligence NATS consumer's OCR mime-gate does not admit
+`text/plain` uploads, so plain-text documents never reach OCR — and
+therefore never reach embeddings or clause detection. PDFs and images
+flow normally. Tracked as a general OCR-pipeline follow-up, outside
+this ADR's scope.
