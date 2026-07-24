@@ -11,12 +11,13 @@
 #
 # Env (defaults target the compose stack):
 #   GATEWAY_URL  (default http://localhost:8080)   — Kong public proxy
-#   PREVIEW_URL  (default http://localhost:8087)   — preview API direct (internal path)
+#   PREVIEW_URL  (default http://localhost:8193)   — preview API direct (internal path)
 #   REDIS_URL / MINIO_*  — seeded fixtures
 set -euo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
-PREVIEW_URL="${PREVIEW_URL:-http://localhost:8087}"
+# 8193, not 8087 — 8087 is audit's health port; see docker-compose preview.
+PREVIEW_URL="${PREVIEW_URL:-http://localhost:8193}"
 SERVICE_KEY="${SEDOC_SERVICE_API_KEY:-dev-service-key-rotate-in-prod}"
 TENANT="11111111-1111-1111-1111-111111111111"
 DOC="22222222-2222-2222-2222-222222222222"

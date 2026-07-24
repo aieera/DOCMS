@@ -770,7 +770,10 @@ services:
     # Host port for the deploy-shaped smoke (scripts/preview-gateway-smoke.sh)
     # to reach the service-authed internal watermark path directly, as the
     # document service does in-cluster. Public traffic goes via the gateway.
-    ports: ["8087:8080"]
+    # 8193, not 8087 — 8087 is audit's published health port (8087:8081);
+    # the original 8087:8080 mapping collided and this container could
+    # never start alongside audit. 819x matches the service-HTTP convention.
+    ports: ["8193:8080"]
     depends_on:
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }

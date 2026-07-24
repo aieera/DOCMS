@@ -267,6 +267,12 @@ export default defineConfig(({ command, mode }) => {
             '/api/v1/uploads/predict':          wsig('http://localhost:8182'),
             // ADR 0104 — clause library (document service).
             '/api/v1/clauses':                  wsig('http://localhost:8182'),
+            // Python preview API (docker-compose preview-api, host 8193 —
+            // 819x service-HTTP convention; 8087 is audit's health port).
+            // Browser code doesn't call it today (previews stream via the
+            // document/storage URL), but routes.yaml declares it public and
+            // the devProxyCoverage guard keeps this map in lockstep.
+            '/api/v1/previews':                 wsig('http://localhost:8193'),
             '/api':                             wsig('http://localhost:8180'),
             // ADR 0110 — Residency admin page fetches /healthz directly
             // (not under /api) to read the cluster `region` field. Route
