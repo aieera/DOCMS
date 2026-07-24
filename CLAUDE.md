@@ -11,7 +11,7 @@ SeDoc — multi-tenant enterprise Document Management System.
 - **1 Node service**: `services/collaboration` (Yjs, on :8083).
 - **1 JVM signer**: `services/signature-signer` (Kotlin/Gradle, PDF signing) — companion to the Go `signature` service.
 - **Clients/edges**: `web/` (React/Vite), `extension/` (browser), `addins/{outlook,word}` (Office add-ins, ADR 0112/0113), `mobile/`.
-- **Go tooling binaries** in `cmd/`: `dms-admin`, `dms-installer`, `license-gen`.
+- **Go tooling binaries** in `cmd/`: `dms-admin`, `dms-sync`, `license-gen`.
 
 Not every directory under `services/` is a Go module — only the 13 above are in `go.work`; the Python/Node/JVM services build via their own toolchains and Dockerfiles. Protobufs in `proto/` are the source of truth for service APIs and generate into `proto/gen/go`.
 

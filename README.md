@@ -6,7 +6,7 @@ Enterprise Document Management System. Multi-tenant, region-aware, policy-enforc
 
 | Layer          | Tech                                  |
 |----------------|---------------------------------------|
-| Backend        | Go 1.22+ (workspaces, gRPC, REST)     |
+| Backend        | Go 1.25+ (workspaces, gRPC, REST)     |
 | Frontend       | React 18 + TypeScript + Vite          |
 | Database       | PostgreSQL 16 (RLS for tenant isolation) |
 | Search         | OpenSearch 2.12                       |

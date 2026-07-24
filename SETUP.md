@@ -4,14 +4,20 @@ This guide gets a fresh clone running with a working login in one command.
 
 ## Prerequisites
 
-- **Docker Desktop 24+** (or Docker Engine + compose plugin)
-- **Go 1.22+**
+- **Docker Desktop 24+** (or Docker Engine + compose plugin).
+  On Windows, Docker Desktop must use the **WSL2 backend with Linux
+  containers** — every SeDoc image is a Linux image.
+- **Go 1.25+** (`go.work` pins `toolchain go1.26.2`; with the default
+  `GOTOOLCHAIN=auto` Go downloads it on first build, which needs internet)
 - **Node.js 20+** with `npm`
 - **Python 3.12+** (only for the intelligence + preview services)
 - **golang-migrate** — `brew install golang-migrate` or `go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
-- **openssl** (for dev secret generation)
+- **openssl** (optional — secret generation falls back to /dev/urandom)
 
-Optional for Python services:
+Optional for Python services (Linux/macOS hosts only — on Windows these
+services run in their Docker containers; the native wheels for libmagic,
+poppler, WeasyPrint/GTK and ffmpeg are impractical to install on a Windows
+host):
 - `pip install -r services/intelligence/requirements.txt`
 - `pip install -r services/preview/requirements.txt`
 
@@ -21,6 +27,20 @@ Optional for Python services:
 git clone https://github.com/aieera/sedoc.git
 cd vaultdms
 make setup
+```
+
+### Alternative: self-contained installer (test servers, Windows)
+
+`./install.sh` (Linux/WSL2) and `install.bat` (Windows, wraps
+`scripts/install/install.ps1`) stand up the same stack but need **only
+Docker on the host** — migrations and seeding run in containers, so Go,
+golang-migrate and openssl are not required. They also handle the
+OpenSearch `vm.max_map_count` kernel requirement that `make setup` assumes
+you've done yourself. Windows specifics: `docs/deploy/windows-test-server.md`.
+
+```bash
+./install.sh              # Linux / WSL2   (add --prebuilt to pull ghcr images)
+install.bat               # Windows        (add -Prebuilt for the same)
 ```
 
 `make setup` runs four steps in sequence:
