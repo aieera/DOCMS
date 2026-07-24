@@ -297,8 +297,10 @@ describe('<DocumentActionsMenu>', () => {
     }))
   })
 
-  it('Copy item is marked aria-disabled and clicking surfaces the "endpoint pending" hint', async () => {
-    const { toast } = await import('sonner')
+  it('Copy item is enabled and opens the copy dialog', async () => {
+    // Copy-to-folder shipped (MoveDocumentDialog mode="copy") — the old
+    // "endpoint pending" stub toast is gone. Guard the real flow: the
+    // item is NOT disabled and selecting it opens the copy dialog.
     const user = userEvent.setup()
     render(wrap(
       <DocumentActionsMenu doc={doc}>
@@ -308,9 +310,11 @@ describe('<DocumentActionsMenu>', () => {
     await user.click(screen.getByRole('button', { name: 'Document actions' }))
 
     const copy = await screen.findByTestId('document-action-copy')
-    expect(copy).toHaveAttribute('aria-disabled', 'true')
+    expect(copy).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(copy)
-    expect(toast.message).toHaveBeenCalledWith(expect.stringMatching(/copy endpoint is pending/i))
+
+    expect(await screen.findByText('Copy document')).toBeInTheDocument()
+    expect(screen.getByTestId('copy-document-submit')).toBeInTheDocument()
   })
 
   it('Manage access item opens the ManageAccessDialog with this document as the target', async () => {
