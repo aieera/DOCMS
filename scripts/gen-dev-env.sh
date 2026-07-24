@@ -15,9 +15,14 @@ if [ ! -f .env.example ]; then
   exit 1
 fi
 
-if ! command -v openssl >/dev/null 2>&1; then
-  echo "openssl required for secret generation" >&2
-  exit 1
+# Secret generation: openssl when available, /dev/urandom otherwise (some
+# minimal test-server images ship without openssl).
+if command -v openssl >/dev/null 2>&1; then
+  rand_b64() { openssl rand -base64 32; }
+  rand_hex() { openssl rand -hex 32; }
+else
+  rand_b64() { head -c 32 /dev/urandom | base64 | tr -d '\n'; }
+  rand_hex() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 fi
 
 cp .env.example .env
@@ -30,12 +35,12 @@ else
   SED_I=(-i '')
 fi
 
-KEK=$(openssl rand -base64 32)
-INTERNAL=$(openssl rand -hex 32)
-COOKIE=$(openssl rand -base64 32)
+KEK=$(rand_b64)
+INTERNAL=$(rand_hex)
+COOKIE=$(rand_b64)
 # Hex (no slashes) so it's sed-safe and matches the compose hint
 # (`openssl rand -hex 32`).
-GATEWAY=$(openssl rand -hex 32)
+GATEWAY=$(rand_hex)
 
 # Escape slashes + ampersands for sed replacement safety.
 esc() { printf '%s' "$1" | sed 's/[\/&]/\\&/g'; }

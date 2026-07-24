@@ -1,11 +1,32 @@
 # One-shot reset: stops everything, rebuilds, restarts services as background jobs.
 # Run from the repo root:  .\restart-dev.ps1
+#
+# Port assignments mirror scripts/run-all-services.sh exactly (svc:grpc:health:http)
+# so the Vite dev proxy (web/vite.config.ts) and inter-service gRPC addrs work
+# identically in both host modes. Infra comes from docker compose, which maps
+# Postgres to host port 15432 (docker-compose.yml "15432:5432").
 
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 
+# Load .env (KEY=VALUE lines) into the process environment. Unlike
+# `set -a; source .env`, values already exported in the shell WIN over
+# .env here (compose-style precedence) -- export to override.
+function Import-DotEnv([string]$Path) {
+  if (-not (Test-Path $Path)) { return }
+  foreach ($line in Get-Content $Path) {
+    if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+      $key = $Matches[1]
+      $val = $Matches[2].Trim()
+      if ($val.Length -ge 2 -and $val.StartsWith('"') -and $val.EndsWith('"')) { $val = $val.Substring(1, $val.Length - 2) }
+      if (-not (Test-Path "env:$key")) { Set-Item -Path "env:$key" -Value $val }
+    }
+  }
+}
+Import-DotEnv "$PSScriptRoot\.env"
+
 Write-Host "==> 1. Stopping any running Go services..." -ForegroundColor Cyan
-$ports = 8180,8181,8182,8184,8185,8186,8187,8188,8189,8190,8194
+$ports = 8180,8181,8182,8183,8184,8185,8186,8187,8188,8189,8190,8191
 foreach ($p in $ports) {
   Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
@@ -15,7 +36,8 @@ Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyC
 Start-Sleep -Seconds 2
 
 Write-Host "==> 2. Verifying Postgres / Redis / NATS are up..." -ForegroundColor Cyan
-$infra = @{ "postgres" = 5432; "redis" = 6379; "nats" = 4222 }
+# Compose host mappings: postgres 15432->5432, redis 6379, nats 4222.
+$infra = @{ "postgres" = 15432; "redis" = 6379; "nats" = 4222 }
 $missing = @()
 foreach ($k in $infra.Keys) {
   if (-not (Test-NetConnection localhost -Port $infra[$k] -InformationLevel Quiet -WarningAction SilentlyContinue)) {
@@ -30,7 +52,7 @@ if ($missing.Count -gt 0) {
 Write-Host "  ok" -ForegroundColor Green
 
 Write-Host "==> 3. Building all service binaries..." -ForegroundColor Cyan
-$svcs = @("auth","policy","document","search","audit","workflow","notification","signature","storage","connector","billing")
+$svcs = @("auth","policy","document","search","audit","workflow","notification","signature","storage","connector","billing","graphql-gateway")
 New-Item -ItemType Directory -Force -Path .\bin | Out-Null
 foreach ($s in $svcs) {
   Write-Host "  building $s..."
@@ -44,37 +66,67 @@ foreach ($s in $svcs) {
 Write-Host "  all binaries built into .\bin" -ForegroundColor Green
 
 Write-Host "==> 4. Starting services as background jobs..." -ForegroundColor Cyan
-# No hardcoded fallback for SEDOC_GATEWAY_SECRET — the previous default
+# No hardcoded fallback for SEDOC_GATEWAY_SECRET -- the previous default
 # was a globally-known string in the source tree and any deployment that
-# inherited it was forge-able. Require the caller to export it.
+# inherited it was forge-able. Comes from .env (make gen-env) or the caller.
 if (-not $env:SEDOC_GATEWAY_SECRET) {
-  Write-Host "SEDOC_GATEWAY_SECRET is required. Generate one and export it before running this script:" -ForegroundColor Red
+  Write-Host "SEDOC_GATEWAY_SECRET is required. Run 'make gen-env' (WSL/Git Bash) or export it:" -ForegroundColor Red
   Write-Host "  `$env:SEDOC_GATEWAY_SECRET = (openssl rand -hex 32)" -ForegroundColor Yellow
   exit 1
 }
-$GatewaySecret = $env:SEDOC_GATEWAY_SECRET
-$portMap = @{
-  "auth"=8180; "policy"=8181; "document"=8182; "search"=8184; "audit"=8185
-  "workflow"=8186; "notification"=8187; "signature"=8188; "storage"=8189
-  "connector"=8190; "billing"=8194
+if (-not $env:SEDOC_LOCAL_KEK) {
+  Write-Host "  warning: SEDOC_LOCAL_KEK not set (no .env?) -- envelope-crypto features disabled" -ForegroundColor Yellow
 }
+
+# svc -> grpc, health, http -- MUST match scripts/run-all-services.sh.
+$portMap = @{
+  "auth"         = @(9090, 8081, 8180)
+  "policy"       = @(9091, 8082, 8181)
+  "document"     = @(9092, 8083, 8182)
+  "storage"      = @(9093, 8084, 8183)
+  "search"       = @(9094, 8085, 8184)
+  "audit"        = @(9095, 8086, 8185)
+  "workflow"     = @(9096, 8087, 8186)
+  "notification" = @(9097, 8088, 8187)
+  "signature"    = @(9098, 8089, 8188)
+  "billing"      = @(9099, 8090, 8189)
+  "connector"    = @(9100, 8091, 8190)
+  # HTTP-only, but pkg/config validates SEDOC_GRPC_PORT > 0 at boot, so it
+  # gets an unused 9101 (same note as run-all-services.sh). Vite proxies
+  # /api/v1/graphql -> :8191.
+  "graphql-gateway" = @(9101, 8093, 8191)
+}
+
+# Shared per-job environment. Inter-service addrs point at the gRPC ports
+# above (same block as run-all-services.sh).
+$common = @{
+  "SEDOC_GATEWAY_SECRET"       = $env:SEDOC_GATEWAY_SECRET
+  "SEDOC_DATABASE_URL"         = "postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable"
+  "SEDOC_REDIS_URL"            = "localhost:6379"
+  "SEDOC_NATS_URL"             = "nats://localhost:4222"
+  "SEDOC_PUBLIC_URL"           = "http://localhost:3000"
+  "POLICY_SERVICE_ADDR"        = "localhost:9091"
+  "STORAGE_SERVICE_ADDR"       = "localhost:9093"
+  "DOCUMENT_SERVICE_ADDR"      = "localhost:9092"
+  "WORKFLOW_SERVICE_ADDR"      = "localhost:9096"
+  "AUDIT_SERVICE_ADDR"         = "localhost:9095"
+  "COLLABORATION_SERVICE_ADDR" = "localhost:9092"
+  "AUTH_SERVICE_ADDR"          = "localhost:9090"
+}
+if ($env:SEDOC_LOCAL_KEK) { $common["SEDOC_LOCAL_KEK"] = $env:SEDOC_LOCAL_KEK }
+
 foreach ($s in $svcs) {
-  $port = $portMap[$s]
-  Start-Job -Name $s -ArgumentList $s, $port, $PSScriptRoot, $GatewaySecret -ScriptBlock {
-    param($svc, $port, $root, $gatewaySecret)
+  $p = $portMap[$s]
+  Start-Job -Name $s -ArgumentList $s, $p[0], $p[1], $p[2], $PSScriptRoot, $common -ScriptBlock {
+    param($svc, $grpcPort, $healthPort, $httpPort, $root, $commonEnv)
     Set-Location $root
-    $env:SEDOC_HTTP_PORT      = "$port"
-    $env:SEDOC_GRPC_PORT      = "$($port + 1000)"
-    $env:SEDOC_HEALTH_PORT    = "$($port + 2000)"
-    $env:SEDOC_GATEWAY_SECRET = $gatewaySecret
-    $env:SEDOC_DATABASE_URL   = "postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable"
-    $env:SEDOC_REDIS_URL      = "localhost:6379"
-    $env:SEDOC_NATS_URL       = "nats://localhost:4222"
-    $env:SEDOC_LOCAL_KEK      = "dev-32-byte-kek-not-for-production!!"
-    $env:SEDOC_PUBLIC_URL     = "http://localhost:3000"
+    foreach ($k in $commonEnv.Keys) { Set-Item -Path "env:$k" -Value $commonEnv[$k] }
+    $env:SEDOC_GRPC_PORT   = "$grpcPort"
+    $env:SEDOC_HEALTH_PORT = "$healthPort"
+    $env:SEDOC_HTTP_PORT   = "$httpPort"
     & ".\bin\$svc.exe"
   } | Out-Null
-  Write-Host "  $s started on :$port"
+  Write-Host "  $s started on :$($p[2]) (grpc=$($p[0]) health=$($p[1]))"
 }
 
 Write-Host "==> 5. Waiting up to 30s for services to bind ports..." -ForegroundColor Cyan
@@ -83,7 +135,7 @@ $ready = @{}
 while ((Get-Date) -lt $deadline -and $ready.Count -lt $svcs.Count) {
   foreach ($s in $svcs) {
     if (-not $ready.ContainsKey($s)) {
-      if (Test-NetConnection localhost -Port $portMap[$s] -InformationLevel Quiet -WarningAction SilentlyContinue) {
+      if (Test-NetConnection localhost -Port $portMap[$s][2] -InformationLevel Quiet -WarningAction SilentlyContinue) {
         $ready[$s] = $true
         Write-Host "  $s ready" -ForegroundColor Green
       }

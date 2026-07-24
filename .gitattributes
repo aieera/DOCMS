@@ -11,6 +11,11 @@ proto/gen/** linguist-generated=true
 web/src/routeTree.gen.ts linguist-generated=true
 web/package-lock.json linguist-generated=true
 
+# Windows cmd.exe misparses LF-only batch files in edge cases (goto/labels);
+# these two are the only extensions that must check out with CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Binary blobs: skip text normalization.
 *.png binary
 *.jpg binary

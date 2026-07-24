@@ -13,7 +13,11 @@
 # per compose merge rules when both are specified — compose pulls
 # the pre-built image instead of re-building from Dockerfile.
 
-name: vaultdms-dev
+# Must match docker-compose.yml — top-level `name:` is last-file-wins, and a
+# different value here forks the stack into a second project (fresh network +
+# volumes, colliding container_names) and silently breaks every bare
+# `docker compose ps` health wait. Stale `vaultdms-dev` bit exactly that way.
+name: sedoc-dev
 
 services:
   # ---- Go services (11) --------------------------------------------------
