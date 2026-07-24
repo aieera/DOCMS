@@ -264,6 +264,21 @@ def _check_air_gapped(config: dict[str, Any], provider: str) -> None:
         )
 
 
+# ---- credential scoping ---------------------------------------------
+
+def _credentials_for(config: dict[str, Any], provider: str) -> tuple[str | None, str | None]:
+    """Return (api_key, base_url) ONLY when they belong to `provider`.
+
+    The tenant config's api_key is provider-specific. Handing it to a
+    different provider (e.g. a hard-coded anthropic model_override on
+    an OpenAI-configured tenant) sent the OpenAI key to Anthropic —
+    "invalid x-api-key" on every /rag/query. On mismatch return None so
+    litellm falls back to the provider's own env key."""
+    if config.get("provider") == provider:
+        return config.get("api_key"), config.get("base_url")
+    return None, None
+
+
 # ---- public entry point ---------------------------------------------
 
 @dataclass
@@ -348,8 +363,6 @@ def route_completion(
 
     primary_model = model_override or config.get("model") or settings.default_llm_model
     fallback_model = config.get("fallback_model") or ""
-    api_key = config.get("api_key")
-    api_base = config.get("base_url")
 
     primary_provider = resolve_provider(primary_model)
     _check_air_gapped(config, primary_provider)
@@ -371,12 +384,15 @@ def route_completion(
             log.info("skipping fallback %s — provider %s blocked by air-gapped",
                      attempt_model, attempt_provider)
             continue
+        # Per-attempt credential scoping: the tenant key only flows to
+        # its own provider (see _credentials_for).
+        attempt_key, attempt_base = _credentials_for(config, attempt_provider)
         try:
             resp, provider = _try_call(
                 tenant_id=tenant_id,
                 model=attempt_model,
-                api_key=api_key,
-                api_base=api_base,
+                api_key=attempt_key,
+                api_base=attempt_base,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,

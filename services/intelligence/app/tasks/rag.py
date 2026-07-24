@@ -104,6 +104,18 @@ def _build_context(chunks: list[dict], max_tokens: int = 4000) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _rank_by_score(scores: list[float], chunks: list[dict], top_n: int) -> list[dict]:
+    """Order chunks by rerank score (desc) and keep the top_n.
+
+    MUST key on the score alone: bare sorted(zip(scores, chunks))
+    falls through to comparing the chunk DICTS whenever two scores tie
+    (TypeError: '<' not supported between 'dict' and 'dict'), and tie
+    scores are the norm when the reranker falls back to uniform
+    scoring — this 500ed every /ask with tied candidates."""
+    ranked = sorted(zip(scores, chunks), key=lambda p: p[0], reverse=True)
+    return [c for _, c in ranked[:top_n]]
+
+
 def _retrieve(
     *,
     tenant_id: str,
@@ -127,8 +139,7 @@ def _retrieve(
     top_20_texts = [c["text"] for c in fused[:20]]
     if top_20_texts:
         scores = rerank(question, top_20_texts)
-        ranked_pairs = sorted(zip(scores, fused[:20]), reverse=True)
-        return [c for _, c in ranked_pairs[:top_k]]
+        return _rank_by_score(scores, fused[:20], top_k)
     return fused[:top_k]
 
 
@@ -378,8 +389,7 @@ def ask(
     top_20_texts = [c["text"] for c in fused[:20]]
     if top_20_texts:
         scores = rerank(question, top_20_texts)
-        ranked_pairs = sorted(zip(scores, fused[:20]), reverse=True)
-        top_chunks = [c for _, c in ranked_pairs[:5]]
+        top_chunks = _rank_by_score(scores, fused[:20], 5)
     else:
         top_chunks = fused[:5]
 

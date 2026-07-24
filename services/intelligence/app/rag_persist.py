@@ -31,12 +31,17 @@ async def get_workspace_ai_settings(
     *, tenant_id: str, workspace_id: str | None,
 ) -> dict[str, Any]:
     """Return {rag_enabled, answer_model, rag_queries_per_day} for the
-    workspace. Falls back to the schema defaults on missing row or
-    tenant-wide queries (workspace_id=None)."""
+    workspace.
+
+    answer_model is None on the fallback paths (no row / tenant-wide
+    query): None means "defer to the tenant's ADR-0081 LLM routing".
+    Forcing DEFAULT_ANSWER_MODEL here overrode the tenant's configured
+    provider on every /rag/query — an OpenAI tenant was pushed onto an
+    anthropic model. Only an explicitly stored row pins a model."""
     if not workspace_id:
         return {
             "rag_enabled": True,
-            "answer_model": DEFAULT_ANSWER_MODEL,
+            "answer_model": None,
             "rag_queries_per_day": DEFAULT_RAG_QUERIES_PER_DAY,
         }
     pool = await get_pool()
@@ -56,12 +61,20 @@ async def get_workspace_ai_settings(
     if not row:
         return {
             "rag_enabled": True,
-            "answer_model": DEFAULT_ANSWER_MODEL,
+            "answer_model": None,  # defer to tenant LLM routing
             "rag_queries_per_day": DEFAULT_RAG_QUERIES_PER_DAY,
         }
+    # A stored answer_model equal to the schema default is NOT an
+    # explicit choice — the upsert COALESCEs it in whenever an admin
+    # saves without touching the model field. Deferring it to tenant
+    # routing is identical for anthropic-configured tenants and fixes
+    # the provider mismatch for everyone else.
+    stored_model = row["answer_model"]
+    if stored_model == DEFAULT_ANSWER_MODEL:
+        stored_model = None
     return {
         "rag_enabled": bool(row["rag_enabled"]),
-        "answer_model": row["answer_model"],
+        "answer_model": stored_model,
         "rag_queries_per_day": int(row["rag_queries_per_day"]),
     }
 
