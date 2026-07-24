@@ -5,6 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/aieera/sedoc/pkg/auth"
 )
 
 func newMux(t *testing.T) *http.ServeMux {
@@ -83,27 +87,53 @@ func TestCreateWebhook_RequiresBodyFields(t *testing.T) {
 	}
 }
 
-func TestGetAuthURL_ReturnsStubForAnyProvider(t *testing.T) {
-	// /auth-url is a stub that just echoes the provider back. Regression
-	// guard so a future real implementation still emits the provider.
+// The auth-url stub era ended with ADR 0111: google (and m365 via its
+// dedicated route) run real OAuth, and every other provider is rejected
+// up front. These tests pin the validation layer that runs BEFORE the
+// service call — newMux wires a nil svc, so reaching svc would panic,
+// which is itself a guard that validation stays in front.
+
+func TestGetAuthURL_RequiresTenant(t *testing.T) {
 	mux := newMux(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/google/auth-url", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte(`"provider":"salesforce"`)) {
-		t.Errorf("response missing provider echo: %s", w.Body.String())
+	if !bytes.Contains(w.Body.Bytes(), []byte("tenant required")) {
+		t.Errorf("response missing tenant error: %s", w.Body.String())
 	}
 }
 
-func TestOAuthCallback_ReturnsStubForAnyProvider(t *testing.T) {
+func TestGetAuthURL_RejectsUnsupportedProvider(t *testing.T) {
+	mux := newMux(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/salesforce/auth-url", nil)
+	// getAuthURL reads the tenant from the auth context (stamped by the
+	// middleware newMux skips), not the raw header — inject it directly.
+	req = req.WithContext(auth.SetTenantID(req.Context(), uuid.New()))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("provider not yet supported: salesforce")) {
+		t.Errorf("response missing unsupported-provider error: %s", w.Body.String())
+	}
+}
+
+func TestOAuthCallback_RequiresCodeAndState(t *testing.T) {
+	// The legacy per-provider callback delegates to the unified handler,
+	// which rejects before any provider dispatch when code/state are
+	// missing (the HMAC-signed state is the provider authority).
 	mux := newMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/google/callback", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("code and state required")) {
+		t.Errorf("response missing code/state error: %s", w.Body.String())
 	}
 }
