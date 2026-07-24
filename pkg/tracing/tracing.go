@@ -18,6 +18,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -54,6 +55,26 @@ func sampleRatio() float64 {
 	return r
 }
 
+// parseOTLPEndpoint normalizes OTEL_EXPORTER_OTLP_ENDPOINT for
+// otlptracehttp.WithEndpoint, which wants bare host:port. The env var's
+// OTel-spec convention is a full URL (http://jaeger:4318) — passing that
+// through verbatim made the exporter percent-encode the scheme into the
+// path ("http://http:%2F%2Fjaeger:4318/v1/traces"), so every export
+// failed and the retry spammed the logs. Strips the scheme (and any
+// trailing slash) and derives TLS from it: https → secure, anything
+// else → insecure. (WithEndpointURL would do this natively, but the
+// exporter is pinned below v1.21 where it was introduced.)
+func parseOTLPEndpoint(raw string) (hostPort string, insecure bool) {
+	insecure = true
+	hostPort = raw
+	if rest, ok := strings.CutPrefix(raw, "https://"); ok {
+		hostPort, insecure = rest, false
+	} else if rest, ok := strings.CutPrefix(raw, "http://"); ok {
+		hostPort = rest
+	}
+	return strings.TrimSuffix(hostPort, "/"), insecure
+}
+
 // Init sets up the global TracerProvider with an OTLP HTTP exporter and
 // the W3C propagator. Call the returned shutdown func in a defer from
 // main(). Callers should gate on Enabled() first. Sampling is
@@ -67,10 +88,12 @@ func Init(ctx context.Context, serviceName, version string) (func(context.Contex
 		endpoint = "http://tempo:4318"
 	}
 
-	exporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(endpoint),
-		otlptracehttp.WithInsecure(),
-	)
+	hostPort, insecure := parseOTLPEndpoint(endpoint)
+	opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(hostPort)}
+	if insecure {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+	exporter, err := otlptracehttp.New(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -256,3 +256,28 @@ func TestEnabled_Gate(t *testing.T) {
 		t.Error("Enabled() should be true when OTEL_EXPORTER_OTLP_ENDPOINT is set")
 	}
 }
+
+func TestParseOTLPEndpoint(t *testing.T) {
+	// The OTEL_EXPORTER_OTLP_ENDPOINT convention is a full URL
+	// (http://jaeger:4318), but otlptracehttp.WithEndpoint wants bare
+	// host:port — passing the URL form produced the broken
+	// "http://http:%2F%2Fjaeger:4318/v1/traces" export target that
+	// spammed every service's logs and silently dropped all traces.
+	cases := []struct {
+		in           string
+		wantHostPort string
+		wantInsecure bool
+	}{
+		{"http://jaeger:4318", "jaeger:4318", true},
+		{"https://otel.example.com:4318", "otel.example.com:4318", false},
+		{"tempo:4318", "tempo:4318", true},
+		{"http://tempo:4318/", "tempo:4318", true},
+	}
+	for _, tc := range cases {
+		hostPort, insecure := parseOTLPEndpoint(tc.in)
+		if hostPort != tc.wantHostPort || insecure != tc.wantInsecure {
+			t.Errorf("parseOTLPEndpoint(%q) = (%q, %v), want (%q, %v)",
+				tc.in, hostPort, insecure, tc.wantHostPort, tc.wantInsecure)
+		}
+	}
+}
