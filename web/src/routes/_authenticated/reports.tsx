@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { dimensionLabel } from '@/lib/reportFormat'
+import { dimensionLabel, formatCell } from '@/lib/reportFormat'
 
 export const Route = createFileRoute('/_authenticated/reports')({
   component: ReportsPage,
@@ -239,14 +239,17 @@ function ReportsPage() {
               ))}
             </div>
 
+            {/* min-w-0 lets the native date inputs shrink inside the
+                narrow builder column — without it their intrinsic
+                min-width pushes the To field past the card edge. */}
             <div className="flex gap-2">
-              <label className="flex-1 text-xs">
+              <label className="min-w-0 flex-1 text-xs">
                 From
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8" />
+                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 min-w-0" />
               </label>
-              <label className="flex-1 text-xs">
+              <label className="min-w-0 flex-1 text-xs">
                 To
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8" />
+                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 min-w-0" />
               </label>
             </div>
 
@@ -314,7 +317,9 @@ function ReportsPage() {
                     {result.rows.map((row, i) => (
                       <tr key={i} className="border-b border-border last:border-0">
                         {row.map((v, j) => (
-                          <td key={j} className="px-3 py-1.5">{String(v ?? '')}</td>
+                          // Columns are dims-first then measures (QueryResult
+                          // contract) — j < resultDimCount identifies dims.
+                          <td key={j} className="px-3 py-1.5">{formatCell(v, j < resultDimCount)}</td>
                         ))}
                       </tr>
                     ))}

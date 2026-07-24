@@ -22,8 +22,14 @@ func TestCompile_GoldenDocumentsByClass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The From includes the users/workspaces name-joins so the
+	// created_by / workspace_id dimensions render display names instead
+	// of raw UUIDs (join keys are the tables' unique (tenant_id, id), so
+	// unused joins are prunable and never fan out rows).
 	want := "SELECT t.document_class AS document_class, count(*) AS count " +
 		"FROM documents t " +
+		"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by " +
+		"LEFT JOIN workspaces w ON w.tenant_id = t.tenant_id AND w.id = t.workspace_id " +
 		"WHERE t.tenant_id = $1 AND t.deleted_at IS NULL " +
 		"GROUP BY t.document_class " +
 		"ORDER BY count(*) DESC, t.document_class LIMIT 100"
@@ -58,7 +64,15 @@ func TestCompile_GoldenVersionsFiltered(t *testing.T) {
 	want := "SELECT to_char(date_trunc('month', t.created_at), 'YYYY-MM') AS created_month, " +
 		"coalesce(t.mime_type,'') AS mime_type, " +
 		"count(*) AS count, coalesce(sum(t.size_bytes),0) AS total_size_bytes " +
-		"FROM versions t JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id " +
+		// document_versions — the real table (migration 000002). The
+		// registry originally said "versions", which doesn't exist, so
+		// every versions-dataset query 500ed at execution time; the
+		// golden blessed the bad name because it never touches a DB.
+		// users/workspaces joins resolve created_by / workspace_id to
+		// display names (same rationale as the documents golden above).
+		"FROM document_versions t JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id " +
+		"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by " +
+		"LEFT JOIN workspaces w ON w.tenant_id = t.tenant_id AND w.id = d.workspace_id " +
 		"WHERE t.tenant_id = $1 AND d.deleted_at IS NULL " +
 		"AND d.document_class IN ($2) " +
 		"AND coalesce(t.mime_type,'') IN ($3, $4) " +

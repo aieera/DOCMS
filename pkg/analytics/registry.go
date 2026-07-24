@@ -43,8 +43,15 @@ type Dataset struct {
 // Registry is the full whitelist, keyed by dataset name.
 var Registry = map[string]Dataset{
 	"documents": {
-		Name:      "documents",
-		From:      "documents t",
+		Name: "documents",
+		// users/workspaces LEFT JOINs resolve the created_by /
+		// workspace_id dimensions to display names — raw UUIDs in the
+		// report table/chart/CSV are unreadable. Join keys are the
+		// tables' unique (tenant_id, id), so rows never fan out and the
+		// planner can prune the joins when the dims aren't selected.
+		From: "documents t " +
+			"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by " +
+			"LEFT JOIN workspaces w ON w.tenant_id = t.tenant_id AND w.id = t.workspace_id",
 		BaseWhere: "t.deleted_at IS NULL",
 		Dimensions: dims(
 			Dimension{Name: "document_class", SQL: "t.document_class"},
@@ -52,8 +59,8 @@ var Registry = map[string]Dataset{
 			Dimension{Name: "doc_type", SQL: "t.doc_type"},
 			Dimension{Name: "mime_type", SQL: "coalesce(t.mime_type,'')"},
 			Dimension{Name: "region_pin", SQL: "t.region_pin"},
-			Dimension{Name: "workspace_id", SQL: "t.workspace_id::text"},
-			Dimension{Name: "created_by", SQL: "coalesce(t.created_by::text,'')"},
+			Dimension{Name: "workspace_id", SQL: "coalesce(w.name, t.workspace_id::text)"},
+			Dimension{Name: "created_by", SQL: "coalesce(u.display_name, u.email, t.created_by::text, '')"},
 			Dimension{Name: "created_day", SQL: "to_char(date_trunc('day', t.created_at), 'YYYY-MM-DD')"},
 			Dimension{Name: "created_month", SQL: "to_char(date_trunc('month', t.created_at), 'YYYY-MM')"},
 		),
@@ -65,14 +72,19 @@ var Registry = map[string]Dataset{
 	"versions": {
 		Name: "versions",
 		// Join documents for workspace scoping dims; the version row
-		// carries its own tenant_id for the predicate.
-		From:      "versions t JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id",
+		// carries its own tenant_id for the predicate. The table is
+		// document_versions (migration 000002) — there is no "versions".
+		// users/workspaces joins: same name-resolution rationale as the
+		// documents dataset (created_by is the VERSION author here).
+		From: "document_versions t JOIN documents d ON d.tenant_id = t.tenant_id AND d.id = t.document_id " +
+			"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.created_by " +
+			"LEFT JOIN workspaces w ON w.tenant_id = t.tenant_id AND w.id = d.workspace_id",
 		BaseWhere: "d.deleted_at IS NULL",
 		Dimensions: dims(
 			Dimension{Name: "mime_type", SQL: "coalesce(t.mime_type,'')"},
-			Dimension{Name: "workspace_id", SQL: "d.workspace_id::text"},
+			Dimension{Name: "workspace_id", SQL: "coalesce(w.name, d.workspace_id::text)"},
 			Dimension{Name: "document_class", SQL: "d.document_class"},
-			Dimension{Name: "created_by", SQL: "coalesce(t.created_by::text,'')"},
+			Dimension{Name: "created_by", SQL: "coalesce(u.display_name, u.email, t.created_by::text, '')"},
 			Dimension{Name: "created_day", SQL: "to_char(date_trunc('day', t.created_at), 'YYYY-MM-DD')"},
 			Dimension{Name: "created_month", SQL: "to_char(date_trunc('month', t.created_at), 'YYYY-MM')"},
 		),
@@ -83,13 +95,16 @@ var Registry = map[string]Dataset{
 		),
 	},
 	"tasks": {
-		Name:      "tasks",
-		From:      "tasks t",
+		Name: "tasks",
+		// users join: assignee_id renders as a display name (same
+		// rationale as the documents dataset's created_by).
+		From: "tasks t " +
+			"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.assignee_id",
 		BaseWhere: "",
 		Dimensions: dims(
 			Dimension{Name: "status", SQL: "t.status"},
 			Dimension{Name: "priority", SQL: "t.priority"},
-			Dimension{Name: "assignee_id", SQL: "coalesce(t.assignee_id::text,'')"},
+			Dimension{Name: "assignee_id", SQL: "coalesce(u.display_name, u.email, t.assignee_id::text, '')"},
 			Dimension{Name: "created_day", SQL: "to_char(date_trunc('day', t.created_at), 'YYYY-MM-DD')"},
 			Dimension{Name: "created_month", SQL: "to_char(date_trunc('month', t.created_at), 'YYYY-MM')"},
 		),
