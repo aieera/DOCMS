@@ -18,15 +18,17 @@ import { useAuthStore } from '@/store/authStore'
 // of the invariant: (1) at most one /auth/me inside the window, (2) one
 // more after it elapses.
 
-// client.ts gates the /auth/me fetch behind hasSessionCookie(), which
-// reads document.cookie for `dms_session=`.
+// client.ts gates the /auth/me fetch behind hasSessionCookie(), which reads
+// document.cookie for `dms_csrf=` — the JS-visible companion of the HttpOnly
+// dms_session cookie (dms_session itself never appears in document.cookie in
+// a real browser).
 function setSessionCookie() {
-  document.cookie = 'dms_session=test-session'
+  document.cookie = 'dms_csrf=test-csrf'
 }
 function clearSessionCookie() {
   // Expire it. jsdom has no API to delete cookies; an immediate expiry
   // is the standard idiom.
-  document.cookie = 'dms_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  document.cookie = 'dms_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
 }
 
 describe('api/client — hydration back-off (M-1)', () => {

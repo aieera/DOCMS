@@ -22,11 +22,19 @@ function readCookie(name: string): string {
 
 const SAFE_METHODS = new Set(['get', 'head', 'options'])
 
-// hasSessionCookie returns true when a dms_session cookie is set, so we
-// can tell "logged-out user firing a query" (let it 401 fast) apart from
-// "logged-in user mid-reload" (wait for /auth/me to populate the store).
+// hasSessionCookie returns true when the browser appears to hold a session,
+// so we can tell "logged-out user firing a query" (let it 401 fast) apart
+// from "logged-in user mid-reload" (wait for /auth/me to populate the store).
+//
+// It checks dms_csrf, NOT dms_session. The real session cookie dms_session is
+// HttpOnly (pkg auth handler setSessionCookie), so document.cookie NEVER
+// exposes it to JS — keying off it made this ALWAYS return false in a real
+// browser, which collapsed sessionIsDead() to always-true and made every 401
+// force a logout+redirect (the "Settings / open document bounces to /login"
+// bug). dms_csrf is the non-HttpOnly companion the auth handler sets and
+// clears in lockstep with dms_session, so it's the JS-visible session signal.
 function hasSessionCookie(): boolean {
-  return document.cookie.split(';').some((c) => c.trim().startsWith('dms_session='))
+  return document.cookie.split(';').some((c) => c.trim().startsWith('dms_csrf='))
 }
 
 // M-1: cooldown window after a failed /auth/me. Without it, a

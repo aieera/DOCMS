@@ -10,11 +10,18 @@ import { useAuthStore } from '@/store/authStore'
 // /auth/me before logging out — if the session is alive, the 401 is
 // surfaced (toast) and the store/URL are left intact.
 
+// Mirror the browser exactly: the real session cookie `dms_session` is
+// HttpOnly and therefore INVISIBLE to document.cookie — only its
+// non-HttpOnly companion `dms_csrf` (set/cleared in lockstep by the auth
+// handler) is readable by JS. A previous version of this test set
+// `dms_session` via document.cookie, which jsdom allows but a real browser
+// never would, so the session-presence check passed in tests while it
+// always returned false in production (every 401 → forced logout).
 function setSessionCookie() {
-  document.cookie = 'dms_session=test-session'
+  document.cookie = 'dms_csrf=test-csrf'
 }
 function clearSessionCookie() {
-  document.cookie = 'dms_session=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  document.cookie = 'dms_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
 }
 
 // window.location.href assignment throws "not implemented" in jsdom;
