@@ -10,8 +10,12 @@ def test_shingles_basic():
 
 
 def test_minhash_similar_texts():
+    # t2 differs from t1 in the LAST word only. With the default shingle
+    # k=5 over a 9-word sentence, a change to the MIDDLE word lands in
+    # every shingle (0 overlap — jaccard 0.0, same as unrelated text),
+    # which is what the old "jumps→leaps" data degenerated to.
     t1 = "the quick brown fox jumps over the lazy dog"
-    t2 = "the quick brown fox leaps over the lazy dog"
+    t2 = "the quick brown fox jumps over the lazy cat"
     t3 = "completely unrelated text about quantum physics and dark matter"
 
     m1 = _minhash(_shingles(t1))

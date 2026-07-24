@@ -19,10 +19,15 @@ from typing import Optional
 from app.db.pool import get_pool
 
 # Shared sub-patterns -------------------------------------------------------
+# _regex_extract applies re.IGNORECASE so LABELS match any casing
+# ("INVOICE #"/"invoice #"). The VALUE anchors below must not inherit
+# that flag — without (?-i:) a sentence like "no invoice fields" would
+# capture "fields" as a document number (the anchor [A-Z0-9] is the
+# deliberate "doc numbers/names start uppercase-or-digit" heuristic).
 _DATE = r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|\w+ \d{1,2},? \d{4})'
 _AMOUNT = r'\$?\s*([\d,]+\.\d{2}|[\d,]{2,})'
-_NUMBER = r'([A-Z0-9][\w\-/]{2,30})'
-_NAME = r'([A-Z][A-Za-z0-9 .,&\'-]{2,60})'
+_NUMBER = r'((?-i:[A-Z0-9])[\w\-/]{2,30})'
+_NAME = r'((?-i:[A-Z])[A-Za-z0-9 .,&\'-]{2,60})'
 
 
 @dataclass(frozen=True)

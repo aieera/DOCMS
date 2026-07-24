@@ -160,7 +160,8 @@ def test_build_summary_aggregates_correctly():
     assert s["pages_needing_review"] == 1
     assert s["min_score"] == pytest.approx(0.50)
     assert s["max_score"] == pytest.approx(0.95)
-    assert s["avg_score"] == pytest.approx((0.95 + 0.50 + 0.85) / 3)
+    # _build_summary rounds avg_score to 4dp before returning.
+    assert s["avg_score"] == pytest.approx(round((0.95 + 0.50 + 0.85) / 3, 4))
     assert s["quality_grade"] == "good"  # 0.766 between good and excellent
 
 

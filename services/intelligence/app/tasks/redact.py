@@ -38,7 +38,11 @@ from app.config import settings
 from app.events.publisher import publish_cloudevent
 from app.tasks.ner import detect_entities
 from app.worker import celery_app
-from app.events.subjects import REDACTION_APPLIED_SUBJECT, VERSION_UPLOADED_SUBJECT
+from app.events.subjects import (
+    NOTIFICATION_SUBJECT,
+    REDACTION_APPLIED_SUBJECT,
+    VERSION_UPLOADED_SUBJECT,
+)
 
 log = logging.getLogger(__name__)
 
@@ -885,7 +889,7 @@ def _notify_redaction_failed(
             "specversion": "1.0",
             "id": str(uuid.uuid4()),
             "source": "dms.intelligence.redact",
-            "type": "dms.notification.send.v1",
+            "type": NOTIFICATION_SUBJECT,
             "time": datetime.now(timezone.utc).isoformat(),
             "datacontenttype": "application/json",
             "tenantid": tenant_id,
@@ -905,7 +909,7 @@ def _notify_redaction_failed(
             },
         }
         asyncio.run(publish_cloudevent(
-            "dms.notification.send.v1", envelope, correlation_id=correlation_id,
+            NOTIFICATION_SUBJECT, envelope, correlation_id=correlation_id,
         ))
     except Exception:
         log.exception("redact: failure notification emit failed")
