@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
@@ -333,6 +334,15 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 			httpErr.Code = http.StatusInternalServerError
 			httpErr.Message = "internal error"
 		}
+	}
+	// 5xx responses must never be silent — the client sees "internal
+	// error" with no cause, so log the real error server-side with the
+	// route + correlation id for triage.
+	if httpErr.Code >= http.StatusInternalServerError {
+		zlog.Error().Err(err).
+			Str("method", r.Method).Str("path", r.URL.Path).
+			Str("correlation_id", corr).Int("status", httpErr.Code).
+			Msg("document handler 5xx")
 	}
 	writeJSONStatus(w, httpErr.Code, httpErr)
 }
