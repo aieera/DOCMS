@@ -42,6 +42,7 @@ import (
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
+	"github.com/aieera/sedoc/services/document/internal/autolink"
 	"github.com/aieera/sedoc/services/document/internal/classification"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
@@ -1530,6 +1531,16 @@ func main() {
 	if js != nil {
 		if cerr := classification.NewConsumer(js, pool, repos, *log.Z()).Start(); cerr != nil {
 			log.Error(ctx).Err(cerr).Msg("classification denorm consumer start failed; sensitivity won't auto-sync from scans")
+		}
+	}
+
+	// ---- Metadata auto-linking ---------------------------------------------
+	// Materialises document relationships (erp_* pointers, shared document
+	// numbers) as contract-graph `references` edges on create/update events.
+	// Best-effort: without NATS the manual edge API still works.
+	if js != nil {
+		if cerr := autolink.NewConsumer(js, autolink.NewStore(pool), *log.Z()).Start(); cerr != nil {
+			log.Error(ctx).Err(cerr).Msg("autolink consumer start failed; relationships won't auto-link")
 		}
 	}
 
