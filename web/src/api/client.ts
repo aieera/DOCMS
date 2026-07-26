@@ -271,8 +271,13 @@ async function sessionIsDead(): Promise<boolean> {
         // through the interceptor below.
         const { data } = await axios.get<User>('/api/v1/auth/me', { withCredentials: true })
         return !data?.tenant_id
-      } catch {
-        return true
+      } catch (probeErr) {
+        // Only an explicit 401 from /auth/me proves the session is gone.
+        // A network error, timeout, 5xx, or gateway 502 means the probe
+        // never got an authoritative answer — treating those as "dead"
+        // destroyed a valid session on every transient backend blip
+        // (the intermittent "auto-logged-out mid-task, retry works" bug).
+        return axios.isAxiosError(probeErr) && probeErr.response?.status === 401
       }
     })().finally(() => {
       sessionProbe = null

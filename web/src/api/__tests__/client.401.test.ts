@@ -101,6 +101,42 @@ describe('api/client — 401 does not destroy a valid session (ERP bug)', () => 
     expect(hrefSpy.value).not.toBe('/login')
   })
 
+  it('keeps the session when the /auth/me probe fails with a 5xx', async () => {
+    server.use(
+      http.get('*/api/v1/documents', () =>
+        HttpResponse.json({ error: 'nope' }, { status: 401 }),
+      ),
+      // The probe hits a transient backend blip (DB restart, pool
+      // exhaustion surfacing as 503/500). That is NOT proof the session
+      // died — logging out here turned every infra hiccup into the
+      // "randomly logged out mid-task" bug.
+      http.get('*/api/v1/auth/me', () =>
+        HttpResponse.json({ error: 'db unavailable' }, { status: 503 }),
+      ),
+    )
+
+    await expect(api.get('/documents')).rejects.toBeDefined()
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(hrefSpy.value).not.toBe('/login')
+  })
+
+  it('keeps the session when the /auth/me probe fails at the network layer', async () => {
+    server.use(
+      http.get('*/api/v1/documents', () =>
+        HttpResponse.json({ error: 'nope' }, { status: 401 }),
+      ),
+      // Proxy restart / container down: the probe never reaches the
+      // backend at all. Same rule — no explicit 401, no logout.
+      http.get('*/api/v1/auth/me', () => HttpResponse.error()),
+    )
+
+    await expect(api.get('/documents')).rejects.toBeDefined()
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    expect(hrefSpy.value).not.toBe('/login')
+  })
+
   it('logs out and redirects when the session is genuinely gone', async () => {
     server.use(
       http.get('*/api/v1/documents', () =>

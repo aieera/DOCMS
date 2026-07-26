@@ -111,10 +111,16 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		// Trust window elapsed: fall through and re-validate.
 	}
 
-	// 2. Postgres fallback.
+	// 2. Postgres fallback. Only "no such session" is an authentication
+	//    verdict — a transient DB failure must propagate as itself, or a
+	//    Postgres blip answers 401 and the web client destroys a valid
+	//    session (the intermittent auto-logout bug).
 	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
 	if err != nil {
-		return nil, vdmserr.ErrUnauthorized
+		if errors.Is(err, vdmserr.ErrNotFound) {
+			return nil, vdmserr.ErrUnauthorized
+		}
+		return nil, err
 	}
 	now := s.clock()
 	if now.After(sess.ExpiresAt) {
@@ -128,6 +134,8 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	}
 
 	// Re-hydrate user to get current email + role (may have changed).
+	// Same not-found-vs-transient split as above: a missing/deleted user
+	// is an auth verdict, a failed transaction is not.
 	var user *model.User
 	if err := database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, sess.TenantID, sess.UserID)
@@ -137,7 +145,10 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		user = u
 		return nil
 	}); err != nil {
-		return nil, vdmserr.ErrUnauthorized
+		if errors.Is(err, vdmserr.ErrNotFound) {
+			return nil, vdmserr.ErrUnauthorized
+		}
+		return nil, err
 	}
 	if user.Status != model.StatusActive {
 		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)

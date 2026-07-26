@@ -26,6 +26,7 @@ package middleware
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -124,11 +125,16 @@ func SessionAuth(cfg SessionAuthConfig) func(http.Handler) http.Handler {
 				  AND u.deleted_at IS NULL
 			`, hash).Scan(&tenantID, &userID, &email, &role, &expires)
 			if err != nil {
-				if err == pgx.ErrNoRows {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// No such session — a genuine authentication verdict.
 					writeUnauthorized(w, r, "authentication required")
 					return
 				}
-				writeUnauthorized(w, r, "authentication required")
+				// Any other error is infrastructure (pool exhausted, DB
+				// restarting, timeout) — NOT proof the session is invalid.
+				// Answering 401 here made every transient blip destroy the
+				// caller's session client-side (intermittent auto-logout).
+				writeUnavailable(w, r, "session validation unavailable")
 				return
 			}
 
