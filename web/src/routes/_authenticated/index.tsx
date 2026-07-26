@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Bell, CheckSquare, Clock, FolderOpen, MessageSquare, PenTool, Search, ShieldAlert, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -22,6 +23,7 @@ function DashboardPage() {
       <PageHeader title={greeting} description="Workspace overview" />
 
       <KpiRow />
+      <PendingSuggestionsCard />
       <QuickActions />
 
       <div className="grid gap-6 lg:grid-cols-2">
