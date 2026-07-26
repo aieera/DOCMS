@@ -155,8 +155,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	h.setSessionCookie(w, res.Session.Token, res.Session.Session.ExpiresAt)
-	h.setCSRFCookie(w, res.Session.Session.ExpiresAt)
+	h.issueSessionCookies(w, res.Session.Token, res.Session.Session.ExpiresAt)
 	h.writeJSON(w, http.StatusOK, loginResponse{
 		SessionToken: res.Session.Token,
 		ExpiresAt:    &res.Session.Session.ExpiresAt,
@@ -182,8 +181,7 @@ func (h *Handler) MFAVerify(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, err)
 		return
 	}
-	h.setSessionCookie(w, sess.Token, sess.Session.ExpiresAt)
-	h.setCSRFCookie(w, sess.Session.ExpiresAt)
+	h.issueSessionCookies(w, sess.Token, sess.Session.ExpiresAt)
 	h.writeJSON(w, http.StatusOK, loginResponse{
 		SessionToken: sess.Token,
 		ExpiresAt:    &sess.Session.ExpiresAt,
@@ -209,8 +207,7 @@ func (h *Handler) MFARecovery(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, err)
 		return
 	}
-	h.setSessionCookie(w, sess.Token, sess.Session.ExpiresAt)
-	h.setCSRFCookie(w, sess.Session.ExpiresAt)
+	h.issueSessionCookies(w, sess.Token, sess.Session.ExpiresAt)
 	h.writeJSON(w, http.StatusOK, loginResponse{
 		SessionToken: sess.Token,
 		ExpiresAt:    &sess.Session.ExpiresAt,

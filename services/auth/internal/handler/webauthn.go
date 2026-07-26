@@ -175,8 +175,7 @@ func (h *Handler) WebAuthnLoginFinish(w http.ResponseWriter, r *http.Request) {
 		h.writeWebAuthnError(w, r, err)
 		return
 	}
-	h.setSessionCookie(w, created.Token, created.Session.ExpiresAt)
-	h.setCSRFCookie(w, created.Session.ExpiresAt)
+	h.issueSessionCookies(w, created.Token, created.Session.ExpiresAt)
 	h.writeJSON(w, http.StatusOK, loginResponse{
 		SessionToken: created.Token,
 		ExpiresAt:    &created.Session.ExpiresAt,

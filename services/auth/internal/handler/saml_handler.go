@@ -79,7 +79,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.main.setSessionCookie(w, result.SessionToken, result.ExpiresAt)
+	h.main.issueSessionCookies(w, result.SessionToken, result.ExpiresAt)
 	target := result.RedirectTo
 	if target == "" {
 		target = "/"

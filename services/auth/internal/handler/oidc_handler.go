@@ -57,7 +57,7 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	h.main.setSessionCookie(w, result.SessionToken, result.ExpiresAt)
+	h.main.issueSessionCookies(w, result.SessionToken, result.ExpiresAt)
 	target := result.RedirectTo
 	if target == "" {
 		target = "/"
