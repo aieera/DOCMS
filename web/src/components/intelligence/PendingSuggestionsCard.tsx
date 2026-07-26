@@ -22,28 +22,32 @@ export function PendingSuggestionsCard() {
   if (q.isError || !q.data || q.data.total === 0) return null
 
   return (
-    <Link
-      to="/admin/tags"
-      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[24px]"
+    // Informational banner, NOT a whole-card link — clicking the count
+    // used to hard-navigate to the tags page, which testers found
+    // surprising. Only the explicit "Review" affordance navigates.
+    // flex-ROW explicitly: WarmCard's base is `flex flex-col`, and
+    // tailwind-merge keeps the base's flex-col unless overridden.
+    <WarmCard
+      padded="sm"
+      className="flex-row items-center gap-3"
       data-testid="pending-suggestions-card"
     >
-      {/* flex-ROW explicitly: WarmCard's base is `flex flex-col`, and
-          tailwind-merge keeps the base's flex-col unless overridden —
-          without this the icon stacked above centered text and the card
-          ballooned to a full hero row. */}
-      <WarmCard padded="sm" className="flex-row items-center gap-3 transition-all hover:-translate-y-0.5 hover:border-primary/50">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/10 text-primary"
-          aria-hidden
-        >
-          <Sparkles className="h-4 w-4" />
-        </span>
-        <p className="min-w-0 truncate text-sm">
-          <span className="font-semibold">{q.data.total}</span>
-          <span className="text-muted-foreground"> AI tag suggestions waiting</span>
-        </p>
-        <span className="ms-auto shrink-0 text-sm font-medium text-primary">Review</span>
-      </WarmCard>
-    </Link>
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/10 text-primary"
+        aria-hidden
+      >
+        <Sparkles className="h-4 w-4" />
+      </span>
+      <p className="min-w-0 truncate text-sm">
+        <span className="font-semibold">{q.data.total}</span>
+        <span className="text-muted-foreground"> AI tag suggestions waiting</span>
+      </p>
+      <Link
+        to="/admin/tags"
+        className="ms-auto shrink-0 rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Review
+      </Link>
+    </WarmCard>
   )
 }

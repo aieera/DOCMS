@@ -19,19 +19,47 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
   const greeting = greet(user?.display_name?.split(' ')[0])
+  // Upload dialog state lives here so BOTH triggers share one dialog:
+  // the header button (always visible, unmistakable) and the Quick-
+  // actions card (click or drop files onto it).
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([])
 
   return (
     <div className="space-y-8">
-      <PageHeader title={greeting} description="Workspace overview" />
+      <PageHeader
+        title={greeting}
+        description="Workspace overview"
+        actions={
+          <Button onClick={() => setUploadOpen(true)} data-testid="header-upload-button">
+            <Upload className="me-1.5 h-4 w-4" aria-hidden /> Upload
+          </Button>
+        }
+      />
 
       <KpiRow />
       <PendingSuggestionsCard />
-      <QuickActions />
+      <QuickActions
+        onUploadClick={() => setUploadOpen(true)}
+        onUploadDrop={(files) => {
+          setDroppedFiles(files)
+          setUploadOpen(true)
+        }}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <OpenTasksCard />
         <RecentActivityCard />
       </div>
+
+      <DashboardUploadDialog
+        open={uploadOpen}
+        onOpenChange={(v) => {
+          setUploadOpen(v)
+          if (!v) setDroppedFiles([])
+        }}
+        initialFiles={droppedFiles}
+      />
     </div>
   )
 }
@@ -229,10 +257,13 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
   { icon: Workflow, label: 'Workflow templates', href: '/workflows', description: 'Reusable approval, signature, notification chains' },
 ]
 
-function QuickActions() {
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [droppedFiles, setDroppedFiles] = useState<File[]>([])
-
+function QuickActions({
+  onUploadClick,
+  onUploadDrop,
+}: {
+  onUploadClick: () => void
+  onUploadDrop: (files: File[]) => void
+}) {
   const cardBody = ({ icon: Icon, label, description, kbd, action }: QuickAction) => (
     <WarmCard
       padded="md"
@@ -283,13 +314,12 @@ function QuickActions() {
               key={qa.label}
               type="button"
               className={cardShell}
-              onClick={() => setUploadOpen(true)}
+              onClick={onUploadClick}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault()
                 const dropped = Array.from(e.dataTransfer.files ?? [])
-                setDroppedFiles(dropped)
-                setUploadOpen(true)
+                onUploadDrop(dropped)
               }}
               data-testid="quick-action-upload"
             >
@@ -302,14 +332,6 @@ function QuickActions() {
           ),
         )}
       </div>
-      <DashboardUploadDialog
-        open={uploadOpen}
-        onOpenChange={(v) => {
-          setUploadOpen(v)
-          if (!v) setDroppedFiles([])
-        }}
-        initialFiles={droppedFiles}
-      />
     </section>
   )
 }
