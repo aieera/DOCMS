@@ -4,7 +4,11 @@ import { api } from './client'
 
 export interface ScimInfo {
   slug: string
+  // configured = a SCIM token hash is already stored on an active SSO config.
   configured: boolean
+  // sso_active = the tenant has an active SSO config to attach a token to.
+  // Rotation 409s without one, so the panel gates the button on this.
+  sso_active: boolean
   base_path: string
 }
 

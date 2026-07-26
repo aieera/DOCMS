@@ -61,15 +61,23 @@ func (h *SCIMAdminHandler) info(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var slug string
-	var configured bool
+	var configured, ssoActive bool
 	_ = h.pool.QueryRow(r.Context(),
 		`SELECT slug FROM organizations WHERE id = $1`, tenantID).Scan(&slug)
 	_ = h.pool.QueryRow(r.Context(), `
 		SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active AND config ? 'scim_token_hash')`,
 		tenantID).Scan(&configured)
+	// sso_active tells the admin panel whether there's an active SSO config
+	// to attach a token to. Without one, rotate 409s ("register an IdP
+	// first"), so the UI gates the button on this rather than inviting a
+	// doomed click. Distinct from `configured` (a token is already set).
+	_ = h.pool.QueryRow(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM sso_configs WHERE tenant_id=$1 AND is_active)`,
+		tenantID).Scan(&ssoActive)
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"slug":       slug,
 		"configured": configured,
+		"sso_active": ssoActive,
 		"base_path":  "/api/v1/scim/v2/" + slug,
 	})
 }
