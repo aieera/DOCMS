@@ -6,19 +6,14 @@ import { toast } from 'sonner'
 import {
   AlertCircle,
   CheckCircle2,
-  CheckSquare,
   Clock,
-  Download,
   Eraser,
   FileText,
   GitBranch,
   History,
-  ArrowLeftRight,
   MessageSquare,
   Network,
   RefreshCw,
-  Share,
-  ShieldCheck,
 } from 'lucide-react'
 
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
@@ -35,6 +30,7 @@ import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
 import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
+import { DocumentHeaderToolbar } from '@/components/documents/DocumentHeaderToolbar'
 import { RealtimePresence } from '@/components/documents/RealtimePresence'
 import { CollaborativeEditor } from '@/components/documents/CollaborativeEditor'
 import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
@@ -255,14 +251,9 @@ export function DocumentDetailBody({
           move are disabled in the actions menu. */}
       <LegalHoldBanner doc={doc} />
 
-      {/* Records management: declare this document as a record (freezes it
-          immutable until disposition) or show its record status. */}
-      <div className="flex justify-end">
-        <DeclareRecordButton documentId={documentId} canManage={isAdminCaller} />
-      </div>
-
-      {/* Audit integrity (Merkle proof) + WORM object-lock status/action. */}
-      <DocumentIntegrity documentId={documentId} canManage={isAdminCaller} />
+      {/* Records + integrity moved into the sidebar (compact-toolbar
+          redesign): they were two full-width header bands that pushed
+          the actual document content below the fold on every open. */}
 
       {/* ADR 0053 — banner appears only when smart_route produced
           pending suggestions for this doc. Self-hides otherwise. */}
@@ -359,6 +350,7 @@ export function DocumentDetailBody({
           doc={doc}
           documentId={documentId}
           versionId={versionId}
+          isAdminCaller={isAdminCaller}
         />
       </div>
     </div>
@@ -496,10 +488,12 @@ function DocumentSidebar({
   doc,
   documentId,
   versionId,
+  isAdminCaller,
 }: {
   doc: any
   documentId: string
   versionId?: string
+  isAdminCaller?: boolean
 }) {
   // `?doctype=note|wiki` lets a freshly-created note open the collaborative
   // editor before its first markdown version exists (the gateway GET doesn't
@@ -510,87 +504,93 @@ function DocumentSidebar({
   const [compareOpen, setCompareOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [manageAccessOpen, setManageAccessOpen] = useState(false)
+
+  // Compact-toolbar redesign: the five full-width buttons became icon
+  // actions so tags/details are visible without scrolling. Download
+  // keeps the cookie-authenticated decrypt-stream alias (see M-4 note
+  // in git history): one URL for every mime type; the `download`
+  // attribute hints the original filename.
+  const handleDownload = () => {
+    if (!versionId) return
+    const a = document.createElement('a')
+    a.href = `/api/v1/documents/${documentId}/versions/${versionId}/download`
+    a.download = doc.title ?? 'document'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
   return (
     <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1">
-      {/* Primary actions — most-used commands surfaced as full-width
-          buttons so they're tap-friendly and never pushed below the
-          fold by intelligence panels. */}
-      <Card className="space-y-2 p-3">
-        {/* M-4: the sidebar Download button used to have no onClick
-            at all — clicking it did nothing for every mime type, not
-            just non-PDFs. Now it points at the cookie-authenticated
-            decrypt-stream alias the image / video / Office viewers
-            already use; the backend handles every blob type, the
-            browser ships the dms_session cookie on the top-frame
-            navigation, and the `download` attribute hints the
-            original filename. We deliberately reuse this single
-            URL across all mimes rather than presigning per type —
-            one path, one failure mode. The LayoutTab keeps its
-            separate `getDownloadURL` presigned-URL path for the
-            PDF viewer's `<Document file=…>` contract; that's an
-            internal viewer URL, not a user "save to disk" action,
-            so it's not part of this unification. */}
-        {versionId ? (
-          <Button asChild variant="outline" size="sm" className="w-full justify-start">
-            <a
-              href={`/api/v1/documents/${documentId}/versions/${versionId}/download`}
-              download={doc.title ?? 'document'}
-              data-testid="sidebar-download"
-            >
-              <Download className="h-4 w-4" /> Download
-            </a>
-          </Button>
-        ) : (
+      {/* Primary actions as a compact icon toolbar. */}
+      <Card className="flex items-center justify-between gap-2 p-2">
+        <DocumentHeaderToolbar
+          onDownload={handleDownload}
+          canDownload={!!versionId}
+          onShare={() => setShareOpen(true)}
+          onCreateTask={() => setTaskOpen(true)}
+          onCompare={() => setCompareOpen(true)}
+          onManageAccess={() => setManageAccessOpen(true)}
+        />
+        <DeclareRecordButton documentId={documentId} canManage={!!isAdminCaller} />
+      </Card>
+
+      {/* Details — fixed metadata block. Surfaces lifecycle, type,
+          size, version count, mime; tags appear inline below if any.
+          Lives at the TOP of the rail (with the AI tag suggestions)
+          so tagging is visible without scrolling — burying it below
+          the intelligence panels made auto-tagging look nonexistent. */}
+      <Card className="p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Details
+        </h3>
+        <dl className="mt-3 space-y-2 text-sm">
+          <Row label="Status">
+            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+          </Row>
+          <Row label="Type">
+            <span className="flex items-center justify-between gap-2">
+              <span>{doc.document_class || 'Unclassified'}</span>
+              <CorrectClassificationButton
+                documentId={documentId}
+                currentCategory={doc.document_class || ''}
+              />
+            </span>
+          </Row>
+          <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
+          <Row label="Versions">{doc.version_count}</Row>
+          <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
+        </dl>
+        {(doc.tags?.length ?? 0) > 0 && (
+          <div className="mt-4 border-t border-border pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tags</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(doc.tags ?? []).map((t: string) => <Badge key={t}>{t}</Badge>)}
+            </div>
+          </div>
+        )}
+        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="w-full justify-start"
-            disabled
-            title="No version uploaded yet"
+            onClick={() => setVersionsOpen(true)}
+            data-testid="open-version-history"
           >
-            <Download className="h-4 w-4" /> Download
+            <History className="h-4 w-4" /> Version history
           </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => setShareOpen(true)}
-          data-testid="open-share-dialog"
-        >
-          <Share className="h-4 w-4" /> Share
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => setTaskOpen(true)}
-          data-testid="create-task-from-doc"
-        >
-          <CheckSquare className="h-4 w-4" /> Create task
-        </Button>
-        {/* ADR 0101 — cross-format compare. */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => setCompareOpen(true)}
-          data-testid="open-compare-dialog"
-        >
-          <ArrowLeftRight className="h-4 w-4" /> Compare with…
-        </Button>
-        {/* Phase 7 — Manage access. The dialog enforces admin via
-            checkPermission inside; non-admins see a read-only view. */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => setManageAccessOpen(true)}
-          data-testid="open-manage-access-dialog"
-        >
-          <ShieldCheck className="h-4 w-4" /> Manage access
-        </Button>
+          <Button variant="ghost" size="sm" className="w-full justify-start">
+            <MessageSquare className="h-4 w-4" /> Comments
+          </Button>
+        </div>
       </Card>
+
+      {/* Pending AI tag suggestions — one-click accept/reject. */}
+      <TagSuggestionsPanel documentId={documentId} />
+
+      {/* Audit integrity (Merkle proof) + WORM object-lock status/action.
+          Moved from the header band (compact-toolbar redesign). */}
+      <DocumentIntegrity documentId={documentId} canManage={!!isAdminCaller} />
       {taskOpen && (
         <CreateTaskDialog
           linkedDocumentId={documentId}
@@ -687,53 +687,6 @@ function DocumentSidebar({
       {/* ADR 0070 / 0071 / 0072 — signatures panel. */}
       <SignaturesPanel documentId={documentId} />
 
-      {/* Details — fixed metadata block. Surfaces lifecycle, type,
-          size, version count, mime; tags appear inline below if any. */}
-      <Card className="p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Details
-        </h3>
-        <dl className="mt-3 space-y-2 text-sm">
-          <Row label="Status">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
-          </Row>
-          <Row label="Type">
-            <span className="flex items-center justify-between gap-2">
-              <span>{doc.document_class || 'Unclassified'}</span>
-              <CorrectClassificationButton
-                documentId={documentId}
-                currentCategory={doc.document_class || ''}
-              />
-            </span>
-          </Row>
-          <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
-          <Row label="Versions">{doc.version_count}</Row>
-          <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
-        </dl>
-        {(doc.tags?.length ?? 0) > 0 && (
-          <div className="mt-4 border-t border-border pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tags</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {(doc.tags ?? []).map((t: string) => <Badge key={t}>{t}</Badge>)}
-            </div>
-          </div>
-        )}
-        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            onClick={() => setVersionsOpen(true)}
-            data-testid="open-version-history"
-          >
-            <History className="h-4 w-4" /> Version history
-          </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start">
-            <MessageSquare className="h-4 w-4" /> Comments
-          </Button>
-        </div>
-      </Card>
-
       {/* Custom fields — cross-references the tenant-defined metadata
           schema (admin → metadata schema) with this document's
           custom_metadata payload. Self-hides when the schema has
@@ -748,8 +701,8 @@ function DocumentSidebar({
 
       {/* Intelligence panels — each component self-hides when it has
           nothing to render, so the sidebar stays compact for docs
-          that haven't reached the relevant pipeline stage yet. */}
-      <TagSuggestionsPanel documentId={documentId} />
+          that haven't reached the relevant pipeline stage yet.
+          (TagSuggestionsPanel moved to the top of the rail.) */}
       {versionId && (
         <TranslationPanel documentId={documentId} versionId={versionId} />
       )}
