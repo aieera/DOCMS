@@ -56,7 +56,11 @@ CONSUMER = "auto_tag"
 
 DEFAULT_CONFIG = {
     "enabled": True,
-    "auto_apply_threshold": 0.95,
+    # Keep in sync with the Go read-path fallback in
+    # services/document/internal/repository/tag_suggestion_repo.go.
+    # 0.95 pushed nearly every AI tag into the pending queue, which made
+    # the whole feature read as "manual tagging only".
+    "auto_apply_threshold": 0.85,
     "suggest_threshold": 0.60,
     "max_tags_per_document": 20,
     "blocked_tags": [],
