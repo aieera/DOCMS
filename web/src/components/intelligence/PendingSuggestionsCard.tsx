@@ -27,19 +27,22 @@ export function PendingSuggestionsCard() {
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[24px]"
       data-testid="pending-suggestions-card"
     >
-      <WarmCard padded="md" className="flex items-center gap-4 transition-all hover:-translate-y-0.5 hover:border-primary/50">
+      {/* flex-ROW explicitly: WarmCard's base is `flex flex-col`, and
+          tailwind-merge keeps the base's flex-col unless overridden —
+          without this the icon stacked above centered text and the card
+          ballooned to a full hero row. */}
+      <WarmCard padded="sm" className="flex-row items-center gap-3 transition-all hover:-translate-y-0.5 hover:border-primary/50">
         <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-muted text-foreground"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/10 text-primary"
           aria-hidden
         >
-          <Sparkles className="h-[1.1rem] w-[1.1rem]" />
+          <Sparkles className="h-4 w-4" />
         </span>
-        <div className="min-w-0">
-          <p className="text-2xl font-semibold leading-tight">{q.data.total}</p>
-          <p className="truncate text-sm text-muted-foreground">
-            AI tag suggestions waiting — review them
-          </p>
-        </div>
+        <p className="min-w-0 truncate text-sm">
+          <span className="font-semibold">{q.data.total}</span>
+          <span className="text-muted-foreground"> AI tag suggestions waiting</span>
+        </p>
+        <span className="ms-auto shrink-0 text-sm font-medium text-primary">Review</span>
       </WarmCard>
     </Link>
   )
