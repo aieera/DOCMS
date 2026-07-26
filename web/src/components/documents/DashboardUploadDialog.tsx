@@ -11,7 +11,7 @@
 // Multi-file batches: prediction runs for the FIRST file only (spec:
 // one destination per batch); remaining files get their tags later from
 // the async auto-tag pipeline.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Upload as UploadIcon, X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -25,10 +25,19 @@ import { FilingSuggestionPanel, type FilingDecision } from './FilingSuggestionPa
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  // Files dropped onto the dashboard Upload card before the dialog
+  // opened — pre-loads the picker so the drop gesture "just works".
+  initialFiles?: File[]
 }
 
-export function DashboardUploadDialog({ open, onOpenChange }: Props) {
-  const [files, setFiles] = useState<File[]>([])
+export function DashboardUploadDialog({ open, onOpenChange, initialFiles }: Props) {
+  const [files, setFiles] = useState<File[]>(initialFiles ?? [])
+
+  // The dialog stays mounted with open=false; a drop on the dashboard
+  // card supplies initialFiles at the moment it opens, so sync then.
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) setFiles(initialFiles)
+  }, [open, initialFiles])
   const [workspaceId, setWorkspaceId] = useState('')
   const [folderId, setFolderId] = useState('')
   const [decision, setDecision] = useState<FilingDecision | null>(null)

@@ -231,14 +231,19 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
 
 function QuickActions() {
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([])
 
-  const cardBody = ({ icon: Icon, label, description, kbd }: QuickAction) => (
+  const cardBody = ({ icon: Icon, label, description, kbd, action }: QuickAction) => (
     <WarmCard
       padded="md"
       className={cn(
         'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50',
         'group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
         'dark:group-hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
+        // The Upload card is an ACTION, not a navigation link — give it
+        // a standing accent so it reads as the dashboard's upload
+        // button rather than one more shortcut tile.
+        action === 'upload' && 'border-primary/50 bg-primary/5 dark:bg-primary/10',
       )}
     >
       <div className="flex items-start gap-3">
@@ -279,6 +284,13 @@ function QuickActions() {
               type="button"
               className={cardShell}
               onClick={() => setUploadOpen(true)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                const dropped = Array.from(e.dataTransfer.files ?? [])
+                setDroppedFiles(dropped)
+                setUploadOpen(true)
+              }}
               data-testid="quick-action-upload"
             >
               {cardBody(qa)}
@@ -290,7 +302,14 @@ function QuickActions() {
           ),
         )}
       </div>
-      <DashboardUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <DashboardUploadDialog
+        open={uploadOpen}
+        onOpenChange={(v) => {
+          setUploadOpen(v)
+          if (!v) setDroppedFiles([])
+        }}
+        initialFiles={droppedFiles}
+      />
     </section>
   )
 }

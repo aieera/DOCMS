@@ -129,6 +129,16 @@ describe('DashboardUploadDialog', () => {
     expect(decisions).toBeUndefined()
   })
 
+  it('opens pre-loaded when initialFiles are provided (drop on the dashboard card)', async () => {
+    panelDecision = null
+    renderWithProviders(
+      <DashboardUploadDialog open onOpenChange={() => {}} initialFiles={[pdf('dropped.pdf')]} />,
+    )
+    expect(await screen.findByText('dropped.pdf')).toBeTruthy()
+    // Workspace still required — Upload stays disabled until chosen.
+    expect(screen.getByRole('button', { name: /^upload$/i })).toHaveProperty('disabled', true)
+  })
+
   it('multi-file: decision applies to the first file only', async () => {
     const { input } = await arrange({ decision: DECISION })
     await userEvent.upload(input, [pdf('a.pdf'), pdf('b.pdf')])
