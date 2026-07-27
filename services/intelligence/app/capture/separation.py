@@ -70,7 +70,15 @@ def propose_segments(
     it to `split` verbatim.
     """
     mode = Mode(mode)
-    pattern = re.compile(separator_pattern) if separator_pattern else None
+    # A caller-supplied pattern that doesn't compile is a client error (400),
+    # not a server fault (500) — surface it as a ValueError the API maps.
+    if separator_pattern:
+        try:
+            pattern = re.compile(separator_pattern)
+        except re.error as e:
+            raise ValueError(f"invalid separator_pattern: {e}") from e
+    else:
+        pattern = None
     segments: list[Segment] = []
 
     if mode == Mode.SEPARATOR_SHEET:

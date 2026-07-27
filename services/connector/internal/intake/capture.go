@@ -97,13 +97,23 @@ type captureSplitResp struct {
 	} `json:"documents"`
 }
 
+// CaptureCommitResult reports the outcome of a commit. Best-effort per segment
+// (one bad page-range doesn't lose the rest), but — unlike before — a dropped
+// segment is NOT silent: Failed/Errors surface it so the caller can retry or
+// alert instead of believing every page was filed.
+type CaptureCommitResult struct {
+	DocumentIDs []string `json:"document_ids"`
+	Failed      int      `json:"failed"`
+	Errors      []string `json:"errors,omitempty"`
+}
+
 // Commit splits the corrected grouping and ingests each segment as a document.
-// Returns the created document ids. Best-effort per segment: one failure is
-// logged and skipped, not fatal, so a single bad page-range doesn't lose the
-// rest of the bundle.
-func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) ([]string, error) {
+// Per-segment failures are counted and reported in the result rather than
+// silently swallowed.
+func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) (CaptureCommitResult, error) {
+	var res CaptureCommitResult
 	if s.ingest == nil {
-		return nil, fmt.Errorf("capture: ingest pipeline not configured")
+		return res, fmt.Errorf("capture: ingest pipeline not configured")
 	}
 	splitReq, _ := json.Marshal(map[string]any{
 		"bundle_b64":  in.BundleB64,
@@ -112,17 +122,19 @@ func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) ([]s
 	})
 	raw, err := s.postIntel(ctx, "/internal/v1/capture/split", splitReq)
 	if err != nil {
-		return nil, fmt.Errorf("capture split: %w", err)
+		return res, fmt.Errorf("capture split: %w", err)
 	}
 	var sr captureSplitResp
 	if err := json.Unmarshal(raw, &sr); err != nil {
-		return nil, fmt.Errorf("capture split decode: %w", err)
+		return res, fmt.Errorf("capture split decode: %w", err)
 	}
 
-	docIDs := make([]string, 0, len(sr.Documents))
+	res.DocumentIDs = make([]string, 0, len(sr.Documents))
 	for i, d := range sr.Documents {
 		pdf, derr := base64.StdEncoding.DecodeString(d.PDFB64)
 		if derr != nil {
+			res.Failed++
+			res.Errors = append(res.Errors, fmt.Sprintf("segment %d: bad pdf base64", i+1))
 			s.log.Warn().Int("segment", i).Msg("capture: bad segment pdf base64; skipped")
 			continue
 		}
@@ -141,12 +153,14 @@ func (s *CaptureService) Commit(ctx context.Context, in CaptureCommitInput) ([]s
 		docID, ierr := s.ingest.IngestFile(ctx, in.TenantID, in.ActorID, in.AuthToken,
 			in.WorkspaceID, in.FolderID, title+".pdf", "application/pdf", pdf, meta)
 		if ierr != nil {
+			res.Failed++
+			res.Errors = append(res.Errors, fmt.Sprintf("segment %d: ingest: %v", i+1, ierr))
 			s.log.Warn().Err(ierr).Int("segment", i).Msg("capture: segment ingest failed")
 			continue
 		}
-		docIDs = append(docIDs, docID)
+		res.DocumentIDs = append(res.DocumentIDs, docID)
 	}
-	return docIDs, nil
+	return res, nil
 }
 
 func (s *CaptureService) postIntel(ctx context.Context, path string, body []byte) (json.RawMessage, error) {

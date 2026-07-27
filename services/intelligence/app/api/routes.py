@@ -1107,7 +1107,12 @@ def capture_analyze_endpoint(body: CaptureAnalyzeRequest):
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="bundle_b64 not valid base64")
     zone = tuple(body.zone) if body.zone and len(body.zone) == 4 else None
-    res = pipeline.analyze(data, body.mime, body.mode, body.separator_pattern, zone)
+    try:
+        res = pipeline.analyze(data, body.mime, body.mode, body.separator_pattern, zone)
+    except ValueError as e:
+        # Bundle over a safety limit (CaptureLimitError) or an invalid
+        # separator_pattern — caller error, not a server fault.
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {
         "page_count": res.page_count,
         "page_barcodes": res.page_barcodes,
@@ -1125,6 +1130,12 @@ def capture_split_endpoint(body: CaptureSplitRequest):
         data = _b64.b64decode(body.bundle_b64)
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="bundle_b64 not valid base64")
-    parts = pipeline.split(data, body.mime, body.page_groups)
+    try:
+        parts = pipeline.split(data, body.mime, body.page_groups)
+    except ValueError as e:
+        # Invalid page grouping (out-of-range/empty) or an over-limit bundle.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # split() guarantees len(parts) == len(page_groups), so the zip pairs each
+    # output PDF with its own group.
     return {"documents": [{"pdf_b64": _b64.b64encode(p).decode("ascii"), "page_count": len(g)}
                           for p, g in zip(parts, body.page_groups)]}

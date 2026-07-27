@@ -61,7 +61,7 @@ func (h *EventStreamHandler) issueToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body issueTokenBody
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.NewDecoder(limitedBody(r)).Decode(&body)
 	if body.Label == "" {
 		writeError(w, http.StatusBadRequest, "label required")
 		return

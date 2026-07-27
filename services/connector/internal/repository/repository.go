@@ -48,6 +48,37 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 	return database.WithTenantTx(ctx, r.pool, tid, fn)
 }
 
+// DedupeIngestedFile records a (tenant, folder, sha256) ingest in the shared
+// intake_ingested_files dedup table and reports whether that content was
+// ALREADY imported into the folder. Lets a re-run of a Drive/folder import
+// land each file exactly once instead of minting a duplicate document (and
+// re-firing OCR/index) per already-imported file. Runs in a tenant tx so the
+// table's RLS insert policy passes.
+func (r *Repository) DedupeIngestedFile(ctx context.Context, tenantID, folderID, sha256Hex, sourcePath string, size int64) (isDup bool, err error) {
+	tUUID, err := uuid.Parse(tenantID)
+	if err != nil {
+		return false, fmt.Errorf("tenant_id: %w", err)
+	}
+	folderUUID, err := uuid.Parse(folderID)
+	if err != nil {
+		return false, fmt.Errorf("folder_id: %w", err)
+	}
+	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		tag, terr := tx.Exec(ctx, `
+			INSERT INTO intake_ingested_files
+			    (tenant_id, id, folder_id, source_path, sha256, size_bytes, ingest_status)
+			VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+			ON CONFLICT (tenant_id, folder_id, sha256) DO NOTHING`,
+			tUUID, uuid.New(), folderUUID, sourcePath, sha256Hex, size)
+		if terr != nil {
+			return terr
+		}
+		isDup = tag.RowsAffected() == 0
+		return nil
+	})
+	return isDup, err
+}
+
 // EmitOutbox writes a domain event to the transactional outbox (§4.7), which
 // the connector's NewOutboxPublisher forwards to NATS. Used for
 // dms.connector.synced.v1 — never a direct NATS publish. Runs in a tenant tx

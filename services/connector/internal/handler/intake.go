@@ -41,7 +41,7 @@ func (h *IntakeHandler) create(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	actorID := auth.UserIDString(r)
 	var body intake.CreateInput
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
@@ -57,7 +57,7 @@ func (h *IntakeHandler) patch(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
 	var body intake.PatchInput
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}

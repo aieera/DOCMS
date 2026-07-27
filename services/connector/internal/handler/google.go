@@ -32,8 +32,11 @@ func (h *Handler) putGoogleConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
+	if !requireConnectorAdmin(w, r) {
+		return
+	}
 	var b putGoogleConfigBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
@@ -79,8 +82,11 @@ func (h *Handler) importGoogleDrive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant and user required")
 		return
 	}
+	if !requireConnectorAdmin(w, r) {
+		return
+	}
 	var b importGoogleDriveBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
@@ -107,6 +113,9 @@ func (h *Handler) disconnectGoogle(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireConnectorAdmin(w, r) {
 		return
 	}
 	if err := h.svc.DisconnectGoogle(r.Context(), tenantID); err != nil {

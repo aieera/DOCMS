@@ -41,8 +41,11 @@ func (h *Handler) putM365Config(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
+	if !requireConnectorAdmin(w, r) {
+		return
+	}
 	var b putM365ConfigBody
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&b); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
@@ -57,6 +60,9 @@ func (h *Handler) m365AuthURL(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireConnectorAdmin(w, r) {
 		return
 	}
 	url, err := h.svc.StartM365OAuth(r.Context(), tenantID)
@@ -75,6 +81,9 @@ func (h *Handler) disconnectM365(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tenant required")
 		return
 	}
+	if !requireConnectorAdmin(w, r) {
+		return
+	}
 	if err := h.svc.DisconnectM365(r.Context(), tenantID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -87,6 +96,9 @@ func (h *Handler) listM365Sites(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireConnectorAdmin(w, r) {
 		return
 	}
 	sites, err := h.svc.ListM365Sites(r.Context(), tenantID, r.URL.Query().Get("acting_as"))
@@ -104,6 +116,9 @@ func (h *Handler) listM365DriveItems(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireConnectorAdmin(w, r) {
 		return
 	}
 	driveID := r.PathValue("drive_id")

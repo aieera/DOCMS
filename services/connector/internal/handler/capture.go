@@ -79,7 +79,7 @@ func (h *CaptureHandler) commit(w http.ResponseWriter, r *http.Request) {
 	if b.Mime == "" {
 		b.Mime = "application/pdf"
 	}
-	docIDs, err := h.svc.Commit(r.Context(), intake.CaptureCommitInput{
+	result, err := h.svc.Commit(r.Context(), intake.CaptureCommitInput{
 		TenantID:    tenantID,
 		ActorID:     userID,
 		AuthToken:   sessionToken(r),
@@ -96,5 +96,12 @@ func (h *CaptureHandler) commit(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]any{"document_ids": docIDs, "count": len(docIDs)})
+	// Surface per-segment failures so the caller isn't told "success" when
+	// some segments were dropped.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"document_ids": result.DocumentIDs,
+		"count":        len(result.DocumentIDs),
+		"failed":       result.Failed,
+		"errors":       result.Errors,
+	})
 }
