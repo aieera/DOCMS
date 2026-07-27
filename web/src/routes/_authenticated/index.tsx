@@ -94,6 +94,8 @@ function relTime(iso: string, opts: { addSuffix?: boolean } = {}): string {
 // ---- KPI cards -----------------------------------------------------------
 
 function KpiRow() {
+  const role = useAuthStore((s) => s.user?.role)
+  const seesAllWorkspaces = role === 'owner' || role === 'admin'
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
   const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({ queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000 })
@@ -135,7 +137,9 @@ function KpiRow() {
         icon={FolderOpen}
         label="Workspaces"
         value={allLoading || workspaces.isLoading ? undefined : wsCount ?? 0}
-        hint={workspaces.isError ? 'unable to load' : 'tenant total'}
+        // Members see only their accessible workspaces — "tenant total"
+        // would be a lie for them.
+        hint={workspaces.isError ? 'unable to load' : seesAllWorkspaces ? 'tenant total' : 'you have access to'}
         href="/workspaces"
       />
       <KpiCard

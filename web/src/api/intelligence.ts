@@ -81,6 +81,9 @@ export async function listPendingTagSuggestions(params: {
     params: Object.fromEntries(
       Object.entries(params).filter(([, v]) => v !== undefined),
     ),
+    // Dashboard probe: 403 is the expected answer for non-admin roles —
+    // don't let the global interceptor toast "Access denied" for it.
+    ...( { suppressErrorToast: true } as object),
   })
   return data
 }

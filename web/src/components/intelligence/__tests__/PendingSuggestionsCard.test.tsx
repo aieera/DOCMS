@@ -3,6 +3,8 @@ import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
 import { listPendingTagSuggestions } from '@/api/intelligence'
+import { useAuthStore } from '@/store/authStore'
+import type { User } from '@/types/api'
 
 // The dashboard card that finally makes the async auto-tag pipeline
 // visible: N pending AI suggestions, linking to the review queue.
@@ -19,7 +21,13 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-beforeEach(() => vi.clearAllMocks())
+const asRole = (role: string) =>
+  useAuthStore.setState({ user: { id: 'u1', email: 'x@y.z', display_name: 'X', role } as unknown as User })
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  asRole('admin')
+})
 
 describe('PendingSuggestionsCard', () => {
   it('shows the pending count and links to the review queue', async () => {
@@ -53,5 +61,12 @@ describe('PendingSuggestionsCard', () => {
     const { container } = renderWithProviders(<PendingSuggestionsCard />)
     await waitFor(() => expect(listPendingTagSuggestions).toHaveBeenCalled())
     expect(container.firstChild).toBeNull()
+  })
+
+  it('member role: renders nothing and never even calls the admin endpoint', () => {
+    asRole('member')
+    const { container } = renderWithProviders(<PendingSuggestionsCard />)
+    expect(container.firstChild).toBeNull()
+    expect(listPendingTagSuggestions).not.toHaveBeenCalled()
   })
 })

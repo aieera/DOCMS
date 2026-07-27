@@ -4,22 +4,27 @@ import { Sparkles } from 'lucide-react'
 
 import { listPendingTagSuggestions } from '@/api/intelligence'
 import { WarmCard } from '@/components/ui/crextio'
+import { useAuthStore } from '@/store/authStore'
 
 // Dashboard tile surfacing the async auto-tag pipeline's output: how
 // many AI tag suggestions are waiting for a human decision, linking to
-// the review queue (Admin → Tags). Renders nothing while loading, when
-// the count is zero, or on ANY error — the /admin/tag-suggestions
-// endpoint 403s for non-admin roles and that must not break the
-// dashboard.
+// the review queue (Admin → Tags). The backing endpoint is gated to
+// owner/admin/compliance_officer, so other roles never even fire the
+// request (and the call itself suppresses the global 403 toast as a
+// second line of defence). Renders nothing while loading, when the
+// count is zero, or on any error.
 export function PendingSuggestionsCard() {
+  const role = useAuthStore((s) => s.user?.role)
+  const mayReview = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const q = useQuery({
     queryKey: ['pending-tag-suggestions-count'],
     queryFn: () => listPendingTagSuggestions({ limit: 1 }),
     staleTime: 60_000,
     retry: false,
+    enabled: mayReview,
   })
 
-  if (q.isError || !q.data || q.data.total === 0) return null
+  if (!mayReview || q.isError || !q.data || q.data.total === 0) return null
 
   return (
     // Informational banner, NOT a whole-card link — clicking the count

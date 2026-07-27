@@ -310,7 +310,13 @@ api.interceptors.response.use(
       useAuthStore.getState().logout()
       window.location.href = '/login'
     } else if (status === 403) {
-      toast.error(detail ? `Access denied — ${detail}` : 'Access denied')
+      // Speculative/background reads (dashboard probes that are
+      // EXPECTED to 403 for non-admin roles) opt out via
+      // `suppressErrorToast` — a red "Access denied" on page load for
+      // a widget the user never asked for reads as breakage.
+      if (!(error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast) {
+        toast.error(detail ? `Access denied — ${detail}` : 'Access denied')
+      }
     } else if (status === 402) {
       // ADR 0095 RequireLicenseFeature — feature not in the license.
       toast.error(detail ?? 'This feature is not included in your license.')
