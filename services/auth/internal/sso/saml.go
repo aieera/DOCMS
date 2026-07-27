@@ -487,11 +487,27 @@ func isSafeRelay(rs, publicURL string) bool {
 	if err != nil {
 		return false
 	}
-	base, err := url.Parse(publicURL)
-	if err != nil {
+	// Absolute / host-bearing URL: only same-host http(s) is allowed.
+	if u.IsAbs() || u.Host != "" {
+		base, err := url.Parse(publicURL)
+		if err != nil {
+			return false
+		}
+		return (u.Scheme == "http" || u.Scheme == "https") && u.Host == base.Host
+	}
+	// Relative reference. url.Parse leaves Host="" for the backslash trick
+	// ("/\evil.com") and other browser-normalised forms, so validate the RAW
+	// string: it must be a single rooted path with no scheme, no opaque part,
+	// and nothing a browser could read as protocol-relative. Without this a
+	// value like "/\evil.com" or "//evil.com" set in Location redirects
+	// off-site (open redirect).
+	if u.Scheme != "" || u.Opaque != "" {
 		return false
 	}
-	return u.Host == "" /* relative path */ || u.Host == base.Host
+	if rs[0] != '/' || strings.HasPrefix(rs, "//") || strings.Contains(rs, "\\") {
+		return false
+	}
+	return true
 }
 
 // clockSkew normalizes the config value to a time.Duration with bounds.

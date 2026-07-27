@@ -188,6 +188,34 @@ func (h *Handler) replaceUser(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, h.userToProto(*u))
 }
 
+// scimBool accepts a JSON bool or a bool-ish string ("true"/"false", any case),
+// since some IdPs (notably Azure AD) encode the SCIM `active` attribute as a
+// string. Returns (value, ok).
+func scimBool(v any) (bool, bool) {
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true":
+			return true, true
+		case "false":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+// setSCIMActive maps active→status; deactivated routes through the full
+// deprovision side effects in applyUserUpdate.
+func setSCIMActive(updates map[string]any, active bool) {
+	if active {
+		updates["status"] = "active"
+	} else {
+		updates["status"] = "deactivated"
+	}
+}
+
 // patchUser supports a small path allowlist: displayName, active.
 func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := TenantFromContext(r.Context())
@@ -210,14 +238,32 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 				updates["display_name"] = s
 			}
 		case "active":
-			if b, ok := op.Value.(bool); ok {
-				if b {
-					updates["status"] = "active"
-				} else {
-					updates["status"] = "deactivated"
+			// Accept a JSON bool OR a bool-ish string — Azure AD encodes SCIM
+			// `active` as the string "False"/"True", which the old bool-only
+			// assertion dropped, silently defeating deprovisioning.
+			if b, ok := scimBool(op.Value); ok {
+				setSCIMActive(updates, b)
+			}
+		case "":
+			// Pathless replace/add: the value is an OBJECT of attributes
+			// (RFC 7644 §3.5.2). Azure AD deprovisions this way
+			// ({"op":"replace","value":{"active":false}}); the old switch had
+			// no "" case, so this no-op'd and the terminated user stayed active.
+			if obj, ok := op.Value.(map[string]any); ok {
+				for k, v := range obj {
+					switch strings.ToLower(strings.TrimSpace(k)) {
+					case "displayname":
+						if s, ok := v.(string); ok && s != "" {
+							updates["display_name"] = s
+						}
+					case "active":
+						if b, ok := scimBool(v); ok {
+							setSCIMActive(updates, b)
+						}
+					}
 				}
 			}
-			// Unknown paths are ignored — RFC 7644 allows targeted PATCH to
+			// Other targeted paths are ignored — RFC 7644 allows a PATCH to
 			// no-op unhandled attributes.
 		}
 	}

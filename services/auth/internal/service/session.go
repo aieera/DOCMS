@@ -128,7 +128,7 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	}
 	// Absolute max lifetime.
 	if now.Sub(sess.CreatedAt) > SessionMaxLifetime {
-		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
+		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash)
 		s.deleteCachedSession(ctx, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
@@ -151,7 +151,7 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		return nil, err
 	}
 	if user.Status != model.StatusActive {
-		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
+		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash)
 		s.deleteCachedSession(ctx, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
@@ -162,10 +162,10 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		if cap := sess.CreatedAt.Add(SessionMaxLifetime); newExpiry.After(cap) {
 			newExpiry = cap
 		}
-		_ = s.sessions.ExtendExpiry(ctx, s.pool, sess.ID, newExpiry)
+		_ = s.sessions.ExtendExpiry(ctx, s.pool, sess.TenantID, sess.ID, newExpiry)
 		sess.ExpiresAt = newExpiry
 	}
-	_ = s.sessions.TouchActivity(ctx, s.pool, sess.ID, now)
+	_ = s.sessions.TouchActivity(ctx, s.pool, sess.TenantID, sess.ID, now)
 
 	cached := &model.CachedSession{
 		UserID:      user.ID,
@@ -185,22 +185,28 @@ func (s *Service) Logout(ctx context.Context, plaintextToken string) error {
 		return nil
 	}
 	hash := sha256Hex(plaintextToken)
-	if err := s.sessions.RevokeByTokenHash(ctx, s.pool, hash); err != nil {
+	// Resolve the session FIRST (RLS-safe SECURITY DEFINER read) so the revoke
+	// can run in the session's tenant tx — a bare-pool UPDATE on the FORCE-RLS
+	// sessions table matches 0 rows under NOBYPASSRLS, so logout never revoked.
+	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
+	if err != nil || sess == nil {
+		// Unknown/expired/already-revoked token → nothing to revoke.
+		s.deleteCachedSession(ctx, hash)
+		return nil
+	}
+	if err := s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash); err != nil {
 		return err
 	}
 	s.deleteCachedSession(ctx, hash)
 
 	// Audit (best-effort; do not fail logout if audit fails).
-	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
-	if err == nil && sess != nil {
-		_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
-			return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
-				"dms.auth.logout.v1", map[string]any{
-					"session_id": sess.ID.String(),
-					"user_id":    sess.UserID.String(),
-				})
-		})
-	}
+	_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
+		return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
+			"dms.auth.logout.v1", map[string]any{
+				"session_id": sess.ID.String(),
+				"user_id":    sess.UserID.String(),
+			})
+	})
 	return nil
 }
 

@@ -117,17 +117,17 @@ func (s *DocumentService) ReviewRedactionCandidate(
 // handler. document_id + version_id identify *which* approved set to
 // burn; force_admin_approve trips the >50-candidate gate to a yes.
 type ApplyRedactionInput struct {
-	VersionID         uuid.UUID
-	ForceAdminApprove bool
+	VersionID          uuid.UUID
+	ForceAdminApprove  bool
 	BulkAdminThreshold int32 // default 50; overridable for tests
 }
 
 // ApplyRedactionResult is what the handler returns: enough info for
 // the UI to redirect or poll.
 type ApplyRedactionResult struct {
-	JobID         uuid.UUID
+	JobID          uuid.UUID
 	CandidateCount int32
-	Status        string
+	Status         string
 }
 
 // ApplyRedaction snapshots the approved candidate set, creates a
@@ -268,6 +268,48 @@ func (s *DocumentService) CanViewUnredacted(
 	// context to the OPA query. Owner/admin still pass via Rule 6.
 	if _, perr := s.requireDocPermission(ctx, tenantID, userID, documentID, "view_unredacted"); perr != nil {
 		return perr
+	}
+	return nil
+}
+
+// EnsureCanDownloadVersion gates a RAW version download / decrypt-stream.
+// Beyond the per-document view check it requires the stronger view_unredacted
+// capability when the requested version is a REDACTION SOURCE — the
+// pre-redaction original persists after ApplyRedaction, and the plain
+// download/decrypt-stream paths (unlike the /unredacted endpoint) previously
+// served it to any 'view' holder, defeating redaction entirely. The download
+// handlers must call THIS instead of EnsureCanViewDocument.
+//
+// NOTE (follow-up, finding #11): these same plain paths also serve sensitive
+// (confidential/restricted/PHI) documents WITHOUT the mandatory per-viewer
+// watermark that the /wm endpoint fails closed to enforce. Closing that needs
+// the watermark render pipeline wired into the plain download/decrypt-stream
+// (and careful interaction with this /unredacted-source flow), tracked
+// separately — a blanket fail-closed here would break /unredacted and normal
+// downloads.
+func (s *DocumentService) EnsureCanDownloadVersion(ctx context.Context, docID, versionID uuid.UUID) error {
+	if err := s.EnsureCanViewDocument(ctx, docID); err != nil {
+		return err
+	}
+	tenantID, _, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	var isRedactionSource bool
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT EXISTS (
+			     SELECT 1 FROM redaction_jobs
+			      WHERE tenant_id = $1 AND source_version_id = $2
+			        AND redacted_version_id IS NOT NULL
+			 )`, tenantID, versionID).Scan(&isRedactionSource)
+	}); err != nil {
+		return err
+	}
+	if isRedactionSource {
+		// This version is the unredacted original of a redacted document;
+		// downloading it requires view_unredacted, not just view.
+		return s.CanViewUnredacted(ctx, docID)
 	}
 	return nil
 }

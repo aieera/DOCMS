@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/auth/internal/model"
 )
 
@@ -19,10 +20,10 @@ import (
 type SessionRepository interface {
 	Create(ctx context.Context, tx pgx.Tx, s *model.Session) error
 	GetByTokenHash(ctx context.Context, pool *pgxpool.Pool, tokenHash string) (*model.Session, error)
-	ExtendExpiry(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, newExpiresAt time.Time) error
-	TouchActivity(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error
+	ExtendExpiry(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, newExpiresAt time.Time) error
+	TouchActivity(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, at time.Time) error
 	RevokeByID(ctx context.Context, tx pgx.Tx, tenantID, userID, id uuid.UUID) error
-	RevokeByTokenHash(ctx context.Context, pool *pgxpool.Pool, tokenHash string) error
+	RevokeByTokenHash(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, tokenHash string) error
 	RevokeAllForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, exceptID *uuid.UUID) (int64, error)
 	ListActiveForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) ([]model.Session, error)
 	CountActiveForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID) (int, error)
@@ -55,14 +56,24 @@ func (r *sessionRepo) GetByTokenHash(ctx context.Context, pool *pgxpool.Pool, to
 	return scanSession(row)
 }
 
-func (r *sessionRepo) ExtendExpiry(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, newExpiresAt time.Time) error {
-	_, err := pool.Exec(ctx, `UPDATE sessions SET expires_at = $2 WHERE id = $1`, id, newExpiresAt)
-	return mapPgError(err)
+// ExtendExpiry / TouchActivity / RevokeByTokenHash write to the FORCE-RLS
+// sessions table, so under the NOBYPASSRLS app role they MUST run inside a
+// tenant tx (SET LOCAL app.current_tenant) — a bare-pool UPDATE matches 0 rows
+// and silently no-ops (sliding-expiry + activity never persist; and, worst,
+// logout never revokes). The read path is RLS-safe via a SECURITY DEFINER
+// function; these writes were left on the raw pool.
+func (r *sessionRepo) ExtendExpiry(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, newExpiresAt time.Time) error {
+	return database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE sessions SET expires_at = $2 WHERE id = $1`, id, newExpiresAt)
+		return mapPgError(err)
+	})
 }
 
-func (r *sessionRepo) TouchActivity(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, at time.Time) error {
-	_, err := pool.Exec(ctx, `UPDATE sessions SET last_activity_at = $2 WHERE id = $1 AND revoked_at IS NULL`, id, at)
-	return mapPgError(err)
+func (r *sessionRepo) TouchActivity(ctx context.Context, pool *pgxpool.Pool, tenantID, id uuid.UUID, at time.Time) error {
+	return database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE sessions SET last_activity_at = $2 WHERE id = $1 AND revoked_at IS NULL`, id, at)
+		return mapPgError(err)
+	})
 }
 
 func (r *sessionRepo) RevokeByID(ctx context.Context, tx pgx.Tx, tenantID, userID, id uuid.UUID) error {
@@ -73,10 +84,12 @@ func (r *sessionRepo) RevokeByID(ctx context.Context, tx pgx.Tx, tenantID, userI
 	return mapPgError(err)
 }
 
-func (r *sessionRepo) RevokeByTokenHash(ctx context.Context, pool *pgxpool.Pool, tokenHash string) error {
-	_, err := pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
-		tokenHash)
-	return mapPgError(err)
+func (r *sessionRepo) RevokeByTokenHash(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, tokenHash string) error {
+	return database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+			tokenHash)
+		return mapPgError(err)
+	})
 }
 
 func (r *sessionRepo) RevokeAllForUser(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, exceptID *uuid.UUID) (int64, error) {
