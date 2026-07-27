@@ -34,6 +34,12 @@ func NewHTTPHandler(svc *service.Service) *HTTPHandler { return &HTTPHandler{svc
 // handlers run.
 func (h *HTTPHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/permissions/matrix", h.MatrixHandler)
+	// Self-scoped: the caller's own grants (direct + via groups). Feeds
+	// the "shared with me" documents surface; no admin gate — you can
+	// always see what's been shared with YOU. Registered before the
+	// {resource_type}/{resource_id} pattern only for readability; the
+	// single-segment path can't collide with the two-segment wildcard.
+	mux.HandleFunc("GET /api/v1/permissions/mine", h.mine)
 	mux.HandleFunc("GET /api/v1/permissions/{resource_type}/{resource_id}", h.list)
 	// Effective access — "who can see this and why". More-specific literal
 	// segment than the {resource_id} list route, so ServeMux routes it here.
@@ -78,6 +84,27 @@ func (h *HTTPHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	perms, err := h.svc.ListByResource(r.Context(), u.TenantID, resourceType, resourceID)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	out := make([]permissionDTO, 0, len(perms))
+	for _, p := range perms {
+		out = append(out, toPermissionDTO(p))
+	}
+	writeJSONOK(w, out)
+}
+
+// mine — GET /permissions/mine. Grants held by the authenticated caller
+// (direct user grants + via group membership). Self-scoped, so no
+// callerMayAdminister gate.
+func (h *HTTPHandler) mine(w http.ResponseWriter, r *http.Request) {
+	u, err := auth.User(r.Context())
+	if err != nil {
+		writeHTTPError(w, r, vdmserr.ErrUnauthorized)
+		return
+	}
+	perms, err := h.svc.ListMine(r.Context(), u.TenantID, u.ID)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

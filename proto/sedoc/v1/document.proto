@@ -57,6 +57,10 @@ message Document {
   string                    security_classification  = 24;
   bool                      has_phi                  = 25;
   bool                      has_pii                  = 26;
+  // Denormalised counter maintained by the upload path (version_count =
+  // version_count + 1 on each completed upload). Surfaced so detail/list
+  // consumers don't need a versions round-trip just to show the count.
+  int32                     version_count            = 27;
 }
 
 message DocumentWorkflowInstance {

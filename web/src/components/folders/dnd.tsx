@@ -2,35 +2,30 @@
 // dnd-kit wrappers kept here so the grid/tree components stay readable.
 //
 // Move endpoints already exist (moveDocument, updateFolder w/ new parent);
-// this is pure wiring. A grip handle is the drag activator so click-to-select
-// and double-click-to-open on the tile itself keep working.
+// this is pure wiring. The whole item drags (no grip) — the pointer
+// sensor's distance constraint keeps click-to-select and
+// double-click-to-open working.
 import type { ReactNode } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
-import { GripVertical } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 export type DragData = { kind: 'doc' | 'folder'; id: string; label: string }
 export type DropData = { folderId: string }
 
-// DraggableTile wraps a grid tile: the whole tile is the drag node (moves
-// with the pointer at reduced opacity) but only the grip activates the drag.
+// DraggableTile wraps a grid tile or list row: the whole item is both the
+// drag node and the activator (Explorer-style — no separate grip). The
+// PointerSensor's distance activation constraint (see the page's
+// useSensors) is what keeps click-to-select and double-click-to-open
+// working: a drag only starts after real pointer travel.
 export function DraggableTile({ dndId, data, children }: { dndId: string; data: DragData; children: ReactNode }) {
-  const { listeners, attributes, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({ id: dndId, data })
+  const { listeners, setNodeRef, isDragging } = useDraggable({ id: dndId, data })
   return (
-    <div ref={setNodeRef} className={cn('group/tile relative', isDragging && 'opacity-40')}>
-      <button
-        ref={setActivatorNodeRef}
-        {...listeners}
-        {...attributes}
-        type="button"
-        onClick={(e) => e.stopPropagation()}
-        aria-label={`Drag ${data.label} to move it`}
-        title="Drag to move"
-        className="absolute end-2 top-2 z-20 cursor-grab touch-none rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent group-hover/tile:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
-        data-testid={`drag-${data.kind}-${data.id}`}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      className={cn('group/tile relative', isDragging && 'opacity-40')}
+      data-testid={`drag-${data.kind}-${data.id}`}
+    >
       {children}
     </div>
   )

@@ -137,17 +137,32 @@ func (s *DocumentService) CreateWorkspace(ctx context.Context, in *CreateWorkspa
 	return w, nil
 }
 
-// GetWorkspace loads a single workspace with counts.
+// GetWorkspace loads a single workspace with counts. Access mirrors
+// ListWorkspaces: tenant owner/admin always; everyone else only for
+// the default workspace, workspaces they created / are members of, or
+// hold a folder grant inside — otherwise ErrForbidden. Metadata is not
+// exempt: a workspace you can't see must not leak its name.
 func (s *DocumentService) GetWorkspace(ctx context.Context, id uuid.UUID) (*model.Workspace, error) {
-	tenantID, _, err := mustCaller(ctx)
+	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if id == uuid.Nil {
 		return nil, errInvalidInput("workspace_id", "required")
 	}
+	role := auth.GetUserRole(ctx)
+	groups := auth.GetUserGroups(ctx)
 	var out *model.Workspace
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		if role != "owner" && role != "admin" {
+			ok, aerr := s.repos.Workspaces.HasAccess(ctx, tx, tenantID, id, userID, groups)
+			if aerr != nil {
+				return aerr
+			}
+			if !ok {
+				return vdmserr.ErrForbidden
+			}
+		}
 		w, err := s.repos.Workspaces.GetByID(ctx, tx, tenantID, id)
 		if err != nil {
 			return err

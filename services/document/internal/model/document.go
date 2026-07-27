@@ -93,6 +93,10 @@ type Document struct {
 	ClassificationSource   string
 	SHA256Hash             string
 	TotalSizeBytes         int64
+	// VersionCount mirrors the denormalised documents.version_count
+	// counter (incremented by the upload-complete path). Read-only on
+	// this model — never written back.
+	VersionCount           int32
 	MimeType               string
 	// DocType marks notes/wikis as a first-class document type. A note is
 	// a normal document (versioning/ACL/search/audit) whose content is a

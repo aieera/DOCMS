@@ -610,6 +610,9 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Per-request LLM budget (streaming included). The 30s code default
+      # cut long doc-QA answers mid-stream; see app/config.py.
+      SEDOC_LLM_TIMEOUT_SECONDS: "120"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3 credentials. The NATS consumer runs in this container
       # and may fetch the blob before enqueueing the Celery task; the
@@ -664,6 +667,9 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Per-request LLM budget (streaming included). The 30s code default
+      # cut long doc-QA answers mid-stream; see app/config.py.
+      SEDOC_LLM_TIMEOUT_SECONDS: "120"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       # boto3/botocore credentials for the OCR worker to download
       # blobs. Use AWS_* names (boto3 reads these directly without
@@ -729,6 +735,9 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Per-request LLM budget (streaming included). The 30s code default
+      # cut long doc-QA answers mid-stream; see app/config.py.
+      SEDOC_LLM_TIMEOUT_SECONDS: "120"
       SEDOC_S3_ENDPOINT: "http://minio:9000"
       AWS_ACCESS_KEY_ID: "minioadmin"
       AWS_SECRET_ACCESS_KEY: "minioadmin"

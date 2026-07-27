@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, Bookmark, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , LayoutTemplate , BarChart3 } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , LayoutTemplate , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -44,7 +44,10 @@ const NAV_GROUPS: NavGroup[] = [
       // /search entry removed 2026-05-29 — search is reached via the
       // header search bar (Cmd+K). Result page still lives at /search.
       { to: '/ask', icon: Sparkles, labelKey: 'sidebar.ask' },
-      { to: '/saved-searches', icon: Bookmark, labelKey: 'sidebar.saved_searches' },
+      // Saved searches moved into the header search dropdown (recents +
+      // saved, star-to-save). The /saved-searches management page still
+      // exists for alerts/subscribers/smart folders — linked from the
+      // dropdown footer, no longer top-level nav.
       // ADR 0104 — clause library.
       { to: '/clauses',        icon: BookOpen,  labelKey: 'sidebar.clauses' },
       // ADR 0118 — workspace templates gallery.
@@ -223,7 +226,16 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <BrandRow collapsed={collapsed} onToggle={onToggle} />
-      <nav aria-label="Primary" className={cn('flex-1 overflow-y-auto px-2 pb-4 pt-3', collapsed && 'px-1.5')}>
+      {/* Scrolls when nav items overflow short viewports, but without a
+          visible scrollbar — the track/thumb read as clutter on the navy
+          rail (same hidden-scrollbar pattern as the document tab bar). */}
+      <nav
+        aria-label="Primary"
+        className={cn(
+          'flex-1 overflow-y-auto px-2 pb-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+          collapsed && 'px-1.5',
+        )}
+      >
         {visibleGroups.map((group, i) => (
           <NavGroupBlock key={group.labelKey} group={group} collapsed={collapsed} pathname={pathname} isFirst={i === 0} />
         ))}

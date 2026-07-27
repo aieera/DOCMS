@@ -35,6 +35,32 @@ func (s *Service) ListByPrincipal(ctx context.Context, tenantID uuid.UUID, kind 
 	return out, err
 }
 
+// ListMine returns every active grant held by the caller — their direct
+// user grants plus grants to any group they belong to. Self-scoped
+// discovery surface ("shared with me"); requires no admin capability.
+func (s *Service) ListMine(ctx context.Context, tenantID, userID uuid.UUID) ([]model.Permission, error) {
+	out, err := s.ListByPrincipal(ctx, tenantID, model.PrincUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := s.loadUserGroups(ctx, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range groups {
+		gid, perr := uuid.Parse(g)
+		if perr != nil {
+			continue
+		}
+		gp, gerr := s.ListByPrincipal(ctx, tenantID, model.PrincGroup, gid)
+		if gerr != nil {
+			return nil, gerr
+		}
+		out = append(out, gp...)
+	}
+	return out, nil
+}
+
 // ListAsOf is the "time machine" read. Returns permissions that were active
 // at the given instant, regardless of current state. Used for compliance
 // audits: "who had access to doc X on March 15?"

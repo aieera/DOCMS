@@ -116,9 +116,14 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
               },
             })))
           } else if (evt.type === 'error') {
+            // Keep whatever streamed before the failure, but say so —
+            // a silently truncated answer reads as a complete (wrong)
+            // one.
             setMessages((m) => updateLastAssistant(m, (a) => ({
               ...a,
-              content: a.content || `Error: ${evt.message}`,
+              content: a.content
+                ? `${a.content}\n\n> ⚠️ The answer was cut off (${evt.message}). Try asking again.`
+                : `Error: ${evt.message}`,
               pending: false,
             })))
           }

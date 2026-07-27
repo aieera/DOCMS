@@ -112,6 +112,73 @@ export function FileTile({
   )
 }
 
+/* ── list-mode rows — same props/behaviour as the tiles, compact layout ── */
+
+// pe-10 reserves the trailing gutter where the wrapping actions-menu ⋯
+// (end-1) sits, so the size/meta column never ends up underneath it.
+const rowBase =
+  'group/card relative flex w-full items-center gap-3 rounded-xl border ps-3 pe-10 py-2 text-start transition-colors ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+
+export function FolderRow({
+  folder, selected, onOpen, onSelect,
+}: { folder: Folder; selected?: boolean; onOpen: () => void; onSelect: () => void }) {
+  const childCount = Number(folder.child_folder_count ?? folder.children_count ?? 0) || 0
+  const items = (Number(folder.document_count) || 0) + childCount
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onDoubleClick={onOpen}
+      className={cn(rowBase, tileState(selected))}
+      data-testid={`folder-row-${folder.id}`}
+    >
+      <FolderGlyph size={30} variant={guessFolderVariant(folder.name)} />
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{folder.name}</span>
+      {folder.visibility === 'private' && <span className="shrink-0 text-xs font-medium text-muted-foreground/50">Private</span>}
+      <span className="w-16 shrink-0 text-end text-xs font-medium text-muted-foreground tabular-nums">
+        {items} {items === 1 ? 'item' : 'items'}
+      </span>
+    </button>
+  )
+}
+
+export function FileRow({
+  doc, selected, onOpen, onSelect,
+}: { doc: Document; selected?: boolean; onOpen: () => void; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onDoubleClick={onOpen}
+      // ps-10 reserves the multi-select checkbox gutter the page
+      // overlays at the row's start.
+      className={cn(rowBase, 'ps-10', tileState(selected))}
+      data-testid={`file-row-${doc.id}`}
+    >
+      <FileTypeIcon mime={doc.mime_type} title={doc.title} size={24} />
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{doc.title}</span>
+      <span className="w-20 shrink-0 text-end text-xs font-medium text-muted-foreground tabular-nums">
+        {formatFileSize(Number(doc.total_size_bytes) || 0)}
+      </span>
+    </button>
+  )
+}
+
+export function NewFolderRow({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl border-[1.6px] border-dashed border-border px-3 py-2 text-muted-foreground transition-all hover:border-primary hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      data-testid="new-folder-row"
+    >
+      <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted"><Plus className="h-4 w-4" /></span>
+      <span className="text-sm font-semibold">New Folder</span>
+    </button>
+  )
+}
+
 export function NewFolderTile({ onClick }: { onClick: () => void }) {
   return (
     <button

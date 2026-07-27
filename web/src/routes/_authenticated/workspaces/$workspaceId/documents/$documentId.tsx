@@ -351,6 +351,7 @@ export function DocumentDetailBody({
           documentId={documentId}
           versionId={versionId}
           isAdminCaller={isAdminCaller}
+          inModal={inModal}
         />
       </div>
     </div>
@@ -489,11 +490,16 @@ function DocumentSidebar({
   documentId,
   versionId,
   isAdminCaller,
+  inModal = false,
 }: {
   doc: any
   documentId: string
   versionId?: string
   isAdminCaller?: boolean
+  // Modal mode: the dialog body is the single scroll container, so the
+  // sidebar must NOT bring its own sticky/max-height scroll region —
+  // nested scrollbars inside the dialog read as broken layout.
+  inModal?: boolean
 }) {
   // `?doctype=note|wiki` lets a freshly-created note open the collaborative
   // editor before its first markdown version exists (the gateway GET doesn't
@@ -521,7 +527,12 @@ function DocumentSidebar({
   }
 
   return (
-    <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1">
+    <aside
+      className={cn(
+        'space-y-4',
+        !inModal && 'lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1',
+      )}
+    >
       {/* Primary actions as a compact icon toolbar. */}
       <Card className="flex items-center justify-between gap-2 p-2">
         <DocumentHeaderToolbar
@@ -558,7 +569,7 @@ function DocumentSidebar({
             </span>
           </Row>
           <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
-          <Row label="Versions">{doc.version_count}</Row>
+          <Row label="Versions">{doc.version_count ?? '—'}</Row>
           <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
         </dl>
         {(doc.tags?.length ?? 0) > 0 && (

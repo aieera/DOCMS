@@ -260,9 +260,11 @@ function PdfPreview({ url, title }: { url: string; title?: string }) {
       )}
       <iframe
         // #toolbar=0 hides Chrome's toolbar; browsers that ignore it just
-        // show their own controls. bg-muted avoids a white/black flash
+        // show their own controls. view=FitH makes the page fill the
+        // frame's width instead of floating small and off-centre in the
+        // viewer's dark letterbox. bg-muted avoids a white/black flash
         // before the document paints.
-        src={`${url}#toolbar=0&navpanes=0`}
+        src={`${url}#toolbar=0&navpanes=0&view=FitH`}
         title={title ?? 'PDF preview'}
         onLoad={() => setState('ready')}
         onError={() => setState('failed')}

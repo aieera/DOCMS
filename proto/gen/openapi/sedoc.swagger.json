@@ -1535,6 +1535,11 @@
           "format": "date-time",
           "type": "string"
         },
+        "versionCount": {
+          "description": "Denormalised counter maintained by the upload path (version_count =\nversion_count + 1 on each completed upload). Surfaced so detail/list\nconsumers don't need a versions round-trip just to show the count.",
+          "format": "int32",
+          "type": "integer"
+        },
         "workflowInstance": {
           "$ref": "#/definitions/v1DocumentWorkflowInstance",
           "description": "Active workflow summary, filled at read time by a LEFT JOIN\nLATERAL against workflow_instances (status NOT IN ('completed',\n'failed','cancelled')). Absent when the document has no in-\nflight workflow. Frontend renders a status pill on the document\ncard + header."

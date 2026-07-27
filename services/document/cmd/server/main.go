@@ -42,6 +42,7 @@ import (
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/document/internal/autolink"
+	"github.com/aieera/sedoc/services/document/internal/onboarding"
 	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/classification"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
@@ -1541,6 +1542,13 @@ func main() {
 	if js != nil {
 		if cerr := autolink.NewConsumer(js, autolink.NewStore(pool), *log.Z()).Start(); cerr != nil {
 			log.Error(ctx).Err(cerr).Msg("autolink consumer start failed; relationships won't auto-link")
+		}
+		// Default-workspace membership: every new user (dms.user.created.v1)
+		// is enrolled into their tenant's is_default workspace so they see
+		// exactly one workspace on first login. Best-effort: the list/get
+		// paths also treat is_default as visible-to-all as a fallback.
+		if cerr := onboarding.NewConsumer(js, pool, *log.Z()).Start(); cerr != nil {
+			log.Error(ctx).Err(cerr).Msg("default-membership consumer start failed; new users won't be auto-enrolled")
 		}
 	}
 

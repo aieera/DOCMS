@@ -1,14 +1,19 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
-import { Copy, Link2, ShieldAlert } from 'lucide-react'
+import { AtSign, Copy, Link2, ShieldAlert, UserPlus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { createShareLink } from '@/api/shareLinks'
 import { createZTShare } from '@/api/ztShare'
 import { getVersions } from '@/api/documents'
+import { getUsers } from '@/api/admin'
+import { grantPermission } from '@/api/permissions'
 import { readErrorMessage } from '@/api/client'
+import { useAuthStore } from '@/store/authStore'
+import type { User } from '@/types/api'
 
 interface Props { open: boolean; onOpenChange: (o: boolean) => void; documentId: string; documentTitle: string }
 
@@ -25,19 +30,77 @@ const permissionOptions: Record<string, string[]> = {
   edit: ['view', 'download', 'edit'],
 }
 
-type ShareMode = 'classic' | 'zt'
+type ShareMode = 'people' | 'classic' | 'zt'
+
+// Internal-share capability levels (policy-service grants — the same
+// vocabulary Manage access uses).
+const PEOPLE_CAPABILITIES = [
+  { value: 'view', label: 'Viewer — can view' },
+  { value: 'share', label: 'Commenter — can view and share' },
+  { value: 'edit', label: 'Editor — can view, edit, and share' },
+] as const
 
 export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: Props) {
+  const qc = useQueryClient()
+  const selfId = useAuthStore((s) => s.user?.id)
   const [expiryHours, setExpiryHours] = useState('168')
   const [password, setPassword] = useState('')
   const [permission, setPermission] = useState<keyof typeof permissionOptions>('view')
   const [shareUrl, setShareUrl] = useState('')
   const [creating, setCreating] = useState(false)
-  // ADR 0098 — Zero-trust view-only is a separate flow (own backend
-  // endpoint, recipient watermark, sender activity panel).
-  const [mode, setMode] = useState<ShareMode>('classic')
+  // Default mode: share directly with people inside the DMS — the
+  // grant lands in the recipient's "Shared with me". Links are the
+  // secondary path for external recipients.
+  const [mode, setMode] = useState<ShareMode>('people')
   const [ztRecipientEmail, setZtRecipientEmail] = useState('')
   const [ztMaxViews, setZtMaxViews] = useState('0')
+
+  // ---- people mode state ----
+  const [peopleQuery, setPeopleQuery] = useState('')
+  const [selected, setSelected] = useState<User[]>([])
+  const [capability, setCapability] = useState<'view' | 'share' | 'edit'>('view')
+  const usersQ = useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: () => getUsers(),
+    enabled: open && mode === 'people',
+    staleTime: 60_000,
+  })
+  // "@jas" and "jas" both match Jasmin — the @ is a trigger, not part
+  // of the name.
+  const term = peopleQuery.replace(/^@/, '').trim().toLowerCase()
+  const suggestions = useMemo(() => {
+    if (!term) return []
+    const chosen = new Set(selected.map((u) => u.id))
+    return (usersQ.data?.items ?? [])
+      .filter((u) => u.id !== selfId && !chosen.has(u.id))
+      .filter((u) =>
+        (u.display_name ?? '').toLowerCase().includes(term) ||
+        (u.email ?? '').toLowerCase().includes(term))
+      .slice(0, 6)
+  }, [term, usersQ.data, selected, selfId])
+
+  const shareWithPeople = async () => {
+    if (selected.length === 0) return
+    setCreating(true)
+    const failed: string[] = []
+    for (const u of selected) {
+      try {
+        await grantPermission('document', documentId, 'user', u.id, capability)
+      } catch {
+        failed.push(u.display_name || u.email)
+      }
+    }
+    setCreating(false)
+    qc.invalidateQueries({ queryKey: ['permissions', 'document', documentId] })
+    if (failed.length === 0) {
+      toast.success(`Shared with ${selected.length} ${selected.length === 1 ? 'person' : 'people'}`)
+      setSelected([])
+      onOpenChange(false)
+    } else {
+      toast.error(`Could not share with ${failed.join(', ')}`)
+      setSelected((prev) => prev.filter((u) => failed.includes(u.display_name || u.email)))
+    }
+  }
 
   const handleCreate = async () => {
     setCreating(true)
@@ -104,10 +167,91 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
           value={mode}
           onValueChange={(v) => { setShareUrl(''); setMode(v as ShareMode) }}
           options={[
+            { value: 'people', label: 'People in this DMS (@mention)' },
             { value: 'classic', label: 'Standard share link' },
             { value: 'zt', label: 'Zero-trust view-only (watermarked, audited)' },
           ]}
         />
+
+        {mode === 'people' && (
+          <>
+            <div className="relative">
+              <Input
+                label="Add people"
+                icon={<AtSign className="h-4 w-4" />}
+                value={peopleQuery}
+                onChange={(e) => setPeopleQuery(e.target.value)}
+                placeholder="Type @ and a name or email…"
+                autoComplete="off"
+                data-testid="share-people-input"
+              />
+              {suggestions.length > 0 && (
+                <ul className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-border bg-card shadow-lg" data-testid="share-people-suggestions">
+                  {suggestions.map((u) => (
+                    <li key={u.id}>
+                      <button
+                        type="button"
+                        onClick={() => { setSelected((prev) => [...prev, u]); setPeopleQuery('') }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-muted/60"
+                        data-testid={`share-people-option-${u.email}`}
+                      >
+                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold uppercase">
+                          {(u.display_name || u.email || '?').slice(0, 2)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{u.display_name || u.email}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{u.email}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {selected.length > 0 && (
+              <div className="flex flex-wrap gap-1.5" data-testid="share-people-chips">
+                {selected.map((u) => (
+                  <span key={u.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 py-0.5 ps-2.5 pe-1 text-xs font-medium">
+                    {u.display_name || u.email}
+                    <button
+                      type="button"
+                      onClick={() => setSelected((prev) => prev.filter((x) => x.id !== u.id))}
+                      aria-label={`Remove ${u.display_name || u.email}`}
+                      className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <Select
+              label="Permission"
+              value={capability}
+              onValueChange={(v) => setCapability(v as typeof capability)}
+              options={PEOPLE_CAPABILITIES.map((c) => ({ value: c.value, label: c.label }))}
+            />
+
+            <Button
+              onClick={shareWithPeople}
+              disabled={creating || selected.length === 0}
+              className="w-full"
+              data-testid="share-people-submit"
+            >
+              <UserPlus className="h-4 w-4" />
+              {creating
+                ? 'Sharing…'
+                : selected.length > 0
+                  ? `Share with ${selected.length} ${selected.length === 1 ? 'person' : 'people'}`
+                  : 'Share'}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Recipients see the document under <strong>Shared with me</strong> and get the access level you pick — no link involved.
+            </p>
+          </>
+        )}
 
         {mode === 'zt' && (
           <div className="rounded-md border border-amber-500/40 bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20">
@@ -127,7 +271,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
           </div>
         )}
 
-        {mode === 'classic' ? (
+        {mode === 'classic' && (
           <>
             <Select
               label="Permission"
@@ -147,7 +291,8 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
               placeholder="Leave empty for no password"
             />
           </>
-        ) : (
+        )}
+        {mode === 'zt' && (
           <>
             <Input
               label="Recipient email"
@@ -170,20 +315,24 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
           </>
         )}
 
-        <Select label="Expires" value={expiryHours} onValueChange={setExpiryHours} options={expiryOptions} />
-        {shareUrl ? (
-          <div
-            data-testid="share-link-result"
-            className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
-          >
-            <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
-            <code className="flex-1 truncate text-xs">{shareUrl}</code>
-            <Button variant="ghost" size="sm" onClick={copyLink} aria-label="Copy share link"><Copy className="h-4 w-4" /></Button>
-          </div>
-        ) : (
-          <Button onClick={handleCreate} disabled={creating} className="w-full">
-            {creating ? 'Creating…' : 'Create Share Link'}
-          </Button>
+        {mode !== 'people' && (
+          <>
+            <Select label="Expires" value={expiryHours} onValueChange={setExpiryHours} options={expiryOptions} />
+            {shareUrl ? (
+              <div
+                data-testid="share-link-result"
+                className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
+              >
+                <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
+                <code className="flex-1 truncate text-xs">{shareUrl}</code>
+                <Button variant="ghost" size="sm" onClick={copyLink} aria-label="Copy share link"><Copy className="h-4 w-4" /></Button>
+              </div>
+            ) : (
+              <Button onClick={handleCreate} disabled={creating} className="w-full">
+                {creating ? 'Creating…' : 'Create Share Link'}
+              </Button>
+            )}
+          </>
         )}
       </div>
     </Dialog>

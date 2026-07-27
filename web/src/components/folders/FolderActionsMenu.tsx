@@ -23,6 +23,8 @@ interface Props {
   canManage: boolean
   onOpen: () => void
   children: ReactNode
+  /** Positions the ⋯ trigger wrapper — default suits tiles, rows pass a centered anchor. */
+  triggerClassName?: string
 }
 
 /**
@@ -30,7 +32,7 @@ interface Props {
  * analogue of DocumentActionsMenu. Self-contained: owns its rename /
  * manage-access / delete dialogs and the folder mutation hooks.
  */
-export function FolderActionsMenu({ folder, canManage, onOpen, children }: Props) {
+export function FolderActionsMenu({ folder, canManage, onOpen, children, triggerClassName }: Props) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [accessOpen, setAccessOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -93,7 +95,7 @@ export function FolderActionsMenu({ folder, canManage, onOpen, children }: Props
         </ContextMenuContent>
       </ContextMenu>
 
-      <div className="absolute end-2 top-2">
+      <div className={triggerClassName ?? 'absolute end-2 top-2'}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

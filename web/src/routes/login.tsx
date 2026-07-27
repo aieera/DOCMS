@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import {
   Form, FormField, FormItem, FormLabel, FormControl, FormMessage,
 } from '@/components/ui/form'
@@ -358,7 +359,7 @@ function LoginPage() {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input {...field} type="password" autoComplete="current-password" />
+                  <PasswordInput {...field} autoComplete="current-password" />
                 </FormControl>
                 <FormMessage />
                 <div className="mt-1.5 flex justify-end">

@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, X } from 'lucide-react'
 
 import { cn } from '@/lib/cn'
 import { formatFileSize, formatDateTime } from '@/lib/formatters'
@@ -19,42 +19,38 @@ interface Props {
   workspace?: Workspace
   onOpenFolder: (folder: Folder) => void
   onOpenFile: (doc: Document) => void
+  onClose: () => void
 }
 
-export function BrowserDetailsPanel({ selection, workspace, onOpenFolder, onOpenFile }: Props) {
+// Windows-Explorer-style details pane: only present while a file or
+// folder is selected; deselecting (background click, folder change, or
+// the ✕ here) removes it entirely.
+export function BrowserDetailsPanel({ selection, workspace, onOpenFolder, onOpenFile, onClose }: Props) {
+  if (selection === null) return null
   return (
-    <aside className="hidden w-[300px] flex-none border-s border-border xl:block">
-      <div className="sticky top-0 max-h-[calc(100vh-7rem)] overflow-y-auto p-6">
-        {selection === null ? (
-          <EmptyState workspace={workspace} />
-        ) : selection.type === 'folder' ? (
+    // Flex column inside the page's bounded height: the ✕ header stays
+    // put and only the details body scrolls — no viewport math, so it
+    // holds together at any zoom level / window size.
+    <aside className="hidden min-h-0 w-[300px] flex-none flex-col border-s border-border xl:flex" data-testid="details-panel">
+      <div className="flex shrink-0 justify-end px-3 pt-3">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close details"
+          title="Close details"
+          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-6 pt-0">
+        {selection.type === 'folder' ? (
           <FolderDetails folder={selection.folder} workspace={workspace} onOpen={() => onOpenFolder(selection.folder)} />
         ) : (
           <FileDetails doc={selection.doc} workspace={workspace} onOpen={() => onOpenFile(selection.doc)} />
         )}
       </div>
     </aside>
-  )
-}
-
-function EmptyState({ workspace }: { workspace?: Workspace }) {
-  return (
-    <div className="flex flex-col items-center pt-6 text-center">
-      <span className="grid h-16 w-16 place-items-center rounded-2xl bg-muted text-muted-foreground">
-        <FolderOpen className="h-7 w-7" />
-      </span>
-      <p className="mt-4 text-base font-semibold text-foreground">{workspace?.name ?? 'Workspace'}</p>
-      <p className="mt-1 text-sm text-muted-foreground">Select a folder or file to see its details.</p>
-      {workspace && (
-        <div className="mt-6 w-full space-y-3 text-start">
-          <Head>Info</Head>
-          <Row k="Type" v="Workspace" />
-          <Row k="Documents" v={(workspace.document_count ?? 0).toLocaleString()} />
-          <Row k="Members" v={(workspace.member_count ?? 0).toLocaleString()} />
-          <Row k="Created" v={formatDateTime(workspace.created_at)} />
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -149,7 +145,12 @@ const Preview = ({ children }: { children: React.ReactNode }) => (
   <div className="grid place-items-center py-2">{children}</div>
 )
 const Name = ({ children }: { children: React.ReactNode }) => (
-  <p className="mb-7 mt-3.5 truncate text-center text-lg font-bold tracking-tight text-foreground">{children}</p>
+  <p
+    title={typeof children === 'string' ? children : undefined}
+    className="mb-7 mt-3.5 truncate text-center text-lg font-bold tracking-tight text-foreground"
+  >
+    {children}
+  </p>
 )
 const Head = ({ children }: { children: React.ReactNode }) => (
   <div className="mb-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{children}</div>
