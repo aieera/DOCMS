@@ -11,6 +11,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -21,6 +22,14 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
+
+// annotationBodyLimit bounds an annotation create/update request body.
+// Annotation `data` is coordinate/text/shape metadata (PDF markup rects,
+// a Fabric.js image-shape envelope, a video-timestamp note) — never file
+// content — so 1 MiB is generous. Without a bound the decoder and the
+// resulting jsonb row (fanned out to every collaboration WS subscriber)
+// were unbounded, unlike every sibling handler in this service.
+const annotationBodyLimit = 1 << 20
 
 // AnnotationsHandler wires the four annotation routes onto a mux.
 type AnnotationsHandler struct {
@@ -73,7 +82,7 @@ func (h *AnnotationsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body annotationCreateBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, annotationBodyLimit)).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}
@@ -154,7 +163,7 @@ func (h *AnnotationsHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body annotationUpdateBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, annotationBodyLimit)).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
 		return
 	}

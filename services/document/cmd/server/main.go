@@ -41,8 +41,8 @@ import (
 	"github.com/aieera/sedoc/pkg/tracing"
 
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
-	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/autolink"
+	"github.com/aieera/sedoc/services/document/internal/bulk"
 	"github.com/aieera/sedoc/services/document/internal/classification"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 	"github.com/aieera/sedoc/services/document/internal/handler"
@@ -1019,7 +1019,7 @@ func main() {
 	// iframe URL. This route IS gateway-signed (it's the
 	// authenticated kickoff from the FE), so it lives on rootMux.
 	coauthStartMux := http.NewServeMux()
-	handler.NewCoauthStartHandler(*log.Z()).Register(coauthStartMux)
+	handler.NewCoauthStartHandler(svc, *log.Z()).Register(coauthStartMux)
 	rootMux.Handle("POST /api/v1/documents/{id}/versions/{vid}/coauth/start",
 		middleware.CorrelationHTTP(coauthStartMux))
 

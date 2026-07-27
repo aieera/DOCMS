@@ -218,6 +218,25 @@ func (s *DocumentService) UpdateComment(ctx context.Context, id uuid.UUID, body 
 		if err != nil {
 			return err
 		}
+		// Enforce the same document-level bar as every other comment path
+		// (create/list/react): the parent document must exist and the caller
+		// must still hold `view`, with lifecycle_state so the OPA disposed-
+		// document deny fires. Without this an author could keep editing a
+		// comment — and fire dms.comment.updated.v1 + mention notifications —
+		// on a soft-deleted or disposed document, or after losing access.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		if existing.AuthorID != userID {
 			return vdmserr.Forbidden("only the author may edit a comment")
 		}
@@ -262,6 +281,23 @@ func (s *DocumentService) SoftDeleteComment(ctx context.Context, id uuid.UUID) e
 		if err != nil {
 			return err
 		}
+		// Document existence + lifecycle gate, consistent with every other
+		// comment path: no mutating a comment on a soft-deleted or disposed
+		// document (the `view` check carries lifecycle_state so OPA's
+		// disposed-deny fires for author and admin alike).
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		if existing.AuthorID != userID && role != "admin" && role != "owner" {
 			return vdmserr.Forbidden("only the author or an admin may delete a comment")
 		}
@@ -287,12 +323,25 @@ func (s *DocumentService) SetCommentResolved(ctx context.Context, id uuid.UUID, 
 		if existing.ParentCommentID != nil {
 			return vdmserr.Validation("comment", "replies cannot be resolved — resolve the thread root")
 		}
+		// Document existence + lifecycle gate for ALL callers (the author
+		// path previously skipped this, letting an author resolve a thread
+		// on a soft-deleted or disposed document). The `view` check carries
+		// lifecycle_state so OPA's disposed-deny fires.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		// Authority: author OR users with edit on the document.
 		if existing.AuthorID != userID {
-			doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
-			if err != nil {
-				return err
-			}
 			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
 				"workspace_id":    doc.WorkspaceID.String(),
 				"lifecycle_state": string(doc.LifecycleState),

@@ -303,6 +303,41 @@ func TestLock_UnlockAndRelock(t *testing.T) {
 	}
 }
 
+// TestLock_PerDocumentAcrossVersions pins the fix for the version-keyed
+// lock: two WOPI sessions on DIFFERENT versions of the SAME document (as
+// happens once a save-back advances the head) must still contend for one
+// lock, preserving the single-writer guarantee across the save boundary.
+func TestLock_PerDocumentAcrossVersions(t *testing.T) {
+	h, _, c, _, done := newWOPIHarness(t)
+	defer done()
+	secret := os.Getenv("SEDOC_WOPI_SECRET")
+	docID := uuid.New()
+
+	// Editor A holds a token for version V1 of document D.
+	cA := *c
+	cA.DocumentID = docID
+	tokA := IssueWOPIToken(secret, cA)
+	w := httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-A", tokA, &cA, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("editor A lock: %d", w.Code)
+	}
+
+	// Editor B opens fresh against a NEW version V2 of the same document D.
+	cB := *c
+	cB.DocumentID = docID
+	cB.FileID = uuid.New() // different version_id, same document
+	tokB := IssueWOPIToken(secret, cB)
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-B", tokB, &cB, ""))
+	if w.Code != http.StatusConflict {
+		t.Errorf("second editor on a new version of the same doc must 409 (single-writer); got %d", w.Code)
+	}
+	if got := w.Header().Get("X-WOPI-Lock"); got != "lock-A" {
+		t.Errorf("conflict must echo A's lock; got %q", got)
+	}
+}
+
 // recordingAuditor satisfies WOPIAuditor and remembers every call.
 type recordingAuditor struct {
 	started []*WOPIClaims

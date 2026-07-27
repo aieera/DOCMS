@@ -76,9 +76,15 @@ func (s *DocumentService) requireAnnotationPermission(
 	} else if ok {
 		return nil
 	}
-	// 3. Author bypass — owners of a row can always update or delete it.
+	// 3. Author bypass — owners of a row can update or delete it, EXCEPT on
+	//    a disposed document, where the lifecycle freeze applies to everyone.
+	//    Non-authors are already denied on disposed by the policy checks
+	//    above (they carry lifecycle_state); the author shortcut must honor
+	//    the same freeze rather than skipping straight past it.
 	if (action == "delete" || action == "update") && authorID != uuid.Nil && authorID == userID {
-		return nil
+		if ls, _ := extra["lifecycle_state"].(string); ls != string(model.StateDisposed) {
+			return nil
+		}
 	}
 	return vdmserr.ErrForbidden
 }

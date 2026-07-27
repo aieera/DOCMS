@@ -30,6 +30,18 @@
 // arrive during the hydration window.
 const HYDRATE_ORIGIN = Symbol('yjs-hydrate')
 
+// Bounds the final-flush awaits in the close handler so a hung DB (e.g. an
+// exhausted pg pool) can't leave rooms.delete unreachable and leak the room.
+const FINAL_FLUSH_TIMEOUT_MS = 10_000
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// A legitimate client controls exactly one awareness clientID (its own Yjs
+// client). Cap per-connection growth so a malicious socket can't register
+// synthetic clientIDs to inflate room/awareness memory or amplify presence
+// broadcasts (and, as a side effect, bounds how many identities one socket
+// can masquerade as).
+const MAX_AWARENESS_IDS_PER_CONN = 8
+
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import * as syncProtocol from 'y-protocols/sync'
@@ -52,7 +64,7 @@ function getRoom(roomId, tenantId, docId) {
   // ADR 0096 — pendingUpdates counts CRDT mutations since the last
   // snapshot. When it hits FLUSH_EVERY we persist to Postgres so a
   // worker restart / last-client-leaves doesn't lose state.
-  room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false, hydrationPromise: null }
+  room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false, canPersist: false, hydrationPromise: null }
 
   // Hydrate from the latest snapshot (if any). Apply asynchronously so
   // we don't block room creation; new clients arriving before hydration
@@ -66,9 +78,19 @@ function getRoom(roomId, tenantId, docId) {
       Y.applyUpdate(ydoc, new Uint8Array(state), HYDRATE_ORIGIN)
     }
     room.hydrated = true
+    // Load succeeded (prior state applied, or genuinely no snapshot yet) —
+    // safe to persist this room's edits.
+    room.canPersist = true
   }).catch((err) => {
+    // Load FAILED (a transient DB error — distinct from "no snapshot", which
+    // resolves to null above). Keep persistence DISABLED: flushing this room
+    // would write a doc missing the unread prior state, and its higher
+    // update_seq would supersede then GC-delete the real snapshot — silent
+    // data loss. Mark hydrated so we stop deferring, but never write; state
+    // re-hydrates on the next room open once the DB recovers.
     room.hydrated = true
-    console.error(`yjs: hydrate failed room=${roomId}: ${err && err.message}`)
+    room.canPersist = false
+    console.error(`yjs: hydrate failed room=${roomId}; persistence disabled for this room: ${err && err.message}`)
   })
 
   // Broadcast awareness updates to every client in the room except
@@ -112,7 +134,7 @@ function getRoom(roomId, tenantId, docId) {
     // write never persists a doc missing already-stored content. Any
     // edits counted pre-hydration are flushed by the last-client path
     // (or the next threshold crossing after hydration completes).
-    if (room.hydrated && room.pendingUpdates >= FLUSH_EVERY) {
+    if (room.hydrated && room.canPersist && room.pendingUpdates >= FLUSH_EVERY) {
       room.pendingUpdates = 0
       // Fire-and-forget; saveSnapshot logs its own errors and never
       // throws. Don't await — the update broadcast must not block on
@@ -155,6 +177,14 @@ export function attachYjs(wss) {
     if (!parsed) return  // not a Yjs URL; let existing handler own it
     if (conn.__routed) return
     conn.__routed = 'yjs'
+    // Participate in the shared heartbeat (index.js) so this socket is not
+    // terminated as "dead". Yjs sockets live in the same wss.clients set the
+    // heartbeat sweeps; without isAlive/pong they were `!isAlive` (undefined)
+    // on the first tick and killed within HEARTBEAT_INTERVAL, causing a
+    // 30-second reconnect loop that broke collaborative editing. Set liveness
+    // now (auth below is async) and refresh it on every pong.
+    conn.isAlive = true
+    conn.on('pong', () => { conn.isAlive = true })
     // Auth check is async — gate the connection before joining the room.
     // The socket is already accepted at this point, but we close with
     // the right code below if auth fails. The client never sees the
@@ -343,6 +373,16 @@ function handleYjsConnection(conn, { roomId, tenantId, docId }, { canEdit = true
           decoding.readVarUint8Array(dec),
           conn
         )
+        // Enforce the per-connection awareness cap. Runs AFTER the apply
+        // (not inside the awareness 'update' emit) to avoid re-entrancy —
+        // the update handler has already recorded this conn's controlledIds.
+        // Trims the states beyond the cap so a client that floods synthetic
+        // clientIDs can't grow room memory or amplify broadcasts unbounded.
+        if (conn.controlledIds && conn.controlledIds.size > MAX_AWARENESS_IDS_PER_CONN) {
+          const excess = Array.from(conn.controlledIds).slice(MAX_AWARENESS_IDS_PER_CONN)
+          awarenessProtocol.removeAwarenessStates(room.awareness, excess, null)
+          for (const id of excess) conn.controlledIds.delete(id)
+        }
       }
     } catch (err) {
       console.error('yjs: failed to process message', err)
@@ -364,11 +404,21 @@ function handleYjsConnection(conn, { roomId, tenantId, docId }, { canEdit = true
     // pre-flush state — silently rolling back the just-departed user's
     // edits. Awaiting keeps the in-memory room authoritative until the
     // snapshot is durable.
+    // Bound every await so a hung DB (e.g. an exhausted pg pool that never
+    // hands out a connection) can't leave rooms.delete unreachable and leak
+    // the room forever. On timeout we skip the flush and drop the room —
+    // losing at most the last <FLUSH_EVERY updates, which is preferable to
+    // an unbounded memory leak.
     try {
-      if (!room.hydrated && room.hydrationPromise) await room.hydrationPromise
-      if (room.pendingUpdates > 0) {
+      if (!room.hydrated && room.hydrationPromise) {
+        await Promise.race([room.hydrationPromise, delay(FINAL_FLUSH_TIMEOUT_MS)])
+      }
+      if (room.canPersist && room.pendingUpdates > 0) {
         room.pendingUpdates = 0
-        await saveSnapshot(room.tenantId, room.docId, room.ydoc)
+        await Promise.race([
+          saveSnapshot(room.tenantId, room.docId, room.ydoc),
+          delay(FINAL_FLUSH_TIMEOUT_MS),
+        ])
       }
     } catch (err) {
       console.error(`yjs: final flush failed room=${roomId}: ${err && err.message}`)

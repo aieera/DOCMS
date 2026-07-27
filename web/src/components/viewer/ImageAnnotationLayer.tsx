@@ -165,6 +165,18 @@ export function ImageAnnotationLayer({ documentId, versionId, imageUrl, canCreat
             preserveAspectRatio="none"
             data-testid="image-annotation-overlay"
           >
+            <defs>
+              {/* Arrowhead for 'arrow' shapes. Without this <marker> the
+                  markerEnd="url(#arrow)" reference resolved to nothing and
+                  arrows rendered as plain lines. markerUnits="strokeWidth"
+                  keeps the head proportional to the (non-scaling) stroke. */}
+              <marker
+                id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill="#2563eb" />
+              </marker>
+            </defs>
             {annotations.flatMap((a) =>
               ((a.data as unknown as ImageShapeData).objects ?? []).map((o, i) =>
                 renderShape(o as Shape, `${a.id}-${i}`, unit),

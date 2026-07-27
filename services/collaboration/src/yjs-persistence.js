@@ -62,7 +62,13 @@ export async function loadSnapshot(tenantId, docId) {
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     console.error(`yjs-persistence: load failed tenant=${tenantId} doc=${docId}`, err.message)
-    return null
+    // THROW rather than return null: "no snapshot" (null above) and "the DB
+    // errored" are different outcomes. If a transient error were reported as
+    // null, the room would hydrate empty and its later higher-seq flushes
+    // would supersede and then GC-delete the real snapshot — silent CRDT
+    // data loss. The caller keeps persistence disabled for the room when
+    // load fails, so nothing overwrites the unread snapshot.
+    throw err
   } finally {
     client.release()
   }
@@ -78,6 +84,14 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
   try {
     await client.query('BEGIN')
     await client.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId])
+    // Serialize concurrent flushes for the same (tenant, doc) — including
+    // across collaboration instances that both hold a room for the doc — so
+    // two racing snapshots don't compute the same COALESCE(MAX(update_seq),0)+1
+    // and collide on the (tenant_id, doc_id, update_seq) PK. Without this the
+    // loser's whole tx (snapshot + dms.document.edited.v1 outbox event) rolled
+    // back and was swallowed by the catch. The advisory lock is transaction-
+    // scoped and released on COMMIT/ROLLBACK.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, [tenantId, docId])
     // update_seq is per (tenant, doc); compute next via COALESCE(MAX+1, 1)
     await client.query(
       `INSERT INTO yjs_snapshots(tenant_id, doc_id, update_seq, state_bin)
