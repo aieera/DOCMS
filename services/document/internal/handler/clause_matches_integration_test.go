@@ -313,6 +313,32 @@ func TestClauseVariations_GroupsNormalizedText(t *testing.T) {
 	top := variations[0].(map[string]any)
 	require.EqualValues(t, 2, top["occurrences"])
 	require.EqualValues(t, 2, body["total_documents"])
+
+	// documents carries title + workspace_id so the clauses page can link
+	// each usage row to the document detail route.
+	docs := body["documents"].([]any)
+	require.Len(t, docs, 2)
+	first := docs[0].(map[string]any)
+	require.Equal(t, "Contract A", first["title"])
+	require.NotEmpty(t, first["id"])
+	require.NotEmpty(t, first["workspace_id"])
+}
+
+func TestClauseVariations_ExcludesSoftDeletedDocuments(t *testing.T) {
+	ctx, tenant := newTestTenant(t)
+	clauseID, _, docB := seedClauseWorld(ctx, t, tenant)
+
+	_, err := testPool.Exec(ctx, `
+		UPDATE documents SET deleted_at = now()
+		 WHERE tenant_id = $1 AND id = $2`, tenant, docB)
+	require.NoError(t, err)
+
+	resp := doAuthedJSON(t, "GET", "/api/v1/clauses/"+clauseID.String()+"/variations", nil, "owner")
+	require.Equal(t, 200, resp.Code)
+	body := decodeMap(t, resp)
+	docs := body["documents"].([]any)
+	require.Len(t, docs, 1, "soft-deleted docB must not surface as a link target")
+	require.Equal(t, "Contract A", docs[0].(map[string]any)["title"])
 }
 
 func TestClauseApprove_SetsAndRevokes(t *testing.T) {

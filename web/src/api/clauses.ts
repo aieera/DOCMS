@@ -94,9 +94,18 @@ export interface ClauseVariation {
   document_ids: string[]
 }
 
+export interface ClauseMatchedDocument {
+  id: string
+  title: string
+  workspace_id: string
+}
+
 export interface ClauseVariations {
   variations: ClauseVariation[]
   total_documents: number
+  // Non-deleted documents behind the variation rows, for linking to the
+  // document detail page (needs workspace_id).
+  documents?: ClauseMatchedDocument[]
 }
 
 export async function getDocumentClauseMatches(documentId: string): Promise<ClauseMatch[]> {

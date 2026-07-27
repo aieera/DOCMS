@@ -108,6 +108,14 @@ type variationRow struct {
 	DocumentIDs    []string `json:"document_ids"`
 }
 
+// matchedDocument lets the clauses page link a usage row to the
+// document detail route, which needs workspace_id alongside the id.
+type matchedDocument struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	WorkspaceID string `json:"workspace_id"`
+}
+
 func (h *ClauseMatchesHandler) variations(w http.ResponseWriter, r *http.Request) {
 	tid, err := auth.GetTenantID(r.Context())
 	if err != nil || tid == uuid.Nil {
@@ -120,6 +128,7 @@ func (h *ClauseMatchesHandler) variations(w http.ResponseWriter, r *http.Request
 		return
 	}
 	variations := []variationRow{}
+	documents := []matchedDocument{}
 	var totalDocs int
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
 		// Normalization MUST mirror intelligence _normalize_text
@@ -155,16 +164,46 @@ func (h *ClauseMatchesHandler) variations(w http.ResponseWriter, r *http.Request
 		if e := rows.Err(); e != nil {
 			return e
 		}
-		return tx.QueryRow(r.Context(), `
+		if e := tx.QueryRow(r.Context(), `
 			SELECT count(DISTINCT document_id) FROM clause_matches
 			 WHERE tenant_id = $1 AND clause_id = $2`,
-			tid, clauseID).Scan(&totalDocs)
+			tid, clauseID).Scan(&totalDocs); e != nil {
+			return e
+		}
+		// Soft-deleted documents keep their clause_matches rows (and stay
+		// in the counts above) but must not surface as dead links.
+		docRows, e := tx.Query(r.Context(), `
+			SELECT DISTINCT d.id, d.title, d.workspace_id
+			  FROM clause_matches m
+			  JOIN documents d ON d.tenant_id = m.tenant_id AND d.id = m.document_id
+			 WHERE m.tenant_id = $1 AND m.clause_id = $2 AND d.deleted_at IS NULL
+			 ORDER BY d.title`,
+			tid, clauseID)
+		if e != nil {
+			return e
+		}
+		defer docRows.Close()
+		for docRows.Next() {
+			var id, wsID uuid.UUID
+			var d matchedDocument
+			if e := docRows.Scan(&id, &d.Title, &wsID); e != nil {
+				return e
+			}
+			d.ID = id.String()
+			d.WorkspaceID = wsID.String()
+			documents = append(documents, d)
+		}
+		return docRows.Err()
 	})
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"variations": variations, "total_documents": totalDocs})
+	writeJSON(w, 200, map[string]any{
+		"variations":      variations,
+		"total_documents": totalDocs,
+		"documents":       documents,
+	})
 }
 
 func (h *ClauseMatchesHandler) approve(w http.ResponseWriter, r *http.Request) {
