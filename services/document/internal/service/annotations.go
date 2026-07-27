@@ -45,11 +45,11 @@ type UpdateAnnotationInput struct {
 // requireAnnotationPermission implements the ADR 0067 resolution
 // order:
 //
-//   1. `edit` on the document → allow (back-compat with the
-//      original PDF-only flow).
-//   2. `annotation.<action>` capability on the document → allow.
-//   3. action == "delete"|"update" AND caller is the author → allow.
-//   4. else 403.
+//  1. `edit` on the document → allow (back-compat with the
+//     original PDF-only flow).
+//  2. `annotation.<action>` capability on the document → allow.
+//  3. action == "delete"|"update" AND caller is the author → allow.
+//  4. else 403.
 //
 // `action` is "create" | "update" | "delete". `authorID` is the
 // row's `created_by` for delete/update; pass uuid.Nil on create.
@@ -184,7 +184,8 @@ func (s *DocumentService) ListAnnotations(ctx context.Context, documentID, versi
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}

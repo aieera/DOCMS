@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
@@ -115,6 +115,26 @@ function WorkspacePage() {
       return next
     })
   const clearSelection = () => { setSelectedIds(new Set()); setAnchorId(null) }
+
+  // Prune the multi-select to documents that still exist whenever the
+  // list refetches. Per-row actions (delete, move-out-of-folder via the
+  // actions menu or drag-and-drop) remove a doc from `docs` but left its
+  // id in `selectedIds`, inflating the bulk count and re-submitting a
+  // stale id to the next bulk op. Return the previous set unchanged when
+  // nothing was pruned so this doesn't trigger an extra render.
+  useEffect(() => {
+    const alive = new Set(docs.map((d) => d.id))
+    setSelectedIds((prev) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (alive.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+    setAnchorId((prev) => (prev && !alive.has(prev) ? null : prev))
+  }, [docs])
 
   // File-manager selection: shift-click selects the contiguous range from the
   // anchor in display order; ctrl/cmd or a plain click toggles one row and

@@ -322,6 +322,38 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 		return
 	}
 	ctx := r.Context()
+
+	// UnlockAndRelock: per MS-WOPI, a LOCK request that also carries
+	// X-WOPI-OldLock means "atomically replace OldLock with Lock". The
+	// handler previously ignored X-WOPI-OldLock and fell through to the
+	// plain-lock path below, where SetNX fails (the file is already
+	// locked with OldLock) and the got==wantLock refresh check doesn't
+	// match either — so a legitimate lock rotation was rejected 409.
+	if oldLock := r.Header.Get("X-WOPI-OldLock"); oldLock != "" {
+		got, err := h.rdb.Get(ctx, wopiLockKey(c.FileID)).Result()
+		if err == redis.Nil {
+			// Nothing to relock. 409 with an empty current-lock header.
+			w.Header().Set("X-WOPI-Lock", "")
+			http.Error(w, "not locked", http.StatusConflict)
+			return
+		}
+		if err != nil {
+			http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if got != oldLock {
+			w.Header().Set("X-WOPI-Lock", got)
+			http.Error(w, "lock mismatch", http.StatusConflict)
+			return
+		}
+		if err := h.rdb.Set(ctx, wopiLockKey(c.FileID), wantLock, lockTTL).Err(); err != nil {
+			http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// SETNX-with-TTL via SET NX EX. Returns false on conflict.
 	ok, err := h.rdb.SetNX(ctx, wopiLockKey(c.FileID), wantLock, lockTTL).Result()
 	if err != nil {
@@ -347,6 +379,12 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 }
 
 func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
+	// Only editors take part in the lock protocol. Without this gate a
+	// read-only token could release another session's write lock.
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
 	wantLock := r.Header.Get("X-WOPI-Lock")
 	if wantLock == "" {
 		http.Error(w, "X-WOPI-Lock required", http.StatusBadRequest)
@@ -376,6 +414,10 @@ func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClai
 }
 
 func (h *WOPIHandler) refreshLock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
 	wantLock := r.Header.Get("X-WOPI-Lock")
 	ctx := r.Context()
 	got, err := h.rdb.Get(ctx, wopiLockKey(c.FileID)).Result()
@@ -394,6 +436,13 @@ func (h *WOPIHandler) refreshLock(w http.ResponseWriter, r *http.Request, c *WOP
 }
 
 func (h *WOPIHandler) getLock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
+	// GetLock returns the current lock value; gating it on CanWrite stops
+	// a read-only token from learning an editor's lock token (which it
+	// could then replay against Unlock/RefreshLock).
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
 	got, _ := h.rdb.Get(r.Context(), wopiLockKey(c.FileID)).Result()
 	w.Header().Set("X-WOPI-Lock", got)
 	w.WriteHeader(http.StatusOK)

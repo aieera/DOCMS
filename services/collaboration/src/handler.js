@@ -42,6 +42,41 @@ async function validateToken(token) {
   }
 }
 
+function policyServiceURL() {
+  return process.env.POLICY_SERVICE_URL || 'http://policy:8080';
+}
+
+/**
+ * Doc-level RBAC (§8) gate for room subscription. A valid tenant session
+ * is necessary but NOT sufficient — without this check any authenticated
+ * tenant user could `subscribe` to any doc_id and receive all FUTURE live
+ * comment bodies + collaborator presence for it (the comments_snapshot
+ * hydration is ACL'd via the user token, but the live event stream that
+ * follows was broadcast to every subscriber unconditionally).
+ *
+ * Mirrors yjs-server.js checkDocPermission and FAILS CLOSED: any deny,
+ * auth failure, or transport error returns false, so a policy outage
+ * never grants access. Uses the acting user's Bearer token (+ the
+ * in-cluster gateway signature) so policy authorizes the real user.
+ */
+async function checkDocView(token, docId) {
+  try {
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const secret = process.env.SEDOC_GATEWAY_SECRET || '';
+    if (secret) headers['X-Gateway-Signature'] = secret;
+    const resp = await fetch(`${policyServiceURL()}/api/v1/permissions/check`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'view', resource_type: 'document', resource_id: docId }),
+    });
+    if (!resp.ok) return false;
+    const body = await resp.json().catch(() => null);
+    return body?.allowed === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Publish to the doc room: the caller gets `data` directly (their
  * confirmation carries the persisted ids), every other subscriber —
@@ -50,8 +85,15 @@ async function validateToken(token) {
  */
 async function publishToRoom(ws, connections, redisPub, docId, data) {
   const channel = `dms:${ws.tenantId}:doc:${docId}`;
+  // Publish ONCE to Redis. Every instance subscribed to this channel —
+  // including this one — receives the message on redisSub and fans it
+  // out to its local subscribers there (index.js), excluding
+  // data._senderUserId. Broadcasting locally here as well delivered the
+  // event twice to every other local subscriber; the loopback is the
+  // single delivery path (same pattern the annotation NATS bridge uses).
   await redisPub.publish(channel, JSON.stringify(data));
-  connections.broadcastToDoc(ws.tenantId, docId, data, ws.userId);
+  // The sender is excluded from the loopback (by _senderUserId), so send
+  // their own confirmation directly — it carries the persisted ids.
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
 
@@ -87,6 +129,15 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
       if (!ws.authenticated) return;
       const docId = msg.doc_id;
       if (!docId) return;
+      // Enforce doc-level `view` BEFORE joining the room — otherwise the
+      // subscriber receives every future live comment body + presence
+      // event for a document they may have no access to.
+      if (!(await checkDocView(ws.token, docId))) {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'subscribe_denied', doc_id: docId, error: 'no access to document' }));
+        }
+        return;
+      }
       connections.subscribeToDoc(ws, docId);
       const users = connections.getDocPresence(ws.tenantId, docId);
       connections.broadcastToDoc(ws.tenantId, docId, {
@@ -126,11 +177,12 @@ export async function handleMessage(ws, msg, connections, redisPub, authTimeout)
         cursor: msg.cursor,
         _senderUserId: ws.userId,
       };
-      // Publish to Redis for cross-instance delivery.
+      // Publish once to Redis; the redisSub loopback (index.js) delivers
+      // to local subscribers too, excluding the sender via _senderUserId.
+      // A direct local broadcast here would double-deliver to every other
+      // local subscriber.
       const channel = `dms:${ws.tenantId}:doc:${msg.doc_id}`;
       await redisPub.publish(channel, JSON.stringify(data));
-      // Local broadcast (same instance).
-      connections.broadcastToDoc(ws.tenantId, msg.doc_id, data, ws.userId);
       break;
     }
 

@@ -102,7 +102,8 @@ func (s *DocumentService) CreateComment(ctx context.Context, in *CreateCommentIn
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -160,7 +161,8 @@ func (s *DocumentService) GetCommentByID(ctx context.Context, id uuid.UUID) (*re
 			return err
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -187,7 +189,8 @@ func (s *DocumentService) ListComments(ctx context.Context, documentID uuid.UUID
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -291,7 +294,8 @@ func (s *DocumentService) SetCommentResolved(ctx context.Context, id uuid.UUID, 
 				return err
 			}
 			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
-				"workspace_id": doc.WorkspaceID.String(),
+				"workspace_id":    doc.WorkspaceID.String(),
+				"lifecycle_state": string(doc.LifecycleState),
 			}); err != nil {
 				return err
 			}
@@ -330,7 +334,8 @@ func (s *DocumentService) AddReaction(ctx context.Context, commentID uuid.UUID, 
 			return err
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -365,12 +370,30 @@ func (s *DocumentService) RemoveReaction(ctx context.Context, commentID uuid.UUI
 // ListReactions returns every reaction on a comment, ungrouped. The
 // handler aggregates by emoji before sending to the FE.
 func (s *DocumentService) ListReactions(ctx context.Context, commentID uuid.UUID) ([]repository.CommentReaction, error) {
-	tenantID, _, err := mustCaller(ctx)
+	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []repository.CommentReaction
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Same `view` bar as every other comment read (AddReaction,
+		// GetCommentByID, ListComments): resolve the parent document and
+		// require view, so a leaked/known comment UUID can't be used to
+		// enumerate who reacted on a document the caller can't see.
+		existing, err := s.repos.Comments.GetByID(ctx, tx, tenantID, commentID)
+		if err != nil {
+			return err
+		}
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		out, err = s.repos.Comments.ListReactions(ctx, tx, tenantID, commentID)
 		return err
 	})
@@ -435,10 +458,10 @@ func (s *DocumentService) emitMention(ctx context.Context, tx pgx.Tx, c *reposit
 		"resource_type": "comment",
 		"resource_id":   c.ID.String(),
 		// extras the audit log + downstream consumers care about:
-		"document_id":  documentID.String(),
-		"comment_id":   c.ID.String(),
-		"by_user_id":   byUserID.String(),
-		"at":           time.Now().UTC().Format(time.RFC3339),
+		"document_id": documentID.String(),
+		"comment_id":  c.ID.String(),
+		"by_user_id":  byUserID.String(),
+		"at":          time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		return err

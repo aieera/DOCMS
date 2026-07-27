@@ -6,25 +6,29 @@
 // + awareness messages; this server relays between everyone in the
 // same (tenant, doc) room in-memory.
 //
-// First slice scope:
+// Scope (all implemented):
 //   ✅ Per-(tenant, doc) room. Cross-tenant routing is impossible
 //      because the URL path encodes tenant+doc.
 //   ✅ sync + awareness protocol (from y-protocols).
-//   ❌ Auth — room URL is unauthenticated in this skeleton. The
-//      wider trust model is: `web` connects via gateway cookie
-//      auth to /ws, and the frontend gets a short-lived session
-//      token to connect to /yjs. Token check goes here.
-//   ❌ Postgres snapshots. The Y doc lives in memory per room;
-//      when the last client disconnects, the doc is GC'd. Fine
-//      for a real-time scratchpad; not fine for persistent
-//      collaborative state. Follow-up: persist every N updates.
+//   ✅ Auth — authorize() below resolves the dms_session cookie via
+//      auth /auth/me, rejects on tenant mismatch, and gates view/edit
+//      through the policy service (fails closed). Close codes
+//      4401/4403/4503.
+//   ✅ Postgres snapshots (ADR 0096 Phase 2, yjs-persistence.js).
+//      Rooms hydrate from the latest snapshot and flush every
+//      FLUSH_EVERY updates plus once more when the last client leaves.
 //
 // Per blueprint §17.4:
 //   - Cursor + presence transient via awareness protocol
 //   - Comments CRDT merge on reconnect (free with Yjs)
-//   - Tenant isolation: room-id prefix = tenant_id; server rejects
-//     connections where URL tenant doesn't match session cookie
-//     (TODO with auth slice).
+//   - Tenant isolation: room-id prefix = tenant_id; the server rejects
+//     connections where the URL tenant doesn't match the session cookie.
+
+// Sentinel origin tagging the applyUpdate that replays a loaded snapshot,
+// so the doc 'update' handler can skip that echo (it must not count
+// toward the flush loop) while still counting genuine client edits that
+// arrive during the hydration window.
+const HYDRATE_ORIGIN = Symbol('yjs-hydrate')
 
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
@@ -48,23 +52,36 @@ function getRoom(roomId, tenantId, docId) {
   // ADR 0096 — pendingUpdates counts CRDT mutations since the last
   // snapshot. When it hits FLUSH_EVERY we persist to Postgres so a
   // worker restart / last-client-leaves doesn't lose state.
-  room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false }
+  room = { ydoc, awareness, clients: new Set(), tenantId, docId, pendingUpdates: 0, hydrated: false, hydrationPromise: null }
 
   // Hydrate from the latest snapshot (if any). Apply asynchronously so
   // we don't block room creation; new clients arriving before hydration
   // finishes will see an empty doc and get the snapshot's state once
   // applyUpdate fires (and Yjs handles the merge correctly via CRDT
-  // properties — duplicates are idempotent).
-  loadSnapshot(tenantId, docId).then((state) => {
+  // properties — duplicates are idempotent). The promise is retained so
+  // the last-client-leaves path can flush AFTER hydration completes,
+  // never persisting a doc that's missing already-stored content.
+  room.hydrationPromise = loadSnapshot(tenantId, docId).then((state) => {
     if (state && rooms.has(roomId)) {
-      Y.applyUpdate(ydoc, new Uint8Array(state))
+      Y.applyUpdate(ydoc, new Uint8Array(state), HYDRATE_ORIGIN)
     }
     room.hydrated = true
+  }).catch((err) => {
+    room.hydrated = true
+    console.error(`yjs: hydrate failed room=${roomId}: ${err && err.message}`)
   })
 
   // Broadcast awareness updates to every client in the room except
-  // the one that produced the update.
+  // the one that produced the update. Also track which awareness
+  // clientIDs each connection controls, so a disconnect can remove
+  // exactly that connection's states (see the close handler). Without
+  // this, disconnected users' cursor/presence states linger for the
+  // room's lifetime and are re-broadcast to every newcomer.
   awareness.on('update', ({ added, updated, removed }, origin) => {
+    if (origin && origin.controlledIds instanceof Set) {
+      for (const id of added) origin.controlledIds.add(id)
+      for (const id of removed) origin.controlledIds.delete(id)
+    }
     const changed = added.concat(updated, removed)
     const enc = encoding.createEncoder()
     encoding.writeVarUint(enc, messageAwareness)
@@ -84,12 +101,18 @@ function getRoom(roomId, tenantId, docId) {
     for (const c of room.clients) {
       if (c !== origin && c.readyState === 1) c.send(msg)
     }
-    // Snapshot loop — flush every FLUSH_EVERY updates. Don't snapshot
-    // pre-hydration updates (they include our own applyUpdate firing
-    // back), only client-driven mutations after the load completes.
-    if (!room.hydrated) return
+    // Snapshot loop. Skip only the snapshot's own applyUpdate echo
+    // (origin === HYDRATE_ORIGIN); count every genuine mutation,
+    // INCLUDING client edits that land during the hydration window —
+    // those were previously dropped, so a room that filled and emptied
+    // before loadSnapshot resolved lost all its edits.
+    if (origin === HYDRATE_ORIGIN) return
     room.pendingUpdates++
-    if (room.pendingUpdates >= FLUSH_EVERY) {
+    // Only flush once the prior snapshot has merged in, so a periodic
+    // write never persists a doc missing already-stored content. Any
+    // edits counted pre-hydration are flushed by the last-client path
+    // (or the next threshold crossing after hydration completes).
+    if (room.hydrated && room.pendingUpdates >= FLUSH_EVERY) {
       room.pendingUpdates = 0
       // Fire-and-forget; saveSnapshot logs its own errors and never
       // throws. Don't await — the update broadcast must not block on
@@ -268,6 +291,10 @@ async function checkDocPermission(cookie, docId, action) {
 function handleYjsConnection(conn, { roomId, tenantId, docId }, { canEdit = true } = {}) {
   const room = getRoom(roomId, tenantId, docId)
   room.clients.add(conn)
+  // Awareness clientIDs this connection controls. Populated by the
+  // awareness 'update' handler in getRoom; drained on close so the
+  // user's cursor/presence disappears for everyone when they leave.
+  conn.controlledIds = new Set()
 
   // Send initial sync step 1 so the newcomer catches up on state.
   const enc = encoding.createEncoder()
@@ -322,17 +349,34 @@ function handleYjsConnection(conn, { roomId, tenantId, docId }, { canEdit = true
     }
   })
 
-  conn.on('close', () => {
+  conn.on('close', async () => {
     room.clients.delete(conn)
-    awarenessProtocol.removeAwarenessStates(room.awareness, [conn.awarenessClientID].filter(Boolean), null)
-    if (room.clients.size === 0) {
-      // Last user left: flush any pending updates before dropping the
-      // room from memory. Fire-and-forget — caller doesn't await.
-      if (room.hydrated && room.pendingUpdates > 0) {
-        saveSnapshot(room.tenantId, room.docId, room.ydoc)
+    // Remove exactly the awareness states this connection controlled so
+    // its cursor/presence vanishes for the remaining peers.
+    awarenessProtocol.removeAwarenessStates(
+      room.awareness, Array.from(conn.controlledIds || []), null,
+    )
+    if (room.clients.size !== 0) return
+    // Last user left. Ensure the prior snapshot has hydrated, flush any
+    // pending edits, and only THEN drop the room. Deleting before the
+    // write commits (the previous fire-and-forget + immediate delete)
+    // let a fast reconnect recreate the room and loadSnapshot the
+    // pre-flush state — silently rolling back the just-departed user's
+    // edits. Awaiting keeps the in-memory room authoritative until the
+    // snapshot is durable.
+    try {
+      if (!room.hydrated && room.hydrationPromise) await room.hydrationPromise
+      if (room.pendingUpdates > 0) {
+        room.pendingUpdates = 0
+        await saveSnapshot(room.tenantId, room.docId, room.ydoc)
       }
-      rooms.delete(roomId)
+    } catch (err) {
+      console.error(`yjs: final flush failed room=${roomId}: ${err && err.message}`)
     }
+    // A client may have rejoined during the await — only drop the room
+    // if it's still empty, otherwise the reconnecting peer keeps the
+    // live in-memory doc.
+    if (room.clients.size === 0) rooms.delete(roomId)
   })
 
   console.log(`yjs: client joined tenant=${tenantId} doc=${docId} peers=${room.clients.size}`)

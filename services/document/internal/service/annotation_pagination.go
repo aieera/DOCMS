@@ -54,7 +54,8 @@ func (s *DocumentService) ListAnnotationsPage(ctx context.Context, documentID, v
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}

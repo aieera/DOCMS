@@ -113,6 +113,35 @@ test('unauthorized sessions are rejected', async () => {
     'sanity: alice did get her own room-load snapshot');
 });
 
+test('subscribe is denied when the caller lacks view on the document', async () => {
+  const { api, server } = await startHarness();
+  api.addUser('tok-mallory', { name: 'Mallory' });
+  api.denyView('tok-mallory', DOC); // policy says no `view`
+
+  const mallory = await new TestClient(server.url).open();
+  const alice = await new TestClient(server.url).open();
+  onTestFinished(() => { mallory.close(); alice.close(); });
+  await mallory.auth('tok-mallory');
+
+  // Subscribe must be rejected with an explicit frame and NO snapshot.
+  mallory.send({ type: 'subscribe', doc_id: DOC });
+  const denied = await mallory.waitFor('subscribe_denied');
+  assert.equal(denied.doc_id, DOC);
+  assert.equal(mallory.inbox.filter((m) => m.type === 'comments_snapshot').length, 0,
+    'a denied subscriber must not receive the comments snapshot');
+
+  // And a subsequently-created comment by an authorized user must never
+  // reach Mallory (she never joined the room).
+  api.addUser('tok-alice', { name: 'Alice' });
+  await alice.auth('tok-alice');
+  await alice.subscribe(DOC);
+  alice.send({ type: 'comment_create', doc_id: DOC, body: 'secret' });
+  await alice.waitFor('comment_added');
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(mallory.inbox.filter((m) => m.type.startsWith('comment_')).length, 0,
+    'a denied subscriber must not receive live comment events');
+});
+
 test('persistence failure sends comment_error and broadcasts nothing', async () => {
   const { api, server } = await startHarness();
   api.addUser('tok-alice', { name: 'Alice' });
