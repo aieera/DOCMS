@@ -119,30 +119,36 @@ func (s *DocumentService) ExportForDiscovery(ctx context.Context, w io.Writer, i
 		ExportedAt:     time.Now().UTC(),
 		Documents:      items,
 	}
+	// §9.5 requirement: the export must be provably audit-logged for
+	// chain-of-custody. Write the audit event BEFORE streaming the ZIP and
+	// ABORT on failure — previously the event was built after the bytes were
+	// already delivered and its insert error was discarded, so a failed audit
+	// write produced an UNAUDITED export. Ordering it first (the ZIP bytes have
+	// not been written yet) makes a failed audit a clean, retryable error
+	// rather than a chain-of-custody gap. manifest_sha256 is computed over the
+	// same manifest the ZIP serializes, so it still binds the audit to the
+	// exact export.
+	evt, err := model.NewOutboxEvent(tenantID, "dms.ediscovery.exported.v1", "case", uuid.MustParse(fakeIfNotUUID(in.CaseID)),
+		map[string]any{
+			"case_id":         in.CaseID,
+			"case_name":       in.CaseName,
+			"custodian_email": in.CustodianEmail,
+			"document_count":  len(items),
+			"exported_by":     userID.String(),
+			"manifest_sha256": manifestSHA256(manifest),
+		})
+	if err != nil {
+		return nil, fmt.Errorf("ediscovery: build audit event: %w", err)
+	}
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	}); err != nil {
+		return nil, fmt.Errorf("ediscovery: audit export failed, aborting: %w", err)
+	}
+
 	if err := writeDiscoveryZip(w, manifest); err != nil {
 		return nil, fmt.Errorf("ediscovery: write zip: %w", err)
 	}
-
-	// §9.5 requirement: export itself must be audit-logged so the
-	// chain-of-custody claim is provable.
-	evt, err := model.NewOutboxEvent(tenantID, "dms.ediscovery.exported.v1", "case", uuid.MustParse(fakeIfNotUUID(in.CaseID)),
-		map[string]any{
-			"case_id":          in.CaseID,
-			"case_name":        in.CaseName,
-			"custodian_email":  in.CustodianEmail,
-			"document_count":   len(items),
-			"exported_by":      userID.String(),
-			"manifest_sha256":  manifestSHA256(manifest),
-		})
-	if err != nil {
-		s.log.Warn().Err(err).Msg("ediscovery: build audit event failed (export already delivered)")
-		return manifest, nil
-	}
-	// Write the audit event outside the export tx; the ZIP bytes
-	// already went to the caller by this point.
-	_ = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		return s.repos.Outbox.Insert(ctx, tx, evt)
-	})
 	return manifest, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -44,9 +45,13 @@ type Service struct {
 }
 
 func New(pool *pgxpool.Pool, log zerolog.Logger) *Service {
+	// SIEM sinks are often internal (on-prem Splunk/syslog on a LAN), so a
+	// deployment opts into private targets explicitly; the metadata/link-local
+	// ranges stay blocked regardless (see guardedDialer). Default is fail-safe.
+	allowPrivate := strings.EqualFold(strings.TrimSpace(os.Getenv("SEDOC_SIEM_ALLOW_PRIVATE_TARGETS")), "true")
 	return &Service{
 		pool:       pool,
-		fwd:        NewForwarder(&http.Client{Timeout: 10 * time.Second}),
+		fwd:        NewForwarder(&http.Client{Timeout: 10 * time.Second}, allowPrivate),
 		log:        log,
 		maxDeliver: 5,
 	}
@@ -68,8 +73,14 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 		if err := s.handle(ctx, msg.Subject, msg.Data); err != nil {
 			md, _ := msg.Metadata()
 			if md != nil && int(md.NumDelivered) >= s.maxDeliver {
-				s.toDLQ(js, msg.Subject, msg.Data, err)
-				_ = msg.Ack() // terminate redelivery
+				if dErr := s.toDLQ(js, msg.Subject, msg.Data, err); dErr != nil {
+					// DLQ persist FAILED — do NOT Ack, which would silently drop
+					// a compliance-relevant event. Nak so it isn't confirmed-and-
+					// lost; redelivery/monitoring can pick it up.
+					_ = msg.Nak()
+					return
+				}
+				_ = msg.Ack() // safely in the DLQ; terminate redelivery
 				return
 			}
 			_ = msg.Nak() // retry
@@ -122,7 +133,10 @@ func (s *Service) handle(ctx context.Context, subject string, raw []byte) error 
 	return firstErr
 }
 
-func (s *Service) toDLQ(js nats.JetStreamContext, subject string, raw []byte, cause error) {
+// toDLQ persists a permanently-failed event to the DLQ subject. Returns the
+// publish error so the caller can decide whether it is safe to Ack (dropping
+// the message) — a swallowed error here silently lost the event.
+func (s *Service) toDLQ(js nats.JetStreamContext, subject string, raw []byte, cause error) error {
 	payload, _ := json.Marshal(map[string]any{
 		"original_subject": subject,
 		"error":            cause.Error(),
@@ -131,7 +145,9 @@ func (s *Service) toDLQ(js nats.JetStreamContext, subject string, raw []byte, ca
 	})
 	if _, err := js.Publish(dlqSubject, payload); err != nil {
 		s.log.Error().Err(err).Str("subject", subject).Msg("siem DLQ publish failed")
+		return err
 	}
+	return nil
 }
 
 // SendTestEvent forwards a synthetic event to one sink and returns the delivery

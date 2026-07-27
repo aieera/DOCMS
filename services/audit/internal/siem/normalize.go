@@ -7,14 +7,18 @@ import (
 
 // Normalize maps a raw domain event (the NATS subject + the CloudEvents-ish
 // JSON body) to the common NormalizedEvent shape. Tolerant of both a flat
-// payload and a {data:{...}} envelope; unknown fields are preserved in Raw.
-// Deterministic + dependency-free so it is unit-testable.
+// payload and a {data:{...}} envelope. Deterministic + dependency-free so it
+// is unit-testable.
+//
+// Raw is intentionally NOT populated: forwarding the whole domain-event JSON to
+// an external, tenant-configured sink over-exposed PII well beyond the curated
+// normalized fields (actor/action/resource/…). Full-fidelity forwarding, if a
+// deployment wants it, should be an explicit opt-in — not the default.
 func Normalize(subject string, raw []byte, receivedAt time.Time) NormalizedEvent {
 	ev := NormalizedEvent{
 		Subject:   subject,
 		Action:    subject,
 		Timestamp: receivedAt.UTC().Format(time.RFC3339Nano),
-		Raw:       json.RawMessage(raw),
 	}
 
 	var top map[string]any

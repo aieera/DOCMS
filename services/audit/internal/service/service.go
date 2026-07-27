@@ -248,7 +248,7 @@ func (s *Service) appendChained(ctx context.Context, event *model.AuditEvent) er
 		return fmt.Errorf("get last hash: %w", err)
 	}
 	event.PreviousHash = prevHash
-	event.EventHash = computeHash(prevHash, event.TenantID, event.Actor, event.Action, event.ResourceID, event.CreatedAt)
+	event.EventHash = computeEventHash(prevHash, event)
 
 	return s.repo.Insert(ctx, event)
 }
@@ -298,7 +298,7 @@ func (s *Service) VerifyIntegrity(ctx context.Context, tenantID string) (*model.
 	result := &model.IntegrityResult{TenantID: tenantID, TotalEvents: int64(len(events)), Valid: true}
 	prevHash := ""
 	for _, e := range events {
-		expected := computeHash(prevHash, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
+		expected := expectedHashFor(prevHash, e)
 		if e.EventHash != expected {
 			result.Valid = false
 			result.BrokenAt = e.ID
@@ -402,7 +402,47 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 
 // AnonymizeSubject redacts a data subject's PII (GDPR Art.17).
 func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID string) (int64, error) {
-	return s.repo.AnonymizeSubject(ctx, tenantID, subjectID)
+	// GDPR erasure mutates HASHED fields (actor/actor_name/ip/user_agent), so it
+	// necessarily invalidates the hash chain from the first affected event
+	// forward. The old code redacted and left the chain permanently BROKEN —
+	// every erasure tripped the p0 audit_chain_break alert and made
+	// VerifyIntegrity report tampering. Instead perform an AUTHORIZED re-chain:
+	// redact, recompute every event's hash in order, persist, and re-anchor with
+	// a fresh signed checkpoint. Held under the per-tenant lock so no concurrent
+	// append races the rewrite.
+	unlock := s.lockTenant(ctx, tenantID)
+	defer unlock()
+
+	n, err := s.repo.AnonymizeSubject(ctx, tenantID, subjectID)
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, nil // nothing redacted → chain untouched
+	}
+
+	events, err := s.repo.ListAll(ctx, tenantID) // chain order (created_at, id)
+	if err != nil {
+		return n, fmt.Errorf("anonymize re-chain load: %w", err)
+	}
+	prev := ""
+	for _, e := range events {
+		e.PreviousHash = prev
+		e.EventHash = computeEventHash(prev, e)
+		prev = e.EventHash
+	}
+	if err := s.repo.UpdateEventHashes(ctx, tenantID, events); err != nil {
+		return n, fmt.Errorf("anonymize re-chain persist: %w", err)
+	}
+
+	// The head hash moved, so the prior checkpoint no longer matches. Re-anchor
+	// with a fresh checkpoint when signing is enabled (CreateCheckpoint does not
+	// re-acquire the per-tenant lock, so this is safe here); ignore the
+	// signing-disabled case.
+	if _, cErr := s.CreateCheckpoint(ctx, tenantID); cErr != nil && !errors.Is(cErr, ErrSigningDisabled) {
+		s.log.Warn().Err(cErr).Str("tenant", tenantID).Msg("audit: re-checkpoint after anonymize failed")
+	}
+	return n, nil
 }
 
 // ---- NATS subscriber ------------------------------------------------------
@@ -468,10 +508,57 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 
 // ---- internals ------------------------------------------------------------
 
+// hashV2Prefix marks an event hash computed by computeEventHash (which covers
+// EVERY content field). Legacy events (no prefix) were hashed by computeHash
+// over only prev|tenant|actor|action|resource|created_at, leaving details,
+// ip_address, user_agent, actor_name, resource_type, resource_title and
+// source_event UNAUTHENTICATED — rewritable undetected. Verification selects
+// the algorithm from this prefix, so historical chains stay valid while new
+// events get full coverage; the chain linkage (each event commits to the prior
+// event's prefixed hash) prevents downgrading a v2 event to the legacy form.
+const hashV2Prefix = "v2:"
+
+// computeEventHash hashes prev + every content field of e with length-prefixed
+// framing, so no field's bytes can be shifted across a boundary (Details is
+// arbitrary JSON that may contain delimiters). This closes the gap where the
+// most security-relevant columns were outside the hash, and folds in
+// resource_type (which also scopes the Merkle proof bucket).
+func computeEventHash(prev string, e *model.AuditEvent) string {
+	h := sha256.New()
+	wf := func(b []byte) { fmt.Fprintf(h, "%d:", len(b)); h.Write(b) }
+	ws := func(s string) { wf([]byte(s)) }
+	ws(prev)
+	ws(e.ID)
+	ws(e.TenantID)
+	ws(e.Actor)
+	ws(e.ActorName)
+	ws(e.Action)
+	ws(e.ResourceType)
+	ws(e.ResourceID)
+	ws(e.ResourceTitle)
+	wf(e.Details)
+	ws(e.IPAddress)
+	ws(e.UserAgent)
+	ws(e.SourceEvent)
+	ws(e.CreatedAt.Format(time.RFC3339Nano))
+	return hashV2Prefix + hex.EncodeToString(h.Sum(nil))
+}
+
+// computeHash is the LEGACY chain hash, retained ONLY to verify events written
+// before the v2 upgrade. Never use it for new events.
 func computeHash(prev, tenantID, actor, action, resourceID string, t time.Time) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s", prev, tenantID, actor, action, resourceID, t.Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// expectedHashFor recomputes the expected hash for e, choosing the algorithm
+// from the stored hash's version prefix so legacy and v2 events both verify.
+func expectedHashFor(prev string, e *model.AuditEvent) string {
+	if strings.HasPrefix(e.EventHash, hashV2Prefix) {
+		return computeEventHash(prev, e)
+	}
+	return computeHash(prev, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
 }
 
 func (s *Service) lockTenant(ctx context.Context, tenantID string) func() {

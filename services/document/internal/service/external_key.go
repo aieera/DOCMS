@@ -258,6 +258,17 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 		if model.IsLegalHoldBlocked(existing.LifecycleState, "create_version") {
 			return vdmserr.ErrLegalHold
 		}
+		// Match the immutability guards CreateVersion / RestoreVersion enforce:
+		// a declared record is immutable, and a WORM object-lock forbids
+		// overwriting (appending a new version) before its retention date. This
+		// ERP upsert path omitted both, so an ERP push of different bytes could
+		// re-version a WORM-locked or record-declared document.
+		if rErr := s.blockedByRecord(ctx, tenantID, existing.ID); rErr != nil {
+			return rErr
+		}
+		if wErr := s.blockedByWORM(ctx, tenantID, existing.ID); wErr != nil {
+			return wErr
+		}
 		if perr := s.requirePermission(ctx, userID, "edit", "document", existing.ID, map[string]any{
 			"workspace_id":    existing.WorkspaceID.String(),
 			"lifecycle_state": string(existing.LifecycleState),

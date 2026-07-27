@@ -113,6 +113,12 @@ func (h *ResidencyHandler) createMigration(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	// A cross-region migration moves tenant data across residency boundaries;
+	// gate it to admin/owner like its sibling redispatch/cancel endpoints (it
+	// was the only one in the group without a role check).
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
 	var body createMigrationBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
@@ -174,11 +180,11 @@ func (h *ResidencyHandler) createMigration(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSONStatus(w, http.StatusAccepted, map[string]any{
-		"id":             migrationID.String(),
-		"status":         "pending",
-		"source_region":  body.SourceRegion,
-		"target_region":  body.TargetRegion,
-		"created_at":     time.Now().UTC().Format(time.RFC3339),
+		"id":            migrationID.String(),
+		"status":        "pending",
+		"source_region": body.SourceRegion,
+		"target_region": body.TargetRegion,
+		"created_at":    time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

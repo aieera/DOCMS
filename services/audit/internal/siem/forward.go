@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -19,12 +20,71 @@ type Forwarder struct {
 	dialer func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
-func NewForwarder(hc *http.Client) *Forwarder {
-	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Second}
+// alwaysBlockedIP is never a legitimate SIEM target, even when private targets
+// are permitted: link-local (169.254.0.0/16 — the cloud metadata endpoint),
+// the unspecified address, and multicast.
+func alwaysBlockedIP(ip net.IP) bool {
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
+}
+
+// isInternalIP additionally covers loopback, RFC1918 private, and CGNAT
+// (100.64.0.0/10) — blocked unless the deployment opts into private targets
+// (on-prem SIEM on a trusted LAN).
+func isInternalIP(ip net.IP) bool {
+	if alwaysBlockedIP(ip) || ip.IsLoopback() || ip.IsPrivate() {
+		return true
 	}
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+		return true
+	}
+	return false
+}
+
+// guardedDialer rejects connections to blocked IPs AT DIAL TIME — the actual
+// address after DNS resolution — so redirects and DNS rebinding can't escape
+// the check. allowPrivate relaxes the RFC1918/loopback/CGNAT block for on-prem
+// internal SIEMs, but the metadata/link-local ranges stay blocked regardless.
+func guardedDialer(allowPrivate bool) *net.Dialer {
 	d := &net.Dialer{Timeout: 5 * time.Second}
-	return &Forwarder{hc: hc, dialer: d.DialContext}
+	d.Control = func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return fmt.Errorf("cannot parse dial address %q", address)
+		}
+		if alwaysBlockedIP(ip) || (!allowPrivate && isInternalIP(ip)) {
+			return fmt.Errorf("blocked connection to internal address %q (SIEM SSRF guard)", address)
+		}
+		return nil
+	}
+	return d
+}
+
+// NewForwarder builds a forwarder whose HTTP client AND syslog dialer both
+// enforce the SSRF guard. Previously the HTTP client used the default transport
+// (no dialer, no IP check, no redirect limit) and the syslog dialer was a plain
+// net.Dialer, so a tenant-configured sink endpoint could reach cloud metadata /
+// internal hosts. allowPrivate permits internal LAN targets (on-prem SIEM).
+func NewForwarder(hc *http.Client, allowPrivate bool) *Forwarder {
+	timeout := 10 * time.Second
+	if hc != nil && hc.Timeout > 0 {
+		timeout = hc.Timeout
+	}
+	d := guardedDialer(allowPrivate)
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{DialContext: d.DialContext},
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("stopped after %d redirects", len(via))
+			}
+			return nil // each hop still dials through the guarded transport
+		},
+	}
+	return &Forwarder{hc: client, dialer: d.DialContext}
 }
 
 // Forward routes to the sink-type-specific delivery. A non-nil error means the
