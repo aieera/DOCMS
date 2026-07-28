@@ -1018,7 +1018,7 @@ services:
       args: { SERVICE: task }
     container_name: sedoc-task
     environment: *go-env
-    ports: ["8095:8081", "8196:8080"]
+    ports: ["8096:8081", "8196:8080"]
     depends_on: *go-depends
     healthcheck: *go-healthcheck
     restart: unless-stopped
