@@ -310,6 +310,32 @@ func (s *Service) SealCeremonyForRequest(ctx context.Context, tenantID, document
 	if !claimed {
 		return nil, true, nil
 	}
+	// Bind the request to the document/version actually being sealed. Signers are
+	// loaded from requestID but documentID/versionID arrive independently from the
+	// caller; without this check one request's real signers could be minted as
+	// PAdES revisions onto an unrelated document. Release the claim on mismatch so
+	// a correct trigger can still seal.
+	if requestID != "" {
+		tenantUUID, perr := uuid.Parse(tenantID)
+		if perr != nil {
+			return nil, false, perr
+		}
+		var req *model.SignatureRequest
+		lerr := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+			r, e := s.repo.GetByIDTx(ctx, tx, tenantID, requestID)
+			req = r
+			return e
+		})
+		if lerr != nil || req == nil || req.DocumentID != documentID || req.VersionID != versionID {
+			rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			s.ReleaseSeal(rctx, tenantID, requestID)
+			rcancel()
+			if lerr != nil {
+				return nil, false, fmt.Errorf("seal: load request: %w", lerr)
+			}
+			return nil, false, fmt.Errorf("seal: request %s does not match the document/version being sealed", requestID)
+		}
+	}
 	var signers []CeremonySigner
 	if requestID != "" {
 		if sg, serr := s.CeremonySigners(ctx, tenantID, requestID); serr != nil {

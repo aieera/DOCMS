@@ -96,8 +96,18 @@ func TestFactory_RejectsUnknown(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestFactory_DefaultsToMock(t *testing.T) {
+// TestFactory_RequiresExplicitSigner pins the fail-closed contract (Epic 5 #11):
+// an UNSET SEDOC_SIGNER must be an error, not a silent MockSigner — defaulting to
+// the non-PAdES mock would ship Adobe-invalid signatures if a production deploy
+// forgot to set it. Dev/CI must set SEDOC_SIGNER=mock explicitly.
+func TestFactory_RequiresExplicitSigner(t *testing.T) {
 	_ = os.Unsetenv("SEDOC_SIGNER")
+	_, err := FromEnv("")
+	require.Error(t, err)
+}
+
+func TestFactory_MockWhenSet(t *testing.T) {
+	t.Setenv("SEDOC_SIGNER", "mock")
 	s, err := FromEnv("")
 	require.NoError(t, err)
 	_, ok := s.(*MockSigner)

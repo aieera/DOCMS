@@ -153,14 +153,22 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := h.svc.RecordSignature(r.Context(), service.RecordSignatureInput{
-		TenantID:   tenantID,
-		RequestID:  reqID,
-		SignerID:   signerID,
+		TenantID:  tenantID,
+		RequestID: reqID,
+		SignerID:  signerID,
+		// The per-signer token from the signing URL proves the caller is the
+		// signer; the service rejects a missing/mismatched token.
+		Token:      r.URL.Query().Get("token"),
 		IPAddress:  ip,
 		SVGPath:    body.SVGPath,
 		DeviceKind: body.DeviceKind,
 		DocHashHex: body.DocHashHex,
 	}); err != nil {
+		// A bad token is an auth failure, not a 500.
+		if strings.Contains(err.Error(), "signing token") {
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -170,7 +178,12 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	id := r.PathValue("id")
-	if err := h.svc.CancelRequest(r.Context(), tenantID, id); err != nil {
+	isAdmin := auth.RoleString(r) == "owner" || auth.RoleString(r) == "admin"
+	if err := h.svc.CancelRequest(r.Context(), tenantID, id, auth.UserIDString(r), isAdmin); err != nil {
+		if strings.Contains(err.Error(), "forbidden") {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

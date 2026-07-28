@@ -88,6 +88,24 @@ func (r *Repository) GetByID(ctx context.Context, tenantID, id string) (*model.S
 	return r.GetByIDTx(ctx, r.pool, tenantID, id)
 }
 
+// SignerSigningToken returns the stored per-signer signing_url_token (the
+// "/sign/{req}/{signer}?token=<tok>" string) used to authorize a sign action.
+// Empty string (nil error) when the signer is absent for this tenant/request.
+func (r *Repository) SignerSigningToken(ctx context.Context, tenantID, requestID, signerID string) (string, error) {
+	var tok string
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(signing_url_token,'') FROM signature_signers
+		  WHERE tenant_id = $1 AND request_id = $2 AND id = $3`,
+		tenantID, requestID, signerID).Scan(&tok)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return tok, nil
+}
+
 // GetByIDTx reads a request + its signers via an explicit querier so callers
 // outside an HTTP request (e.g. the seal consumer) can read inside a
 // database.WithTenantTx (which sets app.current_tenant for RLS).
