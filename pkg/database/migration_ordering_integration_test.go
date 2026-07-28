@@ -147,6 +147,14 @@ var knownCoupledChains = map[string]string{
 	"billing":      "https://github.com/aieera/DOCMS/issues/81 (reshapes document-owned subscriptions_billing/usage_meters)",
 	"intelligence": "https://github.com/aieera/DOCMS/issues/82 (FK to document-owned organizations)",
 	"notification": "https://github.com/aieera/DOCMS/issues/83 (ALTERs document-owned notifications)",
+	// task's 000002 ADOPTS the document-owned `tasks` table (created by
+	// document migration 000033 per ADR-0068) — it ALTERs tasks and adds
+	// FKs onto it from the new side tables. That's the entire point of
+	// the 2026-07-28 task-service migration (task-2-brief.md): ownership
+	// of `tasks` transfers to the task service from this migration on,
+	// but the table itself is still created by document's chain. Coupled
+	// BY DESIGN, same class as auth's #75 — no tracking issue.
+	"task": "ALTERs/FKs onto document-owned tasks table (ADR-0068 adoption, by design)",
 }
 
 func TestMigrationIsolation_EachServiceStandalone(t *testing.T) {
