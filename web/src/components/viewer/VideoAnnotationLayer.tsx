@@ -41,13 +41,21 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
     return () => { cancelled = true }
   }, [documentId, versionId])
 
+  // Depend on blobUrl: the <video> is only mounted once the authed blob
+  // resolves (`{blobUrl && <video …>}`), which happens AFTER first render.
+  // With empty deps this effect ran while videoRef.current was still null,
+  // bailed, and never re-ran — so loadedmetadata was never observed and
+  // duration stayed 0, hiding the pin track forever. Re-running on blobUrl
+  // attaches the listener to the real element; the immediate apply() covers
+  // the case where a cached blob already fired loadedmetadata.
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
-    const onMeta = () => setDuration(v.duration)
-    v.addEventListener('loadedmetadata', onMeta)
-    return () => v.removeEventListener('loadedmetadata', onMeta)
-  }, [])
+    const apply = () => { if (Number.isFinite(v.duration)) setDuration(v.duration) }
+    v.addEventListener('loadedmetadata', apply)
+    apply()
+    return () => v.removeEventListener('loadedmetadata', apply)
+  }, [blobUrl])
 
   const dropPin = async () => {
     const v = videoRef.current

@@ -57,7 +57,12 @@ class Settings(BaseSettings):
     # rejects with "endpoint deprecated". Explicit provider prefix
     # bypasses the legacy router.
     default_llm_model: str = "anthropic/claude-haiku-4-5"
-    llm_timeout_seconds: int = 30
+    # Per-request LLM budget, including streamed generations. 30s cut long
+    # doc-QA answers mid-stream on slower models (litellm.Timeout fires
+    # even while tokens are flowing) — the client saw a mid-sentence stop
+    # with no error. 120s is generous headroom for a full answer while
+    # still bounding a hung provider.
+    llm_timeout_seconds: int = 120
     llm_max_concurrent_per_tenant: int = 10
 
     ocr_gpu: bool = False

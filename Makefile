@@ -40,9 +40,16 @@ build: ## Build all service binaries into ./bin
 		fi; \
 	done
 
+# The repo root is not a Go module (go.work workspace), so a bare `./...`
+# fails under go1.26+. Targets below iterate the workspace modules instead.
+WORKSPACE_MODULE_DIRS = $$($(GO) list -m -f '{{.Dir}}')
+
 .PHONY: test
 test: ## Run all tests with race detector
-	$(GO) test -race -timeout 5m ./...
+	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> test $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GO) test -race -timeout 5m ./...) || exit 1; \
+	done
 
 .PHONY: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow test-services
 test-audit:        ; $(GO) test -race -cover ./services/audit/... ## Run audit tests
@@ -56,16 +63,27 @@ test-services: test-audit test-billing test-connector test-notification test-sig
 
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report
-	$(GO) test -race -coverprofile=coverage.txt -covermode=atomic ./...
+	@echo "mode: atomic" > coverage.txt
+	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> cover $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GO) test -race -covermode=atomic -coverprofile=coverage.part ./...) || exit 1; \
+		tail -n +2 $$dir/coverage.part >> coverage.txt 2>/dev/null; \
+		rm -f $$dir/coverage.part; \
+	done
 	$(GO) tool cover -html=coverage.txt -o coverage.html
 
 .PHONY: lint
 lint: ## Run golangci-lint across the workspace
-	$(GOLANGCI_LINT) run ./...
+	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> lint $${dir#$(CURDIR)/}"; \
+		(cd $$dir && $(GOLANGCI_LINT) run ./...) || exit 1; \
+	done
 
 .PHONY: fmt
 fmt: ## Format Go code
-	$(GO) fmt ./...
+	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+		(cd $$dir && $(GO) fmt ./...) || exit 1; \
+	done
 	@command -v goimports >/dev/null && goimports -w -local github.com/aieera/sedoc . || true
 
 .PHONY: tidy
@@ -220,8 +238,10 @@ reset: ## DANGER: destroy all local data and start fresh
 security-check: ## Run gosec + govulncheck
 	@command -v gosec >/dev/null || $(GO) install github.com/securego/gosec/v2/cmd/gosec@latest
 	@command -v govulncheck >/dev/null || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	gosec -quiet ./...
-	govulncheck ./...
+	@for dir in $(WORKSPACE_MODULE_DIRS); do \
+		echo ">> security-check $${dir#$(CURDIR)/}"; \
+		(cd $$dir && gosec -quiet ./... && govulncheck ./...) || exit 1; \
+	done
 
 # ---- Load Testing ----------------------------------------------------------
 

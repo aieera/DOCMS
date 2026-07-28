@@ -7,6 +7,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
@@ -98,6 +100,25 @@ func (s *Service) ImportDriveFolder(
 		if derr != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: download: %v", name, derr))
+			continue
+		}
+
+		// Idempotency: skip files already imported into this folder. Without
+		// this a re-run (or the fixed-first-page ListDriveFiles returning the
+		// same files again) minted a duplicate document + version — and
+		// re-fired OCR/index — for every already-imported file. Dedup on the
+		// content hash into the destination folder, reusing the same
+		// intake_ingested_files table the folder-intake path uses.
+		sum := sha256.Sum256(data)
+		sha := hex.EncodeToString(sum[:])
+		isDup, ddErr := s.repo.DedupeIngestedFile(ctx, tenantID, destFolderID, sha, "drive:"+fileID, int64(len(data)))
+		if ddErr != nil {
+			res.Failed++
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: dedup: %v", name, ddErr))
+			continue
+		}
+		if isDup {
+			res.Skipped++
 			continue
 		}
 

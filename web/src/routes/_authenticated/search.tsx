@@ -6,9 +6,7 @@ import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
 import { getVersions } from '@/api/documents'
 import {
-  useSavedSearches,
   useCreateSavedSearch,
-  useDeleteSavedSearch,
 } from '@/hooks/useSavedSearches'
 import { useWorkspaces } from '@/hooks/useWorkspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -22,7 +20,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { parseFieldSyntax } from '@/lib/searchParser'
-import type { SavedSearch } from '@/api/savedSearches'
+import { recordRecentSearch } from '@/lib/recentSearches'
+import { sanitizeHighlight } from '@/lib/sanitizeHighlight'
 
 // ADR 0082 — facet sidebar state lives entirely in the URL so any
 // search-with-filters is bookmarkable. The route's validateSearch
@@ -122,6 +121,15 @@ function SearchPage() {
   const [inputValue, setInputValue] = useState(urlQuery)
   const debounceRef = useRef<number | null>(null)
   useEffect(() => { setInputValue(urlQuery) }, [urlQuery])
+  // Every executed search (topbar, deep link, typing here) lands in the
+  // topbar dropdown's Recent list. Settle for 1.5s first so partial
+  // keystroke states don't pollute it.
+  useEffect(() => {
+    const q = urlQuery.trim()
+    if (!q) return
+    const t = window.setTimeout(() => recordRecentSearch(q), 1500)
+    return () => window.clearTimeout(t)
+  }, [urlQuery])
   useEffect(() => () => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current)
   }, [])
@@ -196,9 +204,7 @@ function SearchPage() {
     placeholderData: keepPreviousData,
   })
 
-  const { data: savedSearches } = useSavedSearches()
   const createSavedMut = useCreateSavedSearch()
-  const deleteSavedMut = useDeleteSavedSearch()
 
   const setQuery = (raw: string) => {
     const { free, fields } = parseFieldSyntax(raw)
@@ -299,25 +305,6 @@ function SearchPage() {
     }
   }
 
-  const handleApplySaved = (s: SavedSearch) => {
-    const f = (s.filters ?? {}) as Record<string, unknown>
-    navigate({
-      search: () => ({
-        q: s.query || undefined,
-        tag:             arrayOf(f.tags),
-        classification:  arrayOf(f.document_class),
-        lifecycle_state: arrayOf(f.lifecycle_state),
-        mime_type:       arrayOf(f.mime_type),
-        author:          arrayOf(f.created_by_name),
-        region_pin:      arrayOf(f.region_pin),
-        workspace_id:    s.workspace_id ? String(s.workspace_id) : undefined,
-        created_after:   typeof f.created_after === 'string' ? f.created_after.slice(0, 10) : undefined,
-        created_before:  typeof f.created_before === 'string' ? f.created_before.slice(0, 10) : undefined,
-        size:            sizeKeyFromBytes(f.size_min_bytes, f.size_max_bytes),
-      }),
-    })
-  }
-
   const activeFilterCount =
     asArray(params.tag).length +
     asArray(params.author).length +
@@ -335,9 +322,17 @@ function SearchPage() {
     workspaces?.find((w) => w.id === id)?.name ?? id
 
   return (
-    <div className="grid grid-cols-[260px_1fr] gap-6">
-      {/* ---- Sidebar ------------------------------------------------- */}
-      <aside data-testid="facet-sidebar" className="space-y-3">
+    // minmax(0,1fr) lets the results column actually shrink (without it
+    // long titles/snippets push the grid wider than the viewport and the
+    // results header clips). Below lg the rail stacks under the results.
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+      {/* ---- Sidebar — sticky on desktop so filters stay reachable while
+          scrolling long result lists; stacks below the results on small
+          screens (order-last). ------------------------------------------ */}
+      <aside
+        data-testid="facet-sidebar"
+        className="order-last space-y-3 lg:order-none lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:pe-1"
+      >
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Filters</h3>
           {activeFilterCount > 0 && (
@@ -524,34 +519,9 @@ function SearchPage() {
           workspaceName={workspaceName}
         />
 
-        {savedSearches && savedSearches.length > 0 && (
-          <div className="mb-6 flex flex-wrap gap-2" data-testid="saved-searches">
-            {savedSearches.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-center gap-1 rounded-full border border-border bg-card py-1 ps-3 pe-1 text-xs"
-              >
-                <button
-                  type="button"
-                  onClick={() => handleApplySaved(s)}
-                  className="font-medium"
-                  data-testid={`apply-saved-${s.name}`}
-                >
-                  {s.name}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteSavedMut.mutate(s.id)}
-                  aria-label={`Delete saved search ${s.name}`}
-                  title={`Remove ${s.name}`}
-                  className="ms-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Saved-search chips removed — saved searches now live in the
+            topbar search dropdown (run/save/unsave), with full management
+            on /saved-searches. */}
 
         {/* Item 40 — pre-query empty canvas. Renders only when nothing
             else is on screen (no skeleton, no hint, no results, no
@@ -589,24 +559,24 @@ function SearchPage() {
             description={
               activeFilterCount > 0
                 ? 'Try clearing some filters or broadening your query.'
-                : `No documents match"${query}"`
+                : `No documents match "${query}"`
             }
           />
         )}
 
         {data && (data.results?.length ?? 0) > 0 && (
           <div className="space-y-2" data-testid="search-results">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <p className="text-sm text-muted-foreground">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="whitespace-nowrap text-sm text-muted-foreground">
                 {data.total_count} results in {data.latency_ms}ms
               </p>
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
                 <label htmlFor="sort-select" className="text-xs text-muted-foreground">Sort</label>
                 <select
                   id="sort-select"
                   value={params.sort ?? 'relevance'}
                   onChange={(e) => setParam('sort', e.target.value === 'relevance' ? undefined : e.target.value)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
                   data-testid="sort-select"
                 >
                   {SORT_OPTIONS.map((o) => (
@@ -634,8 +604,8 @@ function SearchPage() {
                     // because the backend escapes everything else
                     // before wrapping (see opensearch highlight config).
                     <p
-                      className="font-medium"
-                      dangerouslySetInnerHTML={{ __html: hit.highlights.title[0] }}
+                      className="truncate font-medium"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHighlight(hit.highlights.title[0]) }}
                     />
                   ) : (
                     // No highlight → raw title from the doc. React's
@@ -643,19 +613,23 @@ function SearchPage() {
                     // a filename like `<script>` must render literally.
                     // Fall back so a hit whose title field is missing/empty in
                     // the index still renders a line instead of a blank card.
-                    <p className="font-medium">{hit.title?.trim() || 'Untitled document'}</p>
+                    <p className="truncate font-medium">{hit.title?.trim() || 'Untitled document'}</p>
                   )}
                   {hit.highlights?.content?.[0] && (
                     <p
-                      className="mt-1 text-sm text-muted-foreground"
-                      dangerouslySetInnerHTML={{ __html: hit.highlights.content[0] }}
+                      className="mt-1 line-clamp-2 text-sm text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHighlight(hit.highlights.content[0]) }}
                     />
                   )}
-                  <div className="mt-2 flex items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     {hit.lifecycle_state && (
                       <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     )}
-                    <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
+                    {/* Index rows without an uploaded blob carry size 0 —
+                        "0 B" reads as breakage, so show nothing. */}
+                    {Number(hit.size_bytes) > 0 && (
+                      <span className="text-xs text-muted-foreground">{formatFileSize(hit.size_bytes)}</span>
+                    )}
                     {(() => {
                       // The index can hand back a zero created_at (0001-01-01)
                       // because the indexer doesn't populate it yet — that
@@ -794,24 +768,6 @@ function ActiveFilterChips({
       ))}
     </div>
   )
-}
-
-// Coerce an unknown JSON value (from a saved-search filter blob)
-// into the URL's repeated-string-param shape. Empty array → undefined
-// so clearing a filter doesn't leave a trailing `?tag=` in the URL.
-function arrayOf(v: unknown): string[] | undefined {
-  if (!v) return undefined
-  if (Array.isArray(v)) return v.length ? v.map(String) : undefined
-  return [String(v)]
-}
-
-// Recover the size-preset URL key from a saved search's byte bounds so
-// applying a saved search restores the Size dropdown selection.
-function sizeKeyFromBytes(min: unknown, max: unknown): string | undefined {
-  const m = typeof min === 'number' ? min : undefined
-  const x = typeof max === 'number' ? max : undefined
-  if (m == null && x == null) return undefined
-  return SIZE_OPTIONS.find((o) => o.min === m && o.max === x)?.value || undefined
 }
 
 export const Route = createFileRoute('/_authenticated/search')({

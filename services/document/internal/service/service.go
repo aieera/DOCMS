@@ -755,6 +755,46 @@ func (s *DocumentService) EnsureCanViewDocument(ctx context.Context, docID uuid.
 	return s.enforceClassificationView(ctx, tenantID, userID, doc)
 }
 
+// AuthorizeCoauth resolves versionID to its parent document, enforces that
+// the caller may VIEW it (fail-closed), and reports whether they may also
+// EDIT. The coauth/start WOPI-token minter uses this so a token is never
+// issued for a document the caller cannot access, and a write-capable token
+// is only issued to a caller who actually holds edit — otherwise a view-only
+// tenant user could mint a write token, lock the version (blocking the real
+// editor), and emit forged co-auth session audit events.
+func (s *DocumentService) AuthorizeCoauth(ctx context.Context, versionID uuid.UUID) (docID uuid.UUID, canWrite bool, err error) {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	var doc *model.Document
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		v, verr := s.repos.Versions.GetByID(ctx, tx, tenantID, versionID)
+		if verr != nil {
+			return verr
+		}
+		doc, verr = s.repos.Documents.GetByID(ctx, tx, tenantID, v.DocumentID)
+		return verr
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	if doc == nil || doc.DeletedAt != nil {
+		return uuid.Nil, false, vdmserr.ErrNotFound
+	}
+	perms, err := s.summarizeDocumentPermissions(ctx, userID, doc.ID, map[string]any{
+		"workspace_id":    doc.WorkspaceID.String(),
+		"lifecycle_state": string(doc.LifecycleState),
+	})
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	if !perms.CanView {
+		return uuid.Nil, false, vdmserr.ErrNotFound
+	}
+	return doc.ID, perms.CanEdit, nil
+}
+
 // summarizeDocumentPermissions issues a single BatchCheckPermission for the
 // 5 canonical actions on a document. One network round-trip per GetDocument.
 //

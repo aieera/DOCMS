@@ -235,7 +235,10 @@ func (r *tagSuggestionRepo) UpsertConfig(ctx context.Context, tx pgx.Tx, tenantI
 	merged := AutoTagConfig{
 		TenantID:           tenantID,
 		Enabled:            true,
-		AutoApplyThreshold: 0.95,
+		// Keep in sync with DEFAULT_CONFIG in
+		// services/intelligence/app/tasks/auto_tag.py (the authoritative
+		// worker-side default).
+		AutoApplyThreshold: 0.85,
 		SuggestThreshold:   0.60,
 		MaxTagsPerDocument: 20,
 		BlockedTags:        []string{},

@@ -3,6 +3,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,17 @@ import (
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/connector/internal/service"
 )
+
+// maxConnectorJSONBody bounds a connector control/config JSON request body.
+// These carry small structured payloads (webhook config, provider creds,
+// folder-intake config, token labels) — never file bytes (the capture bundle
+// path has its own 128 MiB limit) — so 1 MiB is generous while stopping an
+// unbounded-body memory-exhaustion DoS.
+const maxConnectorJSONBody = 1 << 20
+
+// limitedBody wraps the request body in an io.LimitReader so a JSON decode
+// can't be made to read an unbounded amount into memory.
+func limitedBody(r *http.Request) io.Reader { return io.LimitReader(r.Body, maxConnectorJSONBody) }
 
 // Handler holds HTTP route handlers.
 type Handler struct {
@@ -78,6 +90,22 @@ type createWebhookBody struct {
 	Events []string `json:"events"`
 }
 
+// requireConnectorAdmin gates connector management — credential writes, OAuth
+// connect/disconnect, and provider enumeration (which reveals a tenant's
+// SharePoint sites / Drive contents and controls cross-system data movement) —
+// to admin/owner. The upstream auth middleware only proves membership; these
+// endpoints previously ran for any authenticated tenant member. Returns false
+// and writes 403 when the caller lacks the role.
+func requireConnectorAdmin(w http.ResponseWriter, r *http.Request) bool {
+	switch auth.RoleString(r) {
+	case "admin", "owner":
+		return true
+	default:
+		writeError(w, http.StatusForbidden, "admin or owner role required")
+		return false
+	}
+}
+
 func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
@@ -86,7 +114,7 @@ func (h *Handler) createWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body createWebhookBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URL == "" || len(body.Events) == 0 {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&body); err != nil || body.URL == "" || len(body.Events) == 0 {
 		writeError(w, http.StatusBadRequest, "url and events required")
 		return
 	}
@@ -150,7 +178,7 @@ type purgeConnectorBody struct {
 
 func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 	var body purgeConnectorBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(limitedBody(r)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}

@@ -370,12 +370,13 @@ func (s *Service) Dispose(ctx context.Context, tenantID, disposedBy, recordID uu
 			state  string
 			action string
 			frozen bool
+			cutoff *time.Time
 		)
 		if err := tx.QueryRow(ctx, `
-			SELECT document_id, disposition_state, COALESCE(disposition_action,'review'), frozen
+			SELECT document_id, disposition_state, COALESCE(disposition_action,'review'), frozen, cutoff_date
 			  FROM records WHERE tenant_id=$1 AND id=$2`,
 			tenantID, recordID,
-		).Scan(&docID, &state, &action, &frozen); err != nil {
+		).Scan(&docID, &state, &action, &frozen, &cutoff); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return vdmserr.NotFound("record not found")
 			}
@@ -387,6 +388,32 @@ func (s *Service) Dispose(ctx context.Context, tenantID, disposedBy, recordID uu
 		// A records freeze halts disposition independent of legal hold.
 		if frozen {
 			return vdmserr.Conflict("record is frozen; unfreeze before disposition")
+		}
+		// Legal hold FREEZES disposition. The `frozen` flag above is the
+		// records-domain freeze; it is independent of a litigation legal hold
+		// (holds live in legal_hold_documents and do NOT set records.frozen).
+		// Without this check a document under an active legal hold could be
+		// disposed/destroyed — a spoliation event. Same predicate as
+		// HoldsService.AnyActiveHoldFor, run inline to stay in this tx.
+		var onHold bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+			    SELECT 1 FROM legal_hold_documents lhd
+			      JOIN legal_holds lh ON lh.tenant_id = lhd.tenant_id AND lh.id = lhd.hold_id
+			     WHERE lhd.tenant_id = $1 AND lhd.document_id = $2 AND lh.is_active = true
+			)`, tenantID, docID,
+		).Scan(&onHold); err != nil {
+			return vdmserr.FromPgError(err)
+		}
+		if onHold {
+			return vdmserr.Conflict("document is under an active legal hold; disposition is frozen")
+		}
+		// No early disposition: a record must not be destroyed before its
+		// retention cutoff. The legitimate flow is declared -> (cutoff passes)
+		// -> cutoff_pending -> dispose; Dispose previously never compared the
+		// cutoff, so a record with a future cutoff could be disposed at once.
+		if cutoff != nil && time.Now().UTC().Before(*cutoff) {
+			return vdmserr.Conflict("record is within its retention period; cannot dispose before cutoff " + cutoff.UTC().Format(time.RFC3339))
 		}
 
 		finalState := "disposed"

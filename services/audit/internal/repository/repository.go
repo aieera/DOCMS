@@ -348,6 +348,23 @@ func (r *Repository) AnonymizeSubject(ctx context.Context, tenantID, subjectID s
 	return n, err
 }
 
+// UpdateEventHashes rewrites previous_hash + event_hash for each event (by id)
+// in a single tenant tx. Used ONLY for an authorized chain re-computation
+// (GDPR erasure rewrites hashed fields, so the chain must be recomputed). The
+// caller holds the per-tenant lock so no append races the rewrite.
+func (r *Repository) UpdateEventHashes(ctx context.Context, tenantID string, events []*model.AuditEvent) error {
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		for _, e := range events {
+			if _, err := tx.Exec(ctx,
+				`UPDATE audit_events SET event_hash=$3, previous_hash=$4 WHERE tenant_id=$1 AND id=$2`,
+				tenantID, e.ID, e.EventHash, e.PreviousHash); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // HeadAndCount returns the tenant's current event count and the
 // event_hash of the most recent event, read in one snapshot so the pair
 // is consistent. count == 0 means there are no events to checkpoint.

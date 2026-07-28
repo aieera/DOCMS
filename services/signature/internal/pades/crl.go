@@ -23,9 +23,16 @@ type CRLLookup struct {
 // fetchCRL pulls a CRL from the cert's CRLDistributionPoints,
 // parses it, and reports the cert's revocation status. Falls
 // through to the next URL on parse failure.
-func fetchCRL(ctx context.Context, hc *http.Client, cert *x509.Certificate) (*CRLLookup, error) {
+func fetchCRL(ctx context.Context, hc *http.Client, cert, issuer *x509.Certificate) (*CRLLookup, error) {
 	if len(cert.CRLDistributionPoints) == 0 {
 		return nil, errors.New("crl: no distribution points")
+	}
+	// A CRL is fetched over an unauthenticated (frequently plain http) CDP, so we
+	// MUST verify it is signed by the cert's issuer before trusting it — otherwise
+	// a MITM/hijacked CDP can return a forged CRL that omits a revoked serial and
+	// a revoked cert reads as good. No issuer → nothing to verify against.
+	if issuer == nil {
+		return nil, errors.New("crl: no issuer to verify CRL signature")
 	}
 	for _, url := range cert.CRLDistributionPoints {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -45,6 +52,11 @@ func fetchCRL(ctx context.Context, hc *http.Client, cert *x509.Certificate) (*CR
 		// Go 1.19+ — works for both PEM and DER inputs.
 		crl, err := x509.ParseRevocationList(body)
 		if err != nil {
+			continue
+		}
+		// Only trust a CRL actually signed by the issuer (fail closed to the next
+		// CDP / caller fallback otherwise).
+		if crl.CheckSignatureFrom(issuer) != nil {
 			continue
 		}
 		status := StatusValid

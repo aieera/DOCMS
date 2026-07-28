@@ -51,14 +51,17 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		ip = strings.Split(fwd, ",")[0]
 	}
+	isAdmin := auth.RoleString(r) == "owner" || auth.RoleString(r) == "admin"
 	err := h.svc.SignInPerson(r.Context(), service.InPersonSignInput{
-		TenantID:   tenantID,
-		RequestID:  reqID,
-		SignerID:   body.SignerID,
-		IPAddress:  ip,
-		SVGPath:    body.SVGPath,
-		DeviceKind: body.DeviceKind,
-		DocHashHex: body.DocHashHex,
+		TenantID:        tenantID,
+		RequestID:       reqID,
+		SignerID:        body.SignerID,
+		IPAddress:       ip,
+		SVGPath:         body.SVGPath,
+		DeviceKind:      body.DeviceKind,
+		DocHashHex:      body.DocHashHex,
+		OperatorUserID:  auth.UserIDString(r),
+		OperatorIsAdmin: isAdmin,
 	})
 	if err != nil {
 		var ooo *service.OutOfOrderError
@@ -67,6 +70,10 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 				"error":              "out of order",
 				"expected_signer_id": ooo.ExpectedSignerID,
 			})
+			return
+		}
+		if strings.Contains(err.Error(), "forbidden") {
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

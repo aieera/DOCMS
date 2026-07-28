@@ -71,28 +71,32 @@ func NewOIDCService(cfg OIDCServiceConfig) *OIDCService {
 // BuildAuthorizeURL generates a PKCE code_verifier, stores it in Redis
 // keyed by `state`, and returns the URL the browser should navigate to.
 // The TTL on the verifier is 10 minutes — well above most IdP round-trips.
-func (s *OIDCService) BuildAuthorizeURL(ctx context.Context, tenantSlug string, tenantID uuid.UUID) (string, error) {
+// BuildAuthorizeURL returns the IdP authorize URL AND the CSRF `state` value.
+// The caller (handler) sets state in a browser cookie so ExchangeCode can
+// confirm the SAME browser that started the flow completes it — the Redis
+// state alone is not bound to any browser (login CSRF / fixation).
+func (s *OIDCService) BuildAuthorizeURL(ctx context.Context, tenantSlug string, tenantID uuid.UUID) (authURL, state string, err error) {
 	cfg, err := s.loadOIDCConfig(ctx, tenantID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	provider, err := oidc.NewProvider(s.oidcContext(ctx), cfg.IssuerURL)
 	if err != nil {
-		return "", fmt.Errorf("oidc discovery: %w", err)
+		return "", "", fmt.Errorf("oidc discovery: %w", err)
 	}
 
-	state, err := randToken()
+	state, err = randToken() // named return
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	nonce, err := randToken()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	verifier, challenge, err := pkcePair()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	redirectURL := s.publicURL + "/api/v1/auth/oidc/" + tenantSlug + "/callback"
@@ -114,7 +118,7 @@ func (s *OIDCService) BuildAuthorizeURL(ctx context.Context, tenantSlug string, 
 		"nonce":         nonce,
 	})
 	if err := s.rdb.Set(ctx, oidcStateKey(state), payload, 10*time.Minute).Err(); err != nil {
-		return "", fmt.Errorf("redis set oidc state: %w", err)
+		return "", "", fmt.Errorf("redis set oidc state: %w", err)
 	}
 
 	u := oauthCfg.AuthCodeURL(state,
@@ -122,7 +126,7 @@ func (s *OIDCService) BuildAuthorizeURL(ctx context.Context, tenantSlug string, 
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oidc.Nonce(nonce),
 	)
-	return u, nil
+	return u, state, nil
 }
 
 // ---- Callback -------------------------------------------------------------
@@ -135,6 +139,14 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, r *http.Request, tenantS
 	code := r.URL.Query().Get("code")
 	if state == "" || code == "" {
 		return nil, vdmserr.Validation("callback", "missing state or code")
+	}
+	// Bind the flow to the initiating browser: the state param must match the
+	// oidc_state cookie set at BuildAuthorizeURL time. The Redis state is not
+	// tied to any browser, so without this an attacker could complete, in the
+	// victim's browser, a flow the attacker started — login CSRF / session
+	// fixation into the attacker's account.
+	if c, cerr := r.Cookie("oidc_state"); cerr != nil || c.Value == "" || c.Value != state {
+		return nil, vdmserr.ErrUnauthorized
 	}
 	if errStr := r.URL.Query().Get("error"); errStr != "" {
 		return nil, vdmserr.Validation("callback", "idp error: "+errStr)
@@ -214,13 +226,18 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, r *http.Request, tenantS
 	if claims.Email == "" || len(claims.Groups) == 0 {
 		if ui, err := provider.UserInfo(oidcCtx, oauth2.StaticTokenSource(tok)); err == nil {
 			var uiClaims struct {
-				Email  string   `json:"email"`
-				Name   string   `json:"name"`
-				Groups []string `json:"groups"`
+				Email         string   `json:"email"`
+				EmailVerified bool     `json:"email_verified"`
+				Name          string   `json:"name"`
+				Groups        []string `json:"groups"`
 			}
 			_ = ui.Claims(&uiClaims)
 			if claims.Email == "" {
 				claims.Email = uiClaims.Email
+			}
+			// Some IdPs carry email_verified only in UserInfo.
+			if !claims.EmailVerified {
+				claims.EmailVerified = uiClaims.EmailVerified
 			}
 			if claims.Name == "" {
 				claims.Name = uiClaims.Name
@@ -233,6 +250,18 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, r *http.Request, tenantS
 
 	if claims.Email == "" {
 		return nil, vdmserr.Validation("claims", "email missing from id_token and userinfo")
+	}
+
+	// email_verified MUST be true before the email is trusted to resolve or link
+	// a SeDoc account. Without this, a tenant-configured IdP that emits an
+	// unverified, user-settable email (Keycloak / Auth0 / Azure AD B2C) could set
+	// it to a victim's address and, via the email-fallback lookup in
+	// FindOrCreateSAMLUser, link the attacker's subject into the victim's
+	// existing account — account takeover. Mirrors the Google path
+	// (service/google_jwt.go), which already enforces this.
+	if !claims.EmailVerified {
+		s.log.Warn().Str("email", claims.Email).Msg("oidc: rejecting login with unverified email")
+		return nil, vdmserr.Validation("claims", "email is not verified by the identity provider")
 	}
 
 	// idt.Subject is the OIDC `sub` claim (Entra object id for M365) — an

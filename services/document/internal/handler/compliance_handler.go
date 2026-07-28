@@ -23,10 +23,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 
 	"github.com/aieera/sedoc/pkg/auth"
-	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/document/internal/compliance"
 )
 
@@ -104,6 +105,13 @@ func (h *HoldsHandler) list(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Legal-hold existence + matter references are privileged e-discovery info
+	// (knowing a doc is under hold can tip off a custodian; matter refs leak
+	// active-litigation identifiers). Gate reads to the same roles as the
+	// mutating endpoints.
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
 	q := r.URL.Query()
 	f := compliance.ListFilter{Status: q.Get("status")}
 	if s := q.Get("document_id"); s != "" {
@@ -139,6 +147,9 @@ func (h *HoldsHandler) list(w http.ResponseWriter, r *http.Request) {
 func (h *HoldsHandler) get(w http.ResponseWriter, r *http.Request) {
 	tenantID, _, ok := callers(w, r)
 	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -333,6 +344,15 @@ func writeErr(w http.ResponseWriter, r *http.Request, err error) {
 			httpErr.Code = http.StatusInternalServerError
 			httpErr.Message = "internal error"
 		}
+	}
+	// 5xx responses must never be silent — the client sees "internal
+	// error" with no cause, so log the real error server-side with the
+	// route + correlation id for triage.
+	if httpErr.Code >= http.StatusInternalServerError {
+		zlog.Error().Err(err).
+			Str("method", r.Method).Str("path", r.URL.Path).
+			Str("correlation_id", corr).Int("status", httpErr.Code).
+			Msg("document handler 5xx")
 	}
 	writeJSONStatus(w, httpErr.Code, httpErr)
 }

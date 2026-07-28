@@ -186,6 +186,12 @@ func (h *RetentionPolicyHandler) create(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// Retention/disposition policy is a compliance control; only compliance
+	// officers or tenant admins may create it (any member could otherwise
+	// author disposition schedules that later destroy documents).
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
+		return
+	}
 	var body createPolicyBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, r, vdmserr.Validation("body", "invalid json"))
@@ -254,6 +260,9 @@ func (h *RetentionPolicyHandler) create(w http.ResponseWriter, r *http.Request) 
 func (h *RetentionPolicyHandler) update(w http.ResponseWriter, r *http.Request) {
 	tenantID, _, ok := callers(w, r)
 	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
@@ -330,6 +339,9 @@ func (h *RetentionPolicyHandler) update(w http.ResponseWriter, r *http.Request) 
 func (h *RetentionPolicyHandler) delete(w http.ResponseWriter, r *http.Request) {
 	tenantID, _, ok := callers(w, r)
 	if !ok {
+		return
+	}
+	if !requireRole(w, r, "compliance_officer", "admin", "owner") {
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))

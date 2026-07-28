@@ -9,6 +9,9 @@ import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
+import { createSavedSearch, deleteSavedSearch, listSavedSearches } from '@/api/savedSearches'
+import { getRecentSearches, recordRecentSearch, removeRecentSearch } from '@/lib/recentSearches'
+import { SearchDropdown } from '@/components/search/SearchDropdown'
 import { Breadcrumbs } from './breadcrumbs'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
@@ -70,9 +73,45 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
 function CommandTrigger() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const { t } = useTranslation('common')
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const [recents, setRecents] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Saved searches for the dropdown — fetched lazily on first open.
+  const savedQ = useQuery({
+    queryKey: ['saved-searches'],
+    queryFn: listSavedSearches,
+    enabled: open,
+    staleTime: 60_000,
+  })
+  const saveMut = useAppMutation({
+    mutationFn: (query: string) => createSavedSearch({ name: query, query }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-searches'] })
+      toast.success('Search saved')
+    },
+    onError: () => toast.error('Could not save search'),
+  })
+  const unsaveMut = useAppMutation({
+    mutationFn: (id: string) => deleteSavedSearch(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
+    onError: () => toast.error('Could not remove saved search'),
+  })
+
+  const openDropdown = () => {
+    setRecents(getRecentSearches())
+    setOpen(true)
+  }
+  const runQuery = (query: string) => {
+    recordRecentSearch(query)
+    setOpen(false)
+    setQ('')
+    inputRef.current?.blur()
+    navigate({ to: '/search', search: { q: query } })
+  }
 
   // Cmd/Ctrl+K (and `/` when nothing else is taking input) focuses the
   // header search input. The `/` path must NOT trigger inside Radix
@@ -107,44 +146,76 @@ function CommandTrigger() {
   const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
 
   return (
-    <form
-      role="search"
-      onSubmit={(e) => {
-        e.preventDefault()
-        const trimmed = q.trim()
-        if (!trimmed) return
-        navigate({ to: '/search', search: { q: trimmed } })
-      }}
-      className={
-        'group hidden h-10 items-center gap-2 rounded-full border border-input bg-card px-4 shadow-sm ' +
-        'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
-        'hover:border-ring/60 sm:inline-flex sm:w-64 md:w-80'
-      }
-    >
-      <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
-      <input
-        ref={inputRef}
-        type="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder={t('search_placeholder') ?? 'Search documents…'}
-        aria-label={t('sidebar.search') ?? 'Search'}
-        className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <kbd
-        aria-hidden
+    <div className="relative hidden sm:block">
+      <form
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const trimmed = q.trim()
+          if (!trimmed) return
+          runQuery(trimmed)
+        }}
         className={
-          'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
-          'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +
-          'group-focus-within:invisible'
+          'group flex h-10 items-center gap-2 rounded-full border border-input bg-card px-4 shadow-sm ' +
+          'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
+          'hover:border-ring/60 sm:w-64 md:w-80'
         }
       >
-        {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}
-        <span>K</span>
-      </kbd>
-    </form>
+        <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <input
+          ref={inputRef}
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={openDropdown}
+          onBlur={() => setOpen(false)}
+          placeholder={t('search_placeholder') ?? 'Search documents…'}
+          aria-label={t('sidebar.search') ?? 'Search'}
+          aria-expanded={open}
+          className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <kbd
+          aria-hidden
+          className={
+            'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
+            'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +
+            'group-focus-within:invisible'
+          }
+        >
+          {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl</span>}
+          <span>K</span>
+        </kbd>
+      </form>
+
+      {/* Recent + saved searches under the input. mousedown-preventDefault
+          keeps the input focused so the panel's click handlers run before
+          the blur-close. */}
+      {open && (
+        <div
+          className="absolute inset-x-0 top-11 z-50"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <SearchDropdown
+            recents={recents}
+            saved={savedQ.data ?? []}
+            onRun={runQuery}
+            onSaveRecent={(query) => saveMut.mutate(query)}
+            onUnsave={(id) => unsaveMut.mutate(id)}
+            onRemoveRecent={(query) => {
+              removeRecentSearch(query)
+              setRecents(getRecentSearches())
+            }}
+            onManage={() => {
+              setOpen(false)
+              inputRef.current?.blur()
+              navigate({ to: '/saved-searches' })
+            }}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 

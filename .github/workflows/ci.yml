@@ -88,7 +88,10 @@ jobs:
           DATABASE_URL: postgres://sedoc:devpassword@localhost:5432/sedoc?sslmode=disable
           REDIS_URL: localhost:6379
           NATS_URL: nats://localhost:4222
-        run: go test -race -timeout 10m -coverprofile=coverage.txt ./...
+        # The repo root is not a module (go.work workspace), so a bare
+        # `./...` fails under go1.26+; make test-cover iterates the
+        # workspace modules and merges the per-module coverage profiles.
+        run: make test-cover
       - uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -214,7 +217,13 @@ jobs:
         # Budget: 12 minutes p95 per spec §13.1. Timeout at 15m as
         # hard stop; PRs that consistently approach the limit get
         # their slow tests reviewed.
-        run: go test -tags integration -timeout 15m ./pkg/... ./services/...
+        # `./services/...` is not a valid workspace pattern under go1.26+
+        # (services/ itself is not a module) — iterate the service modules.
+        run: |
+          for dir in pkg services/*/; do
+            [ -f "$dir/go.mod" ] || continue
+            (cd "$dir" && go test -tags integration -timeout 15m ./...) || exit 1
+          done
 
   build:
     name: Build

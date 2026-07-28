@@ -17,11 +17,13 @@ package service
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +31,10 @@ import (
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/providers/google"
 )
+
+// connectorStateTTL bounds how long an OAuth authorize→callback round-trip
+// state stays valid.
+const connectorStateTTL = 10 * time.Minute
 
 // SetConnectorDeps wires the per-tenant credential paths for native
 // connectors. Called from main.go after Service construction. The
@@ -40,33 +46,51 @@ func (s *Service) SetConnectorDeps(sealingKey, hmacSecret []byte, defaultRedirec
 	s.connRedirect = defaultRedirect
 }
 
-// connectorOAuthState binds the OAuth round-trip to a single tenant +
-// connector_type. Same shape as the eSign state HMAC.
+// signConnectorState binds the OAuth round-trip to a single tenant +
+// connector_type, a RANDOM nonce, and an expiry — all covered by the HMAC.
+// The nonce makes the state unpredictable (it was previously a static,
+// deterministic HMAC over only tenant|type, identical on every call and
+// never expiring, so anyone who observed a tenant's state — via authorize-URL
+// Referer, browser history, or proxy logs — could replay it indefinitely for
+// auth-code injection). The expiry bounds the replay window.
+//
+// NOTE (follow-up hardening): this is stateless, so it does not yet give
+// one-time-use or session binding. Full defense needs a server-side nonce
+// store consumed on callback (+ PKCE code_verifier). Tracked separately —
+// the connector Service has no ephemeral store wired today.
 func (s *Service) signConnectorState(tenantID, connectorType string) (string, error) {
 	if len(s.connHMAC) < 32 {
 		return "", errors.New("connector hmac secret not configured (≥32 bytes)")
 	}
+	nb := make([]byte, 16)
+	if _, err := rand.Read(nb); err != nil {
+		return "", err
+	}
+	nonce := hex.EncodeToString(nb)
+	exp := strconv.FormatInt(time.Now().Add(connectorStateTTL).Unix(), 10)
+	// Fields are dot-free (UUID tenant, slug type, hex nonce, decimal exp,
+	// hex sig), so a dot delimiter is unambiguous.
+	sig := s.connStateMAC(tenantID, connectorType, nonce, exp)
+	return strings.Join([]string{tenantID, connectorType, nonce, exp, sig}, "."), nil
+}
+
+func (s *Service) connStateMAC(tenantID, connectorType, nonce, exp string) string {
 	mac := hmac.New(sha256.New, s.connHMAC)
-	mac.Write([]byte(tenantID + "|" + connectorType))
-	return tenantID + "." + connectorType + "." + hex.EncodeToString(mac.Sum(nil)), nil
+	mac.Write([]byte(tenantID + "|" + connectorType + "|" + nonce + "|" + exp))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *Service) verifyConnectorState(state string) (tenantID, connectorType string, ok bool) {
-	first := strings.IndexByte(state, '.')
-	if first < 0 {
+	parts := strings.Split(state, ".")
+	if len(parts) != 5 {
 		return "", "", false
 	}
-	second := strings.IndexByte(state[first+1:], '.')
-	if second < 0 {
+	tenantID, connectorType, nonce, exp, sig := parts[0], parts[1], parts[2], parts[3], parts[4]
+	if !hmac.Equal([]byte(sig), []byte(s.connStateMAC(tenantID, connectorType, nonce, exp))) {
 		return "", "", false
 	}
-	tenantID = state[:first]
-	connectorType = state[first+1 : first+1+second]
-	got := state[first+1+second+1:]
-	mac := hmac.New(sha256.New, s.connHMAC)
-	mac.Write([]byte(tenantID + "|" + connectorType))
-	want := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(got), []byte(want)) {
+	expUnix, err := strconv.ParseInt(exp, 10, 64)
+	if err != nil || time.Now().Unix() > expUnix {
 		return "", "", false
 	}
 	return tenantID, connectorType, true

@@ -134,8 +134,39 @@ func (h *Handler) extractBearer(r *http.Request) (string, bool) {
 	return "", false
 }
 
+// issueSessionCookies is the single choke point every browser login flow
+// (password, MFA, WebAuthn, SAML, OIDC) must use to install a session in
+// the browser. It always issues BOTH cookies:
+//
+//   - dms_session (HttpOnly) — the credential.
+//   - dms_csrf (JS-readable) — the double-submit token AND the only
+//     session signal the frontend can see. A login path that sets the
+//     session cookie without this one strands the SPA in "no session"
+//     mode: every 401 force-logs-out and every mutation fails CSRF
+//     (this is exactly how the SAML/OIDC flows shipped broken).
+//
+// The cookie horizon is SessionMaxLifetime, NOT the session's initial
+// expiry: the server slides expires_at on activity (ValidateSession), but
+// a cookie pinned to the initial +24h vanished from the browser mid-task
+// regardless of that sliding — a guaranteed daily forced logout. The
+// server remains the sole authority on session validity; a lingering
+// cookie after server-side expiry just yields a clean 401 → /login.
+// sessionExpiresAt is accepted for call-site symmetry with the login
+// responses (and future per-tenant policy) but deliberately does not
+// bound the cookie.
+func (h *Handler) issueSessionCookies(w http.ResponseWriter, token string, sessionExpiresAt time.Time) {
+	horizon := time.Now().Add(service.SessionMaxLifetime)
+	if sessionExpiresAt.After(horizon) {
+		// Never issue a cookie that dies before its session can.
+		horizon = sessionExpiresAt
+	}
+	h.setSessionCookie(w, token, horizon)
+	h.setCSRFCookie(w, horizon)
+}
+
 // setSessionCookie issues the canonical cookie. Secure defaults to the
-// handler's configured value (true in prod).
+// handler's configured value (true in prod). Do not call from login
+// flows — use issueSessionCookies so dms_csrf ships in lockstep.
 func (h *Handler) setSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     h.cookieName,

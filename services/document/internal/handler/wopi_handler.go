@@ -124,19 +124,38 @@ func (h *WOPIHandler) Register(mux *http.ServeMux) {
 // WOPIClaims is the parsed access_token. Carried on every WOPI
 // request; never leaves the host.
 type WOPIClaims struct {
-	TenantID  uuid.UUID
-	UserID    uuid.UUID
-	FileID    uuid.UUID // version_id
-	ExpiresAt time.Time
-	CanWrite  bool
+	TenantID   uuid.UUID
+	UserID     uuid.UUID
+	FileID     uuid.UUID // version_id (the WOPI "file" identity)
+	DocumentID uuid.UUID // parent document — lock scope (see lockID)
+	ExpiresAt  time.Time
+	CanWrite   bool
+}
+
+// lockID is the identity the WOPI lock is keyed on. It MUST be the
+// document, not the version: a WOPI editor keeps one token (FileID =
+// the version it opened) for its whole session while each save-back
+// creates a NEW version and moves the document head. Keying the lock
+// on FileID (version) let a second editor, opening fresh against the
+// new head, acquire a DIFFERENT lock key and edit the same document
+// concurrently — defeating the single-writer guarantee and losing
+// updates. Falls back to FileID for legacy tokens minted before
+// DocumentID was carried (they expire within the TTL).
+func (c *WOPIClaims) lockID() uuid.UUID {
+	if c.DocumentID != uuid.Nil {
+		return c.DocumentID
+	}
+	return c.FileID
 }
 
 // IssueWOPIToken builds an HMAC-signed token bound to (tenant, user,
 // file_id, expiry, can_write). The frontend embeds it in the iframe
 // URL: `?access_token=...&access_token_ttl=...`.
 func IssueWOPIToken(secret string, c WOPIClaims) string {
-	body := fmt.Sprintf("%s|%s|%s|%d|%t",
-		c.TenantID, c.UserID, c.FileID, c.ExpiresAt.Unix(), c.CanWrite)
+	// 6-field body: document_id is appended after file_id. parseWOPIToken
+	// still accepts the legacy 5-field form (document_id absent → Nil).
+	body := fmt.Sprintf("%s|%s|%s|%d|%t|%s",
+		c.TenantID, c.UserID, c.FileID, c.ExpiresAt.Unix(), c.CanWrite, c.DocumentID)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(body))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -164,7 +183,8 @@ func parseWOPIToken(secret, token string) (*WOPIClaims, error) {
 		return nil, errors.New("bad signature")
 	}
 	fields := strings.Split(string(body), "|")
-	if len(fields) != 5 {
+	// 5 fields = legacy token (no document_id); 6 = current.
+	if len(fields) != 5 && len(fields) != 6 {
 		return nil, errors.New("bad body")
 	}
 	tenantID, err := uuid.Parse(fields[0])
@@ -188,7 +208,13 @@ func parseWOPIToken(secret, token string) (*WOPIClaims, error) {
 		return nil, errors.New("expired")
 	}
 	canWrite := fields[4] == "true"
-	return &WOPIClaims{TenantID: tenantID, UserID: userID, FileID: fileID, ExpiresAt: exp, CanWrite: canWrite}, nil
+	var documentID uuid.UUID
+	if len(fields) == 6 {
+		if documentID, err = uuid.Parse(fields[5]); err != nil {
+			return nil, err
+		}
+	}
+	return &WOPIClaims{TenantID: tenantID, UserID: userID, FileID: fileID, DocumentID: documentID, ExpiresAt: exp, CanWrite: canWrite}, nil
 }
 
 // authenticate parses and validates the access_token query param.
@@ -322,8 +348,40 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 		return
 	}
 	ctx := r.Context()
+
+	// UnlockAndRelock: per MS-WOPI, a LOCK request that also carries
+	// X-WOPI-OldLock means "atomically replace OldLock with Lock". The
+	// handler previously ignored X-WOPI-OldLock and fell through to the
+	// plain-lock path below, where SetNX fails (the file is already
+	// locked with OldLock) and the got==wantLock refresh check doesn't
+	// match either — so a legitimate lock rotation was rejected 409.
+	if oldLock := r.Header.Get("X-WOPI-OldLock"); oldLock != "" {
+		got, err := h.rdb.Get(ctx, wopiLockKey(c.lockID())).Result()
+		if err == redis.Nil {
+			// Nothing to relock. 409 with an empty current-lock header.
+			w.Header().Set("X-WOPI-Lock", "")
+			http.Error(w, "not locked", http.StatusConflict)
+			return
+		}
+		if err != nil {
+			http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if got != oldLock {
+			w.Header().Set("X-WOPI-Lock", got)
+			http.Error(w, "lock mismatch", http.StatusConflict)
+			return
+		}
+		if err := h.rdb.Set(ctx, wopiLockKey(c.lockID()), wantLock, lockTTL).Err(); err != nil {
+			http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// SETNX-with-TTL via SET NX EX. Returns false on conflict.
-	ok, err := h.rdb.SetNX(ctx, wopiLockKey(c.FileID), wantLock, lockTTL).Result()
+	ok, err := h.rdb.SetNX(ctx, wopiLockKey(c.lockID()), wantLock, lockTTL).Result()
 	if err != nil {
 		http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -332,9 +390,9 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 		// Already locked. WOPI: return existing lock in X-WOPI-Lock + 409.
 		// Special case: if the existing lock matches the requested
 		// lock, treat as a refresh (same editor, same session).
-		got, err := h.rdb.Get(ctx, wopiLockKey(c.FileID)).Result()
+		got, err := h.rdb.Get(ctx, wopiLockKey(c.lockID())).Result()
 		if err == nil && got == wantLock {
-			h.rdb.Expire(ctx, wopiLockKey(c.FileID), lockTTL)
+			h.rdb.Expire(ctx, wopiLockKey(c.lockID()), lockTTL)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -347,13 +405,19 @@ func (h *WOPIHandler) lock(w http.ResponseWriter, r *http.Request, c *WOPIClaims
 }
 
 func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
+	// Only editors take part in the lock protocol. Without this gate a
+	// read-only token could release another session's write lock.
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
 	wantLock := r.Header.Get("X-WOPI-Lock")
 	if wantLock == "" {
 		http.Error(w, "X-WOPI-Lock required", http.StatusBadRequest)
 		return
 	}
 	ctx := r.Context()
-	got, err := h.rdb.Get(ctx, wopiLockKey(c.FileID)).Result()
+	got, err := h.rdb.Get(ctx, wopiLockKey(c.lockID())).Result()
 	if err == redis.Nil {
 		http.Error(w, "not locked", http.StatusConflict)
 		return
@@ -367,7 +431,7 @@ func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClai
 		http.Error(w, "lock mismatch", http.StatusConflict)
 		return
 	}
-	if err := h.rdb.Del(ctx, wopiLockKey(c.FileID)).Err(); err != nil {
+	if err := h.rdb.Del(ctx, wopiLockKey(c.lockID())).Err(); err != nil {
 		http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -376,9 +440,13 @@ func (h *WOPIHandler) unlock(w http.ResponseWriter, r *http.Request, c *WOPIClai
 }
 
 func (h *WOPIHandler) refreshLock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
 	wantLock := r.Header.Get("X-WOPI-Lock")
 	ctx := r.Context()
-	got, err := h.rdb.Get(ctx, wopiLockKey(c.FileID)).Result()
+	got, err := h.rdb.Get(ctx, wopiLockKey(c.lockID())).Result()
 	if err == redis.Nil || got != wantLock {
 		if got != "" {
 			w.Header().Set("X-WOPI-Lock", got)
@@ -386,7 +454,7 @@ func (h *WOPIHandler) refreshLock(w http.ResponseWriter, r *http.Request, c *WOP
 		http.Error(w, "lock mismatch", http.StatusConflict)
 		return
 	}
-	if err := h.rdb.Expire(ctx, wopiLockKey(c.FileID), lockTTL).Err(); err != nil {
+	if err := h.rdb.Expire(ctx, wopiLockKey(c.lockID()), lockTTL).Err(); err != nil {
 		http.Error(w, "redis: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -394,7 +462,14 @@ func (h *WOPIHandler) refreshLock(w http.ResponseWriter, r *http.Request, c *WOP
 }
 
 func (h *WOPIHandler) getLock(w http.ResponseWriter, r *http.Request, c *WOPIClaims) {
-	got, _ := h.rdb.Get(r.Context(), wopiLockKey(c.FileID)).Result()
+	// GetLock returns the current lock value; gating it on CanWrite stops
+	// a read-only token from learning an editor's lock token (which it
+	// could then replay against Unlock/RefreshLock).
+	if !c.CanWrite {
+		http.Error(w, "read-only token", http.StatusUnauthorized)
+		return
+	}
+	got, _ := h.rdb.Get(r.Context(), wopiLockKey(c.lockID())).Result()
 	w.Header().Set("X-WOPI-Lock", got)
 	w.WriteHeader(http.StatusOK)
 }
@@ -417,7 +492,7 @@ func (h *WOPIHandler) putFile(w http.ResponseWriter, r *http.Request) {
 	// file. Now: locked file + missing/mismatched header → 409 carrying
 	// the current lock; unlocked file + a stale header → 409 "no lock".
 	wantLock := r.Header.Get("X-WOPI-Lock")
-	got, err := h.rdb.Get(r.Context(), wopiLockKey(c.FileID)).Result()
+	got, err := h.rdb.Get(r.Context(), wopiLockKey(c.lockID())).Result()
 	switch {
 	case err == redis.Nil:
 		if wantLock != "" {

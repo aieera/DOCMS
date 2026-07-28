@@ -80,12 +80,16 @@ func TestCommit_IngestsEachSegmentWithTitleAndMetadata(t *testing.T) {
 		{Title: "Contract", Metadata: map[string]any{"ref": "C-9"}},
 	}
 
-	ids, err := svc.Commit(context.Background(), in)
+	res, err := svc.Commit(context.Background(), in)
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+	ids := res.DocumentIDs
 	if len(ids) != 3 || len(fi.calls) != 3 {
 		t.Fatalf("want 3 ids + 3 ingest calls, got ids=%d calls=%d", len(ids), len(fi.calls))
+	}
+	if res.Failed != 0 || len(res.Errors) != 0 {
+		t.Fatalf("expected no failures, got failed=%d errors=%v", res.Failed, res.Errors)
 	}
 	// Title → filename; default when blank.
 	if fi.calls[0].filename != "Invoice 1.pdf" {
@@ -116,15 +120,19 @@ func TestCommit_BestEffortSkipsFailedSegment(t *testing.T) {
 	fi := &fakeIngester{fail: map[int]bool{1: true}} // middle segment fails
 	svc := newTestCapture(ts.URL, fi)
 
-	ids, err := svc.Commit(context.Background(), baseInput())
+	res, err := svc.Commit(context.Background(), baseInput())
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 	if len(fi.calls) != 3 {
 		t.Fatalf("all 3 segments attempted; got %d", len(fi.calls))
 	}
-	if len(ids) != 2 {
-		t.Fatalf("one failure should be skipped → 2 ids, got %d", len(ids))
+	if len(res.DocumentIDs) != 2 {
+		t.Fatalf("one failure should be skipped → 2 ids, got %d", len(res.DocumentIDs))
+	}
+	// The dropped segment must be REPORTED, not silent (finding #9).
+	if res.Failed != 1 || len(res.Errors) != 1 {
+		t.Fatalf("failed segment must be surfaced; got failed=%d errors=%v", res.Failed, res.Errors)
 	}
 }
 

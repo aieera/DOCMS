@@ -4,6 +4,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { Link } from '@tanstack/react-router'
 import { DocumentActionsMenu } from './DocumentActionsMenu'
+import { TagSuggestionBadge } from './TagSuggestionBadge'
 import { WorkflowStatusBadge } from '@/components/workflows/WorkflowStatusBadge'
 
 export function DocumentCard({ doc }: { doc: Document }) {
@@ -57,6 +58,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
             {doc.workflow_instance && (
               <WorkflowStatusBadge status={doc.workflow_instance.status} size="sm" />
             )}
+            <TagSuggestionBadge documentId={doc.id} />
           </div>
           <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(doc.created_at)}</span>
         </div>

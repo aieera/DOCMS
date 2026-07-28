@@ -78,8 +78,11 @@ mig intelligence up
 echo ">> document: up"
 mig document up
 
-# 4. Remaining independent tracks.
-for svc in search audit billing connector notification; do
+# 4. Remaining independent tracks. auth reads document-owned tables
+#    (api_keys/sessions/users/organizations), so it must stay after the
+#    document track; without its 000001 lookup functions every session dies
+#    at the 3-minute Redis revalidation (the "auto-logout" incident).
+for svc in auth search audit billing connector notification; do
   echo ">> ${svc}: up"
   mig "$svc" up
 done

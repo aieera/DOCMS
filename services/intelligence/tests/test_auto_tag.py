@@ -226,3 +226,12 @@ async def test_auto_apply_split_at_threshold():
     assert out["auto_applied_count"] == 1
     assert persisted["auto_applied"] == ["bigcorp"]
     assert persisted["suggestions"] == ["smallco"]
+
+
+def test_default_auto_apply_threshold_is_085():
+    """0.95 pushed nearly every AI tag into the pending queue, which read
+    as 'tagging is manual'. 0.85 is the agreed default; tenants override
+    via auto_tag_config. Mirrored in services/document/.../tag_suggestion_repo.go."""
+    from app.tasks.auto_tag import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG["auto_apply_threshold"] == 0.85

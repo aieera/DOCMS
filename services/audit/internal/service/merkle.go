@@ -64,7 +64,11 @@ func buildMerkleProof(tenantID, resourceType, resourceID string, events []*model
 	}
 	leaves := make([]string, 0, len(ev))
 	for _, e := range ev {
-		expected := computeHash(e.PreviousHash, e.TenantID, e.Actor, e.Action, e.ResourceID, e.CreatedAt)
+		// Version-aware: v2 events must be recomputed over all fields, legacy
+		// events over the old set. Using the fixed legacy algo here would both
+		// falsely break every v2 event AND leave the same fields (details/ip/
+		// user_agent/…) unverified in the per-resource proof.
+		expected := expectedHashFor(e.PreviousHash, e)
 		if proof.Valid && e.EventHash != expected {
 			proof.Valid = false
 			proof.BrokenAt = e.ID

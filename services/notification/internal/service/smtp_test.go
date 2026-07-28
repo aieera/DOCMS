@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bufio"
+	"net"
 	"strings"
 	"testing"
 
@@ -34,6 +36,39 @@ func TestBuildRFC5322_IncludesHeaders(t *testing.T) {
 		"header/body separator missing")
 	require.True(t, strings.HasSuffix(msg, "body\nline2"),
 		"body must be appended verbatim")
+}
+
+func TestSMTPSender_DialsIPv6HostPort(t *testing.T) {
+	// An IPv6 Host must be bracketed in the dial address
+	// ("[::1]:25", not "::1:25") or the dial fails before any
+	// SMTP traffic happens.
+	ln, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer ln.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		// Greet, wait for the client's first command, then hang up
+		// so Send fails deterministically after the dial phase.
+		_, _ = conn.Write([]byte("220 test ESMTP\r\n"))
+		_, _ = bufio.NewReader(conn).ReadString('\n')
+		_ = conn.Close()
+	}()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	s := NewSMTPSender(SMTPConfig{Host: "::1", Port: port, From: "from@a"})
+	err = s.Send("to@b", "Subject", "Body")
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "smtp dial",
+		"dial must succeed for an IPv6 host; got %v", err)
+	<-done
 }
 
 func TestContainsAt(t *testing.T) {

@@ -20,10 +20,10 @@ import (
 // HTTPHandler exposes the bulk surface over HTTP NDJSON for the
 // admin wizard. Routes:
 //
-//   POST /api/v1/admin/bulk/import        body: NDJSON, response: NDJSON
-//   GET  /api/v1/admin/bulk/export        query: resource=document|workspace|folder
-//                                                 [&workspace_id=&from=&to=&page_size=]
-//                                         response: NDJSON
+//	POST /api/v1/admin/bulk/import        body: NDJSON, response: NDJSON
+//	GET  /api/v1/admin/bulk/export        query: resource=document|workspace|folder
+//	                                              [&workspace_id=&from=&to=&page_size=]
+//	                                      response: NDJSON
 //
 // Both endpoints stream — the import response writes one JSON object
 // per processed line as soon as it's done, the export streams one
@@ -67,6 +67,13 @@ func (h *HTTPHandler) handleImport(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := h.callerTenant(r)
 	if err != nil {
 		writeErrJSON(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	// Gate before writing the streaming 200 — the service-layer check
+	// in ProcessBatch is authoritative but cannot set the HTTP status
+	// once the response has started streaming.
+	if err := requireBulkAdmin(r.Context()); err != nil {
+		writeErrJSON(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -197,6 +204,10 @@ func (h *HTTPHandler) handleExport(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := h.callerTenant(r)
 	if err != nil {
 		writeErrJSON(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if err := requireBulkAdmin(r.Context()); err != nil {
+		writeErrJSON(w, http.StatusForbidden, err.Error())
 		return
 	}
 	resource := r.URL.Query().Get("resource")

@@ -115,7 +115,8 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		}
 		rows, err = tx.Query(ctx, baseSelect+`
 		   AND (
-		     w.created_by = $2
+		     w.is_default
+		     OR w.created_by = $2
 		     OR EXISTS (
 		       SELECT 1 FROM workspace_members wm
 		        WHERE wm.tenant_id    = w.tenant_id
@@ -148,6 +149,47 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		out = append(out, *w)
 	}
 	return out, rows.Err()
+}
+
+// HasAccess reports whether the caller may see the workspace at all —
+// the single-workspace analogue of List's non-admin filter: the tenant
+// default workspace, workspaces they created, are members of, or hold
+// a folder grant inside (directly or via a group).
+func (r *workspaceRepo) HasAccess(ctx context.Context, tx pgx.Tx, tenantID, id, userID uuid.UUID, userGroups []uuid.UUID) (bool, error) {
+	groups := userGroups
+	if groups == nil {
+		groups = []uuid.UUID{}
+	}
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		  SELECT 1 FROM workspaces w
+		   WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL
+		     AND (
+		       w.is_default
+		       OR w.created_by = $3
+		       OR EXISTS (
+		         SELECT 1 FROM workspace_members wm
+		          WHERE wm.tenant_id    = w.tenant_id
+		            AND wm.workspace_id = w.id
+		            AND wm.user_id      = $3
+		       )
+		       OR EXISTS (
+		         SELECT 1 FROM folder_grants fg
+		           JOIN folders f
+		             ON f.tenant_id = fg.tenant_id
+		            AND f.id        = fg.folder_id
+		          WHERE fg.tenant_id   = w.tenant_id
+		            AND f.workspace_id = w.id
+		            AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $3)
+		              OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($4::uuid[])))
+		       )
+		     )
+		)`, tenantID, id, userID, groups).Scan(&ok)
+	if err != nil {
+		return false, mapPgError(err)
+	}
+	return ok, nil
 }
 
 func (r *workspaceRepo) Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description string) error {

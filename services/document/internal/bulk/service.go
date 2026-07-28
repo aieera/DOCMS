@@ -59,12 +59,34 @@ func (s *Service) importConcurrency() int {
 	return defaultImportConcurrency
 }
 
+// requireBulkAdmin gates the bulk surface to admin/owner. Bulk import
+// creates arbitrary workspaces/folders/documents/users/groups and
+// auto-enrols the caller as workspace admin; bulk export streams every
+// document in the tenant. Both reveal or grant tenant-wide authority
+// that ordinary members aren't entitled to, so the whole surface is
+// admin/owner-gated — mirroring requireAnalyticsRole in the service
+// package. This is the authoritative service-layer check; the HTTP
+// handler repeats it before writing response headers (it streams a
+// 200 before reaching the service), and the gRPC handler maps the
+// returned Forbidden through vdmserr.ToGRPCError.
+func requireBulkAdmin(ctx context.Context) error {
+	switch auth.GetUserRole(ctx) {
+	case "admin", "owner":
+		return nil
+	default:
+		return vdmserr.Forbidden("bulk import/export requires the admin or owner role")
+	}
+}
+
 // ProcessBatch handles one BulkImportRequest. Returns per-item
 // results, the aggregate status, and the response payload to
 // persist for replay. Items that fail individually don't fail the
 // whole batch — the caller surfaces success_count / failure_count
 // to the client.
 func (s *Service) ProcessBatch(ctx context.Context, tenantID uuid.UUID, req *sedocv1.BulkImportRequest) (*sedocv1.BulkImportResponse, error) {
+	if err := requireBulkAdmin(ctx); err != nil {
+		return nil, err
+	}
 	requestID, err := uuid.Parse(req.GetRequestId())
 	if err != nil {
 		return nil, fmt.Errorf("request_id: %w", err)

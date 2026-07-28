@@ -9,6 +9,8 @@ import { getWorkspaces, createWorkspace } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { ViewModeToggle } from '@/components/ui/ViewModeToggle'
+import { useUIStore } from '@/store/uiStore'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Card } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/Dialog'
@@ -25,6 +27,8 @@ function WorkspacesPage() {
   })
   const [filter, setFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const viewMode = useUIStore((s) => s.workspacesViewMode)
+  const setViewMode = useUIStore((s) => s.setWorkspacesViewMode)
 
   const filtered = useMemo(() => {
     const list = (data ?? []) as Workspace[]
@@ -63,9 +67,7 @@ function WorkspacesPage() {
               className="ps-9"
             />
           </div>
-          <span className="inline-flex shrink-0 items-center rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground tabular-nums">
-            {filtered.length} of {data?.length ?? 0}
-          </span>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} className="shrink-0" />
         </div>
       )}
 
@@ -91,10 +93,16 @@ function WorkspacesPage() {
           title="No matches"
           description={`No workspace name or description matches "${filter}".`}
         />
-      ) : (
+      ) : viewMode === 'grid' ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((ws) => (
             <WorkspaceCard key={ws.id} ws={ws} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+          {filtered.map((ws) => (
+            <WorkspaceRow key={ws.id} ws={ws} />
           ))}
         </div>
       )}
@@ -173,6 +181,45 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
           </span>
         </div>
       </Card>
+    </Link>
+  )
+}
+
+// Compact list-mode counterpart of WorkspaceCard — same accent, same
+// meta, one row per workspace.
+function WorkspaceRow({ ws }: { ws: Workspace }) {
+  const accent = accentFor(ws.name)
+  return (
+    <Link
+      to="/workspaces/$workspaceId"
+      params={{ workspaceId: ws.id }}
+      data-testid={`workspace-row-${ws.id}`}
+      className="group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
+        <FolderOpen className="h-[18px] w-[18px]" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold tracking-tight">{ws.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {ws.description?.trim() || <span className="italic text-muted-foreground/60">No description</span>}
+        </span>
+      </span>
+      <span className="hidden shrink-0 items-center gap-4 text-xs text-muted-foreground sm:flex">
+        <span className="flex items-center gap-1 tabular-nums">
+          <FileText className="h-3.5 w-3.5" />
+          {ws.document_count.toLocaleString()} {ws.document_count === 1 ? 'doc' : 'docs'}
+        </span>
+        <span className="flex items-center gap-1 tabular-nums">
+          <Users className="h-3.5 w-3.5" />
+          {ws.member_count ?? 0} {(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+        </span>
+        <span className="flex w-20 items-center justify-end gap-1 tabular-nums">
+          <Calendar className="h-3.5 w-3.5" />
+          {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+        </span>
+      </span>
+      <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </Link>
   )
 }

@@ -1,7 +1,10 @@
+import { useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Bell, CheckSquare, Clock, FolderOpen, MessageSquare, PenTool, Search, ShieldAlert, Sparkles, Upload, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
+import { DashboardUploadDialog } from '@/components/documents/DashboardUploadDialog'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -16,18 +19,47 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
   const greeting = greet(user?.display_name?.split(' ')[0])
+  // Upload dialog state lives here so BOTH triggers share one dialog:
+  // the header button (always visible, unmistakable) and the Quick-
+  // actions card (click or drop files onto it).
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([])
 
   return (
     <div className="space-y-8">
-      <PageHeader title={greeting} description="Workspace overview" />
+      <PageHeader
+        title={greeting}
+        description="Workspace overview"
+        actions={
+          <Button onClick={() => setUploadOpen(true)} data-testid="header-upload-button">
+            <Upload className="me-1.5 h-4 w-4" aria-hidden /> Upload
+          </Button>
+        }
+      />
 
       <KpiRow />
-      <QuickActions />
+      <PendingSuggestionsCard />
+      <QuickActions
+        onUploadClick={() => setUploadOpen(true)}
+        onUploadDrop={(files) => {
+          setDroppedFiles(files)
+          setUploadOpen(true)
+        }}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <OpenTasksCard />
         <RecentActivityCard />
       </div>
+
+      <DashboardUploadDialog
+        open={uploadOpen}
+        onOpenChange={(v) => {
+          setUploadOpen(v)
+          if (!v) setDroppedFiles([])
+        }}
+        initialFiles={droppedFiles}
+      />
     </div>
   )
 }
@@ -62,6 +94,8 @@ function relTime(iso: string, opts: { addSuffix?: boolean } = {}): string {
 // ---- KPI cards -----------------------------------------------------------
 
 function KpiRow() {
+  const role = useAuthStore((s) => s.user?.role)
+  const seesAllWorkspaces = role === 'owner' || role === 'admin'
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
   const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({ queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000 })
@@ -103,7 +137,9 @@ function KpiRow() {
         icon={FolderOpen}
         label="Workspaces"
         value={allLoading || workspaces.isLoading ? undefined : wsCount ?? 0}
-        hint={workspaces.isError ? 'unable to load' : 'tenant total'}
+        // Members see only their accessible workspaces — "tenant total"
+        // would be a lie for them.
+        hint={workspaces.isError ? 'unable to load' : seesAllWorkspaces ? 'tenant total' : 'you have access to'}
         href="/workspaces"
       />
       <KpiCard
@@ -209,7 +245,11 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
 interface QuickAction {
   icon: LucideIcon
   label: string
-  href: string
+  // Either a navigation target or an in-place action. The Upload card
+  // used to be a plain link to /workspaces — it "uploaded" nothing and
+  // never asked for a destination. It now opens the smart upload dialog.
+  href?: string
+  action?: 'upload'
   description: string
   kbd?: string
 }
@@ -217,53 +257,84 @@ interface QuickAction {
 const QUICK_ACTIONS: readonly QuickAction[] = [
   { icon: Search, label: 'Search documents', href: '/search', description: 'Full-text + semantic across the tenant', kbd: '⌘K' },
   { icon: Sparkles, label: 'Ask the corpus', href: '/ask', description: 'RAG over the documents you can see' },
-  { icon: Upload, label: 'Upload', href: '/workspaces', description: 'Drag a file into a workspace' },
+  { icon: Upload, label: 'Upload', action: 'upload', description: 'Pick a workspace and drop files in' },
   { icon: Workflow, label: 'Workflow templates', href: '/workflows', description: 'Reusable approval, signature, notification chains' },
 ]
 
-function QuickActions() {
+function QuickActions({
+  onUploadClick,
+  onUploadDrop,
+}: {
+  onUploadClick: () => void
+  onUploadDrop: (files: File[]) => void
+}) {
+  const cardBody = ({ icon: Icon, label, description, kbd, action }: QuickAction) => (
+    <WarmCard
+      padded="md"
+      className={cn(
+        'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50',
+        'group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
+        'dark:group-hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
+        // The Upload card is an ACTION, not a navigation link — give it
+        // a standing accent so it reads as the dashboard's upload
+        // button rather than one more shortcut tile.
+        action === 'upload' && 'border-primary/50 bg-primary/5 dark:bg-primary/10',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-muted text-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground"
+          aria-hidden
+        >
+          <Icon className="h-[1.1rem] w-[1.1rem]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">{label}</p>
+            {kbd && (
+              <kbd className="pointer-events-none inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-foreground/70">
+                {kbd}
+              </kbd>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+      </div>
+    </WarmCard>
+  )
+
+  const cardShell =
+    'group block h-full w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[24px]'
+
   return (
     <section aria-labelledby="quick-actions-heading">
       <h2 id="quick-actions-heading" className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Quick actions
       </h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {QUICK_ACTIONS.map(({ icon: Icon, label, href, description, kbd }) => (
-          <Link
-            key={label}
-            to={href}
-            className="group block h-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-[24px]"
-          >
-            <WarmCard
-              padded="md"
-              className={cn(
-                'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50',
-                'group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
-                'dark:group-hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
-              )}
+        {QUICK_ACTIONS.map((qa) =>
+          qa.action === 'upload' ? (
+            <button
+              key={qa.label}
+              type="button"
+              className={cardShell}
+              onClick={onUploadClick}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                const dropped = Array.from(e.dataTransfer.files ?? [])
+                onUploadDrop(dropped)
+              }}
+              data-testid="quick-action-upload"
             >
-              <div className="flex items-start gap-3">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-muted text-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground"
-                  aria-hidden
-                >
-                  <Icon className="h-[1.1rem] w-[1.1rem]" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{label}</p>
-                    {kbd && (
-                      <kbd className="pointer-events-none inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-foreground/70">
-                        {kbd}
-                      </kbd>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-                </div>
-              </div>
-            </WarmCard>
-          </Link>
-        ))}
+              {cardBody(qa)}
+            </button>
+          ) : (
+            <Link key={qa.label} to={qa.href!} className={cardShell}>
+              {cardBody(qa)}
+            </Link>
+          ),
+        )}
       </div>
     </section>
   )

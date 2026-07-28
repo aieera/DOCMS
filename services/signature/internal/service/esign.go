@@ -2,14 +2,14 @@
 //
 // Three responsibilities:
 //
-//   1. OAuth lifecycle — start, callback, refresh, disconnect.
-//   2. Send + ingest — call the connector when a request's provider
-//      is docusign/adobe_sign, persist envelope id; when a webhook
-//      lands, insert an event row + (on completed) pull the signed
-//      PDF and hand off to the document service for "create new
-//      version" through the existing version-uploaded path
-//      (ADR 0021).
-//   3. Reconcile — a 5-minute poll fills webhook gaps.
+//  1. OAuth lifecycle — start, callback, refresh, disconnect.
+//  2. Send + ingest — call the connector when a request's provider
+//     is docusign/adobe_sign, persist envelope id; when a webhook
+//     lands, insert an event row + (on completed) pull the signed
+//     PDF and hand off to the document service for "create new
+//     version" through the existing version-uploaded path
+//     (ADR 0021).
+//  3. Reconcile — a 5-minute poll fills webhook gaps.
 package service
 
 import (
@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,10 +105,13 @@ func (s *Service) resolveOAuthConfig(ctx context.Context, tenantID string, provi
 			return esign.OAuthConfig{}, fmt.Errorf("esign: unseal client_secret: %w", err)
 		}
 		authzURL, tokenURL := vendorEndpoints(provider, row.Environment, row.Region)
-		if row.AuthorizeURLOverride != "" {
+		// Defense-in-depth: only honor an override that still passes the domain
+		// allowlist, so a row written before this validation existed can't
+		// redirect the token exchange off-vendor. Otherwise keep vendorEndpoints.
+		if row.AuthorizeURLOverride != "" && validateProviderOverride(provider, row.AuthorizeURLOverride) == nil {
 			authzURL = row.AuthorizeURLOverride
 		}
-		if row.TokenURLOverride != "" {
+		if row.TokenURLOverride != "" && validateProviderOverride(provider, row.TokenURLOverride) == nil {
 			tokenURL = row.TokenURLOverride
 		}
 		cfg := esign.OAuthConfig{
@@ -130,6 +135,35 @@ func (s *Service) resolveOAuthConfig(ctx context.Context, tenantID string, provi
 // vendorEndpoints maps environment + region to vendor OAuth hosts so
 // the admin UI doesn't have to ship 4 URL fields per provider. The
 // sandbox/production radio in the modal selects one of the two pairs.
+// allowedOverrideSuffixes lists the domain families a per-tenant OAuth endpoint
+// override may point at, per provider. Restricting overrides to the vendor's own
+// domains stops a tenant admin — or anyone who reaches this write path — from
+// redirecting the client_secret / auth-code exchange (which carries the sealed
+// credentials) to an arbitrary attacker host: SSRF + credential/token exfil.
+var allowedOverrideSuffixes = map[esign.Provider][]string{
+	esign.ProviderDocuSign:  {"docusign.com", "docusign.net"},
+	esign.ProviderAdobeSign: {"adobesign.com", "echosign.com"},
+}
+
+// validateProviderOverride rejects an OAuth endpoint override that is not an
+// absolute https URL on one of the provider's own domains. Empty = no override.
+func validateProviderOverride(provider esign.Provider, rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("must be an absolute https URL")
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, suf := range allowedOverrideSuffixes[provider] {
+		if host == suf || strings.HasSuffix(host, "."+suf) {
+			return nil
+		}
+	}
+	return fmt.Errorf("host %q is not an allowed %s endpoint", host, provider)
+}
+
 func vendorEndpoints(provider esign.Provider, environment, region string) (authorize, token string) {
 	switch provider {
 	case esign.ProviderDocuSign:
@@ -172,6 +206,15 @@ func (s *Service) SaveProviderConfig(ctx context.Context, tenantID, userID strin
 	}
 	if environment != "sandbox" && environment != "production" {
 		return errors.New("environment must be 'sandbox' or 'production'")
+	}
+	// Constrain the endpoint overrides to the vendor's own domains; the token
+	// exchange POSTs the client_secret to TokenURL, so an arbitrary host is a
+	// credential-exfiltration + SSRF primitive.
+	if err := validateProviderOverride(provider, authorizeOverride); err != nil {
+		return fmt.Errorf("authorize_url_override: %w", err)
+	}
+	if err := validateProviderOverride(provider, tokenOverride); err != nil {
+		return fmt.Errorf("token_url_override: %w", err)
 	}
 	sealed, err := esign.SealString([]byte(clientSecret), s.esign.SealingKey)
 	if err != nil {
@@ -795,10 +838,10 @@ func (s *Service) ListInProgressESign(ctx context.Context, tenantID string) ([]m
 			continue
 		}
 		out = append(out, map[string]any{
-			"request_id":   r.ID,
-			"envelope_id":  r.EnvelopeID,
-			"provider":     r.Provider,
-			"status":       "in_progress",
+			"request_id":  r.ID,
+			"envelope_id": r.EnvelopeID,
+			"provider":    r.Provider,
+			"status":      "in_progress",
 		})
 	}
 	return out, nil

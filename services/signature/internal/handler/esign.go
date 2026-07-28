@@ -328,11 +328,28 @@ type putProviderConfigBody struct {
 	TokenURLOverride     string `json:"token_url_override,omitempty"`
 }
 
+// requireTenantAdmin gates the provider-credential endpoints. Storing/replacing
+// a tenant's DocuSign/Adobe OAuth client_id + client_secret (or wiping it) is an
+// admin action; without this any authenticated member could overwrite or delete
+// the tenant's e-sign integration credentials.
+func requireTenantAdmin(w http.ResponseWriter, r *http.Request) bool {
+	switch auth.RoleString(r) {
+	case "owner", "admin":
+		return true
+	default:
+		writeError(w, http.StatusForbidden, "admin role required")
+		return false
+	}
+}
+
 func (e *esignRoutes) putProviderConfig(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireTenantAdmin(w, r) {
 		return
 	}
 	provider := esign.Provider(r.PathValue("provider"))
@@ -377,6 +394,9 @@ func (e *esignRoutes) deleteProviderConfig(w http.ResponseWriter, r *http.Reques
 	tenantID := auth.TenantIDString(r)
 	if tenantID == "" {
 		writeError(w, http.StatusBadRequest, "tenant required")
+		return
+	}
+	if !requireTenantAdmin(w, r) {
 		return
 	}
 	provider := esign.Provider(r.PathValue("provider"))

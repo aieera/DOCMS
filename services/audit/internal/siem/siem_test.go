@@ -54,7 +54,7 @@ func TestSplunkHEC_SuccessAndHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	fwd := NewForwarder(srv.Client())
+	fwd := NewForwarder(srv.Client(), true)
 	ev := Normalize("dms.document.created.v1", []byte(`{"tenant_id":"t1"}`), fixedTime)
 	if err := fwd.Forward(context.Background(), Sink{Type: SinkSplunk, Endpoint: srv.URL, Token: "tok"}, ev); err != nil {
 		t.Fatalf("splunk forward failed: %v", err)
@@ -73,7 +73,7 @@ func TestSplunkHEC_ErrorStatusPropagates(t *testing.T) {
 		_, _ = w.Write([]byte("bad token"))
 	}))
 	defer srv.Close()
-	fwd := NewForwarder(srv.Client())
+	fwd := NewForwarder(srv.Client(), true)
 	err := fwd.Forward(context.Background(), Sink{Type: SinkSplunk, Endpoint: srv.URL, Token: "x"}, NormalizedEvent{})
 	if err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("expected 403 error, got %v", err)
@@ -88,7 +88,7 @@ func TestSentinelHEC_BearerAndLogType(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
-	fwd := NewForwarder(srv.Client())
+	fwd := NewForwarder(srv.Client(), true)
 	if err := fwd.Forward(context.Background(), Sink{Type: SinkSentinel, Endpoint: srv.URL, Token: "beartok"}, NormalizedEvent{}); err != nil {
 		t.Fatalf("sentinel forward failed: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestSentinelHEC_BearerAndLogType(t *testing.T) {
 }
 
 func TestForward_UnknownType(t *testing.T) {
-	fwd := NewForwarder(nil)
+	fwd := NewForwarder(nil, true)
 	if err := fwd.Forward(context.Background(), Sink{Type: "bogus"}, NormalizedEvent{}); err == nil {
 		t.Fatal("expected error for unknown sink type")
 	}

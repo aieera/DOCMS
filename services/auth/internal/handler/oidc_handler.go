@@ -34,11 +34,23 @@ func (h *OIDCHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	url, err := h.svc.BuildAuthorizeURL(r.Context(), slug, tenantID)
+	url, state, err := h.svc.BuildAuthorizeURL(r.Context(), slug, tenantID)
 	if err != nil {
 		h.writeError(w, err)
 		return
 	}
+	// Bind the flow to this browser: ExchangeCode requires the callback's state
+	// param to match this cookie (login-CSRF / fixation defense). SameSite=Lax
+	// so it survives the top-level GET redirect back from the IdP.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.main.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   600,
+	})
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -57,7 +69,7 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	h.main.setSessionCookie(w, result.SessionToken, result.ExpiresAt)
+	h.main.issueSessionCookies(w, result.SessionToken, result.ExpiresAt)
 	target := result.RedirectTo
 	if target == "" {
 		target = "/"

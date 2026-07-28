@@ -71,10 +71,13 @@ describe('loadSnapshot', () => {
     expect(await loadSnapshot('tenant-1', 'doc-1')).toBeNull()
   })
 
-  test('never throws on a query error (returns null)', async () => {
+  test('rethrows on a query error so it is distinguishable from "no snapshot"', async () => {
+    // A transient DB error must NOT masquerade as null (no snapshot): the
+    // room would hydrate empty and its flushes would GC-delete the real
+    // snapshot. The caller keeps persistence disabled when load rejects.
     pgState.query = vi.fn(async () => { throw new Error('db down') })
-    await expect(loadSnapshot('tenant-1', 'doc-1')).resolves.toBeNull()
-    expect(pgState.released).toBe(1)
+    await expect(loadSnapshot('tenant-1', 'doc-1')).rejects.toThrow('db down')
+    expect(pgState.released).toBe(1) // client still released on the error path
   })
 })
 

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 )
 
@@ -40,7 +41,7 @@ func (g *GRPCServer) BulkImport(stream sedocv1.BulkService_BulkImportServer) err
 		}
 		resp, perr := g.svc.ProcessBatch(stream.Context(), tenantID, req)
 		if perr != nil {
-			return status.Error(codes.Internal, perr.Error())
+			return vdmserr.ToGRPCError(perr)
 		}
 		if err := stream.Send(resp); err != nil {
 			return err
@@ -70,9 +71,12 @@ func (g *GRPCServer) BulkExport(req *sedocv1.BulkExportRequest, stream sedocv1.B
 	if t := req.GetTo(); t != nil && t.IsValid() {
 		opts.To = t.AsTime()
 	}
-	return g.svc.Export(stream.Context(), tenantID, opts, func(page *sedocv1.BulkExportResponse) error {
+	if err := g.svc.Export(stream.Context(), tenantID, opts, func(page *sedocv1.BulkExportResponse) error {
 		return stream.Send(page)
-	})
+	}); err != nil {
+		return vdmserr.ToGRPCError(err)
+	}
+	return nil
 }
 
 func callerTenantUUID(ctx context.Context) (uuid.UUID, error) {

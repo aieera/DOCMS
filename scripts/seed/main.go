@@ -194,9 +194,11 @@ func upsertWorkspace(ctx context.Context, tx pgx.Tx, tenantID, userID, region st
 	if err != pgx.ErrNoRows {
 		return "", err
 	}
+	// is_default: the onboarding workspace is the one every tenant user
+	// can see (migration 000100 + the document service's list/get rules).
 	err = tx.QueryRow(ctx, `
-		INSERT INTO workspaces (tenant_id, name, description, region_pin, created_by)
-		VALUES ($1::uuid, 'Default Workspace', 'Auto-created for onboarding', $2, $3::uuid)
+		INSERT INTO workspaces (tenant_id, name, description, region_pin, created_by, is_default)
+		VALUES ($1::uuid, 'Default Workspace', 'Auto-created for onboarding', $2, $3::uuid, true)
 		RETURNING id::text
 	`, tenantID, region, userID).Scan(&id)
 	return id, err

@@ -102,7 +102,8 @@ func (s *DocumentService) CreateComment(ctx context.Context, in *CreateCommentIn
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -160,7 +161,8 @@ func (s *DocumentService) GetCommentByID(ctx context.Context, id uuid.UUID) (*re
 			return err
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -187,7 +189,8 @@ func (s *DocumentService) ListComments(ctx context.Context, documentID uuid.UUID
 			return vdmserr.ErrNotFound
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -213,6 +216,25 @@ func (s *DocumentService) UpdateComment(ctx context.Context, id uuid.UUID, body 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		existing, err := s.repos.Comments.GetByID(ctx, tx, tenantID, id)
 		if err != nil {
+			return err
+		}
+		// Enforce the same document-level bar as every other comment path
+		// (create/list/react): the parent document must exist and the caller
+		// must still hold `view`, with lifecycle_state so the OPA disposed-
+		// document deny fires. Without this an author could keep editing a
+		// comment — and fire dms.comment.updated.v1 + mention notifications —
+		// on a soft-deleted or disposed document, or after losing access.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
 			return err
 		}
 		if existing.AuthorID != userID {
@@ -259,6 +281,23 @@ func (s *DocumentService) SoftDeleteComment(ctx context.Context, id uuid.UUID) e
 		if err != nil {
 			return err
 		}
+		// Document existence + lifecycle gate, consistent with every other
+		// comment path: no mutating a comment on a soft-deleted or disposed
+		// document (the `view` check carries lifecycle_state so OPA's
+		// disposed-deny fires for author and admin alike).
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		if existing.AuthorID != userID && role != "admin" && role != "owner" {
 			return vdmserr.Forbidden("only the author or an admin may delete a comment")
 		}
@@ -284,14 +323,28 @@ func (s *DocumentService) SetCommentResolved(ctx context.Context, id uuid.UUID, 
 		if existing.ParentCommentID != nil {
 			return vdmserr.Validation("comment", "replies cannot be resolved — resolve the thread root")
 		}
+		// Document existence + lifecycle gate for ALL callers (the author
+		// path previously skipped this, letting an author resolve a thread
+		// on a soft-deleted or disposed document). The `view` check carries
+		// lifecycle_state so OPA's disposed-deny fires.
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.DeletedAt != nil {
+			return vdmserr.ErrNotFound
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		// Authority: author OR users with edit on the document.
 		if existing.AuthorID != userID {
-			doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
-			if err != nil {
-				return err
-			}
 			if err := s.requirePermission(ctx, userID, "edit", "document", doc.ID, map[string]any{
-				"workspace_id": doc.WorkspaceID.String(),
+				"workspace_id":    doc.WorkspaceID.String(),
+				"lifecycle_state": string(doc.LifecycleState),
 			}); err != nil {
 				return err
 			}
@@ -330,7 +383,8 @@ func (s *DocumentService) AddReaction(ctx context.Context, commentID uuid.UUID, 
 			return err
 		}
 		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
-			"workspace_id": doc.WorkspaceID.String(),
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
 		}); err != nil {
 			return err
 		}
@@ -365,12 +419,30 @@ func (s *DocumentService) RemoveReaction(ctx context.Context, commentID uuid.UUI
 // ListReactions returns every reaction on a comment, ungrouped. The
 // handler aggregates by emoji before sending to the FE.
 func (s *DocumentService) ListReactions(ctx context.Context, commentID uuid.UUID) ([]repository.CommentReaction, error) {
-	tenantID, _, err := mustCaller(ctx)
+	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []repository.CommentReaction
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		// Same `view` bar as every other comment read (AddReaction,
+		// GetCommentByID, ListComments): resolve the parent document and
+		// require view, so a leaked/known comment UUID can't be used to
+		// enumerate who reacted on a document the caller can't see.
+		existing, err := s.repos.Comments.GetByID(ctx, tx, tenantID, commentID)
+		if err != nil {
+			return err
+		}
+		doc, err := s.repos.Documents.GetByID(ctx, tx, tenantID, existing.DocumentID)
+		if err != nil {
+			return err
+		}
+		if err := s.requirePermission(ctx, userID, "view", "document", doc.ID, map[string]any{
+			"workspace_id":    doc.WorkspaceID.String(),
+			"lifecycle_state": string(doc.LifecycleState),
+		}); err != nil {
+			return err
+		}
 		out, err = s.repos.Comments.ListReactions(ctx, tx, tenantID, commentID)
 		return err
 	})
@@ -435,10 +507,10 @@ func (s *DocumentService) emitMention(ctx context.Context, tx pgx.Tx, c *reposit
 		"resource_type": "comment",
 		"resource_id":   c.ID.String(),
 		// extras the audit log + downstream consumers care about:
-		"document_id":  documentID.String(),
-		"comment_id":   c.ID.String(),
-		"by_user_id":   byUserID.String(),
-		"at":           time.Now().UTC().Format(time.RFC3339),
+		"document_id": documentID.String(),
+		"comment_id":  c.ID.String(),
+		"by_user_id":  byUserID.String(),
+		"at":          time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		return err

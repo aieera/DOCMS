@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Download, ExternalLink, FileText, Stamp } from 'lucide-react'
 
 import { getDownloadURL } from '@/api/documents'
+import { getWatermarkStatus } from '@/api/watermark'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Card } from '@/components/ui/card'
@@ -173,7 +174,24 @@ function PdfPreviewSwitcher({
   url: string
   title?: string
 }) {
-  const [mode, setMode] = useState<'watermarked' | 'original'>('watermarked')
+  // userChoice = an explicit toggle click; until then the default derives
+  // from watermark availability. Unconditionally defaulting to
+  // 'watermarked' greeted every document without a watermarked rendition
+  // with the "No watermarked preview" empty state instead of just showing
+  // the original. Same queryKey as WatermarkedPreview so react-query
+  // serves both components from a single fetch.
+  const [userChoice, setUserChoice] = useState<'watermarked' | 'original' | null>(null)
+  const statusQ = useQuery({
+    queryKey: ['wm-status', documentId, versionId],
+    queryFn: () => getWatermarkStatus(documentId, versionId),
+  })
+  const wmUnavailable =
+    statusQ.data != null &&
+    (statusQ.data.status === 'none' ||
+      statusQ.data.status === 'failed' ||
+      (statusQ.data.page_count ?? 0) <= 0)
+  const mode = userChoice ?? (wmUnavailable ? 'original' : 'watermarked')
+  const setMode = setUserChoice
 
   return (
     <div className="space-y-2" data-testid="pdf-preview-switcher">
@@ -242,9 +260,11 @@ function PdfPreview({ url, title }: { url: string; title?: string }) {
       )}
       <iframe
         // #toolbar=0 hides Chrome's toolbar; browsers that ignore it just
-        // show their own controls. bg-muted avoids a white/black flash
+        // show their own controls. view=FitH makes the page fill the
+        // frame's width instead of floating small and off-centre in the
+        // viewer's dark letterbox. bg-muted avoids a white/black flash
         // before the document paints.
-        src={`${url}#toolbar=0&navpanes=0`}
+        src={`${url}#toolbar=0&navpanes=0&view=FitH`}
         title={title ?? 'PDF preview'}
         onLoad={() => setState('ready')}
         onError={() => setState('failed')}

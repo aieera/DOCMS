@@ -13,6 +13,18 @@ import (
 //	POST /api/v1/signatures/internal/seal
 //	  { "document_id", "version_id", "signer_name"?, "reason"? }
 //	  → { "new_version_id", "level", "fingerprint" }
+//
+// SECURITY NOTE (Epic 5 #10, TRACKED): these /internal/seal* routes are mounted
+// under SessionOrAPIKey, whose session branch admits ANY authenticated tenant
+// member, and the handlers add no role check — so a plain user session can mint
+// an organizational PAdES seal with attacker-controlled signer_name/reason. The
+// legitimate callers are the internal-service principal (Temporal workflow /
+// seal consumer, shared-secret) and API keys; the fix is to require an elevated
+// role (admin/compliance) OR an internal-service/API-key principal and reject a
+// bare user session. Deferred from the Epic 5 pass because distinguishing the
+// principal kind at the handler needs a middleware-set marker that does not yet
+// exist, and a wrong guess would break the production seal workflow. See
+// docs/security/epic5-signature-followups.md.
 func (h *Handler) RegisterSeal(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/signatures/internal/seal", h.sealVersion)
 	mux.HandleFunc("POST /api/v1/signatures/internal/seal-ceremony", h.sealCeremony)

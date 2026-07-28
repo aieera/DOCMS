@@ -24,7 +24,7 @@ import {
   parseBodyForRender, mentionToken,
   type Comment, type ReactionAggregate,
 } from '@/api/comments'
-import { getUsers } from '@/api/admin'
+import { listUserDirectory } from '@/api/auth'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -47,15 +47,17 @@ export function CommentsPanel({ documentId }: { documentId: string }) {
   // Resolve comment author UUIDs → display names. Backend returns
   // only author_id on the comment; without this lookup the bubble
   // header rendered a UUID prefix ("7bb83dcf") instead of a person.
+  // Uses the tenant directory (member-accessible), NOT /admin/users —
+  // that one is admin-gated and broke names + mentions for members.
   const { data: usersList } = useQuery({
-    queryKey: ['mention-search', ''],
-    queryFn: () => getUsers({}),
+    queryKey: ['user-directory'],
+    queryFn: () => listUserDirectory(),
     staleTime: 5 * 60_000,
   })
   const authorNames = useMemo(() => {
     const m = new Map<string, string>()
-    for (const u of usersList?.items ?? []) {
-      m.set(u.id, u.display_name ?? u.email)
+    for (const u of usersList ?? []) {
+      m.set(u.id, u.display_name || u.email)
     }
     return m
   }, [usersList])
@@ -378,7 +380,7 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
 
   const { data: candidates } = useQuery({
     queryKey: ['mention-search', mentionQuery],
-    queryFn: () => getUsers({ search: mentionQuery ?? '' }),
+    queryFn: () => listUserDirectory(mentionQuery ?? ''),
     enabled: mentionQuery !== null,
     staleTime: 30_000,
   })
@@ -395,7 +397,7 @@ function CommentInput({ value, onChange, onSubmit, submitting, placeholder, test
     setTimeout(() => ta.focus(), 0)
   }
 
-  const items = candidates?.items?.slice(0, 5) ?? []
+  const items = candidates?.slice(0, 5) ?? []
 
   return (
     <div className="relative">

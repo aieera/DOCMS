@@ -3,7 +3,7 @@
 // inline edit/delete. Variation tracking, detection, and OnlyOffice
 // side-panel are Phase 2-4 per the ADR.
 import { useEffect, useMemo, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -320,6 +320,10 @@ function ClauseDetail({
     queryKey: ['clause-variations', clause.id],
     queryFn: () => getClauseVariations(clause.id),
   })
+  const docById = useMemo(
+    () => new Map((variations?.documents ?? []).map((d) => [d.id, d])),
+    [variations],
+  )
 
   return (
     <article className="space-y-3 rounded-md border border-border bg-card p-4">
@@ -392,17 +396,37 @@ function ClauseDetail({
               Used in {variations.total_documents} document{variations.total_documents === 1 ? '' : 's'}
             </p>
             <ul className="space-y-1.5">
-              {variations.variations.map((v) => (
-                <li key={v.normalized_hash} className="rounded-md border border-border/60 p-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{v.occurrences}×</span>
-                    <span className="text-muted-foreground">
-                      {Math.round(v.min_similarity * 100)}–{Math.round(v.max_similarity * 100)}%
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-muted-foreground">{v.sample_text}</p>
-                </li>
-              ))}
+              {variations.variations.map((v) => {
+                const docs = v.document_ids
+                  .map((id) => docById.get(id))
+                  .filter((d): d is NonNullable<typeof d> => d != null)
+                return (
+                  <li key={v.normalized_hash} className="rounded-md border border-border/60 p-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{v.occurrences}×</span>
+                      <span className="text-muted-foreground">
+                        {Math.round(v.min_similarity * 100)}–{Math.round(v.max_similarity * 100)}%
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-muted-foreground">{v.sample_text}</p>
+                    {docs.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                        {docs.map((d) => (
+                          <Link
+                            key={d.id}
+                            to="/workspaces/$workspaceId/documents/$documentId"
+                            params={{ workspaceId: d.workspace_id, documentId: d.id }}
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <FileText className="h-3 w-3" />
+                            {d.title}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </>
         ) : (

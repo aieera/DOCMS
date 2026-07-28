@@ -16,6 +16,15 @@ import (
 // var to bring email ingestion up. Production deploys MUST set
 // SEDOC_LOCAL_KEK explicitly; the absence of an explicit KEK in prod is
 // caught by the same config-validation that the rest of the platform uses.
+//
+// KNOWN LIMITATION / FOLLOW-UP (not fixed here — would break existing
+// encrypted rows without a migration): this returns a single deployment-wide
+// key for ALL tenants, unlike the platform's per-blob envelope model
+// (per-tenant KEK via Vault/AWS KMS, see CLAUDE.md), and the dev fallback
+// derives that key from the request-signing secret (cross-purpose reuse).
+// Aligning connector-credential encryption with the per-tenant KEK model
+// requires KMS wiring plus a re-encryption migration of existing
+// credential rows, tracked separately.
 func keyFromEnv() ([]byte, error) {
 	if raw := os.Getenv("SEDOC_LOCAL_KEK"); raw != "" {
 		b, err := base64.StdEncoding.DecodeString(raw)

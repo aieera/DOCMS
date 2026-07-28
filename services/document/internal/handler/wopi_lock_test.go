@@ -17,6 +17,7 @@ import (
 	stdio "io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -207,6 +208,133 @@ func TestLock_UnlockRequiresMatchingValue(t *testing.T) {
 	h.fileOperation(w, makeReq("POST", "LOCK", "fresh-lock", tok, c, ""))
 	if w.Code != http.StatusOK {
 		t.Errorf("re-lock after unlock: %d", w.Code)
+	}
+}
+
+// readOnlyToken mints a WOPI token for the same file as `c` but with
+// CanWrite=false, using the secret the harness installed in the env.
+func readOnlyToken(t *testing.T, c *WOPIClaims) string {
+	t.Helper()
+	ro := *c
+	ro.CanWrite = false
+	return IssueWOPIToken(os.Getenv("SEDOC_WOPI_SECRET"), ro)
+}
+
+// TestLock_ReadOnlyTokenCannotTouchLock pins the fix for the read-only
+// lock-manipulation gap: GetLock / Unlock / RefreshLock must reject a
+// read-only token, so it can neither learn nor destroy an editor's lock.
+func TestLock_ReadOnlyTokenCannotTouchLock(t *testing.T) {
+	h, _, c, tok, done := newWOPIHarness(t)
+	defer done()
+
+	// Editor A (write token) holds the lock.
+	w := httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "editor-A-lock", tok, c, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("editor A lock: %d", w.Code)
+	}
+
+	roTok := readOnlyToken(t, c)
+
+	// GET_LOCK with a read-only token must NOT leak the lock value.
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "GET_LOCK", "", roTok, c, ""))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("read-only GET_LOCK: got %d, want 401", w.Code)
+	}
+	if got := w.Header().Get("X-WOPI-Lock"); got == "editor-A-lock" {
+		t.Errorf("read-only GET_LOCK leaked the lock value %q", got)
+	}
+
+	// UNLOCK with a read-only token (even with the correct value) must fail.
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "UNLOCK", "editor-A-lock", roTok, c, ""))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("read-only UNLOCK: got %d, want 401", w.Code)
+	}
+
+	// The lock must still be intact: editor A can refresh it.
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "REFRESH_LOCK", "editor-A-lock", tok, c, ""))
+	if w.Code != http.StatusOK {
+		t.Errorf("editor A lock was destroyed by the read-only token: refresh got %d", w.Code)
+	}
+}
+
+// TestLock_UnlockAndRelock pins the fix for X-WOPI-OldLock handling: a
+// LOCK carrying OldLock atomically rotates the lock when OldLock matches,
+// and 409s (echoing the current lock) when it doesn't.
+func TestLock_UnlockAndRelock(t *testing.T) {
+	h, _, c, tok, done := newWOPIHarness(t)
+	defer done()
+
+	w := httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-1", tok, c, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("initial lock: %d", w.Code)
+	}
+
+	// Valid rotation: OldLock == current → replace with lock-2.
+	r := makeReq("POST", "LOCK", "lock-2", tok, c, "")
+	r.Header.Set("X-WOPI-OldLock", "lock-1")
+	w = httptest.NewRecorder()
+	h.fileOperation(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UnlockAndRelock with correct OldLock: got %d, want 200, body=%q", w.Code, w.Body.String())
+	}
+
+	// A plain LOCK with the OLD value must now conflict (lock is lock-2).
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-1", tok, c, ""))
+	if w.Code != http.StatusConflict || w.Header().Get("X-WOPI-Lock") != "lock-2" {
+		t.Errorf("after rotation, current lock should be lock-2; got code=%d hdr=%q", w.Code, w.Header().Get("X-WOPI-Lock"))
+	}
+
+	// Rotation with a WRONG OldLock → 409 echoing the current lock.
+	r = makeReq("POST", "LOCK", "lock-3", tok, c, "")
+	r.Header.Set("X-WOPI-OldLock", "not-the-current-lock")
+	w = httptest.NewRecorder()
+	h.fileOperation(w, r)
+	if w.Code != http.StatusConflict {
+		t.Errorf("UnlockAndRelock with wrong OldLock: got %d, want 409", w.Code)
+	}
+	if got := w.Header().Get("X-WOPI-Lock"); got != "lock-2" {
+		t.Errorf("conflict must echo current lock lock-2; got %q", got)
+	}
+}
+
+// TestLock_PerDocumentAcrossVersions pins the fix for the version-keyed
+// lock: two WOPI sessions on DIFFERENT versions of the SAME document (as
+// happens once a save-back advances the head) must still contend for one
+// lock, preserving the single-writer guarantee across the save boundary.
+func TestLock_PerDocumentAcrossVersions(t *testing.T) {
+	h, _, c, _, done := newWOPIHarness(t)
+	defer done()
+	secret := os.Getenv("SEDOC_WOPI_SECRET")
+	docID := uuid.New()
+
+	// Editor A holds a token for version V1 of document D.
+	cA := *c
+	cA.DocumentID = docID
+	tokA := IssueWOPIToken(secret, cA)
+	w := httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-A", tokA, &cA, ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("editor A lock: %d", w.Code)
+	}
+
+	// Editor B opens fresh against a NEW version V2 of the same document D.
+	cB := *c
+	cB.DocumentID = docID
+	cB.FileID = uuid.New() // different version_id, same document
+	tokB := IssueWOPIToken(secret, cB)
+	w = httptest.NewRecorder()
+	h.fileOperation(w, makeReq("POST", "LOCK", "lock-B", tokB, &cB, ""))
+	if w.Code != http.StatusConflict {
+		t.Errorf("second editor on a new version of the same doc must 409 (single-writer); got %d", w.Code)
+	}
+	if got := w.Header().Get("X-WOPI-Lock"); got != "lock-A" {
+		t.Errorf("conflict must echo A's lock; got %q", got)
 	}
 }
 

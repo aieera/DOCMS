@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
@@ -6,7 +6,7 @@ import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from
 import { useDocuments } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
 import { getFolder, getWorkspace, updateFolder } from '@/api/workspaces'
-import { updateDocument, deleteDocument, getVersions, getDownloadURL, createNote, moveDocument } from '@/api/documents'
+import { deleteDocument, getVersions, getDownloadURL, createNote, moveDocument } from '@/api/documents'
 import { cn } from '@/lib/cn'
 import { useCreateFolder, useFolders } from '@/hooks/useFolders'
 import {
@@ -15,12 +15,11 @@ import {
 } from '@dnd-kit/core'
 import { DraggableTile, DroppableFolder, DragOverlayContent, type DragData, type DropData } from '@/components/folders/dnd'
 import { readErrorMessage } from '@/api/client'
-import { predictFiling, sendFilingFeedback, type PredictResponse } from '@/api/predictiveFiling'
 
 import { FolderBreadcrumbs } from '@/components/folders/FolderBreadcrumbs'
 import { NewFolderDialog } from '@/components/folders/NewFolderDialog'
 import { FolderActionsMenu } from '@/components/folders/FolderActionsMenu'
-import { FolderTile, FileTile, NewFolderTile } from '@/components/folders/BrowserTiles'
+import { FolderTile, FileTile, NewFolderTile, FolderRow, FileRow, NewFolderRow } from '@/components/folders/BrowserTiles'
 import { BrowserTreeSidebar } from '@/components/folders/BrowserTreeSidebar'
 import { BrowserDetailsPanel, type Selection } from '@/components/folders/BrowserDetailsPanel'
 import { DocumentActionsMenu } from '@/components/documents/DocumentActionsMenu'
@@ -30,16 +29,15 @@ import { BulkTagDialog } from '@/components/documents/BulkTagDialog'
 import { BulkActionBar } from '@/components/documents/BulkActionBar'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { WorkspaceSettingsDialog } from '@/components/workspaces/WorkspaceSettingsDialog'
-import { UploadEnrichmentDialog, type EnrichmentDecision } from '@/components/documents/UploadEnrichmentDialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ViewModeToggle } from '@/components/ui/ViewModeToggle'
 import { useAuthStore } from '@/store/authStore'
+import { useUIStore } from '@/store/uiStore'
 import { toast } from 'sonner'
 import { runBatched } from '@/lib/runBatched'
 import type { Document as ApiDocument } from '@/types/api'
-
-interface EnrichmentItem { file: File; docId: string; prediction: PredictResponse | null }
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
@@ -63,6 +61,8 @@ function WorkspacePage() {
   const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const viewMode = useUIStore((s) => s.browserViewMode)
+  const setViewMode = useUIStore((s) => s.setBrowserViewMode)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -115,6 +115,26 @@ function WorkspacePage() {
       return next
     })
   const clearSelection = () => { setSelectedIds(new Set()); setAnchorId(null) }
+
+  // Prune the multi-select to documents that still exist whenever the
+  // list refetches. Per-row actions (delete, move-out-of-folder via the
+  // actions menu or drag-and-drop) remove a doc from `docs` but left its
+  // id in `selectedIds`, inflating the bulk count and re-submitting a
+  // stale id to the next bulk op. Return the previous set unchanged when
+  // nothing was pruned so this doesn't trigger an extra render.
+  useEffect(() => {
+    const alive = new Set(docs.map((d) => d.id))
+    setSelectedIds((prev) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (alive.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+    setAnchorId((prev) => (prev && !alive.has(prev) ? null : prev))
+  }, [docs])
 
   // File-manager selection: shift-click selects the contiguous range from the
   // anchor in display order; ctrl/cmd or a plain click toggles one row and
@@ -284,62 +304,13 @@ function WorkspacePage() {
     refreshAfterBulk() // resync tiles, counts, and breadcrumb from the server
   }
 
-  // ── upload + predictive-filing enrichment (unchanged from the prior view) ──
-  const [enrichmentQueue, setEnrichmentQueue] = useState<EnrichmentItem[]>([])
-  const predictionsRef = useRef<Map<File, Promise<PredictResponse | null>>>(new Map())
-
+  // ── upload — no enrichment prompt. Tags and classification arrive
+  // automatically from the intelligence pipeline after OCR/NER (the
+  // auto_tag task applies candidates ≥ the tenant's auto-apply
+  // threshold; mid-confidence ones surface as pending suggestions). ──
   const startUpload = (files: File[]) => {
     if (!files.length) return
-    for (const file of files) {
-      const p = predictFiling({ filename: file.name, mime_type: file.type || 'application/octet-stream', workspace_id: workspaceId }).catch(() => null)
-      predictionsRef.current.set(file, p)
-    }
-    uploadFiles(files, undefined, async (file, docId) => {
-      const pred = (await predictionsRef.current.get(file)) ?? null
-      predictionsRef.current.delete(file)
-      setEnrichmentQueue((prev) => [...prev, { file, docId, prediction: pred }])
-    })
-  }
-  const dequeueEnrichment = () => setEnrichmentQueue((prev) => prev.slice(1))
-
-  const handleEnrichmentConfirm = async (item: EnrichmentItem, decision: EnrichmentDecision) => {
-    dequeueEnrichment()
-    try {
-      await updateDocument(item.docId, { title: decision.title, document_class: decision.documentClass, tags: decision.tags })
-      await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
-    } catch (e) {
-      toast.error(`Couldn't update ${item.file.name}: ${(e as Error).message}`)
-    }
-    if (item.prediction) {
-      const p = item.prediction
-      const predictedTags = p.suggested_tags.map((t) => t.tag)
-      sendFilingFeedback({
-        prediction_id: p.prediction_id,
-        class_accepted: decision.documentClass === p.classification.predicted_class,
-        folder_accepted: false,
-        tags_accepted: decision.tags.filter((t) => predictedTags.includes(t)),
-        tags_rejected: predictedTags.filter((t) => !decision.tags.includes(t)),
-        final_class: decision.documentClass, final_tags: decision.tags,
-        predicted_class: p.classification.predicted_class, predicted_class_score: p.classification.confidence,
-        predicted_folder_id: p.suggested_folder?.id, predicted_folder_score: p.suggested_folder?.score ?? 0,
-        predicted_tags: predictedTags, filename: item.file.name,
-        mime_type: item.file.type || 'application/octet-stream', workspace_id: workspaceId,
-      }).catch((e) => console.warn('filing feedback failed', e))
-    }
-  }
-  const handleEnrichmentSkip = (item: EnrichmentItem) => {
-    dequeueEnrichment()
-    if (!item.prediction) return
-    const p = item.prediction
-    sendFilingFeedback({
-      prediction_id: p.prediction_id, class_accepted: false, folder_accepted: false,
-      tags_accepted: [], tags_rejected: p.suggested_tags.map((t) => t.tag),
-      final_class: p.classification.predicted_class, final_tags: [],
-      predicted_class: p.classification.predicted_class, predicted_class_score: p.classification.confidence,
-      predicted_folder_id: p.suggested_folder?.id, predicted_folder_score: p.suggested_folder?.score ?? 0,
-      predicted_tags: p.suggested_tags.map((t) => t.tag), filename: item.file.name,
-      mime_type: item.file.type || 'application/octet-stream', workspace_id: workspaceId,
-    }).catch((e) => console.warn('filing feedback failed', e))
+    uploadFiles(files)
   }
 
   // New note: create a note document in the current folder, then open the
@@ -367,8 +338,44 @@ function WorkspacePage() {
     if (files.length) startUpload(files)
   }
 
-  const loadingTiles = (n: number) => Array.from({ length: n }).map((_, i) => <Skeleton key={i} className="h-[152px] rounded-2xl" />)
+  // Click-vs-double-click: selecting mounts the details panel, which
+  // reflows the tile grid — the tile literally moves between the two
+  // clicks of a double-click, so the second click misses and open
+  // never fires. Defer the single-click selection just past the
+  // double-click window; an open cancels the pending selection.
+  const selectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(selectTimer.current), [])
+  const scheduleSelect = (fn: () => void) => {
+    clearTimeout(selectTimer.current)
+    selectTimer.current = setTimeout(fn, 220)
+  }
+  const openNow = (fn: () => void) => {
+    clearTimeout(selectTimer.current)
+    fn()
+  }
+
+  const loadingTiles = (n: number) =>
+    Array.from({ length: n }).map((_, i) => (
+      <Skeleton key={i} className={viewMode === 'grid' ? 'h-[152px] rounded-2xl' : 'h-11 rounded-xl'} />
+    ))
   const nothingHere = !foldersLoading && !isLoading && shownFolders.length === 0 && shownDocs.length === 0
+  // Grid mode: responsive tile wall. List mode: single-column rows.
+  const sectionClass = viewMode === 'grid'
+    ? 'grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4'
+    : 'flex flex-col gap-1'
+  // Explorer-style: clicking the empty background (not a tile/row)
+  // deselects, which also dismisses the details panel.
+  const clearOnBackgroundClick = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return
+    setSelection(null)
+    setSelectedIds(new Set())
+  }
+  // In list mode the ⋯ trigger moves from the tile's top-end corner into
+  // the row's trailing gutter (vertically centered).
+  const menuTriggerClass = viewMode === 'grid' ? undefined : 'absolute end-1 top-1/2 -translate-y-1/2'
+  // With 2+ docs checked, per-file menus disappear — the bulk bar is the
+  // single action surface for a multi-selection.
+  const multiSelect = selectedIds.size >= 2
 
   return (
     <div
@@ -404,13 +411,14 @@ function WorkspacePage() {
             workspaceName={ws.data?.name ?? 'Workspace'}
             onNavigate={navigateToFolder}
           />
-          {isAdmin && (
-            <div className="flex flex-none items-center gap-2">
+          <div className="flex flex-none items-center gap-2">
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+            {isAdmin && (
               <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="gap-2" data-testid="open-ws-settings">
                 <SettingsIcon className="h-4 w-4" /> Settings
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
         <div className="flex items-center gap-3 px-6 pt-5">
@@ -438,43 +446,53 @@ function WorkspacePage() {
           </Button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5" onClick={clearOnBackgroundClick}>
           <h2 className="mb-4 px-0.5 text-lg font-bold tracking-tight text-foreground">Folders</h2>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4">
+          <div className={sectionClass} onClick={clearOnBackgroundClick}>
             {foldersLoading ? loadingTiles(4) : (
               <>
-                {shownFolders.filter((f) => !movingIds.has(f.id)).map((f) => (
-                  <DroppableFolder key={f.id} folderId={f.id}>
-                    <DraggableTile dndId={`folder:${f.id}`} data={{ kind: 'folder', id: f.id, label: f.name }}>
-                      <FolderActionsMenu folder={f} canManage={isAdmin} onOpen={() => navigateToFolder(f.id)}>
-                        <FolderTile
-                          folder={f}
-                          selected={selection?.type === 'folder' && selection.folder.id === f.id}
-                          onSelect={() => setSelection({ type: 'folder', folder: f })}
-                          onOpen={() => navigateToFolder(f.id)}
-                        />
-                      </FolderActionsMenu>
-                    </DraggableTile>
-                  </DroppableFolder>
-                ))}
-                {!q && <NewFolderTile onClick={() => setNewFolderOpen(true)} />}
+                {shownFolders.filter((f) => !movingIds.has(f.id)).map((f) => {
+                  const FolderItem = viewMode === 'grid' ? FolderTile : FolderRow
+                  return (
+                    <DroppableFolder key={f.id} folderId={f.id}>
+                      <DraggableTile dndId={`folder:${f.id}`} data={{ kind: 'folder', id: f.id, label: f.name }}>
+                        <FolderActionsMenu folder={f} canManage={isAdmin} onOpen={() => navigateToFolder(f.id)} triggerClassName={menuTriggerClass}>
+                          <FolderItem
+                            folder={f}
+                            selected={selection?.type === 'folder' && selection.folder.id === f.id}
+                            onSelect={() => scheduleSelect(() => setSelection({ type: 'folder', folder: f }))}
+                            onOpen={() => openNow(() => navigateToFolder(f.id))}
+                          />
+                        </FolderActionsMenu>
+                      </DraggableTile>
+                    </DroppableFolder>
+                  )
+                })}
+                {!q && (viewMode === 'grid'
+                  ? <NewFolderTile onClick={() => setNewFolderOpen(true)} />
+                  : <NewFolderRow onClick={() => setNewFolderOpen(true)} />)}
               </>
             )}
           </div>
 
           <h2 className="mb-4 mt-9 px-0.5 text-lg font-bold tracking-tight text-foreground">Files</h2>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(162px,1fr))] gap-4">
+          <div className={sectionClass} onClick={clearOnBackgroundClick}>
             {isLoading ? loadingTiles(4) : shownDocs.filter((d) => !movingIds.has(d.id)).map((d) => {
               const checked = selectedIds.has(d.id)
+              const FileItem = viewMode === 'grid' ? FileTile : FileRow
               return (
                 <div key={d.id} className="group/sel relative">
-                  {/* Accessible multi-select checkbox, overlaid top-start.
-                      Visible on hover/focus, or whenever a selection is
-                      active. stopPropagation so toggling doesn't open the
-                      doc or change the details-panel selection. */}
+                  {/* Accessible multi-select checkbox, overlaid top-start
+                      (grid) or in the row's start gutter (list). Visible on
+                      hover/focus, or whenever a selection is active.
+                      stopPropagation so toggling doesn't open the doc or
+                      change the details-panel selection. */}
                   <div
                     className={cn(
-                      'absolute start-2 top-2 z-10 transition-opacity',
+                      'absolute z-10 transition-opacity',
+                      // List rows: stretch the gutter full-height and let
+                      // flex center the box — no pixel math to drift.
+                      viewMode === 'grid' ? 'start-2 top-2' : 'inset-y-0 start-3 flex items-center',
                       checked || selectedIds.size > 0
                         ? 'opacity-100'
                         : 'opacity-0 group-hover/sel:opacity-100 focus-within:opacity-100',
@@ -491,14 +509,21 @@ function WorkspacePage() {
                     />
                   </div>
                   <DraggableTile dndId={`doc:${d.id}`} data={{ kind: 'doc', id: d.id, label: d.title }}>
-                    <DocumentActionsMenu doc={d} onOpen={() => openDoc(d.id)}>
-                      <FileTile
-                        doc={d}
-                        selected={checked || (selection?.type === 'file' && selection.doc.id === d.id)}
-                        onSelect={() => setSelection({ type: 'file', doc: d })}
-                        onOpen={() => openDoc(d.id)}
-                      />
-                    </DocumentActionsMenu>
+                    {(() => {
+                      const item = (
+                        <FileItem
+                          doc={d}
+                          selected={checked || (selection?.type === 'file' && selection.doc.id === d.id)}
+                          onSelect={() => scheduleSelect(() => setSelection({ type: 'file', doc: d }))}
+                          onOpen={() => openNow(() => openDoc(d.id))}
+                        />
+                      )
+                      return multiSelect ? item : (
+                        <DocumentActionsMenu doc={d} onOpen={() => openDoc(d.id)} triggerClassName={menuTriggerClass}>
+                          {item}
+                        </DocumentActionsMenu>
+                      )
+                    })()}
                   </DraggableTile>
                 </div>
               )
@@ -520,12 +545,13 @@ function WorkspacePage() {
       <DragOverlay>{activeDrag ? <DragOverlayContent label={activeDrag.label} count={activeDrag.count} /> : null}</DragOverlay>
       </DndContext>
 
-      {/* ── right: details ── */}
+      {/* ── right: details (only while something is selected) ── */}
       <BrowserDetailsPanel
         selection={selection}
         workspace={ws.data}
         onOpenFolder={(f) => navigateToFolder(f.id)}
         onOpenFile={(d) => openDoc(d.id)}
+        onClose={() => setSelection(null)}
       />
 
       {/* ── dialogs + overlays (unchanged behaviour) ── */}
@@ -550,17 +576,6 @@ function WorkspacePage() {
         }}
       />
 
-      {enrichmentQueue.length > 0 && (
-        <UploadEnrichmentDialog
-          key={enrichmentQueue[0].docId}
-          open
-          file={enrichmentQueue[0].file}
-          prediction={enrichmentQueue[0].prediction}
-          onConfirm={(decision) => handleEnrichmentConfirm(enrichmentQueue[0], decision)}
-          onSkip={() => handleEnrichmentSkip(enrichmentQueue[0])}
-        />
-      )}
-
       <DocumentViewerModal
         open={!!search.doc}
         onOpenChange={(o) => { if (!o) closeViewer() }}
@@ -568,16 +583,20 @@ function WorkspacePage() {
         workspaceId={workspaceId}
       />
 
-      {/* ── bulk operations ── */}
-      <BulkActionBar
-        count={selectedIds.size}
-        onMove={() => setBulkMoveOpen(true)}
-        onTag={() => setBulkTagOpen(true)}
-        onDownload={bulkDownload}
-        onExport={exportSelected}
-        onDelete={() => setBulkDeleteOpen(true)}
-        onClear={clearSelection}
-      />
+      {/* ── bulk operations — only for a real multi-selection. A single
+          checkbox tick is a quiet select (its actions live in the row's
+          ⋯ menu), matching the Explorer-style selection model. ── */}
+      {selectedIds.size >= 2 && (
+        <BulkActionBar
+          count={selectedIds.size}
+          onMove={() => setBulkMoveOpen(true)}
+          onTag={() => setBulkTagOpen(true)}
+          onDownload={bulkDownload}
+          onExport={exportSelected}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onClear={clearSelection}
+        />
+      )}
 
       {bulkMoveOpen && (
         <MoveDocumentDialog

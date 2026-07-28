@@ -1391,6 +1391,23 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 			return vdmserr.Validation("action", err.Error())
 		}
 
+		// Binding-table legal hold FREEZES every lifecycle transition (the
+		// §lifecycle invariant), except hold management itself. ValidateTransition
+		// only catches the in-band legal_hold STATE; a legal hold placed via the
+		// compliance API (HoldsService) records into legal_hold_documents WITHOUT
+		// changing lifecycle_state, so without this check a held document could be
+		// archived / superseded / disposed — a spoliation event. Read of committed
+		// state, before the action runs.
+		if in.Action != model.ActionApplyHold && in.Action != model.ActionReleaseHold && s.holds != nil {
+			held, herr := s.holds.AnyActiveHoldFor(ctx, tenantID, doc.ID)
+			if herr != nil {
+				return herr
+			}
+			if held {
+				return vdmserr.ErrLegalHold
+			}
+		}
+
 		// Action-specific preconditions + required fields.
 		switch in.Action {
 		case model.ActionSubmitForReview:
@@ -1435,6 +1452,16 @@ func (s *DocumentService) UpdateLifecycle(ctx context.Context, in *UpdateLifecyc
 				return errInvalidInput("reason", "required for dispose")
 			}
 			if err := s.requirePermission(ctx, userID, "admin", "document", doc.ID, nil); err != nil {
+				return err
+			}
+			// A declared record must be disposed through the certified records
+			// disposition ceremony (records.Service.Dispose), not this generic
+			// path — otherwise disposition skips certification + cutoff. And a
+			// WORM object-lock forbids destroy before its retention date.
+			if err := s.blockedByRecord(ctx, tenantID, doc.ID); err != nil {
+				return err
+			}
+			if err := s.blockedByWORM(ctx, tenantID, doc.ID); err != nil {
 				return err
 			}
 

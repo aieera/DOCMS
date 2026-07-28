@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -73,7 +74,9 @@ func (s *smtpSender) Send(to, subject, body string) error {
 		return fmt.Errorf("smtp: to required")
 	}
 
-	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+	// JoinHostPort brackets IPv6 literals ("[::1]:25"); a plain
+	// "%s:%d" would produce an undialable "::1:25".
+	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)

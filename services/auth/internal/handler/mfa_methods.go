@@ -313,8 +313,7 @@ func (h *Handler) MFAPutPolicy(w http.ResponseWriter, r *http.Request) {
 // drops the session + CSRF cookies and emits the standard
 // loginResponse envelope so the frontend can finalize the login.
 func (h *Handler) writeSessionResponse(w http.ResponseWriter, sess *service.CreatedSession) {
-	h.setSessionCookie(w, sess.Token, sess.Session.ExpiresAt)
-	h.setCSRFCookie(w, sess.Session.ExpiresAt)
+	h.issueSessionCookies(w, sess.Token, sess.Session.ExpiresAt)
 	h.writeJSON(w, http.StatusOK, loginResponse{
 		SessionToken: sess.Token,
 		ExpiresAt:    &sess.Session.ExpiresAt,

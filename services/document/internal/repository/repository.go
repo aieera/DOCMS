@@ -59,6 +59,9 @@ type WorkspaceRepository interface {
 	// caller's userGroups slice). Role string is the caller's
 	// tenant-level role; empty role is treated as the most-restrictive.
 	List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID, role string) ([]model.Workspace, error)
+	// HasAccess is the single-workspace analogue of List's non-admin
+	// filter (default workspace / creator / member / folder grant).
+	HasAccess(ctx context.Context, tx pgx.Tx, tenantID, id, userID uuid.UUID, userGroups []uuid.UUID) (bool, error)
 	Update(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, name, description string) error
 	// UpdateCreatedBy reassigns the workspace's creator (single-owner
 	// model). Callers gate on tenant role / current creator before

@@ -23,11 +23,7 @@ import (
 // is the gRPC endpoint for the DSS sidecar; ignored when the mock
 // is selected.
 func FromEnv(sidecarAddr string) (Signer, error) {
-	kind := os.Getenv("SEDOC_SIGNER")
-	if kind == "" {
-		kind = "mock"
-	}
-	switch kind {
+	switch kind := os.Getenv("SEDOC_SIGNER"); kind {
 	case "mock":
 		return NewMockSigner(), nil
 	case "dss":
@@ -35,6 +31,12 @@ func FromEnv(sidecarAddr string) (Signer, error) {
 		// shell client so imports compile; Sign returns
 		// ErrNotConfigured.
 		return NewDSSSidecarSigner(sidecarAddr), nil
+	case "":
+		// Require an EXPLICIT choice. Defaulting to the mock silently shipped
+		// non-PAdES (Adobe-invalid) signatures whenever SEDOC_SIGNER was unset —
+		// including a production deploy that forgot to set it. Dev/CI must set
+		// SEDOC_SIGNER=mock; production sets dss.
+		return nil, fmt.Errorf("SEDOC_SIGNER is required (mock|dss); refusing to default to the non-PAdES mock signer")
 	default:
 		return nil, fmt.Errorf("SEDOC_SIGNER=%q: must be mock or dss", kind)
 	}

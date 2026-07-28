@@ -126,25 +126,39 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 	// Clear attempt counter on success.
 	_ = s.rdb.Del(ctx, loginAttemptsKey(org.ID, email)).Err()
 
-	// ADR 0063 — pull tenant MFA policy. When mode=required, every
-	// login must clear an MFA challenge OR return ErrMFAEnrollmentRequired
-	// when the user has no methods to challenge with (so the admin can
-	// enroll them out-of-band). LoadMFAPolicy is best-effort cached;
-	// failure here falls open to the legacy mfa_enabled-only behavior.
+	// ADR 0063 — tenant MFA policy.
+	//   mode=required    → every login must clear an MFA challenge, or return
+	//                      ErrMFAEnrollmentRequired when the user has no method.
+	//   mode=conditional → challenge users who HAVE MFA enrolled, but don't
+	//                      force enrollment on those who don't (previously a
+	//                      silent no-op — conditional was never enforced).
+	//   anything else    → fall back to the user's own mfa_enabled flag.
+	// FAIL CLOSED on a policy-load error: the block previously did `err == nil &&
+	// ...`, so a policy-store error silently downgraded to a password-only
+	// session, bypassing a required-MFA policy. A rare policy-store outage
+	// blocking login is preferable to silently skipping the control.
 	mustChallenge := user.MFAEnabled
-	if policy, err := s.LoadMFAPolicy(ctx, user.TenantID); err == nil && policy.Mode == "required" {
+	policy, perr := s.LoadMFAPolicy(ctx, user.TenantID)
+	if perr != nil {
+		return nil, fmt.Errorf("mfa policy unavailable; login temporarily blocked: %w", perr)
+	}
+	switch policy.Mode {
+	case "required":
 		methods, _ := s.ListEnrolledMethods(ctx, user.TenantID, user.ID)
 		if len(methods) == 0 && !user.MFAEnabled {
-			// Do NOT increment the login-attempt counter here. The
-			// credential check just succeeded — the failure is purely
-			// "tenant policy requires MFA, this user has none
-			// enrolled," which is an admin/onboarding state, not a
-			// credential-guessing attempt. Audit the event so the
-			// admin can see it, but don't rate-limit-lock the user.
+			// Do NOT increment the login-attempt counter here. The credential
+			// check just succeeded — the failure is purely "tenant policy
+			// requires MFA, this user has none enrolled," an admin/onboarding
+			// state, not a credential-guessing attempt.
 			_ = s.auditLoginFailedNoTx(ctx, org.ID, email, "mfa_enrollment_required")
 			return nil, ErrMFAEnrollmentRequired
 		}
 		mustChallenge = true
+	case "conditional":
+		methods, _ := s.ListEnrolledMethods(ctx, user.TenantID, user.ID)
+		if len(methods) > 0 {
+			mustChallenge = true
+		}
 	}
 
 	if mustChallenge {

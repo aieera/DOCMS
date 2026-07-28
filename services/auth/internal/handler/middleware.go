@@ -92,10 +92,15 @@ func (h *Handler) RequireRole(roles ...string) func(http.Handler) http.Handler {
 func (h *Handler) RequireScope(scope string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "vdms_") {
+			// Detect the API-key path using the SAME parser that authenticates
+			// it (extractBearer, which TrimSpaces). The old prefix test used
+			// TrimPrefix(..., "Bearer ") which disagreed on extra whitespace, so
+			// an "Authorization: Bearer  vdms_…" (double space) key still
+			// authenticated but SKIPPED this scope check.
+			token, _ := h.extractBearer(r)
+			if strings.HasPrefix(token, "vdms_") {
 				// Re-validate with required scope; service returns Forbidden
 				// if the key lacks it.
-				token, _ := h.extractBearer(r)
 				if _, err := h.svc.ValidateAPIKey(r.Context(), token, scope); err != nil {
 					h.writeError(w, r, err)
 					return

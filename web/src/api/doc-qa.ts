@@ -86,8 +86,32 @@ export async function streamQA(params: AskParams): Promise<void> {
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+  // Idle watchdog: if the socket dies without an EOF (proxy drop,
+  // backend restart mid-stream), reader.read() waits forever, the
+  // caller's `streaming` flag never clears, and the chat silently
+  // swallows every later question until a page reload. The server
+  // heartbeats via chunks while generating, so a long silent gap
+  // means the stream is dead — abort it so the caller's error path
+  // runs and the UI recovers.
+  const IDLE_TIMEOUT_MS = 90_000
+  const readWithIdleTimeout = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reader.cancel().catch(() => {})
+            reject(new Error('The answer stream went quiet for 90s and was closed. Try asking again.'))
+          }, IDLE_TIMEOUT_MS)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
   while (true) {
-    const { value, done } = await reader.read()
+    const { value, done } = await readWithIdleTimeout()
     if (done) break
     buf += decoder.decode(value, { stream: true })
     // Parse SSE events terminated by `\n\n`.

@@ -111,10 +111,16 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		// Trust window elapsed: fall through and re-validate.
 	}
 
-	// 2. Postgres fallback.
+	// 2. Postgres fallback. Only "no such session" is an authentication
+	//    verdict — a transient DB failure must propagate as itself, or a
+	//    Postgres blip answers 401 and the web client destroys a valid
+	//    session (the intermittent auto-logout bug).
 	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
 	if err != nil {
-		return nil, vdmserr.ErrUnauthorized
+		if errors.Is(err, vdmserr.ErrNotFound) {
+			return nil, vdmserr.ErrUnauthorized
+		}
+		return nil, err
 	}
 	now := s.clock()
 	if now.After(sess.ExpiresAt) {
@@ -122,12 +128,14 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 	}
 	// Absolute max lifetime.
 	if now.Sub(sess.CreatedAt) > SessionMaxLifetime {
-		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
+		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash)
 		s.deleteCachedSession(ctx, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
 
 	// Re-hydrate user to get current email + role (may have changed).
+	// Same not-found-vs-transient split as above: a missing/deleted user
+	// is an auth verdict, a failed transaction is not.
 	var user *model.User
 	if err := database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
 		u, err := s.users.GetByID(ctx, tx, sess.TenantID, sess.UserID)
@@ -137,10 +145,13 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		user = u
 		return nil
 	}); err != nil {
-		return nil, vdmserr.ErrUnauthorized
+		if errors.Is(err, vdmserr.ErrNotFound) {
+			return nil, vdmserr.ErrUnauthorized
+		}
+		return nil, err
 	}
 	if user.Status != model.StatusActive {
-		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, hash)
+		_ = s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash)
 		s.deleteCachedSession(ctx, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
@@ -151,10 +162,10 @@ func (s *Service) ValidateSession(ctx context.Context, plaintextToken string) (*
 		if cap := sess.CreatedAt.Add(SessionMaxLifetime); newExpiry.After(cap) {
 			newExpiry = cap
 		}
-		_ = s.sessions.ExtendExpiry(ctx, s.pool, sess.ID, newExpiry)
+		_ = s.sessions.ExtendExpiry(ctx, s.pool, sess.TenantID, sess.ID, newExpiry)
 		sess.ExpiresAt = newExpiry
 	}
-	_ = s.sessions.TouchActivity(ctx, s.pool, sess.ID, now)
+	_ = s.sessions.TouchActivity(ctx, s.pool, sess.TenantID, sess.ID, now)
 
 	cached := &model.CachedSession{
 		UserID:      user.ID,
@@ -174,22 +185,28 @@ func (s *Service) Logout(ctx context.Context, plaintextToken string) error {
 		return nil
 	}
 	hash := sha256Hex(plaintextToken)
-	if err := s.sessions.RevokeByTokenHash(ctx, s.pool, hash); err != nil {
+	// Resolve the session FIRST (RLS-safe SECURITY DEFINER read) so the revoke
+	// can run in the session's tenant tx — a bare-pool UPDATE on the FORCE-RLS
+	// sessions table matches 0 rows under NOBYPASSRLS, so logout never revoked.
+	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
+	if err != nil || sess == nil {
+		// Unknown/expired/already-revoked token → nothing to revoke.
+		s.deleteCachedSession(ctx, hash)
+		return nil
+	}
+	if err := s.sessions.RevokeByTokenHash(ctx, s.pool, sess.TenantID, hash); err != nil {
 		return err
 	}
 	s.deleteCachedSession(ctx, hash)
 
 	// Audit (best-effort; do not fail logout if audit fails).
-	sess, err := s.sessions.GetByTokenHash(ctx, s.pool, hash)
-	if err == nil && sess != nil {
-		_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
-			return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
-				"dms.auth.logout.v1", map[string]any{
-					"session_id": sess.ID.String(),
-					"user_id":    sess.UserID.String(),
-				})
-		})
-	}
+	_ = database.WithTenantTx(ctx, s.pool, sess.TenantID, func(tx pgx.Tx) error {
+		return s.emitAuth(ctx, tx, sess.TenantID, sess.UserID,
+			"dms.auth.logout.v1", map[string]any{
+				"session_id": sess.ID.String(),
+				"user_id":    sess.UserID.String(),
+			})
+	})
 	return nil
 }
 

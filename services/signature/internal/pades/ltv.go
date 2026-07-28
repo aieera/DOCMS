@@ -116,6 +116,14 @@ func (v *Verifier) validateOne(ctx context.Context, doc *parsedDoc, sig signatur
 	// Level inference: presence of /DocTimeStamp anywhere → at least
 	// B-T; presence of /DSS with a VRI for THIS sig → B-LT.
 	info.Level = inferLevel(doc, sig)
+	// SECURITY NOTE (Epic 5 #5/#6, TRACKED — NOT yet a real check): TimestampValid
+	// here reflects only the PRESENCE of a /DocTimeStamp marker (inferLevel is a
+	// byte-scan), NOT a verified RFC3161 token. tsa.Stamp likewise accepts a TSA
+	// response without checking the token signature, messageImprint, or nonce.
+	// Treat TimestampValid as "a timestamp appears present", not "cryptographically
+	// valid", until RFC3161 verification (token CMS signature + imprint == signed
+	// digest + nonce match + TSA chain to a trusted root) is implemented. See
+	// docs/security/epic5-signature-followups.md.
 	if info.Level == LevelBT || info.Level == LevelBLT || info.Level == LevelBLTA {
 		info.TimestampValid = true
 	}
@@ -150,6 +158,16 @@ func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certific
 		crlObjs = doc.DSS.CRLObjs
 	}
 	issuer := findIssuer(cert, chain)
+	// Without the issuer cert we cannot trust-anchor the revocation proof:
+	// ocsp.ParseResponse(body, nil) SKIPS the responder-signature binding, and a
+	// CRL's signature can't be checked either — so embedded revocation would be
+	// attacker-forgeable (a self-crafted "good"/omitting CRL would read as Valid,
+	// short-circuiting the live lookup). Fail closed: don't trust embedded LTV
+	// material we can't verify; let the caller fall through to a live, issuer-
+	// bound lookup instead.
+	if issuer == nil {
+		return StatusUnknown, false
+	}
 
 	// OCSP path: parse each embedded response, look for one signed
 	// by `issuer` AND whose ProducedAt fits the cert's validity
@@ -216,6 +234,14 @@ func validateEmbeddedLTV(doc *parsedDoc, sig signatureBlock, cert *x509.Certific
 		if err != nil {
 			continue
 		}
+		// Verify the CRL is actually signed by the cert's issuer before trusting
+		// it as revocation proof. Without this an attacker embeds a self-crafted
+		// CRL (any issuer, no signature check) that omits the revoked serial, and
+		// a revoked signer cert reads as Valid. A CRL signed by a delegated CRL
+		// signer (not the cert issuer) fails here and is skipped — fail closed.
+		if crl.CheckSignatureFrom(issuer) != nil {
+			continue
+		}
 		// CRL's window must overlap the cert's validity to count.
 		if crl.ThisUpdate.After(cert.NotAfter) {
 			continue
@@ -267,7 +293,7 @@ func resolveCertStatus(ctx context.Context, cert *x509.Certificate, chain []*x50
 				return look.Status
 			}
 		}
-		if look, err := fetchCRL(ctx, httpOr(hc), cert); err == nil {
+		if look, err := fetchCRL(ctx, httpOr(hc), cert, issuer); err == nil {
 			return look.Status
 		}
 	}
@@ -306,6 +332,13 @@ func walkChain(leaf *x509.Certificate, chain []*x509.Certificate, roots, inters 
 			inters.AddCert(c)
 		}
 	}
+	// SECURITY NOTE (Epic 5 #7, TRACKED): ExtKeyUsageAny + a nil Roots (OS TLS
+	// trust store) means a publicly-issued serverAuth-only cert verifies as a
+	// document signer. Hardening requires a document-signing trust anchor set
+	// (e.g. AATL) and an EKU policy instead of the OS store — a deployment config
+	// decision, so it is deferred rather than changed blind here (a wrong EKU/root
+	// set would reject legitimate signer certs). See
+	// docs/security/epic5-signature-followups.md.
 	opts := x509.VerifyOptions{
 		Roots:         roots, // nil → OS trust store
 		Intermediates: inters,
@@ -436,7 +469,7 @@ func (e *Embedder) Embed(ctx context.Context, pdf []byte, opts EmbedOptions) ([]
 					m.OCSPResponses = append(m.OCSPResponses, look.RawResponse)
 				}
 			}
-			if look, err := fetchCRL(ctx, hc, signerCert); err == nil {
+			if look, err := fetchCRL(ctx, hc, signerCert, issuer); err == nil {
 				m.CRLs = append(m.CRLs, look.RawCRL)
 			}
 		}
@@ -471,4 +504,3 @@ func (e *Embedder) Embed(ctx context.Context, pdf []byte, opts EmbedOptions) ([]
 	}
 	return out, nil
 }
-

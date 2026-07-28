@@ -17,6 +17,13 @@ export async function getPermissions(resourceType: string, resourceId: string) {
   return data
 }
 
+// The caller's own active grants — direct + via group membership.
+// Self-scoped (no admin needed); powers the "shared with me" surfaces.
+export async function getMyGrants() {
+  const { data } = await api.get<Permission[]>('/permissions/mine')
+  return Array.isArray(data) ? data : []
+}
+
 export async function checkPermission(action: string, resourceType: string, resourceId: string) {
   const { data } = await api.post<{ allowed: boolean; reason?: string }>(
     '/permissions/check',

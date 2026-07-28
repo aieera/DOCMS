@@ -137,7 +137,8 @@ func (h *DecryptStreamHandler) streamVersion(w http.ResponseWriter, r *http.Requ
 	// (tenantID, versionID) — IDOR with envelope-encryption-as-a-
 	// service for the attacker.
 	if h.svc != nil {
-		if err := h.svc.EnsureCanViewDocument(r.Context(), docID); err != nil {
+		// view + view_unredacted-for-redaction-source (see EnsureCanDownloadVersion).
+		if err := h.svc.EnsureCanDownloadVersion(r.Context(), docID, versionID); err != nil {
 			writeErr(w, r, err)
 			return
 		}

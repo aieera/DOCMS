@@ -31,13 +31,16 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		// ---- Public -------------------------------------------------------
 		r.With(vdmsmw.NewIPRateLimiter(5, 5, time.Minute)).Post("/register", h.Register)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/accept-invite", h.AcceptInvite)
-		r.Post("/login", h.Login)
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/login", h.Login)
 		// Track 2 — password reset. Public + per-IP rate-limited (the service
 		// adds a per-email throttle + a constant-time floor for enumeration).
 		r.With(vdmsmw.NewIPRateLimiter(5, 3, time.Minute)).Post("/forgot-password", h.ForgotPassword)
 		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/reset-password", h.ResetPassword)
-		r.Post("/mfa/verify", h.MFAVerify)
-		r.Post("/mfa/recovery", h.MFARecovery)
+		// TOTP (6-digit) + recovery-code brute-force surface — the per-session
+		// 3-guess counter resets on each new login, so an IP limiter is the
+		// route-level backstop.
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/mfa/verify", h.MFAVerify)
+		r.With(vdmsmw.NewIPRateLimiter(10, 5, time.Minute)).Post("/mfa/recovery", h.MFARecovery)
 		// ADR 0112 — Outlook add-in SSO exchange. Public on purpose:
 		// this IS the entry point that establishes auth, and the body
 		// carries an Entra ID token we validate via Graph.
@@ -93,6 +96,13 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			// ADR 0106 — self-service locale picker (LanguageSelector).
 			r.Patch("/me/locale", h.UpdateMyLocale)
 			r.Post("/logout", h.Logout)
+
+			// Tenant people directory — the minimal picker feed for
+			// @mentions and direct shares. Deliberately NOT behind
+			// RequireRole: any authenticated tenant user may look up
+			// coworkers' id/name/email. Roles/status/MFA/seat data stay
+			// on the admin surface (/api/v1/admin/users).
+			r.Get("/users/directory", h.UserDirectory)
 
 			r.Route("/sessions", func(r chi.Router) {
 				r.Get("/", h.ListSessions)

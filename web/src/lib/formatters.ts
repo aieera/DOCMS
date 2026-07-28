@@ -10,13 +10,17 @@ dayjs.extend(relativeTime)
 //   - >= 1 PB                  → "PB" / "EB" instead of running off the
 //                                end of the units array as "… undefined"
 //   - non-finite (±Infinity)   → em-dash
-export function formatFileSize(bytes: number | null | undefined): string {
-  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return '—'
-  if (bytes === 0) return '0 B'
+// Accepts strings too: the API serialises int64 byte counts as JSON
+// strings ("15907"), and callers kept forgetting the Number() wrapper —
+// which silently rendered "—" for perfectly good sizes.
+export function formatFileSize(bytes: number | string | null | undefined): string {
+  const n = typeof bytes === 'string' ? (bytes.trim() === '' ? NaN : Number(bytes)) : bytes
+  if (n == null || !Number.isFinite(n) || n < 0) return '—'
+  if (n === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
-  const raw = Math.floor(Math.log(bytes) / Math.log(1024))
+  const raw = Math.floor(Math.log(n) / Math.log(1024))
   const i = Math.min(raw, units.length - 1) // clamp for ZB+ inputs
-  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
+  return `${(n / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
 // Reject obviously-bogus input (null/undefined/empty, invalid, or the

@@ -38,6 +38,17 @@ function pool() {
 export async function loadSnapshot(tenantId, docId) {
   const client = await pool().connect()
   try {
+    // Must run inside an explicit transaction: set_config(..., true) is
+    // transaction-local (SET LOCAL semantics). On a pooled connection with
+    // no BEGIN, each statement autocommits in its own implicit tx, so the
+    // GUC is discarded before the SELECT runs — app.current_tenant is then
+    // unset, the RLS policy's current_setting('app.current_tenant', true)
+    // is NULL, and the FORCE ROW LEVEL SECURITY predicate matches zero rows
+    // (the app role is NOBYPASSRLS). The net effect was that loadSnapshot
+    // ALWAYS returned null and no room ever rehydrated. Session-level
+    // set_config (is_local=false) is not an option here — it would leak the
+    // tenant scope to the next borrower of this pooled connection.
+    await client.query('BEGIN')
     await client.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId])
     const res = await client.query(
       `SELECT state_bin FROM yjs_snapshots
@@ -45,11 +56,19 @@ export async function loadSnapshot(tenantId, docId) {
        ORDER BY update_seq DESC LIMIT 1`,
       [tenantId, docId],
     )
+    await client.query('COMMIT')
     if (res.rows.length === 0) return null
     return res.rows[0].state_bin
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
     console.error(`yjs-persistence: load failed tenant=${tenantId} doc=${docId}`, err.message)
-    return null
+    // THROW rather than return null: "no snapshot" (null above) and "the DB
+    // errored" are different outcomes. If a transient error were reported as
+    // null, the room would hydrate empty and its later higher-seq flushes
+    // would supersede and then GC-delete the real snapshot — silent CRDT
+    // data loss. The caller keeps persistence disabled for the room when
+    // load fails, so nothing overwrites the unread snapshot.
+    throw err
   } finally {
     client.release()
   }
@@ -65,6 +84,14 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
   try {
     await client.query('BEGIN')
     await client.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId])
+    // Serialize concurrent flushes for the same (tenant, doc) — including
+    // across collaboration instances that both hold a room for the doc — so
+    // two racing snapshots don't compute the same COALESCE(MAX(update_seq),0)+1
+    // and collide on the (tenant_id, doc_id, update_seq) PK. Without this the
+    // loser's whole tx (snapshot + dms.document.edited.v1 outbox event) rolled
+    // back and was swallowed by the catch. The advisory lock is transaction-
+    // scoped and released on COMMIT/ROLLBACK.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, [tenantId, docId])
     // update_seq is per (tenant, doc); compute next via COALESCE(MAX+1, 1)
     await client.query(
       `INSERT INTO yjs_snapshots(tenant_id, doc_id, update_seq, state_bin)

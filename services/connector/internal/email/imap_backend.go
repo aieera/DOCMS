@@ -12,8 +12,12 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // IMAPBackend is the real Poller backend for the IMAP modality. The
@@ -133,16 +137,27 @@ func (b *IMAPBackend) Fetch(ctx context.Context, cfg *Config) ([]*Envelope, erro
 }
 
 // loadPassword pulls the encrypted blob from email_ingestion_configs and
-// returns plaintext. Worth noting: we read directly via the pool (no
-// WithTenantTx) because the row is loaded by ID + tenant_id and the
-// password BYTEA is owned by the row — RLS still gates it.
+// returns plaintext. email_ingestion_configs has FORCE ROW LEVEL SECURITY and
+// the app role is NOBYPASSRLS, so the read MUST run inside WithTenantTx: the
+// RLS policy keys on current_setting('app.current_tenant'), which is only set
+// by SET LOCAL inside the tenant tx. A raw-pool query leaves the GUC unset, so
+// the policy predicate is NULL and the row is INVISIBLE — loadPassword would
+// return no-rows in prod and IMAP ingestion would hard-fail. (The old comment
+// claiming "RLS still gates it" via the WHERE clause was wrong: RLS fails
+// closed without the tenant GUC, it doesn't fall back to the WHERE.)
 func (b *IMAPBackend) loadPassword(ctx context.Context, cfg *Config) (string, error) {
+	tenantUUID, err := uuid.Parse(cfg.TenantID)
+	if err != nil {
+		return "", fmt.Errorf("tenant_id: %w", err)
+	}
 	var blob []byte
-	err := b.Pool.QueryRow(ctx,
-		`SELECT imap_password_encrypted FROM email_ingestion_configs
-		  WHERE tenant_id = $1 AND id = $2`,
-		cfg.TenantID, cfg.ID,
-	).Scan(&blob)
+	err = database.WithTenantTx(ctx, b.Pool, tenantUUID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT imap_password_encrypted FROM email_ingestion_configs
+			  WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, cfg.ID,
+		).Scan(&blob)
+	})
 	if err != nil {
 		return "", err
 	}

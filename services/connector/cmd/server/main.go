@@ -117,7 +117,7 @@ func main() {
 	// Start webhook delivery worker. The kicker hookup is what lets
 	// test-send / redeliver hit the wire within sub-second instead
 	// of waiting for the next 5 s poll tick.
-	deliveryWorker := webhook.NewDeliveryWorker(repo, *log.Z())
+	deliveryWorker := webhook.NewDeliveryWorker(repo, *log.Z(), cfg.WebhookAllowPrivateTargets)
 	svc.SetWorkerKicker(deliveryWorker.Kick)
 	go deliveryWorker.Start(ctx)
 	defer deliveryWorker.Stop()

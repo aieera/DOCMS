@@ -42,6 +42,12 @@ interface Props {
    * way to open a file (the card itself only opens on double-click).
    */
   onOpen?: () => void
+  /**
+   * Positions the ⋯ trigger wrapper. Default suits grid tiles
+   * (top-end corner); list rows pass a vertically-centered anchor so
+   * the trigger lands in the row's trailing gutter.
+   */
+  triggerClassName?: string
 }
 
 type MenuItem =
@@ -80,7 +86,7 @@ async function downloadLatest(documentId: string) {
   a.click()
 }
 
-export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
+export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }: Props) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -202,7 +208,7 @@ export function DocumentActionsMenu({ doc, children, onOpen }: Props) {
         </ContextMenuContent>
       </ContextMenu>
 
-      <div className="absolute end-2 top-2">
+      <div className={triggerClassName ?? 'absolute end-2 top-2'}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

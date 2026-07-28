@@ -323,6 +323,11 @@ func (s *Service) VerifyRecoveryCode(ctx context.Context, mfaSessionToken, recov
 		return s.users.ConsumeRecoveryHash(ctx, tx, tenantID, userID, matchedHash)
 	})
 	if err != nil {
+		// Count the failed attempt (increments the per-session counter and
+		// tears down the MFA session at the cap) — the TOTP path does this, the
+		// recovery-code path previously did not, so recovery-code guessing was
+		// unbounded within a session.
+		s.handleMFAFailure(ctx, tenantID, hash)
 		return nil, vdmserr.ErrUnauthorized
 	}
 

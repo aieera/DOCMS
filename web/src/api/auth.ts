@@ -31,6 +31,22 @@ export async function acceptInvite(tenantSlug: string, token: string, password: 
   return data
 }
 
+// Minimal tenant people directory — available to EVERY authenticated
+// user (the /admin/users list is admin-gated). Feeds @mention pickers
+// and the Share dialog's people mode.
+export interface DirectoryUser {
+  id: string
+  display_name: string
+  email: string
+}
+
+export async function listUserDirectory(q?: string) {
+  const { data } = await api.get<{ users: DirectoryUser[] }>('/auth/users/directory', {
+    params: q ? { q } : undefined,
+  })
+  return data.users ?? []
+}
+
 export async function getCurrentUser() {
   const { data } = await api.get<User>('/auth/me')
   return data

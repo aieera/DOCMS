@@ -5,9 +5,11 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -164,10 +166,18 @@ type RecordSignatureInput struct {
 	TenantID   string
 	RequestID  string
 	SignerID   string
+	Token      string // per-signer signing token from the signing URL (?token=)
 	IPAddress  string
 	SVGPath    string
 	DeviceKind string
 	DocHashHex string
+
+	// operatorSigned marks the in-person ceremony path, where the device
+	// operator's authenticated+authorized session (not a per-signer magic-link
+	// token) is the authorization. Only set within this package by SignInPerson,
+	// which enforces the operator's authority first. The magic-link HTTP path
+	// leaves it false, so the per-signer token is mandatory there.
+	operatorSigned bool
 }
 
 // RecordSignature marks a signer as signed and, when every required
@@ -183,6 +193,26 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 	if err != nil || req == nil {
 		return fmt.Errorf("request not found")
 	}
+
+	// Verify the per-signer signing token BEFORE marking anyone signed. Without
+	// this, any authenticated tenant member who learns a (request, signer) id —
+	// both returned by the GET endpoints — could mark that signer signed, and by
+	// iterating all signer ids drive the request to completed + the final-hash
+	// stamp + the PAdES seal. The token is the signer's single proof of
+	// authorization; it is delivered only in their signing URL. The in-person
+	// path (operatorSigned) is exempt: it is authorized by the operator session
+	// upstream in SignInPerson, and its signers hold no magic-link token.
+	if !in.operatorSigned {
+		stored, terr := s.repo.SignerSigningToken(ctx, in.TenantID, in.RequestID, in.SignerID)
+		if terr != nil {
+			return fmt.Errorf("verify signer: %w", terr)
+		}
+		want := extractSigningToken(stored)
+		if want == "" || in.Token == "" || subtle.ConstantTimeCompare([]byte(in.Token), []byte(want)) != 1 {
+			return fmt.Errorf("invalid or missing signing token")
+		}
+	}
+
 	now := time.Now().UTC()
 	allSigned := true
 	for i := range req.Signers {
@@ -330,7 +360,17 @@ func (s *Service) NextExpectedSigner(req *model.SignatureRequest) string {
 }
 
 // CancelRequest cancels a pending signature request.
-func (s *Service) CancelRequest(ctx context.Context, tenantID, id string) error {
+// CancelRequest voids an in-flight signature request. Only the request's
+// creator or a tenant admin may cancel — otherwise any authenticated tenant
+// member could void anyone's ceremony (denial-of-service on signing).
+func (s *Service) CancelRequest(ctx context.Context, tenantID, id, callerUserID string, isAdmin bool) error {
+	req, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil || req == nil {
+		return fmt.Errorf("request not found")
+	}
+	if !isAdmin && req.CreatedBy != callerUserID {
+		return fmt.Errorf("forbidden: only the request creator or an admin may cancel")
+	}
 	return s.repo.UpdateStatus(ctx, tenantID, id, "cancelled")
 }
 
@@ -371,6 +411,21 @@ func (s *Service) Verify(ctx context.Context, tenantID, documentID string) (*mod
 		}
 	}
 	return result, nil
+}
+
+// extractSigningToken pulls the ?token=<value> out of a stored signing URL
+// ("/sign/{req}/{signer}?token=<tok>"). Returns "" when the stored value has no
+// token param (e.g. the signer-id fallback), which the sign path treats as
+// "no valid token present" and rejects.
+func extractSigningToken(signingURL string) string {
+	if signingURL == "" {
+		return ""
+	}
+	u, err := url.Parse(signingURL)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("token")
 }
 
 func generateToken() string {

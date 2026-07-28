@@ -34,6 +34,9 @@ type ExportOptions struct {
 // those rows live in auth's DB. A future iteration will dial
 // auth's ListUsers / ListGroups RPCs and remap the rows.
 func (s *Service) Export(ctx context.Context, tenantID uuid.UUID, opts ExportOptions, sink func(*sedocv1.BulkExportResponse) error) error {
+	if err := requireBulkAdmin(ctx); err != nil {
+		return err
+	}
 	pageSize := opts.PageSize
 	if pageSize <= 0 {
 		pageSize = 500

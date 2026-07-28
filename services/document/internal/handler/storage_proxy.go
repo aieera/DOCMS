@@ -268,7 +268,10 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 	// behalf, for envelope-encrypted blobs). EnsureCanViewDocument
 	// fails-closed on policy unavailability.
 	if p.svc != nil {
-		if err := p.svc.EnsureCanViewDocument(r.Context(), docID); err != nil {
+		// EnsureCanDownloadVersion = view + (view_unredacted when this version is
+		// a redaction SOURCE). Using only EnsureCanViewDocument let a view-only
+		// member download the persisted pre-redaction original directly.
+		if err := p.svc.EnsureCanDownloadVersion(r.Context(), docID, versionID); err != nil {
 			writeErr(w, r, err)
 			return
 		}

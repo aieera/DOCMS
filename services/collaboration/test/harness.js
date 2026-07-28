@@ -30,6 +30,7 @@ export function startFixtureAPI() {
   const users = new Map();
   const comments = new Map();
   const requests = []; // every hit, for auth/assert inspection
+  const denies = new Set(); // `${token}::${docId}` → policy denies `view`
 
   function docComments(docId) {
     if (!comments.has(docId)) comments.set(docId, new Map());
@@ -56,6 +57,16 @@ export function startFixtureAPI() {
       // (this is the ACL boundary the WS handler forwards the user's
       // token to).
       if (!user) return json(401, { error: 'unauthorized' });
+
+      // Policy service stand-in: doc-level `view` check the subscribe
+      // handler now enforces. Allow by default; a test can register a
+      // denial via api.denyView(token, docId) to exercise the reject path.
+      if (req.url === '/api/v1/permissions/check' && req.method === 'POST') {
+        let action, resourceId;
+        try { ({ action, resource_id: resourceId } = JSON.parse(bodyRaw)); } catch { /* ignore */ }
+        const denied = action === 'view' && denies.has(`${token}::${resourceId}`);
+        return json(200, { allowed: !denied });
+      }
 
       let m;
       if ((m = req.url.match(/^\/api\/v1\/documents\/([^/]+)\/comments/)) && req.method === 'POST') {
@@ -103,6 +114,7 @@ export function startFixtureAPI() {
           users.set(token, { id, tenantId, name });
           return { id, tenantId, name };
         },
+        denyView(token, docId) { denies.add(`${token}::${docId}`); },
         close: () => new Promise((r) => server.close(r)),
       });
     });
@@ -116,10 +128,24 @@ const stubRedisStore = {
   srem: async () => 1,
   smembers: async () => [],
 };
-const stubRedisPub = { publish: async () => 0 };
 
 export function startWSServer() {
   const connections = new ConnectionManager(stubRedisStore);
+  // Model the production redisSub loopback (index.js): a publish fans the
+  // message out to local subscribers, excluding the sender by
+  // _senderUserId. This IS the local delivery path now — the handler no
+  // longer broadcasts directly (that double-delivered every event), so
+  // the harness must replicate the loopback to see cross-client events.
+  const loopbackRedisPub = {
+    publish: async (channel, message) => {
+      const parts = channel.split(':');
+      if (parts.length >= 4) {
+        const data = JSON.parse(message);
+        connections.broadcastToDoc(parts[1], parts[3], data, data._senderUserId);
+      }
+      return 0;
+    },
+  };
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
 
   wss.on('connection', (ws) => {
@@ -133,7 +159,7 @@ export function startWSServer() {
     ws.on('message', async (raw) => {
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
-      await handleMessage(ws, msg, connections, stubRedisPub, authTimeout);
+      await handleMessage(ws, msg, connections, loopbackRedisPub, authTimeout);
     });
     ws.on('close', async () => {
       clearTimeout(authTimeout);
@@ -229,6 +255,7 @@ export async function startHarness() {
   const api = await startFixtureAPI();
   process.env.AUTH_SERVICE_URL = api.url;
   process.env.DOCUMENT_SERVICE_URL = api.url;
+  process.env.POLICY_SERVICE_URL = api.url;
   process.env.SEDOC_GATEWAY_SECRET = 'test-gateway-secret';
   const server = await startWSServer();
   onTestFinished(async () => {

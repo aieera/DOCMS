@@ -45,6 +45,28 @@ func TestBuildSearchQuery_HighlightQueryHasNoFuzziness(t *testing.T) {
 	}
 }
 
+// SECURITY regression — the web client renders highlight fragments as HTML
+// (so <mark> works). Without encoder=html OpenSearch returns the document's
+// own text UNESCAPED, turning a malicious filename into stored XSS for every
+// searcher. The encoder must always ride along with the highlight block.
+func TestBuildSearchQuery_HighlightUsesHTMLEncoder(t *testing.T) {
+	req := &model.SearchRequest{
+		TenantID:  "t",
+		UserID:    "u",
+		Query:     "contract",
+		Highlight: true,
+	}
+	q := BuildSearchQuery(req)
+
+	hl, ok := q["highlight"].(map[string]any)
+	if !ok {
+		t.Fatal("highlight block missing")
+	}
+	if enc, _ := hl["encoder"].(string); enc != "html" {
+		t.Fatalf("highlight encoder = %q, want \"html\" — fragments would reach the browser unescaped (XSS)", enc)
+	}
+}
+
 // A browse / empty-query highlight must NOT attach a highlight_query — an empty
 // multi_match is meaningless and error-prone.
 func TestBuildSearchQuery_EmptyQueryNoHighlightQuery(t *testing.T) {

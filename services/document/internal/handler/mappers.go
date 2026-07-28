@@ -196,6 +196,7 @@ func documentToProto(d *model.Document, p *service.DocumentPermissions) *sedocv1
 		HasPii:                   d.HasPII,
 		Sha256Hash:               d.SHA256Hash,
 		TotalSizeBytes:           d.TotalSizeBytes,
+		VersionCount:             d.VersionCount,
 		MimeType:                 d.MimeType,
 		CreatedBy:                d.CreatedBy.String(),
 		CreatedByName:            d.CreatedByName,

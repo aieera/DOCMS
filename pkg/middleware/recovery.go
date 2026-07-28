@@ -58,6 +58,14 @@ func writeUnauthorized(w http.ResponseWriter, r *http.Request, msg string) {
 	})
 }
 
+func writeUnavailable(w http.ResponseWriter, r *http.Request, msg string) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+		"type":           "UNAVAILABLE",
+		"message":        msg,
+		"correlation_id": auth.GetCorrelationID(r.Context()),
+	})
+}
+
 func writeInternal(w http.ResponseWriter, r *http.Request, _ string) {
 	writeJSON(w, http.StatusInternalServerError, map[string]any{
 		"type":           "INTERNAL",

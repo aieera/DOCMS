@@ -22,7 +22,7 @@ function ActionIcon({ action }: { action: ScimLogEntry['action'] }) {
   return <UserCog className="h-4 w-4 text-blue-500" />
 }
 
-function ScimPage() {
+export function ScimPage() {
   const qc = useQueryClient()
   const { data: info } = useQuery({ queryKey: ['scim-info'], queryFn: getScimInfo })
   const { data: log = [] } = useQuery({ queryKey: ['scim-log'], queryFn: getScimLog, refetchInterval: 10000 })
@@ -62,24 +62,40 @@ function ScimPage() {
 
         <div>
           <label className="text-xs font-semibold uppercase text-muted-foreground">Bearer token</label>
-          <div className="mt-1 flex items-center gap-2">
-            {freshToken ? (
-              <code className="flex-1 truncate rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1.5 text-sm" data-testid="scim-token">
-                {freshToken}
-              </code>
-            ) : (
-              <span className="flex-1 text-sm text-muted-foreground">
-                {info?.configured ? 'A token is configured (hidden). Rotate to issue a new one.' : 'No token configured yet.'}
-              </span>
-            )}
-            {freshToken && (
-              <Button size="sm" variant="outline" onClick={() => copy(freshToken)}><Copy className="h-3.5 w-3.5" /> Copy</Button>
-            )}
-            <Button size="sm" onClick={() => rotate.mutate(undefined)} disabled={rotate.isPending} data-testid="rotate-token">
-              {rotate.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-              {info?.configured ? 'Rotate token' : 'Generate token'}
-            </Button>
-          </div>
+          {info && !info.sso_active ? (
+            // A SCIM token is stored ON the tenant's active SSO config, so
+            // rotation 409s ("register an IdP first") when there's none.
+            // Don't offer a doomed button — explain and point to SSO setup.
+            <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="scim-needs-sso">
+              <p className="font-medium text-foreground">Set up single sign-on first</p>
+              <p className="mt-1 text-muted-foreground">
+                SCIM tokens attach to your active SSO configuration. Register a SAML or OIDC
+                identity provider, then return here to generate a token.
+              </p>
+              <a href="/admin/sso" className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                Set up SSO / identity provider →
+              </a>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              {freshToken ? (
+                <code className="flex-1 truncate rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1.5 text-sm" data-testid="scim-token">
+                  {freshToken}
+                </code>
+              ) : (
+                <span className="flex-1 text-sm text-muted-foreground">
+                  {info?.configured ? 'A token is configured (hidden). Rotate to issue a new one.' : 'No token configured yet.'}
+                </span>
+              )}
+              {freshToken && (
+                <Button size="sm" variant="outline" onClick={() => copy(freshToken)}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+              )}
+              <Button size="sm" onClick={() => rotate.mutate(undefined)} disabled={rotate.isPending} data-testid="rotate-token">
+                {rotate.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+                {info?.configured ? 'Rotate token' : 'Generate token'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 

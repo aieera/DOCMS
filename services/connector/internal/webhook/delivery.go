@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -21,6 +22,55 @@ import (
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
 )
+
+// isInternalIP reports whether ip is in a range a webhook must never reach:
+// loopback, RFC1918 private, link-local (unicast+multicast), unspecified
+// (0.0.0.0 / ::), any multicast, and CGNAT 100.64.0.0/10 (RFC 6598, which
+// net.IP.IsPrivate does NOT cover).
+func isInternalIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+		return true
+	}
+	return false
+}
+
+// newSSRFSafeClient builds an http.Client whose transport rejects any
+// connection to an internal IP AT DIAL TIME — the actual address dialed after
+// DNS resolution. Because every hop (redirects AND fresh DNS resolutions) goes
+// through this Control hook, it closes the TOCTOU gap between the create-time
+// ValidateURL guard and delivery: DNS rebinding and redirect-to-internal are
+// both caught here, not just at registration. allowPrivate (on-prem) disables
+// the guard for trusted internal receivers.
+func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	if !allowPrivate {
+		dialer.Control = func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			ip := net.ParseIP(host)
+			if ip == nil || isInternalIP(ip) {
+				return fmt.Errorf("blocked connection to internal address %q (SSRF guard)", address)
+			}
+			return nil
+		}
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{DialContext: dialer.DialContext},
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("stopped after %d redirects", len(via))
+			}
+			return nil // each hop still dials through the guarded transport
+		},
+	}
+}
 
 // DeliveryWorker polls for pending deliveries and sends them.
 type DeliveryWorker struct {
@@ -31,13 +81,15 @@ type DeliveryWorker struct {
 	nudge chan struct{}
 }
 
-// NewDeliveryWorker creates a worker.
-func NewDeliveryWorker(repo *repository.Repository, log zerolog.Logger) *DeliveryWorker {
+// NewDeliveryWorker creates a worker. allowPrivate must match the value passed
+// to ValidateURL at registration so the delivery-time SSRF guard is consistent
+// with the create-time guard.
+func NewDeliveryWorker(repo *repository.Repository, log zerolog.Logger, allowPrivate bool) *DeliveryWorker {
 	return &DeliveryWorker{
 		repo: repo, log: log,
 		stop:  make(chan struct{}),
 		nudge: make(chan struct{}, 1),
-		hc:    &http.Client{Timeout: 10 * time.Second},
+		hc:    newSSRFSafeClient(10*time.Second, allowPrivate),
 	}
 }
 
@@ -164,13 +216,16 @@ func ValidateURL(rawURL string, allowPrivate bool) error {
 	}
 	if !allowPrivate {
 		for _, ip := range ips {
-			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+			if isInternalIP(ip) {
 				return fmt.Errorf("url resolves to internal IP %s", ip)
 			}
 		}
 	}
-	// HEAD check to verify reachability.
-	client := &http.Client{Timeout: 5 * time.Second}
+	// HEAD check through the SSRF-safe client so the reachability probe can't
+	// itself be steered to an internal host via a redirect or a rebinding DNS
+	// answer (the create-time LookupIP above is advisory; the dial-time guard
+	// is authoritative).
+	client := newSSRFSafeClient(5*time.Second, allowPrivate)
 	resp, err := client.Head(rawURL)
 	if err != nil {
 		return fmt.Errorf("url not reachable: %w", err)

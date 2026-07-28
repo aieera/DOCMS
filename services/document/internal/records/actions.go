@@ -14,18 +14,38 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
+// recordImmutableOrNotFound disambiguates a 0-row mutation on records: a
+// disposed/transferred record is immutable (its mandatory metadata + vital
+// flag must not change post-disposition), which is a Conflict; a genuinely
+// absent record is NotFound.
+func recordImmutableOrNotFound(ctx context.Context, tx pgx.Tx, tenantID, recordID uuid.UUID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM records WHERE tenant_id=$1 AND id=$2)`,
+		tenantID, recordID).Scan(&exists); err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	if exists {
+		return vdmserr.Conflict("record is disposed/transferred; it is immutable")
+	}
+	return vdmserr.NotFound("record not found")
+}
+
 // SetVital toggles the vital-records designation (continuity-of-operations
 // program). Emits dms.record.vital_set.v1 for event completeness.
 func (s *Service) SetVital(ctx context.Context, tenantID uuid.UUID, recordID uuid.UUID, vital bool) error {
 	return database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		ct, err := tx.Exec(ctx,
-			`UPDATE records SET vital_record=$3, updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+			`UPDATE records SET vital_record=$3, updated_at=now()
+			  WHERE tenant_id=$1 AND id=$2 AND disposition_state NOT IN ('disposed','transferred')`,
 			tenantID, recordID, vital)
 		if err != nil {
 			return vdmserr.FromPgError(err)
 		}
 		if ct.RowsAffected() == 0 {
-			return vdmserr.NotFound("record not found")
+			// A disposed/transferred record is immutable; distinguish that from
+			// a genuinely missing one.
+			return recordImmutableOrNotFound(ctx, tx, tenantID, recordID)
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.record.vital_set.v1", "record", recordID, map[string]any{
 			"record_id": recordID.String(), "vital_record": vital,
@@ -108,13 +128,14 @@ func (s *Service) SetMetadata(ctx context.Context, tenantID, recordID uuid.UUID,
 	}
 	err = database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		ct, e := tx.Exec(ctx,
-			`UPDATE records SET metadata=$3::jsonb, updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+			`UPDATE records SET metadata=$3::jsonb, updated_at=now()
+			  WHERE tenant_id=$1 AND id=$2 AND disposition_state NOT IN ('disposed','transferred')`,
 			tenantID, recordID, raw)
 		if e != nil {
 			return vdmserr.FromPgError(e)
 		}
 		if ct.RowsAffected() == 0 {
-			return vdmserr.NotFound("record not found")
+			return recordImmutableOrNotFound(ctx, tx, tenantID, recordID)
 		}
 		evt, e := model.NewOutboxEvent(tenantID, "dms.record.metadata_set.v1", "record", recordID, map[string]any{
 			"record_id": recordID.String(), "keys": mapKeys(metadata),

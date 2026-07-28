@@ -117,6 +117,13 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 			},
 			"pre_tags":  []string{"<mark>"},
 			"post_tags": []string{"</mark>"},
+			// SECURITY: the web client injects these fragments as HTML so
+			// the <mark> wrappers render. The default encoder does NOT
+			// escape the document's own text — a title like
+			// "<img onerror=…>.pdf" would become stored XSS for every
+			// searcher. encoder=html makes OpenSearch escape everything
+			// except the pre/post tags above.
+			"encoder": "html",
 		}
 		// Track 6 — <mark> only tokens that match WITHOUT fuzziness. The outer
 		// query keeps "fuzziness": AUTO for recall (so "contarct" still finds

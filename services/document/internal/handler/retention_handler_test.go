@@ -30,11 +30,15 @@ func newRetentionMux(t *testing.T) *http.ServeMux {
 }
 
 // authedReq builds a request carrying a valid tenant+user auth context.
+// Role is admin so the request clears the compliance role gate on the
+// mutating retention endpoints and reaches the validation logic these tests
+// exercise (a dedicated 403 test would use an empty/member role instead).
 func authedReq(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
 	return req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{
 		TenantID: uuid.New(),
 		ID:       uuid.New(),
+		Role:     "admin",
 	}))
 }
 

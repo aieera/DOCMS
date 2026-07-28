@@ -179,7 +179,11 @@ func (r *complianceRepo) UpdateFindingStatus(ctx context.Context, tx pgx.Tx, ten
 	row := tx.QueryRow(ctx, `
 		UPDATE compliance_findings
 		   SET remediation_status = $4,
-		       remediated_by      = CASE WHEN $4 = 'open' THEN NULL ELSE $3 END,
+		       -- $3::uuid: pgx sends google/uuid.UUID as TEXT (driver.Valuer),
+		       -- so inside the CASE the expression resolves to text and
+		       -- text→uuid is not an implicit assignment cast for a uuid
+		       -- column (SQLSTATE 42804). The explicit cast pins the type.
+		       remediated_by      = CASE WHEN $4 = 'open' THEN NULL ELSE $3::uuid END,
 		       remediated_at      = CASE WHEN $4 = 'open' THEN NULL ELSE now() END,
 		       remediation_note   = NULLIF($5, '')
 		 WHERE tenant_id = $1 AND id = $2
