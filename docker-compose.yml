@@ -1011,6 +1011,18 @@ services:
     volumes:
       - intake_data:/data/intake
 
+  task:
+    build:
+      context: .
+      dockerfile: build/Dockerfile.go-service
+      args: { SERVICE: task }
+    container_name: sedoc-task
+    environment: *go-env
+    ports: ["8095:8081", "8196:8080"]
+    depends_on: *go-depends
+    healthcheck: *go-healthcheck
+    restart: unless-stopped
+
   # ADR 0091 — MCP server (Model Context Protocol) for LLM agents.
   # Exposes search_documents / get_document / upload_document /
   # start_workflow tools to Claude Desktop, Cursor, GitHub Copilot.

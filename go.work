@@ -21,5 +21,6 @@ use (
 	./services/search
 	./services/signature
 	./services/storage
+	./services/task
 	./services/workflow
 )

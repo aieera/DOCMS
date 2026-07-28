@@ -46,6 +46,9 @@ service_specs=(
   "signature:9098:8089:8188"
   "billing:9099:8090:8189"
   "connector:9100:8091:8190"
+  # task is HTTP-only — see the graphql-gateway note below on why a
+  # distinct unused gRPC port is still required.
+  "task:9102:8095:8196"
   # graphql-gateway is HTTP-only — it doesn't bind a gRPC listener,
   # but pkg/config still validates SEDOC_GRPC_PORT (`gt=0,lt=65536`)
   # at boot, so we pass a distinct unused port (9101) rather than 0.

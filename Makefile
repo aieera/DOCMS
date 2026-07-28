@@ -20,7 +20,7 @@ LDFLAGS         := -w -s -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 DATABASE_URL    ?= postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable
 
-SERVICES := document storage search auth policy workflow notification audit signature billing connector
+SERVICES := document storage search auth policy workflow notification audit signature billing connector task
 
 # ---- Help ------------------------------------------------------------------
 
@@ -51,15 +51,16 @@ test: ## Run all tests with race detector
 		(cd $$dir && $(GO) test -race -timeout 5m ./...) || exit 1; \
 	done
 
-.PHONY: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow test-services
+.PHONY: test-audit test-billing test-connector test-notification test-signature test-storage test-task test-workflow test-services
 test-audit:        ; $(GO) test -race -cover ./services/audit/... ## Run audit tests
 test-billing:      ; $(GO) test -race -cover ./services/billing/... ## Run billing tests
 test-connector:    ; $(GO) test -race -cover ./services/connector/... ## Run connector tests
 test-notification: ; $(GO) test -race -cover ./services/notification/... ## Run notification tests
 test-signature:    ; $(GO) test -race -cover ./services/signature/... ## Run signature tests
 test-storage:      ; $(GO) test -race -cover ./services/storage/... ## Run storage tests
+test-task:         ; $(GO) test -race -cover ./services/task/... ## Run task tests
 test-workflow:     ; $(GO) test -race -cover ./services/workflow/... ## Run workflow tests
-test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-workflow ## Run every Go service's unit tests
+test-services: test-audit test-billing test-connector test-notification test-signature test-storage test-task test-workflow ## Run every Go service's unit tests
 
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report

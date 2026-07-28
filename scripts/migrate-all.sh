@@ -82,7 +82,7 @@ mig document up
 #    (api_keys/sessions/users/organizations), so it must stay after the
 #    document track; without its 000001 lookup functions every session dies
 #    at the 3-minute Redis revalidation (the "auto-logout" incident).
-for svc in auth search audit billing connector notification; do
+for svc in auth search audit billing connector notification task; do
   echo ">> ${svc}: up"
   mig "$svc" up
 done
