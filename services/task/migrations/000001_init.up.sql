@@ -1,0 +1,15 @@
+-- Placeholder initial migration for the task service.
+--
+-- Task 1 only scaffolds the service; task-assignment schema lands in a
+-- later task. This file exists (as a genuine, applied no-op) because
+-- golang-migrate v4's file/iofs source driver hard-errors on `up`
+-- against a completely empty migrations directory: on a fresh database
+-- (no tracked version yet) readUp() unconditionally calls
+-- sourceDrv.First() before checking whether any migrations exist, and
+-- First() returns fs.PathError{Op: "first", Err: fs.ErrNotExist} when
+-- zero files match the `<version>_<title>.<up|down>.sql` pattern. An
+-- empty directory (even with a .gitkeep) does not avoid this — verified
+-- against migrate v4.19.1. A trivial applied migration sidesteps it
+-- cleanly and gives scripts/migrate-all.sh's uniform `mig task up` a
+-- real starting version to run future migrations from.
+SELECT 1;
