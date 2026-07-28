@@ -97,6 +97,13 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 			r.Patch("/me/locale", h.UpdateMyLocale)
 			r.Post("/logout", h.Logout)
 
+			// Tenant people directory — the minimal picker feed for
+			// @mentions and direct shares. Deliberately NOT behind
+			// RequireRole: any authenticated tenant user may look up
+			// coworkers' id/name/email. Roles/status/MFA/seat data stay
+			// on the admin surface (/api/v1/admin/users).
+			r.Get("/users/directory", h.UserDirectory)
+
 			r.Route("/sessions", func(r chi.Router) {
 				r.Get("/", h.ListSessions)
 				r.Post("/revoke-all", h.RevokeAllSessions)

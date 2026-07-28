@@ -35,6 +35,49 @@ type listUsersResponse struct {
 	NextCursor string         `json:"next_cursor,omitempty"`
 }
 
+// UserDirectory handles GET /api/v1/auth/users/directory — the
+// people-picker feed for @mentions and direct shares. Available to any
+// authenticated tenant user (unlike ListUsersAdmin); returns only
+// active users and only id/display_name/email.
+func (h *Handler) UserDirectory(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, _, err := requireUser(r)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	f := service.ListUsersFilter{
+		Status: "active",
+		Q:      r.URL.Query().Get("q"),
+		Limit:  200,
+	}
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, perr := parsePositiveInt(s); perr == nil && n < f.Limit {
+			f.Limit = n
+		}
+	}
+	result, err := h.svc.ListUsers(r.Context(), tenantID, f)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	type dirUser struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+		Email       string `json:"email"`
+	}
+	out := struct {
+		Users []dirUser `json:"users"`
+	}{Users: make([]dirUser, 0, len(result.Users))}
+	for _, u := range result.Users {
+		out.Users = append(out.Users, dirUser{
+			ID:          u.ID.String(),
+			DisplayName: u.DisplayName,
+			Email:       u.Email,
+		})
+	}
+	h.writeJSON(w, http.StatusOK, out)
+}
+
 // ListUsersAdmin handles GET /api/v1/admin/users.
 func (h *Handler) ListUsersAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, _, _, err := requireUser(r)

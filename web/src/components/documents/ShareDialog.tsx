@@ -9,11 +9,10 @@ import { toast } from 'sonner'
 import { createShareLink } from '@/api/shareLinks'
 import { createZTShare } from '@/api/ztShare'
 import { getVersions } from '@/api/documents'
-import { getUsers } from '@/api/admin'
+import { listUserDirectory, type DirectoryUser } from '@/api/auth'
 import { grantPermission } from '@/api/permissions'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
-import type { User } from '@/types/api'
 
 interface Props { open: boolean; onOpenChange: (o: boolean) => void; documentId: string; documentTitle: string }
 
@@ -57,11 +56,12 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
 
   // ---- people mode state ----
   const [peopleQuery, setPeopleQuery] = useState('')
-  const [selected, setSelected] = useState<User[]>([])
+  const [selected, setSelected] = useState<DirectoryUser[]>([])
   const [capability, setCapability] = useState<'view' | 'share' | 'edit'>('view')
+  // The directory endpoint (not /admin/users) — members can share too.
   const usersQ = useQuery({
-    queryKey: ['admin', 'users'],
-    queryFn: () => getUsers(),
+    queryKey: ['user-directory'],
+    queryFn: () => listUserDirectory(),
     enabled: open && mode === 'people',
     staleTime: 60_000,
   })
@@ -71,7 +71,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
   const suggestions = useMemo(() => {
     if (!term) return []
     const chosen = new Set(selected.map((u) => u.id))
-    return (usersQ.data?.items ?? [])
+    return (usersQ.data ?? [])
       .filter((u) => u.id !== selfId && !chosen.has(u.id))
       .filter((u) =>
         (u.display_name ?? '').toLowerCase().includes(term) ||
