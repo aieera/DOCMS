@@ -423,7 +423,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 		}); err != nil {
 			return err
 		}
-		if err := s.repos.Documents.SoftDelete(ctx, tx, tenantID, id); err != nil {
+		if err := s.repos.Documents.SoftDelete(ctx, tx, tenantID, id, userID); err != nil {
 			return err
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.deleted.v1", "document", id,
@@ -439,11 +439,20 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id uuid.UUID) erro
 	})
 }
 
+// TrashDocument is a soft-deleted document plus the deletion metadata
+// the Trash UI renders (who deleted it — stamped by both the single
+// delete and the folder-cascade path).
+type TrashDocument struct {
+	model.Document
+	DeletedBy     *uuid.UUID
+	DeletedByName string
+}
+
 // ListTrash returns the tenant's soft-deleted documents. Admin/owner
 // only — gated at the handler layer because the trash spans every
 // workspace and the row-level OPA checks (Rule 4/5) would short-circuit
 // the cross-workspace view.
-func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken string) (*model.Page[model.Document], error) {
+func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken string) (*model.Page[TrashDocument], error) {
 	tenantID, _, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -455,12 +464,66 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 		SortBy:      "updated_at",
 		SortOrder:   "desc",
 	}
-	var page *model.Page[model.Document]
+	var out *model.Page[TrashDocument]
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
-		page, err = s.repos.Documents.List(ctx, tx, tenantID, f)
-		return err
+		page, lErr := s.repos.Documents.List(ctx, tx, tenantID, f)
+		if lErr != nil {
+			return lErr
+		}
+		out = &model.Page[TrashDocument]{
+			Items:         make([]TrashDocument, 0, len(page.Items)),
+			NextPageToken: page.NextPageToken,
+			TotalCount:    page.TotalCount,
+		}
+		for i := range page.Items {
+			out.Items = append(out.Items, TrashDocument{Document: page.Items[i]})
+		}
+		if len(out.Items) == 0 {
+			return nil
+		}
+		// deleted_by isn't part of the shared List projection (hot
+		// path) — enrich the one page here instead.
+		ids := make([]uuid.UUID, 0, len(out.Items))
+		for i := range out.Items {
+			ids = append(ids, out.Items[i].ID)
+		}
+		rows, qErr := tx.Query(ctx, `
+			SELECT d.id, d.deleted_by, COALESCE(u.display_name, '')
+			  FROM documents d
+			  LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.deleted_by
+			 WHERE d.tenant_id = $1 AND d.id = ANY($2)
+		`, tenantID, ids)
+		if qErr != nil {
+			return qErr
+		}
+		defer rows.Close()
+		type delMeta struct {
+			by   *uuid.UUID
+			name string
+		}
+		meta := make(map[uuid.UUID]delMeta, len(ids))
+		for rows.Next() {
+			var (
+				id uuid.UUID
+				m  delMeta
+			)
+			if sErr := rows.Scan(&id, &m.by, &m.name); sErr != nil {
+				return sErr
+			}
+			meta[id] = m
+		}
+		if rErr := rows.Err(); rErr != nil {
+			return rErr
+		}
+		for i := range out.Items {
+			if m, ok := meta[out.Items[i].ID]; ok {
+				out.Items[i].DeletedBy = m.by
+				out.Items[i].DeletedByName = m.name
+			}
+		}
+		return nil
 	})
-	return page, err
+	return out, err
 }
 
 // RestoreDocument clears the soft-delete flag so the document
@@ -523,6 +586,31 @@ func (s *DocumentService) retentionInfo(ctx context.Context, tx pgx.Tx, tenantID
 	return until, exempt, err
 }
 
+// purgeGuard enforces the invariants that block a hard delete:
+// active legal hold and an unelapsed retention window. Shared by the
+// per-document purge, the folder-cohort purge, and Empty Trash so all
+// destructive paths fail closed identically.
+func (s *DocumentService) purgeGuard(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+	if s.holds != nil {
+		held, hErr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
+		if hErr != nil {
+			return fmt.Errorf("hold check: %w", hErr)
+		}
+		if held {
+			return vdmserr.ErrLegalHold
+		}
+	}
+	// Retention guard (handoff Track 1): never hard-delete a document still
+	// inside its retention window — the retention pipeline owns disposal,
+	// and the trash UI must not expose a way to bypass it. 409.
+	if until, exempt, rErr := s.retentionInfo(ctx, tx, tenantID, id); rErr != nil {
+		return rErr
+	} else if until != nil && !exempt && until.After(time.Now().UTC()) {
+		return vdmserr.Conflict("document is under active retention; the retention pipeline owns disposal")
+	}
+	return nil
+}
+
 // PurgeDocument hard-deletes a soft-deleted document. Removes the S3
 // blob bytes first (best-effort — a missing object is not an error so
 // re-runs of a partially-failed purge complete), then drops the DB
@@ -551,22 +639,8 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 		if cur.DeletedAt == nil {
 			return vdmserr.Validation("document", "must be soft-deleted before purge")
 		}
-		if s.holds != nil {
-			held, hErr := s.holds.AnyActiveHoldFor(ctx, tenantID, id)
-			if hErr != nil {
-				return fmt.Errorf("hold check: %w", hErr)
-			}
-			if held {
-				return vdmserr.ErrLegalHold
-			}
-		}
-		// Retention guard (handoff Track 1): never hard-delete a document still
-		// inside its retention window — the retention pipeline owns disposal,
-		// and the trash UI must not expose a way to bypass it. 409.
-		if until, exempt, rErr := s.retentionInfo(ctx, tx, tenantID, id); rErr != nil {
-			return rErr
-		} else if until != nil && !exempt && until.After(time.Now().UTC()) {
-			return vdmserr.Conflict("document is under active retention; the retention pipeline owns disposal")
+		if gErr := s.purgeGuard(ctx, tx, tenantID, id); gErr != nil {
+			return gErr
 		}
 		bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, id)
 		if bErr != nil {
@@ -604,6 +678,109 @@ func (s *DocumentService) PurgeDocument(ctx context.Context, id uuid.UUID) error
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// EmptyTrashSkipped records one trash item Empty Trash could not purge
+// and why (legal hold, active retention, live references, …).
+type EmptyTrashSkipped struct {
+	ID     uuid.UUID `json:"id"`
+	Type   string    `json:"type"` // "folder" | "document"
+	Name   string    `json:"name,omitempty"`
+	Reason string    `json:"reason"`
+}
+
+// EmptyTrashResult summarizes an Empty Trash run.
+type EmptyTrashResult struct {
+	PurgedFolders   int                `json:"purged_folders"`
+	PurgedDocuments int                `json:"purged_documents"`
+	Skipped         []EmptyTrashSkipped `json:"skipped"`
+}
+
+// emptyTrashMaxDocs bounds one Empty Trash call; a tenant with more
+// trashed docs than this finishes on the next click.
+const emptyTrashMaxDocs = 10000
+
+// EmptyTrash permanently deletes everything in the tenant's trash:
+// every folder cohort via PurgeFolder, then every remaining trashed
+// document via PurgeDocument. Items blocked by legal hold / retention
+// / live references are skipped and reported, never fatal — an admin
+// emptying the trash should not be stopped by the one held document.
+// Requires admin/owner — gated at the handler layer.
+func (s *DocumentService) EmptyTrash(ctx context.Context) (*EmptyTrashResult, error) {
+	if s.s3 == nil {
+		return nil, fmt.Errorf("purge unavailable: s3 client not configured")
+	}
+	res := &EmptyTrashResult{Skipped: []EmptyTrashSkipped{}}
+	// skippable: expected per-item refusals (hold, retention, conflict)
+	// become skip entries; anything else (S3 down, DB error) aborts.
+	skippable := func(err error) (string, bool) {
+		var typed *vdmserr.Error
+		if errors.As(err, &typed) {
+			return typed.Message, true
+		}
+		return "", false
+	}
+
+	folders, err := s.ListTrashFolders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range folders {
+		f := &folders[i]
+		fr, pErr := s.PurgeFolder(ctx, f.ID)
+		if pErr != nil {
+			if errors.Is(pErr, vdmserr.ErrNotFound) {
+				continue // already gone (nested cohort purged via an earlier root)
+			}
+			if reason, ok := skippable(pErr); ok {
+				res.Skipped = append(res.Skipped, EmptyTrashSkipped{
+					ID: f.ID, Type: "folder", Name: f.Name, Reason: reason,
+				})
+				continue
+			}
+			return nil, pErr
+		}
+		res.PurgedFolders++
+		res.PurgedDocuments += fr.DocumentsDeleted
+	}
+
+	// Remaining trashed documents: deleted individually, or members of a
+	// skipped cohort. Purging a skipped cohort's unblocked docs here is
+	// intentional — Empty Trash removes everything removable; only the
+	// blocked docs (and their folder rows) stay behind.
+	docIDs := make([]uuid.UUID, 0, 256)
+	titles := make(map[uuid.UUID]string)
+	pageToken := ""
+	for len(docIDs) < emptyTrashMaxDocs {
+		page, lErr := s.ListTrash(ctx, 200, pageToken)
+		if lErr != nil {
+			return nil, lErr
+		}
+		for i := range page.Items {
+			docIDs = append(docIDs, page.Items[i].ID)
+			titles[page.Items[i].ID] = page.Items[i].Title
+		}
+		if page.NextPageToken == "" {
+			break
+		}
+		pageToken = page.NextPageToken
+	}
+	for _, docID := range docIDs {
+		if pErr := s.PurgeDocument(ctx, docID); pErr != nil {
+			if errors.Is(pErr, vdmserr.ErrNotFound) {
+				continue // purged with its cohort above
+			}
+			if reason, ok := skippable(pErr); ok {
+				res.Skipped = append(res.Skipped, EmptyTrashSkipped{
+					ID: docID, Type: "document", Name: titles[docID], Reason: reason,
+				})
+				continue
+			}
+			return nil, pErr
+		}
+		res.PurgedDocuments++
+	}
+	return res, nil
 }
 
 // MoveDocument re-parents a document. Blocked by legal hold. Refuses a move

@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useDirection } from '@/hooks/useDirection'
-import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , LayoutTemplate , BarChart3 } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, Trash2, Settings, PanelLeftClose, PanelLeft, FolderOpen, Boxes, Sparkles, BookOpen, UserCog, Database, Lock, Users, Globe, Inbox, type LucideIcon , BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/shadcn/sheet'
@@ -50,8 +50,9 @@ const NAV_GROUPS: NavGroup[] = [
       // dropdown footer, no longer top-level nav.
       // ADR 0104 — clause library.
       { to: '/clauses',        icon: BookOpen,  labelKey: 'sidebar.clauses' },
-      // ADR 0118 — workspace templates gallery.
-      { to: '/templates',      icon: LayoutTemplate, labelKey: 'sidebar.templates' },
+      // ADR 0118 workspace-templates gallery dropped from nav
+      // 2026-07-28 (user request) — /templates route still resolves
+      // for deep links.
       // ADR 0119 — analytics report builder (admin-gated backend-side).
       { to: '/reports',        icon: BarChart3, labelKey: 'sidebar.reports', roles: ['admin', 'owner'] },
     ],

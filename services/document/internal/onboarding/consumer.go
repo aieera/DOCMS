@@ -74,11 +74,17 @@ func (c *Consumer) handle(msg *nats.Msg) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	err := database.WithTenantTx(ctx, c.pool, tenantID, func(tx pgx.Tx) error {
+		// Join THROUGH users: a user that has since been deleted (stale
+		// event from the stream backlog) selects zero rows instead of
+		// violating the workspace_members→users FK — which would NAK
+		// into an infinite redelivery loop.
 		_, execErr := tx.Exec(ctx, `
 			INSERT INTO workspace_members (tenant_id, workspace_id, user_id, role, added_by)
-			SELECT w.tenant_id, w.id, $2, 'member', NULL
-			  FROM workspaces w
-			 WHERE w.tenant_id = $1 AND w.is_default AND w.deleted_at IS NULL
+			SELECT u.tenant_id, w.id, u.id, 'member', NULL
+			  FROM users u
+			  JOIN workspaces w
+			    ON w.tenant_id = u.tenant_id AND w.is_default AND w.deleted_at IS NULL
+			 WHERE u.tenant_id = $1 AND u.id = $2 AND u.deleted_at IS NULL
 			ON CONFLICT (tenant_id, workspace_id, user_id) DO NOTHING
 		`, tenantID, userID)
 		return execErr

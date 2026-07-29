@@ -258,7 +258,6 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
   { icon: Search, label: 'Search documents', href: '/search', description: 'Full-text + semantic across the tenant', kbd: '⌘K' },
   { icon: Sparkles, label: 'Ask the corpus', href: '/ask', description: 'RAG over the documents you can see' },
   { icon: Upload, label: 'Upload', action: 'upload', description: 'Pick a workspace and drop files in' },
-  { icon: Workflow, label: 'Workflow templates', href: '/workflows', description: 'Reusable approval, signature, notification chains' },
 ]
 
 function QuickActions({
@@ -311,7 +310,7 @@ function QuickActions({
       <h2 id="quick-actions-heading" className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Quick actions
       </h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {QUICK_ACTIONS.map((qa) =>
           qa.action === 'upload' ? (
             <button

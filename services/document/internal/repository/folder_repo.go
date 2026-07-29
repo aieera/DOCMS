@@ -437,6 +437,117 @@ func (r *folderRepo) RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, ro
 	return nil
 }
 
+// FolderPurgeTargets is what a permanent folder delete will remove.
+// CohortID is nil for legacy soft-deletes (pre-FIX-5, no cohort) —
+// those resolve by ltree subtree instead. LiveDocRefs counts live
+// (not soft-deleted) documents still pointing at any target folder;
+// purging while it is non-zero would orphan their folder_id FK, so
+// the service refuses.
+type FolderPurgeTargets struct {
+	WorkspaceID uuid.UUID
+	CohortID    *uuid.UUID
+	FolderIDs   []uuid.UUID
+	DocumentIDs []uuid.UUID
+	LiveDocRefs int64
+}
+
+// PurgeTargets resolves the full row set a permanent delete of the
+// given trashed folder covers. The root must be soft-deleted. Cohort
+// rows (folders + documents stamped with the same deleted_cohort_id)
+// when a cohort exists; otherwise the soft-deleted subtree under the
+// root's ltree path (legacy pre-cascade deletes, which would else be
+// immortal).
+func (r *folderRepo) PurgeTargets(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) (*FolderPurgeTargets, error) {
+	out := &FolderPurgeTargets{}
+	var (
+		rootPath  string
+		deletedAt *time.Time
+	)
+	if err := tx.QueryRow(ctx, `
+		SELECT workspace_id, path::text, deleted_at, deleted_cohort_id
+		  FROM folders
+		 WHERE tenant_id = $1 AND id = $2
+	`, tenantID, rootID).Scan(&out.WorkspaceID, &rootPath, &deletedAt, &out.CohortID); err != nil {
+		return nil, mapPgError(err)
+	}
+	if deletedAt == nil {
+		return nil, vdmserr.Validation("folder", "must be soft-deleted before purge")
+	}
+	collect := func(q string, args ...any) ([]uuid.UUID, error) {
+		rows, err := tx.Query(ctx, q, args...)
+		if err != nil {
+			return nil, mapPgError(err)
+		}
+		defer rows.Close()
+		ids := []uuid.UUID{}
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				return nil, mapPgError(err)
+			}
+			ids = append(ids, id)
+		}
+		return ids, rows.Err()
+	}
+	var err error
+	if out.CohortID != nil {
+		out.FolderIDs, err = collect(`
+			SELECT id FROM folders
+			 WHERE tenant_id = $1 AND deleted_cohort_id = $2
+		`, tenantID, *out.CohortID)
+		if err != nil {
+			return nil, err
+		}
+		out.DocumentIDs, err = collect(`
+			SELECT id FROM documents
+			 WHERE tenant_id = $1 AND deleted_cohort_id = $2
+			   AND deleted_at IS NOT NULL
+		`, tenantID, *out.CohortID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		out.FolderIDs, err = collect(`
+			SELECT id FROM folders
+			 WHERE tenant_id = $1 AND deleted_at IS NOT NULL
+			   AND path <@ $2::ltree
+		`, tenantID, rootPath)
+		if err != nil {
+			return nil, err
+		}
+		out.DocumentIDs, err = collect(`
+			SELECT id FROM documents
+			 WHERE tenant_id = $1 AND deleted_at IS NOT NULL
+			   AND folder_id = ANY($2)
+		`, tenantID, out.FolderIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM documents
+		 WHERE tenant_id = $1 AND deleted_at IS NULL AND folder_id = ANY($2)
+	`, tenantID, out.FolderIDs).Scan(&out.LiveDocRefs); err != nil {
+		return nil, mapPgError(err)
+	}
+	return out, nil
+}
+
+// HardDeleteFolders drops folder rows outright. Parent+child rows in
+// the same call are fine (FK checks fire at end of statement); rows
+// referenced from OUTSIDE the set (routing rules, retention scopes,
+// live documents) surface as a Conflict via mapPgError — the caller
+// translates that into an actionable message.
+func (r *folderRepo) HardDeleteFolders(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		DELETE FROM folders WHERE tenant_id = $1 AND id = ANY($2)
+	`, tenantID, ids)
+	return mapPgError(err)
+}
+
 func (r *folderRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE folders SET deleted_at = now(), updated_at = now()

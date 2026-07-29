@@ -10,6 +10,8 @@ export interface TrashEntry {
   lifecycle_state: string
   created_by?: string
   created_by_name?: string
+  deleted_by?: string
+  deleted_by_name?: string
   deleted_at?: string
 }
 
@@ -64,6 +66,43 @@ export async function listTrashedFolders(): Promise<TrashedFolder[]> {
 // cohort id.
 export async function restoreFolderFromTrash(folderId: string): Promise<void> {
   await api.post(`/folders/${folderId}/restore`)
+}
+
+// purgeFolderFromTrash permanently deletes a trashed folder cohort:
+// every folder + document soft-deleted in the same cascade, their
+// blobs in object storage included. Fails 409 if any cohort document
+// is under legal hold or active retention (fail-closed: nothing is
+// deleted). Works for legacy no-cohort rows too (purges the deleted
+// subtree — the only way to remove those).
+export interface FolderPurgeResult {
+  folders_deleted: number
+  documents_deleted: number
+}
+
+export async function purgeFolderFromTrash(folderId: string): Promise<FolderPurgeResult> {
+  const { data } = await api.delete<FolderPurgeResult>(`/admin/trash/folders/${folderId}`)
+  return data
+}
+
+// emptyTrash purges everything purgeable in the tenant's trash in one
+// call. Items blocked by legal hold / retention are skipped and
+// reported, never fatal.
+export interface EmptyTrashSkipped {
+  id: string
+  type: 'folder' | 'document'
+  name?: string
+  reason: string
+}
+
+export interface EmptyTrashResult {
+  purged_folders: number
+  purged_documents: number
+  skipped: EmptyTrashSkipped[]
+}
+
+export async function emptyTrash(): Promise<EmptyTrashResult> {
+  const { data } = await api.delete<EmptyTrashResult>('/admin/trash')
+  return data
 }
 
 // ---- Empty-folder cleanup (admin maintenance) -----------------------

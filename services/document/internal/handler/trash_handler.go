@@ -1,10 +1,14 @@
-// trash_handler — admin-only Trash surface for soft-deleted documents.
+// trash_handler — admin-only Trash surface for soft-deleted documents
+// and folders.
 //
 //	GET    /api/v1/admin/trash                       — list soft-deleted docs
 //	POST   /api/v1/admin/trash/{id}/restore          — clear deleted_at
-//	DELETE /api/v1/admin/trash/{id}                  — purge (S3 + DB)
+//	DELETE /api/v1/admin/trash/{id}                  — purge doc (S3 + DB)
+//	GET    /api/v1/admin/trash/folders               — list trashed folder cohorts
+//	DELETE /api/v1/admin/trash/folders/{id}          — purge folder cohort (S3 + DB)
+//	DELETE /api/v1/admin/trash                       — empty trash (bulk purge)
 //
-// All three routes require owner/admin role. Authedcontext stamps the
+// All routes require owner/admin role. Authedcontext stamps the
 // session role onto ctx so the service layer's OPA checks (Rule 6)
 // fire identically to the rest of the admin surface.
 package handler
@@ -18,7 +22,6 @@ import (
 	"github.com/google/uuid"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
-	"github.com/aieera/sedoc/services/document/internal/model"
 	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
@@ -41,6 +44,8 @@ func (h *TrashHandler) Register(mux *http.ServeMux) {
 	// shipped in the audit had no listing endpoint, so the UI had no
 	// way to enumerate cohort-root folders to restore.
 	mux.HandleFunc("GET /api/v1/admin/trash/folders", h.listFolders)
+	mux.HandleFunc("DELETE /api/v1/admin/trash/folders/{id}", h.purgeFolder)
+	mux.HandleFunc("DELETE /api/v1/admin/trash", h.emptyTrash)
 }
 
 // trashEntry is the JSON shape returned to the admin UI. Flat,
@@ -56,6 +61,8 @@ type trashEntry struct {
 	LifecycleState string     `json:"lifecycle_state"`
 	CreatedBy      string     `json:"created_by,omitempty"`
 	CreatedByName  string     `json:"created_by_name,omitempty"`
+	DeletedBy      string     `json:"deleted_by,omitempty"`
+	DeletedByName  string     `json:"deleted_by_name,omitempty"`
 	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
 }
 
@@ -190,7 +197,54 @@ func (h *TrashHandler) purge(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func trashFromModel(d *model.Document) trashEntry {
+// folderPurgeResponse echoes what the cohort purge removed so the UI
+// can toast "N folders, M documents permanently deleted".
+type folderPurgeResponse struct {
+	FoldersDeleted   int `json:"folders_deleted"`
+	DocumentsDeleted int `json:"documents_deleted"`
+}
+
+func (h *TrashHandler) purgeFolder(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	folderID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	res, err := h.svc.PurgeFolder(ctx, folderID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, folderPurgeResponse{
+		FoldersDeleted:   res.FoldersDeleted,
+		DocumentsDeleted: res.DocumentsDeleted,
+	})
+}
+
+func (h *TrashHandler) emptyTrash(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	if !requireRole(w, r, "owner", "admin") {
+		return
+	}
+	res, err := h.svc.EmptyTrash(ctx)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, res)
+}
+
+func trashFromModel(d *service.TrashDocument) trashEntry {
 	out := trashEntry{
 		ID:             d.ID.String(),
 		Title:          d.Title,
@@ -200,7 +254,11 @@ func trashFromModel(d *model.Document) trashEntry {
 		LifecycleState: string(d.LifecycleState),
 		CreatedBy:      d.CreatedBy.String(),
 		CreatedByName:  d.CreatedByName,
+		DeletedByName:  d.DeletedByName,
 		DeletedAt:      d.DeletedAt,
+	}
+	if d.DeletedBy != nil {
+		out.DeletedBy = d.DeletedBy.String()
 	}
 	if d.FolderID != uuid.Nil {
 		out.FolderID = d.FolderID.String()

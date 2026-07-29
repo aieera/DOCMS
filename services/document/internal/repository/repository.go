@@ -35,7 +35,7 @@ type DocumentRepository interface {
 	// whole tenant. Powers the pre-upload duplicate prompt.
 	FindByContentHash(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.UUID, sha256 string, limit int) ([]model.DuplicateMatch, error)
 	Update(ctx context.Context, tx pgx.Tx, d *model.Document) error
-	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id, deletedBy uuid.UUID) error
 	Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]struct {
@@ -105,6 +105,11 @@ type FolderRepository interface {
 	// consumer DeleteByQuery without re-walking the tree.
 	SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (*SubtreeDeleteResult, error)
 	RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error
+	// PurgeTargets / HardDeleteFolders power permanent delete from
+	// Trash: resolve the cohort (or legacy subtree) a purge covers,
+	// then drop the folder rows once documents/blobs are gone.
+	PurgeTargets(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) (*FolderPurgeTargets, error)
+	HardDeleteFolders(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, ids []uuid.UUID) error
 	HasChildren(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (bool, error)
 	// ListEmptyFolders returns live leaf folders with no live child
 	// folders and no live documents — the orphaned empties that

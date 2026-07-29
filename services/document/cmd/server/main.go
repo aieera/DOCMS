@@ -742,6 +742,9 @@ func main() {
 	rootMux.Handle("GET /api/v1/admin/trash/folders", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("POST /api/v1/admin/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("DELETE /api/v1/admin/trash/{id}", middleware.CorrelationHTTP(trashAuth))
+	// Folder permanent delete (cohort purge) + Empty Trash bulk purge.
+	rootMux.Handle("DELETE /api/v1/admin/trash/folders/{id}", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("DELETE /api/v1/admin/trash", middleware.CorrelationHTTP(trashAuth))
 
 	// Pre-upload duplicate check — GET /documents/duplicates?sha256=&workspace_id=.
 	// Any authenticated user; the service permission-filters matches to

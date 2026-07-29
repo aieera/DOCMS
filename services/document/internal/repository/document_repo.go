@@ -273,12 +273,14 @@ func (r *documentRepo) Update(ctx context.Context, tx pgx.Tx, d *model.Document)
 	return nil
 }
 
-// SoftDelete sets deleted_at. Retention and hard-delete live in Phase 6.
-func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
+// SoftDelete sets deleted_at and records who deleted the row so the
+// Trash listing can show it (the cascade path stamps deleted_by the
+// same way in SoftDeleteSubtree).
+func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id, deletedBy uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
-		UPDATE documents SET deleted_at = now(), updated_at = now()
+		UPDATE documents SET deleted_at = now(), deleted_by = $3, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-	`, tenantID, id)
+	`, tenantID, id, deletedBy)
 	if err != nil {
 		return mapPgError(err)
 	}
@@ -289,10 +291,14 @@ func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id u
 }
 
 // Restore clears deleted_at. Returns ErrNotFound if the row doesn't
-// exist or is not currently soft-deleted.
+// exist or is not currently soft-deleted. Also clears the cascade
+// markers (deleted_cohort_id / deleted_by): a doc restored out of a
+// folder cohort must not be swept up by a later purge or restore of
+// that cohort.
 func (r *documentRepo) Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
-		UPDATE documents SET deleted_at = NULL, updated_at = now()
+		UPDATE documents SET deleted_at = NULL, deleted_cohort_id = NULL,
+		                     deleted_by = NULL, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL
 	`, tenantID, id)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -740,6 +741,142 @@ func (s *DocumentService) RestoreFolder(ctx context.Context, id uuid.UUID) error
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// FolderPurgeResult summarizes what a permanent folder delete removed.
+type FolderPurgeResult struct {
+	FoldersDeleted   int
+	DocumentsDeleted int
+	BlobsDeleted     int
+}
+
+// PurgeFolder permanently deletes a trashed folder: every folder +
+// document soft-deleted in the same cascade (cohort), their version and
+// blob rows, and the S3 object bytes. Legacy pre-cascade soft-deletes
+// (no cohort id) purge their soft-deleted subtree by path — the only
+// way to remove those otherwise-immortal rows.
+//
+// Fail-closed: if ANY cohort document is under an active legal hold or
+// an unelapsed retention window, nothing is deleted (409). Same guards
+// as PurgeDocument, cohort-wide. Requires admin/owner — gated at the
+// handler layer, same as the document purge.
+func (s *DocumentService) PurgeFolder(ctx context.Context, id uuid.UUID) (*FolderPurgeResult, error) {
+	if s.s3 == nil {
+		return nil, fmt.Errorf("purge unavailable: s3 client not configured")
+	}
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Phase 1 — resolve the cohort, run the guards, collect blob refs.
+	var (
+		targets *repository.FolderPurgeTargets
+		blobs   []struct {
+			BlobID uuid.UUID
+			Bucket string
+			Key    string
+		}
+	)
+	if err := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		t, tErr := s.repos.Folders.PurgeTargets(ctx, tx, tenantID, id)
+		if tErr != nil {
+			return tErr
+		}
+		if t.LiveDocRefs > 0 {
+			return vdmserr.Conflict(fmt.Sprintf(
+				"%d live document(s) still reference this folder tree (restored after the folder was deleted?); move or delete them first", t.LiveDocRefs))
+		}
+		blocked := 0
+		for _, docID := range t.DocumentIDs {
+			if gErr := s.purgeGuard(ctx, tx, tenantID, docID); gErr != nil {
+				var typed *vdmserr.Error
+				if errors.As(gErr, &typed) {
+					blocked++
+					continue
+				}
+				return gErr
+			}
+		}
+		if blocked > 0 {
+			return vdmserr.Conflict(fmt.Sprintf(
+				"%d document(s) in this folder are blocked from permanent deletion by legal hold or active retention", blocked))
+		}
+		for _, docID := range t.DocumentIDs {
+			bs, bErr := s.repos.Documents.BlobsForDocument(ctx, tx, tenantID, docID)
+			if bErr != nil {
+				return bErr
+			}
+			blobs = append(blobs, bs...)
+		}
+		targets = t
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	// Phase 2 — delete object bytes. DeleteObject returns nil on
+	// NoSuchKey so a re-run after a half-failed purge completes.
+	for _, b := range blobs {
+		if err := s.s3.DeleteObject(ctx, b.Bucket, b.Key); err != nil {
+			return nil, fmt.Errorf("s3 delete %s/%s: %w", b.Bucket, b.Key, err)
+		}
+	}
+	// Phase 3 — drop DB rows + emit audit in one tx.
+	res := &FolderPurgeResult{BlobsDeleted: len(blobs)}
+	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		for _, docID := range targets.DocumentIDs {
+			// Skip docs restored between phases — never hard-delete a
+			// live row (its bytes may already be gone; that narrow
+			// window matches the existing PurgeDocument semantics, but
+			// the DB row survives).
+			var stillDeleted bool
+			if qErr := tx.QueryRow(ctx,
+				`SELECT deleted_at IS NOT NULL FROM documents WHERE tenant_id = $1 AND id = $2`,
+				tenantID, docID).Scan(&stillDeleted); qErr != nil {
+				if errors.Is(qErr, pgx.ErrNoRows) {
+					continue // already purged concurrently
+				}
+				return qErr
+			}
+			if !stillDeleted {
+				continue
+			}
+			if dErr := s.repos.Documents.DeleteVersionsAndBlobs(ctx, tx, tenantID, docID); dErr != nil {
+				return dErr
+			}
+			if dErr := s.repos.Documents.HardDelete(ctx, tx, tenantID, docID); dErr != nil {
+				return dErr
+			}
+			res.DocumentsDeleted++
+		}
+		if dErr := s.repos.Folders.HardDeleteFolders(ctx, tx, tenantID, targets.FolderIDs); dErr != nil {
+			var typed *vdmserr.Error
+			if errors.As(dErr, &typed) && typed.Kind == vdmserr.KindConflict {
+				return vdmserr.Conflict("folder is still referenced (live documents, routing rules, or retention scopes); remove those references first")
+			}
+			return dErr
+		}
+		res.FoldersDeleted = len(targets.FolderIDs)
+		payload := map[string]any{
+			"folder_id":      id.String(),
+			"workspace_id":   targets.WorkspaceID.String(),
+			"purged_by":      userID.String(),
+			"folder_count":   res.FoldersDeleted,
+			"document_count": res.DocumentsDeleted,
+			"blob_count":     res.BlobsDeleted,
+		}
+		if targets.CohortID != nil {
+			payload["cohort_id"] = targets.CohortID.String()
+		}
+		evt, evtErr := model.NewOutboxEvent(tenantID, "dms.folder.purged.v1", "folder", id, payload)
+		if evtErr != nil {
+			return evtErr
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // SetFolderVisibility flips a folder between shared and private.

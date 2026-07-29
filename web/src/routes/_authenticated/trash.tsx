@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import { ArchiveRestore, FileText, FolderClosed, Lock, Trash2 } from 'lucide-react'
@@ -17,6 +17,8 @@ import {
   listTrash,
   listTrashedFolders,
   purgeFromTrash,
+  purgeFolderFromTrash,
+  emptyTrash,
   restoreFolderFromTrash,
   restoreFromTrash,
   listEmptyFolders,
@@ -40,12 +42,18 @@ function TrashPage() {
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canManage = role === 'owner' || role === 'admin'
-  const [pageToken, setPageToken] = useState<string | undefined>()
   const [purgeTarget, setPurgeTarget] = useState<TrashEntry | null>(null)
+  const [folderPurgeTarget, setFolderPurgeTarget] = useState<TrashedFolder | null>(null)
+  const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
 
-  const trash = useQuery({
-    queryKey: ['admin-trash', pageToken],
-    queryFn: () => listTrash(pageToken),
+  // Infinite query so "Load more" APPENDS pages — the previous
+  // useQuery-keyed-by-token version replaced page 1 with page 2,
+  // silently dropping earlier rows past 50 trashed docs.
+  const trash = useInfiniteQuery({
+    queryKey: ['admin-trash'],
+    queryFn: ({ pageParam }) => listTrash(pageParam || undefined),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.next_page_token ?? undefined,
     enabled: canManage,
   })
 
@@ -89,6 +97,42 @@ function TrashPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Permanent delete failed'),
   })
 
+  const purgeFolder = useAppMutation({
+    mutationFn: (id: string) => purgeFolderFromTrash(id),
+    onSuccess: (res) => {
+      setFolderPurgeTarget(null)
+      toast.success(
+        `Permanently deleted ${res.folders_deleted} folder${res.folders_deleted === 1 ? '' : 's'}` +
+          (res.documents_deleted > 0
+            ? ` and ${res.documents_deleted} document${res.documents_deleted === 1 ? '' : 's'}`
+            : ''),
+      )
+      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
+      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      qc.invalidateQueries({ queryKey: ['folders'] })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Permanent delete failed'),
+  })
+
+  const emptyAll = useAppMutation({
+    mutationFn: () => emptyTrash(),
+    onSuccess: (res) => {
+      setConfirmEmptyTrash(false)
+      const purged = `Purged ${res.purged_folders} folder${res.purged_folders === 1 ? '' : 's'} and ${res.purged_documents} document${res.purged_documents === 1 ? '' : 's'}`
+      if (res.skipped.length > 0) {
+        toast.warning(
+          `${purged}. ${res.skipped.length} item${res.skipped.length === 1 ? '' : 's'} skipped (legal hold or active retention).`,
+        )
+      } else {
+        toast.success(purged)
+      }
+      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
+      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      qc.invalidateQueries({ queryKey: ['folders'] })
+    },
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't empty trash"),
+  })
+
   // Empty-folder cleanup (admin maintenance). The dry-run scan runs on
   // load so the operator sees the count; cleanup soft-deletes them into
   // the folder trash above (restorable + audited).
@@ -124,45 +168,56 @@ function TrashPage() {
     )
   }
 
-  const items = trash.data?.items ?? []
+  const items = trash.data?.pages.flatMap((p) => p.items) ?? []
   const folders = folderTrash.data ?? []
   const docsEmpty = !trash.isLoading && items.length === 0
   const foldersEmpty = !folderTrash.isLoading && folders.length === 0
+  const trashEmpty = docsEmpty && foldersEmpty
+  const emptyCount = emptyScan.data?.count ?? 0
+  const emptyTruncated = emptyScan.data?.truncated ?? false
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Trash"
-        description="Soft-deleted folders and documents across the tenant. Restoring a folder brings its entire cascade back together; permanent delete removes files from object storage and cannot be undone."
+        description="Restore deleted items, or delete them permanently. Permanent deletion cannot be undone."
+        actions={
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={trashEmpty || emptyAll.isPending}
+            onClick={() => setConfirmEmptyTrash(true)}
+            data-testid="empty-trash"
+          >
+            <Trash2 className="me-1.5 h-3.5 w-3.5" />
+            {emptyAll.isPending ? 'Emptying…' : 'Empty trash'}
+          </Button>
+        }
       />
 
-      {/* ---- Maintenance: empty-folder cleanup ------------------- */}
-      <section data-testid="empty-folder-cleanup">
-        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <FolderClosed className="h-4 w-4" /> Maintenance
-        </h2>
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Empty folders</p>
-            <p className="text-xs text-muted-foreground">
-              {emptyScan.isLoading
-                ? 'Scanning…'
-                : emptyScan.data
-                  ? emptyScan.data.count === 0
-                    ? 'No empty folders found.'
-                    : `${emptyScan.data.count}${emptyScan.data.truncated ? '+' : ''} empty folder${emptyScan.data.count === 1 ? '' : 's'} (no documents, no subfolders). Cleanup is soft — they move to Trash here and can be restored.`
-                  : 'Could not scan.'}
-            </p>
-          </div>
+      {/* ---- Maintenance: empty-folder cleanup. Compact single line;
+             hidden entirely when there's nothing to clean. ---------- */}
+      {emptyCount > 0 && (
+        <div
+          data-testid="empty-folder-cleanup"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span>
+            {emptyCount}
+            {emptyTruncated ? '+' : ''} empty folder
+            {emptyCount === 1 ? '' : 's'} in your workspaces (no documents or subfolders).
+          </span>
           <Button
-            variant="outline"
-            disabled={!emptyScan.data || emptyScan.data.count === 0 || cleanup.isPending}
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={cleanup.isPending}
             onClick={() => setConfirmCleanup(true)}
             data-testid="cleanup-empty-folders"
           >
-            {cleanup.isPending ? 'Cleaning…' : 'Clean up empty folders'}
+            {cleanup.isPending ? 'Cleaning…' : 'Clean up'}
           </Button>
-        </Card>
-      </section>
+        </div>
+      )}
 
       {/* ---- Folders ---------------------------------------------- */}
       {!foldersEmpty && (
@@ -195,6 +250,7 @@ function TrashPage() {
                       f={f}
                       pending={restoreFolder.isPending && restoreFolder.variables === f.id}
                       onRestore={() => restoreFolder.mutate(f.id)}
+                      onPurge={() => setFolderPurgeTarget(f)}
                     />
                   ))}
                 </tbody>
@@ -205,24 +261,22 @@ function TrashPage() {
         </section>
       )}
 
-      {/* ---- Documents ------------------------------------------- */}
-      <section>
-        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <FileText className="h-4 w-4" /> Documents
-        </h2>
+      {/* ---- Documents. Section hides entirely when empty (same as
+             Folders) — one shared empty-state when the whole trash is
+             empty keeps the page from stacking placeholder cards. --- */}
       {trash.isLoading ? (
         <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-      ) : docsEmpty && foldersEmpty ? (
+      ) : trashEmpty ? (
         <EmptyState
           icon={<Trash2 className="h-12 w-12" />}
           title="Trash is empty"
           description="Folders and documents you delete will appear here, ready to restore."
         />
-      ) : docsEmpty ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">
-          No soft-deleted documents.
-        </Card>
-      ) : (
+      ) : docsEmpty ? null : (
+      <section>
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <FileText className="h-4 w-4" /> Documents
+        </h2>
         <Card className="overflow-hidden">
           {/* overflow-x-auto lets the table scroll instead of the Card
               clipping the Actions column ("Delete perman…") when the
@@ -241,52 +295,55 @@ function TrashPage() {
             <tbody className="divide-y divide-border">
               {items.map((entry) => (
                 <tr key={entry.id} data-testid={`trash-row-${entry.id}`}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                  <td className="px-4 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium" title={entry.title}>{entry.title}</p>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          {entry.lifecycle_state && (
-                            <Badge variant="outline" className="font-normal">{entry.lifecycle_state}</Badge>
-                          )}
-                          {entry.mime_type && <code className="font-mono">{entry.mime_type}</code>}
-                          <Link
-                            to="/workspaces/$workspaceId"
-                            params={{ workspaceId: entry.workspace_id }}
-                            className="text-primary hover:underline"
-                          >
-                            View workspace
-                          </Link>
-                        </div>
-                      </div>
+                      <Link
+                        to="/workspaces/$workspaceId"
+                        params={{ workspaceId: entry.workspace_id }}
+                        className="truncate font-medium hover:underline"
+                        title={entry.title}
+                      >
+                        {entry.title}
+                      </Link>
+                      {entry.lifecycle_state === 'legal_hold' && (
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                          <Lock className="me-0.5 h-3 w-3" /> hold
+                        </Badge>
+                      )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatFileSize(entry.total_size_bytes)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{entry.created_by_name || '—'}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-4 py-2 text-muted-foreground">{formatFileSize(entry.total_size_bytes)}</td>
+                  <td className="px-4 py-2 text-muted-foreground">
+                    {entry.deleted_by_name || entry.created_by_name || '—'}
+                  </td>
+                  <td className="px-4 py-2 text-muted-foreground">
                     {entry.deleted_at ? formatDateTime(entry.deleted_at) : '—'}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex justify-end gap-2">
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <div className="flex justify-end gap-1">
                       <Button
-                        size="sm"
-                        variant="outline"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        title="Restore"
+                        aria-label={`Restore ${entry.title}`}
                         onClick={() => restore.mutate(entry.id)}
                         disabled={restore.isPending && restore.variables === entry.id}
                         data-testid={`trash-restore-${entry.id}`}
                       >
-                        <ArchiveRestore className="me-1 h-3.5 w-3.5" />
-                        Restore
+                        <ArchiveRestore className="h-4 w-4" />
                       </Button>
                       <Button
-                        size="sm"
-                        variant="destructive"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        title="Delete permanently"
+                        aria-label={`Permanently delete ${entry.title}`}
                         onClick={() => setPurgeTarget(entry)}
                         data-testid={`trash-purge-${entry.id}`}
                       >
-                        <Trash2 className="me-1 h-3.5 w-3.5" />
-                        Delete permanently
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </td>
@@ -296,20 +353,21 @@ function TrashPage() {
           </table>
           </div>
 
-          {trash.data?.next_page_token && (
+          {trash.hasNextPage && (
             <div className="flex justify-center border-t border-border p-3">
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setPageToken(trash.data?.next_page_token)}
+                onClick={() => trash.fetchNextPage()}
+                disabled={trash.isFetchingNextPage}
               >
-                Load more
+                {trash.isFetchingNextPage ? 'Loading…' : 'Load more'}
               </Button>
             </div>
           )}
         </Card>
-      )}
       </section>
+      )}
 
       <ConfirmDialog
         open={confirmCleanup}
@@ -336,81 +394,115 @@ function TrashPage() {
           confirmTestId="trash-purge-confirm"
         />
       )}
+
+      {folderPurgeTarget && (
+        <TypedConfirmDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) setFolderPurgeTarget(null) }}
+          title="Permanently delete folder?"
+          description={
+            `This will permanently delete "${folderPurgeTarget.name}", every subfolder deleted with it` +
+            (folderPurgeTarget.cohort_docs > 0
+              ? `, and the ${folderPurgeTarget.cohort_docs} document${folderPurgeTarget.cohort_docs === 1 ? '' : 's'} in it`
+              : '') +
+            ' — including their files in object storage. This cannot be undone. Type the folder name to confirm.'
+          }
+          expectedValue={folderPurgeTarget.name}
+          inputLabel="Folder name"
+          confirmLabel="Delete permanently"
+          destructive
+          loading={purgeFolder.isPending}
+          onConfirm={() => purgeFolder.mutate(folderPurgeTarget.id)}
+          confirmTestId="trash-folder-purge-confirm"
+        />
+      )}
+
+      <TypedConfirmDialog
+        open={confirmEmptyTrash}
+        onOpenChange={setConfirmEmptyTrash}
+        title="Empty trash?"
+        description={`This permanently deletes everything in the trash — ${folders.length} folder${folders.length === 1 ? '' : 's'} and ${items.length}${trash.hasNextPage ? '+' : ''} document${items.length === 1 ? '' : 's'} — including their files in object storage. Items under legal hold or active retention are skipped. This cannot be undone. Type EMPTY to confirm.`}
+        expectedValue="EMPTY"
+        inputLabel="Confirmation"
+        confirmLabel="Empty trash"
+        destructive
+        loading={emptyAll.isPending}
+        onConfirm={() => emptyAll.mutate()}
+        confirmTestId="empty-trash-confirm"
+      />
     </div>
   )
 }
 
-// TrashFolderRow renders one cohort-root soft-deleted folder. Carries
-// its own "Confirm restore" affordance via the button; cascade
-// restore is the only action — permanent purge for folders happens
-// via the cascade FK chain when the workspace is deleted, so we
-// deliberately don't expose a "Delete permanently" button here.
+// TrashFolderRow renders one cohort-root soft-deleted folder with two
+// actions: cohort restore (hidden for legacy no-cohort rows, which
+// have no restore scope) and permanent delete (available for every
+// row — the cohort purge endpoint handles legacy rows by subtree,
+// which is the only way to remove them).
 function TrashFolderRow({
   f,
   pending,
   onRestore,
+  onPurge,
 }: {
   f: TrashedFolder
   pending: boolean
   onRestore: () => void
+  onPurge: () => void
 }) {
   const isPrivate = f.visibility === 'private'
   return (
     <tr data-testid={`trash-folder-row-${f.id}`}>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
+      <td className="px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
           <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="truncate font-medium" title={f.name}>{f.name}</p>
-              {isPrivate && (
-                <Badge variant="outline" className="gap-0.5 font-normal">
-                  <Lock className="h-3 w-3" /> Private
-                </Badge>
-              )}
-            </div>
-          </div>
+          <p className="truncate font-medium" title={f.name}>{f.name}</p>
+          {isPrivate && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Private" />}
         </div>
       </td>
-      <td className="px-4 py-3 text-muted-foreground">
+      <td className="px-4 py-2 text-muted-foreground">
         <Link
           to="/workspaces/$workspaceId"
           params={{ workspaceId: f.workspace_id }}
-          className="text-primary hover:underline"
+          className="hover:underline"
         >
           {f.workspace_name}
         </Link>
       </td>
-      <td className="px-4 py-3 text-muted-foreground">
-        {f.cohort_docs > 0
-          ? `${f.cohort_docs} document${f.cohort_docs === 1 ? '' : 's'} in cohort`
-          : 'empty'}
+      <td className="px-4 py-2 text-muted-foreground">
+        {f.cohort_docs > 0 ? `${f.cohort_docs} doc${f.cohort_docs === 1 ? '' : 's'}` : 'empty'}
       </td>
-      <td className="px-4 py-3 text-muted-foreground">
+      <td className="px-4 py-2 text-muted-foreground">
         {f.deleted_at ? formatDateTime(f.deleted_at) : '—'}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex justify-end gap-2">
-          {f.restorable ? (
+      <td className="px-4 py-2 whitespace-nowrap">
+        <div className="flex justify-end gap-1">
+          {f.restorable && (
             <Button
-              size="sm"
-              variant="outline"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              title="Restore folder and its contents"
+              aria-label={`Restore ${f.name}`}
               onClick={onRestore}
               disabled={pending}
               loading={pending}
               data-testid={`trash-folder-restore-${f.id}`}
             >
-              <ArchiveRestore className="me-1 h-3.5 w-3.5" />
-              Restore
+              {!pending && <ArchiveRestore className="h-4 w-4" />}
             </Button>
-          ) : (
-            <span
-              className="text-xs text-muted-foreground"
-              title="Soft-deleted before cohort tracking was added — restore by hand from the workspace if needed."
-            >
-              No cohort
-            </span>
           )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            title="Delete permanently"
+            aria-label={`Permanently delete ${f.name}`}
+            onClick={onPurge}
+            data-testid={`trash-folder-purge-${f.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </td>
     </tr>

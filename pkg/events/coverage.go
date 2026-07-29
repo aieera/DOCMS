@@ -96,6 +96,8 @@ var PublishedSubjects = []string{
 	"dms.document.deleted.v1",
 	"dms.document.edited.v1", // collaborative-edit snapshot (collaboration svc, §17.4)
 	"dms.document.moved.v1",
+	"dms.document.purged.v1",   // trash permanent delete (S3 + DB)
+	"dms.document.restored.v1", // trash restore
 	"dms.document.state_changed.v1",
 	"dms.document.updated.v1",
 	// irm — protected-container license lifecycle (§5/§8)
@@ -104,7 +106,10 @@ var PublishedSubjects = []string{
 	"dms.irm.revoked.v1",
 	// folder
 	"dms.folder.created.v1",
+	"dms.folder.deleted.v1",  // cascade soft-delete (cohort)
 	"dms.folder.moved.v1",
+	"dms.folder.purged.v1",   // trash permanent delete of a cohort
+	"dms.folder.restored.v1", // cohort restore from trash
 
 	// workspace templates (ADR 0118)
 	"dms.template.provisioned.v1",
