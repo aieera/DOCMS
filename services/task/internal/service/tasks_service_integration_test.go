@@ -337,6 +337,51 @@ func TestCreateTask_UnknownDocument_RollsBackWholeCreate(t *testing.T) {
 	require.Zero(t, taskCount, "an unknown document id must roll back the whole create, not leave a docless task behind")
 }
 
+// TestCreateTask_UnknownAssignee_RollsBackWholeCreate mirrors
+// TestCreateTask_UnknownDocument_RollsBackWholeCreate for the other
+// foreign reference CreateTask accepts: a bogus assignee id must fail
+// validation before any row (task, task_assignees, activity, outbox) is
+// left behind, not silently insert a task_assignees row nobody can ever
+// see and fan out events/notifications to no one.
+func TestCreateTask_UnknownAssignee_RollsBackWholeCreate(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	bogusAssignee := uuid.Must(uuid.NewV7())
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	_, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Assignee-linked task", AssigneeIDs: []uuid.UUID{bogusAssignee}})
+	require.ErrorIs(t, err, service.ErrValidation)
+
+	var taskCount int
+	require.NoError(t, superPool.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE tenant_id = $1`, tenant).Scan(&taskCount))
+	require.Zero(t, taskCount, "an unknown assignee id must roll back the whole create, not leave a task behind")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Empty(t, events, "no outbox rows must survive an aborted create")
+}
+
+// TestCreateTask_CrossTenantAssignee_IsValidationError covers the sharper
+// case: a *real* user id, just not one that belongs to the caller's
+// tenant. validateAssigneesExist scopes its SELECT by tenant_id, so this
+// must be rejected exactly like a wholly bogus uuid.
+func TestCreateTask_CrossTenantAssignee_IsValidationError(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	otherTenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	outsider := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedOrgAndUser(ctx, t, superPool, otherTenant, outsider, "member")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	_, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Cross-tenant assignee", AssigneeIDs: []uuid.UUID{outsider}})
+	require.ErrorIs(t, err, service.ErrValidation, "a real user id from a different tenant must still be rejected")
+}
+
 // TestUpdateTask_StrangerForbidden covers canEditFields: a tenant member
 // who is neither the creator nor an admin must not be able to edit.
 func TestUpdateTask_StrangerForbidden(t *testing.T) {
@@ -390,6 +435,50 @@ func TestUpdateTask_CreatorCanEdit_RecordsActivityAndEvent(t *testing.T) {
 
 	events := outboxEventTypes(ctx, t, superPool, tenant)
 	require.Equal(t, 1, countStr(events, "dms.task.updated.v1"))
+}
+
+// TestUpdateTask_IdenticalDueAt_IsNoOp covers the fix for a PATCH that
+// re-sends the task's current due_at: it must not be treated as a
+// change. Before the fix, resending the same due_at still recorded an
+// `updated` activity row, emitted dms.task.updated.v1, and reset the
+// sweep's single-shot reminded_at/overdue_notified_at flags — which
+// would re-arm a reminder the sweep had already fired.
+func TestUpdateTask_IdenticalDueAt_IsNoOp(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Microsecond)
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Has a due date", DueAt: &due})
+	require.NoError(t, err)
+	require.NotNil(t, task.DueAt)
+
+	// Simulate the sweep (Task 6) having already reminded once — this is
+	// exactly the state a spuriously-"changed" due_at branch would
+	// clobber, so seed it directly via SQL rather than waiting on the
+	// sweep to exist.
+	remindedAt := time.Now().UTC().Add(-1 * time.Hour).Truncate(time.Microsecond)
+	_, err = superPool.Exec(ctx, `UPDATE tasks SET reminded_at = $1 WHERE tenant_id = $2 AND id = $3`, remindedAt, tenant, task.ID)
+	require.NoError(t, err)
+
+	sameDue := due
+	updated, err := svc.UpdateTask(cctx, service.UpdateTaskInput{ID: task.ID, DueAt: &sameDue})
+	require.NoError(t, err)
+	require.NotNil(t, updated.DueAt)
+	require.True(t, updated.DueAt.Equal(due))
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Zero(t, countStr(acts, "updated"), "resending the identical due_at must not record an updated activity row")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Zero(t, countStr(events, "dms.task.updated.v1"), "resending the identical due_at must not emit dms.task.updated.v1")
+
+	var gotReminded time.Time
+	require.NoError(t, superPool.QueryRow(ctx, `SELECT reminded_at FROM tasks WHERE tenant_id = $1 AND id = $2`, tenant, task.ID).Scan(&gotReminded))
+	require.WithinDuration(t, remindedAt, gotReminded, time.Millisecond, "reminded_at must be preserved when due_at doesn't actually change")
 }
 
 // TestUpdateTask_InvalidPriority mirrors CreateTask's validation rule on

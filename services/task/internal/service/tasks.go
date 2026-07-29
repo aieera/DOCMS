@@ -104,17 +104,37 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput) (*mode
 		DueAt: in.DueAt, CreatedBy: userID,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	for _, aid := range assigneeIDs {
-		t.Assignees = append(t.Assignees, model.TaskAssignee{UserID: aid, AddedBy: userID, AddedAt: now})
-	}
+	// Assignees are NOT pre-populated onto t here (unlike a bare repo-layer
+	// Create call) — they're validated against `users` first, then added
+	// one at a time below, so an unknown/cross-tenant id is caught before
+	// any task_assignees row (or its activity/event/notify fallout) is
+	// written, symmetric with how documents are validated via
+	// LinkDocument just below.
 
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
 		// Tasks.Create must run first: task_documents/task_assignees both
 		// carry a FOREIGN KEY on (tenant_id, task_id) REFERENCES tasks, so
-		// LinkDocument below would fail closed on a not-yet-existing task
-		// row.
+		// AddAssignee/LinkDocument below would fail closed on a
+		// not-yet-existing task row.
 		if err := s.Repos.Tasks.Create(ctx, tx, t); err != nil {
 			return err
+		}
+
+		// Validate every assignee id resolves to a live user in this
+		// tenant before writing any task_assignees row. There is
+		// deliberately no FK from task_assignees.user_id to users (no
+		// cross-service FK by design), so without this check a garbage or
+		// cross-tenant uuid would silently insert, then fan out an
+		// "assigned" activity row, a dms.task.assigned.v1 event, and a
+		// dms.notify.task.assigned.v1 notification to nobody.
+		if err := validateAssigneesExist(ctx, tx, tenantID, assigneeIDs); err != nil {
+			return err
+		}
+		for _, aid := range assigneeIDs {
+			if err := s.Repos.Tasks.AddAssignee(ctx, tx, tenantID, id, aid, userID); err != nil {
+				return err
+			}
+			t.Assignees = append(t.Assignees, model.TaskAssignee{UserID: aid, AddedBy: userID, AddedAt: now})
 		}
 
 		for _, docID := range documentIDs {
@@ -300,12 +320,16 @@ func (s *TaskService) UpdateTask(ctx context.Context, in UpdateTaskInput) (*mode
 				changed = append(changed, "priority")
 			}
 		}
-		if in.DueAt != nil {
+		if in.DueAt != nil && (cur.DueAt == nil || !cur.DueAt.Equal(*in.DueAt)) {
 			cur.DueAt = in.DueAt
-			// Reset the sweep's single-shot flags on a due-date change so
-			// it gets another shot at reminding — without this, moving a
+			// Reset the sweep's single-shot flags on a real due-date change
+			// so it gets another shot at reminding — without this, moving a
 			// due date forward would silently suppress the next reminder
-			// cycle (ported from the document service's UpdateTask).
+			// cycle (ported from the document service's UpdateTask). Only
+			// do this when the value actually changed: a PATCH that
+			// re-sends the current due_at must be a no-op, not a spurious
+			// "updated" activity row that also resets reminder state and
+			// re-arms a reminder the sweep already fired.
 			cur.RemindedAt = nil
 			cur.OverdueNotifiedAt = nil
 			changed = append(changed, "due_at")
@@ -384,6 +408,51 @@ func (s *TaskService) DeleteTask(ctx context.Context, id uuid.UUID) error {
 			"deleted_by": userID.String(),
 		})
 	})
+}
+
+// ---- tx-scoped validation helpers -----------------------------------------
+
+// validateAssigneesExist confirms every id in assigneeIDs is a live user
+// row for tenantID, in a single SELECT ... = ANY($2) query inside tx.
+// There is deliberately no FOREIGN KEY from task_assignees.user_id to
+// users (cross-service FK stays out by design — the task and document
+// services own their schemas independently even though they currently
+// share one database), so nothing at the SQL level would otherwise catch
+// a garbage or cross-tenant user id before it lands in task_assignees
+// and fans out an assigned activity row / event / notification to no
+// one. No-ops on an empty slice.
+func validateAssigneesExist(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, assigneeIDs []uuid.UUID) error {
+	if len(assigneeIDs) == 0 {
+		return nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2)`, tenantID, assigneeIDs)
+	if err != nil {
+		return fmt.Errorf("validate assignee ids: %w", err)
+	}
+	defer rows.Close()
+
+	found := make(map[uuid.UUID]bool, len(assigneeIDs))
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("validate assignee ids: %w", err)
+		}
+		found[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("validate assignee ids: %w", err)
+	}
+
+	var missing []string
+	for _, id := range assigneeIDs {
+		if !found[id] {
+			missing = append(missing, id.String())
+		}
+	}
+	if len(missing) > 0 {
+		return validationErr(fmt.Sprintf("unknown assignee id(s): %s", strings.Join(missing, ", ")))
+	}
+	return nil
 }
 
 // ---- small pure helpers --------------------------------------------------
