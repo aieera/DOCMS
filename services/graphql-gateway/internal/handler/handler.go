@@ -1,15 +1,17 @@
 // Package handler exposes the public GraphQL endpoint.
 //
 // Two surfaces:
-//   POST /api/v1/graphql    — main entry. Body is one of:
-//       { "id": "<sha256>", "variables": {...}, "operationName": "..." }
-//       { "query": "...", "variables": {...}, "operationName": "..." }   (dev only)
-//   GET  /healthz           — liveness; returns 200 and the loaded
-//                             persisted-query count.
+//
+//	POST /api/v1/graphql    — main entry. Body is one of:
+//	    { "id": "<sha256>", "variables": {...}, "operationName": "..." }
+//	    { "query": "...", "variables": {...}, "operationName": "..." }   (dev only)
+//	GET  /healthz           — liveness; returns 200 and the loaded
+//	                          persisted-query count.
 package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -22,6 +24,10 @@ import (
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/persisted"
 	"github.com/aieera/sedoc/services/graphql-gateway/internal/resolver"
 )
+
+// maxRequestBodyBytes bounds a single GraphQL POST body. Requests are a
+// persisted-query hash (or dev query) plus a variables map; 1 MiB is generous.
+const maxRequestBodyBytes = 1 << 20
 
 // Config bundles the dependencies the handler needs at boot.
 type Config struct {
@@ -51,27 +57,20 @@ func New(cfg Config) http.Handler {
 		// error so operators can root-cause from server logs.
 		defer func() {
 			if rec := recover(); rec != nil {
+				// Log the full recovered value server-side for root-cause, but do
+				// NOT echo it to the client: a panic value can wrap an internal
+				// address / SQL / backend detail (info disclosure). The client gets
+				// a generic message only.
 				cfg.Logger.Error().Interface("panic", rec).Msg("graphql handler panic")
 				writeJSON(w, http.StatusInternalServerError, map[string]any{
 					"error":  "ServerError",
-					"detail": stringifyPanic(rec),
+					"detail": "internal server error",
 				})
 			}
 		}()
 		serve(w, r, cfg)
 	})
 	return mux
-}
-
-func stringifyPanic(rec any) string {
-	switch v := rec.(type) {
-	case string:
-		return v
-	case error:
-		return v.Error()
-	default:
-		return "panic"
-	}
 }
 
 type request struct {
@@ -108,8 +107,17 @@ func serve(w http.ResponseWriter, r *http.Request, cfg Config) {
 		return
 	}
 
+	// Cap the request body. Operations are persisted-query hashes + a small
+	// variables map, so a MiB is generous; without this an internet caller can
+	// POST a multi-GB body that json.Decode buffers into memory (amplified DoS).
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}

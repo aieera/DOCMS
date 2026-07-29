@@ -7,9 +7,12 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Resolvers is the v1 read-side interface. Every Query field on
@@ -50,8 +53,8 @@ type Resolvers interface {
 
 // Result is the standard GraphQL response envelope.
 type Result struct {
-	Data   map[string]any           `json:"data,omitempty"`
-	Errors []*gqlerror.Error        `json:"errors,omitempty"`
+	Data   map[string]any    `json:"data,omitempty"`
+	Errors []*gqlerror.Error `json:"errors,omitempty"`
 }
 
 // Executor parses + validates + dispatches a single GraphQL
@@ -60,6 +63,33 @@ type Result struct {
 type Executor struct {
 	Schema    *ast.Schema
 	Resolvers Resolvers
+	// Logger records the raw resolver/upstream error server-side; the client
+	// only ever sees the sanitized message from clientSafeError. Zero value is a
+	// no-op logger, so this is safe if unset.
+	Logger zerolog.Logger
+}
+
+// clientSafeError converts an internal resolver/upstream error into a
+// client-facing GraphQL error that does NOT leak internal detail (gRPC dial
+// targets, host:port, SQL, backend implementation). The raw error is logged
+// server-side for root-cause; the client gets a generic message keyed off the
+// gRPC status code only.
+func (e *Executor) clientSafeError(fieldName string, err error) *gqlerror.Error {
+	e.Logger.Error().Str("field", fieldName).Err(err).Msg("graphql resolver error")
+	msg := "internal error"
+	switch status.Code(err) {
+	case codes.Unavailable:
+		msg = "service temporarily unavailable"
+	case codes.DeadlineExceeded:
+		msg = "request timed out"
+	case codes.InvalidArgument:
+		msg = "invalid request"
+	case codes.Unauthenticated:
+		msg = "unauthenticated"
+	case codes.ResourceExhausted:
+		msg = "rate limited"
+	}
+	return gqlerror.Errorf("%s: %s", fieldName, msg)
 }
 
 // Execute runs one operation. `query` is the document text;
@@ -91,7 +121,7 @@ func (e *Executor) Execute(ctx context.Context, query string, variables map[stri
 			alias = field.Name
 		}
 		if err != nil {
-			errs = append(errs, gqlerror.Errorf("%s: %s", field.Name, err.Error()))
+			errs = append(errs, e.clientSafeError(field.Name, err))
 			out[alias] = nil
 			continue
 		}

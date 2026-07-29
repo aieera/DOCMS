@@ -4,14 +4,14 @@
 // The resolver is intentionally thin — it does not duplicate the
 // REST handlers' validation, retry, or business rules. It:
 //
-//   1. Resolves the calling identity from the gateway-signed
-//      X-Auth-Tenant-ID / X-Auth-User-ID headers (already in ctx
-//      via pkg/middleware.Tenant + UserIdentity).
-//   2. Calls policy.CheckPermission for the resource being accessed.
-//      Denies degrade to nil (the executor renders that as JSON null).
-//   3. Calls the upstream gRPC, batched via DataLoader where
-//      multiple children share a parent.
-//   4. Maps the proto into the model.* shape.
+//  1. Resolves the calling identity from the gateway-signed
+//     X-Auth-Tenant-ID / X-Auth-User-ID headers (already in ctx
+//     via pkg/middleware.Tenant + UserIdentity).
+//  2. Calls policy.CheckPermission for the resource being accessed.
+//     Denies degrade to nil (the executor renders that as JSON null).
+//  3. Calls the upstream gRPC, batched via DataLoader where
+//     multiple children share a parent.
+//  4. Maps the proto into the model.* shape.
 package resolver
 
 import (
@@ -526,6 +526,14 @@ func (r *Resolver) WorkflowInstance(ctx context.Context, id string) (any, error)
 	if err != nil {
 		return nil, err
 	}
+	// SECURITY NOTE (Epic 8, TRACKED — defense-in-depth, not currently reachable):
+	// a document-LESS instance (GetDocumentId()=="") skips the gateway view-check
+	// and is returned to any tenant member who knows the id, relying entirely on
+	// the workflow backend's own GetInstance authz. This top-level resolver is not
+	// in the persisted-query manifest today, so there is no reachable path; if
+	// workflowInstance is ever exposed, gate document-less instances on the
+	// backend's per-user authz (or fail closed here). See
+	// docs/security/epic8-gateway-followups.md.
 	if resp.GetDocumentId() != "" && !r.check(ctx, "view", "document", resp.GetDocumentId()) {
 		return nil, nil
 	}

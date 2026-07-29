@@ -146,6 +146,7 @@ func main() {
 	executor := &exec.Executor{
 		Schema:    exec.MustLoadSchema(),
 		Resolvers: rsv,
+		Logger:    *log.Z(),
 	}
 
 	// ---- HTTP handler -------------------------------------------------
@@ -192,6 +193,13 @@ func main() {
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler:           root,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Bound whole-request read/write/idle so a slow-drip (slow-loris) body or
+		// a stalled client can't pin a connection indefinitely on this
+		// internet-facing endpoint. ReadHeaderTimeout alone left the body phase
+		// unbounded.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Bool("dev_escape", allowDev).Msg("graphql http listening")
