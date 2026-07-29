@@ -97,6 +97,16 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 		return nil, vdmserr.NotFound("content blob not found")
 	}
 
+	// Refuse to re-encrypt a WORM-locked blob. Re-encryption re-writes the
+	// ciphertext into an ordinary (non-object-locked) bucket, repoints the row,
+	// and deletes the source object — stripping the S3 object-lock and thus WORM
+	// immutability before retention expires. A retention-preserving cross-region
+	// path (copy into the target WORM bucket + re-apply the lock) is tracked in
+	// docs/security/epic6-storage-followups.md (#10/#5).
+	if isWORMBucket(blob.StorageBucket, blob.StorageRegion) {
+		return nil, vdmserr.Validation("blob", "cannot re-encrypt a WORM-locked blob; retention would be stripped")
+	}
+
 	// Idempotence: already in target region under a target-scoped
 	// KEK alias → no work, return a result reflecting current state.
 	targetKEK := aliasForTenantInRegion(in.TenantID, in.TargetRegion)
@@ -182,11 +192,18 @@ func (s *Service) ReencryptBlob(ctx context.Context, in ReencryptBlobInput) (*Re
 			// The migration logically succeeded: the blob row points
 			// at the new ciphertext. Leaking the old one is a GC
 			// concern, not a correctness one. Log and continue.
+			// SECURITY NOTE (Epic 6 #7, TRACKED): "reaper will retry" is
+			// currently FALSE — BlobReaper only enumerates zero-ref content_blobs
+			// rows, and after UpdateMigration no row references this stale source
+			// object, so nothing ever reaps it. The old ciphertext (under the OLD
+			// KEK) persists indefinitely, weakening crypto-shred/residency intent.
+			// Needs an orphan-S3 reconciliation job. See
+			// docs/security/epic6-storage-followups.md.
 			s.log.Warn().
 				Err(err).
 				Str("stale_bucket", blob.StorageBucket).
 				Str("stale_key", blob.StorageKey).
-				Msg("reencrypt: source cleanup failed; reaper will retry")
+				Msg("reencrypt: source cleanup failed; object orphaned (no reconciliation yet)")
 		}
 	}
 

@@ -38,6 +38,16 @@ type ApplyWORMResult struct {
 	Mode        string    `json:"mode"`
 }
 
+// isWORMBucket reports whether a storage bucket is a region's object-lock
+// (WORM) bucket. ApplyWORM repoints a locked blob's storage_bucket here, so this
+// is the only in-DB signal of retention until dedicated retain_until/legal_hold
+// columns exist (see docs/security/epic6-storage-followups.md, #5). Destructive
+// paths (reaper hard-delete, reencrypt-into-plain-bucket) MUST fail closed on a
+// WORM bucket to avoid crypto-shredding / unlocking a still-retained blob.
+func isWORMBucket(bucket, region string) bool {
+	return bucket == bucketName(region, "worm")
+}
+
 // ApplyWORM locks a blob into the region's object-lock bucket until retainUntil.
 func (s *Service) ApplyWORM(ctx context.Context, in ApplyWORMInput) (*ApplyWORMResult, error) {
 	if in.RetainUntil.IsZero() || in.RetainUntil.Before(time.Now()) {

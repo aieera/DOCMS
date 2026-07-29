@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -9,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/storage"
 	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
@@ -85,20 +87,42 @@ func (r *BlobReaper) reap(ctx context.Context) {
 	}
 	deleted := 0
 	for _, b := range blobs {
-		if err := r.s3.DeleteObject(ctx, b.StorageBucket, b.StorageKey); err != nil {
-			r.log.Warn().Err(err).
-				Str("bucket", b.StorageBucket).
-				Str("key", b.StorageKey).
-				Msg("reaper: s3 delete failed; will retry next cycle")
+		// Never reap a WORM-locked blob. Hard-deleting the row destroys the only
+		// copy of the wrapped DEK (encrypted_dek/dek_nonce/kek_id) → the retained
+		// ciphertext becomes permanently undecryptable, i.e. a crypto-shred BEFORE
+		// retention expiry. S3 object-lock protects the bytes but not the DB DEK,
+		// so we must fail closed here. (Full fix = DB retain_until/legal_hold state;
+		// see docs/security/epic6-storage-followups.md #5.)
+		if isWORMBucket(b.StorageBucket, b.StorageRegion) {
+			r.log.Warn().Str("blob_id", b.ID.String()).Str("bucket", b.StorageBucket).
+				Msg("reaper: skipping WORM-locked blob (retained; not eligible for reap)")
 			continue
 		}
+		// Delete the DB row FIRST, guarded on reference_count=0 (inside HardDelete).
+		// If the blob was re-referenced (dedup GetByHash+IncrementRefCount) between
+		// the list query and here, HardDelete matches 0 rows (ErrNotFound) and we
+		// must NOT touch the backing bytes — deleting them would leave a live row
+		// pointing at a destroyed object (silent data loss). Only once the row is
+		// provably gone do we best-effort delete the S3 object; a failed S3 delete
+		// then merely leaks bytes rather than losing still-referenced data.
 		err := database.WithTenantTx(ctx, r.pool, b.TenantID, func(tx pgx.Tx) error {
 			return r.repos.ContentBlobs.HardDelete(ctx, tx, b.TenantID, b.ID)
 		})
 		if err != nil {
+			if errors.Is(err, vdmserr.ErrNotFound) {
+				// Re-referenced during the grace window; keep the bytes.
+				continue
+			}
 			r.log.Warn().Err(err).
 				Str("blob_id", b.ID.String()).
-				Msg("reaper: db delete failed; S3 object already removed")
+				Msg("reaper: db delete failed; leaving blob for next cycle")
+			continue
+		}
+		if err := r.s3.DeleteObject(ctx, b.StorageBucket, b.StorageKey); err != nil {
+			r.log.Warn().Err(err).
+				Str("bucket", b.StorageBucket).
+				Str("key", b.StorageKey).
+				Msg("reaper: s3 delete failed after row removed; object orphaned (storage leak, not data loss)")
 			continue
 		}
 		deleted++

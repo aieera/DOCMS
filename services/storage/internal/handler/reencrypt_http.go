@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 
 	"github.com/google/uuid"
 
@@ -40,8 +39,7 @@ func (h *ReencryptHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
-	if want == "" || r.Header.Get("X-Internal-Service-Key") != want {
+	if !internalServiceKeyOK(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

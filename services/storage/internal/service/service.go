@@ -209,9 +209,10 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	// Per-tenant allowlist (migration 000060). Empty allowlist = not
 	// configured = no extra gate; the exec blocklist above still
 	// applies. When configured, BOTH the MIME and the extension must
-	// be in their respective allowlists. Best-effort: a DB error here
-	// fails-open with a warning, so a Postgres outage can't strand
-	// uploads.
+	// be in their respective allowlists. A policy-store read error now
+	// fails CLOSED (rejects the upload) — see enforceUploadPolicy. NOTE
+	// the type checked here is the CLIENT-DECLARED one; the authoritative
+	// re-check against the magic-byte-detected type happens in CompleteUpload.
 	if err := s.enforceUploadPolicy(ctx, in.TenantID, in.MimeType, in.Filename); err != nil {
 		return nil, err
 	}
@@ -281,6 +282,14 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	// is configured (see NewS3ClientWithPublicEndpoint in main.go). No
 	// post-sign rewrite — that path silently broke uploads via
 	// SignatureDoesNotMatch.
+	// SECURITY NOTE (Epic 6 #3, TRACKED): this presigned PUT stays valid for the
+	// full UploadTTL and is NOT invalidated at CompleteUpload. In EncryptAtRest
+	// mode the service re-writes the object under a fresh DEK, so a post-scan
+	// overwrite fails the AEAD decrypt on download; but with EncryptAtRest=false
+	// the stored bytes are the raw client PUT and the still-valid URL allows a
+	// swap-after-clean-scan TOCTOU (download serves swapped bytes while the blob
+	// records the benign SHA-256). Fix: single-use/short-TTL the URL or re-hash on
+	// download. See docs/security/epic6-storage-followups.md.
 	presignURL, err := s.s3.GeneratePresignedPutURL(ctx, bucket, key, s.cfg.UploadTTL)
 	if err != nil {
 		return nil, fmt.Errorf("presign put: %w", err)
@@ -476,6 +485,21 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	mimeMismatch := detected.IsKnown && !scanner.MIMEMatchesDeclared(session.MimeType, detected)
 	detectedExec := detected.IsKnown && scanner.IsBlockedMIME(detected.MIME)
 	mustQuarantineMIME := detectedExec || (mimeMismatch && detectedExec)
+
+	// Re-enforce the per-tenant allowlist against the MAGIC-BYTE-DETECTED type
+	// (authoritative), not just the client-declared type checked at initiate.
+	// Without this, a tenant allowlist is bypassed by declaring an allowed MIME at
+	// InitiateUpload and then PUTting disallowed bytes. Delete the object so
+	// rejected content is not left in the bucket.
+	policyMime := session.MimeType
+	if detected.IsKnown {
+		policyMime = detected.MIME
+	}
+	if err := s.enforceUploadPolicy(ctx, session.TenantID, policyMime, session.Filename); err != nil {
+		s.failUpload(ctx, session, "upload policy: "+err.Error())
+		_ = s.s3.DeleteObject(ctx, bucket, key)
+		return nil, err
+	}
 
 	// 3. ClamAV stream scan against the in-memory bytes (no second S3 GET).
 	scanRes := s.scanBuffer(ctx, bytes.NewReader(plainBytes))
@@ -721,6 +745,13 @@ func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID)
 
 // GetDownloadURL returns a short-lived presigned GET URL for a completed
 // upload. Rejects uploads that are quarantined or unscanned.
+// SECURITY NOTE (Epic 6 #9, TRACKED): unlike the upload path (ensureUploadPermission),
+// this presigns a GET for any completed upload in the tenant with NO per-user
+// read/ownership check — it trusts the calling service (document) to have
+// authorized. Add a defense-in-depth policy CheckPermission(view, document) here
+// once the caller identity + version→upload resolution are wired (the method is
+// still transitional; see the document_id/upload_id note below). Same gap on
+// AbortUpload/GetScanStatus (#11). See docs/security/epic6-storage-followups.md.
 func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UUID, ttlSeconds int) (string, time.Time, error) {
 	var session *model.UploadSession
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
@@ -847,9 +878,12 @@ func (s *Service) enforceUploadPolicy(ctx context.Context, tenantID uuid.UUID, m
 		return nil
 	})
 	if err != nil {
-		s.log.Warn().Err(err).Str("tenant_id", tenantID.String()).
-			Msg("upload policy read failed; allowlist gate skipped")
-		return nil
+		// Fail CLOSED: a policy-store error must not silently skip the org
+		// allowlist gate (that let disallowed file types through on any transient
+		// DB error). Reject the upload instead.
+		s.log.Error().Err(err).Str("tenant_id", tenantID.String()).
+			Msg("upload policy read failed; failing closed (upload rejected)")
+		return fmt.Errorf("upload policy check unavailable: %w", err)
 	}
 	if pol == nil || (len(pol.AllowedMimeTypes) == 0 && len(pol.AllowedExtensions) == 0) {
 		return nil

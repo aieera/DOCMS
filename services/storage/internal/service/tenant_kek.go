@@ -16,11 +16,12 @@ import (
 // rotation path in cmd/dms-admin/kms.go, not here.
 func aliasForTenant(tenantID uuid.UUID) string {
 	if tenantID == uuid.Nil {
-		// Callers that reach here without a tenant are a bug; return
-		// a non-empty but obviously-invalid alias so a downstream
-		// crypto call fails closed rather than silently encrypting
-		// under a shared key.
-		return "vaultdms/tenant/nil"
+		// Callers that reach here without a tenant are a bug. Return the EMPTY
+		// alias: deriveKEK (LocalKeyManager) rejects "" and Vault/AWS get an empty
+		// key name, so the downstream crypto call fails closed — rather than the
+		// old "vaultdms/tenant/nil", which every manager happily derived into a
+		// single shared, predictable KEK, defeating per-tenant crypto-shred.
+		return ""
 	}
 	return "vaultdms/tenant/" + tenantID.String()
 }
