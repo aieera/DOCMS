@@ -26,6 +26,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -211,6 +212,61 @@ func countStr(items []string, want string) int {
 		}
 	}
 	return n
+}
+
+// outboxPayloads returns the JSON payload of every outbox row of
+// eventType for tenant, oldest first, decoded into a generic map — used
+// by the Task-5 tests below to inspect notify fan-out (user_ids) and
+// status_changed detail without needing typed payload structs.
+func outboxPayloads(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant uuid.UUID, eventType string) []map[string]any {
+	t.Helper()
+	rows, err := pool.Query(ctx, `SELECT payload FROM outbox WHERE tenant_id = $1 AND event_type = $2 ORDER BY created_at`, tenant, eventType)
+	require.NoError(t, err)
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var raw []byte
+		require.NoError(t, rows.Scan(&raw))
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		out = append(out, m)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
+// activityDetails returns the JSON detail of every task_activity row for
+// (tenant, taskID, action), oldest first, decoded into a generic map.
+func activityDetails(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tenant, taskID uuid.UUID, action string) []map[string]any {
+	t.Helper()
+	rows, err := pool.Query(ctx, `SELECT detail FROM task_activity WHERE tenant_id = $1 AND task_id = $2 AND action = $3 ORDER BY id`, tenant, taskID, action)
+	require.NoError(t, err)
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var raw []byte
+		require.NoError(t, rows.Scan(&raw))
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		out = append(out, m)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
+// stringSlice converts a decoded JSON array (dynamically typed as
+// []any/[]interface{} by encoding/json) into []string, for asserting
+// against a payload's "user_ids" field with require.ElementsMatch.
+func stringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, len(arr))
+	for i, e := range arr {
+		out[i], _ = e.(string)
+	}
+	return out
 }
 
 // TestCreateTask_TwoAssigneesOneDocument_ActivityAndOutbox covers the
@@ -628,4 +684,362 @@ func TestListTasks_InvalidFilterIsValidationError(t *testing.T) {
 	cctx := callerCtx(ctx, tenant, creator, "member")
 	_, err := svc.ListTasks(cctx, service.ListTasksInput{Filter: "bogus"})
 	require.ErrorIs(t, err, service.ErrValidation)
+}
+
+// ---- Task 5: status transitions, assignee & document management --------
+
+// TestCompleteTask_ByAssignee_NotifiesCreatorAndOtherAssigneeOnly covers
+// the brief's headline completion scenario: assignee B (not the
+// creator) completes the task. Status moves to done, CompletedBy/At are
+// stamped, a status_changed activity+event fire, and the completion
+// notify goes to (assignees ∪ creator) − actor — i.e. creator A and
+// other-assignee C, but NOT B (the actor who completed it).
+func TestCompleteTask_ByAssignee_NotifiesCreatorAndOtherAssigneeOnly(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creatorA := uuid.Must(uuid.NewV7())
+	assigneeB := uuid.Must(uuid.NewV7())
+	assigneeC := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creatorA, "member")
+	seedUser(ctx, t, superPool, tenant, assigneeB, "member")
+	seedUser(ctx, t, superPool, tenant, assigneeC, "member")
+
+	creatorCtx := callerCtx(ctx, tenant, creatorA, "member")
+	task, err := svc.CreateTask(creatorCtx, service.CreateTaskInput{
+		Title: "Ship the report", AssigneeIDs: []uuid.UUID{assigneeB, assigneeC},
+	})
+	require.NoError(t, err)
+
+	bCtx := callerCtx(ctx, tenant, assigneeB, "member")
+	done, err := svc.CompleteTask(bCtx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, "done", done.Status)
+	require.NotNil(t, done.CompletedBy)
+	require.Equal(t, assigneeB, *done.CompletedBy)
+	require.NotNil(t, done.CompletedAt)
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 1, countStr(acts, "status_changed"))
+	details := activityDetails(ctx, t, superPool, tenant, task.ID, "status_changed")
+	require.Len(t, details, 1)
+	require.Equal(t, "open", details[0]["from"])
+	require.Equal(t, "done", details[0]["to"])
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 1, countStr(events, "dms.task.status_changed.v1"))
+	require.Equal(t, 1, countStr(events, "dms.notify.task.completed.v1"))
+
+	notifies := outboxPayloads(ctx, t, superPool, tenant, "dms.notify.task.completed.v1")
+	require.Len(t, notifies, 1)
+	require.Equal(t, "task.completed", notifies[0]["type"])
+	require.Equal(t, "Task completed", notifies[0]["title"])
+	require.Equal(t, task.Title, notifies[0]["body"])
+	require.ElementsMatch(t, []string{creatorA.String(), assigneeC.String()}, stringSlice(notifies[0]["user_ids"]),
+		"completion notify must reach creator + other assignee, and must exclude the actor (assigneeB) who completed it")
+}
+
+// TestCompleteTask_StrangerForbidden covers canTransition's gate: a
+// tenant member who is neither creator, assignee, nor admin cannot
+// complete a task.
+func TestCompleteTask_StrangerForbidden(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	stranger := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, stranger, "member")
+
+	creatorCtx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(creatorCtx, service.CreateTaskInput{Title: "Not yours to complete"})
+	require.NoError(t, err)
+
+	strangerCtx := callerCtx(ctx, tenant, stranger, "member")
+	_, err = svc.CompleteTask(strangerCtx, task.ID)
+	require.ErrorIs(t, err, service.ErrForbidden)
+
+	got, err := svc.GetTask(creatorCtx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, "open", got.Status, "a forbidden complete attempt must not change status")
+}
+
+// TestReopenTask_ClearsCompletedBy covers Reopen's done->open path:
+// CompletedBy/CompletedAt must be cleared, and a second status_changed
+// activity+event row must be recorded for the open transition.
+func TestReopenTask_ClearsCompletedBy(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	assignee := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, assignee, "member")
+
+	// An assignee besides the creator/actor gives CompleteTask a non-empty
+	// completion-notify recipient list (creator completing their own
+	// task with zero other stakeholders would otherwise emit no notify
+	// at all, since emitNotify no-ops on an empty user list) — needed so
+	// this test can actually assert "exactly one, not a duplicate on
+	// reopen" below.
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Round trip", AssigneeIDs: []uuid.UUID{assignee}})
+	require.NoError(t, err)
+
+	done, err := svc.CompleteTask(cctx, task.ID)
+	require.NoError(t, err)
+	require.NotNil(t, done.CompletedBy)
+	require.NotNil(t, done.CompletedAt)
+
+	reopened, err := svc.ReopenTask(cctx, task.ID)
+	require.NoError(t, err)
+	require.Equal(t, "open", reopened.Status)
+	require.Nil(t, reopened.CompletedBy, "reopen must clear completed_by")
+	require.Nil(t, reopened.CompletedAt, "reopen must clear completed_at")
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 2, countStr(acts, "status_changed"), "one status_changed for complete, one for reopen")
+
+	details := activityDetails(ctx, t, superPool, tenant, task.ID, "status_changed")
+	require.Len(t, details, 2)
+	require.Equal(t, "open", details[0]["from"])
+	require.Equal(t, "done", details[0]["to"])
+	require.Equal(t, "done", details[1]["from"])
+	require.Equal(t, "open", details[1]["to"])
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 2, countStr(events, "dms.task.status_changed.v1"))
+	require.Equal(t, 1, countStr(events, "dms.notify.task.completed.v1"), "reopen must not itself emit a completion notify")
+}
+
+// TestReopenTask_IllegalFromOpen_IsValidationError covers doTransition's
+// message-naming-both-states rule via a live call (the exhaustive matrix
+// itself is pinned down by TestValidTransition_Matrix): reopening an
+// already-open task is illegal (open isn't in {done,cancelled}).
+func TestReopenTask_IllegalFromOpen_IsValidationError(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Already open"})
+	require.NoError(t, err)
+
+	_, err = svc.ReopenTask(cctx, task.ID)
+	require.ErrorIs(t, err, service.ErrValidation)
+}
+
+// TestRemoveAssignee_SelfRemovalAndPeerRemoval_PlainAssigneeWorks
+// covers RemoveAssignee's gate: canManageLinks OR userID == actor. A
+// plain assignee (not creator, not admin) can remove themselves, and —
+// because canManageLinks already grants any assignee link-management
+// rights — can also remove a fellow assignee.
+func TestRemoveAssignee_SelfRemovalAndPeerRemoval_PlainAssigneeWorks(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	assigneeB := uuid.Must(uuid.NewV7())
+	assigneeC := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, assigneeB, "member")
+	seedUser(ctx, t, superPool, tenant, assigneeC, "member")
+
+	creatorCtx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(creatorCtx, service.CreateTaskInput{
+		Title: "Multi-assignee", AssigneeIDs: []uuid.UUID{assigneeB, assigneeC},
+	})
+	require.NoError(t, err)
+
+	bCtx := callerCtx(ctx, tenant, assigneeB, "member")
+
+	// B removes C (a peer, not itself) — allowed because being an
+	// assignee already satisfies canManageLinks.
+	afterPeerRemoval, err := svc.RemoveAssignee(bCtx, task.ID, assigneeC)
+	require.NoError(t, err)
+	require.Len(t, afterPeerRemoval.Assignees, 1)
+	require.Equal(t, assigneeB, afterPeerRemoval.Assignees[0].UserID)
+
+	// B removes itself — allowed via the explicit userID == actor clause.
+	afterSelfRemoval, err := svc.RemoveAssignee(bCtx, task.ID, assigneeB)
+	require.NoError(t, err)
+	require.Empty(t, afterSelfRemoval.Assignees)
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 2, countStr(acts, "unassigned"))
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 2, countStr(events, "dms.task.unassigned.v1"))
+}
+
+// TestRemoveAssignee_StrangerForbidden covers the negative case: a
+// tenant member who is neither creator, assignee, nor admin, and is not
+// removing themselves, cannot remove an assignee.
+func TestRemoveAssignee_StrangerForbidden(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	assignee := uuid.Must(uuid.NewV7())
+	stranger := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, assignee, "member")
+	seedUser(ctx, t, superPool, tenant, stranger, "member")
+
+	creatorCtx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(creatorCtx, service.CreateTaskInput{
+		Title: "Guarded", AssigneeIDs: []uuid.UUID{assignee},
+	})
+	require.NoError(t, err)
+
+	strangerCtx := callerCtx(ctx, tenant, stranger, "member")
+	_, err = svc.RemoveAssignee(strangerCtx, task.ID, assignee)
+	require.ErrorIs(t, err, service.ErrForbidden)
+
+	got, err := svc.GetTask(creatorCtx, task.ID)
+	require.NoError(t, err)
+	require.Len(t, got.Assignees, 1, "a forbidden removal attempt must not change assignees")
+}
+
+// TestRemoveAssignee_NotAnAssignee_IsValidationError covers the
+// "removing someone who isn't currently assigned" branch: creator (who
+// passes the gate) tries to remove a user who was never assigned.
+func TestRemoveAssignee_NotAnAssignee_IsValidationError(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	notAssigned := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, notAssigned, "member")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "No assignees here"})
+	require.NoError(t, err)
+
+	_, err = svc.RemoveAssignee(cctx, task.ID, notAssigned)
+	require.ErrorIs(t, err, service.ErrValidation)
+}
+
+// TestAddAssignee_Idempotent_NoDuplicateActivityOrEvent covers
+// AddAssignee's idempotency rule: re-adding an already-current assignee
+// must not record a second `assigned` activity row, dms.task.assigned.v1
+// event, or dms.notify.task.assigned.v1 notify.
+func TestAddAssignee_Idempotent_NoDuplicateActivityOrEvent(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	newAssignee := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, newAssignee, "member")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Needs a hand"})
+	require.NoError(t, err)
+
+	first, err := svc.AddAssignee(cctx, task.ID, newAssignee)
+	require.NoError(t, err)
+	require.Len(t, first.Assignees, 1)
+
+	second, err := svc.AddAssignee(cctx, task.ID, newAssignee)
+	require.NoError(t, err)
+	require.Len(t, second.Assignees, 1, "re-adding the same assignee must stay idempotent")
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 1, countStr(acts, "assigned"), "exactly one assigned activity row despite two AddAssignee calls")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 1, countStr(events, "dms.task.assigned.v1"))
+	require.Equal(t, 1, countStr(events, "dms.notify.task.assigned.v1"))
+}
+
+// TestLinkDocument_UnknownDocument_IsValidationError covers the
+// repository's ErrNotFound-on-unknown-document remap: linking a
+// nonexistent document id must be ErrValidation, not a raw repository
+// error, and must not touch the task's Documents.
+func TestLinkDocument_UnknownDocument_IsValidationError(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	bogusDoc := uuid.Must(uuid.NewV7())
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "No doc yet"})
+	require.NoError(t, err)
+
+	_, err = svc.LinkDocument(cctx, task.ID, bogusDoc)
+	require.ErrorIs(t, err, service.ErrValidation)
+
+	got, err := svc.GetTask(cctx, task.ID)
+	require.NoError(t, err)
+	require.Empty(t, got.Documents)
+}
+
+// TestLinkDocument_Idempotent_NoDuplicateActivityOrEvent covers the
+// repo's ON CONFLICT upsert path: relinking an already-linked document
+// must not record a second document_linked activity row or event, even
+// though the repo call itself always succeeds and refreshes the
+// snapshot.
+func TestLinkDocument_Idempotent_NoDuplicateActivityOrEvent(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	docID := seedDocument(ctx, t, superPool, tenant, "Spec v1")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Doc host"})
+	require.NoError(t, err)
+
+	first, err := svc.LinkDocument(cctx, task.ID, docID)
+	require.NoError(t, err)
+	require.Len(t, first.Documents, 1)
+
+	second, err := svc.LinkDocument(cctx, task.ID, docID)
+	require.NoError(t, err)
+	require.Len(t, second.Documents, 1, "relinking the same document must stay idempotent")
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 1, countStr(acts, "document_linked"), "exactly one document_linked activity row despite two LinkDocument calls")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 1, countStr(events, "dms.task.document_linked.v1"))
+}
+
+// TestUnlinkDocument_HappyPathAndNotLinked covers UnlinkDocument's
+// success path (activity+event recorded, document removed) and its
+// validation error when the document isn't currently linked.
+func TestUnlinkDocument_HappyPathAndNotLinked(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	docID := seedDocument(ctx, t, superPool, tenant, "Spec v2")
+	otherDoc := seedDocument(ctx, t, superPool, tenant, "Not linked")
+
+	cctx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Doc host 2", DocumentIDs: []uuid.UUID{docID}})
+	require.NoError(t, err)
+	require.Len(t, task.Documents, 1)
+
+	// Unlinking a document that was never linked is a validation error.
+	_, err = svc.UnlinkDocument(cctx, task.ID, otherDoc)
+	require.ErrorIs(t, err, service.ErrValidation)
+
+	unlinked, err := svc.UnlinkDocument(cctx, task.ID, docID)
+	require.NoError(t, err)
+	require.Empty(t, unlinked.Documents)
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 1, countStr(acts, "document_unlinked"))
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 1, countStr(events, "dms.task.document_unlinked.v1"))
 }
