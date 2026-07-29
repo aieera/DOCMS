@@ -27,6 +27,7 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -1042,4 +1043,304 @@ func TestUnlinkDocument_HappyPathAndNotLinked(t *testing.T) {
 
 	events := outboxEventTypes(ctx, t, superPool, tenant)
 	require.Equal(t, 1, countStr(events, "dms.task.document_unlinked.v1"))
+}
+
+// ---- Task 6: comments with @mentions, activity feed --------------------
+
+// mentionToken mirrors web/src/api/comments.ts's mentionToken helper
+// (`@[${displayName}](${userId})`) so these tests build bodies in the
+// exact wire format parseMentions parses.
+func mentionToken(displayName string, userID uuid.UUID) string {
+	return "@[" + displayName + "](" + userID.String() + ")"
+}
+
+// TestAddComment_WithMention_PersistsMentionsAndNotifiesOnlyMentionedNonAuthor
+// covers the brief's headline comment scenario: author A comments
+// mentioning user C. The comment row's mentions column must be [C], a
+// `commented` activity row + dms.task.comment.created.v1 event must
+// fire, and exactly one dms.notify.task.mention.v1 must target C only
+// (not A, the author).
+func TestAddComment_WithMention_PersistsMentionsAndNotifiesOnlyMentionedNonAuthor(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	mentioned := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+	seedUser(ctx, t, superPool, tenant, mentioned, "member")
+
+	authorCtx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(authorCtx, service.CreateTaskInput{Title: "Needs review"})
+	require.NoError(t, err)
+
+	body := "please take a look " + mentionToken("Mentioned User", mentioned)
+	c, err := svc.AddComment(authorCtx, task.ID, body)
+	require.NoError(t, err)
+	require.Equal(t, body, c.Body)
+	require.ElementsMatch(t, []uuid.UUID{mentioned}, c.Mentions)
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Equal(t, 1, countStr(acts, "commented"))
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 1, countStr(events, "dms.task.comment.created.v1"))
+	require.Equal(t, 1, countStr(events, "dms.notify.task.mention.v1"))
+
+	notifies := outboxPayloads(ctx, t, superPool, tenant, "dms.notify.task.mention.v1")
+	require.Len(t, notifies, 1)
+	require.Equal(t, "task.mention", notifies[0]["type"])
+	require.Equal(t, "You were mentioned on a task", notifies[0]["title"])
+	require.Equal(t, body, notifies[0]["body"], "a body under the 200-char cap must pass through unmodified")
+	require.ElementsMatch(t, []string{mentioned.String()}, stringSlice(notifies[0]["user_ids"]),
+		"mention notify must target only the mentioned user, not the author")
+}
+
+// TestAddComment_SelfMention_PersistsMentionButSendsNoNotify covers the
+// brief's "notify mentioned−author" rule: mentioning yourself still
+// lands in the persisted mentions column, but must not generate a
+// dms.notify.task.mention.v1 (there's no point pinging yourself).
+func TestAddComment_SelfMention_PersistsMentionButSendsNoNotify(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Self note"})
+	require.NoError(t, err)
+
+	body := "note to self " + mentionToken("Me", author)
+	c, err := svc.AddComment(cctx, task.ID, body)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []uuid.UUID{author}, c.Mentions, "self-mention is still persisted in the mentions column")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 0, countStr(events, "dms.notify.task.mention.v1"), "self-mention must not notify")
+}
+
+// TestAddComment_UnknownMentionSilentlyDropped covers the "unknown ids
+// are silently dropped, not an error" rule: mentioning a well-formed but
+// nonexistent user id must still succeed, with that id absent from both
+// the persisted mentions and (trivially, since it never lands in
+// mentions) any notify.
+func TestAddComment_UnknownMentionSilentlyDropped(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+	bogus := uuid.Must(uuid.NewV7())
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Ghost mention"})
+	require.NoError(t, err)
+
+	body := "cc " + mentionToken("Nobody", bogus)
+	c, err := svc.AddComment(cctx, task.ID, body)
+	require.NoError(t, err, "an unknown mentioned id must not fail the whole comment")
+	require.Empty(t, c.Mentions, "unknown mention id must be silently dropped from the persisted column")
+
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Equal(t, 0, countStr(events, "dms.notify.task.mention.v1"))
+}
+
+// TestAddComment_ByNonParticipant_Succeeds covers "any authenticated
+// tenant member, no participant gate": a stranger who is neither creator
+// nor assignee can still comment.
+func TestAddComment_ByNonParticipant_Succeeds(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	stranger := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator, "member")
+	seedUser(ctx, t, superPool, tenant, stranger, "member")
+
+	creatorCtx := callerCtx(ctx, tenant, creator, "member")
+	task, err := svc.CreateTask(creatorCtx, service.CreateTaskInput{Title: "Open to all comments"})
+	require.NoError(t, err)
+
+	strangerCtx := callerCtx(ctx, tenant, stranger, "member")
+	c, err := svc.AddComment(strangerCtx, task.ID, "just a bystander weighing in")
+	require.NoError(t, err, "any tenant member must be able to comment, not just creator/assignees")
+	require.Equal(t, stranger, c.AuthorID)
+}
+
+// TestAddComment_ValidationAndNotFound covers the body-length gate and
+// the "task must exist and not be soft-deleted" gate in one test.
+func TestAddComment_ValidationAndNotFound(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Target"})
+	require.NoError(t, err)
+
+	_, err = svc.AddComment(cctx, task.ID, "   ")
+	require.ErrorIs(t, err, service.ErrValidation, "blank-after-trim body must be rejected")
+
+	_, err = svc.AddComment(cctx, task.ID, strings.Repeat("x", 4001))
+	require.ErrorIs(t, err, service.ErrValidation, "body over 4000 chars must be rejected")
+
+	_, err = svc.AddComment(cctx, uuid.Must(uuid.NewV7()), "hello")
+	require.ErrorIs(t, err, service.ErrNotFound, "commenting on a nonexistent task must be ErrNotFound")
+
+	require.NoError(t, svc.DeleteTask(cctx, task.ID))
+	_, err = svc.AddComment(cctx, task.ID, "too late")
+	require.ErrorIs(t, err, service.ErrNotFound, "commenting on a soft-deleted task must be ErrNotFound")
+}
+
+// TestListComments_OldestFirst covers the repository's ORDER BY
+// created_at ASC contract as observed through the service.
+func TestListComments_OldestFirst(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Thread"})
+	require.NoError(t, err)
+
+	first, err := svc.AddComment(cctx, task.ID, "first")
+	require.NoError(t, err)
+	second, err := svc.AddComment(cctx, task.ID, "second")
+	require.NoError(t, err)
+
+	page, err := svc.ListComments(cctx, task.ID, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, page, 2)
+	require.Equal(t, first.ID, page[0].ID)
+	require.Equal(t, second.ID, page[1].ID)
+}
+
+// TestUpdateComment_AuthorRewritesBody_OtherUserForbidden covers both
+// halves of UpdateComment's gate in one test: the author can edit (and
+// mentions re-parse to reflect the new body, with no new notify), and a
+// different tenant member cannot.
+func TestUpdateComment_AuthorRewritesBody_OtherUserForbidden(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	other := uuid.Must(uuid.NewV7())
+	newlyMentioned := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+	seedUser(ctx, t, superPool, tenant, other, "member")
+	seedUser(ctx, t, superPool, tenant, newlyMentioned, "member")
+
+	authorCtx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(authorCtx, service.CreateTaskInput{Title: "Editable"})
+	require.NoError(t, err)
+
+	c, err := svc.AddComment(authorCtx, task.ID, "original body")
+	require.NoError(t, err)
+	require.Empty(t, c.Mentions)
+
+	otherCtx := callerCtx(ctx, tenant, other, "member")
+	_, err = svc.UpdateComment(otherCtx, task.ID, c.ID, "hijacked")
+	require.ErrorIs(t, err, service.ErrForbidden, "only the author may edit a comment")
+
+	newBody := "edited body " + mentionToken("New Person", newlyMentioned)
+	updated, err := svc.UpdateComment(authorCtx, task.ID, c.ID, newBody)
+	require.NoError(t, err)
+	require.Equal(t, newBody, updated.Body)
+	require.ElementsMatch(t, []uuid.UUID{newlyMentioned}, updated.Mentions, "edit must re-parse mentions from the new body")
+
+	// No activity row and no new mention notify for an edit.
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Zero(t, countStr(acts, "updated"), "editing a comment must not record a task-level 'updated' activity row")
+	events := outboxEventTypes(ctx, t, superPool, tenant)
+	require.Zero(t, countStr(events, "dms.notify.task.mention.v1"), "editing a comment must not send a new mention notify")
+}
+
+// TestUpdateComment_ValidationAndNotFound covers UpdateComment's body
+// validation and its ErrNotFound path for an unknown comment id.
+func TestUpdateComment_ValidationAndNotFound(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Target"})
+	require.NoError(t, err)
+	c, err := svc.AddComment(cctx, task.ID, "original")
+	require.NoError(t, err)
+
+	_, err = svc.UpdateComment(cctx, task.ID, c.ID, "")
+	require.ErrorIs(t, err, service.ErrValidation)
+
+	_, err = svc.UpdateComment(cctx, task.ID, uuid.Must(uuid.NewV7()), "new body")
+	require.ErrorIs(t, err, service.ErrNotFound)
+}
+
+// TestDeleteComment_AuthorAdminAndStranger covers all three actors in
+// one test: a stranger is forbidden, the author succeeds, and — on a
+// second comment — an admin who is neither author nor creator also
+// succeeds. Deletion must not record a task-level activity row.
+func TestDeleteComment_AuthorAdminAndStranger(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	stranger := uuid.Must(uuid.NewV7())
+	admin := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+	seedUser(ctx, t, superPool, tenant, stranger, "member")
+	seedUser(ctx, t, superPool, tenant, admin, "admin")
+
+	authorCtx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(authorCtx, service.CreateTaskInput{Title: "Comment host"})
+	require.NoError(t, err)
+
+	c1, err := svc.AddComment(authorCtx, task.ID, "delete me (author)")
+	require.NoError(t, err)
+	c2, err := svc.AddComment(authorCtx, task.ID, "delete me (admin)")
+	require.NoError(t, err)
+
+	strangerCtx := callerCtx(ctx, tenant, stranger, "member")
+	err = svc.DeleteComment(strangerCtx, task.ID, c1.ID)
+	require.ErrorIs(t, err, service.ErrForbidden)
+
+	require.NoError(t, svc.DeleteComment(authorCtx, task.ID, c1.ID), "the author may delete their own comment")
+
+	adminCtx := callerCtx(ctx, tenant, admin, "admin")
+	require.NoError(t, svc.DeleteComment(adminCtx, task.ID, c2.ID), "an admin may delete anyone's comment")
+
+	page, err := svc.ListComments(authorCtx, task.ID, 0, 0)
+	require.NoError(t, err)
+	require.Empty(t, page, "both comments are soft-deleted and must not appear in the list")
+
+	acts := activityActions(ctx, t, superPool, tenant, task.ID)
+	require.Zero(t, countStr(acts, "deleted"), "deleting a comment must not record a task-level 'deleted' activity row (that action is reserved for DeleteTask)")
+}
+
+// TestListActivity_NewestFirst covers the activity feed's newest-first
+// ordering (the repo's ORDER BY id DESC) plus the fact that AddComment's
+// `commented` row shows up alongside CreateTask's `created` row.
+func TestListActivity_NewestFirst(t *testing.T) {
+	ctx, svc, superPool := taskServiceFixture(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	author := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, author, "member")
+
+	cctx := callerCtx(ctx, tenant, author, "member")
+	task, err := svc.CreateTask(cctx, service.CreateTaskInput{Title: "Feed"})
+	require.NoError(t, err)
+	_, err = svc.AddComment(cctx, task.ID, "a comment")
+	require.NoError(t, err)
+
+	page, err := svc.ListActivity(cctx, task.ID, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, page, 2)
+	require.Equal(t, "commented", page[0].Action, "newest (the comment) must come first")
+	require.Equal(t, "created", page[1].Action)
 }

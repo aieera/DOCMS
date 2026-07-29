@@ -101,6 +101,30 @@ func main() {
 	outbox := database.NewOutboxPublisher(pool, js, serviceName, *log.Z())
 	go outbox.Start(ctx)
 
+	// ---- Notification sweep -----------------------------------------------------
+	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at on
+	// tasks crossing the 24h-out and overdue thresholds; emits one notify
+	// event per claimed row. UPDATE…RETURNING makes the claim + emit pair
+	// effectively idempotent (no double-fire on the next tick). Mirrors the
+	// document service's equivalent block (cmd/server/main.go:1080-1100).
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		// Run once on boot so a deploy doesn't wait an hour to send the
+		// first reminder after a cold start.
+		_ = svc.SweepTaskNotifications(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := svc.SweepTaskNotifications(ctx); err != nil {
+					log.Warn(ctx).Err(err).Msg("task notification sweep failed")
+				}
+			}
+		}
+	}()
+
 	log.Info(ctx).Str("version", version).Msg(serviceName + " started")
 	<-ctx.Done()
 	log.Info(context.Background()).Msg(serviceName + " shutting down")
