@@ -56,9 +56,9 @@ func TestParseMentions(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "empty display name still parses",
+			name: "empty display name does not parse (display name must be non-empty)",
 			body: "@[](" + a.String() + ")",
-			want: []uuid.UUID{a},
+			want: nil,
 		},
 		{
 			name: "uppercase-hex uuid still parses (case-insensitive)",

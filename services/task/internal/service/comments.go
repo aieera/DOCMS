@@ -28,15 +28,15 @@ import (
 // convention the document service's comment mentions already use
 // (services/document/internal/service/comments.go:34's mentionRE).
 //
-// The character class here is case-insensitive hex ([0-9a-fA-F-]),
-// matching the document service's regex semantics. The task-6 brief's
-// literal regex text used a lowercase-only class ([0-9a-f-]); since
-// every match is re-validated with uuid.Parse below regardless (itself
-// case-insensitive), narrowing to lowercase-only would just mean
-// silently ignoring a well-formed-but-uppercase token instead of parsing
-// it — matching the document service's proven behavior over inventing a
-// new edge case.
-var mentionRE = regexp.MustCompile(`@\[[^\]]*\]\(([0-9a-fA-F-]{36})\)`)
+// Both the character class for the display name ([^\]]+ — one or more,
+// so an empty `@[]( ... )` token does NOT match) and the hex class for
+// the uuid ([0-9a-fA-F-], case-insensitive) are copied from the document
+// service's mentionRE semantics, not the task-6 brief's literal regex
+// text (which used [^\]]* and a lowercase-only [0-9a-f-] class) — the
+// brief explicitly requires matching the document-service parser's
+// semantics, and this keeps both halves of the token shape consistent
+// with that reference rather than only the hex-case half.
+var mentionRE = regexp.MustCompile(`@\[[^\]]+\]\(([0-9a-fA-F-]{36})\)`)
 
 // parseMentions extracts the deduped set of user ids embedded in body as
 // @[Display Name](uuid) tokens, preserving first-occurrence order. A
