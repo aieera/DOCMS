@@ -109,7 +109,16 @@ func ReviewWorkflow(ctx workflow.Context, in ReviewInput) (string, error) {
 	for len(pending) > 0 && rejector == "" {
 		sel := workflow.NewSelector(ctx)
 
-		// Accept decisions from any reviewer.
+		// Accept decisions from any pending reviewer.
+		// SECURITY NOTE (Epic 10, TRACKED — NOT currently reachable): d.ReviewerID
+		// comes from the signal payload and is gated only against the pending set,
+		// NOT bound to an authenticated caller — so whoever delivers this signal
+		// could decide on behalf of any assigned reviewer. There is no HTTP
+		// endpoint that sends ReviewerDecidedSignal today (unlike signalStep, which
+		// stamps ActorID from the session), so it is not exploitable. When such an
+		// endpoint is added it MUST stamp the authenticated user and this handler
+		// MUST verify d.ReviewerID == that user (as ApprovalWorkflow now does for
+		// StepSignal). See docs/security/epic10-workflow-followups.md.
 		sel.AddReceive(decidedCh, func(ch workflow.ReceiveChannel, _ bool) {
 			var d ReviewerDecision
 			ch.Receive(ctx, &d)

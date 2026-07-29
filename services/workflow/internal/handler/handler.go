@@ -377,8 +377,18 @@ func (h *Handler) getActiveInstanceByDocument(w http.ResponseWriter, r *http.Req
 
 func (h *Handler) cancelInstance(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
+	userID := auth.UserIDString(r)
 	id := r.PathValue("id")
-	if err := h.svc.CancelInstance(r.Context(), tenantID, id); err != nil {
+	if tenantID == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID required")
+		return
+	}
+	// Only the initiator or a tenant admin may cancel (Epic 10 #3/#5).
+	if err := h.svc.CancelInstance(r.Context(), tenantID, userID, auth.RoleString(r), id); err != nil {
+		if errors.Is(err, service.ErrDelegationAuthority) {
+			writeError(w, http.StatusForbidden, "only the initiator or an admin may cancel this workflow")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

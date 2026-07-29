@@ -184,10 +184,16 @@ func (s *Service) GetInstanceTimeline(ctx context.Context, tenantID, instanceID 
 // in 'running' forever and the UI showed a stuck workflow. The DB
 // write is the user-visible source of truth; the Temporal signal is
 // cleanup.
-func (s *Service) CancelInstance(ctx context.Context, tenantID, instanceID string) error {
+func (s *Service) CancelInstance(ctx context.Context, tenantID, actorID, actorRole, instanceID string) error {
 	inst, err := s.repo.GetInstance(ctx, tenantID, instanceID)
 	if err != nil || inst == nil {
 		return fmt.Errorf("instance not found")
+	}
+	// Cancel is the initiator's own action or an admin override (Epic 10 #3/#5).
+	// Previously it took no actor and had no gate, so any tenant member could
+	// cancel anyone's in-flight workflow by id. Mirrors RecallInstance's gate.
+	if inst.InitiatedBy != actorID && !isAdmin(actorRole) {
+		return ErrDelegationAuthority
 	}
 	if err := s.repo.MarkInstanceCancelled(ctx, tenantID, instanceID); err != nil {
 		return fmt.Errorf("mark cancelled: %w", err)

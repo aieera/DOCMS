@@ -27,14 +27,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/rego"
 
 	"github.com/aieera/sedoc/pkg/database"
 )
+
+// safeRegoCapabilities is the capability set condition_rego is evaluated under:
+// the full builtin set MINUS the network / side-effecting builtins (http.send,
+// net.*, opa.runtime). condition_rego is authored per workflow definition and
+// runs on the TRUSTED Temporal worker, so with default capabilities an author
+// could http.send to internal / cloud-metadata hosts (SSRF) or exfiltrate —
+// Epic 10 #4. Restricting capabilities bounds the expression to pure computation
+// over the document-metadata input, which is its only intended use.
+var safeRegoCapabilities = func() *ast.Capabilities {
+	caps := ast.CapabilitiesForThisVersion()
+	allowed := make([]*ast.Builtin, 0, len(caps.Builtins))
+	for _, b := range caps.Builtins {
+		if b.Name == "http.send" || strings.HasPrefix(b.Name, "net.") || strings.HasPrefix(b.Name, "opa.runtime") {
+			continue
+		}
+		allowed = append(allowed, b)
+	}
+	caps.Builtins = allowed
+	return caps
+}()
 
 // AssigneeResolution is the result of ResolveAssignee. When
 // DelegatorID is empty the requested user has no active forward
@@ -114,6 +136,9 @@ result := %s`, expression)
 	q, err := rego.New(
 		rego.Query("data.workflow.result"),
 		rego.Module("workflow.rego", module),
+		// Deny network / side-effecting builtins so an authored condition can't
+		// SSRF from the worker (Epic 10 #4).
+		rego.Capabilities(safeRegoCapabilities),
 		rego.Input(map[string]any{
 			"document": map[string]any{
 				"id":              documentID,

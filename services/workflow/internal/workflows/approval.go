@@ -111,27 +111,64 @@ func executeStep(ctx workflow.Context, input model.ApprovalInput, idx int, step 
 	timerCtx, timerCancel := workflow.WithCancel(ctx)
 	timerFuture := workflow.NewTimer(timerCtx, timeout)
 
+	// Wait for an AUTHORIZED decision (Epic 10 #1/#6). CompleteStep/signalStep do
+	// NOT check entitlement, so a human StepSignal is honored here ONLY when it
+	// targets THIS step AND comes from the party entitled to that outcome:
+	// approve/reject/delegate must come from the assigned approver/delegate
+	// (`effective`); recall must come from the initiator. Any other signal is
+	// ignored and we keep waiting — so a random tenant member can no longer
+	// settle (or self-approve) someone else's pending approval. The timer path is
+	// a system-generated SLA outcome (no human actor) and is always honored.
 	var signal model.StepSignal
-	sel := workflow.NewSelector(ctx)
-	sel.AddReceive(signalCh, func(ch workflow.ReceiveChannel, _ bool) {
-		ch.Receive(ctx, &signal)
-		timerCancel()
-	})
-	sel.AddFuture(timerFuture, func(f workflow.Future) {
-		logger.Info("step timeout", "step", step.Name)
-		// Translate SLA expiry into the configured outcome. on_expire
-		// auto_approve / auto_reject lets a tenant route around an
-		// unresponsive approver without involving a human.
-		outcome := "escalate"
-		switch step.OnExpire {
-		case "auto_approve":
-			outcome = "approve"
-		case "auto_reject":
-			outcome = "reject"
+	for {
+		var got model.StepSignal
+		timedOut := false
+		sel := workflow.NewSelector(ctx)
+		sel.AddReceive(signalCh, func(ch workflow.ReceiveChannel, _ bool) {
+			ch.Receive(ctx, &got)
+		})
+		sel.AddFuture(timerFuture, func(f workflow.Future) {
+			timedOut = true
+		})
+		sel.Select(ctx)
+
+		if timedOut {
+			logger.Info("step timeout", "step", step.Name)
+			// Translate SLA expiry into the configured outcome. on_expire
+			// auto_approve / auto_reject lets a tenant route around an
+			// unresponsive approver without involving a human.
+			outcome := "escalate"
+			switch step.OnExpire {
+			case "auto_approve":
+				outcome = "approve"
+			case "auto_reject":
+				outcome = "reject"
+			}
+			signal = model.StepSignal{StepIndex: idx, Outcome: outcome}
+			break
 		}
-		signal = model.StepSignal{StepIndex: idx, Outcome: outcome}
-	})
-	sel.Select(ctx)
+
+		// Authorize by ACTOR, not step index: only one step blocks on the signal
+		// channel at a time, and binding the outcome to the entitled actor already
+		// prevents a signal meant for a different step/approver from settling this
+		// one (their id won't match `effective`). StepIndex is advisory only and
+		// not reliably set by clients, so it is not gated.
+		authorized := false
+		switch got.Outcome {
+		case "approve", "reject", "delegate":
+			authorized = got.ActorID != "" && got.ActorID == effective
+		case "recall":
+			authorized = got.ActorID != "" && got.ActorID == input.InitiatedBy
+		}
+		if !authorized {
+			logger.Warn("ignoring unauthorized workflow signal",
+				"step", idx, "outcome", got.Outcome, "actor", got.ActorID, "assignee", effective)
+			continue
+		}
+		signal = got
+		break
+	}
+	timerCancel()
 
 	stepID := step.ID
 	if stepID == "" {
@@ -281,6 +318,7 @@ func ParallelApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (
 	}
 
 	signalCh := workflow.GetSignalChannel(ctx, StepCompletedSignal)
+	logger := workflow.GetLogger(ctx)
 	approved := 0
 	rejected := 0
 	needed := len(approvers)
@@ -288,9 +326,24 @@ func ParallelApprovalWorkflow(ctx workflow.Context, input model.ApprovalInput) (
 		needed = 1
 	}
 
-	for range approvers {
+	// Only an ASSIGNED approver counts, and each counts at most ONCE (Epic 10
+	// #1). Without this, any tenant member could send N approve signals to
+	// satisfy a require_all quorum, or one approver could vote repeatedly.
+	approverSet := make(map[string]bool, len(approvers))
+	for _, a := range approvers {
+		approverSet[a] = true
+	}
+	voted := make(map[string]bool, len(approvers))
+
+	for len(voted) < len(approvers) {
 		var signal model.StepSignal
 		signalCh.Receive(ctx, &signal)
+		if signal.ActorID == "" || !approverSet[signal.ActorID] || voted[signal.ActorID] {
+			logger.Warn("ignoring unauthorized or duplicate parallel-approval signal",
+				"actor", signal.ActorID, "outcome", signal.Outcome)
+			continue
+		}
+		voted[signal.ActorID] = true
 		if signal.Outcome == "approve" {
 			approved++
 		} else {

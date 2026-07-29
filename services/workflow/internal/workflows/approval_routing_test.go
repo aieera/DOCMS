@@ -264,7 +264,10 @@ func TestApproval_Recall_AbortsBeforeAnyApproverActs(t *testing.T) {
 
 	env.ExecuteWorkflow(ApprovalWorkflow, model.ApprovalInput{
 		TenantID: "t", InstanceID: "i", DocumentID: "d",
-		Steps: []model.Step{{ID: "s1", Type: "approval", Name: "Review", AssigneeID: "alice", SLAHours: 24}},
+		// Recall is now authorized only for the initiator (Epic 10 #1/#6), so the
+		// workflow must know who the initiator is.
+		InitiatedBy: "initiator",
+		Steps:       []model.Step{{ID: "s1", Type: "approval", Name: "Review", AssigneeID: "alice", SLAHours: 24}},
 	})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
