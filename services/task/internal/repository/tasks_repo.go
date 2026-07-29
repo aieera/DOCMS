@@ -253,16 +253,23 @@ func (r *taskRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.
 	return nil
 }
 
-func (r *taskRepo) AddAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID, addedBy uuid.UUID) error {
-	_, err := tx.Exec(ctx, `
+// AddAssignee reports whether a row was actually inserted (false on a
+// pre-existing (tenant, task, user) pair, via ON CONFLICT DO NOTHING +
+// RowsAffected) — mirrors RemoveAssignee's already-race-safe pattern, so
+// the service layer can decide idempotency (activity/event/notify) from
+// the database's actual outcome instead of a pre-fetched snapshot that a
+// concurrent duplicate call could equally have read as "not yet
+// assigned".
+func (r *taskRepo) AddAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID, addedBy uuid.UUID) (bool, error) {
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO task_assignees (tenant_id, task_id, user_id, added_by)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (tenant_id, task_id, user_id) DO NOTHING`,
 		tenantID, taskID, userID, addedBy)
 	if err != nil {
-		return fmt.Errorf("insert task_assignees: %w", err)
+		return false, fmt.Errorf("insert task_assignees: %w", err)
 	}
-	return nil
+	return tag.RowsAffected() > 0, nil
 }
 
 func (r *taskRepo) RemoveAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID uuid.UUID) (bool, error) {
@@ -275,7 +282,19 @@ func (r *taskRepo) RemoveAssignee(ctx context.Context, tx pgx.Tx, tenantID, task
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *taskRepo) LinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID, linkedBy uuid.UUID) (*model.TaskDocument, error) {
+// LinkDocument resolves the document, then upserts task_documents
+// (ON CONFLICT DO UPDATE, so a relink always refreshes the workspace/
+// title snapshot even when the row already existed). The second return
+// value reports whether the row was newly inserted rather than an
+// existing row being updated by the conflict, via the
+// `(xmax = 0) AS inserted` Postgres idiom: a freshly inserted row's
+// xmax is 0 (no deleting/updating transaction yet), while a row that
+// hit the ON CONFLICT DO UPDATE path gets a non-zero xmax set by that
+// same UPDATE. This lets the service layer decide idempotency
+// (activity/event) from the database's actual outcome rather than a
+// pre-fetched "was it already linked" snapshot, which a concurrent
+// duplicate call could equally have read as "not yet linked".
+func (r *taskRepo) LinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID, linkedBy uuid.UUID) (*model.TaskDocument, bool, error) {
 	var workspaceID uuid.UUID
 	var title string
 	err := tx.QueryRow(ctx, `
@@ -283,24 +302,25 @@ func (r *taskRepo) LinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID
 		tenantID, documentID).Scan(&workspaceID, &title)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, false, ErrNotFound
 		}
-		return nil, fmt.Errorf("resolve document: %w", err)
+		return nil, false, fmt.Errorf("resolve document: %w", err)
 	}
 
 	var d model.TaskDocument
+	var inserted bool
 	err = tx.QueryRow(ctx, `
 		INSERT INTO task_documents (tenant_id, task_id, document_id, workspace_id, title_snapshot, linked_by)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (tenant_id, task_id, document_id)
 		DO UPDATE SET workspace_id = EXCLUDED.workspace_id, title_snapshot = EXCLUDED.title_snapshot
-		RETURNING document_id, workspace_id, title_snapshot, linked_by, linked_at`,
+		RETURNING document_id, workspace_id, title_snapshot, linked_by, linked_at, (xmax = 0) AS inserted`,
 		tenantID, taskID, documentID, workspaceID, title, linkedBy).Scan(
-		&d.DocumentID, &d.WorkspaceID, &d.TitleSnapshot, &d.LinkedBy, &d.LinkedAt)
+		&d.DocumentID, &d.WorkspaceID, &d.TitleSnapshot, &d.LinkedBy, &d.LinkedAt, &inserted)
 	if err != nil {
-		return nil, fmt.Errorf("insert task_documents: %w", err)
+		return nil, false, fmt.Errorf("insert task_documents: %w", err)
 	}
-	return &d, nil
+	return &d, inserted, nil
 }
 
 func (r *taskRepo) UnlinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID uuid.UUID) (bool, error) {

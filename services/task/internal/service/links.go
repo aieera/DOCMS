@@ -21,9 +21,14 @@ import (
 // AddAssignee adds userID to taskID's assignees. Gated by canManageLinks
 // (creator, any current assignee, or admin — same gate as canTransition).
 // Idempotent: re-adding an already-current assignee is a no-op (no
-// duplicate activity row, event, or notify) since the repo's AddAssignee
-// itself is an ON CONFLICT DO NOTHING upsert and wouldn't tell us whether
-// anything actually changed.
+// duplicate activity row, event, or notify) — decided from the repo's
+// `inserted` return value (ON CONFLICT DO NOTHING + RowsAffected), not
+// from a pre-fetched "is userID already an assignee" snapshot. The
+// pre-fetch is race-prone: two concurrent identical AddAssignee calls
+// (double-click, client retry) could both read "not yet assigned" from
+// their own snapshot and both fire the activity/event/notify even though
+// the row only inserts once. Deciding from the actual insert outcome
+// makes duplicate concurrent calls converge on exactly one side effect.
 func (s *TaskService) AddAssignee(ctx context.Context, taskID, userID uuid.UUID) (*model.Task, error) {
 	tenantID, actorID, role, err := mustCaller(ctx)
 	if err != nil {
@@ -46,12 +51,12 @@ func (s *TaskService) AddAssignee(ctx context.Context, taskID, userID uuid.UUID)
 			return err
 		}
 
-		alreadyAssignee := isAssignee(cur, userID)
-		if err := s.Repos.Tasks.AddAssignee(ctx, tx, tenantID, taskID, userID, actorID); err != nil {
+		inserted, err := s.Repos.Tasks.AddAssignee(ctx, tx, tenantID, taskID, userID, actorID)
+		if err != nil {
 			return err
 		}
 
-		if !alreadyAssignee {
+		if inserted {
 			detail, err := json.Marshal(map[string]any{"user_id": userID.String()})
 			if err != nil {
 				return fmt.Errorf("marshal assigned activity detail: %w", err)
@@ -156,7 +161,11 @@ func (s *TaskService) RemoveAssignee(ctx context.Context, taskID, userID uuid.UU
 // repository resolves it against `documents` and returns ErrNotFound,
 // which we remap). Idempotent: relinking an already-linked document
 // still refreshes its workspace/title snapshot at the repo layer (ON
-// CONFLICT DO UPDATE) but records no duplicate activity/event.
+// CONFLICT DO UPDATE) but records no duplicate activity/event — decided
+// from the repo's `inserted` return value (Postgres's `xmax = 0` insert-
+// vs-conflict-update idiom), not a pre-fetched "is documentID already
+// linked" snapshot, for the same concurrent-duplicate-call reason
+// AddAssignee's doc comment explains.
 func (s *TaskService) LinkDocument(ctx context.Context, taskID, documentID uuid.UUID) (*model.Task, error) {
 	tenantID, actorID, role, err := mustCaller(ctx)
 	if err != nil {
@@ -176,8 +185,7 @@ func (s *TaskService) LinkDocument(ctx context.Context, taskID, documentID uuid.
 			return forbiddenErr("only the creator, an assignee, or an admin may manage a task's linked documents")
 		}
 
-		alreadyLinked := isLinkedDocument(cur, documentID)
-		d, err := s.Repos.Tasks.LinkDocument(ctx, tx, tenantID, taskID, documentID, actorID)
+		d, inserted, err := s.Repos.Tasks.LinkDocument(ctx, tx, tenantID, taskID, documentID, actorID)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				return validationErr(fmt.Sprintf("document %s not found", documentID))
@@ -185,7 +193,7 @@ func (s *TaskService) LinkDocument(ctx context.Context, taskID, documentID uuid.
 			return err
 		}
 
-		if !alreadyLinked {
+		if inserted {
 			detail, err := json.Marshal(map[string]any{"document_id": documentID.String(), "title": d.TitleSnapshot})
 			if err != nil {
 				return fmt.Errorf("marshal document_linked activity detail: %w", err)
@@ -280,16 +288,6 @@ func (s *TaskService) UnlinkDocument(ctx context.Context, taskID, documentID uui
 		return nil, err
 	}
 	return result, nil
-}
-
-// isLinkedDocument reports whether documentID is currently linked to t.
-func isLinkedDocument(t *model.Task, documentID uuid.UUID) bool {
-	for _, d := range t.Documents {
-		if d.DocumentID == documentID {
-			return true
-		}
-	}
-	return false
 }
 
 // documentTitleSnapshot returns the linked title snapshot for

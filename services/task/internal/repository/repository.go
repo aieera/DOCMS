@@ -55,15 +55,23 @@ type TaskRepository interface {
 	List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, f TaskFilters) ([]model.Task, int, error)
 	Update(ctx context.Context, tx pgx.Tx, t *model.Task) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
-	// AddAssignee is idempotent: re-adding the same (task, user) pair is a
-	// no-op (ON CONFLICT DO NOTHING).
-	AddAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID, addedBy uuid.UUID) error
+	// AddAssignee is idempotent (ON CONFLICT DO NOTHING on re-adding the
+	// same (task, user) pair) and reports whether a row was actually
+	// inserted, so the caller can distinguish a real add from a no-op
+	// without a separate pre-fetch (which would be race-prone under
+	// concurrent duplicate calls — see RemoveAssignee's analogous bool).
+	AddAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID, addedBy uuid.UUID) (inserted bool, err error)
 	// RemoveAssignee reports whether a row was actually removed.
 	RemoveAssignee(ctx context.Context, tx pgx.Tx, tenantID, taskID, userID uuid.UUID) (bool, error)
 	// LinkDocument resolves workspace_id + title from `documents` (must be
 	// live, i.e. deleted_at IS NULL) and snapshots them onto task_documents.
-	// Returns ErrNotFound when the document doesn't exist.
-	LinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID, linkedBy uuid.UUID) (*model.TaskDocument, error)
+	// Returns ErrNotFound when the document doesn't exist. The snapshot
+	// refreshes on every call (ON CONFLICT DO UPDATE) even when the
+	// document was already linked, but the returned bool reports whether
+	// this call was the one that actually inserted the row (vs. hit the
+	// conflict-update path), so the caller can gate idempotency on the
+	// real DB outcome rather than a pre-fetch race.
+	LinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID, linkedBy uuid.UUID) (doc *model.TaskDocument, inserted bool, err error)
 	// UnlinkDocument reports whether a row was actually removed.
 	UnlinkDocument(ctx context.Context, tx pgx.Tx, tenantID, taskID, documentID uuid.UUID) (bool, error)
 	// ClaimDueSoon/ClaimOverdue are the hourly sweep's atomic claim

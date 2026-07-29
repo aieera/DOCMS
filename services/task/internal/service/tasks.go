@@ -131,14 +131,18 @@ func (s *TaskService) CreateTask(ctx context.Context, in CreateTaskInput) (*mode
 			return err
 		}
 		for _, aid := range assigneeIDs {
-			if err := s.Repos.Tasks.AddAssignee(ctx, tx, tenantID, id, aid, userID); err != nil {
+			// inserted is ignored here: aid always targets a task that was
+			// just created in this same transaction, so it's always a real
+			// insert (dedupUUIDs already removed any duplicate aid earlier).
+			if _, err := s.Repos.Tasks.AddAssignee(ctx, tx, tenantID, id, aid, userID); err != nil {
 				return err
 			}
 			t.Assignees = append(t.Assignees, model.TaskAssignee{UserID: aid, AddedBy: userID, AddedAt: now})
 		}
 
 		for _, docID := range documentIDs {
-			d, err := s.Repos.Tasks.LinkDocument(ctx, tx, tenantID, id, docID, userID)
+			// inserted is ignored for the same reason as AddAssignee above.
+			d, _, err := s.Repos.Tasks.LinkDocument(ctx, tx, tenantID, id, docID, userID)
 			if err != nil {
 				if errors.Is(err, repository.ErrNotFound) {
 					return validationErr(fmt.Sprintf("document %s not found", docID))

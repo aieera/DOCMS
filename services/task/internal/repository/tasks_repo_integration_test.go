@@ -300,7 +300,11 @@ func TestTasksRepo_SoftDelete_HidesFromGetByIDAndList(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// TestTasksRepo_AddAssignee_IsIdempotent covers the brief's sixth bullet.
+// TestTasksRepo_AddAssignee_IsIdempotent covers the brief's sixth bullet,
+// plus (Task 5 review fix) the `inserted` return value: the first call
+// must report true, the second (duplicate) call must report false, so
+// the service layer can gate activity/event/notify emission on the
+// database's actual outcome instead of a race-prone pre-fetch.
 func TestTasksRepo_AddAssignee_IsIdempotent(t *testing.T) {
 	ctx, appPool, superPool := setupTaskDB(t)
 
@@ -322,10 +326,15 @@ func TestTasksRepo_AddAssignee_IsIdempotent(t *testing.T) {
 		})
 	}))
 
+	wantInserted := []bool{true, false}
 	for i := 0; i < 2; i++ {
+		var inserted bool
 		require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
-			return repo.AddAssignee(ctx, tx, tenant, taskID, assignee, creator)
+			var err error
+			inserted, err = repo.AddAssignee(ctx, tx, tenant, taskID, assignee, creator)
+			return err
 		}), "AddAssignee call %d must not error", i+1)
+		require.Equal(t, wantInserted[i], inserted, "AddAssignee call %d inserted flag", i+1)
 	}
 
 	var got *model.Task
@@ -339,7 +348,12 @@ func TestTasksRepo_AddAssignee_IsIdempotent(t *testing.T) {
 }
 
 // TestTasksRepo_LinkDocument_SnapshotsTitleAndErrorsOnMissingDocument
-// covers the brief's seventh bullet.
+// covers the brief's seventh bullet, plus (Task 5 review fix) the
+// `inserted` return value: a first link reports true, a relink of the
+// same document reports false (while still refreshing the title
+// snapshot via ON CONFLICT DO UPDATE), so the service layer can gate
+// activity/event emission on the database's actual insert-vs-conflict
+// outcome (the `xmax = 0` idiom) instead of a race-prone pre-fetch.
 func TestTasksRepo_LinkDocument_SnapshotsTitleAndErrorsOnMissingDocument(t *testing.T) {
 	ctx, appPool, superPool := setupTaskDB(t)
 
@@ -361,18 +375,32 @@ func TestTasksRepo_LinkDocument_SnapshotsTitleAndErrorsOnMissingDocument(t *test
 	}))
 
 	var linked *model.TaskDocument
+	var inserted bool
 	require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
 		var err error
-		linked, err = repo.LinkDocument(ctx, tx, tenant, taskID, docID, creator)
+		linked, inserted, err = repo.LinkDocument(ctx, tx, tenant, taskID, docID, creator)
 		return err
 	}))
 	require.Equal(t, docID, linked.DocumentID)
 	require.Equal(t, wsID, linked.WorkspaceID)
 	require.Equal(t, "Spec v2", linked.TitleSnapshot, "title must be snapshotted from documents.title at link time")
+	require.True(t, inserted, "the first link of a document must report inserted=true")
+
+	// Relinking the same document must report inserted=false (it hit the
+	// ON CONFLICT DO UPDATE path, not a fresh INSERT) while still
+	// refreshing the snapshot.
+	var relinked *model.TaskDocument
+	require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
+		var err error
+		relinked, inserted, err = repo.LinkDocument(ctx, tx, tenant, taskID, docID, creator)
+		return err
+	}))
+	require.False(t, inserted, "relinking an already-linked document must report inserted=false")
+	require.Equal(t, "Spec v2", relinked.TitleSnapshot, "snapshot must still refresh on a conflict-update relink")
 
 	bogusDocID := uuid.Must(uuid.NewV7())
 	err := database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
-		_, err := repo.LinkDocument(ctx, tx, tenant, taskID, bogusDocID, creator)
+		_, _, err := repo.LinkDocument(ctx, tx, tenant, taskID, bogusDocID, creator)
 		return err
 	})
 	require.ErrorIs(t, err, ErrNotFound, "linking a non-existent document must fail with ErrNotFound")
