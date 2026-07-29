@@ -142,7 +142,9 @@ func parseSearchRequestFromURL(r *http.Request) *model.SearchRequest {
 
 	tenantID := auth.TenantIDString(r)
 	userID := auth.UserIDString(r)
-	groups := splitHeader(r.Header.Get("X-Group-IDs"))
+	// GroupIDs are set authoritatively by searchGET via callerGroups AFTER this
+	// parse (Epic 9 #6) — the client X-Group-IDs header is never trusted for ACL.
+	var groups []string
 
 	// share_token via header is the production shape (gateway-injected
 	// from the public URL); query-param accepted as a fallback for

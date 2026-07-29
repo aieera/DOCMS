@@ -44,6 +44,67 @@ func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx
 	return database.WithTenantTx(ctx, r.pool, tid, fn)
 }
 
+// GroupsForUser returns the group IDs the user belongs to, authoritatively from
+// group_members (tenant-scoped via RLS). Used to derive the caller's ACL
+// principals server-side instead of trusting a client-supplied X-Group-IDs
+// header — which a caller could set to groups they are NOT in to read those
+// groups' documents (Epic 9 #6). Empty slice (nil error) when the user is in no
+// groups.
+func (r *Repository) GroupsForUser(ctx context.Context, tenantID, userID string) ([]string, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, vdmserr.Validation("user_id", "not a uuid")
+	}
+	var out []string
+	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, qerr := tx.Query(ctx,
+			`SELECT group_id FROM group_members WHERE tenant_id = $1 AND user_id = $2`,
+			tenantID, uid)
+		if qerr != nil {
+			return qerr
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var g uuid.UUID
+			if serr := rows.Scan(&g); serr != nil {
+				return serr
+			}
+			out = append(out, g.String())
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// WorkspacesForUser returns the workspace IDs the user is a member of,
+// authoritatively from workspace_members. Same rationale as GroupsForUser: the
+// X-Workspace-IDs header is client-controllable (Epic 9 #7).
+func (r *Repository) WorkspacesForUser(ctx context.Context, tenantID, userID string) ([]string, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, vdmserr.Validation("user_id", "not a uuid")
+	}
+	var out []string
+	err = r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, qerr := tx.Query(ctx,
+			`SELECT workspace_id FROM workspace_members WHERE tenant_id = $1 AND user_id = $2`,
+			tenantID, uid)
+		if qerr != nil {
+			return qerr
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var wsid uuid.UUID
+			if serr := rows.Scan(&wsid); serr != nil {
+				return serr
+			}
+			out = append(out, wsid.String())
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // CreateSavedSearch persists a new saved search.
 func (r *Repository) CreateSavedSearch(ctx context.Context, ss *model.SavedSearch) error {
 	filtersJSON, err := json.Marshal(ss.Filters)

@@ -66,6 +66,7 @@ func facetCacheKey(req *model.SearchRequest) string {
 		Tenant         string            `json:"t"`
 		User           string            `json:"u"`
 		Groups         []string          `json:"g"`
+		ShareToken     string            `json:"st"`
 		Query          string            `json:"q"`
 		WorkspaceID    string            `json:"w"`
 		FolderID       string            `json:"f"`
@@ -84,9 +85,14 @@ func facetCacheKey(req *model.SearchRequest) string {
 		CustomMetadata map[string]string `json:"cm"`
 		Facets         []string          `json:"fc"`
 	}{
-		Tenant:         req.TenantID,
-		User:           req.UserID,
-		Groups:         groups,
+		Tenant: req.TenantID,
+		User:   req.UserID,
+		Groups: groups,
+		// Facets under the shareOnly path are scoped to the specific share token,
+		// so the token MUST be in the cache key — else two anonymous followers of
+		// different tokens (identical tenant/user="anonymous"/groups/query) collide
+		// and cross-serve each other's token-scoped buckets (Epic 9 #5/#8).
+		ShareToken:     req.ShareToken,
 		Query:          req.Query,
 		WorkspaceID:    req.Filters.WorkspaceID,
 		FolderID:       req.Filters.FolderID,

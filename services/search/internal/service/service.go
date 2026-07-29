@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -53,6 +54,30 @@ func New(cfg Config) *Service {
 		vec:   cfg.Vector,
 		log:   cfg.Logger,
 	}
+}
+
+// ResolveUserGroups returns the caller's ACL group ids authoritatively from the
+// DB (group_members), used as the fallback when the request had no session-
+// loaded groups (e.g. an internal-service caller). Never trusts a client header.
+func (s *Service) ResolveUserGroups(ctx context.Context, tenantID, userID string) []string {
+	g, err := s.repo.GroupsForUser(ctx, tenantID, userID)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("resolve user groups failed; treating as no groups")
+		return nil
+	}
+	return g
+}
+
+// ResolveUserWorkspaces returns the caller's workspace memberships
+// authoritatively from the DB (workspace_members). Same rationale as
+// ResolveUserGroups.
+func (s *Service) ResolveUserWorkspaces(ctx context.Context, tenantID, userID string) []string {
+	w, err := s.repo.WorkspacesForUser(ctx, tenantID, userID)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("resolve user workspaces failed; treating as none")
+		return nil
+	}
+	return w
 }
 
 // ---- GDPR subject erase (Wave 12.4) ---------------------------------------
@@ -153,17 +178,23 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 			s.log.Warn().Err(err).Str("mode", requestedMode).
 				Msg("semantic path failed; degrading to lexical-only")
 			degradedTo = model.SearchModeLexical
-		} else if len(sem) == 0 {
-			// Nothing to fuse. Hybrid still works (lexical-only
-			// fusion = lexical-only); semantic-only got nothing so
-			// the result set is empty either way. Mark as degraded
-			// so dashboards can count silent "zero semantic" runs.
-			s.log.Debug().Str("mode", requestedMode).Msg("semantic path returned 0 hits")
-			degradedTo = model.SearchModeLexical
-		} else if requestedMode == model.SearchModeHybrid {
-			raw = fuseHits(raw, sem)
 		} else {
-			raw = semToRaw(sem)
+			// Re-verify vector hits against the authoritative OpenSearch ACL — the
+			// Qdrant payload can be stale after a permission revoke (Epic 9 #3).
+			sem = s.filterSemanticByACL(ctx, req, sem)
+			switch {
+			case len(sem) == 0:
+				// Nothing to fuse. Hybrid still works (lexical-only fusion =
+				// lexical-only); semantic-only got nothing so the result set is
+				// empty either way. Mark as degraded so dashboards can count
+				// silent "zero semantic" runs.
+				s.log.Debug().Str("mode", requestedMode).Msg("semantic path returned 0 hits")
+				degradedTo = model.SearchModeLexical
+			case requestedMode == model.SearchModeHybrid:
+				raw = fuseHits(raw, sem)
+			default:
+				raw = semToRaw(sem)
+			}
 		}
 	}
 
@@ -464,8 +495,29 @@ func (s *Service) PartialUpdate(ctx context.Context, tenantID, documentID string
 	return s.os.PartialUpdate(ctx, tenantID, documentID, fields)
 }
 
-// UpdateReadableByFolder re-indexes readable_by for all docs in a folder.
-func (s *Service) UpdateReadableByFolder(ctx context.Context, tenantID, folderID string, readableBy []string) error {
+// readableByScript builds a painless update that overwrites whichever of
+// readable_by / readable_by_users / readable_by_groups are present in fields.
+// All three MUST be kept in sync: the search ACL should-chain (opensearch/
+// query.go buildFilters) matches on the SPLIT readable_by_groups/_users, so
+// updating only the mixed readable_by — the old behaviour — left the split
+// fields stale and a user in a REVOKED group kept matching the document
+// (Epic 9 #2). Permission-change events already carry the split fields.
+func readableByScript(fields map[string]any) map[string]any {
+	var src strings.Builder
+	params := map[string]any{}
+	for _, f := range []string{"readable_by", "readable_by_users", "readable_by_groups"} {
+		if v, ok := fields[f]; ok {
+			src.WriteString("ctx._source." + f + " = params." + f + "; ")
+			params[f] = v
+		}
+	}
+	return map[string]any{"source": src.String(), "lang": "painless", "params": params}
+}
+
+// UpdateReadableByFolder re-indexes the readable_by* fields for all docs in a
+// folder. fields carries readable_by plus (when present) the split
+// readable_by_users / readable_by_groups.
+func (s *Service) UpdateReadableByFolder(ctx context.Context, tenantID, folderID string, fields map[string]any) error {
 	return s.os.UpdateByQuery(ctx, tenantID, map[string]any{
 		"query": map[string]any{
 			"bool": map[string]any{
@@ -475,16 +527,13 @@ func (s *Service) UpdateReadableByFolder(ctx context.Context, tenantID, folderID
 				},
 			},
 		},
-		"script": map[string]any{
-			"source": "ctx._source.readable_by = params.readable_by",
-			"lang":   "painless",
-			"params": map[string]any{"readable_by": readableBy},
-		},
+		"script": readableByScript(fields),
 	})
 }
 
-// UpdateReadableByWorkspace re-indexes readable_by for all docs in a workspace.
-func (s *Service) UpdateReadableByWorkspace(ctx context.Context, tenantID, workspaceID string, readableBy []string) error {
+// UpdateReadableByWorkspace re-indexes the readable_by* fields for all docs in a
+// workspace (same split-field sync as UpdateReadableByFolder).
+func (s *Service) UpdateReadableByWorkspace(ctx context.Context, tenantID, workspaceID string, fields map[string]any) error {
 	return s.os.UpdateByQuery(ctx, tenantID, map[string]any{
 		"query": map[string]any{
 			"bool": map[string]any{
@@ -494,11 +543,7 @@ func (s *Service) UpdateReadableByWorkspace(ctx context.Context, tenantID, works
 				},
 			},
 		},
-		"script": map[string]any{
-			"source": "ctx._source.readable_by = params.readable_by",
-			"lang":   "painless",
-			"params": map[string]any{"readable_by": readableBy},
-		},
+		"script": readableByScript(fields),
 	})
 }
 

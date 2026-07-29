@@ -241,14 +241,12 @@ func (d *PermissionDebouncer) flushOne(ctx context.Context, p pendingUpdate) {
 	case "document":
 		err = d.svc.PartialUpdate(ctx, p.resource.tenantID, p.resource.resourceID, p.fields)
 	case "folder":
-		// UpdateReadableByFolder takes a single readable_by slice;
-		// pull it out of fields. Pre-split fields stay in the
-		// current implementation as a follow-up.
-		rb, _ := p.fields["readable_by"].([]string)
-		err = d.svc.UpdateReadableByFolder(ctx, p.resource.tenantID, p.resource.resourceID, rb)
+		// Pass the full coalesced fields map so the split readable_by_users/
+		// _groups are updated alongside readable_by (Epic 9 #2 — updating only
+		// the mixed field left the split fields the query matches on stale).
+		err = d.svc.UpdateReadableByFolder(ctx, p.resource.tenantID, p.resource.resourceID, p.fields)
 	case "workspace":
-		rb, _ := p.fields["readable_by"].([]string)
-		err = d.svc.UpdateReadableByWorkspace(ctx, p.resource.tenantID, p.resource.resourceID, rb)
+		err = d.svc.UpdateReadableByWorkspace(ctx, p.resource.tenantID, p.resource.resourceID, p.fields)
 	default:
 		// Already filtered upstream by indexer.go::onPermissionChanged;
 		// belt + suspenders here so a misuse can't silently no-op.
@@ -284,12 +282,12 @@ func (d *PermissionDebouncer) PendingCount() int {
 // isn't a prerequisite — the admin page works on a fresh deploy
 // before Grafana is wired.
 type PropagationStats struct {
-	P50Seconds    float64 `json:"p50_seconds"`
-	P95Seconds    float64 `json:"p95_seconds"`
-	P99Seconds    float64 `json:"p99_seconds"`
-	TotalSuccess  uint64  `json:"total_success"`
-	TotalFailure  uint64  `json:"total_failure"`
-	PendingCount  int     `json:"pending_count"`
+	P50Seconds   float64 `json:"p50_seconds"`
+	P95Seconds   float64 `json:"p95_seconds"`
+	P99Seconds   float64 `json:"p99_seconds"`
+	TotalSuccess uint64  `json:"total_success"`
+	TotalFailure uint64  `json:"total_failure"`
+	PendingCount int     `json:"pending_count"`
 }
 
 // CollectPropagationStats reads the in-process Prometheus histogram

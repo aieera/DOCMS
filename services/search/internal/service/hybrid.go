@@ -36,6 +36,16 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 	if s.vec == nil || req.Query == "" {
 		return nil, nil
 	}
+	// §7.3 SHARE-TOKEN ISOLATION (Epic 9 #4): an unauthenticated share-link
+	// follower must see ONLY the shared document. The Qdrant payload filter is on
+	// readable_by (user/group/everyone) and cannot be scoped to a share token,
+	// and readablePrincipals injects "everyone" — so running the vector path here
+	// would leak the whole tenant-wide-visible corpus (document ids + scores).
+	// Skip it; the lexical path is already share-token-scoped, so hybrid/semantic
+	// correctly degrades to the single shared doc.
+	if isAnonymousShareFollower(req) {
+		return nil, nil
+	}
 	limit := req.PageSize
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -61,6 +71,40 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 	return out, nil
 }
 
+// filterSemanticByACL re-verifies vector (semantic) hits against the
+// AUTHORITATIVE OpenSearch ACL. The Qdrant payload's readable_by is only
+// rewritten by the intelligence service on re-embed (content change), so a
+// permission REVOKE leaves it stale and a raw semantic hit can name a document
+// the caller may no longer view (Epic 9 #3). We keep only the hits whose
+// document id still passes the tenant + readable_by filter in OpenSearch. Fails
+// CLOSED: on an ACL-recheck error the vector hits are dropped rather than
+// returned unverified.
+func (s *Service) filterSemanticByACL(ctx context.Context, req *model.SearchRequest, sem []semanticHit) []semanticHit {
+	if len(sem) == 0 {
+		return sem
+	}
+	ids := make([]string, 0, len(sem))
+	for _, h := range sem {
+		ids = append(ids, h.DocumentID)
+	}
+	res, err := s.os.Search(ctx, req.TenantID, opensearch.BuildVisibilityByIDsQuery(req, ids))
+	if err != nil {
+		s.log.Warn().Err(err).Msg("semantic ACL re-check failed; dropping vector hits (fail closed)")
+		return nil
+	}
+	visible := make(map[string]struct{}, len(res.Hits))
+	for _, h := range res.Hits {
+		visible[h.ID] = struct{}{}
+	}
+	out := make([]semanticHit, 0, len(sem))
+	for _, h := range sem {
+		if _, ok := visible[h.DocumentID]; ok {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 // readablePrincipals builds the principal set the dense-vector path
 // matches against the chunk payload's `readable_by` array. It mirrors
 // the OpenSearch permission filter (opensearch/query.go): a chunk is
@@ -74,6 +118,13 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 // invisible to semantic/hybrid search even though lexical found them —
 // the bug that made hybrid silently degrade to lexical-only for the
 // common "shared with the whole tenant" case.
+// isAnonymousShareFollower mirrors opensearch buildFilters' shareOnly condition:
+// an unauthenticated share-link follower (no real user id) presenting a share
+// token. The vector path must not run for them (see semanticSearch).
+func isAnonymousShareFollower(req *model.SearchRequest) bool {
+	return req.ShareToken != "" && (req.UserID == "" || req.UserID == "anonymous")
+}
+
 func readablePrincipals(req *model.SearchRequest) []string {
 	out := make([]string, 0, len(req.GroupIDs)+2)
 	if req.UserID != "" {

@@ -146,7 +146,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
 	}
-	groupIDs := splitHeader(r.Header.Get("X-Group-IDs"))
+	groupIDs := h.callerGroups(r, tenantID, userID)
 
 	var body searchRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -226,6 +226,8 @@ func (h *Handler) searchGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := parseSearchRequestFromURL(r)
+	// Authoritative ACL groups (never the client X-Group-IDs header, Epic 9 #6).
+	req.GroupIDs = h.callerGroups(r, tenantID, userID)
 	result, err := h.svc.Search(r.Context(), req)
 	if err != nil {
 		h.log.Error().Err(err).Msg("search GET failed")
@@ -249,7 +251,7 @@ func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
 	}
-	groups := splitHeader(r.Header.Get("X-Group-IDs"))
+	groups := h.callerGroups(r, tenantID, userID)
 	q := r.URL.Query().Get("q")
 	limit := 10
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
@@ -277,7 +279,7 @@ func (h *Handler) autocomplete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
 	}
-	groupIDs := splitHeader(r.Header.Get("X-Group-IDs"))
+	groupIDs := h.callerGroups(r, tenantID, userID)
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		writeError(w, http.StatusBadRequest, "q parameter required")
@@ -648,4 +650,27 @@ func splitHeader(h string) []string {
 		}
 	}
 	return out
+}
+
+// callerGroups returns the caller's ACL group ids from the AUTHORITATIVE source,
+// never the client-supplied X-Group-IDs header (Epic 9 #6): SessionAuth already
+// loaded the session user's groups from group_members into the context; for an
+// internal-service caller with no session (e.g. the saved-search alert acting
+// for an owner) we resolve them from the DB by (tenant, user). Trusting the
+// header let a caller add groups they are not in and read those groups' docs.
+func (h *Handler) callerGroups(r *http.Request, tenantID, userID string) []string {
+	if g := auth.GetUserGroups(r.Context()); len(g) > 0 {
+		out := make([]string, len(g))
+		for i, id := range g {
+			out[i] = id.String()
+		}
+		return out
+	}
+	return h.svc.ResolveUserGroups(r.Context(), tenantID, userID)
+}
+
+// callerWorkspaces returns the caller's workspace memberships authoritatively
+// (never the client X-Workspace-IDs header, Epic 9 #7).
+func (h *Handler) callerWorkspaces(r *http.Request, tenantID, userID string) []string {
+	return h.svc.ResolveUserWorkspaces(r.Context(), tenantID, userID)
 }

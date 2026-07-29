@@ -147,7 +147,11 @@ func TestParseURL_FacetFromRepeatingAndCommaSeparated(t *testing.T) {
 	}
 }
 
-func TestParseURL_GroupHeader(t *testing.T) {
+// TestParseURL_GroupHeaderIgnored pins Epic 9 #6: parseSearchRequestFromURL must
+// NOT read ACL groups from the client-controllable X-Group-IDs header. Groups are
+// set authoritatively by searchGET (callerGroups → session groups / DB), so the
+// parsed request carries none regardless of what the client sends.
+func TestParseURL_GroupHeaderIgnored(t *testing.T) {
 	r := httptest.NewRequest("GET",
 		"/api/v1/search?q=test", nil)
 	r.Header.Set("X-Auth-Tenant-ID", "t1")
@@ -155,10 +159,7 @@ func TestParseURL_GroupHeader(t *testing.T) {
 	r.Header.Set("X-Group-IDs", "engineering, legal ,product")
 	req := parseSearchRequestFromURL(r)
 
-	if len(req.GroupIDs) != 3 ||
-		req.GroupIDs[0] != "engineering" ||
-		req.GroupIDs[1] != "legal" ||
-		req.GroupIDs[2] != "product" {
-		t.Errorf("groups=%v want [engineering legal product]", req.GroupIDs)
+	if len(req.GroupIDs) != 0 {
+		t.Errorf("groups=%v; want none (X-Group-IDs must be ignored, groups set authoritatively by searchGET)", req.GroupIDs)
 	}
 }

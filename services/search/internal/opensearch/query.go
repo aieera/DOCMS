@@ -163,7 +163,14 @@ func BuildSearchQuery(req *model.SearchRequest) map[string]any {
 			}
 			sz, ok := FacetSizes[name]
 			if !ok {
-				sz = 20
+				// Unknown facet name: DROP it (as the doc comment above promises).
+				// The previous fallback used the raw client-supplied name AS the
+				// aggregation field, so a caller could aggregate over security
+				// fields — facets:["share_tokens"] enumerated anonymous-access
+				// tokens, ["readable_by_users"]/["readable_by_groups"] the ACL
+				// principals — of documents in the result set (Epic 9 #1).
+				// FacetSizes + the ResolveFacet registry are the allowlist.
+				continue
 			}
 			aggs[name] = map[string]any{
 				"terms": map[string]any{"field": name, "size": sz},
@@ -244,38 +251,6 @@ func buildFilters(req *model.SearchRequest) []any {
 	// "tenant-wide visible" corpus to anyone with any valid
 	// share token. The spec calls this out: "External share token:
 	// separate matching logic."
-	shareOnly := req.ShareToken != "" && isAnonymousPrincipal(req.UserID)
-
-	var shoulds []any
-	if shareOnly {
-		shoulds = []any{
-			map[string]any{"terms": map[string]any{"share_tokens": []string{req.ShareToken}}},
-		}
-	} else {
-		groups := req.GroupIDs
-		if groups == nil {
-			groups = []string{}
-		}
-		// Authenticated path — always include "everyone" so tenant-
-		// wide visible docs match regardless of identity.
-		groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
-		shoulds = []any{
-			map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
-			map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
-			// Migration bridge — docs indexed before ADR 0083 only
-			// carry the mixed `readable_by` field. Drop this clause
-			// once the backfill is complete.
-			map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},
-		}
-		if req.ShareToken != "" {
-			// Logged-in user following a share link — sees the union
-			// of their normal access AND what the token grants.
-			shoulds = append(shoulds, map[string]any{
-				"terms": map[string]any{"share_tokens": []string{req.ShareToken}},
-			})
-		}
-	}
-
 	// Mandatory security filters — never omitted. tenant_id is a
 	// hard term filter (not part of the should chain) so a
 	// misconfigured shoulds list can't cause cross-tenant leaks.
@@ -283,7 +258,7 @@ func buildFilters(req *model.SearchRequest) []any {
 		map[string]any{"term": map[string]any{"tenant_id": req.TenantID}},
 		map[string]any{
 			"bool": map[string]any{
-				"should":               shoulds,
+				"should":               aclShoulds(req),
 				"minimum_should_match": 1,
 			},
 		},
@@ -378,6 +353,63 @@ func buildFilters(req *model.SearchRequest) []any {
 // access (logged-in user following a share link sees the union).
 func isAnonymousPrincipal(userID string) bool {
 	return userID == "" || userID == "anonymous"
+}
+
+// aclShoulds builds the readable_by / share-token should-chain (the per-request
+// ACL access paths). §7.3: an unauthenticated share-link follower is scoped to
+// their token only (no user/group/everyone clauses), otherwise the "everyone"
+// clause would leak the tenant-wide corpus. Shared by the main search filter and
+// BuildVisibilityByIDsQuery.
+func aclShoulds(req *model.SearchRequest) []any {
+	if req.ShareToken != "" && isAnonymousPrincipal(req.UserID) {
+		return []any{
+			map[string]any{"terms": map[string]any{"share_tokens": []string{req.ShareToken}}},
+		}
+	}
+	groups := req.GroupIDs
+	if groups == nil {
+		groups = []string{}
+	}
+	groupsWithEveryone := append(append([]string(nil), groups...), "everyone")
+	shoulds := []any{
+		map[string]any{"terms": map[string]any{"readable_by_users": []string{req.UserID}}},
+		map[string]any{"terms": map[string]any{"readable_by_groups": groupsWithEveryone}},
+		// Migration bridge — docs indexed before ADR 0083 only carry the mixed
+		// `readable_by` field. Drop this clause once the backfill is complete.
+		map[string]any{"terms": map[string]any{"readable_by": buildPrincipals(req.UserID, req.GroupIDs)}},
+	}
+	if req.ShareToken != "" {
+		// Logged-in user following a share link — union of normal access + token.
+		shoulds = append(shoulds, map[string]any{
+			"terms": map[string]any{"share_tokens": []string{req.ShareToken}},
+		})
+	}
+	return shoulds
+}
+
+// BuildVisibilityByIDsQuery returns an OpenSearch body that selects, from the
+// given document ids, ONLY those the request's principals may currently view —
+// using the SAME tenant + readable_by ACL as the main search. It re-verifies
+// vector (semantic) hits against the authoritative index ACL, because the Qdrant
+// payload's readable_by is not updated on a permission revoke and would
+// otherwise keep returning a now-unauthorized document (Epic 9 #3).
+func BuildVisibilityByIDsQuery(req *model.SearchRequest, ids []string) map[string]any {
+	return map[string]any{
+		"_source": false,
+		"size":    len(ids),
+		"query": map[string]any{
+			"bool": map[string]any{
+				"filter": []any{
+					map[string]any{"term": map[string]any{"tenant_id": req.TenantID}},
+					map[string]any{"bool": map[string]any{
+						"should":               aclShoulds(req),
+						"minimum_should_match": 1,
+					}},
+					map[string]any{"ids": map[string]any{"values": ids}},
+				},
+			},
+		},
+	}
 }
 
 func buildPrincipals(userID string, groupIDs []string) []string {

@@ -57,12 +57,12 @@ func handlerCtx(parent context.Context, msg *nats.Msg) (context.Context, context
 // the Service layer. Each handler acks on success, naks (redelivery) on
 // transient errors, and terms malformed messages.
 type Indexer struct {
-	svc        *Service
-	debouncer  *PermissionDebouncer // ADR 0083 — coalesces permission events
-	js         nats.JetStreamContext
-	log        zerolog.Logger
-	subs       []*nats.Subscription
-	parent     context.Context
+	svc       *Service
+	debouncer *PermissionDebouncer // ADR 0083 — coalesces permission events
+	js        nats.JetStreamContext
+	log       zerolog.Logger
+	subs      []*nats.Subscription
+	parent    context.Context
 }
 
 // NewIndexer creates the consumer. Call Start to begin receiving.
@@ -505,9 +505,11 @@ func (ix *Indexer) onPermissionChanged(msg *nats.Msg) {
 	case "document":
 		err = ix.svc.PartialUpdate(ctx, tenantID, resourceID, fields)
 	case "folder":
-		err = ix.svc.UpdateReadableByFolder(ctx, tenantID, resourceID, readableBy)
+		// Pass the full fields map so the split readable_by_users/_groups are
+		// updated alongside readable_by (Epic 9 #2).
+		err = ix.svc.UpdateReadableByFolder(ctx, tenantID, resourceID, fields)
 	case "workspace":
-		err = ix.svc.UpdateReadableByWorkspace(ctx, tenantID, resourceID, readableBy)
+		err = ix.svc.UpdateReadableByWorkspace(ctx, tenantID, resourceID, fields)
 	}
 	if err != nil {
 		ix.log.Error().Err(err).Str("resource", resourceType+"/"+resourceID).Msg("readable_by update failed")

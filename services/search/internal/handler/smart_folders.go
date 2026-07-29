@@ -29,7 +29,10 @@ func (h *Handler) listSmartFolders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "X-Tenant-ID and X-User-ID headers required")
 		return
 	}
-	workspaceIDs := parseCSV(r.Header.Get("X-Workspace-IDs"))
+	// Authoritative membership from workspace_members, never the client
+	// X-Workspace-IDs header (Epic 9 #7) — the header let a caller list
+	// workspace-scoped smart folders for workspaces they are not in.
+	workspaceIDs := h.callerWorkspaces(r, tenantID, userID)
 	list, err := h.svc.ListSmartFolders(r.Context(), tenantID, userID, workspaceIDs)
 	if err != nil {
 		h.log.Error().Err(err).Msg("list smart folders failed")
@@ -64,14 +67,14 @@ func (h *Handler) promoteSmartFolder(w http.ResponseWriter, r *http.Request) {
 	if body.Icon == "" {
 		body.Icon = "sparkles"
 	}
-	// Workspace permission gate: if a workspace_id is supplied, it
-	// MUST be in the caller's X-Workspace-IDs list (populated by the
-	// gateway from workspace_members for the authenticated user).
-	// Without this, a member could pin a smart folder against any
-	// workspace UUID they guessed, surfacing in the sidebar of users
-	// who actually belong to that workspace.
+	// Workspace permission gate: if a workspace_id is supplied, the caller MUST
+	// be a member of it. Membership is resolved authoritatively from
+	// workspace_members (Epic 9 #7) — the previous X-Workspace-IDs header was
+	// client-controllable, so a member could pin a smart folder into any
+	// workspace UUID they guessed, surfacing in the sidebar of that workspace's
+	// real members.
 	if body.WorkspaceID != nil && *body.WorkspaceID != "" {
-		memberships := parseCSV(r.Header.Get("X-Workspace-IDs"))
+		memberships := h.callerWorkspaces(r, tenantID, userID)
 		found := false
 		for _, ws := range memberships {
 			if ws == *body.WorkspaceID {
