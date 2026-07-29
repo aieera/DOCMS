@@ -225,31 +225,12 @@ func TestTaskSchema_BackfillsLegacyAssigneeAndDocument(t *testing.T) {
 // TestTaskSchema_RLSFailsClosedAcrossTenants proves the new side tables
 // carry the same tenant-isolation posture as every other tenant table:
 // FORCE ROW LEVEL SECURITY plus a USING/WITH CHECK policy on
-// app.current_tenant. The testcontainer's default role is a BYPASSRLS
-// superuser (policies are a no-op for it), so this connects as a
-// dedicated NOBYPASSRLS role — same pattern as
-// pkg/database/rls_integration_test.go — to actually exercise the policy.
+// app.current_tenant. setupTaskDB (repo_fixture_integration_test.go)
+// hands back a dedicated NOBYPASSRLS pool — same pattern
+// pkg/database/rls_integration_test.go uses — so this actually exercises
+// the policy rather than the testcontainer's BYPASSRLS superuser role.
 func TestTaskSchema_RLSFailsClosedAcrossTenants(t *testing.T) {
-	ctx, dsn, pool := newSchemaFixture(t)
-	runTaskMigrations(t, dsn)
-
-	_, err := pool.Exec(ctx, `
-		DO $$ BEGIN
-		  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dms_app') THEN
-		    CREATE ROLE dms_app LOGIN PASSWORD 'devpassword' NOBYPASSRLS;
-		  END IF;
-		END $$;
-		GRANT USAGE ON SCHEMA public TO dms_app;
-		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dms_app;
-		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dms_app;
-	`)
-	require.NoError(t, err)
-
-	appDSN, err := testutil.RewriteDSNUser(dsn, "dms_app", "devpassword")
-	require.NoError(t, err)
-	appPool, err := database.NewPool(ctx, appDSN, database.DefaultPoolConfig())
-	require.NoError(t, err)
-	t.Cleanup(appPool.Close)
+	ctx, appPool, pool := setupTaskDB(t)
 
 	tenantA := uuid.Must(uuid.NewV7())
 	tenantB := uuid.Must(uuid.NewV7())
