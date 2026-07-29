@@ -74,11 +74,23 @@ func (c *Cache) GetJSON(ctx context.Context, key string, out any) (hit bool, err
 
 // SetJSON marshals + writes with default TTL.
 func (c *Cache) SetJSON(ctx context.Context, key string, v any) error {
+	return c.SetJSONTTL(ctx, key, v, TTL)
+}
+
+// MembershipTTL bounds how long a stale user->groups / user->workspaces set can
+// keep granting access after a membership or workspace-role change. It is kept
+// short because those mutations happen in ANOTHER service and emit no event this
+// cache can consume (Epic 7 #2/#3), so TTL expiry is currently the ONLY
+// invalidation for these keys. See docs/security/epic7-policy-followups.md.
+const MembershipTTL = 5 * time.Second
+
+// SetJSONTTL marshals + writes with an explicit TTL.
+func (c *Cache) SetJSONTTL(ctx context.Context, key string, v any, ttl time.Duration) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	return c.rdb.Set(ctx, key, b, TTL).Err()
+	return c.rdb.Set(ctx, key, b, ttl).Err()
 }
 
 // Del removes a single key. Missing keys are not an error.
@@ -96,10 +108,19 @@ func (c *Cache) InvalidateResource(ctx context.Context, tenantID uuid.UUID, kind
 	return c.Del(ctx, ResourcePermsKey(tenantID, kind, resourceID))
 }
 
-// InvalidateUserGroups drops a user's cached group list. Called on
-// group_members mutations.
+// InvalidateUserGroups drops a user's cached group list. Should be called on
+// group_members mutations — but see Epic 7 #2: no group-membership event is
+// currently emitted for this to subscribe to, so MembershipTTL bounds staleness.
 func (c *Cache) InvalidateUserGroups(ctx context.Context, tenantID, userID uuid.UUID) error {
 	return c.Del(ctx, UserGroupsKey(tenantID, userID))
+}
+
+// InvalidateUserWorkspaces drops a user's cached workspace-membership+role list.
+// Should be called on workspace_members mutations (add/remove/role change) — but
+// see Epic 7 #3: no workspace-membership event is currently emitted, so
+// MembershipTTL bounds staleness until one is.
+func (c *Cache) InvalidateUserWorkspaces(ctx context.Context, tenantID, userID uuid.UUID) error {
+	return c.Del(ctx, UserWorkspacesKey(tenantID, userID))
 }
 
 // TrackResourceByGroup records that resource X has a permission involving

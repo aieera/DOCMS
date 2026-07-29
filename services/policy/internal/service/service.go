@@ -132,7 +132,9 @@ func (s *Service) loadUserGroups(ctx context.Context, tenantID, userID uuid.UUID
 			for _, id := range ids {
 				out = append(out, id.String())
 			}
-			_ = s.cache.SetJSON(ctx, key, out)
+			// Short TTL: no group-membership event exists to invalidate this on
+			// removal (Epic 7 #2), so bound the stale-access window.
+			_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
 			return nil
 		})
 	})
@@ -160,7 +162,9 @@ func (s *Service) loadUserWorkspaces(ctx context.Context, tenantID, userID uuid.
 					Role:        m.Role,
 				})
 			}
-			_ = s.cache.SetJSON(ctx, key, out)
+			// Short TTL: no workspace-membership/role event exists to invalidate
+			// this on demotion/removal (Epic 7 #3), so bound the stale-access window.
+			_ = s.cache.SetJSONTTL(ctx, key, out, cache.MembershipTTL)
 			return nil
 		})
 	})

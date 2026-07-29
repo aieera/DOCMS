@@ -198,15 +198,26 @@ func (h *HTTPHandler) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ResourceType string            `json:"resource_type"`
-		ResourceID   string            `json:"resource_id"`
-		Action       string            `json:"action"`
-		Context      map[string]string `json:"context,omitempty"`
+		ResourceType string `json:"resource_type"`
+		ResourceID   string `json:"resource_id"`
+		Action       string `json:"action"`
+		// Context is accepted for backward-compat but DELIBERATELY IGNORED — see
+		// the security note below. The real frontend sends none.
+		Context map[string]string `json:"context,omitempty"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeHTTPError(w, r, err)
 		return
 	}
+	// SECURITY (Epic 7 #1/#4): the decision context MUST be server-derived, never
+	// taken from the request body. This endpoint is session-authenticated and the
+	// caller controls the JSON body, so forwarding body.Context let any user spoof
+	// user_role=owner/admin — rego Rule 6 then grants EVERY capability on EVERY
+	// resource and exempts them from the disposed/deactivated/clearance deny gates
+	// — or fabricate folder_id/workspace_id to force the Rule 3/4 cascade. We bind
+	// only the authenticated role (u.Role) here. Resource-inheritance/clearance
+	// context is supplied only by the trusted gRPC path (document service, from the
+	// JWT + resolved resource), never by an end-user body.
 	result, err := h.svc.Check(r.Context(), service.CheckInput{
 		TenantID:     u.TenantID,
 		SubjectType:  "user",
@@ -214,7 +225,7 @@ func (h *HTTPHandler) check(w http.ResponseWriter, r *http.Request) {
 		Action:       body.Action,
 		ResourceType: body.ResourceType,
 		ResourceID:   body.ResourceID,
-		Context:      body.Context,
+		Context:      map[string]string{"user_role": u.Role},
 	})
 	if err != nil {
 		writeHTTPError(w, r, err)
