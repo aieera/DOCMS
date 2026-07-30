@@ -16,9 +16,8 @@ import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import {
   listMyTasks, listMyCreatedTasks, completeTask, reopenTask, cancelTask, deleteTask, createTask,
-  type Task, type TaskPriority,
+  invalidateTasks, taskKeys, type Task, type TaskPriority,
 } from '@/api/tasks'
-import { getDocument } from '@/api/documents'
 import { useAuthStore } from '@/store/authStore'
 import { getUsers } from '@/api/admin'
 import { readErrorMessage } from '@/api/client'
@@ -120,17 +119,16 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
   const created = mode === 'created'
 
   const { data, isLoading } = useQuery({
-    queryKey: [created ? 'created-tasks' : 'my-tasks', includeCompleted],
+    queryKey: [...(created ? taskKeys.created() : taskKeys.mine()), includeCompleted],
     queryFn: () => (created ? listMyCreatedTasks : listMyTasks)(includeCompleted),
   })
 
   // Invalidate both inboxes + the header badge — a task can move between
   // the assigned-to-me and created-by-me lists on any mutation.
   const refreshAll = () => {
-    // ['my-tasks'] also drives the topbar badge (same cache key), so a
+    // taskKeys.mine() also drives the topbar badge (same cache key), so a
     // single invalidation refreshes both the list and the badge.
-    qc.invalidateQueries({ queryKey: ['my-tasks'] })
-    qc.invalidateQueries({ queryKey: ['created-tasks'] })
+    void invalidateTasks(qc)
   }
 
   const tasks = useMemo(() => {
@@ -281,29 +279,26 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
     onError: onTaskError,
   })
 
-  // Task → document deep link. The task row carries only
-  // linked_document_id; the route also needs workspaceId. Look it
-  // up on click rather than pre-fetching for every row.
-  const openLinkedDoc = async (docId: string) => {
-    try {
-      const doc = await getDocument(docId)
-      void navigate({
-        to: '/workspaces/$workspaceId/documents/$documentId',
-        params: { workspaceId: doc.workspace_id, documentId: doc.id },
-      })
-    } catch (e) {
-      toast.error(readErrorMessage(e) ?? 'Could not open linked document')
-    }
+  // Task → document deep link. Linked documents carry their own
+  // workspace_id (snapshotted at link time), so the row navigates
+  // without a lookup round-trip. Multi-document tasks deep-link to the
+  // first; the detail drawer lists them all.
+  const linkedDoc = task.documents?.[0]
+  const openLinkedDoc = (doc: { document_id: string; workspace_id: string }) => {
+    void navigate({
+      to: '/workspaces/$workspaceId/documents/$documentId',
+      params: { workspaceId: doc.workspace_id, documentId: doc.document_id },
+    })
   }
 
   const isDone = task.status === 'done' || task.status === 'cancelled'
   return (
     <tr className="border-t border-border" data-testid={`task-row-${task.id}`}>
       <td className="px-3 py-2">
-        {task.linked_document_id ? (
+        {linkedDoc ? (
           <button
             type="button"
-            onClick={() => void openLinkedDoc(task.linked_document_id!)}
+            onClick={() => openLinkedDoc(linkedDoc)}
             className="font-medium text-start hover:underline"
             data-testid={`task-doc-link-${task.id}`}
           >
@@ -463,8 +458,8 @@ function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: (
     mutationFn: () => createTask({
       title, description, priority,
       due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
-      linked_document_id: linkedDocumentId,
-      assignee_id: assigneeId && assigneeId !== UNASSIGNED ? assigneeId : undefined,
+      document_ids: linkedDocumentId ? [linkedDocumentId] : undefined,
+      assignee_ids: assigneeId && assigneeId !== UNASSIGNED ? [assigneeId] : undefined,
     }),
     onSuccess: () => {
       toast.success(assigneeId === me?.id ? 'Task created' : 'Task created and assigned')

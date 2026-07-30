@@ -7,7 +7,7 @@ import { Bell, CheckCheck, CheckSquare, LogOut, Menu, Search, UserCog } from 'lu
 import { toast } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
-import { listMyTasks } from '@/api/tasks'
+import { listMyTasks, taskKeys } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from '@/api/savedSearches'
 import { getRecentSearches, recordRecentSearch, removeRecentSearch } from '@/lib/recentSearches'
@@ -221,11 +221,11 @@ function CommandTrigger() {
 
 function MyTasksBadge() {
   const navigate = useNavigate()
-  // Shares the ['my-tasks'] cache with the dashboard KPI/Open-tasks
+  // Shares the taskKeys.mine() cache with the dashboard KPI/Open-tasks
   // cards (same listMyTasks(false) query) so navigating to the
   // dashboard doesn't fire a second identical request.
   const { data } = useQuery({
-    queryKey: ['my-tasks'],
+    queryKey: taskKeys.mine(),
     queryFn: () => listMyTasks(false),
     refetchInterval: 30_000,
     staleTime: 15_000,

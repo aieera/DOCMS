@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { useAppMutation } from '@/hooks/useAppMutation'
-import { createTask, type TaskPriority } from '@/api/tasks'
+import { createTask, invalidateTasks, type TaskPriority } from '@/api/tasks'
 
 interface Props {
   open: boolean
@@ -46,11 +46,12 @@ export function AddToTaskDialog({ open, onOpenChange, documentId, documentTitle 
       title: title.trim(),
       priority,
       due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
-      linked_document_id: documentId,
+      document_ids: [documentId],
     }),
     onSuccess: () => {
-      // The /tasks/mine inbox + per-document task list both invalidate.
-      qc.invalidateQueries({ queryKey: ['tasks'] })
+      // One ['tasks'] family covers the inboxes, the topbar badge, the
+      // dashboard card and the per-document panel.
+      void invalidateTasks(qc)
       onOpenChange(false)
     },
     defaultErrorMessage: 'Could not create task',

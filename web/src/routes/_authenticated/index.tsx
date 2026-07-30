@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { WarmCard } from '@/components/ui/crextio'
 import { useAuthStore } from '@/store/authStore'
-import { listMyTasks, type Task } from '@/api/tasks'
+import { listMyTasks, type Task, taskKeys } from '@/api/tasks'
 import { getWorkspaces } from '@/api/workspaces'
 import { getUnreadCount, getNotifications } from '@/api/notifications'
 import { cn } from '@/lib/cn'
@@ -97,7 +97,7 @@ function KpiRow() {
   const role = useAuthStore((s) => s.user?.role)
   const seesAllWorkspaces = role === 'owner' || role === 'admin'
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
-  const tasks = useQuery({ queryKey: ['my-tasks'], queryFn: () => listMyTasks(false), staleTime: 30_000 })
+  const tasks = useQuery({ queryKey: taskKeys.mine(), queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({ queryKey: ['notifications', 'unread-count'], queryFn: getUnreadCount, staleTime: 30_000 })
 
   const wsCount = workspaces.data?.length
@@ -344,7 +344,7 @@ function QuickActions({
 function OpenTasksCard() {
   const navigate = useNavigate()
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['my-tasks'],
+    queryKey: taskKeys.mine(),
     queryFn: () => listMyTasks(false),
     staleTime: 30_000,
   })
