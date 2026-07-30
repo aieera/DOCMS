@@ -273,8 +273,6 @@ type Repositories struct {
 	Redaction           RedactionRepository
 	// ADR 0066 — threaded comments + reactions.
 	Comments CommentRepository
-	// ADR 0068 — lightweight tasks (separate from workflow_tasks).
-	Tasks TaskRepository
 	// ADR 0115 — per-stage processing status surface.
 	Processing ProcessingRepository
 	// WS3 — pre-commit ingestion pipeline.
@@ -316,7 +314,6 @@ func New(pool *pgxpool.Pool) *Repositories {
 		NER:                 NewNERRepo(),
 		Redaction:           NewRedactionRepo(),
 		Comments:            NewCommentRepo(),
-		Tasks:               NewTaskRepo(),
 		Processing:          NewProcessingRepo(),
 		Ingestion:           &ingestionRepo{},
 		ReviewQueue:         &reviewQueueRepo{},

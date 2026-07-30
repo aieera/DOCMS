@@ -1043,21 +1043,10 @@ func main() {
 	rootMux.Handle("DELETE /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 	rootMux.Handle("GET /api/v1/comments/{cid}/reactions", middleware.CorrelationHTTP(commentsMux))
 
-	// ADR 0068 — lightweight tasks. Distinct from workflow_tasks
-	// (approval-step state) which lives in services/workflow.
-	tasksMux := http.NewServeMux()
-	handler.NewTasksHandler(svc, *log.Z()).Register(tasksMux)
-	rootMux.Handle("POST /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/mine", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("GET /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("PATCH /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/assign", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/unassign", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/complete", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/reopen", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("POST /api/v1/tasks/{id}/cancel", middleware.CorrelationHTTP(tasksMux))
-	rootMux.Handle("DELETE /api/v1/tasks/{id}", middleware.CorrelationHTTP(tasksMux))
+	// Tasks (ADR 0068) moved to services/task on 2026-07-28 — routes,
+	// service, repository and the hourly sweep all live there now. Still
+	// distinct from workflow_tasks (approval-step state) in
+	// services/workflow.
 
 	// ADR 0118 — workspace templates: gallery CRUD + ProvisionFromTemplate.
 	// Provision walks the template tree in ONE tenant tx (folders +
@@ -1076,28 +1065,6 @@ func main() {
 	analyticsMux := http.NewServeMux()
 	handler.NewAnalyticsHandler(svc, *log.Z()).Register(analyticsMux)
 	rootMux.Handle("/api/v1/analytics/", middleware.CorrelationHTTP(analyticsMux))
-
-	// ADR 0068 — hourly sweep. Stamps reminded_at / overdue_notified_at
-	// on tasks crossing the 24h-out and overdue thresholds; emits one
-	// notify event per claimed row. UPDATE…RETURNING makes the claim
-	// + emit pair effectively idempotent (no double-fire on next tick).
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		// Run once on boot so a deploy doesn't wait an hour to send
-		// the first reminder after a cold start.
-		_ = svc.SweepTaskNotifications(ctx)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := svc.SweepTaskNotifications(ctx); err != nil {
-					log.Warn(ctx).Err(err).Msg("task notification sweep failed")
-				}
-			}
-		}
-	}()
 
 	// §17.3 / D10 — annotation CRUD. Pinned method+path patterns so
 	// only the annotation surface lands here; other
