@@ -47,9 +47,14 @@ func (h *Handler) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if err := h.svc.UpdateFeatureFlags(r.Context(), u.TenantID.String(), &flags); err != nil {
+	// Tenant-facing (org owner): clamp requested paid entitlements to the tenant's
+	// plan so an owner can't self-grant premium features without paying (Epic 11
+	// #1/#2). Echo the EFFECTIVE (clamped) flags so the client sees what actually
+	// took effect, not what it asked for.
+	effective, err := h.svc.UpdateTenantFeatureFlags(r.Context(), u.TenantID.String(), &flags)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, flags)
+	writeJSON(w, http.StatusOK, effective)
 }

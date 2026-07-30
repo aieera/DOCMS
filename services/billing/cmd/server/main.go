@@ -44,6 +44,23 @@ func main() {
 	}
 	cfg.ServiceVersion = version
 
+	// Fail closed in prod without the money-path secrets (Epic 11 #3/#4/#5).
+	//   - StripeWebhookSecret: without it the webhook handler skips HMAC
+	//     verification and trusts unsigned JSON.
+	//   - InternalAPIKey: requireAPIKey leaves the /internal/v1 provision +
+	//     update-features endpoints unauthenticated when the key is empty.
+	// RequireSecret is a no-op outside prod, so dev keeps working. This is the
+	// documented "service boundary" enforcement RequireSecret refers to.
+	for _, s := range []struct{ name, val string }{
+		{"stripe_webhook_secret", cfg.StripeWebhookSecret},
+		{"internal_api_key", cfg.InternalAPIKey},
+	} {
+		if err := cfg.RequireSecret(s.name, s.val); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	log := logger.New(serviceName, cfg.ServiceVersion, cfg.LogLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

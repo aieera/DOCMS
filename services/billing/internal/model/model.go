@@ -69,6 +69,24 @@ type FeatureFlags struct {
 }
 
 // DefaultFlagsByPlan returns default feature flags for a plan.
+// ClampEntitlementsTo returns f with every PAID entitlement flag AND-ed against
+// `allowed` (the tenant's plan defaults), so a caller may turn an entitlement
+// they already hold OFF but cannot turn ON one their plan does not include
+// (Epic 11 #1/#2). AutoDetectDocumentType is a free per-tenant preference, not a
+// paywalled entitlement, so it is preserved from f unchanged.
+func (f FeatureFlags) ClampEntitlementsTo(allowed FeatureFlags) FeatureFlags {
+	return FeatureFlags{
+		AIEnabled:              f.AIEnabled && allowed.AIEnabled,
+		AdvancedWorkflow:       f.AdvancedWorkflow && allowed.AdvancedWorkflow,
+		SSOEnabled:             f.SSOEnabled && allowed.SSOEnabled,
+		ESignatures:            f.ESignatures && allowed.ESignatures,
+		CustomBranding:         f.CustomBranding && allowed.CustomBranding,
+		APIAccess:              f.APIAccess && allowed.APIAccess,
+		DataRooms:              f.DataRooms && allowed.DataRooms,
+		AutoDetectDocumentType: f.AutoDetectDocumentType,
+	}
+}
+
 func DefaultFlagsByPlan(planID string) FeatureFlags {
 	switch planID {
 	case "enterprise":

@@ -93,6 +93,12 @@ func (wh *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	} else {
+		// No secret configured → signature verification is impossible. This path
+		// is dev-only: billing main.go calls RequireSecret so a PROD deploy cannot
+		// boot with an empty secret (Epic 11 #3/#4). Log loudly so an accidental
+		// unsecured deployment is visible, and still refuse anything but a
+		// well-formed body.
+		wh.log.Warn().Msg("stripe webhook secret is empty — processing UNVERIFIED event (dev only; prod boot is gated by RequireSecret)")
 		if err := json.Unmarshal(body, &event); err != nil {
 			http.Error(w, "parse", http.StatusBadRequest)
 			return

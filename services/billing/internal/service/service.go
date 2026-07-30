@@ -49,12 +49,33 @@ func (s *Service) GetFeatureFlags(ctx context.Context, tenantID string) (*model.
 }
 
 // UpdateFeatureFlags overrides feature flags.
+// UpdateFeatureFlags writes flags verbatim. TRUSTED callers only — the internal
+// /internal/v1 endpoint (behind requireAPIKey) and provisioning — so it can set
+// entitlements directly (e.g. an ops comp/override after a verified plan change).
+// Do NOT call this from a tenant-facing path; use UpdateTenantFeatureFlags.
 func (s *Service) UpdateFeatureFlags(ctx context.Context, tenantID string, f *model.FeatureFlags) error {
 	if err := s.repo.UpdateFeatureFlags(ctx, tenantID, f); err != nil {
 		return err
 	}
 	s.flags.Invalidate(ctx, tenantID)
 	return nil
+}
+
+// UpdateTenantFeatureFlags is the TENANT-facing path (PUT /admin/settings, org
+// owner role). It clamps requested PAID entitlement flags to the tenant's plan
+// so an owner can toggle within (or below) their entitlements but cannot
+// self-grant premium features without paying (Epic 11 #1/#2). On any error
+// resolving the plan it falls back to the lowest tier (fail closed).
+func (s *Service) UpdateTenantFeatureFlags(ctx context.Context, tenantID string, f *model.FeatureFlags) (model.FeatureFlags, error) {
+	planID := "standard"
+	if sub, err := s.repo.GetSubscription(ctx, tenantID); err == nil && sub != nil && sub.PlanID != "" {
+		planID = sub.PlanID
+	}
+	clamped := f.ClampEntitlementsTo(model.DefaultFlagsByPlan(planID))
+	if err := s.UpdateFeatureFlags(ctx, tenantID, &clamped); err != nil {
+		return model.FeatureFlags{}, err
+	}
+	return clamped, nil
 }
 
 // IsFeatureEnabled checks a single flag (for middleware).
