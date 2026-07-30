@@ -413,6 +413,12 @@ func hydrateTasks(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, tasks []mo
 	for i := range tasks {
 		ids[i] = tasks[i].ID
 		idx[tasks[i].ID] = i
+		// Start both collections empty rather than nil: a nil slice
+		// marshals to JSON `null`, and the web client treats these as
+		// arrays (task.documents.map(...), task.assignees.length), so a
+		// task with no linked documents would crash the detail drawer.
+		tasks[i].Assignees = []model.TaskAssignee{}
+		tasks[i].Documents = []model.TaskDocument{}
 	}
 
 	arows, err := tx.Query(ctx, `

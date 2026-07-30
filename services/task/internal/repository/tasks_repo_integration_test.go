@@ -11,6 +11,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -480,3 +481,60 @@ func TestTasksRepo_ClaimDueSoonAndOverdue(t *testing.T) {
 }
 
 func timePtr(t time.Time) *time.Time { return &t }
+
+// A task with no assignees or documents must come back with EMPTY
+// slices, never nil. A nil slice marshals to JSON `null`, and the web
+// client treats both fields as arrays (task.documents.map(...),
+// task.assignees.length) — a live check against the dev stack caught
+// "documents": null being served for exactly this case.
+func TestTasksRepo_EmptyCollectionsAreNonNil(t *testing.T) {
+	ctx, appPool, superPool := setupTaskDB(t)
+
+	tenant := uuid.Must(uuid.NewV7())
+	creator := uuid.Must(uuid.NewV7())
+	seedOrgAndUser(ctx, t, superPool, tenant, creator)
+
+	repo := &taskRepo{}
+	id := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
+		return repo.Create(ctx, tx, &model.Task{
+			TenantID: tenant, ID: id, Title: "Bare task",
+			Status: "open", Priority: "normal", Source: "user",
+			CreatedBy: creator, CreatedAt: now, UpdatedAt: now,
+		})
+	}))
+
+	require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
+		got, err := repo.GetByID(ctx, tx, tenant, id)
+		if err != nil {
+			return err
+		}
+		require.NotNil(t, got.Assignees, "GetByID must not return a nil Assignees slice")
+		require.NotNil(t, got.Documents, "GetByID must not return a nil Documents slice")
+		require.Empty(t, got.Assignees)
+		require.Empty(t, got.Documents)
+
+		page, _, err := repo.List(ctx, tx, tenant, TaskFilters{})
+		if err != nil {
+			return err
+		}
+		require.Len(t, page, 1)
+		require.NotNil(t, page[0].Assignees, "List must not return a nil Assignees slice")
+		require.NotNil(t, page[0].Documents, "List must not return a nil Documents slice")
+		return nil
+	}))
+
+	// The JSON the handler would serve must carry [] rather than null.
+	var task *model.Task
+	require.NoError(t, database.WithTenantTx(ctx, appPool, tenant, func(tx pgx.Tx) error {
+		var err error
+		task, err = repo.GetByID(ctx, tx, tenant, id)
+		return err
+	}))
+	blob, err := json.Marshal(task)
+	require.NoError(t, err)
+	require.Contains(t, string(blob), `"assignees":[]`)
+	require.Contains(t, string(blob), `"documents":[]`)
+}

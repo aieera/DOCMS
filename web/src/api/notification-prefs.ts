@@ -36,8 +36,17 @@ export const EVENT_TYPES: { id: string; label: string }[] = [
   { id: 'comment.mention',         label: 'Comment mentions me' },
   { id: 'comment.reply',           label: 'Reply to my comment' },
   { id: 'workflow.step_assigned',  label: 'Workflow step assigned' },
+  // Task ids MUST match the `type` the task service puts on its
+  // dms.notify.task.*.v1 payloads ("task." + suffix). `task.due` used to
+  // be listed here, but nothing ever emits that type — the emitter has
+  // always sent task.due_soon — so the toggle wrote preference rows that
+  // could never match, and since Decide() defaults to enabled when no row
+  // matches, due-soon mail could not be switched off.
   { id: 'task.assigned',           label: 'Task assigned to me' },
-  { id: 'task.due',                label: 'Task due soon' },
+  { id: 'task.due_soon',           label: 'Task due soon' },
+  { id: 'task.overdue',            label: 'Task overdue' },
+  { id: 'task.mention',            label: 'Mentioned in a task comment' },
+  { id: 'task.completed',          label: 'Task completed' },
   { id: 'document.version_uploaded', label: 'New version uploaded' },
   { id: 'signature.requested',     label: 'Signature requested' },
 ]

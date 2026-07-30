@@ -273,7 +273,10 @@ describe('<DocumentActionsMenu>', () => {
     expect(surface).not.toHaveBeenCalled()
   })
 
-  it('Add to task action opens a dialog and createTask runs with linked_document_id', async () => {
+  // AddToTaskDialog was replaced by the shared TaskCreateDialog
+  // (2026-07-28 task-service design), so the document arrives as
+  // document_ids[] rather than the retired linked_document_id.
+  it('Add to task action opens the task dialog pre-linked to this document', async () => {
     const user = userEvent.setup()
     createTaskMock.mockResolvedValue({ id: 'task-1' })
 
@@ -285,15 +288,16 @@ describe('<DocumentActionsMenu>', () => {
     await user.click(screen.getByRole('button', { name: 'Document actions' }))
     await user.click(await screen.findByTestId('document-action-add-to-task'))
 
-    const input = await screen.findByTestId('add-to-task-title') as HTMLInputElement
+    const input = await screen.findByTestId('task-title') as HTMLInputElement
     expect(input.value).toBe('Follow up: Quarterly report')
-    await user.click(screen.getByTestId('add-to-task-submit'))
+    expect(screen.getByTestId('document-chip-doc-1')).toBeInTheDocument()
+    await user.click(screen.getByTestId('task-create-submit'))
 
     await waitFor(() => expect(createTaskMock).toHaveBeenCalledTimes(1))
     expect(createTaskMock).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Follow up: Quarterly report',
       priority: 'normal',
-      linked_document_id: 'doc-1',
+      document_ids: ['doc-1'],
     }))
   })
 
