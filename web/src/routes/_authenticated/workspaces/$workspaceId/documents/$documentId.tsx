@@ -63,7 +63,7 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
-import { CreateTaskDialog } from '@/routes/_authenticated/tasks'
+import { TaskCreateDialog } from '@/components/tasks/TaskCreateDialog'
 import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
 import { RouteSuggestionBanner } from '@/components/intelligence/RouteSuggestionBanner'
 import { CompliancePanel } from '@/components/intelligence/CompliancePanel'
@@ -602,13 +602,11 @@ function DocumentSidebar({
       {/* Audit integrity (Merkle proof) + WORM object-lock status/action.
           Moved from the header band (compact-toolbar redesign). */}
       <DocumentIntegrity documentId={documentId} canManage={!!isAdminCaller} />
-      {taskOpen && (
-        <CreateTaskDialog
-          linkedDocumentId={documentId}
-          onClose={() => setTaskOpen(false)}
-          onCreated={() => { /* topbar tasks badge polls every 30s */ }}
-        />
-      )}
+      <TaskCreateDialog
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        defaultDocument={{ document_id: documentId, title: doc?.title ?? '' }}
+      />
       <ShareDialog
         open={shareOpen}
         onOpenChange={setShareOpen}

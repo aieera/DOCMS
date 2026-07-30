@@ -24,7 +24,7 @@ import { RenameDocumentDialog } from './RenameDocumentDialog'
 import { MoveDocumentDialog } from './MoveDocumentDialog'
 import { ShareDialog } from './ShareDialog'
 import { ProtectShareDialog } from './ProtectShareDialog'
-import { AddToTaskDialog } from './AddToTaskDialog'
+import { TaskCreateDialog } from '@/components/tasks/TaskCreateDialog'
 import { ManageAccessDialog } from './ManageAccessDialog'
 
 import type { Document } from '@/types/api'
@@ -271,11 +271,10 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
         documentId={doc.id}
         documentTitle={doc.title}
       />
-      <AddToTaskDialog
+      <TaskCreateDialog
         open={taskOpen}
         onOpenChange={setTaskOpen}
-        documentId={doc.id}
-        documentTitle={doc.title}
+        defaultDocument={{ document_id: doc.id, title: doc.title }}
       />
       <ConfirmDialog
         open={confirmDelete}

@@ -11,15 +11,16 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
-import { Check, X, CheckSquare, Plus, LayoutGrid, List, Trash2, UserPlus } from 'lucide-react'
+import { Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import {
-  listMyTasks, listMyCreatedTasks, completeTask, reopenTask, cancelTask, deleteTask, createTask,
+  listTasks, completeTask, reopenTask, cancelTask, deleteTask, startTask,
   invalidateTasks, taskKeys, type Task, type TaskPriority,
 } from '@/api/tasks'
+import { TaskCreateDialog } from '@/components/tasks/TaskCreateDialog'
+import { TaskDetailDrawer } from '@/components/tasks/TaskDetailDrawer'
 import { useAuthStore } from '@/store/authStore'
-import { getUsers } from '@/api/admin'
 import { readErrorMessage } from '@/api/client'
 import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -35,8 +36,6 @@ import { cn } from '@/lib/cn'
 type Tab = 'my' | 'created' | 'approvals'
 type View = 'table' | 'kanban'
 type SortKey = 'due_at' | 'priority' | 'created_at'
-
-const PRIORITY_RANK: Record<TaskPriority, number> = { urgent: 4, high: 3, normal: 2, low: 1 }
 
 function TasksPage() {
   const [tab, setTab] = useState<Tab>('my')
@@ -116,48 +115,40 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
   const [filterPriority, setFilterPriority] = useState<TaskPriority | ''>('')
   const [includeCompleted, setIncludeCompleted] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const [offset, setOffset] = useState(0)
   const created = mode === 'created'
+  const PAGE = 50
 
+  // Filtering, sorting and paging all happen server-side now — the old
+  // page pulled every task and sorted in the browser, which silently
+  // broke once a tenant had more tasks than one response could carry.
+  const params = {
+    filter: (created ? 'created' : 'mine') as 'created' | 'mine',
+    priority: filterPriority || undefined,
+    include_completed: includeCompleted,
+    sort,
+    limit: PAGE,
+    offset,
+  }
   const { data, isLoading } = useQuery({
-    queryKey: [...(created ? taskKeys.created() : taskKeys.mine()), includeCompleted],
-    queryFn: () => (created ? listMyCreatedTasks : listMyTasks)(includeCompleted),
+    queryKey: taskKeys.list(params),
+    queryFn: () => listTasks(params),
   })
 
-  // Invalidate both inboxes + the header badge — a task can move between
-  // the assigned-to-me and created-by-me lists on any mutation.
+  const tasks = data?.items ?? []
+  const total = data?.total ?? 0
+
+  // Any mutation can move a task between the assigned-to-me and
+  // created-by-me lists, so refresh the whole ['tasks'] family (which
+  // also drives the topbar badge and the dashboard card).
   const refreshAll = () => {
-    // taskKeys.mine() also drives the topbar badge (same cache key), so a
-    // single invalidation refreshes both the list and the badge.
     void invalidateTasks(qc)
   }
 
-  const tasks = useMemo(() => {
-    let rows = data ?? []
-    if (filterPriority) rows = rows.filter((t) => t.priority === filterPriority)
-    return [...rows].sort((a, b) => {
-      switch (sort) {
-        case 'priority':
-          return (PRIORITY_RANK[b.priority] ?? 0) - (PRIORITY_RANK[a.priority] ?? 0)
-        case 'created_at':
-          return b.created_at.localeCompare(a.created_at)
-        case 'due_at':
-        default: {
-          if (!a.due_at && !b.due_at) return 0
-          if (!a.due_at) return 1
-          if (!b.due_at) return -1
-          return a.due_at.localeCompare(b.due_at)
-        }
-      }
-    })
-    // M-3: includeCompleted only affects the SERVER-side filter via
-    // listMyTasks(includeCompleted) and the useQuery key above, so
-    // strictly speaking this memo doesn't need it in deps — `data`
-    // changes after the refetch and that already re-runs the memo.
-    // Keep it in the array anyway as a defensive contract: any future
-    // edit that adds a closure reference to `includeCompleted` here
-    // (e.g. a local "hide completed even if server returned them"
-    // filter) gets correct staleness behavior for free.
-  }, [data, sort, filterPriority, includeCompleted])
+  // Changing a filter must reset paging, or page 3 of an old filter
+  // shows an empty list.
+  const resetPaging = () => setOffset(0)
 
   return (
     <section>
@@ -165,7 +156,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         <Select
           label="Sort by"
           value={sort}
-          onValueChange={(v) => setSort(v as SortKey)}
+          onValueChange={(v) => { setSort(v as SortKey); resetPaging() }}
           options={[
             { value: 'due_at',     label: 'Due date' },
             { value: 'priority',   label: 'Priority' },
@@ -176,7 +167,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         <Select
           label="Priority"
           value={filterPriority || 'all'}
-          onValueChange={(v) => setFilterPriority(v === 'all' ? '' : (v as TaskPriority))}
+          onValueChange={(v) => { setFilterPriority(v === 'all' ? '' : (v as TaskPriority)); resetPaging() }}
           options={[
             { value: 'all',    label: 'Any priority' },
             { value: 'urgent', label: 'Urgent' },
@@ -187,7 +178,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
           className="w-40"
         />
         <label className="flex items-center gap-1 text-xs">
-          <input type="checkbox" checked={includeCompleted} onChange={(e) => setIncludeCompleted(e.target.checked)} />
+          <input type="checkbox" checked={includeCompleted} onChange={(e) => { setIncludeCompleted(e.target.checked); resetPaging() }} />
           Show completed
         </label>
         <div className="ms-auto flex items-center gap-1 rounded-md border border-border p-1">
@@ -213,7 +204,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         </Button>
       </div>
 
-      {creating && <CreateTaskDialog onClose={() => setCreating(false)} onCreated={refreshAll} />}
+      <TaskCreateDialog open={creating} onOpenChange={setCreating} />
 
       {isLoading && <Skeleton className="h-32" />}
       {!isLoading && tasks.length === 0 && (
@@ -231,16 +222,44 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
       )}
 
       {!isLoading && tasks.length > 0 && view === 'table' && (
-        <TaskTable tasks={tasks} onChange={refreshAll} />
+        <TaskTable tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
       {!isLoading && tasks.length > 0 && view === 'kanban' && (
-        <TaskKanban tasks={tasks} onChange={refreshAll} />
+        <TaskKanban tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
+
+      {total > PAGE && (
+        <nav className="mt-3 flex items-center justify-between text-xs" aria-label="Task pages">
+          <span className="text-muted-foreground">
+            {offset + 1}–{Math.min(offset + PAGE, total)} of {total}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - PAGE))}
+            >
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={offset + PAGE >= total}
+              onClick={() => setOffset(offset + PAGE)}
+            >
+              Next
+            </Button>
+          </div>
+        </nav>
+      )}
+
+      <TaskDetailDrawer taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
     </section>
   )
 }
 
-function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void }) {
+function TaskTable({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () => void; onOpen: (id: string) => void }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border" data-testid="task-table">
       <table className="w-full min-w-[640px] text-sm">
@@ -254,14 +273,14 @@ function TaskTable({ tasks, onChange }: { tasks: Task[]; onChange: () => void })
           </tr>
         </thead>
         <tbody>
-          {tasks.map((t) => <TaskRow key={t.id} task={t} onChange={onChange} />)}
+          {tasks.map((t) => <TaskRow key={t.id} task={t} onChange={onChange} onOpen={onOpen} />)}
         </tbody>
       </table>
     </div>
   )
 }
 
-function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
+function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void; onOpen: (id: string) => void }) {
   const navigate = useNavigate()
   // H-4: surface server errors for every transition button — without
   // onError the buttons looked dead on 403 / 404 / 5xx, and the user
@@ -295,17 +314,25 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
   return (
     <tr className="border-t border-border" data-testid={`task-row-${task.id}`}>
       <td className="px-3 py-2">
-        {linkedDoc ? (
+        {/* The title opens the detail drawer; a linked document gets its
+            own small deep link so both destinations stay reachable. */}
+        <button
+          type="button"
+          onClick={() => onOpen(task.id)}
+          className={`text-start font-medium hover:underline ${isDone ? 'text-muted-foreground line-through' : ''}`}
+          data-testid={`task-open-${task.id}`}
+        >
+          {task.title}
+        </button>
+        {linkedDoc && (
           <button
             type="button"
             onClick={() => openLinkedDoc(linkedDoc)}
-            className="font-medium text-start hover:underline"
+            className="ms-2 text-xs text-muted-foreground hover:underline"
             data-testid={`task-doc-link-${task.id}`}
           >
-            {task.title}
+            {linkedDoc.title}
           </button>
-        ) : (
-          <span className={`font-medium ${isDone ? 'line-through text-muted-foreground' : ''}`}>{task.title}</span>
         )}
         {task.description && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">{task.description}</p>}
       </td>
@@ -354,7 +381,7 @@ function TaskRow({ task, onChange }: { task: Task; onChange: () => void }) {
   )
 }
 
-function TaskKanban({ tasks, onChange }: { tasks: Task[]; onChange: () => void }) {
+function TaskKanban({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () => void; onOpen: (id: string) => void }) {
   const buckets = useMemo(() => {
     const out = { open: [] as Task[], in_progress: [] as Task[], done: [] as Task[], cancelled: [] as Task[] }
     for (const t of tasks) out[t.status].push(t)
@@ -362,175 +389,69 @@ function TaskKanban({ tasks, onChange }: { tasks: Task[]; onChange: () => void }
   }, [tasks])
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="task-kanban">
-      <KanbanColumn title="Open"        tasks={buckets.open}        onChange={onChange} testid="col-open" />
-      <KanbanColumn title="In progress" tasks={buckets.in_progress} onChange={onChange} testid="col-in-progress" />
-      <KanbanColumn title="Done"        tasks={[...buckets.done, ...buckets.cancelled]} onChange={onChange} testid="col-done" />
+      <KanbanColumn title="Open"        tasks={buckets.open}        onChange={onChange} onOpen={onOpen} testid="col-open" />
+      <KanbanColumn title="In progress" tasks={buckets.in_progress} onChange={onChange} onOpen={onOpen} testid="col-in-progress" />
+      <KanbanColumn title="Done"        tasks={[...buckets.done, ...buckets.cancelled]} onChange={onChange} onOpen={onOpen} testid="col-done" />
     </div>
   )
 }
 
-function KanbanColumn({ title, tasks, onChange, testid }: { title: string; tasks: Task[]; onChange: () => void; testid: string }) {
+function KanbanColumn({ title, tasks, onChange, onOpen, testid }: { title: string; tasks: Task[]; onChange: () => void; onOpen: (id: string) => void; testid: string }) {
   return (
     <div className="rounded-md border border-border bg-card p-2" data-testid={testid}>
       <h3 className="mb-2 px-1 text-xs font-semibold uppercase text-muted-foreground">{title} ({tasks.length})</h3>
       <ul className="space-y-2">
-        {tasks.map((t) => <KanbanCard key={t.id} task={t} onChange={onChange} />)}
+        {tasks.map((t) => <KanbanCard key={t.id} task={t} onChange={onChange} onOpen={onOpen} />)}
       </ul>
     </div>
   )
 }
 
-function KanbanCard({ task, onChange }: { task: Task; onChange: () => void }) {
+function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => void; onOpen: (id: string) => void }) {
   const complete = useAppMutation({
     mutationFn: () => completeTask(task.id),
     onSuccess: onChange,
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not complete task'),
   })
+  const start = useAppMutation({
+    mutationFn: () => startTask(task.id),
+    onSuccess: onChange,
+    onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not start task'),
+  })
   return (
     <li className="rounded border border-border bg-background p-2 text-sm" data-testid={`kanban-card-${task.id}`}>
       <div className="flex items-start justify-between gap-2">
-        <span className="font-medium">{task.title}</span>
+        <button
+          type="button"
+          onClick={() => onOpen(task.id)}
+          className="text-start font-medium hover:underline"
+          data-testid={`kanban-open-${task.id}`}
+        >
+          {task.title}
+        </button>
         <Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge>
       </div>
       {task.due_at && (
         <p className="mt-1 text-xs text-muted-foreground">Due {formatRelativeTime(task.due_at)}</p>
       )}
       {task.status !== 'done' && task.status !== 'cancelled' && (
-        <Button size="sm" variant="ghost" onClick={() => complete.mutate()} className="mt-1">
-          <Check className="h-3 w-3" /> Complete
-        </Button>
+        <div className="mt-1 flex gap-1">
+          {/* Start is what finally makes in_progress reachable — the
+              status existed in the schema but no UI or API path set it. */}
+          {task.status === 'open' && (
+            <Button size="sm" variant="ghost" onClick={() => start.mutate()}>
+              <Play className="h-3 w-3" /> Start
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => complete.mutate()}>
+            <Check className="h-3 w-3" /> Complete
+          </Button>
+        </div>
       )}
     </li>
   )
 }
 
-// ---- Create-task dialog ------------------------------------------------
-
-function CreateTaskDialog({ onClose, onCreated, linkedDocumentId }: { onClose: () => void; onCreated: () => void; linkedDocumentId?: string }) {
-  const me = useAuthStore((s) => s.user)
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<TaskPriority>('normal')
-  const [dueAt, setDueAt] = useState('')
-  // Default the assignee to the current user. Doc-created tasks
-  // without an assignee never show on anyone's `/tasks/mine` page,
-  // and the on-assign notification doesn't fire — both surprising
-  // failure modes that this default avoids.
-  const [assigneeId, setAssigneeId] = useState<string>(me?.id ?? '')
-
-  // Tenant-wide user list. The same /admin/users endpoint the
-  // mention autocomplete uses; cheap enough for a single dropdown
-  // (real-world tenants have <500 users in this dialog's hot path).
-  const usersQ = useQuery({
-    queryKey: ['mention-search', ''],
-    queryFn: () => getUsers({}),
-    staleTime: 5 * 60_000,
-  })
-
-  // Radix Select reserves value="" for "no selection / show
-  // placeholder", so the Unassigned option uses a sentinel string
-  // instead. Translated back to undefined on submit.
-  const UNASSIGNED = '__unassigned__'
-  const assigneeOptions = useMemo(() => {
-    const items = usersQ.data?.items ?? []
-    const opts = [
-      { value: UNASSIGNED, label: '— Unassigned —' },
-      ...items.map((u) => ({
-        value: u.id,
-        label: `${u.display_name ?? u.email}${u.id === me?.id ? ' (me)' : ''}`,
-      })),
-    ]
-    // Always include the current user even if the listing didn't
-    // return them yet (admin endpoint paginates).
-    if (me && !items.some((u) => u.id === me.id)) {
-      opts.splice(1, 0, { value: me.id, label: `${me.display_name ?? me.email} (me)` })
-    }
-    return opts
-  }, [usersQ.data, me])
-
-  // Wave 5 pattern 1 — migrated from useMutation to useAppMutation.
-  // onSuccess (toast + onCreated + onClose) preserved verbatim;
-  // the old `(e: any) => toast.error(e?.response?.data?.error ?? 'failed')`
-  // is replaced by the wrapper's default (readErrorMessage + the
-  // defaultErrorMessage fallback) which surfaces the real backend
-  // reason instead of the opaque 'failed'.
-  const create = useAppMutation({
-    mutationFn: () => createTask({
-      title, description, priority,
-      due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
-      document_ids: linkedDocumentId ? [linkedDocumentId] : undefined,
-      assignee_ids: assigneeId && assigneeId !== UNASSIGNED ? [assigneeId] : undefined,
-    }),
-    onSuccess: () => {
-      toast.success(assigneeId === me?.id ? 'Task created' : 'Task created and assigned')
-      onCreated()
-      onClose()
-    },
-    defaultErrorMessage: 'Could not create task',
-  })
-
-  return (
-    // Hand-rolled overlay (predates the shared Dialog): give it the
-    // dialog contract keyboard/AT users rely on — role+aria-modal,
-    // a label, and Escape-to-close (review/a11y-gate finding).
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      data-testid="create-task-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-task-title"
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-    >
-      <div className="w-full max-w-md space-y-3 rounded-lg border border-border bg-card p-4">
-        <h3 id="create-task-title" className="text-sm font-semibold">New task</h3>
-        <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus data-testid="task-title" />
-        <Input label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
-        <Select
-          label="Assignee"
-          value={assigneeId || UNASSIGNED}
-          onValueChange={setAssigneeId}
-          options={assigneeOptions}
-        />
-        <Select
-          label="Priority"
-          value={priority}
-          onValueChange={(v) => setPriority(v as TaskPriority)}
-          options={[
-            { value: 'urgent', label: 'Urgent' },
-            { value: 'high',   label: 'High' },
-            { value: 'normal', label: 'Normal' },
-            { value: 'low',    label: 'Low' },
-          ]}
-        />
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">Due date (optional)</span>
-          <input
-            type="datetime-local"
-            value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            className="rounded border border-border bg-background p-1.5 text-sm"
-          />
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() => {
-              if (create.isPending) return
-              if (!title.trim()) { toast.error('Title is required'); return }
-              create.mutate()
-            }}
-            disabled={create.isPending}
-            data-testid="create-task-submit"
-          >
-            Create
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export { CreateTaskDialog }
 
 // ---- Approvals (existing workflow_tasks) ------------------------------
 
