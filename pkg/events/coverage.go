@@ -134,6 +134,21 @@ var PublishedSubjects = []string{
 	// signature
 	"dms.signature.applied.v1",
 	"dms.signature.completed.v1",
+	// task (2026-07-28 task-service design, Task 4/5/6 emitters)
+	"dms.notify.task.assigned.v1",
+	"dms.notify.task.completed.v1",
+	"dms.notify.task.due_soon.v1",
+	"dms.notify.task.mention.v1",
+	"dms.notify.task.overdue.v1",
+	"dms.task.assigned.v1",
+	"dms.task.comment.created.v1",
+	"dms.task.created.v1",
+	"dms.task.deleted.v1",
+	"dms.task.document_linked.v1",
+	"dms.task.document_unlinked.v1",
+	"dms.task.status_changed.v1",
+	"dms.task.unassigned.v1",
+	"dms.task.updated.v1",
 	// user
 	"dms.user.invited.v1",
 	"dms.user.mfa_reset.v1",
