@@ -79,6 +79,7 @@ import { EntitiesPanel } from '@/components/intelligence/EntitiesPanel'
 import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 import { MatchedClausesPanel } from '@/components/documents/MatchedClausesPanel'
+import { DocumentTasksPanel } from '@/components/tasks/DocumentTasksPanel'
 
 type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'redaction' | 'activity'
 
@@ -707,6 +708,9 @@ function DocumentSidebar({
           document. Self-hides when the detect_clauses task found
           nothing. */}
       <MatchedClausesPanel documentId={documentId} />
+
+      {/* Tasks linked to this document (2026-07-28 task-service design). */}
+      <DocumentTasksPanel documentId={documentId} documentTitle={doc?.title ?? ''} />
 
       {/* Intelligence panels — each component self-hides when it has
           nothing to render, so the sidebar stays compact for docs
