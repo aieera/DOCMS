@@ -309,7 +309,10 @@ routes:
   - { service: document, prefix: /api/v1/comments, methods: [], auth: required }
   - { service: document, prefix: /api/v1/threads, methods: [], auth: required }
   - { service: document, prefix: /api/v1/tags, methods: [], auth: required }
-  - { service: document, prefix: /api/v1/tasks, methods: [], auth: required }
+  # Tasks moved out of the document service into their own upstream
+  # (2026-07-28 task-service design). URL shape is unchanged, so web and
+  # mobile clients are unaffected by the move.
+  - { service: task, prefix: /api/v1/tasks, methods: [], auth: required }
   - { service: document, prefix: /api/v1/clauses, methods: [], auth: required }
   - { service: document, prefix: /api/v1/contracts, methods: [], auth: required }
   - { service: document, prefix: /api/v1/compare, methods: [], auth: required }

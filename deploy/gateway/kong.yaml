@@ -219,7 +219,6 @@ services:
       - { name: comments,                paths: [/api/v1/comments],                strip_path: false }
       - { name: threads,                 paths: [/api/v1/threads],                 strip_path: false }
       - { name: tags,                    paths: [/api/v1/tags],                    strip_path: false }
-      - { name: tasks,                   paths: [/api/v1/tasks],                   strip_path: false }
       - { name: clauses,                 paths: [/api/v1/clauses],                 strip_path: false }
       - { name: contracts,               paths: [/api/v1/contracts],               strip_path: false }
       - { name: compare,                 paths: [/api/v1/compare],                 strip_path: false }
@@ -389,3 +388,10 @@ services:
     url: http://mcp-server:8080
     routes:
       - { name: mcp, paths: [/api/v1/mcp], strip_path: false }
+
+  - name: task
+    url: http://task:8080
+    routes:
+      # Moved off the document upstream by the 2026-07-28 task-service
+      # design; the path is unchanged so clients don't notice.
+      - { name: tasks, paths: [/api/v1/tasks], strip_path: false }

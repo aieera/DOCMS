@@ -31,6 +31,9 @@ const SERVICE_PORTS: Record<string, string> = {
   'graphql-gateway': '8191',
   'mcp-server': '8192',
   intelligence: '8194',
+  // Task service (2026-07-28 task-service design) — host HTTP 8196,
+  // health 8096 (8095 was already taken on the dev box).
+  task: '8196',
   // Python preview API (docker-compose preview-api, host 8193 → container
   // 8080; 819x = service-HTTP convention). Not in run-all-services.sh —
   // it only runs via compose. NOTE: 8087 is audit's HEALTH port — the

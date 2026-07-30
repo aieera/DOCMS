@@ -215,10 +215,11 @@ export default defineConfig(({ command, mode }) => {
             '/api/v1/audit':                    wsig('http://localhost:8185'),
             '/api/v1/workflows':                wsig('http://localhost:8186'),
             '/api/v1/notifications':            wsig('http://localhost:8187'),
-            // ADR 0068 — lightweight tasks live in the document
-            // service. Without this entry /api/v1/tasks/mine falls
-            // through to the auth catch-all (8180) and 404s.
-            '/api/v1/tasks':                    wsig('http://localhost:8182'),
+            // Tasks live in their own service since the 2026-07-28
+            // task-service design (they were on the document service,
+            // 8182, under ADR 0068). Without this entry /api/v1/tasks/mine
+            // falls through to the auth catch-all (8180) and 404s.
+            '/api/v1/tasks':                    wsig('http://localhost:8196'),
             // ADR 0118 — workspace templates, saved reports/analytics,
             // records management, and notes/wiki (all document service).
             // Kong got these routes on 2026-07-02 but the host-mode
