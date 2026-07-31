@@ -59,6 +59,7 @@
     "cytoscape-dagre": "^3.0.0",
     "date-fns": "^4.4.0",
     "dayjs": "^1.11.21",
+    "fflate": "^0.8.3",
     "graphql": "^16.14.1",
     "i18next": "^26.3.1",
     "i18next-browser-languagedetector": "^8.2.1",
