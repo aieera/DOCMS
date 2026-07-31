@@ -10,6 +10,7 @@ import {
   type BulkImportSummary,
   type BulkItemResult,
 } from '@/api/bulk'
+import { UploadWizard } from '@/components/admin/bulkUpload/UploadWizard'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
@@ -28,17 +29,24 @@ import { Input } from '@/components/ui/shadcn/input'
 // gRPC surface directly. The UI exists to make small migrations
 // (a few hundred rows) straightforward without a CLI.
 
-function BulkPage() {
-  const [tab, setTab] = useState<'import' | 'export'>('import')
+type BulkTab = 'upload' | 'advanced-import' | 'export'
+const TAB_LABEL: Record<BulkTab, string> = {
+  upload: 'Upload files & folders',
+  'advanced-import': 'Advanced / migration',
+  export: 'Export',
+}
+
+export function BulkPage() {
+  const [tab, setTab] = useState<BulkTab>('upload')
   return (
     <div className="space-y-6">
       <PageHeader
         title="Bulk import / export"
-        description="Stream documents, workspaces, folders, users, and groups in or out via NDJSON. Designed for tenant migration off legacy DMSes."
+        description="Bulk-upload files & folders, or migrate resources via NDJSON (advanced)."
       />
 
       <div className="inline-flex gap-1 rounded-md bg-muted/60 p-1 text-xs" role="tablist">
-        {(['import', 'export'] as const).map((t) => (
+        {(['upload', 'advanced-import', 'export'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -50,12 +58,14 @@ function BulkPage() {
             }`}
             data-testid={`bulk-tab-${t}`}
           >
-            {t === 'import' ? 'Import' : 'Export'}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
 
-      {tab === 'import' ? <ImportPanel /> : <ExportPanel />}
+      {tab === 'upload' && <UploadWizard />}
+      {tab === 'advanced-import' && <ImportPanel />}
+      {tab === 'export' && <ExportPanel />}
     </div>
   )
 }
