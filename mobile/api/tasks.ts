@@ -3,6 +3,16 @@
 // document sitting in in_review via the lifecycle action endpoint.
 import { api } from './client'
 
+// Wire shape from services/task. A task carries MULTIPLE assignees and
+// MULTIPLE linked documents since the 2026-07-28 task-service design;
+// this screen only needs the first document, so the client flattens it
+// back to linked_document_id for the existing UI.
+export interface TaskDocument {
+  document_id: string
+  workspace_id: string
+  title: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -10,8 +20,9 @@ export interface Task {
   status: string // open | in_progress | done | cancelled
   priority?: string
   due_at?: string
-  assignee_id?: string
   created_by?: string
+  documents?: TaskDocument[]
+  /** Derived from documents[0] — the server no longer sends this field. */
   linked_document_id?: string
   created_at?: string
 }
@@ -20,7 +31,13 @@ export async function myTasks(includeCompleted = false): Promise<Task[]> {
   const { data } = await api.get('/tasks/mine', {
     params: includeCompleted ? { include_completed: true } : {},
   })
-  return Array.isArray(data) ? data : data?.tasks ?? data?.items ?? []
+  const rows: Task[] = Array.isArray(data) ? data : data?.tasks ?? data?.items ?? []
+  // Keep the "Open linked document" affordance working: the task service
+  // returns documents[] instead of the retired linked_document_id.
+  return rows.map((t) => ({
+    ...t,
+    linked_document_id: t.linked_document_id ?? t.documents?.[0]?.document_id,
+  }))
 }
 
 export async function completeTask(id: string): Promise<void> {
