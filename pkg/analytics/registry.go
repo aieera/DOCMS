@@ -96,15 +96,27 @@ var Registry = map[string]Dataset{
 	},
 	"tasks": {
 		Name: "tasks",
-		// users join: assignee_id renders as a display name (same
-		// rationale as the documents dataset's created_by).
+		// Tasks carry MULTIPLE assignees since the 2026-07-28
+		// task-service design, and t.assignee_id is no longer written.
+		// The lateral picks the FIRST-added assignee so the dimension
+		// keeps rendering a display name (same rationale as the
+		// documents dataset's created_by) — a plain join to
+		// task_assignees would fan out one row per assignee and
+		// silently double-count every measure on this dataset,
+		// including "tasks by status". Tasks with several assignees are
+		// therefore attributed to whoever was assigned first.
 		From: "tasks t " +
-			"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = t.assignee_id",
-		BaseWhere: "",
+			"LEFT JOIN LATERAL (SELECT a.user_id FROM task_assignees a " +
+			"WHERE a.tenant_id = t.tenant_id AND a.task_id = t.id " +
+			"ORDER BY a.added_at, a.user_id LIMIT 1) a1 ON true " +
+			"LEFT JOIN users u ON u.tenant_id = t.tenant_id AND u.id = a1.user_id",
+		// Deletion became a soft delete when tasks moved services;
+		// without this predicate every deleted task stays in the counts.
+		BaseWhere: "t.deleted_at IS NULL",
 		Dimensions: dims(
 			Dimension{Name: "status", SQL: "t.status"},
 			Dimension{Name: "priority", SQL: "t.priority"},
-			Dimension{Name: "assignee_id", SQL: "coalesce(u.display_name, u.email, t.assignee_id::text, '')"},
+			Dimension{Name: "assignee_id", SQL: "coalesce(u.display_name, u.email, a1.user_id::text, '')"},
 			Dimension{Name: "created_day", SQL: "to_char(date_trunc('day', t.created_at), 'YYYY-MM-DD')"},
 			Dimension{Name: "created_month", SQL: "to_char(date_trunc('month', t.created_at), 'YYYY-MM')"},
 		),

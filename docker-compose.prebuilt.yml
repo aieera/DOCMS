@@ -43,6 +43,8 @@ services:
     image: ghcr.io/aieera/sedoc/billing:${SEDOC_IMAGE_TAG:-main}
   connector:
     image: ghcr.io/aieera/sedoc/connector:${SEDOC_IMAGE_TAG:-main}
+  task:
+    image: ghcr.io/aieera/sedoc/task:${SEDOC_IMAGE_TAG:-main}
 
   # ---- Non-Go application services --------------------------------------
   collaboration:

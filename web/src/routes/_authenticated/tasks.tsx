@@ -289,6 +289,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
   // reasons reach the toast verbatim.
   const onTaskError = (e: unknown) =>
     toast.error(readErrorMessage(e) ?? 'Could not update task')
+  const start    = useAppMutation({ mutationFn: () => startTask(task.id),    onSuccess: onChange, onError: onTaskError })
   const complete = useAppMutation({ mutationFn: () => completeTask(task.id), onSuccess: onChange, onError: onTaskError })
   const reopen   = useAppMutation({ mutationFn: () => reopenTask(task.id),   onSuccess: onChange, onError: onTaskError })
   const cancel   = useAppMutation({ mutationFn: () => cancelTask(task.id),   onSuccess: onChange, onError: onTaskError })
@@ -343,6 +344,18 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
       <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
       <td className="px-3 py-2 text-end">
         <div className="inline-flex items-center gap-1">
+          {task.status === 'open' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => start.mutate()}
+              disabled={start.isPending}
+              data-testid={`start-${task.id}`}
+              className="gap-1 text-muted-foreground"
+            >
+              <Play className="h-3 w-3" /> Start
+            </Button>
+          )}
           {!isDone && (
             <Button
               size="sm"

@@ -429,7 +429,11 @@ func validateAssigneesExist(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 	if len(assigneeIDs) == 0 {
 		return nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2)`, tenantID, assigneeIDs)
+	// deleted_at IS NULL matches the document-link check, which also
+	// rejects soft-deleted targets: assigning a departed user would keep
+	// sending them due-soon and completion notifications forever, since
+	// task_assignees deliberately carries no cross-service FK to users.
+	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL`, tenantID, assigneeIDs)
 	if err != nil {
 		return fmt.Errorf("validate assignee ids: %w", err)
 	}

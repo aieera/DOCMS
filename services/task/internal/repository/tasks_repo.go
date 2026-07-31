@@ -208,13 +208,20 @@ func taskOrderClause(sort string) string {
 	const priorityWeight = `CASE t.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'normal' THEN 2 ELSE 1 END DESC`
 	const newestFirst = `t.created_at DESC`
 
+	// Every ordering ends in t.id so the sort is total. Without it, rows
+	// tying on all the preceding keys (bulk-created tasks share a
+	// created_at to the microsecond) have no defined order, and the
+	// handler's limit/offset paging can then repeat or skip a row across
+	// a page boundary.
+	const tiebreak = `t.id`
+
 	switch sort {
 	case "priority":
-		return `ORDER BY ` + priorityWeight + `, ` + dueFirst + `, ` + newestFirst
+		return `ORDER BY ` + priorityWeight + `, ` + dueFirst + `, ` + newestFirst + `, ` + tiebreak
 	case "created_at":
-		return `ORDER BY ` + newestFirst
+		return `ORDER BY ` + newestFirst + `, ` + tiebreak
 	default: // "due_at", ""
-		return `ORDER BY ` + dueFirst + `, ` + priorityWeight + `, ` + newestFirst
+		return `ORDER BY ` + dueFirst + `, ` + priorityWeight + `, ` + newestFirst + `, ` + tiebreak
 	}
 }
 

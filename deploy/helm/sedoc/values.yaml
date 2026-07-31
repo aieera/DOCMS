@@ -374,6 +374,27 @@ connector:
   httpPort: 8080
   healthPort: 8081
 
+# 2026-07-28 task-service design — document-centric task assignment.
+# HTTP-only (no gRPC server); owns /api/v1/tasks, which the gateway
+# routes here instead of the document service.
+task:
+  enabled: true
+  replicas: 2
+  image:
+    repository: "{{ .Values.global.imageRegistry }}/task"
+    tag: "{{ .Values.global.imageTag }}"
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  env: {}
+  httpPort: 8080
+  healthPort: 8081
+
 # ADR 0074 — GraphQL read gateway. HTTP-only public surface; calls
 # document/workflow/collaboration/policy/audit over gRPC.
 graphql-gateway:

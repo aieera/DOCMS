@@ -6,6 +6,7 @@
 // Permission gating mirrors the server so the UI never offers a button
 // that would 403: edit/delete for creator or admin/owner; status
 // transitions and link management for assignees too.
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -33,6 +34,7 @@ import { DocumentPicker, type PickedDocument } from '@/components/tasks/Document
 import { TaskActivity } from '@/components/tasks/TaskActivity'
 import { TaskComments } from '@/components/tasks/TaskComments'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatRelativeTime } from '@/lib/formatters'
@@ -100,6 +102,7 @@ function TaskDetailBody({
   onClose: () => void
   onChanged: () => void
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const isAdmin = meRole === 'admin' || meRole === 'owner'
   const isCreator = task.created_by === meId
   const isAssignee = task.assignees.some((a) => a.user_id === meId)
@@ -134,7 +137,11 @@ function TaskDetailBody({
   })
   const remove = useAppMutation({
     mutationFn: () => deleteTask(task.id),
-    onSuccess: () => { toast.success('Task deleted'); onChanged() },
+    onSuccess: () => {
+      toast.success('Task deleted')
+      onChanged()
+      onClose()
+    },
     defaultErrorMessage: 'Could not delete task',
   })
 
@@ -260,14 +267,21 @@ function TaskDetailBody({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              remove.mutate(undefined)
-              onClose()
-            }}
+            onClick={() => setConfirmDelete(true)}
             data-testid="task-delete"
           >
             <Trash2 className="me-1 h-3.5 w-3.5" /> Delete task
           </Button>
+          <ConfirmDialog
+            open={confirmDelete}
+            onOpenChange={setConfirmDelete}
+            title="Delete task?"
+            description={`"${task.title}" will be removed from every inbox. Its comments and activity go with it.`}
+            confirmLabel="Delete"
+            destructive
+            loading={remove.isPending}
+            onConfirm={() => remove.mutate(undefined)}
+          />
         </footer>
       )}
     </article>

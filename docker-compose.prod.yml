@@ -195,3 +195,11 @@ services:
     <<: [*restart, *logging]
     env_file: .env
     depends_on: [postgres, nats]
+
+  # 2026-07-28 task-service design — owns /api/v1/tasks (moved off the
+  # document service; the gateway routes the prefix here).
+  task:
+    image: ${REGISTRY}/task:${VERSION}
+    <<: [*restart, *logging]
+    env_file: .env
+    depends_on: [postgres, nats]
