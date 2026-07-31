@@ -307,7 +307,11 @@ func filterExistingUserIDs(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, i
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2)`, tenantID, ids)
+	// deleted_at IS NULL for the same reason validateAssigneesExist
+	// filters it: a departed user should not be notified. Unknown ids are
+	// dropped rather than rejected, so a mention of a deleted colleague
+	// still posts the comment — it just doesn't notify anyone.
+	rows, err := tx.Query(ctx, `SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL`, tenantID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("filter mention ids: %w", err)
 	}

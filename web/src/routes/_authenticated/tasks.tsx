@@ -26,6 +26,7 @@ import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Input } from '@/components/ui/shadcn/input'
@@ -282,6 +283,7 @@ function TaskTable({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () =>
 
 function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void; onOpen: (id: string) => void }) {
   const navigate = useNavigate()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   // H-4: surface server errors for every transition button — without
   // onError the buttons looked dead on 403 / 404 / 5xx, and the user
   // had no signal anything happened. readErrorMessage parses the
@@ -381,13 +383,25 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => remove.mutate()}
+            onClick={() => setConfirmDelete(true)}
             aria-label={`Delete task: ${task.title}`}
             title={`Delete task: ${task.title}`}
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </Button>
+          {/* Same confirmation the drawer uses — this icon button used to
+              delete on a single click with no way back. */}
+          <ConfirmDialog
+            open={confirmDelete}
+            onOpenChange={setConfirmDelete}
+            title="Delete task?"
+            description={`"${task.title}" will be removed from every inbox. Its comments and activity go with it.`}
+            confirmLabel="Delete"
+            destructive
+            loading={remove.isPending}
+            onConfirm={() => remove.mutate()}
+          />
         </div>
       </td>
     </tr>
