@@ -37,7 +37,7 @@ const LEVEL_OPTS = CLASSIFICATION_LEVELS.map((l) => ({ value: l, label: l }))
 const CLEARANCE_OPTS = [{ value: '', label: 'none' }, ...LEVEL_OPTS]
 const ACTION_OPTS = RULE_ACTIONS.map((a) => ({ value: a, label: a === '*' ? 'any action' : a }))
 
-function ClassificationPage() {
+export function ClassificationPage() {
   const qc = useQueryClient()
   const cfgQ = useQuery({ queryKey: ['admin', 'classification', 'config'], queryFn: getClassificationConfig })
   const rulesQ = useQuery({ queryKey: ['admin', 'classification', 'rules'], queryFn: listClassificationRules })

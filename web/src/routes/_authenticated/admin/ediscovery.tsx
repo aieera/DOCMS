@@ -22,7 +22,7 @@ function humanSize(bytes: number): string {
   return `${v.toFixed(1)} ${units[i]}`
 }
 
-function EDiscoveryPage() {
+export function EDiscoveryPage() {
   const qc = useQueryClient()
   const { data: holds = [] } = useQuery({ queryKey: ['holds', 'active'], queryFn: () => listHolds({ status: 'active' }) })
   const [holdId, setHoldId] = useState('')

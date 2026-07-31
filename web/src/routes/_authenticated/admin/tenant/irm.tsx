@@ -32,7 +32,7 @@ function fmt(ts: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
 }
 
-function IrmPage() {
+export function IrmPage() {
   const containersQ = useQuery({
     queryKey: ['admin', 'irm', 'containers'],
     queryFn: listIrmContainers,

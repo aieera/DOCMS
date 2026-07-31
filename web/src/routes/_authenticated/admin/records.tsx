@@ -22,7 +22,7 @@ const ACTIONS: DispositionAction[] = ['destroy', 'transfer', 'permanent', 'revie
 
 type Tab = 'plan' | 'schedules' | 'queue'
 
-function RecordsAdminPage() {
+export function RecordsAdminPage() {
   const role = useAuthStore((s) => s.user?.role) ?? ''
   const canWrite = WRITE_ROLES.includes(role)
   const [tab, setTab] = useState<Tab>('plan')

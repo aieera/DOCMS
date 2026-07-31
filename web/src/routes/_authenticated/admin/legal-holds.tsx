@@ -20,7 +20,7 @@ import { cn } from '@/lib/cn'
 
 type StatusFilter = 'active' | 'released' | 'all'
 
-function LegalHoldsPage() {
+export function LegalHoldsPage() {
   const [filter, setFilter] = useState<StatusFilter>('active')
   const [pendingRelease, setPendingRelease] = useState<LegalHold | null>(null)
   const qc = useQueryClient()

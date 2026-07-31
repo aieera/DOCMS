@@ -18,7 +18,7 @@ const TYPES: { value: SinkType; label: string; endpointHint: string }[] = [
   { value: 'syslog', label: 'Syslog (RFC 5424)', endpointHint: 'host:514  or  udp://host:514' },
 ]
 
-function SIEMPage() {
+export function SIEMPage() {
   const qc = useQueryClient()
   const { data: sinks = [] } = useQuery({ queryKey: ['siem-sinks'], queryFn: listSinks })
   const [draft, setDraft] = useState<SinkInput>({ name: '', type: 'splunk_hec', endpoint: '', token: '', enabled: true })

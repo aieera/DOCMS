@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Activity, AlertTriangle, Archive, Brain, CreditCard, FileJson, FileKey, FileSearch, FolderSync, FolderTree, KeyRound, Link2, Lock, MapPinned, Plug, Radio, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Stamp, Tags as TagsIcon, Upload, UserCog, Users, Workflow, Database, type LucideIcon } from 'lucide-react'
+import { Activity, AlertTriangle, Brain, CreditCard, Database, FileJson, FileSearch, FolderSync, FolderTree, KeyRound, Link2, Lock, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Tags as TagsIcon, Upload, UserCog, Users, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
@@ -13,47 +13,70 @@ interface Section {
   desc: string
 }
 
-interface SectionGroup {
+interface SubGroup {
   label: string
-  description: string
   sections: Section[]
 }
 
-// 2026-05-29 admin-consolidation:
-// Merged tiles replace their per-page predecessors. The standalone
-// keep-list (License, Billing, Workflows, Retention, Legal holds,
-// Audit log, Metadata schema, Share links, API keys, Privacy requests,
-// Bulk, Permission propagation) stays as-is — only navigation grouping
-// changes. Old URLs (/admin/users, /admin/compliance, etc.) still
-// resolve and render the same component for bookmark compatibility.
+interface SectionGroup {
+  label: string
+  description: string
+  sections?: Section[]
+  subgroups?: SubGroup[]
+}
+
+// 2026-07-30 admin-consolidation-2:
+// Tenant administration was a flat 24-tile wall. It is now 6 merged tabbed
+// pages + 4 named sub-groups. Each merge composes already-adjacent pages as
+// `?tab=`-driven tabs (see the merged route files); the old standalone URLs
+// (/admin/billing, /admin/siem, /admin/tenant/watermark, …) still resolve and
+// render their component for bookmark compatibility — only the navigation
+// grouping and canonical entry points changed.
+//
+// Merges: Identity&Access(+SCIM) · Subscription&licensing(billing+license) ·
+// Information protection(classification+watermark+IRM) · Records&retention ·
+// Legal holds&e-discovery · Audit&SIEM.
 const TENANT_GROUP: SectionGroup = {
   label: 'Tenant administration',
   description: 'People, policy, and tenant-wide configuration.',
-  sections: [
-    { to: '/admin/identity', icon: Users, label: 'Identity & Access', desc: 'Users, groups, roles, SSO, LDAP/AD' },
-    { to: '/admin/scim', icon: UserCog, label: 'SCIM provisioning', desc: 'IdP user/group provisioning + deprovision + log' },
-    { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
-    { to: '/admin/data-governance', icon: ShieldAlert, label: 'Data governance', desc: 'Compliance overview + residency migrations' },
-    { to: '/admin/tenant/license', icon: ScrollText, label: 'License', desc: 'JWT claims, seats, feature flags, expiry' },
-    { to: '/admin/tenant/classification', icon: ShieldCheck, label: 'Classification & access', desc: 'Sensitivity rules · per-user clearance · PHI/PII gating' },
-    { to: '/admin/tenant/watermark', icon: Stamp, label: 'Watermark', desc: 'Dynamic viewer watermark — template, opacity, tiling, per-classification' },
-    { to: '/admin/tenant/irm', icon: FileKey, label: 'Protected exports', desc: 'IRM licenses — recipients, expiry, opens, revoke' },
-    { to: '/admin/tenant/sync', icon: FolderSync, label: 'Devices & Sync', desc: 'Selective-sync devices, folders, status, revoke' },
-    { to: '/admin/tenant/encryption', icon: Lock, label: 'Encryption & keys', desc: 'External KMS (Vault/AWS/Azure) · rotation · break-glass revoke' },
-    { to: '/admin/billing', icon: CreditCard, label: 'Billing', desc: 'Plan + usage' },
-    { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
-    { to: '/admin/retention', icon: Archive, label: 'Retention', desc: 'Retention policies' },
-    { to: '/admin/legal-holds', icon: Scale, label: 'Legal holds', desc: 'Active holds' },
-    { to: '/admin/ediscovery', icon: FileSearch, label: 'E-discovery', desc: 'Hold-scoped export: docs + metadata + audit' },
-    { to: '/admin/records', icon: FolderTree, label: 'Records', desc: 'File plan · retention schedules · disposition' },
-    { to: '/admin/audit-log', icon: ScrollText, label: 'Audit log', desc: 'Activity history' },
-    { to: '/admin/siem', icon: Radio, label: 'SIEM forwarding', desc: 'Forward events to syslog / Splunk / Sentinel' },
-    { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
-    { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
-    { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
-    { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
-    { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
-    { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
+  subgroups: [
+    {
+      label: 'People & access',
+      sections: [
+        { to: '/admin/identity', icon: Users, label: 'Identity & Access', desc: 'Users, groups, roles, SSO, LDAP/AD, SCIM provisioning' },
+        { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
+        { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
+      ],
+    },
+    {
+      label: 'Security & protection',
+      sections: [
+        { to: '/admin/protection', icon: ShieldCheck, label: 'Information protection', desc: 'Classification & access · watermark · protected exports (IRM)' },
+        { to: '/admin/tenant/encryption', icon: Lock, label: 'Encryption & keys', desc: 'External KMS (Vault/AWS/Azure) · rotation · break-glass revoke' },
+        { to: '/admin/tenant/sync', icon: FolderSync, label: 'Devices & Sync', desc: 'Selective-sync devices, folders, status, revoke' },
+      ],
+    },
+    {
+      label: 'Compliance & records',
+      sections: [
+        { to: '/admin/records-retention', icon: FolderTree, label: 'Records & retention', desc: 'File plan · retention policies & schedules · disposition' },
+        { to: '/admin/legal', icon: Scale, label: 'Legal holds & e-discovery', desc: 'Active holds + hold-scoped export (docs + metadata + audit)' },
+        { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
+        { to: '/admin/audit', icon: ScrollText, label: 'Audit & SIEM', desc: 'Activity history + forwarding to syslog / Splunk / Sentinel' },
+        { to: '/admin/data-governance', icon: ShieldAlert, label: 'Data governance', desc: 'Compliance overview + residency migrations' },
+      ],
+    },
+    {
+      label: 'Configuration & operations',
+      sections: [
+        { to: '/admin/subscription', icon: CreditCard, label: 'Subscription & licensing', desc: 'Plan & usage · license (JWT claims, seats, entitlements, expiry)' },
+        { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
+        { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
+        { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
+        { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
+        { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
+      ],
+    },
   ],
 }
 
@@ -129,12 +152,29 @@ function SectionGroupBlock({ group }: { group: SectionGroup }) {
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">{group.description}</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {group.sections.map((s) => (
-          <SectionCard key={s.to} section={s} />
-        ))}
-      </div>
+      {group.subgroups ? (
+        <div className="space-y-6">
+          {group.subgroups.map((sg) => (
+            <div key={sg.label}>
+              <h3 className="mb-3 text-sm font-medium text-foreground">{sg.label}</h3>
+              <SectionGrid sections={sg.sections} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <SectionGrid sections={group.sections ?? []} />
+      )}
     </section>
+  )
+}
+
+function SectionGrid({ sections }: { sections: Section[] }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {sections.map((s) => (
+        <SectionCard key={s.to} section={s} />
+      ))}
+    </div>
   )
 }
 

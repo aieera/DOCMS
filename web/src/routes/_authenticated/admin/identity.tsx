@@ -5,12 +5,15 @@ import { GroupsPage } from './groups'
 import { PermissionsPage } from './permissions'
 import { SsoPage } from './sso'
 import { LDAPAdminPage } from './tenant/identity/ldap'
+import { ScimPage } from './scim'
 
 // Merge #1 — Identity & Access. Two outer tabs from the plan:
 //   People & Roles → users / groups / permission matrix
-//   Authentication → SSO + LDAP/AD
-// Sub-tab state is URL-driven via `?group=` and `?sub=` so deep links
-// from audit log / docs / external systems still work.
+//   Authentication → SSO + LDAP/AD + SCIM provisioning
+// SCIM (IdP user/group provisioning + deprovision) folds in here as an
+// authentication concern alongside SSO/LDAP. Sub-tab state is URL-driven
+// via `?group=` and `?sub=` so deep links (incl. the old /admin/scim, which
+// still resolves standalone) keep working.
 type Group = 'people' | 'auth'
 type Sub =
   | 'users'
@@ -18,11 +21,12 @@ type Sub =
   | 'permissions'
   | 'sso'
   | 'ldap'
+  | 'scim'
 
 interface S { group?: Group; sub?: Sub }
 
 const PEOPLE_SUBS: readonly Sub[] = ['users', 'groups', 'permissions']
-const AUTH_SUBS: readonly Sub[] = ['sso', 'ldap']
+const AUTH_SUBS: readonly Sub[] = ['sso', 'ldap', 'scim']
 
 function IdentityPage() {
   const navigate = useNavigate()
@@ -85,9 +89,11 @@ function IdentityPage() {
             <TabsList>
               <TabsTrigger value="sso">SSO (SAML / OIDC)</TabsTrigger>
               <TabsTrigger value="ldap">LDAP / AD</TabsTrigger>
+              <TabsTrigger value="scim">SCIM provisioning</TabsTrigger>
             </TabsList>
             <TabsContent value="sso" className="mt-4"><SsoPage /></TabsContent>
             <TabsContent value="ldap" className="mt-4"><LDAPAdminPage /></TabsContent>
+            <TabsContent value="scim" className="mt-4"><ScimPage /></TabsContent>
           </Tabs>
         </TabsContent>
       </Tabs>
@@ -107,7 +113,8 @@ export const Route = createFileRoute('/_authenticated/admin/identity')({
       s === 'groups' ||
       s === 'permissions' ||
       s === 'sso' ||
-      s === 'ldap'
+      s === 'ldap' ||
+      s === 'scim'
     ) out.sub = s
     return out
   },

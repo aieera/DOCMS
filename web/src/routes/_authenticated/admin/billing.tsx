@@ -3,7 +3,7 @@ import { CreditCard } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-function BillingPage() {
+export function BillingPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Billing" description="Plan, usage, and invoices for this tenant." />

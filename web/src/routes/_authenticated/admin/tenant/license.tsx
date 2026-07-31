@@ -14,7 +14,7 @@ export const Route = createFileRoute('/_authenticated/admin/tenant/license')({
   component: LicensePage,
 })
 
-function LicensePage() {
+export function LicensePage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['tenant-license'],
     queryFn: getLicense,

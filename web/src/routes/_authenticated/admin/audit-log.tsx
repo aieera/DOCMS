@@ -7,7 +7,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { AuditLogTable } from '@/components/admin/AuditLogTable'
 import { Button } from '@/components/ui/shadcn/button'
 
-function AuditLogPage() {
+export function AuditLogPage() {
   const { data, isLoading } = useQuery({ queryKey: ['admin', 'audit-log'], queryFn: () => getAuditLog() })
 
   const handleExport = async () => {

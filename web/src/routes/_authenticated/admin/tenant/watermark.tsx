@@ -56,7 +56,7 @@ function renderTemplate(template: string): string {
   return out
 }
 
-function WatermarkPage() {
+export function WatermarkPage() {
   const qc = useQueryClient()
   const cfgQ = useQuery({ queryKey: ['admin', 'watermark', 'config'], queryFn: getWatermarkConfig })
   const overridesQ = useQuery({

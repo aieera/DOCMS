@@ -42,7 +42,7 @@ const EMPTY: CreatePolicyInput = {
   is_active: true,
 }
 
-function RetentionPage() {
+export function RetentionPage() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'retention-policies'],
