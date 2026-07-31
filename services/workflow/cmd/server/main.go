@@ -97,20 +97,38 @@ func main() {
 		InternalKey: os.Getenv("SEDOC_INTERNAL_API_KEY"),
 		Log:         *log.Z(),
 	}
+	registerAll := func(w worker.Worker) {
+		w.RegisterWorkflow(workflows.ApprovalWorkflow)
+		w.RegisterWorkflow(workflows.ParallelApprovalWorkflow)
+		w.RegisterWorkflow(workflows.ReviewWorkflow)
+		w.RegisterWorkflow(workflows.RetentionWorkflow)
+		w.RegisterWorkflow(workflows.SignatureWorkflow)
+		w.RegisterWorkflow(workflows.ExportWorkflow)
+		w.RegisterWorkflow(workflows.EraseWorkflow)
+		w.RegisterWorkflow(workflows.AnonymizeWorkflow)
+		w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
+		w.RegisterActivity(acts)
+	}
 	w := worker.New(tc, taskQueue, worker.Options{})
-	w.RegisterWorkflow(workflows.ApprovalWorkflow)
-	w.RegisterWorkflow(workflows.ParallelApprovalWorkflow)
-	w.RegisterWorkflow(workflows.ReviewWorkflow)
-	w.RegisterWorkflow(workflows.RetentionWorkflow)
-	w.RegisterWorkflow(workflows.SignatureWorkflow)
-	w.RegisterWorkflow(workflows.ExportWorkflow)
-	w.RegisterWorkflow(workflows.EraseWorkflow)
-	w.RegisterWorkflow(workflows.AnonymizeWorkflow)
-	w.RegisterWorkflow(workflows.ResidencyMigrationWorkflow)
-	w.RegisterActivity(acts)
+	registerAll(w)
 	go func() {
 		if err := w.Run(worker.InterruptCh()); err != nil {
 			log.Error(ctx).Err(err).Msg("temporal worker")
+		}
+	}()
+	// Second worker on the cross-service dispatch queue. The document
+	// service (DSR privacy requests, residency migrations) and the
+	// retention scheduler start workflows on `vaultdms-default` — the
+	// queue the standalone cmd/worker binary owns in production. The
+	// compose stack doesn't run that binary, so without this worker
+	// those workflows sat unclaimed forever (privacy requests pending
+	// for a month). Registering both queues here makes the inline
+	// dev worker cover everything cmd/worker would.
+	wDefault := worker.New(tc, "vaultdms-default", worker.Options{})
+	registerAll(wDefault)
+	go func() {
+		if err := wDefault.Run(worker.InterruptCh()); err != nil {
+			log.Error(ctx).Err(err).Msg("temporal worker (vaultdms-default)")
 		}
 	}()
 

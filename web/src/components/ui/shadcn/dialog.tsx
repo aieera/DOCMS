@@ -60,6 +60,12 @@ const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, Dia
         ref={ref}
         className={cn(
           'fixed start-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4',
+          // Grid items default to min-width:auto, so ONE unbreakable
+          // string anywhere in a dialog (a share URL, a long filename)
+          // silently stretches the content track wider than the panel —
+          // every w-full field then pokes out the right edge ("torn
+          // dialog"). Cap every direct child at the track width.
+          '[&>*]:min-w-0',
           'border border-border bg-background p-6 shadow-lg duration-200',
           'sm:rounded-lg',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',

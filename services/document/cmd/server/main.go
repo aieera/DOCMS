@@ -265,7 +265,14 @@ func main() {
 	// operator re-dispatches.
 	var tcDSR temporalclient.Client
 	if cfg.TemporalAddr != "" {
-		if c, terr := temporalclient.Dial(temporalclient.Options{HostPort: cfg.TemporalAddr, Namespace: "vaultdms"}); terr == nil {
+		// Default namespace, matching every other Temporal client in the
+		// repo — the workflow service's worker (which hosts Export/Erase/
+		// AnonymizeWorkflow on vaultdms-default) polls the DEFAULT
+		// namespace. The previous Namespace:"vaultdms" pointed at a
+		// namespace that never existed, so every DSR dispatch failed with
+		// "Namespace vaultdms is not found" and requests sat pending
+		// forever.
+		if c, terr := temporalclient.Dial(temporalclient.Options{HostPort: cfg.TemporalAddr}); terr == nil {
 			tcDSR = c
 			defer c.Close()
 		} else {

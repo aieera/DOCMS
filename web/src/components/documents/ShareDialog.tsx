@@ -319,13 +319,18 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
           <>
             <Select label="Expires" value={expiryHours} onValueChange={setExpiryHours} options={expiryOptions} />
             {shareUrl ? (
+              // min-w-0 + overflow-hidden on the row: the URL is one
+              // unbreakable token, and a flex child defaults to
+              // min-width:auto — without the override the row grows past
+              // the dialog panel instead of truncating (the "torn
+              // dialog" bug).
               <div
                 data-testid="share-link-result"
-                className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
+                className="flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
               >
                 <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
-                <code className="flex-1 truncate text-xs">{shareUrl}</code>
-                <Button variant="ghost" size="sm" onClick={copyLink} aria-label="Copy share link"><Copy className="h-4 w-4" /></Button>
+                <code className="min-w-0 flex-1 truncate text-xs" title={shareUrl}>{shareUrl}</code>
+                <Button variant="ghost" size="sm" className="shrink-0" onClick={copyLink} aria-label="Copy share link"><Copy className="h-4 w-4" /></Button>
               </div>
             ) : (
               <Button onClick={handleCreate} disabled={creating} className="w-full">
