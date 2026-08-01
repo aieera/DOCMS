@@ -1,4 +1,5 @@
-import { ensureWorkspace, makeFolderEnsurer } from './folders'
+import { readErrorMessage } from '@/api/client'
+import { ensureWorkspace, makeFolderEnsurer, resolveRootFolder } from './folders'
 import { uploadFileToFolder } from './uploadFile'
 import { dirSegments } from './paths'
 import type { Destination, ConflictPolicy, ImportResult, PathFileMap } from './types'
@@ -31,7 +32,10 @@ export async function runImport(args: {
   const concurrency = args.concurrency ?? 4
 
   const workspaceId = await ensureWorkspace(destination)
-  const ensureFolder = makeFolderEnsurer(workspaceId, destination.targetFolderId)
+  // Root-level files need a real folder id (the endpoint rejects a null folder),
+  // so resolve/auto-create the workspace root before building the ensurer.
+  const rootFolderId = await resolveRootFolder(workspaceId, destination.targetFolderId)
+  const ensureFolder = makeFolderEnsurer(workspaceId, rootFolderId)
   const result: ImportResult = { created: 0, skipped: 0, failed: 0, items: [] }
 
   const entries = [...map.entries()]
@@ -48,7 +52,9 @@ export async function runImport(args: {
         result.items.push({ relPath, outcome: 'created', documentId: r.documentId })
         onEvent?.({ relPath, state: 'done' })
       } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e)
+        // Surface the backend's real reason (e.g. "file type not allowed"),
+        // not the opaque "Request failed with status code 400".
+        const reason = readErrorMessage(e) ?? (e instanceof Error ? e.message : String(e))
         result.failed++
         result.items.push({ relPath, outcome: 'failed', reason })
         onEvent?.({ relPath, state: 'failed', reason })

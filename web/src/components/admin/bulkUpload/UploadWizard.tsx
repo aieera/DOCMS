@@ -109,6 +109,7 @@ export function UploadWizard() {
   }
 
   const doneCount = [...progress.values()].filter((s) => s === 'done' || s === 'failed').length
+  const pct = plan && plan.fileCount > 0 ? Math.round((doneCount / plan.fileCount) * 100) : 0
 
   return (
     <div className="space-y-4">
@@ -236,10 +237,25 @@ export function UploadWizard() {
               <Upload className="me-1 h-4 w-4" /> Run import
             </Button>
           </div>
-          {running && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Uploading… {doneCount}/{plan.fileCount}
-            </p>
+          {(running || result) && (
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+                <span>{running ? 'Uploading…' : 'Complete'}</span>
+                <span>{doneCount}/{plan.fileCount} · {pct}%</span>
+              </div>
+              <div
+                className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={plan.fileCount}
+                aria-valuenow={doneCount}
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
           )}
           {result && (
             <div className="mt-3 space-y-2 text-sm">

@@ -4,6 +4,7 @@ const uploadFileToFolder = vi.fn()
 const ensureFolder = vi.fn(async () => 'f1')
 vi.mock('../folders', () => ({
   ensureWorkspace: vi.fn(async () => 'ws1'),
+  resolveRootFolder: vi.fn(async () => 'root1'),
   makeFolderEnsurer: () => ensureFolder,
 }))
 vi.mock('../uploadFile', () => ({

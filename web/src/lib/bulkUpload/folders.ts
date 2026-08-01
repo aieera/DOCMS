@@ -14,6 +14,31 @@ export async function ensureWorkspace(dest: Destination): Promise<string> {
 }
 
 /**
+ * Resolve the folder that root-level files should land in. The upload/create
+ * endpoints require a non-nil folder_id even at the workspace root, so we can't
+ * pass undefined (that 400s). Prefer an explicit target folder; otherwise use
+ * the workspace's root folder, auto-creating a "Root" folder for legacy
+ * workspaces that have none. Mirrors src/hooks/useUpload.ts.
+ */
+export async function resolveRootFolder(
+  workspaceId: string,
+  targetFolderId?: string,
+): Promise<string | undefined> {
+  if (targetFolderId) return targetFolderId
+  const folders = await getFolders(workspaceId)
+  const root = folders.find((f) => !f.parent_folder_id && !f.parent_id)
+  if (root) return root.id
+  if (folders.length === 0) {
+    try {
+      return (await createFolder(workspaceId, 'Root')).id
+    } catch {
+      // fall through — the upload will surface a clearer error
+    }
+  }
+  return undefined
+}
+
+/**
  * Returns an idempotent folder ensurer for one workspace. `ensure(dirPath)`
  * resolves (or creates) every segment of dirPath under the optional root folder,
  * reusing an existing same-name child when present, and caches path→folderId so
