@@ -59,6 +59,7 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/shadcn/button'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/shadcn/accordion'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
@@ -81,7 +82,7 @@ import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewP
 import { MatchedClausesPanel } from '@/components/documents/MatchedClausesPanel'
 import { DocumentTasksPanel } from '@/components/tasks/DocumentTasksPanel'
 
-type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'redaction' | 'activity'
+type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'comments' | 'signatures' | 'redaction' | 'activity'
 
 const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'preview', label: 'Preview', icon: FileText },
@@ -93,6 +94,8 @@ const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
   { key: 'relationships', label: 'Relationships', icon: Network },
   // Document-associated workflow (templates attached to this doc).
   { key: 'workflow', label: 'Workflow', icon: GitBranch },
+  { key: 'comments', label: 'Comments', icon: MessageSquare },
+  { key: 'signatures', label: 'Signatures', icon: Pencil },
   { key: 'activity', label: 'Activity', icon: History },
   { key: 'redaction', label: 'Redaction', icon: Eraser },
 ]
@@ -307,6 +310,17 @@ export function DocumentDetailBody({
               user who initiated the workflow. */}
           <TabPanel current={tab} value="workflow">
             <WorkflowTab documentId={documentId} canCancel={isAdminCaller} />
+          </TabPanel>
+
+          {/* Comments + Signatures moved out of the sidebar into their own
+              tabs (2026-08-01 sidebar de-weighting) — they're full feature
+              surfaces, not at-a-glance metadata. */}
+          <TabPanel current={tab} value="comments">
+            <CommentsPanel documentId={documentId} />
+          </TabPanel>
+
+          <TabPanel current={tab} value="signatures">
+            <SignaturesPanel documentId={documentId} />
           </TabPanel>
 
           <TabPanel current={tab} value="redaction">
@@ -703,39 +717,31 @@ function DocumentSidebar({
         </Card>
       )}
 
-      {/* ADR 0066 — comments side panel. */}
-      <CommentsPanel documentId={documentId} />
+      {/* Comments + Signatures moved to their own tabs (left column) — they
+          are full feature surfaces, not at-a-glance metadata.
+          2026-08-01 sidebar de-weighting (hybrid). */}
 
-      {/* ADR 0070 / 0071 / 0072 — signatures panel. */}
-      <SignaturesPanel documentId={documentId} />
-
-      {/* Custom fields — cross-references the tenant-defined metadata
-          schema (admin → metadata schema) with this document's
-          custom_metadata payload. Self-hides when the schema has
-          zero properties so docs in tenants that never configured
-          custom metadata don't see an empty card. */}
-      <CustomFieldsSidebarSlot doc={doc as Document} />
-
-      {/* ADR 0104 Phase 2 — clause-library matches detected in this
-          document. Self-hides when the detect_clauses task found
-          nothing. */}
-      <MatchedClausesPanel documentId={documentId} />
-
-      {/* Tasks linked to this document (2026-07-28 task-service design). */}
-      <DocumentTasksPanel documentId={documentId} documentTitle={doc?.title ?? ''} />
-
-      {/* Intelligence panels — each component self-hides when it has
-          nothing to render, so the sidebar stays compact for docs
-          that haven't reached the relevant pipeline stage yet.
-          (TagSuggestionsPanel moved to the top of the rail.) */}
-      {versionId && (
-        <TranslationPanel documentId={documentId} versionId={versionId} />
-      )}
-
-      {/* Phase 5 — per-document retention exemption (business waiver).
-          Distinct from legal hold; self-hides for non-admins on docs
-          that aren't currently exempt. */}
-      <RetentionExemptSidebarSlot doc={doc} />
+      {/* The remaining intelligence / metadata panels collapse into one
+          section, COLLAPSED BY DEFAULT, so the rail stops being a mile-long
+          stack. Each panel self-hides when it has nothing, so an expanded
+          section only shows what's actually relevant to this document. */}
+      <Accordion type="multiple" className="overflow-hidden rounded-lg border border-border bg-card">
+        <AccordionItem value="more" className="border-0">
+          <AccordionTrigger className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:no-underline">
+            More details &amp; intelligence
+          </AccordionTrigger>
+          <AccordionContent className="space-y-4 px-4 pb-4">
+            {/* Custom fields (tenant JSON-Schema metadata), clause-library
+                matches, linked tasks, translation, retention exemption —
+                each self-hides when empty. */}
+            <CustomFieldsSidebarSlot doc={doc as Document} />
+            <MatchedClausesPanel documentId={documentId} />
+            <DocumentTasksPanel documentId={documentId} documentTitle={doc?.title ?? ''} />
+            {versionId && <TranslationPanel documentId={documentId} versionId={versionId} />}
+            <RetentionExemptSidebarSlot doc={doc} />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </aside>
   )
 }
