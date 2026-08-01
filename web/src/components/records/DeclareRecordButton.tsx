@@ -18,7 +18,7 @@ export function DeclareRecordButton({ documentId, canManage }: { documentId: str
     queryKey: ['record', documentId],
     queryFn: () => getRecordForDocument(documentId),
   })
-  const { data: categories = [] } = useQuery({
+  const { data: categories = [], isLoading: catsLoading } = useQuery({
     queryKey: ['record-categories'],
     queryFn: listCategories,
     enabled: canManage && !record,
@@ -51,6 +51,32 @@ export function DeclareRecordButton({ documentId, canManage }: { documentId: str
       <Button size="sm" variant="outline" onClick={() => setPicking(true)} data-testid="declare-record">
         <FileLock2 className="h-3.5 w-3.5" /> Declare as record
       </Button>
+    )
+  }
+
+  if (catsLoading) {
+    return <span className="text-xs text-muted-foreground" data-testid="declare-record-loading">Loading record series…</span>
+  }
+
+  // No file plan configured yet — an empty <select> looks broken, so guide the
+  // admin to build the file plan (retention schedules + at least one series)
+  // before records can be declared. Plain <a> so it works without a router in
+  // isolation; it's a rare cross-area jump.
+  if (series.length === 0) {
+    return (
+      <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs" data-testid="declare-record-empty">
+        <span className="font-medium">No record series configured</span>
+        <span className="text-muted-foreground">
+          Set up a file plan (retention schedules + a series) in{' '}
+          <a href="/admin/records-retention?tab=records" className="text-primary underline underline-offset-2">
+            Admin → Records
+          </a>{' '}
+          before declaring records.
+        </span>
+        <button type="button" className="mt-1 self-start text-muted-foreground hover:text-foreground" onClick={() => setPicking(false)}>
+          Cancel
+        </button>
+      </div>
     )
   }
 
