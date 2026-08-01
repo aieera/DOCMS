@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import ReactMarkdown from 'react-markdown'
 import { AlertCircle, Download, ExternalLink, FileText, Stamp } from 'lucide-react'
 
 import { getDownloadURL } from '@/api/documents'
@@ -131,6 +132,21 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
     )
   }
 
+  // Text: render markdown / plain text inline instead of forcing a download.
+  // Uses the same-origin, cookie-authed download alias (not the presigned S3
+  // URL) so the fetch isn't blocked by cross-origin CORS.
+  if (mime === 'text/markdown' || mime === 'text/x-markdown' || mime.startsWith('text/')) {
+    return (
+      <TextPreview
+        documentId={documentId}
+        versionId={versionId!}
+        mime={mime}
+        title={title}
+        downloadUrl={url}
+      />
+    )
+  }
+
   // Fallback: anything else (Office docs, archives, custom MIME types)
   // can't be inlined safely; surface a Download CTA instead of a
   // blank box.
@@ -150,6 +166,80 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
       >
         Download to open
       </a>
+    </Card>
+  )
+}
+
+// ---- Text / Markdown preview --------------------------------------------
+//
+// Fetches the document body from the same-origin download alias and renders it
+// inline: markdown through react-markdown (raw HTML disabled, so no XSS from
+// document content), everything else as wrapped monospaced text. Falls back to
+// the shared download card on error. A hard cap keeps a huge text file from
+// freezing the tab.
+const TEXT_PREVIEW_CAP = 2 * 1024 * 1024 // 2 MiB
+
+function TextPreview({
+  documentId,
+  versionId,
+  mime,
+  title,
+  downloadUrl,
+}: {
+  documentId: string
+  versionId: string
+  mime: string
+  title?: string
+  downloadUrl: string
+}) {
+  const q = useQuery({
+    queryKey: ['text-preview', documentId, versionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/v1/documents/${documentId}/versions/${versionId}/download`, {
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error(`Failed to load text (${res.status})`)
+      const text = await res.text()
+      return text.length > TEXT_PREVIEW_CAP
+        ? { text: text.slice(0, TEXT_PREVIEW_CAP), truncated: true }
+        : { text, truncated: false }
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  if (q.isLoading) {
+    return (
+      <Card className="flex h-[40vh] items-center justify-center gap-2" data-testid="preview-text-loading" aria-busy>
+        <Spinner className="h-5 w-5" />
+        <span className="text-xs text-muted-foreground">Loading preview…</span>
+      </Card>
+    )
+  }
+  if (q.isError || q.data == null) {
+    return <PreviewUnavailable url={downloadUrl} title={title} kind="text" />
+  }
+
+  const isMarkdown =
+    mime === 'text/markdown' || mime === 'text/x-markdown' || (title ?? '').toLowerCase().endsWith('.md')
+
+  return (
+    <Card className="max-h-[80vh] overflow-auto p-6" data-testid="preview-text">
+      {isMarkdown ? (
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <ReactMarkdown>{q.data.text}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre className="whitespace-pre-wrap break-words font-mono text-sm text-foreground">{q.data.text}</pre>
+      )}
+      {q.data.truncated && (
+        <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+          Preview truncated at 2&nbsp;MB —{' '}
+          <a href={downloadUrl} download className="font-medium text-primary underline underline-offset-2">
+            download the full file
+          </a>
+          .
+        </p>
+      )}
     </Card>
   )
 }

@@ -44,7 +44,9 @@ export function DeclareRecordButton({ documentId, canManage }: { documentId: str
     return <RecordStatus record={record} documentId={documentId} canManage={canManage} disposed={disposed} />
   }
 
-  if (!canManage) return null
+  if (!canManage) {
+    return <span className="text-xs text-muted-foreground" data-testid="record-none">Not declared as a record.</span>
+  }
 
   if (!picking) {
     return (

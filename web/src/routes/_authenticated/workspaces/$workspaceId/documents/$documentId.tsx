@@ -534,8 +534,9 @@ function DocumentSidebar({
         !inModal && 'lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1',
       )}
     >
-      {/* Primary actions as a compact icon toolbar. */}
-      <Card className="flex items-center justify-between gap-2 p-2">
+      {/* Primary actions — compact icon toolbar (records moved to its own
+          card below so the declare picker / empty-state can't overflow it). */}
+      <Card className="flex items-center gap-1 p-2">
         <DocumentHeaderToolbar
           onDownload={handleDownload}
           canDownload={!!versionId}
@@ -544,7 +545,18 @@ function DocumentSidebar({
           onCompare={() => setCompareOpen(true)}
           onManageAccess={() => setManageAccessOpen(true)}
         />
-        <DeclareRecordButton documentId={documentId} canManage={!!isAdminCaller} />
+      </Card>
+
+      {/* Records — declare / status / vital / freeze. Its own full-width card
+          so the series picker and the "no file plan" empty-state lay out
+          cleanly instead of overflowing the icon toolbar. */}
+      <Card className="p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Records
+        </h3>
+        <div className="mt-3">
+          <DeclareRecordButton documentId={documentId} canManage={!!isAdminCaller} />
+        </div>
       </Card>
 
       {/* Details — fixed metadata block. Surfaces lifecycle, type,
