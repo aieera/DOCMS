@@ -391,7 +391,11 @@ func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (
 	if err != nil {
 		return "", nil, fmt.Errorf("body: %w", err)
 	}
-	var attachIDs []string
+	// Non-nil: email_messages.attachment_document_ids is NOT NULL, and a nil
+	// slice marshals to NULL. Mail with no attachments therefore failed the
+	// stamping UPDATE with a 23502 and stayed 'pending' forever — which was
+	// most mail, and the reason the queue never drained.
+	attachIDs := []string{}
 	for _, att := range env.Attachments {
 		ct := att.ContentType
 		if ct == "" {

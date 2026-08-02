@@ -184,33 +184,45 @@ func (c *Client) IngestFile(
 		return "", fmt.Errorf("initiate upload: %w", err)
 	}
 
-	// 3. PUT the bytes (skip when storage deduplicated to an existing blob —
-	//    an empty presigned URL signals the dedup hit).
-	if initResp.GetPresignedPutUrl() != "" {
+	// 3+4. PUT the bytes, then complete (scan + persist blob).
+	//
+	//  On a dedup hit the bytes already exist in this region: storage has
+	//  bumped the existing blob's refcount, opened NO upload session, and
+	//  returned an empty presigned URL — so both steps must be skipped, as
+	//  storage.proto states ("no PUT/complete needed"). The old shape only
+	//  skipped the PUT and still called CompleteUpload, whose upload_id was
+	//  then the zero UUID → "upload_id: required", rolling the whole ingest
+	//  back. Every re-ingest of content already held by the tenant failed
+	//  this way: re-filing the same mail, an attachment a user had uploaded
+	//  before, or any retry after a partial failure.
+	if !initResp.GetDeduplicated() {
 		if err := c.putBytes(ctx, initResp.GetPresignedPutUrl(), contentType, data); err != nil {
 			c.rollback(ctx, tenantID, actorID, authToken, docID)
 			return "", fmt.Errorf("put bytes: %w", err)
 		}
-	}
-
-	// 4. Complete (scan + persist blob).
-	if _, err := c.storage.CompleteUpload(mdCtx, &sedocv1.CompleteUploadRequest{
-		UploadId:       initResp.GetUploadId(),
-		ChecksumSha256: checksum,
-		SizeBytes:      int64(len(data)),
-	}); err != nil {
-		c.rollback(ctx, tenantID, actorID, authToken, docID)
-		return "", fmt.Errorf("complete upload: %w", err)
+		if _, err := c.storage.CompleteUpload(mdCtx, &sedocv1.CompleteUploadRequest{
+			UploadId:       initResp.GetUploadId(),
+			ChecksumSha256: checksum,
+			SizeBytes:      int64(len(data)),
+		}); err != nil {
+			c.rollback(ctx, tenantID, actorID, authToken, docID)
+			return "", fmt.Errorf("complete upload: %w", err)
+		}
 	}
 
 	// 5. Resolve the blob id (CompleteUpload doesn't return it through the
 	//    proto — same (tenant, sha256) lookup the document storage proxy does)
 	//    and link it as the document's first version. The version write fires
 	//    dms.version.uploaded.v1 → OCR + embed + index.
-	blobID, err := c.lookupBlobID(ctx, tenantID, checksum)
-	if err != nil {
-		c.rollback(ctx, tenantID, actorID, authToken, docID)
-		return "", fmt.Errorf("resolve blob id: %w", err)
+	//    On the dedup path this resolves to the blob storage just refcounted.
+	blobID := initResp.GetExistingBlobId()
+	if blobID == "" {
+		var berr error
+		blobID, berr = c.lookupBlobID(ctx, tenantID, checksum)
+		if berr != nil {
+			c.rollback(ctx, tenantID, actorID, authToken, docID)
+			return "", fmt.Errorf("resolve blob id: %w", berr)
+		}
 	}
 	if err := c.createVersion(ctx, tenantID, actorID, authToken, docID, blobID); err != nil {
 		c.rollback(ctx, tenantID, actorID, authToken, docID)
