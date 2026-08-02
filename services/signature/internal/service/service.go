@@ -266,6 +266,11 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 			"document_id": req.DocumentID,
 			"version_id":  req.VersionID,
 			"request_id":  req.ID,
+			// The seal consumer signs AS this user — storage rejects an
+			// upload with a nil user_id. The field was never emitted, so
+			// every auto-seal failed "user_id: required" and the consumer
+			// Nak'd it back into an endless redelivery loop.
+			"initiated_by": req.CreatedBy,
 		})
 		evt := database.NewOutboxEvent(tenantUUID, "dms.signature.completed.v1", "signature_request", reqUUID, payload)
 		return s.outbox.Insert(ctx, tx, evt)

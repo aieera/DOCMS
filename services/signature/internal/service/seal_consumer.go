@@ -26,6 +26,27 @@ type SealConsumer struct {
 	base context.Context // process-lifetime ctx from Start; per-message ctxs derive from it (C4)
 }
 
+const (
+	// maxSealAttempts bounds redelivery so an unsealable message (bad payload,
+	// deleted version) is terminated rather than retried forever.
+	maxSealAttempts = 8
+	// sealRetryBackoff is multiplied by the delivery count, capped at
+	// maxSealRetryDelay: 15s, 30s, 45s … 2m.
+	sealRetryBackoff  = 15 * time.Second
+	maxSealRetryDelay = 2 * time.Minute
+)
+
+// deliveryCount reports how many times JetStream has delivered this message
+// (1 on the first). Metadata is unavailable for a non-JetStream message, in
+// which case we treat it as a first delivery.
+func deliveryCount(msg *nats.Msg) int {
+	md, err := msg.Metadata()
+	if err != nil || md == nil {
+		return 1
+	}
+	return int(md.NumDelivered)
+}
+
 // NewSealConsumer constructs the consumer. svc must have a configured sealer
 // (AddSealer) or SealVersion returns "not configured" and the message is Nak'd.
 func NewSealConsumer(js nats.JetStreamContext, svc *Service, log zerolog.Logger) *SealConsumer {
@@ -83,10 +104,29 @@ func (c *SealConsumer) handle(msg *nats.Msg) {
 	// won the claim, so this is an idempotent no-op.
 	res, alreadySealed, err := c.svc.SealCeremonyForRequest(ctx, env.TenantID, data.DocumentID, data.VersionID, data.InitiatedBy, data.RequestID)
 	if err != nil {
+		// Back the retry off instead of Nak'ing bare. A bare Nak redelivers
+		// immediately, so a failure that cannot resolve itself (this one was
+		// a missing initiated_by → "user_id: required") spun at ~28 msg/s
+		// indefinitely, burning CPU across signature AND storage. Give up
+		// after maxSealAttempts so a poison message can't hold the loop.
+		attempt := deliveryCount(msg)
+		if attempt >= maxSealAttempts {
+			c.log.Error().Err(err).
+				Str("document_id", data.DocumentID).Str("version_id", data.VersionID).
+				Int("attempts", attempt).
+				Msg("seal consumer: giving up after max attempts; document left unsealed")
+			_ = msg.Term()
+			return
+		}
+		delay := time.Duration(attempt) * sealRetryBackoff
+		if delay > maxSealRetryDelay {
+			delay = maxSealRetryDelay
+		}
 		c.log.Error().Err(err).
 			Str("document_id", data.DocumentID).Str("version_id", data.VersionID).
+			Int("attempt", attempt).Dur("retry_in", delay).
 			Msg("seal consumer: seal failed; will redeliver")
-		_ = msg.Nak()
+		_ = msg.NakWithDelay(delay)
 		return
 	}
 	if alreadySealed {
