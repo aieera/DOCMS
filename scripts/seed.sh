@@ -5,6 +5,26 @@ set -euo pipefail
 
 DB_URL="${DATABASE_URL:-postgres://sedoc:devpassword@localhost:15432/sedoc?sslmode=disable}"
 
+# Honor the SEED_* values in .env (gen-env writes them there and install.sh
+# passes them through) — without this, `make setup`/`make reset` silently
+# seed the acme defaults no matter what the operator configured. Process
+# env still wins over .env. Values may be quoted and CRLF-terminated; strip
+# both, the way compose's own .env parser does.
+env_val() {
+  local v
+  v="$(grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2-)" || true
+  v="${v%$'\r'}"
+  v="${v%\"}"
+  printf '%s' "${v#\"}"
+}
+if [ -f .env ]; then
+  export SEED_ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-$(env_val SEED_ADMIN_EMAIL)}"
+  export SEED_ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-$(env_val SEED_ADMIN_PASSWORD)}"
+  export SEED_TENANT_SLUG="${SEED_TENANT_SLUG:-$(env_val SEED_TENANT_SLUG)}"
+  export SEED_TENANT_NAME="${SEED_TENANT_NAME:-$(env_val SEED_TENANT_NAME)}"
+  export SEED_REGION="${SEED_REGION:-$(env_val SEED_REGION)}"
+fi
+
 echo "Waiting for Postgres..."
 if command -v pg_isready >/dev/null 2>&1; then
   deadline=$(( $(date +%s) + 60 ))
