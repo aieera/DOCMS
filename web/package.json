@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "node scripts/build-graphql-manifest.mjs && node scripts/build-load-test-index.mjs && vite",
     "build": "node scripts/build-graphql-manifest.mjs && node scripts/build-load-test-index.mjs && tsc && vite build",
