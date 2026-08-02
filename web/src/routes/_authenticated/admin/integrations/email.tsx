@@ -21,7 +21,7 @@ import {
   type EmailConfig,
   type EmailSource,
 } from '@/api/email-ingestion'
-import { getWorkspaces } from '@/api/workspaces'
+import { getWorkspaces, getFolders } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -182,9 +182,21 @@ function CreateForm({
   // Real workspace picker (was a raw-UUID text box). 'none' sentinel:
   // Radix Select rejects empty-string values.
   const [workspace, setWorkspace] = useState('none')
-  const [folder, setFolder] = useState('')
+  const [folder, setFolder] = useState('none')
   const [interval, setInterval] = useState(300)
   const wsQ = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
+  // Destination is REQUIRED by the ingest pipeline (it files each mail
+  // body + attachment as a real document, which needs a home). The form
+  // used to call both fields "optional" and take a raw folder UUID, so
+  // configs were happily created that then failed on EVERY message with
+  // "target workspace + folder required" — mail was fetched, nothing was
+  // filed, and the only clue was a `last error` chip.
+  const foldersQ = useQuery({
+    queryKey: ['folders', workspace],
+    queryFn: () => getFolders(workspace),
+    enabled: workspace !== 'none',
+    staleTime: 60_000,
+  })
 
   const sourceDesc = SOURCE_OPTIONS.find((o) => o.value === source)?.desc
 
@@ -192,6 +204,10 @@ function CreateForm({
     if (!label.trim()) { toast.error('Label is required'); return }
     if (source === 'imap' && (!imapHost.trim() || !imapUser.trim() || !imapPwd)) {
       toast.error('IMAP host, username, and password are required')
+      return
+    }
+    if (workspace === 'none' || folder === 'none') {
+      toast.error('Pick the workspace and folder incoming mail should be filed into')
       return
     }
     const oauthProvider =
@@ -204,8 +220,8 @@ function CreateForm({
       imap_use_tls: source === 'imap' ? true           : undefined,
       imap_username: source === 'imap' ? imapUser.trim() : undefined,
       imap_password: source === 'imap' ? imapPwd       : undefined,
-      target_workspace_id: workspace !== 'none' ? workspace : undefined,
-      target_folder_id:    folder.trim() || undefined,
+      target_workspace_id: workspace,
+      target_folder_id:    folder,
       poll_interval_seconds: interval,
     })
   }
@@ -239,19 +255,33 @@ function CreateForm({
       )}
       <div className="grid gap-3 sm:grid-cols-3">
         <Select
-          label="Target workspace (optional)"
+          label="File into workspace"
           value={workspace}
-          onValueChange={setWorkspace}
+          onValueChange={(v) => { setWorkspace(v); setFolder('none') }}
           options={[
-            { value: 'none', label: '— pick per message —' },
+            { value: 'none', label: 'Select a workspace…' },
             ...(wsQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
           ]}
         />
-        <Input
-          label="Target folder ID (optional)"
-          placeholder="advanced — folder UUID"
+        <Select
+          label="File into folder"
           value={folder}
-          onChange={(e) => setFolder(e.target.value)}
+          onValueChange={setFolder}
+          disabled={workspace === 'none'}
+          options={[
+            {
+              value: 'none',
+              label:
+                workspace === 'none'
+                  ? 'Pick a workspace first'
+                  : foldersQ.isLoading
+                    ? 'Loading folders…'
+                    : (foldersQ.data ?? []).length === 0
+                      ? 'No folders in this workspace'
+                      : 'Select a folder…',
+            },
+            ...(foldersQ.data ?? []).map((f) => ({ value: f.id, label: f.name })),
+          ]}
         />
         <Input
           label="Poll interval (seconds, min 60)"
