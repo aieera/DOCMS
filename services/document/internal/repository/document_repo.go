@@ -298,9 +298,34 @@ func (r *documentRepo) SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id, 
 func (r *documentRepo) Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE documents SET deleted_at = NULL, deleted_cohort_id = NULL,
-		                     deleted_by = NULL, updated_at = now()
+		                     deleted_by = NULL, user_cleared_at = NULL,
+		                     user_cleared_by = NULL, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL
 	`, tenantID, id)
+	if err != nil {
+		return mapPgError(err)
+	}
+	if ct.RowsAffected() == 0 {
+		return vdmserr.ErrNotFound
+	}
+	return nil
+}
+
+// ClearFromUserTrash hides a soft-deleted document from the deleter's own
+// Trash WITHOUT touching the bytes or the row. The admin Trash still lists
+// it (flagged) and Restore still brings it back — that asymmetry is the
+// whole point: a member's "delete permanently" must not be able to destroy
+// something an admin may need back.
+//
+// Scoped to `deleted_by = clearedBy` so one member can never clear another
+// member's item out of their view.
+func (r *documentRepo) ClearFromUserTrash(ctx context.Context, tx pgx.Tx, tenantID, id, clearedBy uuid.UUID) error {
+	ct, err := tx.Exec(ctx, `
+		UPDATE documents SET user_cleared_at = now(), user_cleared_by = $3
+		WHERE tenant_id = $1 AND id = $2
+		  AND deleted_at IS NOT NULL AND user_cleared_at IS NULL
+		  AND deleted_by = $3
+	`, tenantID, id, clearedBy)
 	if err != nil {
 		return mapPgError(err)
 	}
@@ -458,6 +483,15 @@ func (r *documentRepo) List(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, 
 	switch {
 	case f.DeletedOnly:
 		where = append(where, "d.deleted_at IS NOT NULL")
+		// Per-user Trash: only what this caller deleted, and only while
+		// they haven't cleared it. The admin Trash sets neither, so it
+		// still sees user-cleared rows and can restore them.
+		if f.DeletedBy != nil {
+			where = append(where, "d.deleted_by = "+add(*f.DeletedBy))
+		}
+		if f.NotUserCleared {
+			where = append(where, "d.user_cleared_at IS NULL")
+		}
 	case !f.IncludeDeleted:
 		where = append(where, "d.deleted_at IS NULL")
 	}

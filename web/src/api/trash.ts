@@ -13,6 +13,10 @@ export interface TrashEntry {
   deleted_by?: string
   deleted_by_name?: string
   deleted_at?: string
+  /** Admin listing only: the deleter has already cleared this from their
+   *  own Trash and believes it gone. It is still here and still restorable
+   *  — only an admin purge destroys anything. */
+  user_cleared?: boolean
 }
 
 export interface TrashListResponse {
@@ -34,6 +38,33 @@ export async function restoreFromTrash(documentId: string): Promise<void> {
 
 export async function purgeFromTrash(documentId: string): Promise<void> {
   await api.delete(`/admin/trash/${documentId}`)
+}
+
+// ── Per-user Trash ─────────────────────────────────────────────────────
+// Every route below is scoped server-side to documents the CALLER deleted,
+// so no role check is needed here.
+
+/** The caller's own deleted items — not the tenant-wide admin listing. */
+export async function listMyTrash(pageToken?: string, pageSize = 50): Promise<TrashListResponse> {
+  const params: Record<string, string> = {}
+  if (pageToken) params.page_token = pageToken
+  if (pageSize) params.page_size = String(pageSize)
+  const { data } = await api.get<TrashListResponse>('/trash', { params })
+  return data
+}
+
+/** Put one of the caller's own deleted documents back. */
+export async function restoreMyTrash(documentId: string): Promise<void> {
+  await api.post(`/trash/${documentId}/restore`)
+}
+
+/** Remove an item from the caller's own Trash.
+ *
+ *  This does NOT destroy anything: the document and its bytes remain and an
+ *  administrator can still restore it from the admin Trash. Word the UI so
+ *  the user isn't told the file is unrecoverable when it isn't. */
+export async function clearFromMyTrash(documentId: string): Promise<void> {
+  await api.delete(`/trash/${documentId}`)
 }
 
 // TrashedFolder — soft-deleted folder row for the Trash page. The

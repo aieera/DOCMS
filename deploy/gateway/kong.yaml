@@ -240,6 +240,7 @@ services:
       - { name: compliance,              paths: [/api/v1/compliance],              strip_path: false }
       - { name: admin-compliance,        paths: [/api/v1/admin/compliance],        strip_path: false }
       - { name: admin-trash,             paths: [/api/v1/admin/trash],             strip_path: false }
+      - { name: user-trash,              paths: [/api/v1/trash],                   strip_path: false }
       - { name: admin-folders,           paths: [/api/v1/admin/folders],           strip_path: false }
       - { name: admin-bulk,              paths: [/api/v1/admin/bulk],              strip_path: false }
       - { name: admin-models,            paths: [/api/v1/admin/models],            strip_path: false }

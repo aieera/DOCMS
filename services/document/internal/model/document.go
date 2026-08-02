@@ -335,6 +335,13 @@ type DocumentFilter struct {
 	// DeletedOnly flips the filter to soft-deleted rows only. Used by
 	// the admin Trash list, which doesn't scope by workspace.
 	DeletedOnly bool
+	// DeletedBy scopes DeletedOnly to one deleter — the per-user Trash.
+	// Ignored unless DeletedOnly is set.
+	DeletedBy *uuid.UUID
+	// NotUserCleared drops rows the deleter has already cleared from
+	// their own Trash. The admin Trash leaves this false so it keeps
+	// showing (and can still restore) what a user cleared.
+	NotUserCleared bool
 }
 
 // VersionFilter is pagination scoped to a single document.

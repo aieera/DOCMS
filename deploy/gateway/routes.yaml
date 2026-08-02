@@ -338,6 +338,10 @@ routes:
   - { service: document, prefix: /api/v1/compliance, methods: [], auth: required }
   - { service: document, prefix: /api/v1/admin/compliance, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/trash, methods: [], auth: admin }
+  # Per-user Trash. auth: required, NOT admin — every route is scoped to
+  # rows the caller deleted, and its DELETE only clears the caller's own
+  # view rather than purging bytes.
+  - { service: document, prefix: /api/v1/trash, methods: [], auth: required }
   - { service: document, prefix: /api/v1/admin/folders, methods: [], auth: admin }  # empty-folder scan + cleanup (Trash page tool)
   - { service: document, prefix: /api/v1/admin/bulk, methods: [], auth: admin }
   - { service: document, prefix: /api/v1/admin/ediscovery, methods: [], auth: admin }  # hold-scoped e-discovery export

@@ -46,6 +46,15 @@ func (h *TrashHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/trash/folders", h.listFolders)
 	mux.HandleFunc("DELETE /api/v1/admin/trash/folders/{id}", h.purgeFolder)
 	mux.HandleFunc("DELETE /api/v1/admin/trash", h.emptyTrash)
+
+	// Per-user Trash. No role gate: every route below is scoped to
+	// "soft-deleted BY the caller", which is its own authorization.
+	// DELETE here clears the item from the caller's own Trash and does
+	// NOT destroy anything — the admin routes above remain the only way
+	// to purge bytes.
+	mux.HandleFunc("GET /api/v1/trash", h.listMine)
+	mux.HandleFunc("POST /api/v1/trash/{id}/restore", h.restoreMine)
+	mux.HandleFunc("DELETE /api/v1/trash/{id}", h.clearMine)
 }
 
 // trashEntry is the JSON shape returned to the admin UI. Flat,
@@ -64,6 +73,11 @@ type trashEntry struct {
 	DeletedBy      string     `json:"deleted_by,omitempty"`
 	DeletedByName  string     `json:"deleted_by_name,omitempty"`
 	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
+	// UserCleared drives the admin list's "cleared by user" badge: the
+	// deleter has removed it from their own Trash and believes it gone,
+	// but it is still here and still restorable. Never true in the
+	// per-user listing.
+	UserCleared bool `json:"user_cleared,omitempty"`
 }
 
 type listResponse struct {
@@ -244,6 +258,71 @@ func (h *TrashHandler) emptyTrash(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusOK, res)
 }
 
+// listMine — GET /api/v1/trash. Any authenticated caller; returns only
+// what they deleted and have not cleared.
+func (h *TrashHandler) listMine(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	pageSize := 50
+	if v := r.URL.Query().Get("page_size"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			pageSize = n
+		}
+	}
+	page, err := h.svc.ListMyTrash(ctx, pageSize, r.URL.Query().Get("page_token"))
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	items := make([]trashEntry, 0, len(page.Items))
+	for i := range page.Items {
+		items = append(items, trashFromModel(&page.Items[i]))
+	}
+	writeJSONStatus(w, http.StatusOK, listResponse{Items: items, NextPageToken: page.NextPageToken})
+}
+
+// restoreMine — POST /api/v1/trash/{id}/restore. Ownership is checked in
+// the service (404 for anything the caller didn't delete), and the same
+// legal-hold + retention guards as the admin restore apply.
+func (h *TrashHandler) restoreMine(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	docID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	if err := h.svc.RestoreOwnDocument(ctx, docID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearMine — DELETE /api/v1/trash/{id}. Reads as "delete permanently" to
+// the member, but destroys nothing: it only hides the row from their Trash.
+// The admin Trash keeps it, flagged, and can still restore it.
+func (h *TrashHandler) clearMine(w http.ResponseWriter, r *http.Request) {
+	ctx, _, _, ok := authedContext(w, r)
+	if !ok {
+		return
+	}
+	docID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, r, vdmserr.Validation("id", "not a uuid"))
+		return
+	}
+	if err := h.svc.ClearOwnDocument(ctx, docID); err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func trashFromModel(d *service.TrashDocument) trashEntry {
 	out := trashEntry{
 		ID:             d.ID.String(),
@@ -256,6 +335,7 @@ func trashFromModel(d *service.TrashDocument) trashEntry {
 		CreatedByName:  d.CreatedByName,
 		DeletedByName:  d.DeletedByName,
 		DeletedAt:      d.DeletedAt,
+		UserCleared:    d.UserCleared,
 	}
 	if d.DeletedBy != nil {
 		out.DeletedBy = d.DeletedBy.String()

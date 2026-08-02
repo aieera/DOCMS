@@ -446,6 +446,12 @@ type TrashDocument struct {
 	model.Document
 	DeletedBy     *uuid.UUID
 	DeletedByName string
+	// UserCleared is true once the deleter has cleared the item from
+	// their own Trash. Only ever true in the admin listing — the
+	// per-user listing filters these out — and it drives the "cleared
+	// by user" badge so an admin can tell that the person who deleted
+	// it believes it is already gone.
+	UserCleared bool
 }
 
 // ListTrash returns the tenant's soft-deleted documents. Admin/owner
@@ -453,7 +459,19 @@ type TrashDocument struct {
 // workspace and the row-level OPA checks (Rule 4/5) would short-circuit
 // the cross-workspace view.
 func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken string) (*model.Page[TrashDocument], error) {
-	tenantID, _, err := mustCaller(ctx)
+	return s.listTrash(ctx, pageSize, pageToken, false)
+}
+
+// ListMyTrash returns only what THIS caller deleted and hasn't yet cleared
+// from their own Trash. Needs no role gate and no per-row permission check:
+// deleted_by = caller is itself the authorization, and a member cannot see
+// a colleague's deletion even in a folder they share.
+func (s *DocumentService) ListMyTrash(ctx context.Context, pageSize int, pageToken string) (*model.Page[TrashDocument], error) {
+	return s.listTrash(ctx, pageSize, pageToken, true)
+}
+
+func (s *DocumentService) listTrash(ctx context.Context, pageSize int, pageToken string, mineOnly bool) (*model.Page[TrashDocument], error) {
+	tenantID, userID, err := mustCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -463,6 +481,10 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 		PageToken:   pageToken,
 		SortBy:      "updated_at",
 		SortOrder:   "desc",
+	}
+	if mineOnly {
+		f.DeletedBy = &userID
+		f.NotUserCleared = true
 	}
 	var out *model.Page[TrashDocument]
 	err = s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
@@ -488,7 +510,8 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 			ids = append(ids, out.Items[i].ID)
 		}
 		rows, qErr := tx.Query(ctx, `
-			SELECT d.id, d.deleted_by, COALESCE(u.display_name, '')
+			SELECT d.id, d.deleted_by, COALESCE(u.display_name, ''),
+			       d.user_cleared_at IS NOT NULL
 			  FROM documents d
 			  LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.deleted_by
 			 WHERE d.tenant_id = $1 AND d.id = ANY($2)
@@ -498,8 +521,9 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 		}
 		defer rows.Close()
 		type delMeta struct {
-			by   *uuid.UUID
-			name string
+			by      *uuid.UUID
+			name    string
+			cleared bool
 		}
 		meta := make(map[uuid.UUID]delMeta, len(ids))
 		for rows.Next() {
@@ -507,7 +531,7 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 				id uuid.UUID
 				m  delMeta
 			)
-			if sErr := rows.Scan(&id, &m.by, &m.name); sErr != nil {
+			if sErr := rows.Scan(&id, &m.by, &m.name, &m.cleared); sErr != nil {
 				return sErr
 			}
 			meta[id] = m
@@ -519,6 +543,7 @@ func (s *DocumentService) ListTrash(ctx context.Context, pageSize int, pageToken
 			if m, ok := meta[out.Items[i].ID]; ok {
 				out.Items[i].DeletedBy = m.by
 				out.Items[i].DeletedByName = m.name
+				out.Items[i].UserCleared = m.cleared
 			}
 		}
 		return nil
@@ -572,6 +597,79 @@ func (s *DocumentService) RestoreDocument(ctx context.Context, id uuid.UUID) err
 			return err
 		}
 		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// RestoreOwnDocument is the member-facing restore: it reuses RestoreDocument
+// (and therefore every legal-hold and retention guard) but first proves the
+// caller is the person who deleted the document and hasn't already cleared
+// it. Without that ownership check this would be an unauthenticated
+// tenant-wide restore, since RestoreDocument itself is role-gated at the
+// handler and does no per-row authorization.
+func (s *DocumentService) RestoreOwnDocument(ctx context.Context, id uuid.UUID) error {
+	if err := s.assertOwnTrashItem(ctx, id); err != nil {
+		return err
+	}
+	return s.RestoreDocument(ctx, id)
+}
+
+// ClearOwnDocument removes a document from the caller's own Trash. It is
+// deliberately NOT a purge: the row and its bytes stay put, the admin Trash
+// keeps listing it (flagged "cleared by user"), and an admin can still
+// restore it. Members therefore have no route to destroy content.
+func (s *DocumentService) ClearOwnDocument(ctx context.Context, id uuid.UUID) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.assertOwnTrashItem(ctx, id); err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		if err := s.repos.Documents.ClearFromUserTrash(ctx, tx, tenantID, id, userID); err != nil {
+			return err
+		}
+		// Audited: from the member's point of view this is "delete
+		// permanently", so the trail has to show who asked for it even
+		// though nothing was destroyed.
+		evt, err := model.NewOutboxEvent(tenantID, "dms.document.trash_cleared.v1", "document", id,
+			map[string]any{
+				"document_id": id.String(),
+				"cleared_by":  userID.String(),
+			})
+		if err != nil {
+			return err
+		}
+		return s.repos.Outbox.Insert(ctx, tx, evt)
+	})
+}
+
+// assertOwnTrashItem returns ErrNotFound unless the document is soft-deleted,
+// was deleted by the caller, and is still in the caller's Trash. NotFound
+// rather than Forbidden so the member surface can't be used to probe for
+// documents in workspaces the caller can't see.
+func (s *DocumentService) assertOwnTrashItem(ctx context.Context, id uuid.UUID) error {
+	tenantID, userID, err := mustCaller(ctx)
+	if err != nil {
+		return err
+	}
+	return s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+		var ok bool
+		qErr := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+			    SELECT 1 FROM documents
+			     WHERE tenant_id = $1 AND id = $2
+			       AND deleted_at IS NOT NULL
+			       AND deleted_by = $3
+			       AND user_cleared_at IS NULL
+			)`, tenantID, id, userID).Scan(&ok)
+		if qErr != nil {
+			return qErr
+		}
+		if !ok {
+			return vdmserr.ErrNotFound
+		}
+		return nil
 	})
 }
 

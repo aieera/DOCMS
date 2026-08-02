@@ -190,6 +190,10 @@ export default defineConfig(({ command, mode }) => {
             '/api/v1/admin':                    wsig('http://localhost:8180'),
             '/api/v1/permissions':              wsig('http://localhost:8181'),
             '/api/v1/documents':                wsig('http://localhost:8182'),
+            // Per-user Trash (document service). Distinct from
+            // /api/v1/admin/trash above; without this it falls into the
+            // '/api' catch-all on auth (:8180) and 404s.
+            '/api/v1/trash':                    wsig('http://localhost:8182'),
             '/api/v1/workspaces':               wsig('http://localhost:8182'),
             '/api/v1/folders':                  wsig('http://localhost:8182'),
             '/api/v1/shared':                   wsig('http://localhost:8182'),

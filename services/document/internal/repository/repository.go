@@ -37,6 +37,10 @@ type DocumentRepository interface {
 	Update(ctx context.Context, tx pgx.Tx, d *model.Document) error
 	SoftDelete(ctx context.Context, tx pgx.Tx, tenantID, id, deletedBy uuid.UUID) error
 	Restore(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
+	// ClearFromUserTrash hides a soft-deleted row from its deleter's own
+	// Trash. NOT a delete — the admin Trash keeps listing it and Restore
+	// still works.
+	ClearFromUserTrash(ctx context.Context, tx pgx.Tx, tenantID, id, clearedBy uuid.UUID) error
 	HardDelete(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) error
 	BlobsForDocument(ctx context.Context, tx pgx.Tx, tenantID, docID uuid.UUID) ([]struct {
 		BlobID uuid.UUID

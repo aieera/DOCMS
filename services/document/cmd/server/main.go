@@ -752,6 +752,14 @@ func main() {
 	// Folder permanent delete (cohort purge) + Empty Trash bulk purge.
 	rootMux.Handle("DELETE /api/v1/admin/trash/folders/{id}", middleware.CorrelationHTTP(trashAuth))
 	rootMux.Handle("DELETE /api/v1/admin/trash", middleware.CorrelationHTTP(trashAuth))
+	// Per-user Trash — same handler + session auth, no role gate. Every
+	// route is scoped to rows the caller soft-deleted, and its DELETE only
+	// clears the item from that caller's own view (the bytes stay, the
+	// admin Trash keeps listing it). Members previously had no way to see
+	// or recover their own deletions at all.
+	rootMux.Handle("GET /api/v1/trash", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("POST /api/v1/trash/{id}/restore", middleware.CorrelationHTTP(trashAuth))
+	rootMux.Handle("DELETE /api/v1/trash/{id}", middleware.CorrelationHTTP(trashAuth))
 
 	// Pre-upload duplicate check — GET /documents/duplicates?sha256=&workspace_id=.
 	// Any authenticated user; the service permission-filters matches to

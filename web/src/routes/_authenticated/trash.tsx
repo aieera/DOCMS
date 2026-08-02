@@ -26,6 +26,7 @@ import {
   type TrashedFolder,
   type TrashEntry,
 } from '@/api/trash'
+import { MyTrashSection } from '@/components/trash/MyTrashSection'
 import { formatDateTime, formatFileSize } from '@/lib/formatters'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
@@ -157,13 +158,13 @@ function TrashPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't clean up empty folders"),
   })
 
+  // Members get their own Trash — the items THEY deleted, which they can
+  // restore themselves. Previously this page told them to go ask an admin.
   if (!canManage) {
     return (
-      <div>
-        <PageHeader title="Trash" description="Deleted items — restore or permanently delete" />
-        <Card className="p-8 text-center text-sm text-muted-foreground">
-          Trash is an administrator surface. Contact your workspace admin to restore a deleted document.
-        </Card>
+      <div className="space-y-6">
+        <PageHeader title="Trash" description="Items you deleted — restore them or clear them from this list" />
+        <MyTrashSection />
       </div>
     )
   }
@@ -193,6 +194,10 @@ function TrashPage() {
           </Button>
         }
       />
+
+      {/* Admins are users too: their own deletions come first, then the
+          tenant-wide surface below. */}
+      <MyTrashSection />
 
       {/* ---- Maintenance: empty-folder cleanup. Compact single line;
              hidden entirely when there's nothing to clean. ---------- */}
@@ -309,6 +314,18 @@ function TrashPage() {
                       {entry.lifecycle_state === 'legal_hold' && (
                         <Badge variant="outline" className="shrink-0 font-normal">
                           <Lock className="me-0.5 h-3 w-3" /> hold
+                        </Badge>
+                      )}
+                      {/* The deleter has cleared this from their own trash
+                          and believes it gone. It is still recoverable —
+                          only the purge below destroys anything. */}
+                      {entry.user_cleared && (
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 font-normal"
+                          title="The person who deleted this has cleared it from their own trash. It is still recoverable from here."
+                        >
+                          cleared by user
                         </Badge>
                       )}
                     </div>
