@@ -21,17 +21,17 @@ import (
 // resource_types the inner axis, cells are the max capability the
 // role holds on that resource.
 type PermissionMatrix struct {
-	Roles         []string            `json:"roles"`
-	ResourceTypes []string            `json:"resource_types"`
-	Capabilities  []string            `json:"capabilities"`
-	Cells         []PermissionCell    `json:"cells"`
-	Notes         []string            `json:"notes"`
+	Roles         []string         `json:"roles"`
+	ResourceTypes []string         `json:"resource_types"`
+	Capabilities  []string         `json:"capabilities"`
+	Cells         []PermissionCell `json:"cells"`
+	Notes         []string         `json:"notes"`
 }
 
 // PermissionCell is one (role, resource_type) pairing.
 type PermissionCell struct {
-	Role         string `json:"role"`
-	ResourceType string `json:"resource_type"`
+	Role          string `json:"role"`
+	ResourceType  string `json:"resource_type"`
 	MaxCapability string `json:"max_capability"` // one of Capabilities, or "" for none
 	Source        string `json:"source"`         // rego rule label
 }
@@ -39,9 +39,9 @@ type PermissionCell struct {
 // buildMatrix mirrors services/policy/internal/opa/policy.rego. The
 // rules used:
 //
-//   Rule 5: workspace_members.role == admin → admin on workspace + contents
-//   Rule 6: user_role ∈ {owner, admin} → admin on everything
-//   Otherwise: member / viewer / external get only explicit grants.
+//	Rule 5: workspace_members.role == admin → admin on workspace + contents
+//	Rule 6: user_role ∈ {owner, admin} → admin on everything
+//	Otherwise: member / viewer / external get only explicit grants.
 //
 // "member" / "viewer" / "external" cells are intentionally "" (no
 // baseline) — those roles rely on explicit permission rows, which
@@ -49,11 +49,11 @@ type PermissionCell struct {
 // dialogs, not in this global matrix.
 func buildMatrix() PermissionMatrix {
 	const (
-		admin  = "admin"
-		del    = "delete"
-		edit   = "edit"
-		share  = "share"
-		view   = "view"
+		admin = "admin"
+		del   = "delete"
+		edit  = "edit"
+		share = "share"
+		view  = "view"
 	)
 	roles := []string{"owner", "admin", "workspace_admin", "member", "viewer", "external"}
 	resources := []string{"workspace", "folder", "document"}
