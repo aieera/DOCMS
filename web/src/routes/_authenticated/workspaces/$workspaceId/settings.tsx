@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { getWorkspace } from '@/api/workspaces'
 import { getUsers } from '@/api/admin'
+import { listUserDirectory } from '@/api/auth'
 import {
   useUpdateWorkspace, useDeleteWorkspace, useTransferWorkspaceOwnership,
   useWorkspaceMembers, useAddWorkspaceMember, useUpdateWorkspaceMemberRole,
@@ -436,21 +437,34 @@ function MemberPicker({
 }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
+
+  // Search the SERVER, not a snapshot of it.
+  //
+  // This used to fetch getUsers({limit:'25'}) once and filter the result in
+  // the browser, which broke two ways:
+  //   - the response was cached for 60s under a query key that ignored the
+  //     search term, so a user created after the picker had been opened was
+  //     unfindable until a hard reload — you could see them in Identity &
+  //     Access yet not add them to a workspace;
+  //   - only the 25 NEWEST users were ever fetched (ORDER BY created_at
+  //     DESC), so past 25 users everyone older simply never appeared, and
+  //     no amount of typing would surface them.
+  // Keying the query on the debounced term fixes both: each distinct search
+  // is its own cache entry and is answered by the database.
+  const [debounced, setDebounced] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 250)
+    return () => clearTimeout(t)
+  }, [q])
+
   const usersQ = useQuery({
-    queryKey: ['admin', 'users', { for: 'workspace-member-picker' }],
-    queryFn: () => getUsers({ limit: '25' }),
+    queryKey: ['user-directory', debounced],
+    queryFn: () => listUserDirectory(debounced),
     enabled: open,
-    staleTime: 60_000,
+    staleTime: 30_000,
   })
-  const ql = q.trim().toLowerCase()
-  const candidates = (usersQ.data?.items ?? [])
+  const candidates = (usersQ.data ?? [])
     .filter((u) => !excludeIds.has(u.id))
-    .filter((u) =>
-      ql === ''
-        ? true
-        : u.email?.toLowerCase().includes(ql) ||
-          u.display_name?.toLowerCase().includes(ql),
-    )
     .slice(0, 8)
   return (
     <div className="relative space-y-1">

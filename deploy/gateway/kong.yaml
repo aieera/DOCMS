@@ -138,6 +138,12 @@ services:
             config: { minute: 5, hour: 60, policy: local, fault_tolerant: true, hide_client_headers: false }
       - { name: auth-mfa-rest,    paths: [/api/v1/auth/mfa],          strip_path: false }
       - { name: auth-sessions,    paths: [/api/v1/auth/sessions],     strip_path: false }
+      # People-picker feed (@mentions, share dialogs, assignee + workspace
+      # member pickers). Same class as the admin-* gap noted below: no Kong
+      # route, so it worked in dev via the vite catch-all and 404'd in prod,
+      # leaving every picker silently empty. Must precede no broader auth
+      # prefix — /api/v1/auth/users has no other route.
+      - { name: auth-user-dir,    paths: [/api/v1/auth/users/directory], methods: [GET], strip_path: false }
       - { name: auth-apikeys,     paths: [/api/v1/auth/api-keys],     strip_path: false }
       - { name: auth-saml,        paths: [/api/v1/auth/saml],         strip_path: false }
       - { name: auth-oidc,        paths: [/api/v1/auth/oidc],         strip_path: false }

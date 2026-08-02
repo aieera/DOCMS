@@ -74,6 +74,15 @@ routes:
     prefix: /api/v1/auth/sessions
     methods: []
     auth: required
+  # People-picker feed for @mentions, share dialogs, assignee + workspace
+  # member pickers. Had no Kong route: it worked in dev through the vite
+  # /api -> auth catch-all and 404'd behind the gateway, so every picker
+  # came back empty in a gateway deployment. Any authenticated user;
+  # returns only id/display_name/email for active users.
+  - service: auth
+    prefix: /api/v1/auth/users/directory
+    methods: [GET]
+    auth: required
   - service: auth
     prefix: /api/v1/auth/api-keys
     methods: []
