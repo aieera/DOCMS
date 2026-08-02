@@ -208,12 +208,12 @@ export function DocumentDetailBody({
     <div
       className={cn(
         'flex flex-col gap-6',
-        // Full-page: lock to the viewport so the PAGE never scrolls — the
-        // preview pane and the rail scroll internally instead. lg+ only; on
-        // small screens the single column flows and the page scrolls as
-        // normal. Mirrors the workspace browser's shell pattern. In the modal
-        // the dialog body owns scrolling, so no lock is applied there.
-        !inModal && 'lg:min-h-0 lg:flex-1 lg:overflow-hidden',
+        // Lock to the available height so the preview pane and the rail scroll
+        // INDEPENDENTLY, instead of the short column leaving dead space beside
+        // the tall one. Works in both contexts because each parent is a bounded
+        // flex column: the route content area (full page) and the dialog body
+        // (modal). lg+ only; small screens flow and scroll as one column.
+        'lg:min-h-0 lg:flex-1 lg:overflow-hidden',
       )}
     >
       {!inModal && <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} versionId={versionId} onNavigate={setTab} />}
@@ -310,10 +310,10 @@ export function DocumentDetailBody({
       <div
         className={cn(
           'grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]',
-          // Full-page lock: the grid fills the remaining height and its single
-          // row is bounded (minmax(0,1fr)) so the two columns can scroll
-          // internally instead of growing the page. Skipped in the modal.
-          !inModal && 'lg:min-h-0 lg:flex-1 lg:[grid-template-rows:minmax(0,1fr)]',
+          // The grid fills the remaining height and its single row is bounded
+          // (minmax(0,1fr)) so the two columns scroll internally instead of one
+          // growing to match the other. Applies in both full page and modal.
+          'lg:min-h-0 lg:flex-1 lg:[grid-template-rows:minmax(0,1fr)]',
         )}
       >
         {/* key={tab} remounts the pane on tab change so each view opens
@@ -322,7 +322,7 @@ export function DocumentDetailBody({
           key={tab}
           className={cn(
             'flex min-w-0 min-h-[calc(100vh-12rem)] flex-col space-y-4',
-            !inModal && 'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
+            'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
           )}
         >
           <DocumentTabs tab={tab} onChange={setTab} />
@@ -426,7 +426,6 @@ export function DocumentDetailBody({
           documentId={documentId}
           versionId={versionId}
           isAdminCaller={isAdminCaller}
-          inModal={inModal}
         />
       </div>
     </div>
@@ -804,16 +803,11 @@ function DocumentSidebar({
   documentId,
   versionId,
   isAdminCaller,
-  inModal = false,
 }: {
   doc: any
   documentId: string
   versionId?: string
   isAdminCaller?: boolean
-  // Modal mode: the dialog body is the single scroll container, so the
-  // sidebar must NOT bring its own sticky/max-height scroll region —
-  // nested scrollbars inside the dialog read as broken layout.
-  inModal?: boolean
 }) {
   // `?doctype=note|wiki` lets a freshly-created note open the collaborative
   // editor before its first markdown version exists (the gateway GET doesn't
@@ -827,10 +821,10 @@ function DocumentSidebar({
     <aside
       className={cn(
         'space-y-4',
-        // Full-page: the rail is a bounded grid cell that scrolls internally
-        // (the page shell no longer scrolls). Was sticky+max-height before the
-        // viewport-lock. Modal keeps natural flow.
-        !inModal && 'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
+        // The rail is a bounded grid cell that scrolls internally on lg+ (the
+        // shell/dialog no longer scrolls as a whole). Was sticky+max-height
+        // before the viewport-lock.
+        'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
       )}
     >
 

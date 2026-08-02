@@ -143,7 +143,7 @@ export function DocumentViewerModal({ open, onOpenChange, documentId, workspaceI
             scrollables (tab content + sidebar) behave correctly inside the
             fixed-height dialog. The body renders nothing meaningful until
             documentId is set — guards against flash on first open. */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-background px-6 py-5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background px-6 py-5">
           {documentId && workspaceId && (
             <DocumentDetailBody documentId={documentId} workspaceId={workspaceId} inModal />
           )}
