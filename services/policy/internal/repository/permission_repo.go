@@ -73,6 +73,50 @@ func (r *permissionRepo) ListByPrincipal(ctx context.Context, tx pgx.Tx, tenantI
 	return scanPermissions(rows)
 }
 
+// ListForPrincipalOnResource returns every row for one principal on one
+// resource REGARDLESS of validity — revoked and expired rows included.
+//
+// The unique constraint spans (tenant, resource, principal, capability) with
+// no time dimension, so a revoked row still occupies its slot: re-granting
+// the same capability collides with it forever. Grant needs to see those
+// tombstones to revive them instead of failing with ALREADY_EXISTS.
+func (r *permissionRepo) ListForPrincipalOnResource(
+	ctx context.Context, tx pgx.Tx, tenantID uuid.UUID,
+	kind model.ResourceType, id uuid.UUID,
+	principalType model.PrincipalType, principalID uuid.UUID,
+) ([]model.Permission, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT `+selectPermissionCols+`
+		FROM permissions
+		WHERE tenant_id = $1
+		  AND resource_type = $2 AND resource_id = $3
+		  AND principal_type = $4 AND principal_id = $5
+		FOR UPDATE
+	`, tenantID, string(kind), id, string(principalType), principalID)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	return scanPermissions(rows)
+}
+
+// Reactivate revives a previously revoked or expired grant in place, which is
+// the only way to re-create one: see ListForPrincipalOnResource for why the
+// row cannot simply be inserted again.
+func (r *permissionRepo) Reactivate(
+	ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID,
+	grantedBy uuid.UUID, at time.Time, expiresAt *time.Time,
+) (*model.Permission, error) {
+	row := tx.QueryRow(ctx, `
+		UPDATE permissions
+		SET valid_from = $4, valid_to = NULL, expires_at = $5,
+		    granted_by = $3, granted_at = $4
+		WHERE tenant_id = $1 AND id = $2
+		RETURNING `+selectPermissionCols+`
+	`, tenantID, id, grantedBy, at, nullable(expiresAt))
+	return scanPermission(row)
+}
+
 // Insert writes a permission. Schema has capability as a single TEXT value
 // (CHECK constraint limits the domain); a grant with model.Effect=deny is
 // not representable in the 000001 schema and is rejected up front.
@@ -106,10 +150,18 @@ func (r *permissionRepo) Revoke(ctx context.Context, tx pgx.Tx, tenantID, id uui
 		  AND (valid_to IS NULL OR valid_to > $3)
 		RETURNING `+selectPermissionCols+`
 	`, tenantID, id, at)
+	return scanPermission(row)
+}
 
-	var p model.Permission
-	var validTo, expiresAt *time.Time
-	var capability string
+// ---- scanning helpers -----------------------------------------------------
+
+func scanPermission(row pgx.Row) (*model.Permission, error) {
+	var (
+		p          model.Permission
+		capability string
+		validTo    *time.Time
+		expiresAt  *time.Time
+	)
 	if err := row.Scan(
 		&p.TenantID, &p.ID, (*string)(&p.ResourceType), &p.ResourceID,
 		(*string)(&p.PrincipalType), &p.PrincipalID,
@@ -124,8 +176,6 @@ func (r *permissionRepo) Revoke(ctx context.Context, tx pgx.Tx, tenantID, id uui
 	p.ExpiresAt = expiresAt
 	return &p, nil
 }
-
-// ---- scanning helpers -----------------------------------------------------
 
 func scanPermissions(rows pgx.Rows) ([]model.Permission, error) {
 	var out []model.Permission

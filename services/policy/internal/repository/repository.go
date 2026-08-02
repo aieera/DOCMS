@@ -22,7 +22,9 @@ type PermissionRepo interface {
 	ListByResource(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, kind model.ResourceType, id uuid.UUID, at time.Time) ([]model.Permission, error)
 	ListByResourceAsOf(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, kind model.ResourceType, id uuid.UUID, asOf time.Time) ([]model.Permission, error)
 	ListByPrincipal(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, kind model.PrincipalType, id uuid.UUID, at time.Time) ([]model.Permission, error)
+	ListForPrincipalOnResource(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, kind model.ResourceType, id uuid.UUID, principalType model.PrincipalType, principalID uuid.UUID) ([]model.Permission, error)
 	Insert(ctx context.Context, tx pgx.Tx, p *model.Permission) error
+	Reactivate(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, grantedBy uuid.UUID, at time.Time, expiresAt *time.Time) (*model.Permission, error)
 	Revoke(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, at time.Time) (*model.Permission, error)
 }
 

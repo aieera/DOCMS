@@ -47,16 +47,16 @@ type GrantInput struct {
 //     superseded so grants do not stack (see supersededCapabilities for the
 //     guard that stops a lesser granter stripping a higher one).
 //
-// GranterCapability bounds what may be superseded; leave it empty for
-// internal callers that are implicitly fully privileged.
+// GranterCapability bounds what may be superseded. An empty value ranks 0
+// and therefore supersedes nothing — deliberately fail-closed, so a caller
+// that forgets to resolve the granter's capability can never strip existing
+// grants. Callers with real authority must say so explicitly (the HTTP
+// handler always passes the probed ceiling).
 func (s *Service) Grant(ctx context.Context, in GrantInput) (*model.Permission, error) {
 	if err := validateGrant(in); err != nil {
 		return nil, err
 	}
 	granterCap := in.GranterCapability
-	if granterCap == "" {
-		granterCap = model.CapAdmin
-	}
 
 	var granted *model.Permission
 	var superseded []model.Permission

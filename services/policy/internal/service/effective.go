@@ -40,8 +40,10 @@ type EffectiveAccess struct {
 	FolderOwner *uuid.UUID
 }
 
-// capRank mirrors the Rego capability hierarchy
-// (admin > delete > edit > share > view). Higher rank subsumes lower.
+// capRank mirrors the Rego capability hierarchy in opa/policy.rego
+// (admin > delete > edit > share > view_unredacted > view). Higher rank
+// subsumes lower. TestCapRankMatchesRego pins this mirror to the Rego
+// literal — change them together.
 func capRank(c model.Capability) int {
 	switch c {
 	case model.CapAdmin:
@@ -52,6 +54,8 @@ func capRank(c model.Capability) int {
 		return 30
 	case model.CapShare:
 		return 20
+	case "view_unredacted": // ADR 0079; no model constant yet
+		return 15
 	case model.CapView:
 		return 10
 	}

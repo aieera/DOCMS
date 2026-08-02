@@ -82,12 +82,16 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
   const shareWithPeople = async () => {
     if (selected.length === 0) return
     setCreating(true)
-    const failed: string[] = []
+    // Keep the reason, not just the name. A bare `catch {}` here made a
+    // permissions refusal, a duplicate grant and a dropped connection all
+    // render as the same unactionable "Could not share with X".
+    const failed: { name: string; reason: string }[] = []
     for (const u of selected) {
+      const name = u.display_name || u.email
       try {
         await grantPermission('document', documentId, 'user', u.id, capability)
-      } catch {
-        failed.push(u.display_name || u.email)
+      } catch (err: unknown) {
+        failed.push({ name, reason: readErrorMessage(err) ?? 'the server rejected the request' })
       }
     }
     setCreating(false)
@@ -96,10 +100,17 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
       toast.success(`Shared with ${selected.length} ${selected.length === 1 ? 'person' : 'people'}`)
       setSelected([])
       onOpenChange(false)
-    } else {
-      toast.error(`Could not share with ${failed.join(', ')}`)
-      setSelected((prev) => prev.filter((u) => failed.includes(u.display_name || u.email)))
+      return
     }
+    // One recipient — lead with why. Several — name them, then the first
+    // reason, since a batch usually fails for one shared cause.
+    toast.error(
+      failed.length === 1
+        ? `Could not share with ${failed[0].name}: ${failed[0].reason}`
+        : `Could not share with ${failed.map((f) => f.name).join(', ')} — ${failed[0].reason}`,
+    )
+    const failedNames = new Set(failed.map((f) => f.name))
+    setSelected((prev) => prev.filter((u) => failedNames.has(u.display_name || u.email)))
   }
 
   const handleCreate = async () => {

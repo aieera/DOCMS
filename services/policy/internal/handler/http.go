@@ -248,11 +248,6 @@ func (h *HTTPHandler) grant(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, r, httpErr)
 		return
 	}
-	if !h.callerMayAdminister(r, u, resourceType, resourceID) {
-		writeHTTPError(w, r, vdmserr.ErrForbidden)
-		return
-	}
-
 	var body struct {
 		PrincipalType string     `json:"principal_type"`
 		PrincipalID   string     `json:"principal_id"`
@@ -268,15 +263,27 @@ func (h *HTTPHandler) grant(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, r, vdmserr.Validation("principal_id", "not a uuid"))
 		return
 	}
+
+	// Sharing needs the `share` capability, not `admin` — and never more than
+	// the caller holds themselves. The body is parsed first because the gate
+	// depends on which capability is being handed out.
+	requested := model.Capability(body.Capability)
+	callerCap := h.callerCapability(r, u, resourceType, resourceID)
+	if !service.MayGrant(callerCap, requested) {
+		writeHTTPError(w, r, vdmserr.Forbidden(grantDeniedReason(callerCap, requested, resourceType)))
+		return
+	}
+
 	p, err := h.svc.Grant(r.Context(), service.GrantInput{
-		TenantID:      u.TenantID,
-		GrantedBy:     u.ID,
-		ResourceType:  resourceType,
-		ResourceID:    resourceID,
-		PrincipalType: model.PrincipalType(body.PrincipalType),
-		PrincipalID:   principalID,
-		Capability:    model.Capability(body.Capability),
-		ExpiresAt:     body.ExpiresAt,
+		TenantID:          u.TenantID,
+		GrantedBy:         u.ID,
+		ResourceType:      resourceType,
+		ResourceID:        resourceID,
+		PrincipalType:     model.PrincipalType(body.PrincipalType),
+		PrincipalID:       principalID,
+		Capability:        requested,
+		ExpiresAt:         body.ExpiresAt,
+		GranterCapability: callerCap,
 	})
 	if err != nil {
 		writeHTTPError(w, r, err)
@@ -339,11 +346,32 @@ func (h *HTTPHandler) callerMayAdminister(r *http.Request, u auth.UserInfo, reso
 	case "owner", "admin":
 		return true
 	}
+	return h.callerHolds(r, u, resourceType, resourceID, model.CapAdmin)
+}
+
+// callerCapability resolves how much the caller holds on a resource, probing
+// highest-first so the answer is their ceiling. Returns "" when they hold
+// less than `share`, which is the floor for granting anything.
+func (h *HTTPHandler) callerCapability(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID) model.Capability {
+	// Org owners and admins hold everything, everywhere.
+	switch u.Role {
+	case "owner", "admin":
+		return model.CapAdmin
+	}
+	for _, c := range service.CapabilityProbeOrder() {
+		if h.callerHolds(r, u, resourceType, resourceID, c) {
+			return c
+		}
+	}
+	return ""
+}
+
+func (h *HTTPHandler) callerHolds(r *http.Request, u auth.UserInfo, resourceType model.ResourceType, resourceID uuid.UUID, c model.Capability) bool {
 	res, err := h.svc.Check(r.Context(), service.CheckInput{
 		TenantID:     u.TenantID,
 		SubjectType:  "user",
 		SubjectID:    u.ID.String(),
-		Action:       "admin",
+		Action:       string(c),
 		ResourceType: string(resourceType),
 		ResourceID:   resourceID.String(),
 	})
@@ -351,6 +379,17 @@ func (h *HTTPHandler) callerMayAdminister(r *http.Request, u auth.UserInfo, reso
 		return false
 	}
 	return res.Allowed
+}
+
+// grantDeniedReason explains a refused grant in the terms the person in the
+// share dialog needs — "ask an admin" vs "you can't hand out more than you
+// have". The generic "permission denied" left users unable to tell a
+// permissions problem from a network failure.
+func grantDeniedReason(callerCap, requested model.Capability, resourceType model.ResourceType) string {
+	if callerCap == "" {
+		return "you need share access to this " + string(resourceType) + " before you can share it — ask an owner or admin"
+	}
+	return "you cannot grant " + string(requested) + " access because you only hold " + string(callerCap) + " on this " + string(resourceType)
 }
 
 func parseResource(r *http.Request) (model.ResourceType, uuid.UUID, error) {
