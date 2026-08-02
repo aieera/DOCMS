@@ -186,7 +186,7 @@ export function Breadcrumbs() {
             <DirectionalIcon name="ChevronRight" className="mx-1 h-3.5 w-3.5 shrink-0 text-sidebar-foreground/40" aria-hidden />
             {isLast ? (
               <span
-                className="block max-w-[28ch] truncate font-semibold text-white sm:max-w-[44ch]"
+                className="block max-w-[32ch] truncate font-semibold text-white sm:max-w-[56ch]"
                 title={crumb.label}
               >
                 {crumb.label}
@@ -194,7 +194,7 @@ export function Breadcrumbs() {
             ) : (
               <Link
                 to={crumb.href}
-                className="block max-w-[20ch] truncate text-sidebar-foreground/60 transition-colors hover:text-white"
+                className="block max-w-[28ch] truncate text-sidebar-foreground/60 transition-colors hover:text-white sm:max-w-[40ch]"
                 title={crumb.label}
               >
                 {crumb.label}

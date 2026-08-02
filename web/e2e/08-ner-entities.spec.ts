@@ -135,6 +135,7 @@ test.describe('Journey 08 — NER entities tab', () => {
     await page.goto(`/workspaces/${WORKSPACE_ID}/documents/${DOCUMENT_ID}`)
 
     // Switch to the Entities tab.
+    await page.getByTestId('tabgroup-analysis').click()
     await page.getByTestId('tab-entities').click()
 
     // Header summarizes total + group count.
@@ -170,6 +171,7 @@ test.describe('Journey 08 — NER entities tab', () => {
     })
 
     await page.goto(`/workspaces/${WORKSPACE_ID}/documents/${DOCUMENT_ID}`)
+    await page.getByTestId('tabgroup-analysis').click()
     await page.getByTestId('tab-entities').click()
 
     // Click the per-row Relabel pencil for the "John Doe" row.

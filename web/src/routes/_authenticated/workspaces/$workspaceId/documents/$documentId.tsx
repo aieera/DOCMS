@@ -6,15 +6,28 @@ import { toast } from 'sonner'
 import {
   AlertCircle,
   CheckCircle2,
+  CheckSquare,
+  ChevronDown,
   Clock,
+  Download,
   Eraser,
   FileText,
   GitBranch,
+  GitCompareArrows,
   History,
   MessageSquare,
+  MoreHorizontal,
   Network,
   RefreshCw,
+  Share2,
+  UserCog,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/shadcn/dropdown-menu'
 
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { useDocument } from '@/hooks/useDocuments'
@@ -30,7 +43,6 @@ import { CoauthorEditor } from '@/components/viewer/CoauthorEditor'
 import { ImageAnnotationLayer } from '@/components/viewer/ImageAnnotationLayer'
 import { VideoAnnotationLayer } from '@/components/viewer/VideoAnnotationLayer'
 import { CommentsPanel } from '@/components/documents/CommentsPanel'
-import { DocumentHeaderToolbar } from '@/components/documents/DocumentHeaderToolbar'
 import { RealtimePresence } from '@/components/documents/RealtimePresence'
 import { CollaborativeEditor } from '@/components/documents/CollaborativeEditor'
 import { RelationshipsGraph } from '@/components/documents/RelationshipsGraph'
@@ -59,9 +71,9 @@ import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/shadcn/button'
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/shadcn/accordion'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { fieldLabel } from '@/lib/schemaFields'
 import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 import { TaskCreateDialog } from '@/components/tasks/TaskCreateDialog'
@@ -84,20 +96,35 @@ import { DocumentTasksPanel } from '@/components/tasks/DocumentTasksPanel'
 
 type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'comments' | 'signatures' | 'redaction' | 'activity'
 
-const TABS: { key: TabKey; label: string; icon: typeof FileText }[] = [
-  { key: 'preview', label: 'Preview', icon: FileText },
-  { key: 'text', label: 'Text', icon: FileText },
-  { key: 'qa', label: 'Q&A', icon: MessageSquare },
-  { key: 'compliance', label: 'Compliance', icon: AlertCircle },
-  { key: 'entities', label: 'Entities', icon: FileText },
+// Each view belongs to one of five groups; the tab bar renders those groups as
+// top-level nav and reveals a group's views as sub-tabs. `group` here is the
+// single source of truth — TAB_GROUPS below derives its members by filtering.
+const TABS: { key: TabKey; label: string; icon: typeof FileText; group: TabGroupKey }[] = [
+  { key: 'preview', label: 'Preview', icon: FileText, group: 'document' },
+  { key: 'text', label: 'Text', icon: FileText, group: 'document' },
+  { key: 'redaction', label: 'Redaction', icon: Eraser, group: 'document' },
+  { key: 'qa', label: 'Q&A', icon: MessageSquare, group: 'analysis' },
+  { key: 'entities', label: 'Entities', icon: FileText, group: 'analysis' },
   // ADR 0099 — contract intelligence graph.
-  { key: 'relationships', label: 'Relationships', icon: Network },
+  { key: 'relationships', label: 'Relationships', icon: Network, group: 'analysis' },
+  { key: 'compliance', label: 'Compliance', icon: AlertCircle, group: 'compliance' },
   // Document-associated workflow (templates attached to this doc).
-  { key: 'workflow', label: 'Workflow', icon: GitBranch },
-  { key: 'comments', label: 'Comments', icon: MessageSquare },
-  { key: 'signatures', label: 'Signatures', icon: Pencil },
-  { key: 'activity', label: 'Activity', icon: History },
-  { key: 'redaction', label: 'Redaction', icon: Eraser },
+  { key: 'workflow', label: 'Workflow', icon: GitBranch, group: 'collaboration' },
+  { key: 'comments', label: 'Comments', icon: MessageSquare, group: 'collaboration' },
+  { key: 'signatures', label: 'Signatures', icon: Pencil, group: 'collaboration' },
+  { key: 'activity', label: 'Activity', icon: History, group: 'history' },
+]
+
+type TabGroupKey = 'document' | 'analysis' | 'compliance' | 'collaboration' | 'history'
+
+// Top-level groups, in display order. Single-view groups (Compliance, History)
+// open their view directly with no sub-tab row.
+const TAB_GROUPS: { key: TabGroupKey; label: string; icon: typeof FileText; tabs: typeof TABS }[] = [
+  { key: 'document', label: 'Document', icon: FileText, tabs: TABS.filter((t) => t.group === 'document') },
+  { key: 'analysis', label: 'Analysis', icon: Network, tabs: TABS.filter((t) => t.group === 'analysis') },
+  { key: 'compliance', label: 'Compliance', icon: AlertCircle, tabs: TABS.filter((t) => t.group === 'compliance') },
+  { key: 'collaboration', label: 'Collaboration', icon: MessageSquare, tabs: TABS.filter((t) => t.group === 'collaboration') },
+  { key: 'history', label: 'History', icon: History, tabs: TABS.filter((t) => t.group === 'history') },
 ]
 
 function DocumentDetailPage() {
@@ -178,19 +205,25 @@ export function DocumentDetailBody({
 
   return (
     <div className="space-y-6">
-      {!inModal && <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} />}
-      {/* Modal mode: replace the rich header with a compact metadata
-          strip so uploader + intelligence badges aren't lost. */}
+      {!inModal && <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} versionId={versionId} onNavigate={setTab} />}
+      {/* Modal mode: replace the rich header with a compact metadata strip so
+          uploader + intelligence badges + primary actions aren't lost. */}
       {inModal && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
           <span title={uploaderTooltip(doc)}>{uploaderLabel(doc)}</span>
           <span aria-hidden>·</span>
           <span>uploaded {formatDateTime(doc.created_at)}</span>
-          <span className="ms-auto flex flex-wrap items-center gap-2">
+          <div className="ms-auto flex flex-wrap items-center gap-2">
             <LanguageBadge documentId={documentId} />
-            <ComplianceBadge documentId={documentId} />
-            <OcrQualityBadge documentId={documentId} />
-          </span>
+            <BadgeLink onNavigate={setTab} tab="compliance" title="View compliance findings">
+              <ComplianceBadge documentId={documentId} />
+            </BadgeLink>
+            <BadgeLink onNavigate={setTab} tab="text" title="View extracted text (OCR)">
+              <OcrQualityBadge documentId={documentId} />
+            </BadgeLink>
+            <RealtimePresence documentId={documentId} />
+            <DocumentActions doc={doc} documentId={documentId} versionId={versionId} />
+          </div>
         </div>
       )}
 
@@ -379,6 +412,8 @@ function DocumentHeader({
   doc,
   workspaceId,
   documentId,
+  versionId,
+  onNavigate,
 }: {
   doc: {
     title: string
@@ -389,6 +424,8 @@ function DocumentHeader({
   }
   workspaceId: string
   documentId: string
+  versionId?: string
+  onNavigate?: (tab: TabKey) => void
 }) {
   return (
     <div className="space-y-3">
@@ -429,108 +466,61 @@ function DocumentHeader({
             <WorkflowStatusBadge status={doc.workflow_instance.status} />
           )}
           <LanguageBadge documentId={documentId} />
-          <ComplianceBadge documentId={documentId} />
-          <OcrQualityBadge documentId={documentId} />
+          <BadgeLink onNavigate={onNavigate} tab="compliance" title="View compliance findings">
+            <ComplianceBadge documentId={documentId} />
+          </BadgeLink>
+          <BadgeLink onNavigate={onNavigate} tab="text" title="View extracted text (OCR)">
+            <OcrQualityBadge documentId={documentId} />
+          </BadgeLink>
+          <RealtimePresence documentId={documentId} />
+          <DocumentActions doc={doc} documentId={documentId} versionId={versionId} />
         </div>
       </div>
     </div>
   )
 }
 
-// ---- Tabs ---------------------------------------------------------------
-
-function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) => void }) {
-  // Horizontal scrollable tab bar that uses a muted background "pill"
-  // surface — keeps consistent with shadcn's Tabs default look. The
-  // active tab gets the card surface so it visually rises above the
-  // pill bar.
-  return (
-    <div
-      className="relative overflow-x-auto [mask-image:linear-gradient(to_right,black_0,black_calc(100%-2rem),transparent)] [scroll-snap-type:x_mandatory] [&::-webkit-scrollbar]:hidden"
-      role="tablist"
-      aria-label="Document views"
-    >
-      <div className="inline-flex min-w-full gap-1 rounded-md bg-muted/60 p-1">
-        {TABS.map(({ key, label, icon: Icon }) => {
-          const active = tab === key
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => onChange(key)}
-              data-testid={`tab-${key}`}
-              className={cn(
-                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all [scroll-snap-align:start]',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                active
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function TabPanel({
-  current,
-  value,
+// Wraps a status badge so it deep-links to the tab that explains it (e.g.
+// "Critical" → Compliance, "OCR: Good" → Text). No-op passthrough when no
+// navigation handler is supplied. The wrapped badges already self-hide when
+// they have no data, so this renders nothing in that case.
+function BadgeLink({
+  onNavigate,
+  tab,
+  title,
   children,
 }: {
-  current: TabKey
-  value: TabKey
+  onNavigate?: (tab: TabKey) => void
+  tab: TabKey
+  title: string
   children: React.ReactNode
 }) {
-  if (current !== value) return null
-  // role=tabpanel for screen readers; the rendered content drives its
-  // own surface so wrapper stays unstyled.
+  if (!onNavigate) return <>{children}</>
   return (
-    <div role="tabpanel" aria-labelledby={`tab-${value}`} className="space-y-3">
+    <button
+      type="button"
+      onClick={() => onNavigate(tab)}
+      title={title}
+      data-testid={`badge-link-${tab}`}
+      className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+    >
       {children}
-    </div>
+    </button>
   )
 }
 
-// ---- Sidebar -------------------------------------------------------------
-
-function DocumentSidebar({
-  doc,
-  documentId,
-  versionId,
-  isAdminCaller,
-  inModal = false,
-}: {
-  doc: any
-  documentId: string
-  versionId?: string
-  isAdminCaller?: boolean
-  // Modal mode: the dialog body is the single scroll container, so the
-  // sidebar must NOT bring its own sticky/max-height scroll region —
-  // nested scrollbars inside the dialog read as broken layout.
-  inModal?: boolean
-}) {
-  // `?doctype=note|wiki` lets a freshly-created note open the collaborative
-  // editor before its first markdown version exists (the gateway GET doesn't
-  // yet return doc_type). Loose read so it's harmless in the modal context.
-  const { doctype: composeDocType } = useSearch({ strict: false }) as { doctype?: 'note' | 'wiki' }
+// Self-contained primary-action cluster for the header: a labelled Download
+// button (the one action people reach for) plus a ⋯ menu for the rest, and it
+// owns the dialogs those items open. Lives beside the filename so actions sit
+// with the document they act on — the sidebar no longer carries an icon card.
+function DocumentActions({ doc, documentId, versionId }: { doc: any; documentId: string; versionId?: string }) {
   const [taskOpen, setTaskOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
-  const [versionsOpen, setVersionsOpen] = useState(false)
   const [manageAccessOpen, setManageAccessOpen] = useState(false)
 
-  // Compact-toolbar redesign: the five full-width buttons became icon
-  // actions so tags/details are visible without scrolling. Download
-  // keeps the cookie-authenticated decrypt-stream alias (see M-4 note
-  // in git history): one URL for every mime type; the `download`
-  // attribute hints the original filename.
+  // Cookie-authenticated decrypt-stream alias: one URL for every mime type;
+  // the `download` attribute hints the original filename.
   const handleDownload = () => {
     if (!versionId) return
     const a = document.createElement('a')
@@ -542,93 +532,38 @@ function DocumentSidebar({
   }
 
   return (
-    <aside
-      className={cn(
-        'space-y-4',
-        !inModal && 'lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1',
-      )}
-    >
-      {/* Primary actions — compact icon toolbar (records moved to its own
-          card below so the declare picker / empty-state can't overflow it). */}
-      <Card className="flex items-center gap-1 p-2">
-        <DocumentHeaderToolbar
-          onDownload={handleDownload}
-          canDownload={!!versionId}
-          onShare={() => setShareOpen(true)}
-          onCreateTask={() => setTaskOpen(true)}
-          onCompare={() => setCompareOpen(true)}
-          onManageAccess={() => setManageAccessOpen(true)}
-        />
-      </Card>
-
-      {/* Records — declare / status / vital / freeze. Its own full-width card
-          so the series picker and the "no file plan" empty-state lay out
-          cleanly instead of overflowing the icon toolbar. */}
-      <Card className="p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Records
-        </h3>
-        <div className="mt-3">
-          <DeclareRecordButton documentId={documentId} canManage={!!isAdminCaller} />
-        </div>
-      </Card>
-
-      {/* Details — fixed metadata block. Surfaces lifecycle, type,
-          size, version count, mime; tags appear inline below if any.
-          Lives at the TOP of the rail (with the AI tag suggestions)
-          so tagging is visible without scrolling — burying it below
-          the intelligence panels made auto-tagging look nonexistent. */}
-      <Card className="p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Details
-        </h3>
-        <dl className="mt-3 space-y-2 text-sm">
-          <Row label="Status">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
-          </Row>
-          <Row label="Type">
-            <span className="flex items-center justify-between gap-2">
-              <span>{doc.document_class || 'Unclassified'}</span>
-              <CorrectClassificationButton
-                documentId={documentId}
-                currentCategory={doc.document_class || ''}
-              />
-            </span>
-          </Row>
-          <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
-          <Row label="Versions">{doc.version_count ?? '—'}</Row>
-          <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
-        </dl>
-        {(doc.tags?.length ?? 0) > 0 && (
-          <div className="mt-4 border-t border-border pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tags</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {(doc.tags ?? []).map((t: string) => <Badge key={t}>{t}</Badge>)}
-            </div>
-          </div>
-        )}
-        <div className="mt-4 flex flex-col gap-1 border-t border-border pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            onClick={() => setVersionsOpen(true)}
-            data-testid="open-version-history"
-          >
-            <History className="h-4 w-4" /> Version history
+    <div className="flex items-center gap-1">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={handleDownload}
+        disabled={!versionId}
+        data-testid="action-download"
+      >
+        <Download className="h-4 w-4" /> Download
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="More actions" data-testid="action-more">
+            <MoreHorizontal className="h-4 w-4" aria-hidden />
           </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start">
-            <MessageSquare className="h-4 w-4" /> Comments
-          </Button>
-        </div>
-      </Card>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={() => setShareOpen(true)}>
+            <Share2 className="me-2 h-4 w-4" aria-hidden /> Share
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setCompareOpen(true)}>
+            <GitCompareArrows className="me-2 h-4 w-4" aria-hidden /> Compare with…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setManageAccessOpen(true)}>
+            <UserCog className="me-2 h-4 w-4" aria-hidden /> Manage access
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTaskOpen(true)}>
+            <CheckSquare className="me-2 h-4 w-4" aria-hidden /> Create task
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      {/* Pending AI tag suggestions — one-click accept/reject. */}
-      <TagSuggestionsPanel documentId={documentId} />
-
-      {/* Audit integrity (Merkle proof) + WORM object-lock status/action.
-          Moved from the header band (compact-toolbar redesign). */}
-      <DocumentIntegrity documentId={documentId} canManage={!!isAdminCaller} />
       <TaskCreateDialog
         open={taskOpen}
         onOpenChange={setTaskOpen}
@@ -655,20 +590,272 @@ function DocumentSidebar({
         workspaceId={doc.workspace_id}
         folderId={doc.folder_id}
       />
-      <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
-        <SheetContent side="right" className="w-[440px] sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Version history</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 max-h-[calc(100vh-120px)] overflow-y-auto">
-            <VersionHistory documentId={documentId} />
-          </div>
-        </SheetContent>
-      </Sheet>
+    </div>
+  )
+}
 
-      {/* ADR 0065 — co-authoring entrypoint. Renders only for
-          Office mime types and only when the configured editor is
-          reachable; falls back to "Open in desktop app" otherwise. */}
+// ---- Tabs ---------------------------------------------------------------
+
+function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) => void }) {
+  // Two-level navigation: five top-level groups, each revealing its own views
+  // as sub-tabs. Collapses the 11 flat tabs into an organized hierarchy so no
+  // view hides silently off the edge and the way back to the document (the
+  // Document group) is always visible. `tab` still drives content; the active
+  // group is derived from it.
+  const activeGroup = TAB_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) ?? TAB_GROUPS[0]
+  return (
+    <div className="space-y-2">
+      {/* Top-level groups */}
+      <div
+        role="tablist"
+        aria-label="Document sections"
+        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted/60 p-1 [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
+      >
+        {TAB_GROUPS.map(({ key, label, icon: Icon, tabs }) => {
+          const active = key === activeGroup.key
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(tabs[0].key)}
+              data-testid={`tabgroup-${key}`}
+              className={cn(
+                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                active
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Sub-tabs for the active group (only when it has more than one view). */}
+      {activeGroup.tabs.length > 1 && (
+        <div
+          role="tablist"
+          aria-label={`${activeGroup.label} views`}
+          className="flex flex-wrap gap-1 px-0.5"
+        >
+          {activeGroup.tabs.map(({ key, label, icon: Icon }) => {
+            const active = tab === key
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onChange(key)}
+                data-testid={`tab-${key}`}
+                className={cn(
+                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  active
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TabPanel({
+  current,
+  value,
+  children,
+}: {
+  current: TabKey
+  value: TabKey
+  children: React.ReactNode
+}) {
+  if (current !== value) return null
+  // role=tabpanel for screen readers; the rendered content drives its
+  // own surface so wrapper stays unstyled.
+  return (
+    <div role="tabpanel" aria-labelledby={`tab-${value}`} className="space-y-3">
+      {children}
+    </div>
+  )
+}
+
+// ---- Sidebar -------------------------------------------------------------
+
+// Collapsible rail section with its own header and a per-section open/closed
+// state persisted to localStorage (keyed globally, so the user's layout
+// choices stick across documents and reloads). Used for the sections whose
+// body we author inline here; self-contained panels (which already carry
+// their own card + header and self-hide when empty) render directly below.
+function RailSection({
+  id,
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  id: string
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const storageKey = `doc-rail:${id}`
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(storageKey)
+      return v == null ? defaultOpen : v === '1'
+    } catch {
+      return defaultOpen
+    }
+  })
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(storageKey, next ? '1' : '0')
+      } catch {
+        /* storage unavailable (private mode) — state stays in-memory */
+      }
+      return next
+    })
+  }
+  return (
+    <Card className="overflow-hidden">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        data-testid={`rail-section-${id}`}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <span>{title}</span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && <div className="border-t border-border px-4 pb-4 pt-3">{children}</div>}
+    </Card>
+  )
+}
+
+function DocumentSidebar({
+  doc,
+  documentId,
+  versionId,
+  isAdminCaller,
+  inModal = false,
+}: {
+  doc: any
+  documentId: string
+  versionId?: string
+  isAdminCaller?: boolean
+  // Modal mode: the dialog body is the single scroll container, so the
+  // sidebar must NOT bring its own sticky/max-height scroll region —
+  // nested scrollbars inside the dialog read as broken layout.
+  inModal?: boolean
+}) {
+  // `?doctype=note|wiki` lets a freshly-created note open the collaborative
+  // editor before its first markdown version exists (the gateway GET doesn't
+  // yet return doc_type). Loose read so it's harmless in the modal context.
+  const { doctype: composeDocType } = useSearch({ strict: false }) as { doctype?: 'note' | 'wiki' }
+  // Version history is the one dialog still opened from the rail (the Details
+  // section); the rest of the actions moved to the header (DocumentActions).
+  const [versionsOpen, setVersionsOpen] = useState(false)
+
+  return (
+    <aside
+      className={cn(
+        'space-y-4',
+        !inModal && 'lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1',
+      )}
+    >
+
+      {/* Rail sections — individually collapsible, each remembering its own
+          open/closed state; ordered by how often they're used. Sections we
+          author inline use RailSection; self-contained intelligence panels
+          (their own card + header, self-hiding when empty) render directly. */}
+
+      {/* Details — lifecycle, type, size, version count, mime. */}
+      <RailSection id="details" title="Details" defaultOpen>
+        <dl className="space-y-2 text-sm">
+          <Row label="Status">
+            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+          </Row>
+          <Row label="Type">
+            <span className="flex items-center justify-between gap-2">
+              <span>{doc.document_class || 'Unclassified'}</span>
+              <CorrectClassificationButton
+                documentId={documentId}
+                currentCategory={doc.document_class || ''}
+              />
+            </span>
+          </Row>
+          <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>
+          <Row label="Versions">
+            {/* The count is the history affordance — dedupes the separate
+                "Version history" button that duplicated this row. Comments is a
+                tab (Collaboration), so its dead rail link is gone. */}
+            <button
+              type="button"
+              onClick={() => setVersionsOpen(true)}
+              data-testid="open-version-history"
+              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            >
+              {doc.version_count ?? '—'}
+              <History className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </Row>
+          <Row label="MIME"><code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{doc.mime_type}</code></Row>
+        </dl>
+      </RailSection>
+
+      {/* Tags — one home: applied tags + AI suggestions (self-hides its list). */}
+      <RailSection id="tags" title="Tags" defaultOpen>
+        {(doc.tags?.length ?? 0) > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {(doc.tags ?? []).map((t: string) => <Badge key={t}>{t}</Badge>)}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No tags applied.</p>
+        )}
+        <div className="mt-3">
+          <TagSuggestionsPanel documentId={documentId} />
+        </div>
+      </RailSection>
+
+      {/* Custom fields — self-hides when the tenant has no metadata schema. */}
+      <CustomFieldsSidebarSlot doc={doc as Document} />
+
+      {/* Tasks linked to this document. */}
+      <DocumentTasksPanel documentId={documentId} documentTitle={doc?.title ?? ''} />
+
+      {/* Records & integrity — declare-as-record + Merkle proof / WORM lock. */}
+      <RailSection id="records" title="Records & integrity">
+        <DeclareRecordButton documentId={documentId} canManage={!!isAdminCaller} />
+        <div className="mt-3">
+          <DocumentIntegrity documentId={documentId} canManage={!!isAdminCaller} />
+        </div>
+      </RailSection>
+
+      {/* Matched clauses — self-hides when none. */}
+      <MatchedClausesPanel documentId={documentId} />
+
+      {/* Language & translation. */}
+      {versionId && <TranslationPanel documentId={documentId} versionId={versionId} />}
+
+      {/* Retention exemption — self-hides when not applicable. */}
+      <RetentionExemptSidebarSlot doc={doc} />
+
+      {/* Contextual editors — render only for the relevant mime types. */}
+      {/* ADR 0065 — co-authoring entrypoint (Office types). */}
       {versionId && (
         <CoauthorEditor
           documentId={documentId}
@@ -679,10 +866,7 @@ function DocumentSidebar({
           canEdit={true}
         />
       )}
-
-      {/* ADR 0067 — image + video annotation layers. Mime-based
-          dispatch; PDF stays on the existing PDFLayoutViewer +
-          highlight/note/stamp/drawing flow. */}
+      {/* ADR 0067 — image + video annotation layers. */}
       {versionId && doc.mime_type?.startsWith('image/') && (
         <ImageAnnotationLayer
           documentId={documentId}
@@ -699,13 +883,7 @@ function DocumentSidebar({
           canCreate={true}
         />
       )}
-
-      {/* ADR 0096 — live presence: who else is viewing this doc. */}
-      <RealtimePresence documentId={documentId} />
-
-      {/* §17.4 / note — live collaborative editing for text documents and
-          notes/wikis (CRDT, no merge dialogs). Office types edit via the WOPI
-          iframe (CoauthorEditor); binary/PDF/image types have no text surface. */}
+      {/* §17.4 / note — live collaborative editing for text/note/wiki docs. */}
       {(doc.mime_type?.startsWith('text/') ||
         doc.doc_type === 'note' || doc.doc_type === 'wiki' ||
         composeDocType === 'note' || composeDocType === 'wiki') && (
@@ -717,31 +895,19 @@ function DocumentSidebar({
         </Card>
       )}
 
-      {/* Comments + Signatures moved to their own tabs (left column) — they
-          are full feature surfaces, not at-a-glance metadata.
-          2026-08-01 sidebar de-weighting (hybrid). */}
-
-      {/* The remaining intelligence / metadata panels collapse into one
-          section, COLLAPSED BY DEFAULT, so the rail stops being a mile-long
-          stack. Each panel self-hides when it has nothing, so an expanded
-          section only shows what's actually relevant to this document. */}
-      <Accordion type="multiple" className="overflow-hidden rounded-lg border border-border bg-card">
-        <AccordionItem value="more" className="border-0">
-          <AccordionTrigger className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:no-underline">
-            More details &amp; intelligence
-          </AccordionTrigger>
-          <AccordionContent className="space-y-4 px-4 pb-4">
-            {/* Custom fields (tenant JSON-Schema metadata), clause-library
-                matches, linked tasks, translation, retention exemption —
-                each self-hides when empty. */}
-            <CustomFieldsSidebarSlot doc={doc as Document} />
-            <MatchedClausesPanel documentId={documentId} />
-            <DocumentTasksPanel documentId={documentId} documentTitle={doc?.title ?? ''} />
-            {versionId && <TranslationPanel documentId={documentId} versionId={versionId} />}
-            <RetentionExemptSidebarSlot doc={doc} />
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+      {/* Version history dialog — opened from the Details section. Other
+          dialogs (share/compare/task/manage-access) live in the header's
+          DocumentActions; live presence moved to the header too. */}
+      <Sheet open={versionsOpen} onOpenChange={setVersionsOpen}>
+        <SheetContent side="right" className="w-[440px] sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Version history</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 max-h-[calc(100vh-120px)] overflow-y-auto">
+            <VersionHistory documentId={documentId} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </aside>
   )
 }
@@ -819,7 +985,11 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
           return (
             <Row key={key} label={
               <>
-                {spec?.description || key}
+                {/* JSON Schema `title` is the label; `description` is
+                    helper text. Using description here leaked schema
+                    placeholders ("e.g. INV-2026-0042") into the label
+                    slot. Falls back to a tidied key, never the raw one. */}
+                <span title={spec?.description || undefined}>{fieldLabel(key, spec)}</span>
                 {required.has(key) && <span aria-label="required" className="ms-0.5 text-destructive">*</span>}
               </>
             }>
