@@ -80,6 +80,32 @@ func (r *workspaceRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uui
 // then had to render "No access" hints because a member's click hit
 // 403 on the inner /documents call. With per-caller filtering, the
 // frontend just renders whatever comes back.
+// workspaceGrantExists admits a caller who holds a workspace-scoped grant in
+// the `permissions` table (directly or through a group).
+//
+// Without it, "Manage access → add someone to this workspace" wrote a grant
+// that the workspace LIST ignored: OPA honoured it, so the grantee could read
+// the workspace's documents via a direct URL and got 200 from
+// /workspaces/{id}/documents, but the workspace never appeared in their
+// sidebar — access granted, nothing to click. Membership and folder grants
+// were the only paths that made a workspace visible.
+//
+// Validity mirrors the policy service's own predicate (permission_repo.go) so
+// the two authorization sources can't disagree about whether a grant is live.
+//
+// Placeholders: $1 tenant, $2 user, $3 group uuid[] — same as the caller's.
+const workspaceGrantExists = `EXISTS (
+		       SELECT 1 FROM permissions p
+		        WHERE p.tenant_id     = w.tenant_id
+		          AND p.resource_type = 'workspace'
+		          AND p.resource_id   = w.id
+		          AND ((p.principal_type = 'user'  AND p.principal_id = $2)
+		            OR (p.principal_type = 'group' AND p.principal_id = ANY($3::uuid[])))
+		          AND p.valid_from <= now()
+		          AND (p.valid_to   IS NULL OR p.valid_to   > now())
+		          AND (p.expires_at IS NULL OR p.expires_at > now())
+		     )`
+
 func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID, role string) ([]model.Workspace, error) {
 	const baseSelect = `
 		SELECT w.tenant_id, w.id, w.name, COALESCE(w.description, ''),
@@ -133,6 +159,7 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		          AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $2)
 		            OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($3::uuid[])))
 		     )
+		     OR `+workspaceGrantExists+`
 		   )
 		 ORDER BY w.created_at ASC, w.id ASC`, tenantID, userID, groups)
 	}
@@ -153,8 +180,11 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 
 // HasAccess reports whether the caller may see the workspace at all —
 // the single-workspace analogue of List's non-admin filter: the tenant
-// default workspace, workspaces they created, are members of, or hold
-// a folder grant inside (directly or via a group).
+// default workspace, workspaces they created, are members of, hold a
+// workspace-scoped grant on, or hold a folder grant inside (directly or
+// via a group). Must stay in step with List: if one admits a caller and
+// the other doesn't, the workspace either appears and 403s on open, or
+// opens fine but never appears.
 func (r *workspaceRepo) HasAccess(ctx context.Context, tx pgx.Tx, tenantID, id, userID uuid.UUID, userGroups []uuid.UUID) (bool, error) {
 	groups := userGroups
 	if groups == nil {
@@ -183,6 +213,17 @@ func (r *workspaceRepo) HasAccess(ctx context.Context, tx pgx.Tx, tenantID, id, 
 		            AND f.workspace_id = w.id
 		            AND ((fg.grantee_type = 'user'  AND fg.grantee_id = $3)
 		              OR (fg.grantee_type = 'group' AND fg.grantee_id = ANY($4::uuid[])))
+		       )
+		       OR EXISTS (
+		         SELECT 1 FROM permissions p
+		          WHERE p.tenant_id     = w.tenant_id
+		            AND p.resource_type = 'workspace'
+		            AND p.resource_id   = w.id
+		            AND ((p.principal_type = 'user'  AND p.principal_id = $3)
+		              OR (p.principal_type = 'group' AND p.principal_id = ANY($4::uuid[])))
+		            AND p.valid_from <= now()
+		            AND (p.valid_to   IS NULL OR p.valid_to   > now())
+		            AND (p.expires_at IS NULL OR p.expires_at > now())
 		       )
 		     )
 		)`, tenantID, id, userID, groups).Scan(&ok)
