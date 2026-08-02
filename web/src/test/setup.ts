@@ -22,6 +22,16 @@ class ResizeObserverMock {
 }
 ;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverMock }).ResizeObserver = ResizeObserverMock
 
+// jsdom implements neither the Pointer Capture API nor scrollIntoView, both of
+// which Radix Select calls when its listbox opens. Without these stubs any test
+// that clicks a Select trigger throws instead of opening the menu.
+if (typeof Element !== 'undefined') {
+  Element.prototype.hasPointerCapture ??= () => false
+  Element.prototype.setPointerCapture ??= () => {}
+  Element.prototype.releasePointerCapture ??= () => {}
+  Element.prototype.scrollIntoView ??= () => {}
+}
+
 // jsdom lacks window.matchMedia — sonner and some Radix primitives
 // call it to query prefers-reduced-motion.
 if (typeof window !== 'undefined' && !window.matchMedia) {

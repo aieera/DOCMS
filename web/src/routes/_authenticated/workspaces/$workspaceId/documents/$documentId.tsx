@@ -898,8 +898,18 @@ function DocumentSidebar({
       {/* Matched clauses — self-hides when none. */}
       <MatchedClausesPanel documentId={documentId} />
 
-      {/* Language & translation. */}
-      {versionId && <TranslationPanel documentId={documentId} versionId={versionId} />}
+      {/* Language & translation — the rail owns the card + collapse; the panel
+          renders bare content like the other RailSection widgets. */}
+      {versionId && (
+        <RailSection id="translation" title="Language & translation">
+          <TranslationPanel
+            documentId={documentId}
+            versionId={versionId}
+            mimeType={doc.mime_type ?? undefined}
+            title={doc.title ?? undefined}
+          />
+        </RailSection>
+      )}
 
       {/* Retention exemption — self-hides when not applicable. */}
       <RetentionExemptSidebarSlot doc={doc} />
