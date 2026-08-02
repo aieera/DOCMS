@@ -268,10 +268,19 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	if err != nil {
 		return 0, err
 	}
-	// Phase 1 (in tx): record each NEW message as 'pending' and collect the
-	// ones to materialise. We do NOT call the ingest pipeline inside the tx —
-	// it makes storage gRPC + presigned-PUT round-trips that would hold a DB
+	// Phase 1 (in tx): record each message as 'pending' and collect the ones
+	// to materialise. We do NOT call the ingest pipeline inside the tx — it
+	// makes storage gRPC + presigned-PUT round-trips that would hold a DB
 	// connection open for seconds per message.
+	//
+	// A row that is already 'materialised' is skipped (the DO UPDATE's WHERE
+	// filters it out, so RETURNING yields nothing). Anything still 'pending'
+	// or 'failed' is picked up again: the poller re-FETCHes the last 30 days
+	// on every tick, so the envelope is in hand and materialisation can be
+	// retried. This is the ONLY retry path — with a plain DO NOTHING, a
+	// message whose ingest failed (mis-set target folder, storage blip, or a
+	// crash between INSERT and materialise) stayed 'pending' forever because
+	// every later poll skipped it on the conflict.
 	type pending struct {
 		msgID string
 		env   *Envelope
@@ -281,22 +290,28 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 	err = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		for _, env := range envelopes {
 			recipients, _ := json.Marshal(env.To)
-			msgID := newUUID()
-			tag, err := tx.Exec(ctx, `
+			var msgID string
+			err := tx.QueryRow(ctx, `
 				INSERT INTO email_messages
 				    (tenant_id, id, config_id, source_message_id, thread_id,
 				     subject, sender, recipients, received_at, ingest_status)
 				VALUES ($1, $2, $3, $4, NULLIF($5, ''),
 				        NULLIF($6, ''), NULLIF($7, ''), $8, $9, 'pending')
-				ON CONFLICT (tenant_id, config_id, source_message_id) DO NOTHING`,
-				cfg.TenantID, msgID, configUUID, env.SourceMessageID, env.ThreadID,
+				ON CONFLICT (tenant_id, config_id, source_message_id) DO UPDATE
+				   SET subject      = EXCLUDED.subject,
+				       sender       = EXCLUDED.sender,
+				       ingest_status = 'pending',
+				       ingest_error  = NULL
+				 WHERE email_messages.ingest_status <> 'materialised'
+				RETURNING id`,
+				cfg.TenantID, newUUID(), configUUID, env.SourceMessageID, env.ThreadID,
 				env.Subject, env.From, recipients, nullableTime(env.Date),
-			)
+			).Scan(&msgID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				continue // already materialised — nothing to redo
+			}
 			if err != nil {
 				return err
-			}
-			if tag.RowsAffected() == 0 {
-				continue // duplicate
 			}
 			toMaterialise = append(toMaterialise, pending{msgID, env})
 			ingested++
@@ -324,10 +339,14 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID string, env *Envelope) {
 	tenantUUID, err := uuid.Parse(cfg.TenantID)
 	if err != nil {
+		s.log.Error().Err(err).Str("config_id", cfg.ID).Msg("email: bad tenant id")
 		return
 	}
 	bodyDocID, attachIDs, ierr := s.ingestEmail(ctx, cfg, env)
-	_ = database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
+	// Log the stamping error rather than dropping it. Swallowing it left
+	// the row on 'pending' with no trace anywhere, which is indistinguishable
+	// from "never attempted" — the state that hid this whole class of bug.
+	serr := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
 		if ierr != nil {
 			s.log.Warn().Err(ierr).Str("config_id", cfg.ID).Msg("email: ingest failed")
 			_, e := tx.Exec(ctx,
@@ -344,6 +363,10 @@ func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID strin
 			cfg.TenantID, msgID, bodyDocID, attachIDs)
 		return e
 	})
+	if serr != nil {
+		s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
+			Msg("email: stamping ingest outcome failed; message stays pending")
+	}
 }
 
 // ingestEmail materialises the body (rendered Markdown) + each attachment as

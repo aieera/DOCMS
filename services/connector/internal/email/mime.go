@@ -1,10 +1,12 @@
 package email
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"strings"
 )
@@ -20,7 +22,7 @@ func walkMIME(msg *mail.Message) (body string, attachments []Attachment, err err
 	mediaType, params, parseErr := mime.ParseMediaType(msg.Header.Get("Content-Type"))
 	if parseErr != nil || !strings.HasPrefix(mediaType, "multipart/") {
 		// Single-part message — body is the whole thing.
-		raw, _ := io.ReadAll(msg.Body)
+		raw := readDecoded(msg.Body, msg.Header.Get("Content-Transfer-Encoding"))
 		return string(raw), nil, nil
 	}
 	boundary := params["boundary"]
@@ -30,6 +32,59 @@ func walkMIME(msg *mail.Message) (body string, attachments []Attachment, err err
 	mr := multipart.NewReader(msg.Body, boundary)
 	body, attachments = walkParts(mr, "", nil)
 	return body, attachments, nil
+}
+
+// readDecoded reads a MIME part applying its Content-Transfer-Encoding.
+//
+// mime/multipart deliberately does NOT do this for you: NextPart hands
+// back the part's bytes verbatim. Reading a base64 part with io.ReadAll
+// therefore yields the base64 TEXT, so an ingested PDF was stored as
+// "JVBERi0x..." (the encoding of "%PDF-1") — unreadable to both the
+// OCR pipeline and the browser's PDF viewer.
+//
+// On a decode error we fall back to the raw bytes: a mislabelled part is
+// better filed as-is than dropped.
+func readDecoded(r io.Reader, encoding string) []byte {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "base64":
+		raw, _ := io.ReadAll(r)
+		// MUAs hard-wrap base64 at 76 columns; the decoder rejects the
+		// embedded CRLFs, so strip all whitespace first.
+		clean := strings.Map(func(c rune) rune {
+			if c == '\r' || c == '\n' || c == ' ' || c == '\t' {
+				return -1
+			}
+			return c
+		}, string(raw))
+		// Some senders omit the trailing "=" padding.
+		if dec, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(strings.TrimRight(clean, "=")); err == nil {
+			return dec
+		}
+		return raw
+	case "quoted-printable":
+		dec, err := io.ReadAll(quotedprintable.NewReader(r))
+		if err != nil && len(dec) == 0 {
+			return nil
+		}
+		return dec
+	default: // 7bit, 8bit, binary, or absent — already plain.
+		raw, _ := io.ReadAll(r)
+		return raw
+	}
+}
+
+// decodeHeader resolves RFC 2047 encoded-words ("=?UTF-8?q?...?=") that
+// mail clients use for non-ASCII header text. Without it a subject line
+// became the document's literal title, e.g. "=?UTF-8?q?[Docker]_You?=.md".
+// Undecodable input is returned unchanged rather than dropped.
+func decodeHeader(s string) string {
+	if s == "" || !strings.Contains(s, "=?") {
+		return s
+	}
+	if dec, err := (&mime.WordDecoder{}).DecodeHeader(s); err == nil {
+		return dec
+	}
+	return s
 }
 
 func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (string, []Attachment) {
@@ -52,6 +107,8 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (str
 		if filename == "" {
 			filename = params["name"]
 		}
+		// Non-ASCII filenames arrive as encoded-words too.
+		filename = decodeHeader(filename)
 		isAttachment := dispMediaType == "attachment" || (filename != "" && !strings.HasPrefix(mediaType, "text/"))
 
 		if strings.HasPrefix(mediaType, "multipart/") {
@@ -60,7 +117,7 @@ func walkParts(mr *multipart.Reader, body string, attachments []Attachment) (str
 			continue
 		}
 
-		raw, _ := io.ReadAll(part)
+		raw := readDecoded(part, part.Header.Get("Content-Transfer-Encoding"))
 		if isAttachment {
 			attachments = append(attachments, Attachment{
 				Filename:    filename,

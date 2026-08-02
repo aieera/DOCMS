@@ -183,9 +183,11 @@ func parseIMAPMessage(buf *imapclient.FetchMessageBuffer) (*Envelope, error) {
 	}
 	env := &Envelope{
 		SourceMessageID: imapUIDKey(buf),
-		Subject:         msg.Header.Get("Subject"),
-		From:            msg.Header.Get("From"),
-		ThreadID:        msg.Header.Get("Thread-Index"), // best-effort; not all servers set this
+		// Headers carry RFC 2047 encoded-words for any non-ASCII text;
+		// the subject becomes the filed document's title, so decode it.
+		Subject:  decodeHeader(msg.Header.Get("Subject")),
+		From:     decodeHeader(msg.Header.Get("From")),
+		ThreadID: msg.Header.Get("Thread-Index"), // best-effort; not all servers set this
 	}
 	if to := msg.Header.Get("To"); to != "" {
 		env.To = []string{to}
