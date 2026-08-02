@@ -12,6 +12,7 @@ import {
   sha256Hex,
   type Signer,
 } from '@/api/signatures'
+import { getDocument } from '@/api/documents'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -47,6 +48,17 @@ function InPersonSignPage() {
     queryFn: () => getRequest(requestId),
   })
 
+  // Documents are addressed as /workspaces/:ws/documents/:doc, but the
+  // signature request only carries document_id — resolve the workspace
+  // so the completion screen can link straight back to the document.
+  const docId = reqQ.data?.document_id
+  const docQ = useQuery({
+    queryKey: ['document', docId],
+    queryFn: () => getDocument(docId!),
+    enabled: !!docId,
+    staleTime: 60_000,
+  })
+
   // Pending signers in order. Filter out cc/approver — only signer
   // and witness gate completion.
   const orderedSigners: Signer[] = useMemo(() => {
@@ -73,6 +85,9 @@ function InPersonSignPage() {
   }, [firstPendingIndex, stepIndex])
 
   const [handoff, setHandoff] = useState(false)
+  // Local completion latch so the last signer immediately sees the
+  // done state without waiting for the request refetch to land.
+  const [done, setDone] = useState(false)
   const padRef = useRef<SignaturePadHandle>(null)
 
   const signMut = useAppMutation({
@@ -97,7 +112,13 @@ function InPersonSignPage() {
       const nextIdx = stepIndex + 1
       await qc.invalidateQueries({ queryKey: ['signature-request', requestId] })
       if (nextIdx >= orderedSigners.length) {
-        navigate({ to: '/sign/done' })
+        // Stay here: the invalidated request query flips this page to
+        // its own "All signers complete" state. It previously pushed to
+        // /sign/done, which is the QES/QTSP *return* page — it requires
+        // a ?session= param from the trust-service redirect, so the
+        // in-person ceremony landed on "Missing session id in URL" and
+        // an endless spinner.
+        setDone(true)
         return
       }
       setStepIndex(nextIdx)
@@ -130,12 +151,29 @@ function InPersonSignPage() {
       </p>
     )
   }
-  if (reqQ.data.status === 'completed' || firstPendingIndex < 0) {
+  if (done || reqQ.data.status === 'completed' || firstPendingIndex < 0) {
     return (
       <div className="mx-auto max-w-md p-6 text-center" data-testid="in-person-complete">
-        <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-foreground" />
+        <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-emerald-600" />
         <h2 className="text-lg font-semibold">All signers complete</h2>
-        <p className="mt-1 text-sm text-muted-foreground">This signature request is done.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          This signature request is done. The sealed document and certificate of
+          completion are attached to the document record.
+        </p>
+        {docQ.data?.workspace_id && (
+          <Button
+            className="mt-5"
+            onClick={() =>
+              navigate({
+                to: '/workspaces/$workspaceId/documents/$documentId',
+                params: { workspaceId: docQ.data!.workspace_id, documentId: reqQ.data!.document_id },
+              })
+            }
+            data-testid="in-person-open-doc"
+          >
+            Open document
+          </Button>
+        )}
       </div>
     )
   }
