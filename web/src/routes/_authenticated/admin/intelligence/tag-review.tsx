@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -10,6 +10,8 @@ import {
   reviewTagSuggestions,
   type TagSuggestion,
 } from '@/api/intelligence'
+import { getDocument } from '@/api/documents'
+import { readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
@@ -75,8 +77,8 @@ export function TagReviewQueuePage() {
   const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <PageHeader
+    <div className="max-w-5xl">
+      <PageHeader variant="section"
         title="Tag review queue"
         description={`${tenantTotal} pending suggestion${tenantTotal === 1 ? '' : 's'} across the tenant`}
       />
@@ -151,6 +153,20 @@ function DocumentGroup({
   busy: boolean
   onReview: (actions: { suggestion_id: string; action: 'accept' | 'reject' }[]) => void
 }) {
+  const navigate = useNavigate()
+  // Deep link needs the real workspace id; the suggestion row only
+  // carries the document id, so resolve it on click.
+  const openDocument = async (id: string) => {
+    try {
+      const doc = await getDocument(id)
+      void navigate({
+        to: '/workspaces/$workspaceId/documents/$documentId',
+        params: { workspaceId: doc.workspace_id, documentId: id },
+      })
+    } catch (e) {
+      toast.error(readErrorMessage(e) ?? 'Could not open the document')
+    }
+  }
   const acceptAll = () => onReview(items.map((s) => ({ suggestion_id: s.id, action: 'accept' })))
   const rejectAll = () => onReview(items.map((s) => ({ suggestion_id: s.id, action: 'reject' })))
 
@@ -159,12 +175,16 @@ function DocumentGroup({
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="text-sm">
           <span className="font-medium">Document </span>
-          <a
-            href={`/workspaces/_/documents/${documentId}`}
-            className="text-violet-600 hover:underline"
+          {/* The old raw <a href="/workspaces/_/..."> passed a literal
+              underscore as the workspaceId (guaranteed 404) and forced a
+              full page reload. Resolve the real workspace on click. */}
+          <button
+            type="button"
+            onClick={() => void openDocument(documentId)}
+            className="text-primary hover:underline"
           >
             {documentId.slice(0, 8)}…
-          </a>
+          </button>
           <span className="ms-2 text-muted-foreground">{items.length} pending</span>
         </div>
         <div className="flex gap-2">

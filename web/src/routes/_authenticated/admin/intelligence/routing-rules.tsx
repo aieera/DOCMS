@@ -8,10 +8,15 @@ import { Plus, Trash2, AlertTriangle } from 'lucide-react'
 import {
   createRoutingRule,
   deleteRoutingRule,
+  getSmartRoutingConfig,
   listRoutingRules,
   updateRoutingRule,
+  updateSmartRoutingConfig,
   type RoutingRule,
+  type SmartRoutingConfig,
 } from '@/api/smart-routing'
+import { useAuthStore } from '@/store/authStore'
+import { IntelligenceConfigCard, type ConfigField } from '@/components/admin/IntelligenceConfigCard'
 import { getWorkspaces, getFolders } from '@/api/workspaces'
 import type { Folder, Workspace } from '@/types/api'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -31,8 +36,21 @@ interface CreateForm {
 
 const EMPTY: CreateForm = { name: '', category_key: '', target_folder_id: '', priority: '0' }
 
+// GET/PUT /admin/smart-routing-config — endpoints that existed (and the
+// hub card promised) but had no UI until now.
+const ROUTING_CONFIG_FIELDS: ConfigField<SmartRoutingConfig>[] = [
+  { key: 'enabled', label: 'Smart routing enabled', kind: 'toggle', hint: 'Master switch for suggestions and auto-moves' },
+  { key: 'auto_move_threshold', label: 'Auto-move threshold', kind: 'number', min: 0, max: 1, step: 0.05, hint: 'Confidence at which a document is filed automatically' },
+  { key: 'suggest_threshold', label: 'Suggest threshold', kind: 'number', min: 0, max: 1, step: 0.05, hint: 'Confidence at which a filing suggestion is shown' },
+  { key: 'max_suggestions', label: 'Max suggestions', kind: 'number', min: 1, max: 10, step: 1 },
+  { key: 'learn_from_history', label: 'Learn from filing history', kind: 'toggle' },
+  { key: 'use_similarity', label: 'Use content similarity', kind: 'toggle' },
+]
+
 function RoutingRulesPage() {
   const qc = useQueryClient()
+  const role = useAuthStore((st) => st.user?.role)
+  const canEditConfig = role === 'admin' || role === 'owner'
   const [creating, setCreating] = useState<CreateForm | null>(null)
 
   const { data: rules, isLoading } = useQuery({
@@ -41,16 +59,28 @@ function RoutingRulesPage() {
   })
 
   // Resolve target_folder_id → a human folder name for the table. Rules only
-  // store the UUID (the list endpoint doesn't join folders), so we load every
-  // workspace's folders and build an id→path map; unresolved ids fall back to
-  // a short, copy-friendly UUID rather than the bare raw value (BUG-08).
+  // store the UUID (the list endpoint doesn't join folders), so we load
+  // folders and build an id→path map; unresolved ids fall back to a short,
+  // copy-friendly UUID rather than the bare raw value (BUG-08).
   const workspacesQ = useQuery({
     queryKey: ['routing-rules', 'workspaces'],
     queryFn: getWorkspaces,
     staleTime: 60_000,
   })
+  // Only fetch folders for workspaces a rule actually targets — this
+  // used to fan out one request per workspace in the tenant on every
+  // page load just to label the table. Rules without a
+  // target_workspace_id (legacy rows) fall back to the full sweep.
+  const targetWorkspaceIds = new Set(
+    (rules ?? []).map((r) => r.target_workspace_id).filter((id): id is string => !!id),
+  )
+  const everyRuleHasWorkspace =
+    (rules ?? []).length > 0 && (rules ?? []).every((r) => !!r.target_workspace_id)
+  const workspacesToFetch = (workspacesQ.data ?? []).filter(
+    (w: Workspace) => !everyRuleHasWorkspace || targetWorkspaceIds.has(w.id),
+  )
   const folderQueries = useQueries({
-    queries: (workspacesQ.data ?? []).map((w: Workspace) => ({
+    queries: workspacesToFetch.map((w: Workspace) => ({
       queryKey: ['routing-rules', 'folders', w.id],
       queryFn: () => getFolders(w.id),
       staleTime: 60_000,
@@ -77,6 +107,7 @@ function RoutingRulesPage() {
     mutationFn: (rule: RoutingRule) =>
       updateRoutingRule(rule.id, { enabled: !rule.enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['routing-rules'] }),
+    defaultErrorMessage: 'Could not toggle the rule',
   })
 
   const remove = useAppMutation({
@@ -105,7 +136,7 @@ function RoutingRulesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="max-w-5xl">
       <PageHeader
         title="Routing rules"
         description="When a document is classified, matching rules emit folder suggestions."
@@ -113,6 +144,19 @@ function RoutingRulesPage() {
           !creating && (
             <Button size="sm" onClick={() => setCreating({ ...EMPTY })}>
               <Plus className="me-2 h-4 w-4" />
+
+      <div className="mt-6">
+        <IntelligenceConfigCard
+          title="Configuration"
+          description="Thresholds and behavior for smart filing across the tenant."
+          queryKey={['smart-routing-config']}
+          fetchConfig={getSmartRoutingConfig}
+          saveConfig={updateSmartRoutingConfig}
+          fields={ROUTING_CONFIG_FIELDS}
+          canEdit={canEditConfig}
+          testid="smart-routing-config"
+        />
+      </div>
               New rule
             </Button>
           )

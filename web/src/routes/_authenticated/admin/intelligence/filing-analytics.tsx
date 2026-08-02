@@ -1,17 +1,45 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 
 import { getFilingAnalytics } from '@/api/smart-routing'
+import { getWorkspaces, getFolders } from '@/api/workspaces'
+import type { Folder, Workspace } from '@/types/api'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 function FilingAnalyticsPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['filing-analytics'],
     queryFn: getFilingAnalytics,
     refetchInterval: 30_000,
   })
+
+  // Folder-name resolution for the (category → folder) table, which used
+  // to print raw UUIDs. Shares the routing-rules page's query keys so
+  // the two admin pages reuse one cache; only fires once the analytics
+  // payload actually contains folder rows.
+  const hasFolderRows = (data?.top_folder_by_category ?? []).length > 0
+  const workspacesQ = useQuery({
+    queryKey: ['routing-rules', 'workspaces'],
+    queryFn: getWorkspaces,
+    staleTime: 60_000,
+    enabled: hasFolderRows,
+  })
+  const folderQueries = useQueries({
+    queries: (hasFolderRows ? (workspacesQ.data ?? []) : []).map((w: Workspace) => ({
+      queryKey: ['routing-rules', 'folders', w.id],
+      queryFn: () => getFolders(w.id),
+      staleTime: 60_000,
+    })),
+  })
+  const folderNameById = new Map<string, string>()
+  for (const q of folderQueries) {
+    for (const f of (q.data as Folder[] | undefined) ?? []) {
+      folderNameById.set(f.id, f.path || f.name)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -24,7 +52,16 @@ function FilingAnalyticsPage() {
       </div>
     )
   }
-  if (!data) return null
+  // `return null` here rendered a completely blank page whenever the
+  // fetch failed — indistinguishable from a broken route.
+  if (isError || !data) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Filing analytics" description="Suggestion acceptance + filing patterns." />
+        <ErrorState message="Could not load filing analytics." onRetry={() => void refetch()} />
+      </div>
+    )
+  }
 
   const acc = data.suggestion_acceptance
   const acceptancePct = (acc.acceptance_rate * 100).toFixed(1)
@@ -82,7 +119,13 @@ function FilingAnalyticsPage() {
                 {data.top_folder_by_category.map((row, i) => (
                   <tr key={`${row.category_key}-${row.folder_id}-${i}`} className="border-t border-border">
                     <td className="py-2.5">{row.category_key}</td>
-                    <td className="py-2.5 font-mono text-xs text-muted-foreground">{row.folder_id}</td>
+                    <td className="py-2.5 text-xs">
+                      {folderNameById.get(row.folder_id) ?? (
+                        <span className="font-mono text-muted-foreground" title={row.folder_id}>
+                          {row.folder_id.slice(0, 8)}…
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2.5 text-end tabular-nums">{row.count}</td>
                   </tr>
                 ))}

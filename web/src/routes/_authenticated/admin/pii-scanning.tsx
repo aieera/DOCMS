@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { ComplianceConfigPage } from './intelligence/compliance-config'
 import { ComplianceAdminDashboard } from './intelligence/compliance'
+import { PageHeader } from '@/components/shared/PageHeader'
 
 // Merge #6 — PII/PHI scanning. Config (rules + thresholds) on one
 // tab, findings dashboard on the other.
@@ -13,7 +14,9 @@ function PIIScanningPage() {
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'findings'
   return (
-    <Tabs
+    <div className="space-y-4">
+      <PageHeader title="PII / PHI scanning" description="Findings across the tenant and the detection rules that produce them." />
+      <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/pii-scanning', search: { tab: v as Tab } })}
     >
@@ -23,7 +26,8 @@ function PIIScanningPage() {
       </TabsList>
       <TabsContent value="findings" className="mt-4"><ComplianceAdminDashboard /></TabsContent>
       <TabsContent value="config" className="mt-4"><ComplianceConfigPage /></TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   )
 }
 

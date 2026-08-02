@@ -96,8 +96,8 @@ export function ModelsPage() {
     totalExamples != null && minExamples != null && minExamples > 0 && totalExamples < minExamples
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <PageHeader
+    <div className="max-w-6xl">
+      <PageHeader variant="section"
         title="Model registry"
         description="Per-tenant fine-tuned classifiers. New versions are trained from your manual corrections."
         actions={
@@ -142,7 +142,7 @@ export function ModelsPage() {
               className={`rounded px-2 py-1 text-xs ${
                 filterStatus === s
                   ? 'bg-foreground text-background'
-                  : 'bg-muted text-foreground hover:bg-muted  '
+                  : 'bg-muted text-foreground hover:bg-muted/70'
               }`}
             >
               {s === '' ? 'All' : s}

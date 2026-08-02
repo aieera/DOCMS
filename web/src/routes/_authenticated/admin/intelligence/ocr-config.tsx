@@ -76,8 +76,8 @@ export function OcrConfigPage() {
   // (read-only); everyone else gets bounced.
   if (!canView) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <PageHeader
+      <div className="max-w-3xl">
+        <PageHeader variant="section"
           title="OCR quality config"
           description="Per-tenant scoring thresholds, auto-retry, and notifications."
         />
@@ -96,8 +96,8 @@ export function OcrConfigPage() {
 
   if (isError) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <PageHeader title="OCR quality config" />
+      <div className="max-w-3xl">
+        <PageHeader variant="section" title="OCR quality config" />
         <div className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <div>
@@ -113,8 +113,8 @@ export function OcrConfigPage() {
 
   if (isLoading || !draft) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <PageHeader title="OCR quality config" description="Loading current configuration…" />
+      <div className="max-w-3xl">
+        <PageHeader variant="section" title="OCR quality config" description="Loading current configuration…" />
         <div className="mt-6 space-y-3">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
@@ -168,8 +168,8 @@ export function OcrConfigPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <PageHeader
+    <div className="max-w-3xl">
+      <PageHeader variant="section"
         title="OCR quality config"
         description="Per-tenant scoring thresholds, auto-retry, and review-queue routing."
       />

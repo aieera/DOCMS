@@ -52,8 +52,8 @@ export function OcrReviewPage() {
   const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <PageHeader
+    <div className="max-w-6xl">
+      <PageHeader variant="section"
         title="OCR review queue"
         description="Documents whose OCR pipeline flagged at least one page for human review."
       />
@@ -74,6 +74,8 @@ export function OcrReviewPage() {
             {GRADES.map((g) => (
               <button
                 key={g}
+                type="button"
+                aria-pressed={grade === g}
                 onClick={() => {
                   setGrade(grade === g ? '' : g)
                   setPage(0)
@@ -81,7 +83,7 @@ export function OcrReviewPage() {
                 className={[
                   'rounded border px-3 py-2 text-start',
                   grade === g
-                    ? 'border-violet-500 bg-violet-50 dark:bg-violet-950'
+                    ? 'border-primary bg-primary/10'
                     : 'border-border',
                 ].join(' ')}
               >

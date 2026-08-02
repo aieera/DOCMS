@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 const PROVIDER_OPTIONS = [
   { value: 'anthropic',  label: 'Anthropic (Claude)' },
@@ -56,7 +57,7 @@ function relativeTime(iso: string | null): string {
 
 export function TenantAIPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['tenant-llm-config'],
     queryFn: getTenantLLMConfig,
   })
@@ -104,6 +105,9 @@ export function TenantAIPage() {
     },
   })
 
+  if (isError) {
+    return <ErrorState message="Could not load the AI provider configuration." onRetry={() => void refetch()} />
+  }
   if (isLoading || !draft) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -163,7 +167,7 @@ export function TenantAIPage() {
         aria-hidden="true"
         className="pointer-events-none absolute -left-[9999px] h-px w-px opacity-0"
       />
-      <PageHeader
+      <PageHeader variant="section"
         title="AI provider"
         description="Per-tenant LLM routing — provider, model, fallback, encrypted API key, rate limit, daily budget."
       />

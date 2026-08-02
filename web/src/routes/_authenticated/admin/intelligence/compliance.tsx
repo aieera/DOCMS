@@ -9,6 +9,8 @@ import {
 } from '@/api/compliance-pii'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { Button } from '@/components/ui/shadcn/button'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 // Severity display order. risk_distribution arrives as a Go map → JSON keys in
@@ -27,25 +29,37 @@ const RISK_COLOR: Record<string, string> = {
 export function ComplianceAdminDashboard() {
   const [riskFilter, setRiskFilter] = useState<string>('')
 
-  const { data: dash, isLoading: dashLoading } = useQuery({
+  const { data: dash, isLoading: dashLoading, isError: dashError, refetch: refetchDash } = useQuery({
     queryKey: ['compliance-dashboard'],
     queryFn: getComplianceDashboard,
     refetchInterval: 30_000,
   })
 
+  const PAGE = 50
+  const [page, setPage] = useState(0)
   const { data: findings, isLoading: findingsLoading } = useQuery({
-    queryKey: ['compliance-pending', riskFilter],
-    queryFn: () => listPendingFindings({ risk_level: riskFilter || undefined }),
+    queryKey: ['compliance-pending', riskFilter, page],
+    queryFn: () =>
+      listPendingFindings({
+        risk_level: riskFilter || undefined,
+        limit: PAGE,
+        offset: page * PAGE,
+      }),
     refetchInterval: 30_000,
   })
 
-  if (dashLoading || !dash) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+  if (dashLoading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+  // A failed dashboard fetch used to render "Loading…" forever — an
+  // expired session or 403 looked like a hang.
+  if (dashError || !dash) {
+    return <ErrorState message="Could not load the compliance dashboard." onRetry={() => void refetchDash()} />
+  }
 
   const totalRisk = Object.values(dash.risk_distribution).reduce((a, b) => a + b, 0) || 1
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      <PageHeader
+    <div className="max-w-6xl">
+      <PageHeader variant="section"
         title="Compliance scanning"
         description="Tenant-wide PII/PHI findings produced by the intelligence pipeline."
       />
@@ -87,7 +101,7 @@ export function ComplianceAdminDashboard() {
                 <span className="w-32 truncate font-mono">{e.entity_type}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
                   <div
-                    className="h-full bg-violet-500"
+                    className="h-full bg-primary"
                     style={{
                       width: `${
                         (e.count / Math.max(1, ...dash.top_entity_types.map((x) => x.count))) * 100
@@ -109,7 +123,7 @@ export function ComplianceAdminDashboard() {
             All
           </FilterPill>
           {RISK_LEVELS.map((r) => (
-            <FilterPill key={r} active={riskFilter === r} onClick={() => setRiskFilter(r)}>
+            <FilterPill key={r} active={riskFilter === r} onClick={() => { setRiskFilter(r); setPage(0) }}>
               {r}
             </FilterPill>
           ))}
@@ -152,6 +166,32 @@ export function ComplianceAdminDashboard() {
             </tbody>
           </table>
         )}
+        {(findings?.total ?? 0) > PAGE && (
+          <div className="mt-3 flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {page * PAGE + 1}–{Math.min((page + 1) * PAGE, findings?.total ?? 0)} of{' '}
+              {findings?.total ?? 0}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={(page + 1) * PAGE >= (findings?.total ?? 0)}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Section>
     </div>
   )
@@ -189,7 +229,7 @@ function FilterPill({
       onClick={onClick}
       className={[
         'rounded-full px-3 py-1 text-xs capitalize',
-        active ? 'bg-violet-500 text-white' : 'bg-muted',
+        active ? 'bg-primary text-primary-foreground' : 'bg-muted',
       ].join(' ')}
     >
       {children}

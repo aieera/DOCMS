@@ -23,7 +23,7 @@ export function LLMUsagePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader variant="section"
         title="LLM usage"
         description="Per-tenant token + cost tally aggregated across models. Each Q&A and NER LLM call increments these counters; entries TTL out after 30 days of inactivity."
       />
@@ -69,9 +69,8 @@ export function LLMUsagePage() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        Counters are stored in Redis and reset 30 days after the last call to that model. For long-term billing reports, wire{' '}
-        <code className="rounded bg-muted px-1 font-mono">llm_gateway._meter_usage</code> to write into a{' '}
-        <code className="rounded bg-muted px-1 font-mono">tenant_usage_events</code> table — Redis is fine for the rolling-window dashboard above.
+        Counters cover a rolling window and reset 30 days after the last call to
+        that model — this dashboard shows recent usage, not a billing ledger.
       </p>
     </div>
   )

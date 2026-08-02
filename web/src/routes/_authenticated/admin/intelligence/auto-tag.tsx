@@ -13,12 +13,13 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 const SOURCE_KEYS = ['ner', 'classification', 'llm', 'pattern'] as const
 
 export function AutoTagAdminPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['auto-tag-config'],
     queryFn: getAutoTagConfig,
   })
@@ -42,9 +43,20 @@ export function AutoTagAdminPage() {
     onError: () => toast.error('Save failed'),
   })
 
+  if (isError) {
+    return <ErrorState message="Could not load the auto-tag configuration." onRetry={() => void refetch()} />
+  }
   if (isLoading || !draft) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   }
+
+  // Save enables only when something actually changed — the always-on
+  // button used to fire no-op PUTs and mask "did my edit take?".
+  const blockedDraft = blockedTagsInput.split(',').map((s) => s.trim()).filter(Boolean)
+  const dirty =
+    !!data &&
+    (JSON.stringify({ ...draft, blocked_tags: blockedDraft }) !==
+      JSON.stringify({ ...data, blocked_tags: data.blocked_tags ?? [] }))
 
   const onSubmit = () => {
     const blocked = blockedTagsInput
@@ -59,8 +71,8 @@ export function AutoTagAdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <PageHeader
+    <div className="max-w-3xl">
+      <PageHeader variant="section"
         title="Auto-tagging"
         description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline."
       />
@@ -132,7 +144,7 @@ export function AutoTagAdminPage() {
         </div>
 
         <div className="flex justify-end pt-2">
-          <Button onClick={onSubmit} disabled={save.isPending}>
+          <Button onClick={onSubmit} disabled={save.isPending || !dirty}>
             <Save className="me-2 h-4 w-4" />
             Save
           </Button>

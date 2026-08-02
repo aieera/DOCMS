@@ -77,7 +77,9 @@ const NAV_GROUPS: NavGroup[] = [
     labelKey: 'sidebar.settings',
     items: [
       { to: '/settings/security', icon: UserCog, labelKey: 'sidebar.my_settings' },
-      { to: '/admin', icon: Settings, labelKey: 'sidebar.admin', roles: ['admin', 'owner'] },
+      // compliance_officer gets a filtered hub (intelligence read-only
+      // pages the backend authorizes) — see COMPLIANCE_OFFICER_ADMIN_PATHS.
+      { to: '/admin', icon: Settings, labelKey: 'sidebar.admin', roles: ['admin', 'owner', 'compliance_officer'] },
     ],
   },
 ]

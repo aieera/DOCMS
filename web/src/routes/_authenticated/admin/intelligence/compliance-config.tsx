@@ -13,6 +13,7 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 const RISK_LEVELS = ['critical', 'high', 'medium', 'low'] as const
 
@@ -66,7 +67,7 @@ function validatePatterns(text: string): string | null {
 
 export function ComplianceConfigPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['compliance-config'],
     queryFn: getComplianceConfig,
   })
@@ -94,6 +95,9 @@ export function ComplianceConfigPage() {
     onError: () => toast.error('Save failed'),
   })
 
+  if (isError) {
+    return <ErrorState message="Could not load the detection rules." onRetry={() => void refetch()} />
+  }
   if (isLoading || !draft) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
   // Recomputed each render from the live textarea contents — never stale.
@@ -123,8 +127,8 @@ export function ComplianceConfigPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <PageHeader
+    <div className="max-w-3xl">
+      <PageHeader variant="section"
         title="Compliance config"
         description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns."
       />

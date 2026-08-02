@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Brain, CreditCard, Database, FileJson, FileSea
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
+import { adminPathAllowsComplianceOfficer } from '@/routes/_authenticated'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
@@ -124,14 +125,36 @@ const PLATFORM_GROUP: SectionGroup = {
 }
 
 function AdminPage() {
-  const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
-  const groups = [TENANT_GROUP, INTEGRATIONS_GROUP, INTEL_GROUP, ...(isPlatformAdmin ? [PLATFORM_GROUP] : [])]
+  const user = useAuthStore((s) => s.user)
+  const isPlatformAdmin = user?.is_platform_admin === true
+  const isComplianceOfficer = user?.role === 'compliance_officer' && !isPlatformAdmin
+
+  let groups = [TENANT_GROUP, INTEGRATIONS_GROUP, INTEL_GROUP, ...(isPlatformAdmin ? [PLATFORM_GROUP] : [])]
+
+  // A compliance officer only reaches the hub for the intelligence
+  // pages the backend authorizes them to read (see the route guard's
+  // COMPLIANCE_OFFICER_ADMIN_PATHS) — show exactly those cards so the
+  // hub never advertises a destination that would bounce them.
+  if (isComplianceOfficer) {
+    groups = [
+      {
+        ...INTEL_GROUP,
+        sections: (INTEL_GROUP.sections ?? []).filter((sec) =>
+          adminPathAllowsComplianceOfficer(sec.to),
+        ),
+      },
+    ]
+  }
 
   return (
     <div className="space-y-10">
       <PageHeader
         title="Administration"
-        description="Manage tenant-wide policy, people, and intelligence settings."
+        description={
+          isComplianceOfficer
+            ? 'Intelligence oversight — read-only access to scanning, tagging, and anomaly surfaces.'
+            : 'Manage tenant-wide policy, people, and intelligence settings.'
+        }
       />
       {groups.map((g) => (
         <SectionGroupBlock key={g.label} group={g} />

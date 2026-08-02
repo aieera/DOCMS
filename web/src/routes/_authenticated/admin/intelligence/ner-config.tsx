@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
+import { ErrorState } from '@/components/ui/ErrorState'
 
 // Mirrors the LLM-eligible types in services/document/internal/service/
 // ner_service.go::allowedEntityTypes, minus the deterministic ones
@@ -37,7 +38,7 @@ const MODEL_PRESETS = [
 
 export function NERConfigPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['ner-config'],
     queryFn: getNERConfig,
   })
@@ -62,10 +63,15 @@ export function NERConfigPage() {
     },
   })
 
+  if (isError) {
+    // Includes the license-gated 403 ("intel_llm feature is not
+    // included") — surface it in-page instead of an eternal spinner.
+    return <ErrorState message="Could not load the NER configuration. Your plan may not include the LLM NER tier." onRetry={() => void refetch()} />
+  }
   if (isLoading || !draft) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
-        <PageHeader title="NER configuration" description="Loading…" />
+      <div className="max-w-3xl">
+        <PageHeader variant="section" title="NER configuration" description="Loading…" />
       </div>
     )
   }
@@ -81,8 +87,8 @@ export function NERConfigPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <PageHeader
+    <div className="max-w-3xl">
+      <PageHeader variant="section"
         title="NER configuration"
         description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach. Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
         actions={

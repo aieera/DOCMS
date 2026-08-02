@@ -55,7 +55,7 @@ export function TagsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader variant="section"
         title="Tags"
         description="Tenant-level tag catalog. Documents reference these tags by id; deleting a tag removes it from every document that has it."
       />

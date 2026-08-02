@@ -4,6 +4,7 @@ import { TenantAIPage } from './tenant/ai'
 import { NERConfigPage } from './intelligence/ner-config'
 import { ModelsPage } from './intelligence/models'
 import { LLMUsagePage } from './intelligence/usage'
+import { PageHeader } from '@/components/shared/PageHeader'
 
 // Merge #2 — AI provider + NER tier + Model registry + LLM usage.
 // Per the consolidation plan: the duplicate usage tally that used to
@@ -19,7 +20,9 @@ function AIPage() {
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'provider'
   return (
-    <Tabs
+    <div className="space-y-4">
+      <PageHeader title="AI & Models" description="Provider keys, NER tier, model registry, and usage & cost." />
+      <Tabs
       value={active}
       onValueChange={(v) => navigate({ to: '/admin/ai', search: { tab: v as Tab } })}
     >
@@ -33,7 +36,8 @@ function AIPage() {
       <TabsContent value="ner" className="mt-4"><NERConfigPage /></TabsContent>
       <TabsContent value="models" className="mt-4"><ModelsPage /></TabsContent>
       <TabsContent value="usage" className="mt-4"><LLMUsagePage /></TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   )
 }
 

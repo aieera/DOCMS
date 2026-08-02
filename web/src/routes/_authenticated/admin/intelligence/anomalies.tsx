@@ -14,10 +14,16 @@ import {
   type AnomalyReport,
   type FindingStatus,
   type Severity,
+  getAnomalyConfig,
+  updateAnomalyConfig,
+  type AnomalyConfig,
 } from '@/api/anomaly'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
+import { useAuthStore } from '@/store/authStore'
+import { IntelligenceConfigCard, type ConfigField } from '@/components/admin/IntelligenceConfigCard'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 
 const SEVERITY_VARIANT: Record<Severity, string> = {
   high:   'disposed',   // red
@@ -45,8 +51,23 @@ const STATUS_LABEL: Record<FindingStatus, string> = {
   false_positive: 'False positive',
 }
 
+// GET/PUT /admin/anomaly-config — existed server-side with a written
+// client (api/anomaly.ts) but no UI until now.
+const ANOMALY_CONFIG_FIELDS: ConfigField<AnomalyConfig>[] = [
+  { key: 'enabled', label: 'Scheduled scans enabled', kind: 'toggle' },
+  { key: 'schedule_cron', label: 'Schedule (cron)', kind: 'text', hint: 'e.g. 0 2 * * * for nightly at 02:00' },
+  { key: 'z_score_threshold', label: 'Z-score threshold', kind: 'number', min: 1, max: 10, step: 0.1, hint: 'Metadata outlier sensitivity — lower flags more' },
+  { key: 'content_distance_threshold', label: 'Content distance threshold', kind: 'number', min: 0, max: 1, step: 0.05, hint: 'Embedding distance for content outliers' },
+  { key: 'min_documents_for_analysis', label: 'Min documents per workspace', kind: 'number', min: 1, step: 1, hint: 'Workspaces below this are skipped' },
+  { key: 'analyze_metadata', label: 'Analyze metadata', kind: 'toggle' },
+  { key: 'analyze_content', label: 'Analyze content embeddings', kind: 'toggle' },
+  { key: 'analyze_behavioral', label: 'Analyze upload behavior', kind: 'toggle' },
+]
+
 function AnomalyDashboardPage() {
   const qc = useQueryClient()
+  const role = useAuthStore((st) => st.user?.role)
+  const canEditConfig = role === 'admin' || role === 'owner'
   const [openReport, setOpenReport] = useState<string | null>(null)
 
   const { data: reports, isLoading } = useQuery({
@@ -68,12 +89,16 @@ function AnomalyDashboardPage() {
     onError: () => toast.error('Failed to start analysis'),
   })
 
-  const openCount = (reports?.reports ?? [])
+  // Sum of anomalies_found across completed reports — includes findings
+  // that were later resolved or marked false-positive, so this is
+  // "reported", not "open" (the per-finding status lives one level
+  // deeper and isn't aggregated by this endpoint).
+  const reportedCount = (reports?.reports ?? [])
     .filter((r) => r.status === 'completed')
     .reduce((acc, r) => acc + r.anomalies_found, 0)
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="max-w-6xl">
       <PageHeader
         title="Anomaly detection"
         description="Workspace-level outlier scans across metadata, content embeddings, and upload behavior."
@@ -87,7 +112,7 @@ function AnomalyDashboardPage() {
 
       <div className="mt-6 grid grid-cols-3 gap-4">
         <Metric label="Reports" value={(reports?.total ?? 0).toLocaleString()} />
-        <Metric label="Open findings" value={openCount.toLocaleString()} />
+        <Metric label="Findings reported" value={reportedCount.toLocaleString()} />
         <Metric
           label="Last scan"
           value={(reports?.reports?.[0]?.created_at
@@ -96,9 +121,27 @@ function AnomalyDashboardPage() {
         />
       </div>
 
+      <div className="mt-6">
+        <IntelligenceConfigCard
+          title="Scan settings"
+          description="Schedule and sensitivity for the workspace outlier scans."
+          queryKey={['anomaly-config']}
+          fetchConfig={getAnomalyConfig}
+          saveConfig={updateAnomalyConfig}
+          fields={ANOMALY_CONFIG_FIELDS}
+          canEdit={canEditConfig}
+          testid="anomaly-config"
+        />
+      </div>
+
       <div className="mt-8 rounded border border-border">
-        <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Recent reports
+        <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <span>Recent reports</span>
+          {(reports?.total ?? 0) > 30 && (
+            <span className="font-normal normal-case tracking-normal">
+              showing the 30 most recent of {reports?.total}
+            </span>
+          )}
         </div>
         <table className="w-full text-sm">
           <thead className="text-start text-xs uppercase text-muted-foreground">
@@ -178,14 +221,14 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
     onError: () => toast.error('Update failed'),
   })
 
+  // Radix Sheet replaces the hand-rolled fixed-inset div: focus trap,
+  // Escape-to-close, role="dialog"/aria wiring, and scroll lock come
+  // from the primitive instead of being (absent) hand-rolled concerns.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        className="flex h-[85vh] w-[min(1100px,95vw)] flex-col rounded-lg bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-medium">
+    <Sheet open onOpenChange={(open) => { if (!open) onClose() }}>
+      <SheetContent side="right" className="flex w-full max-w-2xl flex-col gap-0 p-0 sm:max-w-2xl">
+        <SheetHeader className="border-b border-border px-4 py-3">
+          <SheetTitle className="flex items-center gap-2 text-sm font-medium">
             <AlertTriangle className="h-4 w-4 text-warning" />
             Report {reportId.slice(0, 8)}…
             {data?.report && (
@@ -193,11 +236,8 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
                 {data.report.status}
               </Badge>
             )}
-          </div>
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+          </SheetTitle>
+        </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
@@ -211,9 +251,9 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
                 )}
               </div>
               {data.report.summary && Object.keys(data.report.summary).length > 0 && (
-                <pre className="mb-4 rounded bg-muted/40 p-3 text-xs">
-                  {JSON.stringify(data.report.summary, null, 2)}
-                </pre>
+                <div className="mb-4">
+                  <KeyValueList data={data.report.summary as Record<string, unknown>} />
+                </div>
               )}
               {(data.findings ?? []).length === 0 ? (
                 <div className="text-sm text-muted-foreground">No findings.</div>
@@ -232,8 +272,26 @@ function ReportDetailModal({ reportId, onClose }: { reportId: string; onClose: (
             </>
           )}
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// Renders a flat object as label/value rows; nested values fall back to
+// compact JSON. Replaces the raw JSON.stringify <pre> dumps that made
+// the report summary and finding evidence read like a debugger.
+function KeyValueList({ data }: { data: Record<string, unknown> }) {
+  return (
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 rounded bg-muted/40 p-3 text-xs">
+      {Object.entries(data).map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt className="font-medium text-muted-foreground">{k.replace(/_/g, ' ')}</dt>
+          <dd className="break-all font-mono">
+            {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
+          </dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
@@ -267,9 +325,9 @@ function FindingCard({
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
             Evidence
           </summary>
-          <pre className="mt-1 rounded bg-muted/40 p-2 text-[11px]">
-            {JSON.stringify(f.evidence, null, 2)}
-          </pre>
+          <div className="mt-1">
+            <KeyValueList data={f.evidence as Record<string, unknown>} />
+          </div>
         </details>
       )}
       {f.status === 'open' && (
