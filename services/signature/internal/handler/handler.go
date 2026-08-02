@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -139,10 +140,7 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 	tenantID := auth.TenantIDString(r)
 	reqID := r.PathValue("id")
 	signerID := r.PathValue("signerId")
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		ip = strings.Split(fwd, ",")[0]
-	}
+	ip := clientIP(r)
 	var body recordSignatureBody
 	// Decode best-effort: an empty/absent body is valid for the
 	// click-to-sign and typed flows that don't capture biometrics.
@@ -205,6 +203,36 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// clientIP extracts a BARE IP for the audit columns, which are Postgres
+// `inet` — that type rejects "host:port", so writing r.RemoteAddr
+// verbatim ("172.18.0.1:59222") failed every in-person signature with
+// a 500 (SQLSTATE 22P02). Prefers the left-most X-Forwarded-For hop
+// when present (we sit behind Kong / the dev proxy). Returns "" when
+// nothing parses, and the service layer stores NULL rather than junk.
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		cand := strings.TrimSpace(strings.Split(fwd, ",")[0])
+		if ip := net.ParseIP(cand); ip != nil {
+			return ip.String()
+		}
+		// XFF hop may itself carry a port.
+		if host, _, err := net.SplitHostPort(cand); err == nil {
+			if ip := net.ParseIP(host); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		if ip := net.ParseIP(host); ip != nil {
+			return ip.String()
+		}
+	}
+	if ip := net.ParseIP(strings.TrimSpace(r.RemoteAddr)); ip != nil {
+		return ip.String()
+	}
+	return ""
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

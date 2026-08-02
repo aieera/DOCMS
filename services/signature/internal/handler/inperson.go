@@ -47,10 +47,7 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "signer_id required")
 		return
 	}
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		ip = strings.Split(fwd, ",")[0]
-	}
+	ip := clientIP(r)
 	isAdmin := auth.RoleString(r) == "owner" || auth.RoleString(r) == "admin"
 	err := h.svc.SignInPerson(r.Context(), service.InPersonSignInput{
 		TenantID:        tenantID,
