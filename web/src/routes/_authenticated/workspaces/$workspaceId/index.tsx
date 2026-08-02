@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
 
-import { useDocuments } from '@/hooks/useDocuments'
+import { useDocumentsInfinite, documentsFromPages } from '@/hooks/useDocuments'
 import { useUpload } from '@/hooks/useUpload'
 import { getFolder, getWorkspace, updateFolder } from '@/api/workspaces'
 import { deleteDocument, getVersions, getDownloadURL, createNote, moveDocument } from '@/api/documents'
@@ -57,7 +57,8 @@ function WorkspacePage() {
   const { data: foldersData, isLoading: foldersLoading } = useFolders(workspaceId, currentFolderId ?? undefined)
   const folderDetail = useQuery({ queryKey: ['folder', currentFolderId], queryFn: () => getFolder(currentFolderId!), enabled: !!currentFolderId })
   const documentsParams: Record<string, string> = currentFolderId ? { folder_id: currentFolderId } : {}
-  const { data, isLoading } = useDocuments(workspaceId, documentsParams)
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useDocumentsInfinite(workspaceId, documentsParams)
   const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -95,12 +96,30 @@ function WorkspacePage() {
 
   const folders = foldersData ?? []
   const docs = useMemo(
-    () => ((data as unknown as { documents?: unknown[]; items?: unknown[] })?.documents
-      ?? (data as unknown as { items?: unknown[] })?.items
-      ?? []) as ApiDocument[],
+    () => documentsFromPages(data?.pages) as ApiDocument[],
     [data],
   )
+  // Auto-load the next page when the sentinel scrolls into view.
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = loadMoreRef.current
+    if (!el || !hasNextPage || isFetchingNextPage) return
+    const io = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) fetchNextPage() },
+      { rootMargin: '200px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
   const q = query.trim().toLowerCase()
+  // The filter box matches client-side against loaded rows, so with a
+  // cursor-paginated list it would silently miss anything not yet fetched.
+  // While a filter is active, keep pulling pages so "no matches" means the
+  // folder really has none.
+  useEffect(() => {
+    if (q && hasNextPage && !isFetchingNextPage) fetchNextPage()
+  }, [q, hasNextPage, isFetchingNextPage, fetchNextPage])
   const shownFolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders
   const shownDocs = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
   const usedBytes = useMemo(() => docs.reduce((sum, d) => sum + (Number(d.total_size_bytes) || 0), 0), [docs])
@@ -532,6 +551,23 @@ function WorkspacePage() {
               <p className="col-span-full py-6 text-sm text-muted-foreground">No files here yet.</p>
             )}
           </div>
+
+          {/* Cursor pagination. The sentinel auto-loads on scroll; the button
+              is the accessible, no-observer fallback and also tells the user
+              that more exists — without it a folder just looked 20 files
+              long. */}
+          {hasNextPage && (
+            <div ref={loadMoreRef} className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+              >
+                {isFetchingNextPage ? 'Loading…' : 'Load more files'}
+              </Button>
+            </div>
+          )}
 
           {nothingHere && (
             <div className="mt-10 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-14 text-center">

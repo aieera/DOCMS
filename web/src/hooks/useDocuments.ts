@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { getDocuments, getDocument, updateDocument, deleteDocument, moveDocument, copyDocument } from '@/api/documents'
 import { readErrorMessage } from '@/api/client'
@@ -10,6 +10,57 @@ export function useDocuments(workspaceId: string, params: Record<string, string>
     queryFn: () => getDocuments(workspaceId, params),
     enabled: !!workspaceId,
   })
+}
+
+// The list endpoint is cursor-paginated and caps a page at 20 rows. The
+// browser used a plain useQuery and rendered only that first page, with no
+// pager and no "load more" — so in any folder holding more than 20
+// documents the rest were simply unreachable, and the filter box (which
+// matches client-side against what is loaded) could not find them either.
+// Following pagination.next_page_token is what makes the whole folder
+// visible.
+export function useDocumentsInfinite(workspaceId: string, params: Record<string, string> = {}) {
+  return useInfiniteQuery({
+    queryKey: ['documents', 'infinite', workspaceId, params],
+    initialPageParam: '',
+    // NOTE the param name. page_token lives under the nested `pagination`
+    // message, so the grpc-gateway only binds it as `pagination.page_token`
+    // — a plain `?page_token=` is silently DROPPED and the server replays
+    // page 1 forever (an infinite loop of identical rows, which is exactly
+    // what a naive spelling produces here).
+    queryFn: ({ pageParam }) =>
+      getDocuments(
+        workspaceId,
+        pageParam ? { ...params, 'pagination.page_token': pageParam as string } : params,
+      ),
+    // An empty/absent token means the server has no more rows. Also stop if
+    // the token did not advance — otherwise a server that echoes the same
+    // cursor turns this into an unbounded fetch loop.
+    getNextPageParam: (last, _all, lastParam) => {
+      const next = nextTokenOf(last)
+      if (!next || next === lastParam) return undefined
+      return next
+    },
+    enabled: !!workspaceId,
+  })
+}
+
+/** The REST shape is {documents, pagination:{next_page_token}}; older
+ *  callers saw {items, page_token}. Read both so neither goes silently
+ *  unpaginated. */
+function nextTokenOf(page: unknown): string {
+  const p = page as
+    | { pagination?: { next_page_token?: string }; next_page_token?: string; page_token?: string }
+    | undefined
+  return p?.pagination?.next_page_token ?? p?.next_page_token ?? p?.page_token ?? ''
+}
+
+/** Flatten an infinite-query result into the row array the list renders. */
+export function documentsFromPages(pages: unknown[] | undefined): unknown[] {
+  if (!pages) return []
+  return pages.flatMap(
+    (p) => (p as { documents?: unknown[]; items?: unknown[] })?.documents ?? (p as { items?: unknown[] })?.items ?? [],
+  )
 }
 
 export function useDocument(id: string) {
