@@ -36,6 +36,13 @@ export const COMPLIANCE_OFFICER_ADMIN_PATHS = [
   '/admin/pii-scanning',
   '/admin/tagging',
   '/admin/intelligence/anomalies',
+  // Legacy-URL redirect stubs targeting the pages above. This guard runs
+  // BEFORE the stub's own beforeLoad, so leaving an alias out bounces the
+  // role to '/' before the redirect can fire.
+  '/admin/pii',
+  '/admin/tags',
+  '/admin/intelligence/ocr-config',
+  '/admin/intelligence/anomaly-reports',
 ]
 
 export function adminPathAllowsComplianceOfficer(pathname: string): boolean {

@@ -59,15 +59,11 @@ export function AutoTagAdminPage() {
       JSON.stringify({ ...data, blocked_tags: data.blocked_tags ?? [] }))
 
   const onSubmit = () => {
-    const blocked = blockedTagsInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
     if (draft.auto_apply_threshold < draft.suggest_threshold) {
       toast.error('auto_apply_threshold must be ≥ suggest_threshold')
       return
     }
-    save.mutate({ ...draft, blocked_tags: blocked })
+    save.mutate({ ...draft, blocked_tags: blockedDraft })
   }
 
   return (

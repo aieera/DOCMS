@@ -121,18 +121,19 @@ function AnomalyDashboardPage() {
         />
       </div>
 
-      <div className="mt-6">
-        <IntelligenceConfigCard
-          title="Scan settings"
-          description="Schedule and sensitivity for the workspace outlier scans."
-          queryKey={['anomaly-config']}
-          fetchConfig={getAnomalyConfig}
-          saveConfig={updateAnomalyConfig}
-          fields={ANOMALY_CONFIG_FIELDS}
-          canEdit={canEditConfig}
-          testid="anomaly-config"
-        />
-      </div>
+      {canEditConfig && (
+        <div className="mt-6">
+          <IntelligenceConfigCard
+            title="Scan settings"
+            description="Schedule and sensitivity for the workspace outlier scans."
+            queryKey={['anomaly-config']}
+            fetchConfig={getAnomalyConfig}
+            saveConfig={updateAnomalyConfig}
+            fields={ANOMALY_CONFIG_FIELDS}
+            testid="anomaly-config"
+          />
+        </div>
+      )}
 
       <div className="mt-8 rounded border border-border">
         <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

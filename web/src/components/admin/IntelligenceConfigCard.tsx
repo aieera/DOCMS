@@ -35,11 +35,12 @@ export interface IntelligenceConfigCardProps<T extends object> {
   fetchConfig: () => Promise<T>
   saveConfig: (patch: Partial<T>) => Promise<T>
   fields: ConfigField<T>[]
-  /** Hide entirely when the caller knows the viewer can't write. */
-  canEdit: boolean
   testid: string
 }
 
+// Writes are admin/owner-gated server-side; callers render this card only
+// for editors (rendering the form for a read-only viewer would just farm
+// 403 toasts).
 export function IntelligenceConfigCard<T extends object>({
   title,
   description,
@@ -47,14 +48,12 @@ export function IntelligenceConfigCard<T extends object>({
   fetchConfig,
   saveConfig,
   fields,
-  canEdit,
   testid,
 }: IntelligenceConfigCardProps<T>) {
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: [...queryKey],
     queryFn: fetchConfig,
-    enabled: canEdit,
   })
   const [draft, setDraft] = useState<T | null>(null)
 
@@ -71,10 +70,6 @@ export function IntelligenceConfigCard<T extends object>({
     },
     defaultErrorMessage: 'Could not save the configuration',
   })
-
-  // Writes are admin/owner-gated server-side; rendering the form for a
-  // read-only viewer would just farm 403 toasts.
-  if (!canEdit) return null
 
   const dirty = !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data)
 

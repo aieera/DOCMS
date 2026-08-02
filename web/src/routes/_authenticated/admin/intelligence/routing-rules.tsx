@@ -74,11 +74,10 @@ function RoutingRulesPage() {
   const targetWorkspaceIds = new Set(
     (rules ?? []).map((r) => r.target_workspace_id).filter((id): id is string => !!id),
   )
-  const everyRuleHasWorkspace =
-    (rules ?? []).length > 0 && (rules ?? []).every((r) => !!r.target_workspace_id)
-  const workspacesToFetch = (workspacesQ.data ?? []).filter(
-    (w: Workspace) => !everyRuleHasWorkspace || targetWorkspaceIds.has(w.id),
-  )
+  const needFullSweep = (rules ?? []).some((r) => !r.target_workspace_id)
+  const workspacesToFetch = needFullSweep
+    ? (workspacesQ.data ?? [])
+    : (workspacesQ.data ?? []).filter((w: Workspace) => targetWorkspaceIds.has(w.id))
   const folderQueries = useQueries({
     queries: workspacesToFetch.map((w: Workspace) => ({
       queryKey: ['routing-rules', 'folders', w.id],
@@ -144,24 +143,25 @@ function RoutingRulesPage() {
           !creating && (
             <Button size="sm" onClick={() => setCreating({ ...EMPTY })}>
               <Plus className="me-2 h-4 w-4" />
-
-      <div className="mt-6">
-        <IntelligenceConfigCard
-          title="Configuration"
-          description="Thresholds and behavior for smart filing across the tenant."
-          queryKey={['smart-routing-config']}
-          fetchConfig={getSmartRoutingConfig}
-          saveConfig={updateSmartRoutingConfig}
-          fields={ROUTING_CONFIG_FIELDS}
-          canEdit={canEditConfig}
-          testid="smart-routing-config"
-        />
-      </div>
               New rule
             </Button>
           )
         }
       />
+
+      {canEditConfig && (
+        <div className="mt-6">
+          <IntelligenceConfigCard
+            title="Configuration"
+            description="Thresholds and behavior for smart filing across the tenant."
+            queryKey={['smart-routing-config']}
+            fetchConfig={getSmartRoutingConfig}
+            saveConfig={updateSmartRoutingConfig}
+            fields={ROUTING_CONFIG_FIELDS}
+            testid="smart-routing-config"
+          />
+        </div>
+      )}
 
       {creating && (
         <div className="mt-4 rounded border border-border p-4">

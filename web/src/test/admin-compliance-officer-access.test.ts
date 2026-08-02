@@ -24,6 +24,18 @@ describe('adminPathAllowsComplianceOfficer', () => {
     expect(adminPathAllowsComplianceOfficer(p + '/sub')).toBe(true)
   })
 
+  // Legacy aliases redirect into allowed pages, but this guard runs before
+  // the stub's beforeLoad — each alias must be allowed or the role gets
+  // bounced to '/' instead of redirected.
+  it.each([
+    '/admin/pii',
+    '/admin/tags',
+    '/admin/intelligence/ocr-config',
+    '/admin/intelligence/anomaly-reports',
+  ])('allows the legacy alias %s so its redirect stub can run', (p) => {
+    expect(adminPathAllowsComplianceOfficer(p)).toBe(true)
+  })
+
   it.each([
     '/admin/identity',
     '/admin/tenant-settings',
