@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -24,8 +24,12 @@ import {
 //   3. Getting-started links pointing at the actual Zapier / Make /
 //      n8n developer portals where the user builds their apps.
 
+// Standalone URL deep-links into the tabbed Integrations shell; the
+// page component below is what the shell renders as its iPaaS tab.
 export const Route = createFileRoute('/_authenticated/admin/integrations/ipaas')({
-  component: IpaasPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/integrations', search: { tab: 'ipaas' }, replace: true })
+  },
 })
 
 const AVAILABLE_SCOPES = [
@@ -34,7 +38,7 @@ const AVAILABLE_SCOPES = [
   { id: 'integrations:*', label: 'integrations:*', desc: 'Both of the above' },
 ]
 
-function IpaasPage() {
+export function IPaaSPage() {
   const qc = useQueryClient()
   const keysQ = useQuery({ queryKey: ['api-keys'], queryFn: listAPIKeys })
   const [createOpen, setCreateOpen] = useState(false)
@@ -51,7 +55,7 @@ function IpaasPage() {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="space-y-6">
       <PageHeader
         title="iPaaS integrations"
         description="Connect SeDoc to Zapier, Make, n8n and other automation platforms. Issue API keys with scoped access, then build your Zap / scenario / workflow in the vendor's developer portal."

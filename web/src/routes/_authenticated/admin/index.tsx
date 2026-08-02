@@ -71,7 +71,7 @@ const TENANT_GROUP: SectionGroup = {
       sections: [
         { to: '/admin/subscription', icon: CreditCard, label: 'Subscription & licensing', desc: 'Plan & usage · license (JWT claims, seats, entitlements, expiry)' },
         { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
-        { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Custom-field JSON Schema' },
+        { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Visual field builder + raw JSON Schema' },
         { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
         { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
         { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },

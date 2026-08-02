@@ -45,9 +45,10 @@ import { WebhooksPage } from '../webhooks'
 import { EmailIngestionPage } from './email'
 import { EventStreamPage } from './events'
 import { MCPPage } from './mcp'
+import { IPaaSPage } from './ipaas'
 
-type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp'
-const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp']
+type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp' | 'ipaas'
+const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp', 'ipaas']
 interface S { tab?: TopTab; esign_error?: string }
 
 export const Route = createFileRoute('/_authenticated/admin/integrations/')({
@@ -76,7 +77,7 @@ function IntegrationsPage() {
     }
   }, [esign_error, navigate])
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="mx-auto w-full max-w-5xl p-6">
       <PageHeader
         title="Integrations"
         description="Third-party providers, outbound webhooks, inbound email + event streams, and MCP keys for this tenant."
@@ -92,6 +93,7 @@ function IntegrationsPage() {
           <TabsTrigger value="email" data-testid="top-tab-email">Email ingestion</TabsTrigger>
           <TabsTrigger value="events" data-testid="top-tab-events">Event streaming</TabsTrigger>
           <TabsTrigger value="mcp" data-testid="top-tab-mcp">MCP</TabsTrigger>
+          <TabsTrigger value="ipaas" data-testid="top-tab-ipaas">iPaaS</TabsTrigger>
         </TabsList>
         <TabsContent value="esign" className="mt-4"><ESignatureSection /></TabsContent>
         <TabsContent value="connectors" className="mt-4"><ConnectorsPage /></TabsContent>
@@ -99,6 +101,7 @@ function IntegrationsPage() {
         <TabsContent value="email" className="mt-4"><EmailIngestionPage /></TabsContent>
         <TabsContent value="events" className="mt-4"><EventStreamPage /></TabsContent>
         <TabsContent value="mcp" className="mt-4"><MCPPage /></TabsContent>
+        <TabsContent value="ipaas" className="mt-4"><IPaaSPage /></TabsContent>
       </Tabs>
     </div>
   )

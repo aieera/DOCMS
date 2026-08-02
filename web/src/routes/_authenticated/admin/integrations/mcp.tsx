@@ -60,7 +60,7 @@ export function MCPPage() {
   const mcpURL = `${origin}/api/v1/mcp`
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="space-y-6">
       <PageHeader
         title="MCP server (LLM agents)"
         description="Let Claude Desktop, Cursor, GitHub Copilot, and other Model Context Protocol clients call SeDoc tools (search, get, upload, start workflow). Issue an API key with mcp scopes, then paste the matching snippet into your client's config."

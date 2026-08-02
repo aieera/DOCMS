@@ -21,6 +21,7 @@ import {
   type EmailConfig,
   type EmailSource,
 } from '@/api/email-ingestion'
+import { getWorkspaces } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/shadcn/badge'
@@ -178,9 +179,12 @@ function CreateForm({
   const [imapPort, setImapPort] = useState<number>(993)
   const [imapUser, setImapUser] = useState('')
   const [imapPwd, setImapPwd] = useState('')
-  const [workspace, setWorkspace] = useState('')
+  // Real workspace picker (was a raw-UUID text box). 'none' sentinel:
+  // Radix Select rejects empty-string values.
+  const [workspace, setWorkspace] = useState('none')
   const [folder, setFolder] = useState('')
   const [interval, setInterval] = useState(300)
+  const wsQ = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
 
   const sourceDesc = SOURCE_OPTIONS.find((o) => o.value === source)?.desc
 
@@ -200,8 +204,8 @@ function CreateForm({
       imap_use_tls: source === 'imap' ? true           : undefined,
       imap_username: source === 'imap' ? imapUser.trim() : undefined,
       imap_password: source === 'imap' ? imapPwd       : undefined,
-      target_workspace_id: workspace || undefined,
-      target_folder_id:    folder    || undefined,
+      target_workspace_id: workspace !== 'none' ? workspace : undefined,
+      target_folder_id:    folder.trim() || undefined,
       poll_interval_seconds: interval,
     })
   }
@@ -234,8 +238,21 @@ function CreateForm({
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Input label="Target workspace (UUID, optional)" value={workspace} onChange={(e) => setWorkspace(e.target.value)} />
-        <Input label="Target folder (UUID, optional)" value={folder} onChange={(e) => setFolder(e.target.value)} />
+        <Select
+          label="Target workspace (optional)"
+          value={workspace}
+          onValueChange={setWorkspace}
+          options={[
+            { value: 'none', label: '— pick per message —' },
+            ...(wsQ.data ?? []).map((w) => ({ value: w.id, label: w.name })),
+          ]}
+        />
+        <Input
+          label="Target folder ID (optional)"
+          placeholder="advanced — folder UUID"
+          value={folder}
+          onChange={(e) => setFolder(e.target.value)}
+        />
         <Input
           label="Poll interval (seconds, min 60)"
           type="number"

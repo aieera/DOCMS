@@ -5,8 +5,8 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 // six-tab surface; that content now lives on the canonical URL with
 // the same `?tab=` shape so deep-links pasted around the org still
 // resolve to the right tab.
-type Tab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp'
-const TABS: readonly Tab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp']
+type Tab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp' | 'ipaas'
+const TABS: readonly Tab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp', 'ipaas']
 interface S { tab?: Tab }
 
 export const Route = createFileRoute('/_authenticated/admin/integrations-hub')({
