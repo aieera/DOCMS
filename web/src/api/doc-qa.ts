@@ -9,6 +9,7 @@ export interface Citation {
   end_char?: number
   similarity_score: number
   document_id: string
+  document_title?: string
   version_id: string
 }
 
@@ -22,9 +23,13 @@ export interface QAMessage {
   created_at: string
 }
 
+export type QAScope = 'document' | 'workspace' | 'global'
+
 export interface QAConversation {
   id: string
   title: string
+  scope?: QAScope
+  workspace_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -37,8 +42,11 @@ export type QAStreamEvent =
   | { type: 'error'; message: string }
 
 interface AskParams {
-  documentId: string
   question: string
+  // document scope needs documentId; workspace/global set scope (+ workspaceId).
+  documentId?: string
+  scope?: QAScope
+  workspaceId?: string
   conversationId?: string
   model?: string
   signal?: AbortSignal
@@ -51,7 +59,7 @@ interface AskParams {
  * thrown; per-event errors arrive as type='error' through onEvent.
  */
 export async function streamQA(params: AskParams): Promise<void> {
-  const { documentId, question, conversationId, model, signal, onEvent } = params
+  const { documentId, question, scope, workspaceId, conversationId, model, signal, onEvent } = params
   const baseURL = api.defaults.baseURL ?? '/api/v1'
   const { tenantId, user } = useAuthStore.getState()
   const headers: Record<string, string> = {
@@ -73,8 +81,10 @@ export async function streamQA(params: AskParams): Promise<void> {
     credentials: 'include',
     headers,
     body: JSON.stringify({
-      document_id: documentId,
       question,
+      scope: scope ?? 'document',
+      document_id: documentId,
+      workspace_id: workspaceId,
       conversation_id: conversationId,
       model,
     }),
@@ -132,8 +142,10 @@ export async function streamQA(params: AskParams): Promise<void> {
 }
 
 export async function askQASync(params: {
-  documentId: string
   question: string
+  documentId?: string
+  scope?: QAScope
+  workspaceId?: string
   conversationId?: string
   model?: string
 }) {
@@ -144,20 +156,44 @@ export async function askQASync(params: {
     model: string
     output_tokens: number
   }>('/intelligence/qa/sync', {
-    document_id: params.documentId,
     question: params.question,
+    scope: params.scope ?? 'document',
+    document_id: params.documentId,
+    workspace_id: params.workspaceId,
     conversation_id: params.conversationId,
     model: params.model,
   })
   return data
 }
 
+// Per-document history (existing DocQAChat path).
 export async function getQAHistory(documentId: string, conversationId?: string) {
   const { data } = await api.get<{
     conversations: QAConversation[]
     messages?: QAMessage[]
   }>(`/intelligence/qa/history/${documentId}`, {
     params: conversationId ? { conversation_id: conversationId } : undefined,
+  })
+  return data
+}
+
+// Cross-document Ask history. No scope → every workspace + global chat for the
+// user (the Ask page's history sidebar). Pass conversationId to also load that
+// thread's messages.
+export async function getAskHistory(params?: {
+  scope?: 'workspace' | 'global'
+  workspaceId?: string
+  conversationId?: string
+}) {
+  const { data } = await api.get<{
+    conversations: QAConversation[]
+    messages?: QAMessage[]
+  }>('/intelligence/qa/history', {
+    params: {
+      scope: params?.scope,
+      workspace_id: params?.workspaceId,
+      conversation_id: params?.conversationId,
+    },
   })
   return data
 }

@@ -123,18 +123,26 @@ def _retrieve(
     question: str,
     scope: str,
     scope_id: str | None,
+    allowed_doc_ids: list[str] | None = None,
     top_k: int = 5,
 ) -> list[dict]:
     """Shared retrieval pipeline used by both ask() and stream_ask().
     Returns the top-k chunks with full payload metadata for citation
-    rendering."""
+    rendering.
+
+    `allowed_doc_ids`, when supplied, restricts retrieval to that set on top
+    of the readable_by group filter (defense-in-depth) — required for
+    workspace/global scope where there is no single-document scope filter."""
     q_embedding = embed_single(question)
     scope_filter = None
     if scope == "document" and scope_id:
         scope_filter = {"document_id": scope_id}
     elif scope == "workspace" and scope_id:
         scope_filter = {"workspace_id": scope_id}
-    vector_results = _vector_search(q_embedding, tenant_id, user_groups, scope_filter)
+    vector_results = _vector_search(
+        q_embedding, tenant_id, user_groups, scope_filter,
+        allowed_doc_ids=allowed_doc_ids,
+    )
     fused = _rrf_fuse([vector_results])
     top_20_texts = [c["text"] for c in fused[:20]]
     if top_20_texts:
@@ -158,7 +166,9 @@ def stream_ask(
     user_id: str,
     user_groups: list[str],
     question: str,
-    document_id: str,
+    scope: str = "document",
+    scope_id: str | None = None,
+    allowed_doc_ids: list[str] | None = None,
     conversation_history: list[dict] | None = None,
     model: str | None = None,
 ):
@@ -169,12 +179,19 @@ def stream_ask(
       'chunk'      — text token from the LLM
       'done'       — final event with model + token totals + full_text
     Caller is responsible for SSE-formatting and persistence.
+
+    `scope` (document | workspace | global) + `scope_id` (document_id or
+    workspace_id) set retrieval breadth. For workspace/global scope the caller
+    MUST pass `allowed_doc_ids` (the user's readable docs) so retrieval is
+    permission-filtered. Multi-turn memory is unchanged — `conversation_history`
+    flows into the prompt for every scope.
     """
     from app import llm_gateway
 
     top_chunks = _retrieve(
         tenant_id=tenant_id, user_groups=user_groups,
-        question=question, scope="document", scope_id=document_id,
+        question=question, scope=scope, scope_id=scope_id,
+        allowed_doc_ids=allowed_doc_ids,
     )
     citations = [
         {
@@ -185,6 +202,9 @@ def stream_ask(
             "end_char": c.get("end_char"),
             "similarity_score": float(c.get("score", 0.0)),
             "document_id": c.get("document_id", ""),
+            # document_title lets the cross-document Ask chat render readable
+            # citations ([N] Title) instead of raw ids.
+            "document_title": c.get("document_title", ""),
             "version_id": c.get("version_id", ""),
         }
         for c in top_chunks
@@ -192,7 +212,8 @@ def stream_ask(
     yield "citations", {"citations": citations}
 
     if not top_chunks:
-        msg = "I couldn't find relevant content in this document to answer your question."
+        where = "this document" if scope == "document" else "your documents"
+        msg = f"I couldn't find relevant content in {where} to answer your question."
         yield "chunk", {"text": msg}
         yield "done", {
             "full_text": msg, "citations": citations,

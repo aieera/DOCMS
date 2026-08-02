@@ -1,15 +1,14 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { useAppMutation } from '@/hooks/useAppMutation'
+import { createFileRoute } from '@tanstack/react-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  Sparkles, ThumbsUp, ThumbsDown, Flag, Send, AlertTriangle,
-  Copy, Check, X, Clock, Layers,
-} from 'lucide-react'
+import { Sparkles, Send, Plus, Globe, Building2, User as UserIcon } from 'lucide-react'
 
 import { getWorkspaces } from '@/api/workspaces'
-import { queryRAG, sendRAGFeedback, type RAGCitation, type RAGQueryResponse, type RAGFeedback } from '@/api/rag'
+import {
+  streamQA, getAskHistory,
+  type Citation, type QAConversation, type QAScope,
+} from '@/api/doc-qa'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { AnswerMarkdown } from '@/components/ai/AnswerMarkdown'
 import { Button } from '@/components/ui/shadcn/button'
@@ -18,14 +17,12 @@ import {
   Select as SelectRoot, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/shadcn/tooltip'
+import { formatRelativeTime } from '@/lib/formatters'
+import { cn } from '@/lib/cn'
 
 const ALL_WORKSPACES = '__all__'
 // Mirrors the backend cap in services/intelligence/app/api/routes.py.
 const MAX_QUESTION_LEN = 4000
-const RECENT_KEY = 'ask:recent-questions'
-const MAX_RECENT = 6
-const UNKNOWN_ANSWER = "I don't know."
 
 const EXAMPLE_QUESTIONS = [
   'What documents are available?',
@@ -34,640 +31,358 @@ const EXAMPLE_QUESTIONS = [
   'Which documents mention renewal or termination?',
 ]
 
-function loadRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string').slice(0, MAX_RECENT) : []
-  } catch {
-    return []
-  }
-}
-
-// One source = one document. The backend can return several chunks from
-// the same document; we group them so the sources list shows each
-// document once (with its cited pages) instead of duplicate rows, and so
-// the inline [N] index is stable per document.
-interface CitationGroup {
-  n: number
-  doc_id: string
-  title: string
-  workspace_id: string | null
-  bestScore: number
-  pages: { page: number | null; snippet: string; score: number; chunk_id: number | null }[]
-}
-
-function groupCitations(citations: RAGCitation[]): CitationGroup[] {
-  const order: string[] = []
-  // _doc / _section accumulate the best title candidates across ALL of a
-  // document's chunks — some chunks may carry document_title/section_path
-  // while others don't, so picking only the first chunk's value showed
-  // "Untitled document" even when a sibling chunk had the real title.
-  const map = new Map<string, CitationGroup & { _doc?: string; _section?: string }>()
-  let next = 1
-  for (const c of citations) {
-    let g = map.get(c.doc_id)
-    if (!g) {
-      g = {
-        n: next++,
-        doc_id: c.doc_id,
-        title: 'Untitled document',
-        workspace_id: c.workspace_id,
-        bestScore: c.score,
-        pages: [],
-      }
-      map.set(c.doc_id, g)
-      order.push(c.doc_id)
-    }
-    if (c.document_title && !g._doc) g._doc = c.document_title
-    if (c.section_path && !g._section) g._section = c.section_path
-    g.bestScore = Math.max(g.bestScore, c.score)
-    if (!g.pages.some((p) => p.page === c.page)) {
-      g.pages.push({ page: c.page, snippet: c.snippet, score: c.score, chunk_id: c.chunk_id })
-    }
-  }
-  for (const g of map.values()) {
-    g.title = g._doc ?? g._section ?? 'Untitled document'
-    g.pages.sort((a, b) => (a.page ?? 0) - (b.page ?? 0))
-  }
-  return order.map((id) => map.get(id)!)
-}
-
-// Chunking can begin a snippet mid-word ("olutions to customers…") and
-// mid-sentence. Drop a leading partial token, strip leading punctuation,
-// and signal truncation with ellipses so passages read cleanly.
-function cleanSnippet(s: string | undefined): string {
-  let t = (s ?? '').trim()
-  if (!t) return ''
-  let cut = false
-  if (/^[a-z]/.test(t)) {
-    const sp = t.indexOf(' ')
-    if (sp > 0 && sp <= 24) { t = t.slice(sp + 1); cut = true }
-  }
-  t = t.replace(/^[\s,;:.)]+/, '')
-  const needTail = t.length > 0 && !/[.!?]['")\]]?$/.test(t)
-  return `${cut ? '… ' : ''}${t}${needTail ? '…' : ''}`
-}
-
-// rerank/cosine scores aren't guaranteed 0..1; render a percentage when
-// they look normalised, otherwise a 2-dp value. Purely informational.
-function formatRelevance(score: number): string {
-  if (score >= 0 && score <= 1) return `${Math.round(score * 100)}%`
-  return score.toFixed(2)
+interface UIMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  citations?: Citation[]
+  pending?: boolean
 }
 
 function AskPage() {
-  const [question, setQuestion] = useState('')
+  const qc = useQueryClient()
+  const [input, setInput] = useState('')
   const [workspaceId, setWorkspaceId] = useState<string>(ALL_WORKSPACES)
-  const [answer, setAnswer] = useState<RAGQueryResponse | null>(null)
-  const [feedback, setFeedback] = useState<RAGFeedback | null>(null)
-  const [recent, setRecent] = useState<string[]>(() => loadRecent())
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  // The question that produced the currently-shown answer, so re-submitting
-  // the identical text gives a visible "re-running" cue instead of silently
-  // swapping in a fresh answer.
-  const lastAskedRef = useRef<string | null>(null)
+  const [activeConv, setActiveConv] = useState<QAConversation | null>(null)
+  const [messages, setMessages] = useState<UIMessage[]>([])
+  const [streaming, setStreaming] = useState(false)
+  const [loadingConv, setLoadingConv] = useState(false)
+  const idc = useRef(0)
+  const nextId = () => `m${++idc.current}`
+  const threadRef = useRef<HTMLDivElement>(null)
 
-  const { data: workspaces, isError: workspacesError } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
+  const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces })
+  const history = useQuery({ queryKey: ['ask-history'], queryFn: () => getAskHistory() })
 
-  const askMut = useAppMutation({
-    mutationFn: queryRAG,
-    onSuccess: (data) => {
-      setAnswer(data)
-      setFeedback(null)
-    },
-    onError: () => {
-      toast.error('Could not get an answer — please retry')
-    },
-  })
-
-  const feedbackMut = useAppMutation({
-    mutationFn: ({ id, kind }: { id: string; kind: RAGFeedback }) => sendRAGFeedback(id, kind),
-    onSuccess: (_d, vars) => {
-      setFeedback(vars.kind)
-      toast.success('Thanks for the feedback')
-    },
-    onError: () => toast.error('Failed to record feedback'),
-  })
-
-  // Auto-grow the textarea up to a cap so long questions are visible
-  // without an inner scrollbar, then scroll.
+  // Keep the thread pinned to the latest turn as it streams.
   useEffect(() => {
-    const el = taRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
-  }, [question])
+    const el = threadRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages])
 
-  const pushRecent = (q: string) => {
-    setRecent((prev) => {
-      const next = [q, ...prev.filter((x) => x !== q)].slice(0, MAX_RECENT)
-      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* ignore quota */ }
-      return next
-    })
+  const wsName = (id: string | null | undefined) =>
+    workspaces.data?.find((w) => w.id === id)?.name ?? 'workspace'
+
+  const newChat = () => {
+    setActiveConv(null)
+    setMessages([])
+    setInput('')
   }
 
-  const runQuery = (qText: string) => {
-    const q = qText.trim()
-    if (!q || askMut.isPending) return
-    const isRepeat = q === lastAskedRef.current && !!answer
-    lastAskedRef.current = q
-    pushRecent(q)
-    if (isRepeat) toast.message('Re-running the same question…')
-    askMut.mutate({
-      question: q.slice(0, MAX_QUESTION_LEN),
-      workspaceId: workspaceId === ALL_WORKSPACES ? undefined : workspaceId,
-    })
+  const openConv = async (conv: QAConversation) => {
+    if (streaming) return
+    setActiveConv(conv)
+    setMessages([])
+    setLoadingConv(true)
+    try {
+      const data = await getAskHistory({ conversationId: conv.id })
+      setMessages(
+        (data.messages ?? []).map((m) => ({
+          id: m.id, role: m.role, content: m.content, citations: m.citations,
+        })),
+      )
+    } catch {
+      toast.error("Couldn't load that conversation")
+    } finally {
+      setLoadingConv(false)
+    }
   }
 
-  const handleSubmit = () => runQuery(question)
+  const send = async (override?: string) => {
+    const q = (override ?? input).trim()
+    if (!q || streaming) return
+    setInput('')
 
-  const askExample = (q: string) => {
-    setQuestion(q)
-    runQuery(q)
+    const userId = nextId()
+    const aId = nextId()
+    setMessages((m) => [
+      ...m,
+      { id: userId, role: 'user', content: q },
+      { id: aId, role: 'assistant', content: '', pending: true },
+    ])
+    setStreaming(true)
+
+    // A conversation's scope is fixed at creation; existing chats reuse their
+    // stored scope, new chats take it from the composer's selector.
+    const isGlobal = activeConv
+      ? (activeConv.scope ?? 'global') === 'global'
+      : workspaceId === ALL_WORKSPACES
+    const scope: QAScope = isGlobal ? 'global' : 'workspace'
+    const wsId = isGlobal ? undefined : activeConv?.workspace_id ?? workspaceId
+    const wasNew = !activeConv
+    let convId = activeConv?.id
+
+    try {
+      await streamQA({
+        question: q,
+        scope,
+        workspaceId: wsId ?? undefined,
+        conversationId: convId,
+        onEvent: (evt) => {
+          if (evt.type === 'conversation') {
+            convId = evt.conversation_id
+          } else if (evt.type === 'citations') {
+            setMessages((m) => m.map((x) => (x.id === aId ? { ...x, citations: evt.citations } : x)))
+          } else if (evt.type === 'chunk') {
+            setMessages((m) => m.map((x) => (x.id === aId ? { ...x, content: x.content + evt.text } : x)))
+          } else if (evt.type === 'done') {
+            setMessages((m) => m.map((x) => (x.id === aId
+              ? { ...x, content: evt.full_text || x.content, citations: evt.citations ?? x.citations, pending: false }
+              : x)))
+          } else if (evt.type === 'error') {
+            setMessages((m) => m.map((x) => (x.id === aId ? { ...x, content: `⚠️ ${evt.message}`, pending: false } : x)))
+            toast.error(evt.message)
+          }
+        },
+      })
+    } catch (e) {
+      setMessages((m) => m.map((x) => (x.id === aId
+        ? { ...x, content: x.content || '⚠️ The request failed. Try again.', pending: false }
+        : x)))
+      toast.error(e instanceof Error ? e.message : 'Ask failed')
+    } finally {
+      setStreaming(false)
+      // Adopt the server conversation id for a new chat so follow-ups thread,
+      // and refresh the sidebar so the new/updated conversation appears.
+      if (wasNew && convId) {
+        setActiveConv({
+          id: convId, title: q.slice(0, 60), scope,
+          workspace_id: wsId ?? null, created_at: '', updated_at: '',
+        })
+      }
+      qc.invalidateQueries({ queryKey: ['ask-history'] })
+    }
   }
 
-  const wsOptions = [
-    { value: ALL_WORKSPACES, label: 'All workspaces' },
-    ...(workspaces ?? []).map((w) => ({ value: w.id, label: w.name })),
-  ]
-
-  const overLimit = question.length > MAX_QUESTION_LEN
+  const conversations = history.data?.conversations ?? []
+  const scopeLabel = activeConv
+    ? activeConv.scope === 'workspace'
+      ? wsName(activeConv.workspace_id)
+      : 'All workspaces'
+    : workspaceId === ALL_WORKSPACES
+      ? 'All workspaces'
+      : wsName(workspaceId)
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="mx-auto max-w-3xl">
-        <PageHeader
-          title="Ask"
-          description="Ask a question across your documents — answers cite the source pages."
-        />
+    <div className="flex min-h-0 flex-1 flex-col gap-4 lg:overflow-hidden">
+      <PageHeader
+        title="Ask"
+        description="Chat with your documents — answers cite the source pages."
+      />
 
-        <div className="space-y-3">
-          {/* Unified composer: textarea on top, a footer bar holding the
-              scope picker (left) and Ask button (right). One bordered
-              surface that lights up on focus, instead of three
-              mismatched-height controls in a row. */}
-          <div className="rounded-2xl border border-border bg-card shadow-sm transition focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/40">
-            <div className="relative">
-              <Textarea
-                ref={taRef}
-                aria-label="Ask a question about your documents"
-                placeholder="Ask anything about your documents…"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                rows={3}
-                maxLength={MAX_QUESTION_LEN}
-                className="resize-none border-0 bg-transparent px-4 pt-3.5 pe-10 text-[15px] shadow-none focus-visible:ring-0"
-                data-testid="ask-question-input"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault()
-                    handleSubmit()
-                  }
-                }}
-              />
-              {question && (
-                <button
-                  type="button"
-                  onClick={() => { setQuestion(''); taRef.current?.focus() }}
-                  aria-label="Clear question"
-                  title="Clear"
-                  className="absolute end-2.5 top-2.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
-              <SelectRoot value={workspaceId} onValueChange={setWorkspaceId}>
-                <SelectTrigger
-                  aria-label="Scope"
-                  className="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground focus:ring-0 data-[state=open]:bg-muted"
-                >
-                  <Layers className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                  <SelectValue placeholder="All workspaces" />
-                </SelectTrigger>
-                <SelectContent>
-                  {wsOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </SelectRoot>
-
-              <div className="flex items-center gap-2.5">
-                <span
-                  className={`hidden text-xs tabular-nums sm:inline ${overLimit ? 'font-medium text-destructive' : 'text-muted-foreground'}`}
-                  aria-live="polite"
-                >
-                  {question.length.toLocaleString()}/{MAX_QUESTION_LEN.toLocaleString()}
-                </span>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!question.trim() || overLimit || askMut.isPending}
-                  data-testid="ask-submit"
-                  aria-label="Ask the corpus"
-                  title="Ask the corpus (⌘/Ctrl + Enter)"
-                  size="sm"
-                  className="gap-1.5 rounded-lg"
-                >
-                  {askMut.isPending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                  <span>Ask</span>
-                </Button>
-              </div>
-            </div>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:overflow-hidden">
+        {/* History sidebar */}
+        <aside className="flex min-h-0 flex-col rounded-lg border border-border bg-card lg:overflow-hidden">
+          <div className="border-b border-border p-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={newChat}
+              data-testid="ask-new-chat"
+            >
+              <Plus className="h-4 w-4" /> New chat
+            </Button>
           </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2" data-testid="ask-history">
+            {history.isLoading ? (
+              <div className="flex justify-center p-4"><Spinner /></div>
+            ) : conversations.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                No conversations yet.
+              </p>
+            ) : (
+              <ul className="space-y-0.5">
+                {conversations.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => openConv(c)}
+                      data-testid={`ask-conv-${c.id}`}
+                      className={cn(
+                        'flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-start transition-colors',
+                        activeConv?.id === c.id
+                          ? 'bg-primary/10 text-foreground'
+                          : 'hover:bg-muted',
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {c.scope === 'workspace'
+                          ? <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          : <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                        <span className="truncate text-sm">{c.title}</span>
+                      </span>
+                      <span className="ps-5 text-[11px] text-muted-foreground">
+                        {c.updated_at ? formatRelativeTime(c.updated_at) : 'just now'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
 
-          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
-            <p>
-              <kbd className="me-1 inline-flex h-4 items-center rounded border border-border bg-muted px-1 font-mono text-[10px]">⌘/Ctrl + Enter</kbd>
-              to submit. Answers come from your readable documents only.
-            </p>
-            {workspacesError && (
-              <span className="flex items-center gap-1 text-destructive" role="alert">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                Scoped search unavailable
-              </span>
+        {/* Chat pane */}
+        <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card lg:overflow-hidden">
+          <div ref={threadRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4" data-testid="ask-thread">
+            {loadingConv ? (
+              <div className="flex justify-center p-8"><Spinner /></div>
+            ) : messages.length === 0 ? (
+              <EmptyChat onPick={(q) => send(q)} disabled={streaming} />
+            ) : (
+              messages.map((m) => <MessageBubble key={m.id} m={m} />)
             )}
           </div>
 
-          {recent.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" aria-hidden /> Recent
-              </span>
-              {recent.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => askExample(q)}
-                  className="max-w-[16rem] truncate rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  title={q}
+          {/* Composer */}
+          <div className="border-t border-border p-3">
+            <div className="rounded-lg border border-border bg-background focus-within:ring-2 focus-within:ring-ring">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value.slice(0, MAX_QUESTION_LEN))}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send() }
+                }}
+                placeholder="Ask anything about your documents…"
+                rows={2}
+                className="resize-none border-0 bg-transparent focus-visible:ring-0"
+                data-testid="ask-input"
+              />
+              <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                {/* Scope: fixed once a conversation exists; editable for new chats. */}
+                <SelectRoot
+                  value={activeConv
+                    ? (activeConv.scope === 'workspace' ? (activeConv.workspace_id ?? ALL_WORKSPACES) : ALL_WORKSPACES)
+                    : workspaceId}
+                  onValueChange={(v) => { if (!activeConv) setWorkspaceId(v) }}
+                  disabled={!!activeConv || streaming}
                 >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {askMut.isPending && <AnswerSkeleton />}
-
-        {answer && !askMut.isPending && (
-          <div className="mt-6 space-y-4" data-testid="ask-answer">
-            <AnswerView
-              answer={answer}
-              feedback={feedback}
-              onFeedback={(kind) => feedbackMut.mutate({ id: answer.query_id, kind })}
-              feedbackPending={feedbackMut.isPending}
-            />
-          </div>
-        )}
-
-        {!answer && !askMut.isPending && (
-          <div className="mt-12 flex flex-col items-center gap-3 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Sparkles className="h-8 w-8" />
-            </span>
-            <h2 className="text-xl font-medium">Ask your documents</h2>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Type a question above to search across your workspaces. Each answer is grounded in real document pages.
-            </p>
-            <div className="mt-3 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
-              {EXAMPLE_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => askExample(q)}
-                  data-testid="ask-example"
-                  className="group flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-2.5 text-start text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden />
-                  <span>{q}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </TooltipProvider>
-  )
-}
-
-function AnswerView(props: {
-  answer: RAGQueryResponse
-  feedback: RAGFeedback | null
-  onFeedback: (kind: RAGFeedback) => void
-  feedbackPending: boolean
-}) {
-  const { answer, feedback, onFeedback, feedbackPending } = props
-  const [copied, setCopied] = useState(false)
-  const groups = useMemo(() => groupCitations(answer.citations), [answer.citations])
-  const byDoc = useMemo(() => new Map(groups.map((g) => [g.doc_id, g])), [groups])
-  const isUnknown = answer.answer.trim() === UNKNOWN_ANSWER
-  const hasSources = groups.length > 0
-
-  const copyAnswer = async () => {
-    try {
-      await navigator.clipboard.writeText(buildCopyText(answer, groups))
-      setCopied(true)
-      toast.success('Answer copied')
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast.error('Copy failed')
-    }
-  }
-
-  return (
-    <>
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="flex items-start justify-between gap-2">
-          {isUnknown ? (
-            <div className="text-sm text-foreground">
-              {hasSources ? (
-                <p className="flex items-start gap-2 text-muted-foreground">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
-                  <span>I couldn&apos;t find a direct answer in your documents. The closest passages I found are listed below — try rephrasing or narrowing the scope.</span>
-                </p>
-              ) : (
-                <p className="flex items-start gap-2 text-muted-foreground">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden />
-                  <span>I couldn&apos;t find anything relevant in your readable documents. Try rephrasing the question, or widen the scope to “All workspaces”.</span>
-                </p>
-              )}
-            </div>
-          ) : (
-            <AnswerMarkdown
-              text={answer.answer}
-              className="prose prose-sm max-w-none text-foreground dark:prose-invert"
-              isCitation={(docId) => byDoc.has(docId)}
-              renderCitation={(token) => renderCitationChip(token, byDoc)}
-            />
-          )}
-          {!isUnknown && (
-            <button
-              type="button"
-              onClick={copyAnswer}
-              aria-label="Copy answer"
-              title="Copy answer"
-              className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              data-testid="ask-copy"
-            >
-              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-            </button>
-          )}
-        </div>
-
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
-          {/* Item: technical metadata is opt-in, not always-on. */}
-          <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer select-none rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Details
-            </summary>
-            <p className="mt-1 font-mono">
-              {answer.model || 'unknown model'} · {answer.elapsed_ms}ms · {answer.input_tokens + answer.output_tokens} tokens
-            </p>
-          </details>
-          {!isUnknown && (
-            feedback !== null ? (
-              <span
-                className="flex items-center gap-1.5 text-xs font-medium text-green-600"
-                data-testid="ask-feedback-confirm"
-                role="status"
-              >
-                <Check className="h-3.5 w-3.5" aria-hidden />
-                {feedback === 'flag' ? 'Flagged — thanks' : 'Thanks for your feedback'}
-              </span>
-            ) : (
-              <div className="flex items-center gap-1">
-                <FeedbackButton
-                  icon={<ThumbsUp className="h-3.5 w-3.5" />}
-                  active={feedback === 'up'}
-                  disabled={feedbackPending}
-                  onClick={() => onFeedback('up')}
-                  testId="ask-feedback-up"
-                  label="Helpful"
-                />
-                <FeedbackButton
-                  icon={<ThumbsDown className="h-3.5 w-3.5" />}
-                  active={feedback === 'down'}
-                  disabled={feedbackPending}
-                  onClick={() => onFeedback('down')}
-                  testId="ask-feedback-down"
-                  label="Not helpful"
-                />
-                <FeedbackButton
-                  icon={<Flag className="h-3.5 w-3.5" />}
-                  active={feedback === 'flag'}
-                  disabled={feedbackPending}
-                  onClick={() => onFeedback('flag')}
-                  testId="ask-feedback-flag"
-                  label="Flag"
-                />
+                  <SelectTrigger className="h-8 w-auto gap-1.5 border-0 bg-muted/60 text-xs" data-testid="ask-scope">
+                    <Globe className="h-3.5 w-3.5" />
+                    <SelectValue>{scopeLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_WORKSPACES}>All workspaces</SelectItem>
+                    {(workspaces.data ?? []).map((w) => (
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </SelectRoot>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {input.length}/{MAX_QUESTION_LEN}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => void send()}
+                    disabled={!input.trim() || streaming}
+                    loading={streaming}
+                    data-testid="ask-send"
+                  >
+                    <Send className="h-4 w-4" /> Ask
+                  </Button>
+                </div>
               </div>
-            )
-          )}
+            </div>
+            <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
+              <kbd className="rounded bg-muted px-1">⌘/Ctrl + Enter</kbd> to send · answers come from your readable documents only.
+            </p>
+          </div>
         </div>
-      </div>
-
-      <CitationsList groups={groups} heading={isUnknown ? 'Closest passages' : 'Sources'} />
-    </>
-  )
-}
-
-function buildCopyText(answer: RAGQueryResponse, groups: CitationGroup[]): string {
-  const lines = [answer.answer.trim()]
-  if (groups.length) {
-    lines.push('', 'Sources:')
-    for (const g of groups) {
-      const pages = g.pages.map((p) => p.page).filter((p): p is number => p != null)
-      const pageStr = pages.length ? ` (p${pages.join(', p')})` : ''
-      lines.push(`[${g.n}] ${g.title}${pageStr}`)
-    }
-  }
-  return lines.join('\n')
-}
-
-function AnswerSkeleton() {
-  return (
-    <div className="mt-6 space-y-4" data-testid="ask-loading">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Spinner className="h-4 w-4" /> Searching your documents…
-      </div>
-      <div className="space-y-2 rounded-lg border border-border bg-card p-4">
-        <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
-        <div className="h-3.5 w-full animate-pulse rounded bg-muted" />
-        <div className="h-3.5 w-5/6 animate-pulse rounded bg-muted" />
-        <div className="h-3.5 w-2/3 animate-pulse rounded bg-muted" />
       </div>
     </div>
   )
 }
 
-function FeedbackButton(props: {
-  icon: React.ReactNode
-  active: boolean
-  disabled: boolean
-  onClick: () => void
-  testId: string
-  label: string
-}) {
+function EmptyChat({ onPick, disabled }: { onPick: (q: string) => void; disabled: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      disabled={props.disabled}
-      data-testid={props.testId}
-      aria-label={props.label}
-      aria-pressed={props.active}
-      title={props.label}
-      className={`flex h-7 items-center gap-1 rounded px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        props.active ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
-      } disabled:opacity-50`}
-    >
-      {props.icon}
-    </button>
-  )
-}
-
-// A clickable, hover-previewable citation chip rendered inline in the
-// answer text. Deep-links to the cited page in the document viewer.
-function CitationBadge({ group, page, snippet }: { group: CitationGroup; page?: number; snippet: string }) {
-  const label = page != null ? `${group.n}·p${page}` : `${group.n}`
-  const inner = (
-    <span
-      className="ms-0.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 align-super text-[10px] font-semibold text-primary ring-1 ring-inset ring-primary/20 transition-colors hover:bg-primary/20"
-    >
-      {label}
-    </span>
-  )
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {group.workspace_id ? (
-          <Link
-            to="/workspaces/$workspaceId/documents/$documentId"
-            params={{ workspaceId: group.workspace_id, documentId: group.doc_id }}
-            search={page != null ? { page } : {}}
-            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            data-testid="ask-inline-citation"
-            aria-label={`Source ${group.n}${page != null ? `, page ${page}` : ''}: ${group.title}`}
+    <div className="flex h-full flex-col items-center justify-center gap-5 py-10 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+        <Sparkles className="h-7 w-7 text-primary" />
+      </span>
+      <div>
+        <h2 className="text-lg font-semibold">Ask your documents</h2>
+        <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+          Ask a question across your workspaces. Each answer is grounded in real document pages, and follow-ups keep the conversation's context.
+        </p>
+      </div>
+      <div className="grid w-full max-w-lg gap-2 sm:grid-cols-2">
+        {EXAMPLE_QUESTIONS.map((q) => (
+          <button
+            key={q}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(q)}
+            className="flex items-start gap-2 rounded-lg border border-border p-3 text-start text-sm transition-colors hover:bg-muted disabled:opacity-50"
           >
-            {inner}
-          </Link>
-        ) : (
-          <span aria-label={`Source ${group.n}: ${group.title}`}>{inner}</span>
-        )}
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">
-        <p className="font-medium">{group.title}{page != null ? ` · page ${page}` : ''}</p>
-        {cleanSnippet(snippet) && <p className="mt-1 line-clamp-4 text-muted-foreground">{cleanSnippet(snippet)}</p>}
-      </TooltipContent>
-    </Tooltip>
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span>{q}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
-// Renders the badge chip for one inline citation token. Token → chip
-// substitution (plus adjacent-dedup and punctuation tightening) happens
-// inside AnswerMarkdown so Markdown formatting and chips coexist.
-function renderCitationChip(token: string, byDoc: Map<string, CitationGroup>): React.ReactNode {
-  const [docId, pagePart] = token.split(':page_')
-  const group = byDoc.get(docId)
-  if (!group) return null
-  const page = pagePart ? Number(pagePart) : undefined
-  const match = page != null ? group.pages.find((p) => p.page === page) : undefined
-  const snippet = match?.snippet ?? group.pages[0]?.snippet ?? ''
-  return <CitationBadge group={group} page={page} snippet={snippet} />
+function MessageBubble({ m }: { m: UIMessage }) {
+  if (m.role === 'user') {
+    return (
+      <div className="flex justify-end" data-testid="ask-msg-user">
+        <div className="flex max-w-[80%] items-start gap-2">
+          <div className="rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+            {m.content}
+          </div>
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+            <UserIcon className="h-4 w-4 text-muted-foreground" />
+          </span>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex justify-start" data-testid="ask-msg-assistant">
+      <div className="flex max-w-[85%] items-start gap-2">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <Sparkles className="h-4 w-4 text-primary" />
+        </span>
+        <div className="min-w-0 rounded-2xl rounded-tl-sm border border-border bg-background px-3.5 py-2 text-sm">
+          {m.content
+            ? <AnswerMarkdown text={m.content} />
+            : <span className="inline-flex items-center gap-2 text-muted-foreground"><Spinner className="h-3.5 w-3.5" /> Thinking…</span>}
+          {m.citations && m.citations.length > 0 && <CitationChips citations={m.citations} />}
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function CitationsList({ groups, heading }: { groups: CitationGroup[]; heading: string }) {
+function CitationChips({ citations }: { citations: Citation[] }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, { title: string; pages: number[]; n: number }>()
+    let n = 0
+    for (const c of citations) {
+      let g = map.get(c.document_id)
+      if (!g) { g = { title: c.document_title || 'Document', pages: [], n: ++n }; map.set(c.document_id, g) }
+      if (c.document_title && (!g.title || g.title === 'Document')) g.title = c.document_title
+      if (c.page != null && !g.pages.includes(c.page)) g.pages.push(c.page)
+    }
+    return [...map.entries()].map(([id, g]) => ({ id, ...g, pages: g.pages.sort((a, b) => a - b) }))
+  }, [citations])
   if (!groups.length) return null
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <h3 className="mb-3 text-sm font-medium">{heading}</h3>
-      <ul className="space-y-3" data-testid="ask-citations-list">
-        {groups.map((g) => (
-          <CitationRow key={g.doc_id} group={g} />
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function CitationRow({ group }: { group: CitationGroup }) {
-  const [expanded, setExpanded] = useState(false)
-  const pagesWithNum = group.pages.filter((p) => p.page != null)
-  const primarySnippet = cleanSnippet(group.pages[0]?.snippet)
-  const hasMore = group.pages.length > 1
-
-  return (
-    <li className="flex flex-col gap-1 text-sm">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-mono text-xs text-muted-foreground">[{group.n}]</span>
-        {group.workspace_id ? (
-          <Link
-            to="/workspaces/$workspaceId/documents/$documentId"
-            params={{ workspaceId: group.workspace_id, documentId: group.doc_id }}
-            search={pagesWithNum[0]?.page != null ? { page: pagesWithNum[0].page } : {}}
-            className="font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {group.title}
-          </Link>
-        ) : (
-          <span className="font-medium">{group.title}</span>
-        )}
-
-        {/* Per-page deep links so each cited page is reachable directly. */}
-        {pagesWithNum.length > 0 && group.workspace_id && (
-          <span className="flex flex-wrap items-center gap-1">
-            {pagesWithNum.map((p) => (
-              <Link
-                key={p.page}
-                to="/workspaces/$workspaceId/documents/$documentId"
-                params={{ workspaceId: group.workspace_id!, documentId: group.doc_id }}
-                search={{ page: p.page! }}
-                className="rounded border border-border px-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                title={`Open page ${p.page}`}
-              >
-                p{p.page}
-              </Link>
-            ))}
-          </span>
-        )}
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="ms-auto rounded bg-muted px-1.5 text-xs tabular-nums text-muted-foreground" data-testid="ask-source-score">
-              {formatRelevance(group.bestScore)}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Relevance score</TooltipContent>
-        </Tooltip>
-      </div>
-
-      <p className="text-xs text-muted-foreground">{primarySnippet}</p>
-
-      {expanded && hasMore && (
-        <ul className="mt-1 space-y-1 border-s border-border ps-3">
-          {group.pages.slice(1).map((p, i) => (
-            <li key={`${p.page}-${i}`} className="text-xs text-muted-foreground">
-              {p.page != null && <span className="me-1 font-medium text-foreground">p{p.page}:</span>}
-              {cleanSnippet(p.snippet)}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="self-start rounded text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
+      {groups.map((g) => (
+        <span
+          key={g.id}
+          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+          title={g.title}
         >
-          {expanded ? 'Show less' : `Show ${group.pages.length - 1} more passage${group.pages.length - 1 === 1 ? '' : 's'}`}
-        </button>
-      )}
-    </li>
+          <span className="font-semibold text-foreground">[{g.n}]</span>
+          <span className="max-w-[220px] truncate">{g.title}</span>
+          {g.pages.length > 0 && <span className="shrink-0">· p.{g.pages.join(', ')}</span>}
+        </span>
+      ))}
+    </div>
   )
 }
 

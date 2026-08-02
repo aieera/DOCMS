@@ -172,10 +172,49 @@ def redact_detect_endpoint(
 
 
 class QARequest(BaseModel):
-    document_id: str
     question: str
+    # document scope keeps document_id; workspace/global add scope+workspace_id.
+    document_id: Optional[str] = None
+    scope: str = "document"
+    workspace_id: Optional[str] = None
     conversation_id: Optional[str] = None
     model: Optional[str] = None
+
+
+async def _resolve_qa_scope(
+    body: "QARequest", tenant: str, user_id: str
+) -> tuple[str, Optional[str], Optional[list[str]]]:
+    """Validate the requested scope and return (scope, scope_id, allowed_doc_ids).
+
+    - document  → (document_id, None): per-doc chat; the readable_by group +
+      document scope filter suffice, so no explicit allow-list.
+    - workspace → (workspace_id, permission-filtered doc ids for that workspace).
+    - global    → (None, permission-filtered doc ids across the user's workspaces).
+
+    allowed_doc_ids is the defense-in-depth permission gate for cross-document
+    scopes (empty list ⇒ retrieval returns nothing ⇒ "couldn't find" answer,
+    which never leaks whether docs/workspaces exist).
+    """
+    from app import rag_persist
+
+    scope = (body.scope or "document").lower()
+    if scope == "document":
+        if not body.document_id:
+            raise HTTPException(400, "document_id required for document scope")
+        return "document", body.document_id, None
+    if scope == "workspace":
+        if not body.workspace_id:
+            raise HTTPException(400, "workspace_id required for workspace scope")
+        allowed = await rag_persist.list_allowed_doc_ids(
+            tenant_id=tenant, user_id=user_id, workspace_id=body.workspace_id,
+        )
+        return "workspace", body.workspace_id, allowed
+    if scope == "global":
+        allowed = await rag_persist.list_allowed_doc_ids(
+            tenant_id=tenant, user_id=user_id, workspace_id=None,
+        )
+        return "global", None, allowed
+    raise HTTPException(400, f"invalid scope: {scope}")
 
 
 def _resolve_caller(x_tenant_id, x_user_id, x_group_ids) -> tuple[str, str, list[str]]:
@@ -196,12 +235,16 @@ async def qa_stream_endpoint(
     """ADR 0055 — SSE streaming Q&A. Each `data:` line is a JSON
     object: {type, ...}. type ∈ {citations, chunk, done, error}."""
     tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
-    if not body.document_id or not body.question:
-        raise HTTPException(400, "document_id and question required")
+    if not body.question:
+        raise HTTPException(400, "question required")
+    scope, scope_id, allowed_doc_ids = await _resolve_qa_scope(body, tenant, user_id)
 
     conv_id = await ensure_conversation(
-        tenant_id=tenant, user_id=user_id, document_id=body.document_id,
+        tenant_id=tenant, user_id=user_id,
         conversation_id=body.conversation_id, first_question=body.question,
+        scope=scope,
+        document_id=scope_id if scope == "document" else None,
+        workspace_id=scope_id if scope == "workspace" else None,
     )
     history = await list_messages(tenant_id=tenant, conversation_id=conv_id)
     history_for_llm = [{"role": m["role"], "content": m["content"]} for m in history]
@@ -218,7 +261,8 @@ async def qa_stream_endpoint(
         # FastAPI/Uvicorn worker isn't blocked on the LLM call.
         gen = stream_ask(
             tenant_id=tenant, user_id=user_id, user_groups=groups,
-            question=body.question, document_id=body.document_id,
+            question=body.question, scope=scope, scope_id=scope_id,
+            allowed_doc_ids=allowed_doc_ids,
             conversation_history=history_for_llm, model=body.model,
         )
         # First event carries conversation id so the client can
@@ -277,12 +321,16 @@ async def qa_sync_endpoint(
     """Non-streaming variant — runs the same pipeline, collects all
     chunks, returns the full response at once."""
     tenant, user_id, groups = _resolve_caller(x_tenant_id, x_user_id, x_group_ids)
-    if not body.document_id or not body.question:
-        raise HTTPException(400, "document_id and question required")
+    if not body.question:
+        raise HTTPException(400, "question required")
+    scope, scope_id, allowed_doc_ids = await _resolve_qa_scope(body, tenant, user_id)
 
     conv_id = await ensure_conversation(
-        tenant_id=tenant, user_id=user_id, document_id=body.document_id,
+        tenant_id=tenant, user_id=user_id,
         conversation_id=body.conversation_id, first_question=body.question,
+        scope=scope,
+        document_id=scope_id if scope == "document" else None,
+        workspace_id=scope_id if scope == "workspace" else None,
     )
     history = await list_messages(tenant_id=tenant, conversation_id=conv_id)
     history_for_llm = [{"role": m["role"], "content": m["content"]} for m in history]
@@ -298,7 +346,8 @@ async def qa_sync_endpoint(
                "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
         for etype, payload in stream_ask(
             tenant_id=tenant, user_id=user_id, user_groups=groups,
-            question=body.question, document_id=body.document_id,
+            question=body.question, scope=scope, scope_id=scope_id,
+            allowed_doc_ids=allowed_doc_ids,
             conversation_history=history_for_llm, model=body.model,
         ):
             if etype == "citations":
@@ -334,6 +383,35 @@ async def qa_sync_endpoint(
     }
 
 
+@router.get("/qa/history")
+async def qa_history_scoped_endpoint(
+    scope: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    x_tenant_id: str = Depends(get_tenant_id),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+):
+    """Scope-aware history for the cross-document Ask chat.
+
+    scope=None (default) → every workspace + global chat for the user (the Ask
+    page's history sidebar); scope='workspace' + workspace_id → that workspace's
+    chats; scope='global' → global chats. When conversation_id is supplied, also
+    returns that conversation's full message thread.
+    """
+    tenant = _require_tenant(x_tenant_id)
+    if not x_user_id:
+        raise HTTPException(400, "X-User-ID required")
+    convs = await list_conversations(
+        tenant_id=tenant, user_id=x_user_id, scope=scope, workspace_id=workspace_id,
+    )
+    out: dict = {"conversations": convs}
+    if conversation_id:
+        out["messages"] = await list_messages(
+            tenant_id=tenant, conversation_id=conversation_id,
+        )
+    return out
+
+
 @router.get("/qa/history/{document_id}")
 async def qa_history_endpoint(
     document_id: str,
@@ -348,7 +426,7 @@ async def qa_history_endpoint(
     if not x_user_id:
         raise HTTPException(400, "X-User-ID required")
     convs = await list_conversations(
-        tenant_id=tenant, user_id=x_user_id, document_id=document_id,
+        tenant_id=tenant, user_id=x_user_id, scope="document", document_id=document_id,
     )
     out: dict = {"conversations": convs}
     if conversation_id:
