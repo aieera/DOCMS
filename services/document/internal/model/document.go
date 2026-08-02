@@ -170,6 +170,15 @@ type Workspace struct {
 	DocumentCount int64
 	FolderCount   int64
 	MemberCount   int64
+	// SharedWithCount is how many DISTINCT principals other than the creator
+	// hold access — workspace members plus active workspace-scoped grants.
+	// Zero means private: nobody but the creator (and tenant admins, whose
+	// access is implicit and deliberately not counted) can reach it.
+	//
+	// MemberCount alone can't answer this: the creator is auto-enrolled as a
+	// member, so every workspace reads "1 member" whether or not it has been
+	// shared, and a pure permissions-table grant adds no member row at all.
+	SharedWithCount int64
 }
 
 // WorkspaceMember is one row of the workspace ACL plus enough user

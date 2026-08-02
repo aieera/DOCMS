@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { cn } from '@/lib/cn'
+import { WorkspaceAccessBadge } from '@/components/workspaces/WorkspaceAccessBadge'
 
 function WorkspacesPage() {
   const { data, isLoading, isError } = useQuery({
@@ -154,11 +155,19 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
     >
       <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-shadow transition-colors motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-2">
           <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
             <FolderOpen className="h-5 w-5" />
           </span>
-          <DirectionalIcon name="ChevronRight" className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          {/* Top-right is the card's highest-scan position and was carrying
+              only a chevron — the access state earns it. */}
+          <span className="flex items-center gap-2">
+            <WorkspaceAccessBadge
+              sharedWithCount={ws.shared_with_count}
+              memberCount={ws.member_count}
+            />
+            <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </span>
         </div>
         <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
         <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm">
@@ -169,11 +178,11 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <FileText className="h-3.5 w-3.5" />
-            {ws.document_count.toLocaleString()} {ws.document_count === 1 ? 'doc' : 'docs'}
+            {Number(ws.document_count).toLocaleString()} {Number(ws.document_count) === 1 ? 'doc' : 'docs'}
           </span>
           <span className="flex items-center gap-1">
             <Users className="h-3.5 w-3.5" />
-            {ws.member_count ?? 0} {(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+            {Number(ws.member_count ?? 0).toLocaleString()} {Number(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
           </span>
           <span className="ms-auto flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
@@ -200,7 +209,16 @@ function WorkspaceRow({ ws }: { ws: Workspace }) {
         <FolderOpen className="h-[18px] w-[18px]" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold tracking-tight">{ws.name}</span>
+        {/* Beside the name, not in the meta group: that group is hidden
+            below sm, and access state must survive to mobile. */}
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-semibold tracking-tight">{ws.name}</span>
+          <WorkspaceAccessBadge
+            sharedWithCount={ws.shared_with_count}
+            memberCount={ws.member_count}
+            className="shrink-0"
+          />
+        </span>
         <span className="block truncate text-xs text-muted-foreground">
           {ws.description?.trim() || <span className="italic text-muted-foreground/60">No description</span>}
         </span>
@@ -208,11 +226,11 @@ function WorkspaceRow({ ws }: { ws: Workspace }) {
       <span className="hidden shrink-0 items-center gap-4 text-xs text-muted-foreground sm:flex">
         <span className="flex items-center gap-1 tabular-nums">
           <FileText className="h-3.5 w-3.5" />
-          {ws.document_count.toLocaleString()} {ws.document_count === 1 ? 'doc' : 'docs'}
+          {Number(ws.document_count).toLocaleString()} {Number(ws.document_count) === 1 ? 'doc' : 'docs'}
         </span>
         <span className="flex items-center gap-1 tabular-nums">
           <Users className="h-3.5 w-3.5" />
-          {ws.member_count ?? 0} {(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
+          {Number(ws.member_count ?? 0).toLocaleString()} {Number(ws.member_count ?? 0) === 1 ? 'member' : 'members'}
         </span>
         <span className="flex w-20 items-center justify-end gap-1 tabular-nums">
           <Calendar className="h-3.5 w-3.5" />

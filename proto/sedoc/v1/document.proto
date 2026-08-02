@@ -110,6 +110,14 @@ message Workspace {
   // the "N members" pill on workspace cards. Includes admins, members,
   // and viewers; folder-grant-only callers are not counted.
   int64                     member_count    = 12;
+  // shared_with_count — DISTINCT principals other than the creator that
+  // hold access: workspace members plus active workspace-scoped grants.
+  // Zero means private. Drives the Private/Shared badge, which member_count
+  // cannot: the creator is auto-enrolled, so a never-shared workspace still
+  // reports one member, and a permissions-table grant adds no member row.
+  // Tenant admins' implicit access is intentionally excluded — otherwise
+  // every workspace would read as shared.
+  int64                     shared_with_count = 13;
 }
 
 message Folder {

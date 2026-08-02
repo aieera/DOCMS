@@ -50,36 +50,15 @@ func (r *workspaceRepo) AddMember(
 	return mapPgError(err)
 }
 
+// GetByID shares workspaceBaseSelect with List so the two can't drift. They
+// previously carried duplicate column lists, and adding a column to one left
+// the other scanning the wrong shape at runtime — a failure the compiler
+// cannot catch, because scanWorkspace takes whatever the row hands it.
 func (r *workspaceRepo) GetByID(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*model.Workspace, error) {
-	row := tx.QueryRow(ctx, `
-		SELECT w.tenant_id, w.id, w.name, COALESCE(w.description, ''),
-		       COALESCE(w.region_pin, ''), w.settings::text::bytea,
-		       w.created_by, w.created_at, w.updated_at, w.deleted_at,
-		       COALESCE((SELECT count(*) FROM documents d
-		                 WHERE d.tenant_id = w.tenant_id AND d.workspace_id = w.id
-		                   AND d.deleted_at IS NULL), 0),
-		       COALESCE((SELECT count(*) FROM folders f
-		                 WHERE f.tenant_id = w.tenant_id AND f.workspace_id = w.id
-		                   AND f.deleted_at IS NULL), 0),
-		       COALESCE((SELECT count(*) FROM workspace_members wm
-		                 WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id), 0)
-		FROM workspaces w
-		WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL
-	`, tenantID, id)
+	row := tx.QueryRow(ctx, workspaceBaseSelect+` AND w.id = $2`, tenantID, id)
 	return scanWorkspace(row)
 }
 
-// List returns the workspaces the caller can access.
-//
-// Tenant owner/admin sees every active workspace (the gateway grants
-// them cross-workspace access anyway). Members see only:
-//   - workspaces they created, OR
-//   - workspaces they're in via workspace_members.
-//
-// Previously this returned every workspace in the tenant — the UI
-// then had to render "No access" hints because a member's click hit
-// 403 on the inner /documents call. With per-caller filtering, the
-// frontend just renders whatever comes back.
 // workspaceGrantExists admits a caller who holds a workspace-scoped grant in
 // the `permissions` table (directly or through a group).
 //
@@ -106,8 +85,12 @@ const workspaceGrantExists = `EXISTS (
 		          AND (p.expires_at IS NULL OR p.expires_at > now())
 		     )`
 
-func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID, role string) ([]model.Workspace, error) {
-	const baseSelect = `
+// workspaceBaseSelect is the single column list behind both List and
+// GetByID. Shared so a new column can't land in one and leave the other
+// scanning a shape that no longer matches.
+//
+// Placeholder: $1 tenant.
+const workspaceBaseSelect = `
 		SELECT w.tenant_id, w.id, w.name, COALESCE(w.description, ''),
 		       COALESCE(w.region_pin, ''), w.settings::text::bytea,
 		       w.created_by, w.created_at, w.updated_at, w.deleted_at,
@@ -118,16 +101,50 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		                 WHERE f.tenant_id = w.tenant_id AND f.workspace_id = w.id
 		                   AND f.deleted_at IS NULL), 0),
 		       COALESCE((SELECT count(*) FROM workspace_members wm
-		                 WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id), 0)
+		                 WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id), 0),
+		       -- Private vs shared. DISTINCT across both access sources and
+		       -- excluding the creator, who is auto-enrolled as a member on
+		       -- creation and would otherwise make every workspace look shared.
+		       COALESCE((
+		         SELECT count(*) FROM (
+		           SELECT wm.user_id AS principal
+		             FROM workspace_members wm
+		            WHERE wm.tenant_id = w.tenant_id AND wm.workspace_id = w.id
+		              AND wm.user_id <> w.created_by
+		           UNION
+		           SELECT p.principal_id
+		             FROM permissions p
+		            WHERE p.tenant_id     = w.tenant_id
+		              AND p.resource_type = 'workspace'
+		              AND p.resource_id   = w.id
+		              AND p.principal_id <> w.created_by
+		              AND p.valid_from <= now()
+		              AND (p.valid_to   IS NULL OR p.valid_to   > now())
+		              AND (p.expires_at IS NULL OR p.expires_at > now())
+		         ) shared_principals
+		       ), 0)
 		  FROM workspaces w
 		 WHERE w.tenant_id = $1 AND w.deleted_at IS NULL`
+
+// List returns the workspaces the caller can access.
+//
+// Tenant owner/admin sees every active workspace (the gateway grants
+// them cross-workspace access anyway). Members see only:
+//   - workspaces they created, OR
+//   - workspaces they're in via workspace_members.
+//
+// Previously this returned every workspace in the tenant — the UI
+// then had to render "No access" hints because a member's click hit
+// 403 on the inner /documents call. With per-caller filtering, the
+// frontend just renders whatever comes back.
+func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, userGroups []uuid.UUID, role string) ([]model.Workspace, error) {
 
 	var (
 		rows pgx.Rows
 		err  error
 	)
 	if role == "owner" || role == "admin" {
-		rows, err = tx.Query(ctx, baseSelect+" ORDER BY w.created_at ASC, w.id ASC", tenantID)
+		rows, err = tx.Query(ctx, workspaceBaseSelect+" ORDER BY w.created_at ASC, w.id ASC", tenantID)
 	} else {
 		// Grantee-only access: a folder grant alone admits the caller
 		// to the workspace shell (read-only, scoped to the granted
@@ -139,7 +156,7 @@ func (r *workspaceRepo) List(ctx context.Context, tx pgx.Tx, tenantID, userID uu
 		if groups == nil {
 			groups = []uuid.UUID{}
 		}
-		rows, err = tx.Query(ctx, baseSelect+`
+		rows, err = tx.Query(ctx, workspaceBaseSelect+`
 		   AND (
 		     w.is_default
 		     OR w.created_by = $2
@@ -376,7 +393,7 @@ func scanWorkspace(row workspaceRow) (*model.Workspace, error) {
 		&w.TenantID, &w.ID, &w.Name, &w.Description,
 		&w.RegionPin, &w.Settings,
 		&w.CreatedBy, &w.CreatedAt, &w.UpdatedAt, &w.DeletedAt,
-		&w.DocumentCount, &w.FolderCount, &w.MemberCount,
+		&w.DocumentCount, &w.FolderCount, &w.MemberCount, &w.SharedWithCount,
 	)
 	if err != nil {
 		return nil, mapPgError(err)

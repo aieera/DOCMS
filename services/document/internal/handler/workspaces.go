@@ -91,17 +91,18 @@ func workspaceToProto(w *model.Workspace) *sedocv1.Workspace {
 		return nil
 	}
 	out := &sedocv1.Workspace{
-		Id:            w.ID.String(),
-		TenantId:      w.TenantID.String(),
-		Name:          w.Name,
-		Description:   w.Description,
-		RegionPin:     w.RegionPin,
-		CreatedBy:     w.CreatedBy.String(),
-		CreatedAt:     timestamppb.New(w.CreatedAt),
-		UpdatedAt:     timestamppb.New(w.UpdatedAt),
-		DocumentCount: w.DocumentCount,
-		FolderCount:   w.FolderCount,
-		MemberCount:   w.MemberCount,
+		Id:              w.ID.String(),
+		TenantId:        w.TenantID.String(),
+		Name:            w.Name,
+		Description:     w.Description,
+		RegionPin:       w.RegionPin,
+		CreatedBy:       w.CreatedBy.String(),
+		CreatedAt:       timestamppb.New(w.CreatedAt),
+		UpdatedAt:       timestamppb.New(w.UpdatedAt),
+		DocumentCount:   w.DocumentCount,
+		FolderCount:     w.FolderCount,
+		MemberCount:     w.MemberCount,
+		SharedWithCount: w.SharedWithCount,
 	}
 	// Settings is stored as JSON bytes; surface as Struct for protobuf
 	// callers and omit if empty/invalid.

@@ -3669,6 +3669,11 @@
         "settings": {
           "type": "object"
         },
+        "sharedWithCount": {
+          "description": "shared_with_count \u2014 DISTINCT principals other than the creator that\nhold access: workspace members plus active workspace-scoped grants.\nZero means private. Drives the Private/Shared badge, which member_count\ncannot: the creator is auto-enrolled, so a never-shared workspace still\nreports one member, and a permissions-table grant adds no member row.\nTenant admins' implicit access is intentionally excluded \u2014 otherwise\nevery workspace would read as shared.",
+          "format": "int64",
+          "type": "string"
+        },
         "tenantId": {
           "type": "string"
         },

@@ -33,6 +33,11 @@ export interface Workspace {
   // The workspace creator — also the canonical "owner" in our single-
   // owner model. Mutable via POST /workspaces/{id}/transfer-ownership.
   created_by?: string
+  /** How many people other than the creator can reach this workspace —
+   *  members plus active workspace grants. 0 means private. Distinct from
+   *  member_count, which counts the auto-enrolled creator and misses
+   *  grant-only access. */
+  shared_with_count?: number
 }
 
 export interface Folder {
