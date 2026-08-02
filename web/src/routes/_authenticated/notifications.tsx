@@ -10,6 +10,7 @@ import {
   CheckCheck,
   CheckSquare,
   FileText,
+  Inbox,
   Layers,
   MessageSquare,
   PenLine,
@@ -24,10 +25,10 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/shadcn/tabs'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'
 import { formatRelativeTime } from '@/lib/formatters'
+import { cn } from '@/lib/cn'
 
 // Map the event-type taxonomy (dms.{domain}.{action}) onto an icon +
 // tint so the list scans by kind at a glance. Prefix match keeps new
@@ -49,6 +50,18 @@ function typeVisual(type: string): { Icon: LucideIcon; tint: string } {
   return { Icon: Bell, tint: 'bg-muted text-muted-foreground' }
 }
 
+// Category rail is derived from the same domain taxonomy typeVisual uses.
+// Each category self-hides when it has no notifications, so the rail only
+// ever shows kinds the user actually has.
+const CATEGORIES = [
+  { key: 'task', label: 'Tasks', Icon: CheckSquare, match: (t) => t.startsWith('task.') },
+  { key: 'document', label: 'Documents', Icon: FileText, match: (t) => t.startsWith('document.') },
+  { key: 'comment', label: 'Comments', Icon: MessageSquare, match: (t) => t.startsWith('comment.') },
+  { key: 'workflow', label: 'Workflow', Icon: Workflow, match: (t) => t.startsWith('workflow.') },
+  { key: 'signature', label: 'Signatures', Icon: PenLine, match: (t) => t.startsWith('signature.') },
+  { key: 'security', label: 'Security', Icon: ShieldAlert, match: (t) => t.startsWith('security.') || t.startsWith('auth.') },
+] as const satisfies readonly { key: string; label: string; Icon: LucideIcon; match: (t: string) => boolean }[]
+
 const GROUP_ORDER = ['Today', 'Yesterday', 'This week', 'Earlier'] as const
 type GroupLabel = (typeof GROUP_ORDER)[number]
 
@@ -66,11 +79,12 @@ function dateGroup(iso: string): GroupLabel {
   return 'Earlier'
 }
 
-type Filter = 'all' | 'unread'
+// `all` / `unread` are status views; anything else is a CATEGORIES key.
+type View = 'all' | 'unread' | (typeof CATEGORIES)[number]['key']
 
 function NotificationsPage() {
   const qc = useQueryClient()
-  const [filter, setFilter] = useState<Filter>('all')
+  const [view, setView] = useState<View>('all')
   const list = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
 
   // Both mutations also invalidate the unread-count query so the
@@ -110,8 +124,29 @@ function NotificationsPage() {
   const items = useMemo(() => list.data?.items ?? [], [list.data])
   const unreadCount = items.filter((n) => !n.read).length
 
+  // Per-rail counts in a single pass over the inbox.
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: items.length, unread: unreadCount }
+    for (const cat of CATEGORIES) c[cat.key] = 0
+    for (const n of items) {
+      for (const cat of CATEGORIES) {
+        if (cat.match(n.type)) {
+          c[cat.key]++
+          break
+        }
+      }
+    }
+    return c
+  }, [items, unreadCount])
+
+  const visible = useMemo(() => {
+    if (view === 'unread') return items.filter((n) => !n.read)
+    if (view === 'all') return items
+    const cat = CATEGORIES.find((c) => c.key === view)
+    return cat ? items.filter((n) => cat.match(n.type)) : items
+  }, [items, view])
+
   const groups = useMemo(() => {
-    const visible = filter === 'unread' ? items.filter((n) => !n.read) : items
     const byGroup = new Map<GroupLabel, Notification[]>()
     for (const n of visible) {
       const g = dateGroup(n.created_at)
@@ -122,10 +157,12 @@ function NotificationsPage() {
     return GROUP_ORDER.filter((g) => byGroup.has(g)).map(
       (g) => [g, byGroup.get(g)!] as const,
     )
-  }, [items, filter])
+  }, [visible])
+
+  const activeCategories = CATEGORIES.filter((c) => counts[c.key] > 0)
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-5xl p-6">
       <PageHeader
         title="Notifications"
         description={
@@ -158,27 +195,6 @@ function NotificationsPage() {
         }
       />
 
-      {items.length > 0 && (
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)} className="mb-4">
-          <TabsList>
-            <TabsTrigger value="all" data-testid="notif-filter-all">
-              All
-              <span className="ms-1.5 rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground">
-                {items.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="unread" data-testid="notif-filter-unread">
-              Unread
-              {unreadCount > 0 && (
-                <span className="ms-1.5 rounded-full bg-destructive/10 px-1.5 text-[10px] font-semibold text-destructive">
-                  {unreadCount}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      )}
-
       {list.isLoading ? (
         <Spinner />
       ) : items.length === 0 ? (
@@ -187,35 +203,139 @@ function NotificationsPage() {
           title="No notifications"
           description="You're all caught up"
         />
-      ) : groups.length === 0 ? (
-        <EmptyState
-          icon={<CheckCheck className="h-12 w-12" />}
-          title="No unread notifications"
-          description="Everything in your inbox has been read."
-        />
       ) : (
-        <div className="space-y-6" data-testid="notif-list">
-          {groups.map(([label, groupItems]) => (
-            <section key={label} aria-label={label}>
-              <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {label}
-              </h2>
-              <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-                {groupItems.map((n) => (
-                  <NotificationRow
-                    key={n.id}
-                    n={n}
-                    onRead={() => readOne.mutate(n.id)}
-                    onSnooze={() => snooze.mutate(n.type)}
-                    snoozing={snooze.isPending && snooze.variables === n.type}
+        <div className="grid gap-6 lg:grid-cols-[210px_minmax(0,1fr)]">
+          {/* Filter rail — horizontal scroll on mobile, vertical on lg. */}
+          <nav
+            className="flex flex-row gap-1 overflow-x-auto pb-1 lg:sticky lg:top-6 lg:flex-col lg:self-start lg:overflow-visible lg:pb-0 [&::-webkit-scrollbar]:hidden"
+            aria-label="Filter notifications"
+          >
+            <RailButton
+              icon={Inbox}
+              label="All"
+              count={counts.all}
+              active={view === 'all'}
+              onClick={() => setView('all')}
+              testId="notif-filter-all"
+            />
+            <RailButton
+              icon={Bell}
+              label="Unread"
+              count={counts.unread}
+              accent
+              active={view === 'unread'}
+              onClick={() => setView('unread')}
+              testId="notif-filter-unread"
+            />
+            {activeCategories.length > 0 && (
+              <>
+                <p className="mt-3 hidden px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:block">
+                  Categories
+                </p>
+                {activeCategories.map((c) => (
+                  <RailButton
+                    key={c.key}
+                    icon={c.Icon}
+                    label={c.label}
+                    count={counts[c.key]}
+                    active={view === c.key}
+                    onClick={() => setView(c.key)}
+                    testId={`notif-filter-${c.key}`}
                   />
                 ))}
-              </ul>
-            </section>
-          ))}
+              </>
+            )}
+          </nav>
+
+          {/* List pane */}
+          <div className="min-w-0">
+            {groups.length === 0 ? (
+              <EmptyState
+                icon={<CheckCheck className="h-12 w-12" />}
+                title={view === 'unread' ? 'No unread notifications' : 'Nothing here'}
+                description={
+                  view === 'unread'
+                    ? 'Everything in your inbox has been read.'
+                    : 'No notifications in this category.'
+                }
+              />
+            ) : (
+              <div className="space-y-6" data-testid="notif-list">
+                {groups.map(([label, groupItems]) => (
+                  <section key={label} aria-label={label}>
+                    <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {label}
+                    </h2>
+                    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+                      {groupItems.map((n) => (
+                        <NotificationRow
+                          key={n.id}
+                          n={n}
+                          onRead={() => readOne.mutate(n.id)}
+                          onSnooze={() => snooze.mutate(n.type)}
+                          snoozing={snooze.isPending && snooze.variables === n.type}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
+  )
+}
+
+// One entry in the filter rail: icon + label + count. Renders as a chip on
+// mobile (content-sized, in a scrolling row) and a full-width row on lg.
+function RailButton({
+  icon: Icon,
+  label,
+  count,
+  active,
+  accent,
+  onClick,
+  testId,
+}: {
+  icon: LucideIcon
+  label: string
+  count: number
+  active: boolean
+  accent?: boolean
+  onClick: () => void
+  testId?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'true' : undefined}
+      data-testid={testId}
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors lg:w-full',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+        active
+          ? 'bg-primary/10 text-primary'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="lg:flex-1 lg:text-start">{label}</span>
+      <span
+        className={cn(
+          'rounded-full px-1.5 text-[11px] font-semibold tabular-nums',
+          accent && count > 0
+            ? 'bg-destructive/10 text-destructive'
+            : active
+              ? 'bg-primary/15 text-primary'
+              : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {count}
+      </span>
+    </button>
   )
 }
 
