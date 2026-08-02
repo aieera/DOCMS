@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Shield, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 
@@ -10,8 +10,13 @@ import { Spinner } from '@/components/ui/Spinner'
 // Today: always `unlicensed_dev_mode` (no JWT validator wired).
 // Future: same component renders real claims when enforcement ships.
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/subscription?tab=license). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/license')({
-  component: LicensePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/subscription', search: { tab: 'license' }, replace: true })
+  },
 })
 
 export function LicensePage() {

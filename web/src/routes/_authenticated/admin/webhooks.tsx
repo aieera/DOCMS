@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -469,4 +469,11 @@ function deliveryVariant(status: number, dlq: boolean): string {
   return 'disposed'
 }
 
-export const Route = createFileRoute('/_authenticated/admin/webhooks')({ component: WebhooksPage })
+// Standalone URL redirects into the canonical Integrations shell tab.
+// The page component stays exported — the shell embeds it — so this
+// content renders in exactly one place.
+export const Route = createFileRoute('/_authenticated/admin/webhooks')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/integrations', search: { tab: 'webhooks' }, replace: true })
+  },
+})

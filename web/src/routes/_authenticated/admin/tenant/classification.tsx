@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldCheck, Trash2, Plus, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -29,8 +29,13 @@ import {
 // Define classification→access rules, toggle enforcement, and assign per-user
 // clearance. Enforcement is off until enabled, so turning it on is deliberate.
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/protection?tab=classification). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/classification')({
-  component: ClassificationPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/protection', search: { tab: 'classification' }, replace: true })
+  },
 })
 
 const LEVEL_OPTS = CLASSIFICATION_LEVELS.map((l) => ({ value: l, label: l }))

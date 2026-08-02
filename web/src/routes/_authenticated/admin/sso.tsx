@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -557,4 +557,11 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/admin/sso')({ component: SsoPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/identity?sub=sso). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/sso')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/identity', search: { sub: 'sso' }, replace: true })
+  },
+})

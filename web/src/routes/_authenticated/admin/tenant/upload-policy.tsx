@@ -3,7 +3,7 @@
 // blocklist still applies). The storage service reads the same table
 // on InitiateUpload, so what's saved here gates uploads org-wide.
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { Plus, X } from 'lucide-react'
@@ -245,6 +245,11 @@ function ListSection({
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/tenant-settings?tab=upload). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/upload-policy')({
-  component: UploadPolicyPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/tenant-settings', search: { tab: 'upload' }, replace: true })
+  },
 })

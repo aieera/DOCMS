@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
@@ -35,4 +35,11 @@ export function AuditLogPage() {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/admin/audit-log')({ component: AuditLogPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/audit?tab=log). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/audit-log')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/audit', search: { tab: 'log' }, replace: true })
+  },
+})

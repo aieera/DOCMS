@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Coins, Cpu } from 'lucide-react'
 
@@ -101,6 +101,11 @@ function Metric({ label, value, icon }: { label: string; value: string; icon?: R
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/ai?tab=usage). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/intelligence/usage')({
-  component: LLMUsagePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/ai', search: { tab: 'usage' }, replace: true })
+  },
 })

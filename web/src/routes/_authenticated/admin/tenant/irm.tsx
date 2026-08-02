@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Lock, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,8 +22,13 @@ import {
 // IRM containers and their per-recipient licenses, plus a per-license
 // revoke. Revoking blocks the next open of that recipient's link.
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/protection?tab=exports). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/irm')({
-  component: IrmPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/protection', search: { tab: 'exports' }, replace: true })
+  },
 })
 
 function fmt(ts: string | null | undefined): string {

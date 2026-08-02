@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -205,4 +205,11 @@ function extractMessage(err: unknown): string {
   return 'Release failed'
 }
 
-export const Route = createFileRoute('/_authenticated/admin/legal-holds')({ component: LegalHoldsPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/legal?tab=holds). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/legal-holds')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/legal', search: { tab: 'holds' }, replace: true })
+  },
+})

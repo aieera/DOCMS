@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Save, AlertTriangle, ShieldAlert } from 'lucide-react'
@@ -443,6 +443,11 @@ function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/ocr?tab=config). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/intelligence/ocr-config')({
-  component: OcrConfigPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/ocr', search: { tab: 'config' }, replace: true })
+  },
 })

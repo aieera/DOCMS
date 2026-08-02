@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -402,4 +402,11 @@ function UserPicker({
   )
 }
 
-export const Route = createFileRoute('/_authenticated/admin/groups')({ component: GroupsPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/identity?sub=groups). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/groups')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/identity', search: { sub: 'groups' }, replace: true })
+  },
+})

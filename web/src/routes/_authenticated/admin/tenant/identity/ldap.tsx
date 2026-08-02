@@ -15,7 +15,7 @@
 // the admin types a new password into the field — leaving it empty
 // on PATCH preserves the stored value.
 import { useEffect, useMemo, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -49,8 +49,13 @@ import { Spinner } from '@/components/ui/Spinner'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/identity?sub=ldap). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/identity/ldap')({
-  component: LDAPAdminPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/identity', search: { sub: 'ldap' }, replace: true })
+  },
 })
 
 const DEFAULT_BODY: LDAPWriteBody = {

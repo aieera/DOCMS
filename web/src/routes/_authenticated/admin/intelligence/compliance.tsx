@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import {
@@ -197,6 +197,11 @@ function FilterPill({
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/pii-scanning?tab=findings). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/intelligence/compliance')({
-  component: ComplianceAdminDashboard,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/pii-scanning', search: { tab: 'findings' }, replace: true })
+  },
 })

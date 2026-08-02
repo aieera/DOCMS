@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -387,4 +387,11 @@ function scopeSummary(p: RetentionPolicy): string {
   return bits.length > 0 ? bits.join(' · ') : 'all documents'
 }
 
-export const Route = createFileRoute('/_authenticated/admin/retention')({ component: RetentionPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/records-retention?tab=retention). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/retention')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/records-retention', search: { tab: 'retention' }, replace: true })
+  },
+})

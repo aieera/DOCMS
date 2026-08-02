@@ -31,7 +31,12 @@ const AUTH_SUBS: readonly Sub[] = ['sso', 'ldap', 'scim']
 function IdentityPage() {
   const navigate = useNavigate()
   const { group, sub } = Route.useSearch()
-  const activeGroup: Group = group ?? 'people'
+  // Infer the group from the sub when only `sub` is given: a deep link
+  // like ?sub=scim (from the retired /admin/scim URL) must open the
+  // Authentication group, not fall back to People and silently show
+  // Users instead.
+  const activeGroup: Group =
+    group ?? (sub && AUTH_SUBS.includes(sub) ? 'auth' : 'people')
   const activeSub: Sub =
     sub && (activeGroup === 'people' ? PEOPLE_SUBS : AUTH_SUBS).includes(sub)
       ? sub

@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ShieldCheck, Check } from 'lucide-react'
 
@@ -161,4 +161,11 @@ export function PermissionsPage() {
   )
 }
 
-export const Route = createFileRoute('/_authenticated/admin/permissions')({ component: PermissionsPage })
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/identity?sub=permissions). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
+export const Route = createFileRoute('/_authenticated/admin/permissions')({
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/identity', search: { sub: 'permissions' }, replace: true })
+  },
+})

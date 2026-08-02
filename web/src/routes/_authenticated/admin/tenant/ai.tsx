@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -393,6 +393,11 @@ function UsageCard({ label, value, icon }: {
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/ai?tab=provider). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/ai')({
-  component: TenantAIPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/ai', search: { tab: 'provider' }, replace: true })
+  },
 })

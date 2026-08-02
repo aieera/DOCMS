@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stamp, Trash2, Plus, Droplet } from 'lucide-react'
 import { toast } from 'sonner'
@@ -31,8 +31,13 @@ import {
 // + look, plus per-classification overrides (e.g. force a restricted
 // watermark that can't be disabled).
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/protection?tab=watermark). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/tenant/watermark')({
-  component: WatermarkPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/protection', search: { tab: 'watermark' }, replace: true })
+  },
 })
 
 const CLASSIFICATION_OPTS = WATERMARK_CLASSIFICATIONS.map((c) => ({ value: c, label: c }))

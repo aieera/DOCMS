@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Trash2, Send, CheckCircle2, XCircle, Radio } from 'lucide-react'
@@ -129,6 +129,11 @@ function SinkRow({ sink, onToggle, onTest, onDelete, testing }: {
   )
 }
 
+// Merged surface — this standalone URL redirects into the canonical
+// tabbed page (/admin/audit?tab=forwarding). The page component stays
+// exported so the shell can embed it: one rendering, one URL.
 export const Route = createFileRoute('/_authenticated/admin/siem')({
-  component: SIEMPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/audit', search: { tab: 'forwarding' }, replace: true })
+  },
 })
