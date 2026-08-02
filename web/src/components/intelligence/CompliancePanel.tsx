@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { TimeAgo } from '@/components/shared/TimeAgo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -58,7 +59,7 @@ export function CompliancePanel({ documentId }: Props) {
     onError: () => toast.error('Scan failed'),
   })
 
-  if (isLoading) return <div className="p-4 text-sm text-zinc-500">Loading compliance scan…</div>
+  if (isLoading) return <div className="p-4 text-sm text-zinc-600">Loading compliance scan…</div>
   if (!data?.summary) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-zinc-200 p-4 text-sm dark:border-zinc-800">
@@ -100,8 +101,8 @@ export function CompliancePanel({ documentId }: Props) {
           <span aria-hidden className={`ms-2 inline-block h-2 w-2 rounded-full ${RISK_DOT[risk] ?? 'bg-zinc-300'}`} />
           <span className="uppercase tracking-wide">{risk}</span>
         </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <span>scanned {new Date(s.scanned_at).toLocaleString()}</span>
+        <div className="flex items-center gap-2 text-xs text-zinc-600">
+          <span>scanned <TimeAgo date={s.scanned_at} /></span>
           <Button size="sm" variant="ghost" disabled={rescan.isPending} onClick={() => rescan.mutate()}>
             <RefreshCw className="me-1 h-3 w-3" />
             Rescan
@@ -117,7 +118,7 @@ export function CompliancePanel({ documentId }: Props) {
       </div>
 
       {findings.length === 0 ? (
-        <div className="px-4 pb-4 text-sm text-zinc-500">No findings.</div>
+        <div className="px-4 pb-4 text-sm text-zinc-600">No findings.</div>
       ) : (
         <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
           {findings.map((f) => (
@@ -155,8 +156,8 @@ function FindingRow({
       <div className="flex items-center gap-3">
         <span aria-hidden className={`h-2 w-2 rounded-full ${RISK_DOT[f.risk_level]}`} />
         <span className="w-32 truncate font-mono">{f.entity_type}</span>
-        <span className="w-12 text-end tabular-nums text-zinc-500">{f.occurrence_count}</span>
-        <span className="w-24 truncate text-zinc-500">
+        <span className="w-12 text-end tabular-nums text-zinc-600">{f.occurrence_count}</span>
+        <span className="w-24 truncate text-zinc-600">
           {f.page_numbers.length > 0 ? `pp. ${f.page_numbers.join(', ')}` : '—'}
         </span>
         <Badge variant="outline" className="text-[10px] uppercase">
@@ -203,7 +204,7 @@ function FindingRow({
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
-      <div className="text-zinc-500">{label}</div>
+      <div className="text-zinc-600">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
     </div>
   )

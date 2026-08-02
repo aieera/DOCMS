@@ -56,15 +56,15 @@ export function TranslationViewer({ translationId, sourceText, onClose }: Props)
             <span className="font-medium">Translation</span>
             {data && (
               <>
-                <span className="text-zinc-500">
+                <span className="text-zinc-600">
                   {languageLabel(data.source_language)} → {languageLabel(data.target_language)}
                 </span>
                 <span className="text-zinc-400">·</span>
-                <span className="text-zinc-500">{data.word_count} words</span>
+                <span className="text-zinc-600">{data.word_count} words</span>
                 {data.model_used && (
                   <>
                     <span className="text-zinc-400">·</span>
-                    <span className="font-mono text-xs text-zinc-500">{data.model_used}</span>
+                    <span className="font-mono text-xs text-zinc-600">{data.model_used}</span>
                   </>
                 )}
               </>
@@ -81,7 +81,7 @@ export function TranslationViewer({ translationId, sourceText, onClose }: Props)
           </div>
         </div>
 
-        {isLoading && <div className="p-6 text-sm text-zinc-500">Loading…</div>}
+        {isLoading && <div className="p-6 text-sm text-zinc-600">Loading…</div>}
 
         {data && (
           <div className="grid flex-1 grid-cols-1 gap-0 overflow-hidden md:grid-cols-2">
@@ -105,7 +105,7 @@ export function TranslationViewer({ translationId, sourceText, onClose }: Props)
 function Pane({ label, text, rtl }: { label: string; text: string; rtl: boolean }) {
   return (
     <div className="flex flex-col overflow-hidden border-t border-zinc-200 first:border-t-0 dark:border-zinc-800 md:border-s md:border-t-0 md:first:border-s-0">
-      <div className="border-b border-zinc-100 px-4 py-2 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-900">
+      <div className="border-b border-zinc-100 px-4 py-2 text-xs uppercase tracking-wide text-zinc-600 dark:border-zinc-900">
         {label}
       </div>
       <div

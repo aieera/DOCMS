@@ -48,7 +48,7 @@ export function PendingSuggestionsCard() {
         <span className="text-muted-foreground"> AI tag suggestions waiting</span>
       </p>
       <Link
-        to="/admin/tags"
+        to="/admin/tagging"
         className="ms-auto shrink-0 rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         Review

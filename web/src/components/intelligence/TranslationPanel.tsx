@@ -82,11 +82,11 @@ export function TranslationPanel({ documentId, versionId, availableLanguages }: 
           <div>
             Detected: <span className="font-medium">{languageLabel(lang.detected_language)}</span>
             {lang.confidence !== undefined && (
-              <span className="ms-2 text-zinc-500">({Math.round(lang.confidence * 100)}%)</span>
+              <span className="ms-2 text-zinc-600">({Math.round(lang.confidence * 100)}%)</span>
             )}
           </div>
         ) : (
-          <div className="text-zinc-500">Language detection pending…</div>
+          <div className="text-zinc-600">Language detection pending…</div>
         )}
       </div>
 
@@ -99,12 +99,12 @@ export function TranslationPanel({ documentId, versionId, availableLanguages }: 
           />
         ))}
         {Object.keys(existing).length === 0 && (
-          <li className="px-4 py-3 text-sm text-zinc-500">No translations yet.</li>
+          <li className="px-4 py-3 text-sm text-zinc-600">No translations yet.</li>
         )}
       </ul>
 
       <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-3 text-sm dark:border-zinc-900">
-        <span className="text-zinc-500">Translate to:</span>
+        <span className="text-zinc-600">Translate to:</span>
         <select
           aria-label="Translate to language"
           className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-900"
@@ -145,7 +145,7 @@ function TranslationRow({ t, onView }: { t: Translation; onView: () => void }) {
       <span className="w-32 truncate">{label}</span>
       <StatusPill status={t.status} />
       {t.status === 'completed' && (
-        <span className="text-xs text-zinc-500">{t.word_count} words</span>
+        <span className="text-xs text-zinc-600">{t.word_count} words</span>
       )}
       {t.status === 'failed' && t.error_message && (
         <span className="truncate text-xs text-red-500" title={t.error_message}>

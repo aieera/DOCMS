@@ -3,6 +3,7 @@
 // No new deps: sparkline + bars + heatmap are plain SVG.
 // Filter chips drop activity scope to a single actor or action.
 import { useMemo, useState } from 'react'
+import { formatDateTime } from '@/lib/formatters'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Users, Activity, Filter, X as XIcon } from 'lucide-react'
 
@@ -105,7 +106,12 @@ export function AuditVisualization({ documentId }: Props) {
         <BarsPanel
           title="Top actors"
           icon={Users}
-          rows={filtered.actors.slice(0, 8).map((a) => ({ id: a.id, label: a.name, count: a.count }))}
+          // Rows with no resolvable actor rendered as a nameless bar
+          // ("a bar with value 1 and no label"). Name them explicitly
+          // rather than shipping an anonymous row.
+          rows={filtered.actors
+            .slice(0, 8)
+            .map((a) => ({ id: a.id, label: a.name?.trim() || 'Unknown user', count: a.count }))}
           activeId={actorFilter ?? undefined}
           onClick={(id) => setActorFilter(actorFilter === id ? null : id)}
         />
@@ -147,7 +153,7 @@ function Sparkline({ buckets }: { buckets: AuditVizTimeBucket[] }) {
               height={h}
               className="fill-violet-500/70"
             >
-              <title>{`${new Date(b.ts).toLocaleString()} · ${b.count} events`}</title>
+              <title>{`${formatDateTime(b.ts)} · ${b.count} events`}</title>
             </rect>
           )
         })}

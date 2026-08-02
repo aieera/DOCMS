@@ -41,7 +41,8 @@ describe('PendingSuggestionsCard', () => {
 
     expect(await screen.findByText('7')).toBeTruthy()
     const link = screen.getByRole('link')
-    expect(link.getAttribute('href')).toContain('/admin/tags')
+    // canonical merged surface — /admin/tags now redirects here
+    expect(link.getAttribute('href')).toContain('/admin/tagging')
   })
 
   it('renders nothing when there are zero pending suggestions', async () => {

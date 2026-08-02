@@ -100,7 +100,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
 
   if (isLoading) {
     return (
-      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-500">
+      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-600">
         Loading tag suggestions…
       </div>
     )
@@ -131,13 +131,13 @@ export function TagSuggestionsPanel({ documentId }: Props) {
         <Sparkles className="h-4 w-4 text-violet-500" />
         Suggested tags
         {pending.length > 0 && (
-          <span className="ms-1 text-xs text-zinc-500">({pending.length} pending)</span>
+          <span className="ms-1 text-xs text-zinc-600">({pending.length} pending)</span>
         )}
       </div>
 
       {autoApplied.length > 0 && (
         <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-900">
-          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Auto-applied</div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-600">Auto-applied</div>
           <div className="flex flex-wrap gap-2">
             {autoApplied.map((s) => (
               <Badge key={s.id} variant="default" className="gap-1">
@@ -158,11 +158,18 @@ export function TagSuggestionsPanel({ documentId }: Props) {
               bottom placement scrolled out of sight, which is exactly
               when you need them. */}
           <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-2 dark:border-zinc-900">
+            {/* A disabled control with no reason reads as broken. Say
+                why: usually "nothing here clears the 90% bar". */}
             <Button
               size="sm"
               variant="outline"
               disabled={review.isPending || pending.every((s) => s.confidence < HIGH_CONFIDENCE)}
               onClick={acceptHighConfidence}
+              title={
+                pending.every((s) => s.confidence < HIGH_CONFIDENCE)
+                  ? `No suggestion is at or above ${Math.round(HIGH_CONFIDENCE * 100)}% confidence yet — review them individually.`
+                  : `Accept every suggestion at or above ${Math.round(HIGH_CONFIDENCE * 100)}% confidence`
+              }
             >
               Accept all high-confidence
             </Button>
@@ -201,7 +208,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                           className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`}
                         />
                         <span className="truncate font-medium">{cat}</span>
-                        <span className="text-xs text-zinc-500">({items.length})</span>
+                        <span className="text-xs text-zinc-600">({items.length})</span>
                       </button>
                       <Button
                         size="sm"
@@ -221,7 +228,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                         aria-label={`Dismiss all ${cat} suggestions`}
                         title={`Dismiss all ${cat}`}
                       >
-                        <X className="h-4 w-4 text-zinc-500" />
+                        <X className="h-4 w-4 text-zinc-600" />
                       </Button>
                     </div>
                     {open && (
@@ -282,7 +289,7 @@ function SuggestionRow({
       <span className="min-w-0 flex-1 truncate text-sm" title={s.tag_name}>
         {s.tag_name}
       </span>
-      <span className="w-10 shrink-0 text-end text-xs tabular-nums text-zinc-500">{pct}%</span>
+      <span className="w-10 shrink-0 text-end text-xs tabular-nums text-zinc-600">{pct}%</span>
       <Badge variant="outline" className="shrink-0 text-[10px]">
         {sourceLabel(s.source)}
       </Badge>
@@ -290,7 +297,7 @@ function SuggestionRow({
         <Check className="h-4 w-4 text-emerald-600" />
       </Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onReject} aria-label={`Reject ${s.tag_name}`}>
-        <X className="h-4 w-4 text-zinc-500" />
+        <X className="h-4 w-4 text-zinc-600" />
       </Button>
     </li>
   )

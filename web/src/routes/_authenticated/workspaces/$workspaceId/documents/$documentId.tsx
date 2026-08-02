@@ -73,6 +73,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { fieldLabel } from '@/lib/schemaFields'
 import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
@@ -204,7 +205,17 @@ export function DocumentDetailBody({
   const versionId = (doc as unknown as { current_version_id?: string }).current_version_id
 
   return (
-    <div className="space-y-6">
+    <div
+      className={cn(
+        'flex flex-col gap-6',
+        // Full-page: lock to the viewport so the PAGE never scrolls — the
+        // preview pane and the rail scroll internally instead. lg+ only; on
+        // small screens the single column flows and the page scrolls as
+        // normal. Mirrors the workspace browser's shell pattern. In the modal
+        // the dialog body owns scrolling, so no lock is applied there.
+        !inModal && 'lg:min-h-0 lg:flex-1 lg:overflow-hidden',
+      )}
+    >
       {!inModal && <DocumentHeader doc={doc} workspaceId={workspaceId} documentId={documentId} versionId={versionId} onNavigate={setTab} />}
       {/* Modal mode: replace the rich header with a compact metadata strip so
           uploader + intelligence badges + primary actions aren't lost. */}
@@ -296,8 +307,24 @@ export function DocumentDetailBody({
           pending suggestions for this doc. Self-hides otherwise. */}
       <RouteSuggestionBanner documentId={documentId} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-w-0 min-h-[calc(100vh-12rem)] flex-col space-y-4">
+      <div
+        className={cn(
+          'grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]',
+          // Full-page lock: the grid fills the remaining height and its single
+          // row is bounded (minmax(0,1fr)) so the two columns can scroll
+          // internally instead of growing the page. Skipped in the modal.
+          !inModal && 'lg:min-h-0 lg:flex-1 lg:[grid-template-rows:minmax(0,1fr)]',
+        )}
+      >
+        {/* key={tab} remounts the pane on tab change so each view opens
+            scrolled to the top rather than inheriting the previous scroll. */}
+        <div
+          key={tab}
+          className={cn(
+            'flex min-w-0 min-h-[calc(100vh-12rem)] flex-col space-y-4',
+            !inModal && 'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
+          )}
+        >
           <DocumentTabs tab={tab} onChange={setTab} />
 
           <TabPanel current={tab} value="preview">
@@ -682,11 +709,21 @@ function TabPanel({
   children: React.ReactNode
 }) {
   if (current !== value) return null
-  // role=tabpanel for screen readers; the rendered content drives its
-  // own surface so wrapper stays unstyled.
+  // role=tabpanel + aria-controls pairing for screen readers; the
+  // rendered content drives its own surface so the wrapper stays
+  // unstyled. Each panel gets its OWN error boundary: a failure in one
+  // tab must not blank the shell (or the other tabs).
   return (
-    <div role="tabpanel" aria-labelledby={`tab-${value}`} className="space-y-3">
-      {children}
+    <div
+      role="tabpanel"
+      id={`panel-${value}`}
+      aria-labelledby={`tab-${value}`}
+      tabIndex={0}
+      className="space-y-3 focus-visible:outline-none"
+    >
+      <ErrorBoundary variant="panel" label={TABS.find((t) => t.key === value)?.label ?? value}>
+        {children}
+      </ErrorBoundary>
     </div>
   )
 }
@@ -729,19 +766,35 @@ function RailSection({
       return next
     })
   }
+  const headingId = `rail-heading-${id}`
   return (
-    <Card className="overflow-hidden">
-      <button
-        type="button"
-        onClick={toggle}
-        aria-expanded={open}
-        data-testid={`rail-section-${id}`}
-        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span>{title}</span>
-        <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && <div className="border-t border-border px-4 pb-4 pt-3">{children}</div>}
+    <Card className="overflow-hidden" role="region" aria-labelledby={headingId}>
+      {/* Real heading element: screen-reader users navigate this rail by
+          heading, and a styled <div> is invisible to that. Sentence case
+          at 13px — the old 12px uppercase + wide tracking made field
+          names like `amount_usd` read as an error string. */}
+      <h2 id={headingId} className="m-0">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-controls={`rail-body-${id}`}
+          data-testid={`rail-section-${id}`}
+          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-semibold text-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <span>{title}</span>
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        </button>
+      </h2>
+      {open && (
+        <div id={`rail-body-${id}`} className="border-t border-border px-4 pb-4 pt-3">
+          {/* Per-widget isolation: one failing rail widget must not take
+              down the shell (the taskOpen crash did exactly that). */}
+          <ErrorBoundary variant="panel" label={title}>
+            {children}
+          </ErrorBoundary>
+        </div>
+      )}
     </Card>
   )
 }
@@ -774,7 +827,10 @@ function DocumentSidebar({
     <aside
       className={cn(
         'space-y-4',
-        !inModal && 'lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pe-1',
+        // Full-page: the rail is a bounded grid cell that scrolls internally
+        // (the page shell no longer scrolls). Was sticky+max-height before the
+        // viewport-lock. Modal keeps natural flow.
+        !inModal && 'lg:min-h-0 lg:overflow-y-auto lg:pe-1',
       )}
     >
 
@@ -888,7 +944,7 @@ function DocumentSidebar({
         doc.doc_type === 'note' || doc.doc_type === 'wiki' ||
         composeDocType === 'note' || composeDocType === 'wiki') && (
         <Card className="p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3 className="mb-3 text-[13px] font-semibold text-foreground">
             {doc.doc_type === 'wiki' || composeDocType === 'wiki' ? 'Wiki' : 'Note'}
           </h3>
           <CollaborativeEditor documentId={documentId} />
@@ -954,9 +1010,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
   return (
     <Card className="p-4" data-testid="custom-fields-sidebar">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Custom fields
-        </h3>
+        <h3 className="text-[13px] font-semibold text-foreground">Custom fields</h3>
         <button
           type="button"
           onClick={() => setEditOpen(true)}
@@ -1276,7 +1330,9 @@ function RetentionExemptSidebarSlot({ doc }: { doc: Document | unknown }) {
 function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-xs uppercase tracking-wider text-muted-foreground">{label}</dt>
+      {/* Sentence case: 12px uppercase + wide tracking made values
+          like `amount_usd` read as an error string, and slowed scanning. */}
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 flex-1 truncate text-end text-sm">{children}</dd>
     </div>
   )

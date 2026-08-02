@@ -315,12 +315,18 @@ function NotificationsDropdown() {
           data-testid="notifications-button"
         >
           <Bell className="h-[1.1rem] w-[1.1rem]" />
+          {/* Count, not a bare dot: the tasks badge next to this one
+              shows a number, so a dot here made two identical-looking
+              affordances behave differently — and the actual unread
+              total existed only in the aria-label. */}
           {unreadCount > 0 && (
             <span
-              className="pointer-events-none absolute end-1 top-1 h-2 w-2 rounded-full bg-destructive"
+              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
               aria-hidden
               data-testid="notifications-unread-dot"
-            />
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
           )}
         </Button>
       </DropdownMenuTrigger>

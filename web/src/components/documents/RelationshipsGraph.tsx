@@ -5,6 +5,7 @@
 // side panel. Admin/owner gets an "Add edge" affordance for manual
 // linking until the Phase 2 extractor lands.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { formatDateTime } from '@/lib/formatters'
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -237,7 +238,7 @@ export function RelationshipsGraph({ documentId, workspaceId }: Props) {
           </div>
           <dl className="mt-2 space-y-1 text-xs">
             <Row label="Confidence" value={`${(selectedEdge.confidence * 100).toFixed(0)}%`} />
-            <Row label="Created" value={new Date(selectedEdge.created_at).toLocaleString()} />
+            <Row label="Created" value={formatDateTime(selectedEdge.created_at)} />
             {Object.entries(selectedEdge.metadata).map(([k, v]) => (
               <Row key={k} label={k} value={String(v)} />
             ))}

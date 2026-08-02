@@ -66,10 +66,10 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
     onError: () => toast.error('Bulk review failed'),
   })
 
-  if (isLoading) return <div className="p-4 text-sm text-zinc-500">Loading OCR quality…</div>
+  if (isLoading) return <div className="p-4 text-sm text-zinc-600">Loading OCR quality…</div>
   if (!data?.summary) {
     return (
-      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-500 dark:border-zinc-800">
+      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-600 dark:border-zinc-800">
         OCR quality scoring hasn't run yet for this document.
       </div>
     )
@@ -87,9 +87,9 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
           OCR quality
           <span aria-hidden className={`ms-2 inline-block h-2 w-2 rounded-full ${GRADE_DOT[s.quality_grade]}`} />
           <span className="uppercase tracking-wide">{s.quality_grade}</span>
-          <span className="ms-1 text-zinc-500 tabular-nums">({s.avg_score.toFixed(2)})</span>
+          <span className="ms-1 text-zinc-600 tabular-nums">({s.avg_score.toFixed(2)})</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-500">
+        <div className="flex items-center gap-3 text-xs text-zinc-600">
           <span>
             {s.pages_needing_review}/{s.total_pages} need review
           </span>
@@ -102,7 +102,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
       </div>
 
       <table className="w-full text-sm">
-        <thead className="text-start text-xs uppercase text-zinc-500">
+        <thead className="text-start text-xs uppercase text-zinc-600">
           <tr>
             <th className="px-4 py-2">Page</th>
             <th className="px-4 py-2">Score</th>
@@ -114,7 +114,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
         <tbody>
           {pages.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-4 text-center text-zinc-500">
+              <td colSpan={5} className="px-4 py-4 text-center text-zinc-600">
                 No per-page scores.
               </td>
             </tr>
@@ -153,7 +153,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
                 ) : p.needs_review ? (
                   <span className="text-xs text-amber-600">Needs review</span>
                 ) : (
-                  <span className="text-xs text-zinc-500">OK</span>
+                  <span className="text-xs text-zinc-600">OK</span>
                 )}
               </td>
               <td className="px-4 py-2 text-end" onClick={(e) => e.stopPropagation()}>
@@ -201,7 +201,7 @@ function ScoreBar({ score }: { score: number }) {
       <div className="h-1.5 w-24 overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-10 text-end text-xs tabular-nums text-zinc-500">{pct}%</span>
+      <span className="w-10 text-end text-xs tabular-nums text-zinc-600">{pct}%</span>
     </div>
   )
 }

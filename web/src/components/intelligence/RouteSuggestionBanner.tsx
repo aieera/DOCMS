@@ -75,7 +75,7 @@ export function RouteSuggestionBanner({ documentId }: Props) {
           <span className="ms-2 text-violet-600 tabular-nums">
             {Math.round(top.confidence * 100)}%
           </span>
-          <span className="ms-2 text-xs text-zinc-500">
+          <span className="ms-2 text-xs text-zinc-600">
             via {SOURCE_LABEL[top.match_source]}
           </span>
         </div>
@@ -116,7 +116,7 @@ export function RouteSuggestionBanner({ documentId }: Props) {
               <span className="flex-1 truncate" title={s.folder_path}>
                 {s.folder_path}
               </span>
-              <span className="tabular-nums text-zinc-500">{Math.round(s.confidence * 100)}%</span>
+              <span className="tabular-nums text-zinc-600">{Math.round(s.confidence * 100)}%</span>
               <Badge variant="outline" className="text-[10px]">
                 {SOURCE_LABEL[s.match_source]}
               </Badge>

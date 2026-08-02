@@ -14,6 +14,11 @@ vi.mock('@/api/documents', () => ({
 }))
 vi.mock('@/api/watermark', () => ({
   getWatermarkStatus: vi.fn(),
+  // WatermarkedPreview (rendered when a rendition IS available) also
+  // pulls these; without them the module mock leaves them undefined and
+  // the component throws on render.
+  wmPageUrl: (d: string, v: string, p: number) => `/wm/${d}/${v}/${p}`,
+  wmDownloadUrl: (d: string, v: string) => `/wm/${d}/${v}/download`,
 }))
 
 import { getWatermarkStatus } from '@/api/watermark'

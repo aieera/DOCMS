@@ -65,9 +65,15 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
         <ul className="space-y-1">
           {pending.map((s) => (
             <li key={s.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-muted/60">
-              <span className="min-w-0 truncate text-sm">
-                {s.tag_name}
-                <span className="ms-2 text-xs text-muted-foreground">{Math.round(s.confidence * 100)}%</span>
+              {/* The name is the identity of the row: give it the full
+                  remaining width and drop the confidence to a second
+                  line, so "contract" no longer truncates to "contr…"
+                  next to the chip and two icon buttons. */}
+              <span className="flex min-w-0 flex-1 flex-col" title={s.tag_name}>
+                <span className="truncate text-sm">{s.tag_name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {Math.round(s.confidence * 100)}% confidence
+                </span>
               </span>
               <span className="flex shrink-0 items-center gap-1">
                 <Button

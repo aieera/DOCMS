@@ -8,7 +8,7 @@ import { getWatermarkStatus } from '@/api/watermark'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/shadcn/button'
+import { cn } from '@/lib/cn'
 import { WatermarkedPreview } from './WatermarkedPreview'
 
 interface Props {
@@ -275,37 +275,70 @@ function PdfPreviewSwitcher({
     queryKey: ['wm-status', documentId, versionId],
     queryFn: () => getWatermarkStatus(documentId, versionId),
   })
-  const wmUnavailable =
+  // Availability is POSITIVE-gated: only default to the watermarked
+  // rendition once the status query confirms it actually has pages.
+  // The old check defaulted to 'watermarked' whenever status was
+  // merely unknown (still loading, or an error), so first paint of a
+  // document without a rendition was the "No watermarked preview"
+  // empty state — an empty box while the real document sat one click
+  // away. Unknown now falls back to the original.
+  const wmAvailable =
     statusQ.data != null &&
-    (statusQ.data.status === 'none' ||
-      statusQ.data.status === 'failed' ||
-      (statusQ.data.page_count ?? 0) <= 0)
-  const mode = userChoice ?? (wmUnavailable ? 'original' : 'watermarked')
+    statusQ.data.status !== 'none' &&
+    statusQ.data.status !== 'failed' &&
+    (statusQ.data.page_count ?? 0) > 0
+  const wmPending = statusQ.data?.status === 'processing'
+  const mode = userChoice ?? (wmAvailable ? 'watermarked' : 'original')
   const setMode = setUserChoice
+
+  // Decide BEFORE first paint. Rendering a default while availability is
+  // still unknown means either greeting the user with an empty
+  // "No watermarked preview" box, or swapping the view out from under
+  // them a moment later. A brief spinner beats both.
+  if (statusQ.isLoading) {
+    return (
+      <Card
+        className="flex h-[60vh] items-center justify-center gap-2 bg-muted/20"
+        data-testid="pdf-preview-resolving"
+        aria-busy
+      >
+        <Spinner className="h-5 w-5" />
+        <span className="text-xs text-muted-foreground">Preparing preview…</span>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-2" data-testid="pdf-preview-switcher">
-      <div className="flex items-center justify-end gap-1 rounded-md bg-muted/60 p-1 text-xs sm:w-fit sm:ms-auto">
-        <Button
-          variant={mode === 'watermarked' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-7 gap-1.5"
+      {/* Segmented control: the selected segment must be unmistakable,
+          not just an aria-pressed attribute. Selected = raised card
+          surface + border + foreground text; unselected = flat muted. */}
+      <div
+        role="group"
+        aria-label="Preview rendition"
+        className="flex items-center justify-end gap-1 rounded-md bg-muted/60 p-1 text-xs sm:ms-auto sm:w-fit"
+      >
+        <SegmentButton
+          selected={mode === 'watermarked'}
           onClick={() => setMode('watermarked')}
-          data-testid="pdf-mode-watermarked"
-          aria-pressed={mode === 'watermarked'}
+          testId="pdf-mode-watermarked"
+          disabled={!wmAvailable && !wmPending}
+          title={
+            wmAvailable || wmPending
+              ? 'Server-rendered pages stamped with your identity'
+              : 'No watermarked rendition exists for this version'
+          }
         >
           <Stamp className="h-3.5 w-3.5" /> Watermarked
-        </Button>
-        <Button
-          variant={mode === 'original' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-7 gap-1.5"
+        </SegmentButton>
+        <SegmentButton
+          selected={mode === 'original'}
           onClick={() => setMode('original')}
-          data-testid="pdf-mode-original"
-          aria-pressed={mode === 'original'}
+          testId="pdf-mode-original"
+          title="The document exactly as uploaded"
         >
           <FileText className="h-3.5 w-3.5" /> Original
-        </Button>
+        </SegmentButton>
       </div>
       {mode === 'watermarked' ? (
         <WatermarkedPreview documentId={documentId} versionId={versionId} />
@@ -313,6 +346,42 @@ function PdfPreviewSwitcher({
         <PdfPreview url={url} title={title} />
       )}
     </div>
+  )
+}
+
+// One segment of the rendition switcher. Selected state is carried by
+// BOTH aria-pressed (assistive tech) and a distinct visual treatment
+// (everyone else) — the previous secondary/ghost pairing rendered the
+// two segments indistinguishably.
+function SegmentButton({
+  selected, onClick, disabled, title, testId, children,
+}: {
+  selected: boolean
+  onClick: () => void
+  disabled?: boolean
+  title?: string
+  testId?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-pressed={selected}
+      data-testid={testId}
+      className={cn(
+        'inline-flex h-7 items-center gap-1.5 rounded px-2.5 font-medium transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'disabled:cursor-not-allowed disabled:opacity-40',
+        selected
+          ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -360,8 +429,10 @@ function PdfPreview({ url, title }: { url: string; title?: string }) {
         onError={() => setState('failed')}
         className="h-[80vh] w-full border-0 bg-muted/30"
       />
+      {/* Neutral viewer actions. The "preview not displaying" prompt used to
+          live here on every render, implying a problem even when the PDF was
+          fine; a genuine render failure now routes to PreviewUnavailable. */}
       <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t border-border bg-card px-3 py-1.5 text-xs">
-        <span className="me-auto text-muted-foreground">Preview not displaying?</span>
         <a
           href={url}
           target="_blank"
