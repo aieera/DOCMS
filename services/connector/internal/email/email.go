@@ -540,11 +540,17 @@ func (s *Service) ListConfigs(ctx context.Context, tenantID string) ([]*Config, 
 		defer rows.Close()
 		for rows.Next() {
 			c := &Config{TenantID: tenantID}
+			// created_by is column 17 of 18 — omitting its destination
+			// made every List() fail with "number of field descriptions
+			// must equal number of destinations, got 18 and 17", so the
+			// Email ingestion tab 500'd on load and after every create.
+			// The Get/due-poll queries alongside this one always scanned
+			// it; only this copy drifted.
 			if err := rows.Scan(&c.ID, &c.Source, &c.Label, &c.Active,
 				&c.OAuthProvider, &c.IMAPHost, &c.IMAPPort, &c.IMAPUseTLS,
 				&c.IMAPUsername, &c.TargetWorkspaceID, &c.TargetFolderID,
 				&c.PollIntervalSeconds, &c.LastRunAt, &c.LastSuccessAt,
-				&c.LastError, &c.MessagesIngested, &c.CreatedAt); err != nil {
+				&c.LastError, &c.MessagesIngested, &c.CreatedBy, &c.CreatedAt); err != nil {
 				return err
 			}
 			out = append(out, c)
