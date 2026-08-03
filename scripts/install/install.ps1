@@ -298,7 +298,9 @@ foreach ($svc in @("intelligence", "document")) {
   Invoke-Mig $svc @("up")
   if ($LASTEXITCODE -ne 0) { Fail "$svc migrations failed" }
 }
-foreach ($svc in @("search", "audit", "billing", "connector", "notification")) {
+# Keep in lockstep with scripts/migrate-all.sh (auth after document; a track
+# missing here ships a server with missing tables).
+foreach ($svc in @("auth", "search", "audit", "billing", "connector", "notification", "task")) {
   Write-Host "  ${svc}: up"
   Invoke-Mig $svc @("up")
   if ($LASTEXITCODE -ne 0) { Fail "$svc migrations failed" }

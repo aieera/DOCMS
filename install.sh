@@ -201,7 +201,11 @@ if [ -z "$(document_version)" ]; then
 fi
 echo "  intelligence: up"; mig intelligence up
 echo "  document: up";     mig document up
-for svc in search audit billing connector notification; do
+# Keep this list in lockstep with scripts/migrate-all.sh (§4) — auth must
+# run after document (its 000001 lookup functions; else sessions die at the
+# 3-minute revalidation), and forgetting a track here ships a server with
+# missing tables (the task-service /tasks/mine 500 incident).
+for svc in auth search audit billing connector notification task; do
   echo "  ${svc}: up"; mig "$svc" up
 done
 
