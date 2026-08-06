@@ -4,6 +4,7 @@ import { useUploadStore } from '@/store/uploadStore'
 import { initiateUpload, uploadToPresigned, completeUpload } from '@/api/upload'
 import { createDocument, createVersion, deleteDocument, findDuplicateDocuments } from '@/api/documents'
 import { getFolders, createFolder } from '@/api/workspaces'
+import { findRootFolder } from '@/lib/rootFolder'
 import { sendFilingFeedback } from '@/api/predictiveFiling'
 import { sha256HexOfFile } from '@/lib/hash'
 import { randomId } from '@/lib/id'
@@ -99,8 +100,11 @@ export function useUpload(workspaceId?: string, folderId?: string) {
     if (!resolvedFolderId) {
       try {
         const folders = await getFolders(workspaceId)
-        const folderList = folders as unknown as { id: string; parent_folder_id?: string | null; parent_id?: string | null }[]
-        const root = folderList.find((f) => !f.parent_folder_id && !f.parent_id)
+        const folderList = folders as unknown as { id: string; name: string; parent_folder_id?: string | null; parent_id?: string | null; created_at?: string }[]
+        // Deterministic root pick shared with the workspace browser — the
+        // old first-parentless-match could file a root upload into an
+        // arbitrary sibling folder.
+        const root = findRootFolder(folderList)
         if (root) {
           resolvedFolderId = root.id
         } else if (folderList.length === 0) {

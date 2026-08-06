@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
 
 import { useDocumentsInfinite, documentsFromPages } from '@/hooks/useDocuments'
+import { findRootFolder } from '@/lib/rootFolder'
 import { useUpload } from '@/hooks/useUpload'
 import { getFolder, getWorkspace, updateFolder } from '@/api/workspaces'
 import { deleteDocument, getVersions, getDownloadURL, createNote, moveDocument } from '@/api/documents'
@@ -56,9 +57,24 @@ function WorkspacePage() {
   const ws = useQuery({ queryKey: ['workspace', workspaceId], queryFn: () => getWorkspace(workspaceId), staleTime: 60_000 })
   const { data: foldersData, isLoading: foldersLoading } = useFolders(workspaceId, currentFolderId ?? undefined)
   const folderDetail = useQuery({ queryKey: ['folder', currentFolderId], queryFn: () => getFolder(currentFolderId!), enabled: !!currentFolderId })
-  const documentsParams: Record<string, string> = currentFolderId ? { folder_id: currentFolderId } : {}
+  // At the workspace root, list the designated root folder's documents —
+  // an unfiltered request returns EVERY document in the workspace, which
+  // made files uploaded into any folder appear at the root too. The root
+  // folder's own card is hidden below (it *is* the view), so its files
+  // read as workspace-root files, Explorer-style.
+  const rootFolder = !currentFolderId ? findRootFolder(foldersData ?? []) : undefined
+  const effectiveFolderId = currentFolderId ?? rootFolder?.id
+  const documentsParams: Record<string, string> = effectiveFolderId ? { folder_id: effectiveFolderId } : {}
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useDocumentsInfinite(workspaceId, documentsParams)
+    useDocumentsInfinite(
+      workspaceId,
+      documentsParams,
+      // Wait for the folder list before fetching at the root; firing the
+      // unfiltered query first would flash the whole workspace's files.
+      // A workspace with no root folder shows no root-level files at all
+      // (documents cannot exist outside folders).
+      !!currentFolderId || (!foldersLoading && !!rootFolder),
+    )
   const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -120,7 +136,8 @@ function WorkspacePage() {
   useEffect(() => {
     if (q && hasNextPage && !isFetchingNextPage) fetchNextPage()
   }, [q, hasNextPage, isFetchingNextPage, fetchNextPage])
-  const shownFolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders
+  const visibleFolders = rootFolder ? folders.filter((f) => f.id !== rootFolder.id) : folders
+  const shownFolders = q ? visibleFolders.filter((f) => f.name.toLowerCase().includes(q)) : visibleFolders
   const shownDocs = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
   const usedBytes = useMemo(() => docs.reduce((sum, d) => sum + (Number(d.total_size_bytes) || 0), 0), [docs])
   // The details panel must reflect server state after a mutation (e.g. the

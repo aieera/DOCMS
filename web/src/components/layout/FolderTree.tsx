@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { Folder, FolderOpen, Sparkles, Lock, Users, Globe, ShieldCheck, AlertTriangle } from 'lucide-react'
 import { getFolders } from '@/api/workspaces'
+import { findRootFolder } from '@/lib/rootFolder'
 import { listSmartFolders, type SavedSearch, type TreeVisibility } from '@/api/savedSearches'
 import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/lib/cn'
@@ -125,7 +126,12 @@ export function FolderTree({ workspaceId }: { workspaceId: string }) {
             {t('folder_tree.load_error') ?? "Couldn't load folders"}
           </p>
         ) : folders?.length ? (
-          folders.map((f) => <FolderNode key={f.id} folder={f} workspaceId={workspaceId} depth={0} />)
+          // The designated root folder is the workspace root itself (the
+          // browser shows its files at root level), so its node would be
+          // a duplicate of the workspace entry above it.
+          folders
+            .filter((f) => f.id !== findRootFolder(folders)?.id)
+            .map((f) => <FolderNode key={f.id} folder={f} workspaceId={workspaceId} depth={0} />)
         ) : (
           <p className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">{t('folder_tree.empty') ?? 'No folders'}</p>
         )}

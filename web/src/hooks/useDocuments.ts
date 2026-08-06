@@ -19,7 +19,11 @@ export function useDocuments(workspaceId: string, params: Record<string, string>
 // matches client-side against what is loaded) could not find them either.
 // Following pagination.next_page_token is what makes the whole folder
 // visible.
-export function useDocumentsInfinite(workspaceId: string, params: Record<string, string> = {}) {
+export function useDocumentsInfinite(
+  workspaceId: string,
+  params: Record<string, string> = {},
+  enabled: boolean = true,
+) {
   return useInfiniteQuery({
     queryKey: ['documents', 'infinite', workspaceId, params],
     initialPageParam: '',
@@ -41,7 +45,7 @@ export function useDocumentsInfinite(workspaceId: string, params: Record<string,
       if (!next || next === lastParam) return undefined
       return next
     },
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
   })
 }
 
