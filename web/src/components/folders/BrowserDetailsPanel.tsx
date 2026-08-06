@@ -1,10 +1,14 @@
 import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
 import { FolderOpen, X } from 'lucide-react'
 
 import { cn } from '@/lib/cn'
-import { formatFileSize, formatDateTime } from '@/lib/formatters'
+import { formatFileSize, formatDateTime, formatRelativeTime } from '@/lib/formatters'
 import { Button } from '@/components/ui/shadcn/button'
 import { useSetFolderVisibility } from '@/hooks/useFolders'
+import { useActivityForDocument } from '@/hooks/useDocumentDetailGQL'
+import { useAuthStore } from '@/store/authStore'
+import { getAuditLog } from '@/api/admin'
 import { readErrorMessage } from '@/api/client'
 import { FolderGlyph, FileTypeIcon, fileKind } from '@/components/folders/BrowserTiles'
 import type { Document, Folder, Workspace } from '@/types/api'
@@ -93,11 +97,94 @@ function FolderDetails({ folder, workspace, onOpen }: { folder: Folder; workspac
         <Switch checked={isShared} disabled={setVis.isPending} onChange={toggle} />
       </div>
 
+      <FolderActivity folderId={folder.id} />
+
       <Button variant="outline" className="mt-5 w-full gap-2" onClick={onOpen}>
         <FolderOpen className="h-4 w-4" /> Open folder
       </Button>
     </div>
   )
+}
+
+// ---- Recent activity ------------------------------------------------------
+
+interface ActivityRow {
+  id: string
+  summary: string
+  actor?: string
+  at: string
+}
+
+function ActivitySection({ rows, isLoading }: { rows: ActivityRow[]; isLoading: boolean }) {
+  return (
+    <>
+      <Divider />
+      <Head>Recent activity</Head>
+      {isLoading ? (
+        <div className="space-y-2.5" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-3.5 animate-pulse rounded bg-muted/60" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No recent activity</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {rows.map((r) => (
+            <li key={r.id} className="text-xs leading-snug">
+              <span className="text-foreground">{r.summary}</span>
+              <span className="text-muted-foreground">
+                {' — '}
+                {r.actor ? `${r.actor}, ` : ''}
+                {formatRelativeTime(r.at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+// Folder activity comes from the audit service, whose events endpoint is
+// admin/owner-gated server-side — render nothing for other roles rather
+// than farming 403s. Files use the per-document activity resolver instead,
+// which is permission-checked for any reader.
+function FolderActivity({ folderId }: { folderId: string }) {
+  const role = useAuthStore((st) => st.user?.role)
+  const canReadAudit = role === 'admin' || role === 'owner'
+  const q = useQuery({
+    queryKey: ['folder-activity', folderId],
+    enabled: canReadAudit,
+    queryFn: () =>
+      getAuditLog({ resource_type: 'folder', resource_id: folderId, page_size: '5' }),
+  })
+  if (!canReadAudit || q.isError) return null
+  const events = (q.data?.events ?? []) as {
+    id: string
+    action: string
+    actor_name?: string
+    created_at: string
+  }[]
+  const rows: ActivityRow[] = events.slice(0, 5).map((e) => ({
+    id: e.id,
+    summary: e.action.replace(/[._]/g, ' '),
+    actor: e.actor_name || undefined,
+    at: e.created_at,
+  }))
+  return <ActivitySection rows={rows} isLoading={q.isLoading} />
+}
+
+function FileActivity({ documentId }: { documentId: string }) {
+  const q = useActivityForDocument(documentId)
+  if (q.isError) return null
+  const rows: ActivityRow[] = (q.data?.nodes ?? []).slice(0, 5).map((n) => ({
+    id: n.id,
+    summary: n.summary,
+    actor: n.actorName || undefined,
+    at: n.occurredAt,
+  }))
+  return <ActivitySection rows={rows} isLoading={q.isLoading} />
 }
 
 function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Workspace; onOpen: () => void }) {
@@ -134,6 +221,8 @@ function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Wo
           </div>
         </>
       )}
+
+      <FileActivity documentId={doc.id} />
 
       <Button className="mt-5 w-full" onClick={onOpen}>Open document</Button>
     </div>
