@@ -228,7 +228,11 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           }
           setStatus(id, 'completed')
           toast.success(`${file.name} — deduplicated, no upload needed`)
-          await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+          // Bare ['documents'] on purpose: the folder browser reads from
+        // ['documents', 'infinite', wsId, …], which ['documents', wsId]
+        // does NOT prefix-match — that near-miss kept freshly uploaded
+        // files invisible until an unrelated refetch (tab refocus).
+        await qc.invalidateQueries({ queryKey: ['documents'] })
         // BUG: folder card counts went stale after upload. The folders
         // list query carries per-folder document_count + child_folder_count
         // and was never invalidated, so the card grid kept showing "00
@@ -271,7 +275,11 @@ export function useUpload(workspaceId?: string, folderId?: string) {
 
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
-        await qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+        // Bare ['documents'] on purpose: the folder browser reads from
+        // ['documents', 'infinite', wsId, …], which ['documents', wsId]
+        // does NOT prefix-match — that near-miss kept freshly uploaded
+        // files invisible until an unrelated refetch (tab refocus).
+        await qc.invalidateQueries({ queryKey: ['documents'] })
         // BUG: folder card counts went stale after upload. The folders
         // list query carries per-folder document_count + child_folder_count
         // and was never invalidated, so the card grid kept showing "00

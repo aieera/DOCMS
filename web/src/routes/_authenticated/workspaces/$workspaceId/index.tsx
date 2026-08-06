@@ -193,7 +193,9 @@ function WorkspacePage() {
   }
 
   const refreshAfterBulk = () => {
-    qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
+    // Bare ['documents'] — must also hit ['documents', 'infinite', …],
+    // which a ['documents', workspaceId] prefix does not match.
+    qc.invalidateQueries({ queryKey: ['documents'] })
     qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
     qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
   }
