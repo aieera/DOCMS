@@ -311,7 +311,7 @@ $seedEnv = @(
   "-e", "GOWORK=off",
   "-e", "DATABASE_URL=$DbUrl"
 )
-foreach ($k in @("SEED_ADMIN_EMAIL", "SEED_ADMIN_PASSWORD", "SEED_TENANT_SLUG", "SEED_TENANT_NAME", "SEED_REGION")) {
+foreach ($k in @("SEED_ADMIN_EMAIL", "SEED_ADMIN_PASSWORD", "SEED_ADMIN_NAME", "SEED_TENANT_SLUG", "SEED_TENANT_NAME", "SEED_REGION")) {
   $v = Get-EnvVal ".env" $k
   if ($v) { $seedEnv += @("-e", "$k=$v") }
 }

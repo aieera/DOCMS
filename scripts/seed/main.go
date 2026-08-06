@@ -6,6 +6,7 @@
 //	DATABASE_URL            Postgres connection string (required)
 //	SEED_ADMIN_EMAIL        Default: admin@acme.local
 //	SEED_ADMIN_PASSWORD     Default: ChangeMe!Now2026
+//	SEED_ADMIN_NAME         Default: Admin User
 //	SEED_TENANT_SLUG        Default: acme
 //	SEED_TENANT_NAME        Default: Acme Corporation
 //	SEED_REGION             Default: me-central-1
@@ -49,6 +50,7 @@ type seedInputs struct {
 	TenantPlan    string
 	AdminEmail    string
 	AdminPassword string
+	AdminName     string
 	Force         bool
 }
 
@@ -68,6 +70,7 @@ func main() {
 		TenantPlan:    envOr("SEED_PLAN", defaultPlan),
 		AdminEmail:    envOr("SEED_ADMIN_EMAIL", defaultEmail),
 		AdminPassword: envOr("SEED_ADMIN_PASSWORD", defaultPassword),
+		AdminName:     envOr("SEED_ADMIN_NAME", "Admin User"),
 		Force:         *force,
 	}
 
@@ -117,7 +120,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, in seedInputs) error {
 		return fmt.Errorf("set tenant: %w", err)
 	}
 
-	userID, err := upsertAdminUser(ctx, tx, tenantID, in.AdminEmail, string(hash))
+	userID, err := upsertAdminUser(ctx, tx, tenantID, in.AdminEmail, in.AdminName, string(hash))
 	if err != nil {
 		return fmt.Errorf("admin user: %w", err)
 	}
@@ -157,17 +160,18 @@ func upsertOrganization(ctx context.Context, pool *pgxpool.Pool, in seedInputs) 
 	return id, err
 }
 
-func upsertAdminUser(ctx context.Context, tx pgx.Tx, tenantID, email, hash string) (string, error) {
+func upsertAdminUser(ctx context.Context, tx pgx.Tx, tenantID, email, name, hash string) (string, error) {
 	var id string
 	err := tx.QueryRow(ctx, `
 		INSERT INTO users (tenant_id, email, display_name, password_hash, role, status, mfa_enabled)
-		VALUES ($1::uuid, $2, 'Admin User', $3, 'owner', 'active', false)
+		VALUES ($1::uuid, $2, $3, $4, 'owner', 'active', false)
 		ON CONFLICT (tenant_id, email) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
 			password_hash = EXCLUDED.password_hash,
 			role = 'owner',
 			status = 'active'
 		RETURNING id::text
-	`, tenantID, email, hash).Scan(&id)
+	`, tenantID, email, name, hash).Scan(&id)
 	return id, err
 }
 

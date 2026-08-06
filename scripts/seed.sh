@@ -20,6 +20,7 @@ env_val() {
 if [ -f .env ]; then
   export SEED_ADMIN_EMAIL="${SEED_ADMIN_EMAIL:-$(env_val SEED_ADMIN_EMAIL)}"
   export SEED_ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD:-$(env_val SEED_ADMIN_PASSWORD)}"
+  export SEED_ADMIN_NAME="${SEED_ADMIN_NAME:-$(env_val SEED_ADMIN_NAME)}"
   export SEED_TENANT_SLUG="${SEED_TENANT_SLUG:-$(env_val SEED_TENANT_SLUG)}"
   export SEED_TENANT_NAME="${SEED_TENANT_NAME:-$(env_val SEED_TENANT_NAME)}"
   export SEED_REGION="${SEED_REGION:-$(env_val SEED_REGION)}"

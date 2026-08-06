@@ -217,6 +217,7 @@ docker run --rm --network "$NETWORK" \
   -e DATABASE_URL="$DB_URL" \
   -e SEED_ADMIN_EMAIL="$(env_val SEED_ADMIN_EMAIL)" \
   -e SEED_ADMIN_PASSWORD="$(env_val SEED_ADMIN_PASSWORD)" \
+  -e SEED_ADMIN_NAME="$(env_val SEED_ADMIN_NAME)" \
   -e SEED_TENANT_SLUG="$(env_val SEED_TENANT_SLUG)" \
   -e SEED_TENANT_NAME="$(env_val SEED_TENANT_NAME)" \
   -e SEED_REGION="$(env_val SEED_REGION)" \
