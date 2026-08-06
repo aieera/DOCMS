@@ -6,6 +6,7 @@ import { ChevronRight, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { formatFileSize } from '@/lib/formatters'
 import { useFolders } from '@/hooks/useFolders'
+import { findRootFolder } from '@/lib/rootFolder'
 import { FolderGlyph } from '@/components/folders/BrowserTiles'
 import type { Folder, Workspace } from '@/types/api'
 
@@ -75,7 +76,11 @@ function TreeChildren({
   workspaceId, parentId, currentFolderId, onNavigate, depth,
 }: { workspaceId: string; parentId: string | undefined; currentFolderId: string | null; onNavigate: (id: string | null) => void; depth: number }) {
   const { data, isLoading } = useFolders(workspaceId, parentId)
-  const folders = data ?? []
+  // At the top level, hide the designated root folder — the browser shows
+  // its files as the workspace root itself, so a "Root" node here would
+  // duplicate the workspace entry above.
+  const fetched = data ?? []
+  const folders = parentId ? fetched : fetched.filter((f) => f.id !== findRootFolder(fetched)?.id)
   if (isLoading) {
     return <div className={cn('space-y-1.5 py-1', depth > 0 && 'ms-5 border-s border-dashed border-border ps-3')}>{[0, 1].map((i) => <div key={i} className="h-7 animate-pulse rounded-lg bg-muted/60" />)}</div>
   }
