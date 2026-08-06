@@ -27,6 +27,7 @@ import {
   type TrashEntry,
 } from '@/api/trash'
 import { MyTrashSection } from '@/components/trash/MyTrashSection'
+import { getWorkspace } from '@/api/workspaces'
 import { formatDateTime, formatFileSize } from '@/lib/formatters'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
@@ -43,6 +44,23 @@ function TrashPage() {
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
   const canManage = role === 'owner' || role === 'admin'
+  const { workspace: workspaceScope } = Route.useSearch()
+  const scopeWs = useQuery({
+    queryKey: ['workspace', workspaceScope],
+    queryFn: () => getWorkspace(workspaceScope!),
+    enabled: !!workspaceScope,
+    staleTime: 60_000,
+  })
+  // Scoped description with an escape hatch back to the tenant-wide view.
+  const scopeBanner = workspaceScope ? (
+    <span>
+      Showing items deleted from <strong>{scopeWs.data?.name ?? 'this workspace'}</strong>
+      {' · '}
+      <Link to="/trash" className="underline underline-offset-2 hover:text-foreground">
+        Show all trash
+      </Link>
+    </span>
+  ) : null
   const [purgeTarget, setPurgeTarget] = useState<TrashEntry | null>(null)
   const [folderPurgeTarget, setFolderPurgeTarget] = useState<TrashedFolder | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
@@ -163,14 +181,19 @@ function TrashPage() {
   if (!canManage) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Trash" description="Items you deleted — restore them or clear them from this list" />
-        <MyTrashSection />
+        <PageHeader
+          title="Trash"
+          description={scopeBanner ?? 'Items you deleted — restore them or clear them from this list'}
+        />
+        <MyTrashSection workspaceId={workspaceScope} />
       </div>
     )
   }
 
-  const items = trash.data?.pages.flatMap((p) => p.items) ?? []
-  const folders = folderTrash.data ?? []
+  const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
+  const items = workspaceScope ? allItems.filter((i) => i.workspace_id === workspaceScope) : allItems
+  const allFolders = folderTrash.data ?? []
+  const folders = workspaceScope ? allFolders.filter((f) => f.workspace_id === workspaceScope) : allFolders
   const docsEmpty = !trash.isLoading && items.length === 0
   const foldersEmpty = !folderTrash.isLoading && folders.length === 0
   const trashEmpty = docsEmpty && foldersEmpty
@@ -180,24 +203,28 @@ function TrashPage() {
     <div className="space-y-6">
       <PageHeader
         title="Trash"
-        description="Restore deleted items, or delete them permanently. Permanent deletion cannot be undone."
+        description={scopeBanner ?? 'Restore deleted items, or delete them permanently. Permanent deletion cannot be undone.'}
         actions={
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={trashEmpty || emptyAll.isPending}
-            onClick={() => setConfirmEmptyTrash(true)}
-            data-testid="empty-trash"
-          >
-            <Trash2 className="me-1.5 h-3.5 w-3.5" />
-            {emptyAll.isPending ? 'Emptying…' : 'Empty trash'}
-          </Button>
+          // Empty-trash purges the WHOLE tenant's trash — offering it on a
+          // workspace-scoped view would destroy far more than the list shows.
+          workspaceScope ? undefined : (
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={trashEmpty || emptyAll.isPending}
+              onClick={() => setConfirmEmptyTrash(true)}
+              data-testid="empty-trash"
+            >
+              <Trash2 className="me-1.5 h-3.5 w-3.5" />
+              {emptyAll.isPending ? 'Emptying…' : 'Empty trash'}
+            </Button>
+          )
         }
       />
 
       {/* Admins are users too: their own deletions come first, then the
           tenant-wide surface below. */}
-      <MyTrashSection />
+      <MyTrashSection workspaceId={workspaceScope} />
 
       {/* ---- Maintenance: empty-folder cleanup. Compact single line;
              hidden entirely when there's nothing to clean. ---------- */}
@@ -526,4 +553,11 @@ function TrashFolderRow({
   )
 }
 
-export const Route = createFileRoute('/_authenticated/trash')({ component: TrashPage })
+export const Route = createFileRoute('/_authenticated/trash')({
+  component: TrashPage,
+  // ?workspace=<id> scopes the page to one workspace's deletions — the
+  // Trash entry in the workspace browser's panel links here with it, while
+  // the global sidebar entry arrives without it (tenant-wide view).
+  validateSearch: (s: Record<string, unknown>): { workspace?: string } =>
+    typeof s.workspace === 'string' && s.workspace ? { workspace: s.workspace } : {},
+})

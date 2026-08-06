@@ -48,6 +48,7 @@ export function BrowserTreeSidebar({ workspaceId, currentFolderId, onNavigate, w
       <div className="border-t border-border p-3">
         <Link
           to="/trash"
+          search={{ workspace: workspaceId }}
           className="mb-3 flex h-10 items-center gap-2.5 rounded-xl px-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
         >
           <Trash2 className="h-[18px] w-[18px] text-muted-foreground" />

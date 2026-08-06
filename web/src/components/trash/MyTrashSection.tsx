@@ -26,7 +26,9 @@ import { formatDateTime, formatFileSize } from '@/lib/formatters'
 // restore it. Members have no route that destroys content — so the copy
 // must not promise that it does. Saying "permanently" here would be a lie
 // that stops people asking an admin to recover something recoverable.
-export function MyTrashSection() {
+/** When workspaceId is set, only deletions from that workspace are shown
+ *  (the workspace browser's Trash link scopes the page this way). */
+export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
   const qc = useQueryClient()
   const [clearTarget, setClearTarget] = useState<TrashEntry | null>(null)
 
@@ -67,7 +69,8 @@ export function MyTrashSection() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't remove that item"),
   })
 
-  const items = trash.data?.pages.flatMap((p) => p.items) ?? []
+  const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
+  const items = workspaceId ? allItems.filter((i) => i.workspace_id === workspaceId) : allItems
 
   return (
     <section data-testid="my-trash-section">
