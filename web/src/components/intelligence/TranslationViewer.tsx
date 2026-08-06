@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useQuery } from '@tanstack/react-query'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { AlertCircle, Check, Copy, Download, Loader2, X } from 'lucide-react'
@@ -59,7 +60,7 @@ export function TranslationViewer({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {

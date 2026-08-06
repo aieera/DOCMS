@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
@@ -96,7 +97,7 @@ export function ProtectShareDialog({ open, onOpenChange, documentId, documentTit
     setRecipients((rows) => (rows.length <= 1 ? rows : rows.filter((_, idx) => idx !== i)))
 
   const copy = (text: string) => {
-    navigator.clipboard.writeText(text)
+    copyText(text)
     toast.success('Link copied to clipboard')
   }
 

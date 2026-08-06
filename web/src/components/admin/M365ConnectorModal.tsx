@@ -16,6 +16,7 @@
 // enough that the abstraction noise would outweigh the dedup win.
 // We'll revisit when Salesforce / ServiceNow / Workday land and
 // the 4th copy of the same wrapper proves the pattern is real.
+import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -178,7 +179,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            navigator.clipboard.writeText(value).then(() => {
+            copyText(value).then(() => {
               setCopied(true)
               setTimeout(() => setCopied(false), 1500)
             })

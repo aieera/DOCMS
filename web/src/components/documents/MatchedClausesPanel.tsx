@@ -3,6 +3,7 @@
 // detect_clauses task). Self-hides when there are no matches, matching
 // the FilingSuggestionPanel idiom. Copy puts the MATCHED text on the
 // clipboard (the Phase-3 "reuse" substitute).
+import { copyText } from '@/lib/clipboard'
 import { useQuery } from '@tanstack/react-query'
 import { BookMarked, Copy, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,7 +23,7 @@ export function MatchedClausesPanel({ documentId }: { documentId: string }) {
 
   const copy = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyText(text)
       toast.success('Copied to clipboard')
     } catch {
       toast.error('Copy failed')

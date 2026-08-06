@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@/components/ui/Dialog'
@@ -166,7 +167,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
   }
 
   const copyLink = () => {
-    navigator.clipboard.writeText(shareUrl)
+    copyText(shareUrl)
     toast.success('Link copied to clipboard')
   }
 

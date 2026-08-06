@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -199,7 +200,7 @@ function CopyableEndpoint({ trigger, url }: { trigger: string; url: string }) {
         </div>
         <Button
           size="sm" variant="ghost"
-          onClick={() => navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+          onClick={() => copyText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
           aria-label="Copy URL"
         >
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -345,7 +346,7 @@ function RevealedKeyDialog({ open, plaintext, onClose }: {
             </code>
             <Button
               size="sm"
-              onClick={() => navigator.clipboard.writeText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+              onClick={() => copyText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
             >
               {copied ? <Check className="me-1 h-4 w-4" /> : <Copy className="me-1 h-4 w-4" />}
               {copied ? 'Copied' : 'Copy'}

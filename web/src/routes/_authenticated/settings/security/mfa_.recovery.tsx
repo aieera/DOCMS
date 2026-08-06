@@ -2,6 +2,7 @@
 // themselves are issued by /auth/mfa/setup (existing TOTP setup
 // flow) and on regenerate. Server returns plaintext codes EXACTLY
 // ONCE; we render them and prompt the user to copy them.
+import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -41,7 +42,7 @@ function RecoveryCodesPage() {
 
   const copyAll = () => {
     if (!codes) return
-    navigator.clipboard.writeText(codes.join('\n'))
+    copyText(codes.join('\n'))
     toast.success('Copied to clipboard')
   }
 

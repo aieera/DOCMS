@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -265,7 +266,7 @@ function ModeTabs({ mode, onChange, disabled }: { mode: Mode; onChange: (m: Mode
 function ActivationLinkPanel({ issued, onClose }: { issued: InviteUserResponse; onClose: () => void }) {
   const url = buildActivationURL(issued.tenant_slug, issued.invite_token)
   const copy = async () => {
-    try { await navigator.clipboard.writeText(url); toast.success('Link copied') }
+    try { await copyText(url); toast.success('Link copied') }
     catch { toast.error('Copy failed — select and copy manually') }
   }
   return (

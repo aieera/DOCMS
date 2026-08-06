@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -207,7 +208,7 @@ function Snippet({ title, file, code }: { title: string; file: string; code: str
         <span className="text-sm font-medium">{title}</span>
         <Button
           size="sm" variant="ghost"
-          onClick={() => navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+          onClick={() => copyText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           <span className="ms-1 text-xs">{copied ? 'Copied' : 'Copy'}</span>
@@ -340,7 +341,7 @@ function RevealedKeyDialog({ plaintext, onClose }: { plaintext: string; onClose:
           </code>
           <Button
             size="sm"
-            onClick={() => navigator.clipboard.writeText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+            onClick={() => copyText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
           >
             {copied ? <Check className="me-1 h-4 w-4" /> : <Copy className="me-1 h-4 w-4" />}
             {copied ? 'Copied' : 'Copy'}

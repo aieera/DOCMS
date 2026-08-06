@@ -2,6 +2,7 @@
 // Phase 1: list + free-text search + filter chips + create modal +
 // inline edit/delete. Variation tracking, detection, and OnlyOffice
 // side-panel are Phase 2-4 per the ADR.
+import { copyText } from '@/lib/clipboard'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -347,8 +348,7 @@ function ClauseDetail({
             size="sm"
             aria-label="Copy clause"
             onClick={() =>
-              navigator.clipboard
-                .writeText(clause.body_text)
+              copyText(clause.body_text)
                 .then(() => toast.success('Clause copied'))
                 .catch(() => toast.error('Copy failed'))
             }

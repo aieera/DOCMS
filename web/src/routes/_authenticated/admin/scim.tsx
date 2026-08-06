@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 
 function copy(text: string) {
-  navigator.clipboard?.writeText(text).then(
+  copyText(text).then(
     () => toast.success('Copied'),
     () => toast.error('Copy failed'),
   )

@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -148,7 +149,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            navigator.clipboard.writeText(value).then(() => {
+            copyText(value).then(() => {
               setCopied(true)
               setTimeout(() => setCopied(false), 1500)
             })

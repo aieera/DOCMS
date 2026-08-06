@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
@@ -160,7 +161,7 @@ function ApiKeysPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => { navigator.clipboard.writeText(issued.api_key); toast.success('Copied') }}
+                  onClick={() => { copyText(issued.api_key); toast.success('Copied') }}
                   aria-label="Copy"
                 >
                   <Copy className="h-4 w-4" />

@@ -1,3 +1,4 @@
+import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -90,7 +91,7 @@ export function WebhooksPage() {
   const toggleEvent = (e: string) =>
     setEvents((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]))
 
-  const copy = (txt: string) => navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
+  const copy = (txt: string) => copyText(txt).then(() => toast.success('Copied'))
 
   return (
     <div className="space-y-6">
@@ -271,7 +272,7 @@ function WebhookRow({
 // delivery.go::signPayload.
 function SignatureSamples() {
   const [lang, setLang] = useState<keyof typeof SAMPLES>('node')
-  const copy = (txt: string) => navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
+  const copy = (txt: string) => copyText(txt).then(() => toast.success('Copied'))
   return (
     <div className="border-t border-border bg-muted/30 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">

@@ -6,6 +6,7 @@
 //   3. Live tail — SSE stream of the tenant's own events, capped at 60s
 //      windows so an abandoned browser tab doesn't pin a JetStream
 //      consumer forever.
+import { copyText } from '@/lib/clipboard'
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -77,7 +78,7 @@ export function EventStreamPage() {
   })
 
   const copy = (txt: string) =>
-    navigator.clipboard.writeText(txt).then(() => toast.success('Copied'))
+    copyText(txt).then(() => toast.success('Copied'))
   const downloadCreds = (filename: string, content: string) => {
     const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)

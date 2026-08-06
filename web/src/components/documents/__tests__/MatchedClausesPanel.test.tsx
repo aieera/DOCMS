@@ -18,6 +18,9 @@ vi.mock('@/api/clauses', async (importOriginal) => ({
   getDocumentClauseMatches: vi.fn(async () => matches),
 }))
 
+const copyTextMock = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/lib/clipboard', () => ({ copyText: copyTextMock }))
+
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
@@ -37,14 +40,11 @@ describe('<MatchedClausesPanel>', () => {
 
   it('copies the clause body on Copy click', async () => {
     const user = userEvent.setup({ writeToClipboard: false })
-    // userEvent.setup() unconditionally replaces navigator.clipboard with
-    // its own internal stub (see @testing-library/user-event's Clipboard.js
-    // attachClipboardStubToView), clobbering the beforeEach-installed
-    // vi.fn() before the click fires. Spy on the stub in place so the
-    // assertion below observes the call.
-    vi.spyOn(navigator.clipboard, 'writeText')
+    // The component copies via the shared copyText helper (which handles
+    // insecure-context fallback itself), so assert against that seam
+    // rather than navigator.clipboard.
     render(wrap(<MatchedClausesPanel documentId="d-1" />))
     await user.click(await screen.findByRole('button', { name: /copy/i }))
-    expect(navigator.clipboard.writeText).toHaveBeenCalled()
+    expect(copyTextMock).toHaveBeenCalledWith(matches[0].matched_text)
   })
 })
