@@ -123,6 +123,20 @@ function WorkspacePage() {
   const shownFolders = q ? folders.filter((f) => f.name.toLowerCase().includes(q)) : folders
   const shownDocs = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
   const usedBytes = useMemo(() => docs.reduce((sum, d) => sum + (Number(d.total_size_bytes) || 0), 0), [docs])
+  // The details panel must reflect server state after a mutation (e.g. the
+  // share/private toggle). `selection` captures the row object at click
+  // time, so after an invalidation the panel would keep rendering the stale
+  // snapshot; re-derive the current object from the fresh lists by id,
+  // falling back to the snapshot while it's mid-refetch or filtered out.
+  const freshSelection: Selection = useMemo(() => {
+    if (!selection) return null
+    if (selection.type === 'folder') {
+      const f = folders.find((x) => x.id === selection.folder.id)
+      return f ? { type: 'folder', folder: f } : selection
+    }
+    const d = docs.find((x) => x.id === selection.doc.id)
+    return d ? { type: 'file', doc: d } : selection
+  }, [selection, folders, docs])
 
   // ── multi-select bulk operations ──
   const selectedDocs = useMemo(() => docs.filter((d) => selectedIds.has(d.id)), [docs, selectedIds])
@@ -583,7 +597,7 @@ function WorkspacePage() {
 
       {/* ── right: details (only while something is selected) ── */}
       <BrowserDetailsPanel
-        selection={selection}
+        selection={freshSelection}
         workspace={ws.data}
         onOpenFolder={(f) => navigateToFolder(f.id)}
         onOpenFile={(d) => openDoc(d.id)}
