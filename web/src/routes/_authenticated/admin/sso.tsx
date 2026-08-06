@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -336,9 +337,8 @@ function Wizard({ onDone }: { onDone: () => void }) {
               />
             </Field>
             <Field label="Client Secret">
-              <input
-                type="password"
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+              <PasswordInput
+                className="h-auto w-full rounded-md px-2 py-1 text-sm"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
               />

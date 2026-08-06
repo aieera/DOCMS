@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -127,7 +128,7 @@ function RegisterPage() {
               <FormItem>
                 <FormLabel>Password</FormLabel>
                 <FormControl>
-                  <Input {...field} type="password" autoComplete="new-password" />
+                  <PasswordInput {...field} autoComplete="new-password" />
                 </FormControl>
                 <FormMessage />
               </FormItem>

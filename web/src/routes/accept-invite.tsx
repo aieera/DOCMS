@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
@@ -8,7 +9,6 @@ import { toast } from 'sonner'
 
 import { acceptInvite } from '@/api/auth'
 import { Button } from '@/components/ui/shadcn/button'
-import { Input } from '@/components/ui/shadcn/input'
 import {
   Form, FormField, FormItem, FormLabel, FormControl,
 } from '@/components/ui/form'
@@ -150,9 +150,8 @@ function AcceptInvitePage() {
               <FormItem>
                 <FormLabel>New password</FormLabel>
                 <FormControl>
-                  <Input
+                  <PasswordInput
                     {...field}
-                    type="password"
                     placeholder="Pick something strong"
                     autoFocus
                     autoComplete="new-password"
@@ -168,7 +167,7 @@ function AcceptInvitePage() {
               <FormItem>
                 <FormLabel>Confirm password</FormLabel>
                 <FormControl>
-                  <Input {...field} type="password" autoComplete="new-password" />
+                  <PasswordInput {...field} autoComplete="new-password" />
                 </FormControl>
               </FormItem>
             )}

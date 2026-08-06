@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -257,8 +258,7 @@ function APIKeySection({
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
                 {hasKey ? 'Replace key' : 'Paste new key'}
               </span>
-              <Input
-                type="password"
+              <PasswordInput
                 placeholder={modelHint.startsWith('claude-') ? 'sk-ant-…' : 'sk-…'}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

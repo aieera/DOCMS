@@ -16,6 +16,7 @@
 // enough that the abstraction noise would outweigh the dedup win.
 // We'll revisit when Salesforce / ServiceNow / Workday land and
 // the 4th copy of the same wrapper proves the pattern is real.
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -130,8 +131,7 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
 
           <div>
             <label className="mb-1 block text-sm font-medium">Client secret VALUE</label>
-            <Input
-              type="password"
+            <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="abc~1234567890…"

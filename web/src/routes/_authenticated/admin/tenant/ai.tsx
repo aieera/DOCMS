@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -258,9 +259,8 @@ export function TenantAIPage() {
               ? <>Key set <strong>{relativeTime(draft.key_set_at)}</strong>. Stored AES-256-GCM encrypted at rest. Never returned in plaintext after save.</>
               : <>No key set. Without a key, calls fall back to the deploy-default credentials.</>}
           </p>
-          <Input
+          <PasswordInput
             label="New API key (write-only)"
-            type="password"
             // "new-password" (not "off", which Chrome ignores) stops the
             // browser autofilling the signed-in user's SAVED password into
             // this write-only field. The data-* hints opt out of 1Password /

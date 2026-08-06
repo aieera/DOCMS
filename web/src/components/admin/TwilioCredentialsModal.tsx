@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -91,8 +92,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
               Auth Token
               {hasExistingToken && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
-            <Input
-              type="password"
+            <PasswordInput
               value={authToken}
               onChange={(e) => setAuthToken(e.target.value)}
               placeholder={hasExistingToken ? '••••••••' : 'paste once — never re-shown'}

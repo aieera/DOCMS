@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -295,9 +296,8 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
                 { value: 'edit', label: 'Edit' },
               ]}
             />
-            <Input
+            <PasswordInput
               label="Password (optional)"
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Leave empty for no password"

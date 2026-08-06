@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -110,8 +111,7 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
 
           <div>
             <label className="mb-1 block text-sm font-medium">Client Secret</label>
-            <Input
-              type="password"
+            <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="GOCSPX-…"

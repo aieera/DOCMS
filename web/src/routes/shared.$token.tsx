@@ -15,12 +15,12 @@
 // non-`unlocked` state; the unlocked panel is the ONLY render path
 // that surfaces document metadata or the download button, so an
 // unverified caller never reaches content (C-1 invariant).
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { createFileRoute } from '@tanstack/react-router'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Button } from '@/components/ui/shadcn/button'
 import { Download, Lock, Loader2, AlertTriangle, FileX } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Input } from '@/components/ui/shadcn/input'
 import { toast } from 'sonner'
 import { accessShareLink, type ShareLinkAccessResult } from '@/api/shareLinks'
 import { readErrorMessage } from '@/api/client'
@@ -167,8 +167,7 @@ function SharedViewerPage() {
               The sender protected this link with a password.
             </p>
           </div>
-          <Input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter password"

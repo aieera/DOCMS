@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -120,8 +121,7 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
               {provider === 'docusign' ? 'Secret Key' : 'Client Secret'}
               {hasExistingSecret && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
-            <Input
-              type="password"
+            <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder={hasExistingSecret ? '••••••••' : 'paste once — never re-shown'}

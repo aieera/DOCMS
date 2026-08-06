@@ -14,6 +14,7 @@
 //"•••••••• (set)" instead of round-tripping the secret. To rotate,
 // the admin types a new password into the field — leaving it empty
 // on PATCH preserves the stored value.
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -289,8 +290,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
         label={draftMode ? 'Bind password' : 'New bind password'}
         hint={draftMode ? 'Required.' : 'Leave blank to keep the existing password.'}
       >
-        <Input
-          type="password"
+        <PasswordInput
           value={body.bind_password ?? ''}
           onChange={(e) => setBody({ ...body, bind_password: e.target.value })}
           placeholder={draftMode ? '' : 'Unchanged'}
@@ -356,7 +356,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
       <Field label="Test bind (optional)" hint="Verify by binding as a real directory user. Leave blank to skip.">
         <div className="flex flex-col gap-2">
           <Input placeholder="sample username" value={sampleUser} onChange={(e) => setSampleUser(e.target.value)} />
-          <Input placeholder="sample password" type="password" value={samplePass} onChange={(e) => setSamplePass(e.target.value)} />
+          <PasswordInput placeholder="sample password" value={samplePass} onChange={(e) => setSamplePass(e.target.value)} />
         </div>
       </Field>
 

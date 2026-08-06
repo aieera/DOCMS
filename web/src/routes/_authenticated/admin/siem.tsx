@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -70,7 +71,7 @@ export function SIEMPage() {
         </select>
         <input className="rounded border border-border bg-background px-2 py-1.5 text-sm sm:col-span-2"
           placeholder={hint} value={draft.endpoint} onChange={(e) => setDraft({ ...draft, endpoint: e.target.value })} />
-        <input className="rounded border border-border bg-background px-2 py-1.5 text-sm" type="password"
+        <PasswordInput className="h-auto rounded border-border px-2 py-1.5 text-sm"
           placeholder="token" value={draft.token} onChange={(e) => setDraft({ ...draft, token: e.target.value })} />
         <Button size="sm" className="sm:col-span-6 sm:w-40" disabled={!draft.name || !draft.endpoint || create.isPending}
           onClick={() => create.mutate(undefined)} data-testid="sink-create">

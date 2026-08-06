@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -120,8 +121,7 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
               Password
               {hasExistingPassword && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
-            <Input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={hasExistingPassword ? '••••••••' : 'paste once — never re-shown'}

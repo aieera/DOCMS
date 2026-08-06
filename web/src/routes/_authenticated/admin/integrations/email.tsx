@@ -5,6 +5,7 @@
 //   2. Status dashboard — totals + pending/failed + next-run countdown.
 //   3. OAuth nudge — points at /admin/connectors for the Microsoft +
 //      Gmail authorisation flow that this page reuses.
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -250,7 +251,7 @@ function CreateForm({
           <Input label="IMAP host" placeholder="imap.example.com" value={imapHost} onChange={(e) => setImapHost(e.target.value)} data-testid="email-imap-host" />
           <Input label="Port" type="number" value={imapPort} onChange={(e) => setImapPort(Number(e.target.value))} />
           <Input label="Username" placeholder="user@example.com" value={imapUser} onChange={(e) => setImapUser(e.target.value)} data-testid="email-imap-user" />
-          <Input label="Password" type="password" autoComplete="off" value={imapPwd} onChange={(e) => setImapPwd(e.target.value)} data-testid="email-imap-pwd" />
+          <PasswordInput label="Password" autoComplete="off" value={imapPwd} onChange={(e) => setImapPwd(e.target.value)} data-testid="email-imap-pwd" />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-3">

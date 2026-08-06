@@ -1,3 +1,4 @@
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useState } from 'react'
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
@@ -195,9 +196,8 @@ export function UsersPage() {
               />
               <Select label="Role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
               {mode === 'direct' && (
-                <Input
+                <PasswordInput
                   label="Initial password"
-                  type="password"
                   placeholder="≥12 chars, mix of upper/lower/digit/special"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
