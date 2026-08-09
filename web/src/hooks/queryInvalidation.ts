@@ -30,17 +30,6 @@
 // matching helper here rather than hand-rolling a key, so a new reader
 // key only has to be registered in ONE place.
 //
-// NOTE for whoever owns the tag-suggestion surfaces: the same class is
-// live there and is NOT fixed here (those files are outside this
-// change's scope) — the dashboard tile reads
-// ['pending-tag-suggestions-count'] (components/intelligence/
-// PendingSuggestionsCard) while the review queue invalidates only
-// ['admin-tag-suggestions'] (routes/_authenticated/admin/intelligence/
-// tag-review), so the tile keeps showing a pre-review count. Adding an
-// `invalidateTagSuggestions` helper below and calling it from
-// tag-review.tsx, TagSuggestionsPanel.tsx and TagSuggestionBadge.tsx is
-// the fix.
-
 import type { QueryClient } from '@tanstack/react-query'
 
 /** Every notification surface: the hook-backed lists + unread count,
@@ -51,6 +40,18 @@ export function invalidateNotifications(qc: QueryClient): Promise<void> {
     qc.invalidateQueries({ queryKey: ['notifications'] }),
     qc.invalidateQueries({ queryKey: ['notifications-inbox'] }),
     qc.invalidateQueries({ queryKey: ['notif-recent'] }),
+  ]).then(() => undefined)
+}
+
+/** Every tag-suggestion reader: the review queue and its tenant total,
+ *  plus the dashboard tile's separate count key. Reviewing a suggestion
+ *  used to refresh only the queue, so the dashboard advertised "5
+ *  waiting" while the queue said 6. */
+export function invalidateTagSuggestions(qc: QueryClient): Promise<void> {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ['admin-tag-suggestions'] }),
+    qc.invalidateQueries({ queryKey: ['pending-tag-suggestions-count'] }),
+    qc.invalidateQueries({ queryKey: ['tag-suggestions'] }),
   ]).then(() => undefined)
 }
 

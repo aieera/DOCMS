@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { invalidateTagSuggestions } from '@/hooks/queryInvalidation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -64,7 +65,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
   const review = useAppMutation({
     mutationFn: (actions: ReviewAction[]) => reviewTagSuggestions(documentId, actions),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['tag-suggestions', documentId] })
+      void invalidateTagSuggestions(qc)
       qc.invalidateQueries({ queryKey: ['document', documentId] })
       const acc = res.accepted_count
       const rej = res.rejected_count

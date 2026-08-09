@@ -234,7 +234,7 @@ export function DocumentDetailBody({
           console for QA; the loading pill is kept as a transient cue. */}
       {isAdminCaller && gql.isLoading && (
         <p className="text-xs text-muted-foreground" data-testid="gql-status-loading">
-          Loading aggregated detail via GraphQL…
+          Loading document details…
         </p>
       )}
 
@@ -1372,7 +1372,7 @@ function OCRFailureBanner({ documentId, versionId }: { documentId: string; versi
         <div className="text-sm">
           <p className="font-medium text-foreground">OCR failed</p>
           <p className="text-muted-foreground">
-            Text extraction did not complete. Re-run to try again — use Auto for the default pipeline or force Surya if Auto skipped layout analysis.
+            Text extraction did not complete. Re-run to try again — use Auto for the default engine, or pick a specific engine if Auto skipped layout analysis.
           </p>
         </div>
       </div>

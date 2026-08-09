@@ -92,7 +92,7 @@ function WorkspacePage() {
       // it can only produce another copy of the same error toast.
       !wsFailure && (!!currentFolderId || (!foldersLoading && !!rootFolder)),
     )
-  const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
+  const { uploadFiles } = useUpload(workspaceId, effectiveFolderId ?? undefined)
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const viewMode = useUIStore((s) => s.browserViewMode)
@@ -386,8 +386,10 @@ function WorkspacePage() {
   // collaborative editor on it (the ?doctype hint mounts the editor before
   // the first markdown version exists). Notes need a folder to live in.
   const onNewNote = async () => {
-    if (!currentFolderId) return
-    const note = await createNote({ workspace_id: workspaceId, folder_id: currentFolderId, doc_type: 'note' })
+    // effectiveFolderId, not currentFolderId: at the workspace root the
+    // note belongs in the root folder, exactly like an upload there.
+    if (!effectiveFolderId) return
+    const note = await createNote({ workspace_id: workspaceId, folder_id: effectiveFolderId, doc_type: 'note' })
     navigate({
       to: '/workspaces/$workspaceId/documents/$documentId',
       params: { workspaceId, documentId: note.id },
@@ -506,14 +508,21 @@ function WorkspacePage() {
           </div>
           <Button
             onClick={onNewNote}
-            disabled={!currentFolderId}
+            disabled={!effectiveFolderId}
             variant="outline"
             className="h-12 gap-2 rounded-xl px-5"
-            title={currentFolderId ? 'Create a collaborative note' : 'Open a folder to add a note'}
+            // A title tooltip is invisible to keyboard and touch users, so
+            // the reason is announced instead of merely hovered.
+            aria-describedby={!effectiveFolderId ? 'new-note-hint' : undefined}
             data-testid="new-note"
           >
             <StickyNote className="h-[18px] w-[18px]" /> New note
           </Button>
+          {!effectiveFolderId && (
+            <p id="new-note-hint" className="sr-only">
+              Still loading this workspace&rsquo;s folders.
+            </p>
+          )}
           <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-sm hover:shadow-md" data-testid="open-upload">
             <Upload className="h-[18px] w-[18px]" /> Upload
           </Button>

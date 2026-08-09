@@ -19,7 +19,10 @@ export function PendingSuggestionsCard() {
   const q = useQuery({
     queryKey: ['pending-tag-suggestions-count'],
     queryFn: () => listPendingTagSuggestions({ limit: 1 }),
-    staleTime: 60_000,
+    // Short window on purpose: reviewing a suggestion invalidates this
+    // key, but a minute-long staleTime also let the tile drift behind
+    // the queue whenever the review happened in another tab.
+    staleTime: 10_000,
     retry: false,
     enabled: mayReview,
   })

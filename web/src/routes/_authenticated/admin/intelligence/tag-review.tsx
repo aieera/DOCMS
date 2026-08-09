@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { invalidateTagSuggestions } from '@/hooks/queryInvalidation'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -66,7 +67,7 @@ export function TagReviewQueuePage() {
       actions: { suggestion_id: string; action: 'accept' | 'reject' }[]
     }) => reviewTagSuggestions(documentId, actions),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-tag-suggestions'] })
+      void invalidateTagSuggestions(qc)
       toast.success('Reviewed')
     },
     onError: () => toast.error('Review failed'),

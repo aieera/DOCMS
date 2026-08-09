@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateTagSuggestions } from '@/hooks/queryInvalidation'
 import { Check, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -26,7 +27,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
       reviewTagSuggestions(documentId, actions),
     onSuccess: (res) => {
       if (res.accepted_tags.length > 0) toast.success(`Tagged: ${res.accepted_tags.join(', ')}`)
-      qc.invalidateQueries({ queryKey: ['tag-suggestions', documentId] })
+      void invalidateTagSuggestions(qc)
       qc.invalidateQueries({ queryKey: ['documents'] })
     },
     onError: () => toast.error('Could not save the tag decision — try again'),

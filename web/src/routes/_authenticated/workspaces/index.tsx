@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { useMemo, useState } from 'react'
-import { Plus, FolderOpen, Users, FileText, Search, Calendar } from 'lucide-react'
+import { Plus, FolderOpen, Users, FileText, Search, Calendar, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
@@ -65,8 +65,21 @@ function WorkspacesPage() {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter workspaces…"
-              className="ps-9"
+              // The placeholder is not an accessible name — it disappears
+              // the moment anything is typed.
+              aria-label="Filter workspaces"
+              className={cn('ps-9', filter && 'pe-9')}
             />
+            {filter && (
+              <button
+                type="button"
+                onClick={() => setFilter('')}
+                aria-label="Clear filter"
+                className="absolute inset-y-0 end-0 flex items-center pe-3 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <ViewModeToggle value={viewMode} onChange={setViewMode} className="shrink-0" />
         </div>
@@ -266,6 +279,8 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [touched, setTouched] = useState(false)
+  const trimmed = name.trim()
 
   const mut = useAppMutation({
     mutationFn: () => createWorkspace(name.trim(), description.trim() || undefined),
@@ -291,7 +306,8 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!name.trim()) { toast.error('Name is required'); return }
+          setTouched(true)
+          if (!trimmed) return
           mut.mutate()
         }}
         className="space-y-4"
@@ -301,10 +317,11 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Q4 Contracts"
-          // No native `required`: it blocks the form's onSubmit before our
-          // toast.error('Name is required') can fire, so the empty-name case
-          // appeared to do nothing. Let the JS validation handle it (toast),
-          // consistent with the other dialogs (e.g. Webhooks → "URL is required").
+          // Validated inline rather than by a toast fired from the far
+          // corner of the screen, and the submit stays disabled while the
+          // name is empty — matching the New-folder dialog.
+          onBlur={() => setTouched(true)}
+          error={touched && !trimmed ? 'Enter a name.' : undefined}
           autoFocus
           maxLength={120}
         />
@@ -319,7 +336,7 @@ function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={mut.isPending}>
             Cancel
           </Button>
-          <Button type="submit" loading={mut.isPending} disabled={mut.isPending}>
+          <Button type="submit" loading={mut.isPending} disabled={mut.isPending || !trimmed}>
             Create workspace
           </Button>
         </div>
