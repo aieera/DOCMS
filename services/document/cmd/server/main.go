@@ -1005,8 +1005,16 @@ func main() {
 	// docs/runbooks/search-reindex.md); kept for future drift repair.
 	searchReindexMux := http.NewServeMux()
 	handler.NewSearchReindexHandler(svc, *log.Z()).RegisterInternal(searchReindexMux)
+	// The handler reads the tenant off the context, so the identity
+	// middleware has to run — without TenantHTTP the documented repair
+	// tool 401'd on every call no matter what headers were sent, which
+	// made it useless exactly when it was needed (backfilling the index
+	// after an indexer fix). Gateway signature first: this route is on
+	// the internal mux and must not be reachable from outside.
 	rootMux.Handle("POST /internal/v1/search/reindex",
-		middleware.CorrelationHTTP(searchReindexMux))
+		middleware.CorrelationHTTP(
+			middleware.RequireGatewaySignature()(
+				middleware.TenantHTTP(pool)(searchReindexMux))))
 
 	// ADR 0065 — the concrete WOPI file resolver: token → (tenant, doc,
 	// version), GetFile streams (decrypting) blobs, PutFile commits a
