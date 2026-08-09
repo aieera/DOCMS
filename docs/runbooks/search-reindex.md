@@ -2,6 +2,30 @@
 
 ## What this repairs
 
+### Missing dates / author / lifecycle on search hits (run this after upgrading)
+
+Until the date fix, `dms.document.created.v1` and `dms.document.reindexed.v1`
+carried no `created_at`, `updated_at` or `created_by_name`, and the search
+service's `IndexDocument.CreatedAt` was a non-optional `time.Time`. Every
+indexed document therefore stored the literal `0001-01-01T00:00:00Z`:
+
+- search hits returned `"created_at":"0001-01-01T00:00:00Z"` (the Reports
+  engine read the real dates straight from Postgres, which is why only
+  search looked wrong);
+- **Relevance / Newest / Oldest was inert** — the sort key was identical
+  across the whole corpus;
+- the `author` and `lifecycle_state` facets rendered blank because
+  `created_by_name` / `lifecycle_state` were never projected.
+
+Both events now carry those fields, so **newly created and newly edited
+documents self-heal**. Documents indexed before the upgrade keep the bad
+values until reindexed — run the whole-tenant pass below once per tenant
+after deploying. The search service defensively renders a zero date as
+`null` rather than year 1, so the UI degrades to "no date" until the
+reindex lands.
+
+### ACL / content wipe from the sparse-update bug
+
 The OpenSearch index is a projection fed by NATS events. Before the
 indexer partial-update fix, `dms.document.updated.v1` (a **sparse** diff:
 `{document_id, changed_fields, updated_by}`) was routed through the same
@@ -27,6 +51,8 @@ the full search projection from source of truth, per live document:
 | Index field | Source of truth |
 |---|---|
 | title, description, tags, document_class, lifecycle_state, region_pin, mime_type, size_bytes | `documents` row |
+| created_at, updated_at | `documents` row (RFC3339; omitted when NULL rather than written as year 1) |
+| created_by_name | `users.display_name` via `LEFT JOIN users ON (tenant_id, created_by)` |
 | content, content_snippet | `ocr_results` pages of the current version (ordered, capped at 1 MB) |
 | readable_by, readable_by_users, readable_by_groups | folder/workspace ACL (`computeFolderReaders` — same query that stamps created events) |
 | version_count | `document_versions` count |
@@ -80,6 +106,9 @@ the same way.
 2. Outbox drains: `SELECT count(*) FROM outbox WHERE event_type='dms.document.reindexed.v1' AND NOT published` → 0 within seconds.
 3. A previously-vanished doc is findable again by an ACL-permitted user
    (search by a content phrase, not just the title).
+4. Date repair: `POST /api/v1/search` returns a real `created_at` on every
+   hit (no `0001-01-01`), `sort_by=created_at` reorders the list, and the
+   author / lifecycle facets have non-empty bucket values.
 
 ## Notes
 

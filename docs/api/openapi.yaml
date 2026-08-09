@@ -216,12 +216,32 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
               properties:
                 query: { type: string }
+                q: { type: string, description: Alias for `query` (the spelling GET /search uses) }
                 filters: { type: object }
                 facets: { type: array, items: { type: string } }
                 page_size: { type: integer, default: 20 }
+                limit: { type: integer, description: Alias for `page_size` }
+                page_token: { type: string }
+                search_mode:
+                  type: string
+                  enum: [lexical, semantic, hybrid]
+                  default: lexical
+                  description: >
+                    Ranker stack. `lexical` = BM25 only, `semantic` = dense-vector
+                    ANN only, `hybrid` = both fused by RRF. Also accepted as `mode`,
+                    the spelling GET /search uses.
+                mode: { type: string, enum: [lexical, semantic, hybrid], description: Alias for `search_mode` }
+                sort_by: { type: string, enum: [relevance, created_at, updated_at, title, size_bytes] }
+                sort_order: { type: string, enum: [asc, desc] }
                 highlight: { type: boolean, default: true }
+                explain: { type: boolean, default: false }
+                share_token: { type: string }
+      # Unknown top-level fields are rejected with 400 rather than ignored:
+      # a mistyped parameter used to yield a silent default (e.g. a lexical
+      # search for a caller that asked for hybrid).
       responses:
         '200':
           content:

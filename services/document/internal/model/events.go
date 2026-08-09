@@ -25,12 +25,28 @@ type OutboxEvent struct {
 // ---- Event payloads --------------------------------------------------------
 
 type DocumentCreatedPayload struct {
-	DocumentID  string `json:"document_id"`
-	WorkspaceID string `json:"workspace_id"`
-	FolderID    string `json:"folder_id"`
-	Title       string `json:"title"`
-	RegionPin   string `json:"region_pin"`
-	CreatedBy   string `json:"created_by"`
+	DocumentID  string   `json:"document_id"`
+	WorkspaceID string   `json:"workspace_id"`
+	FolderID    string   `json:"folder_id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	RegionPin   string   `json:"region_pin"`
+	// LifecycleState — always "draft" at create time, but the search
+	// index has no other source for it until the first state change, so
+	// hits (and the lifecycle_state facet) came back blank.
+	LifecycleState string `json:"lifecycle_state,omitempty"`
+	CreatedBy      string `json:"created_by"`
+	// CreatedByName is the uploader's display name, denormalised for the
+	// search index (the search service has no users table). Without it
+	// the `author` facet had nothing to bucket.
+	CreatedByName string `json:"created_by_name,omitempty"`
+	// CreatedAt / UpdatedAt — RFC3339. The search indexer had no source
+	// for these, so every indexed document carried Go's zero time and
+	// rendered as "0001-01-01T00:00:00Z"; sorting by date was inert
+	// because the key was constant across the corpus.
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 	// FIX-4 (audit C3) — populated from publishFolderACLChange's
 	// query so freshly-indexed documents land in OpenSearch with the
 	// correct ACL from minute one. Without this, new docs match no

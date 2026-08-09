@@ -218,10 +218,13 @@ func main() {
 			middleware.Idempotency(pool)(mux)))
 	searchAuth.Handle("/",
 		middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
 	httpSrv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.HTTPPort),
 		// otelhttp opens a SERVER span per request (inert without tracing.Init).
-		Handler:           otelhttp.NewHandler(middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)), "search.http"),
+		Handler:           secHeaders(otelhttp.NewHandler(middleware.RequireGatewaySignature()(middleware.IdentityHeadersHTTP()(searchAuth)), "search.http")),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

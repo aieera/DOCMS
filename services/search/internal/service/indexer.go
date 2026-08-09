@@ -171,6 +171,12 @@ func (ix *Indexer) onDocCreated(msg *nats.Msg) {
 	if v, ok := data["size_bytes"].(float64); ok {
 		doc.SizeBytes = int64(v)
 	}
+	// Temporal fields. Both events that land here (document.created.v1 and
+	// document.reindexed.v1) now carry them; older in-flight events don't,
+	// in which case the field stays nil and is omitted from the index doc
+	// rather than written as the year-1 zero time (see model.IndexDocument).
+	doc.CreatedAt = timeField(data, "created_at")
+	doc.UpdatedAt = timeField(data, "updated_at")
 	if tags, ok := data["tags"].([]any); ok {
 		for _, t := range tags {
 			if s, ok := t.(string); ok {
@@ -629,6 +635,26 @@ func intField(m map[string]any, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+// timeField parses an RFC3339 timestamp off an event payload. Returns nil
+// for missing / non-string / unparseable / zero values so the caller omits
+// the field entirely — an absent date is honest, a year-1 date is not.
+func timeField(m map[string]any, key string) *time.Time {
+	s, ok := m[key].(string)
+	if !ok || s == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			if t.IsZero() {
+				return nil
+			}
+			t = t.UTC()
+			return &t
+		}
+	}
+	return nil
 }
 
 func strSliceField(m map[string]any, key string) []string {

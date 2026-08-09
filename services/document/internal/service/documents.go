@@ -116,14 +116,30 @@ func (s *DocumentService) CreateDocument(ctx context.Context, in *CreateDocument
 			s.log.Warn().Err(rerr).Str("doc", doc.ID.String()).Msg("compute readable_by failed; doc indexed without ACL")
 			readableBy, readableUsers, readableGroups = nil, nil, nil
 		}
+		// Uploader display name for the search projection — the search
+		// service has no users table, so `created_by_name` (and the
+		// author facet built on it) can only come from here. Best-effort:
+		// a missing/soft-deleted user just leaves it empty.
+		var createdByName string
+		if err := tx.QueryRow(ctx,
+			`SELECT COALESCE(display_name, '') FROM users WHERE tenant_id = $1 AND id = $2`,
+			tenantID, userID).Scan(&createdByName); err != nil {
+			createdByName = ""
+		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.created.v1", "document", doc.ID,
 			model.DocumentCreatedPayload{
 				DocumentID:       doc.ID.String(),
 				WorkspaceID:      doc.WorkspaceID.String(),
 				FolderID:         doc.FolderID.String(),
 				Title:            doc.Title,
+				Description:      doc.Description,
+				Tags:             doc.Tags,
 				RegionPin:        doc.RegionPin,
+				LifecycleState:   string(doc.LifecycleState),
 				CreatedBy:        userID.String(),
+				CreatedByName:    createdByName,
+				CreatedAt:        doc.CreatedAt.UTC().Format(time.RFC3339),
+				UpdatedAt:        doc.UpdatedAt.UTC().Format(time.RFC3339),
 				ReadableBy:       readableBy,
 				ReadableByUsers:  readableUsers,
 				ReadableByGroups: readableGroups,

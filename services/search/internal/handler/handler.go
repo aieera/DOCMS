@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog"
 
@@ -96,6 +95,9 @@ func (h *Handler) purgeSubject(w http.ResponseWriter, r *http.Request) {
 
 // ---- search ---------------------------------------------------------------
 
+// searchRequestBody is the POST /api/v1/search wire shape. Field names
+// here are canonical; decodeSearchBody additionally accepts the aliases
+// in searchBodyAliases and REJECTS anything else (see its doc comment).
 type searchRequestBody struct {
 	Query      string      `json:"query"`
 	Filters    filtersBody `json:"filters"`
@@ -148,9 +150,9 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 	groupIDs := h.callerGroups(r, tenantID, userID)
 
-	var body searchRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	body, err := decodeSearchBody(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -187,15 +189,27 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 			HasContent:     body.Filters.HasContent,
 		},
 	}
-	if body.Filters.CreatedAfter != "" {
-		if t, err := time.Parse(time.RFC3339, body.Filters.CreatedAfter); err == nil {
-			req.Filters.CreatedAfter = &t
+	// Date bounds. A malformed value used to be dropped SILENTLY, which
+	// looked exactly like the filter had been applied and matched
+	// everything — a bare "2026-12-31" (no time part) produced an
+	// unfiltered result set with a 200. Bare dates are now accepted
+	// (promoted to midnight UTC, same as the GET syntax's
+	// `filter=created_at:[…]`), and anything still unparseable is a 400.
+	if v := body.Filters.CreatedAfter; v != "" {
+		t, err := parseFilterTime(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "filters.created_after: "+err.Error())
+			return
 		}
+		req.Filters.CreatedAfter = &t
 	}
-	if body.Filters.CreatedBefore != "" {
-		if t, err := time.Parse(time.RFC3339, body.Filters.CreatedBefore); err == nil {
-			req.Filters.CreatedBefore = &t
+	if v := body.Filters.CreatedBefore; v != "" {
+		t, err := parseFilterTime(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "filters.created_before: "+err.Error())
+			return
 		}
+		req.Filters.CreatedBefore = &t
 	}
 
 	result, err := h.svc.Search(r.Context(), req)

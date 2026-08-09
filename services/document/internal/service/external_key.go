@@ -204,11 +204,17 @@ func (s *DocumentService) UpsertDocumentByExternalKey(ctx context.Context, in *U
 				}
 				evt, eerr := model.NewOutboxEvent(tenantID, "dms.document.created.v1", "document", doc.ID,
 					model.DocumentCreatedPayload{
-						DocumentID:       doc.ID.String(),
-						WorkspaceID:      doc.WorkspaceID.String(),
-						FolderID:         doc.FolderID.String(),
-						Title:            doc.Title,
-						RegionPin:        doc.RegionPin,
+						DocumentID:  doc.ID.String(),
+						WorkspaceID: doc.WorkspaceID.String(),
+						FolderID:    doc.FolderID.String(),
+						Title:       doc.Title,
+						RegionPin:   doc.RegionPin,
+						// Same projection as CreateDocument: without the dates
+						// the search index stored Go's zero time for ingested
+						// docs and date sorting was inert.
+						LifecycleState:   string(doc.LifecycleState),
+						CreatedAt:        doc.CreatedAt.UTC().Format(time.RFC3339),
+						UpdatedAt:        doc.UpdatedAt.UTC().Format(time.RFC3339),
 						CreatedBy:        userID.String(),
 						ReadableBy:       readableBy,
 						ReadableByUsers:  readableUsers,

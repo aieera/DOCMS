@@ -172,6 +172,11 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 	// X-Search-Mode-Degraded header from Degraded.
 	requestedMode := mode
 	degradedTo := ""
+	// vectorFused records that the returned hit set actually contains
+	// dense-vector rows. Facets then have to be derived from those rows:
+	// the OpenSearch aggregations only describe the BM25 half, which is
+	// what made facet counts contradict the reported total.
+	vectorFused := false
 	if mode == model.SearchModeHybrid || mode == model.SearchModeSemantic {
 		sem, err := s.semanticSearch(ctx, req)
 		if err != nil {
@@ -179,9 +184,12 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 				Msg("semantic path failed; degrading to lexical-only")
 			degradedTo = model.SearchModeLexical
 		} else {
-			// Re-verify vector hits against the authoritative OpenSearch ACL — the
-			// Qdrant payload can be stale after a permission revoke (Epic 9 #3).
-			sem = s.filterSemanticByACL(ctx, req, sem)
+			// ONE shared step: re-verify against the authoritative OpenSearch
+			// ACL (the Qdrant payload goes stale after a permission revoke,
+			// Epic 9 #3), re-apply the request's own filters, and pull the
+			// same _source the lexical branch renders from.
+			var hydrated map[string]opensearch.RawHit
+			sem, hydrated = s.hydrateSemantic(ctx, req, sem)
 			switch {
 			case len(sem) == 0:
 				// Nothing to fuse. Hybrid still works (lexical-only fusion =
@@ -191,14 +199,18 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 				s.log.Debug().Str("mode", requestedMode).Msg("semantic path returned 0 hits")
 				degradedTo = model.SearchModeLexical
 			case requestedMode == model.SearchModeHybrid:
-				raw = fuseHits(raw, sem)
+				raw = fuseHits(raw, sem, hydrated)
+				vectorFused = true
 			default:
-				raw = semToRaw(sem)
+				raw = semToRaw(sem, hydrated)
+				vectorFused = true
 			}
 		}
 	}
 
 	result := &model.SearchResult{
+		// Non-nil so an empty result set serializes as `[]`, not `null`.
+		Results:    []model.DocumentHit{},
 		TotalCount: raw.TotalHits,
 		SearchMode: requestedMode,
 		LatencyMS:  time.Since(start).Milliseconds(),
@@ -230,6 +242,35 @@ func (s *Service) Search(ctx context.Context, req *model.SearchRequest) (*model.
 		// best-effort and never blocks the response.
 		if facetsRequested && cacheKey != "" {
 			s.storeCachedFacets(ctx, cacheKey, result.Facets)
+		}
+	}
+
+	// The OpenSearch aggregations above are computed over the BM25 match set
+	// only — Qdrant has no aggregation layer, so a fused/semantic response
+	// carried buckets describing a different (smaller) set of documents than
+	// the rows and total it reported: the sidebar said 3 while the header
+	// said 8, and semantic mode had no facets at all.
+	//
+	// When the response holds the COMPLETE result set (everything fits on
+	// this page — always true for semantic, and true for hybrid on small
+	// corpora), derive the buckets from the returned rows so the counts add
+	// up to total_count exactly. When the set is paginated, OpenSearch's
+	// aggregation over the whole lexical match set remains the better
+	// answer; deriving from one page would understate it badly. Derived
+	// buckets are merged over the aggregation ones so a facet shape that
+	// can't be derived (date_histogram, range) keeps its OpenSearch buckets.
+	//
+	// Deliberately AFTER the cache store above, so only the mode-independent
+	// BM25 buckets are ever cached.
+	if vectorFused && facetsRequested && int64(len(result.Results)) == result.TotalCount {
+		if derived := facetsFromHits(raw.Hits, req.Facets); derived != nil {
+			if result.Facets == nil {
+				result.Facets = derived
+			} else {
+				for name, buckets := range derived {
+					result.Facets[name] = buckets
+				}
+			}
 		}
 	}
 
@@ -350,7 +391,9 @@ func (s *Service) Autocomplete(ctx context.Context, tenantID, userID string, gro
 		limit = 10
 	}
 
-	result := &model.AutocompleteResult{}
+	// Pre-allocated so an empty completion list serializes as `[]`, not
+	// `null` — same contract as SuggestResult below.
+	result := &model.AutocompleteResult{Suggestions: []model.Suggestion{}}
 	seen := map[string]bool{}
 
 	// 1. Recent searches from Redis.
@@ -550,6 +593,11 @@ func (s *Service) UpdateReadableByWorkspace(ctx context.Context, tenantID, works
 // ---- Redis helpers --------------------------------------------------------
 
 func (s *Service) storeRecentSearch(ctx context.Context, tenantID, userID, query string) {
+	if s.redis == nil {
+		// Same nil-tolerance the facet cache has: the recent-search
+		// ledger is a convenience, never a reason to fail a search.
+		return
+	}
 	key := recentSearchesPrefix + tenantID + ":" + userID
 	score := float64(time.Now().UnixMilli())
 	pipe := s.redis.Pipeline()
@@ -562,6 +610,9 @@ func (s *Service) storeRecentSearch(ctx context.Context, tenantID, userID, query
 }
 
 func (s *Service) getRecentSearches(ctx context.Context, tenantID, userID string, limit int) []string {
+	if s.redis == nil {
+		return nil
+	}
 	key := recentSearchesPrefix + tenantID + ":" + userID
 	result, err := s.redis.ZRevRange(ctx, key, 0, int64(limit-1)).Result()
 	if err != nil {
@@ -599,12 +650,12 @@ func mapHit(h opensearch.RawHit) model.DocumentHit {
 		hit.HasThumbnail = v
 	}
 	if v, ok := src["created_at"].(string); ok {
-		if t, err := parseSearchTime(v); err == nil {
+		if t, err := parseSearchTime(v); err == nil && !t.IsZero() {
 			hit.CreatedAt = &t
 		}
 	}
 	if v, ok := src["updated_at"].(string); ok {
-		if t, err := parseSearchTime(v); err == nil {
+		if t, err := parseSearchTime(v); err == nil && !t.IsZero() {
 			hit.UpdatedAt = &t
 		}
 	}
@@ -619,8 +670,15 @@ func mapHit(h opensearch.RawHit) model.DocumentHit {
 }
 
 // parseSearchTime tries the date formats OpenSearch can serialise dates
-// in for our schema's "date" fields. The default mapping is
-// strict_date_optional_time, which emits one of:
+// in for our schema's "date" fields. A parsed-but-ZERO result is treated
+// as "no date" by the caller: documents indexed before the indexer
+// carried created_at hold a literal "0001-01-01T00:00:00Z" (Go's zero
+// time, serialised by the old non-omitempty IndexDocument field), and
+// echoing that back produced "0001-01-01T00:00:00Z" on every hit. Those
+// rows are repaired by a reindex (docs/runbooks/search-reindex.md); until
+// then the field is simply absent.
+//
+// The default mapping is strict_date_optional_time, which emits one of:
 //   - 2026-05-20T10:30:00Z
 //   - 2026-05-20T10:30:00.123Z
 //   - 2026-05-20T10:30:00+00:00

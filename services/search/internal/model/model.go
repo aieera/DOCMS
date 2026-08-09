@@ -243,24 +243,34 @@ type SavedSearchSubscriber struct {
 // searchable) would be a mapping change + full reindex + per-version
 // ACL/delete handling — its own project, not a query flag.
 type IndexDocument struct {
-	TenantID       string         `json:"tenant_id"`
-	DocumentID     string         `json:"document_id"`
-	WorkspaceID    string         `json:"workspace_id"`
-	FolderID       string         `json:"folder_id,omitempty"`
-	FolderPath     string         `json:"folder_path,omitempty"`
-	Title          string         `json:"title"`
-	Description    string         `json:"description,omitempty"`
-	Content        string         `json:"content,omitempty"`
-	ContentSnippet string         `json:"content_snippet,omitempty"`
-	Tags           []string       `json:"tags,omitempty"`
-	DocumentClass  string         `json:"document_class,omitempty"`
-	LifecycleState string         `json:"lifecycle_state"`
-	RegionPin      string         `json:"region_pin,omitempty"`
-	MimeType       string         `json:"mime_type,omitempty"`
-	SizeBytes      int64          `json:"size_bytes"`
-	CreatedBy      string         `json:"created_by"`
-	CreatedByName  string         `json:"created_by_name"`
-	CreatedAt      time.Time      `json:"created_at"`
+	TenantID       string   `json:"tenant_id"`
+	DocumentID     string   `json:"document_id"`
+	WorkspaceID    string   `json:"workspace_id"`
+	FolderID       string   `json:"folder_id,omitempty"`
+	FolderPath     string   `json:"folder_path,omitempty"`
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	Content        string   `json:"content,omitempty"`
+	ContentSnippet string   `json:"content_snippet,omitempty"`
+	Tags           []string `json:"tags,omitempty"`
+	DocumentClass  string   `json:"document_class,omitempty"`
+	LifecycleState string   `json:"lifecycle_state"`
+	RegionPin      string   `json:"region_pin,omitempty"`
+	MimeType       string   `json:"mime_type,omitempty"`
+	SizeBytes      int64    `json:"size_bytes"`
+	CreatedBy      string   `json:"created_by"`
+	CreatedByName  string   `json:"created_by_name"`
+	// CreatedAt is a POINTER with omitempty on purpose. As a plain
+	// time.Time it serialised Go's zero value as the literal date
+	// "0001-01-01T00:00:00Z" whenever the producing event carried no
+	// created_at — which was every event, since neither
+	// dms.document.created.v1 nor dms.document.reindexed.v1 shipped the
+	// field. Every indexed document therefore had the same year-1 date:
+	// hits rendered "0001-01-01T00:00:00Z" and sort_by=created_at was
+	// inert because the sort key was constant across the corpus.
+	// Omitting the field instead leaves it unmapped in OpenSearch, which
+	// sorts as a missing value rather than a wrong one.
+	CreatedAt      *time.Time     `json:"created_at,omitempty"`
 	UpdatedAt      *time.Time     `json:"updated_at,omitempty"`
 	CustomMetadata map[string]any `json:"custom_metadata,omitempty"`
 	// ReadableBy is the legacy mixed field — user_ids, group_ids,

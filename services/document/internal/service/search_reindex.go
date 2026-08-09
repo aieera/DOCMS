@@ -25,6 +25,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -75,11 +76,18 @@ func (s *DocumentService) ReindexSearch(ctx context.Context, documentID *uuid.UU
 // after `cursor` (or exactly the one doc when documentID is set) inside
 // the caller's tx. Returns (emitted, lastID).
 func (s *DocumentService) reindexBatch(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, documentID *uuid.UUID, cursor uuid.UUID) (int, uuid.UUID, error) {
+	// LEFT JOIN users for created_by_name — the search service has no
+	// users table, so the display name (and the `author` facet built on
+	// it) can only reach the index through this projection. Correlated on
+	// (tenant_id, created_by) so RLS keeps tenant isolation intact; same
+	// join Documents.GetByID uses.
 	rows, err := tx.Query(ctx, `
 		SELECT d.id, d.workspace_id, d.folder_id, d.title, COALESCE(d.description,''),
 		       d.tags, COALESCE(d.document_class,''), d.lifecycle_state, d.region_pin,
-		       COALESCE(d.mime_type,''), d.total_size_bytes, d.created_by, d.current_version_id
+		       COALESCE(d.mime_type,''), d.total_size_bytes, d.created_by, d.current_version_id,
+		       COALESCE(u.display_name,''), d.created_at, d.updated_at
 		FROM documents d
+		LEFT JOIN users u ON u.tenant_id = d.tenant_id AND u.id = d.created_by
 		WHERE d.tenant_id = $1 AND d.deleted_at IS NULL
 		  AND ($2::uuid IS NULL OR d.id = $2)
 		  AND ($2::uuid IS NOT NULL OR d.id > $3)
@@ -100,13 +108,17 @@ func (s *DocumentService) reindexBatch(ctx context.Context, tx pgx.Tx, tenantID 
 		sizeBytes           int64
 		createdBy           *uuid.UUID
 		currentVersionID    *uuid.UUID
+		createdByName       string
+		createdAt           time.Time
+		updatedAt           *time.Time
 	}
 	var batch []docRow
 	for rows.Next() {
 		var d docRow
 		if err := rows.Scan(&d.id, &d.workspaceID, &d.folderID, &d.title, &d.description,
 			&d.tags, &d.documentClass, &d.lifecycleState, &d.regionPin,
-			&d.mimeType, &d.sizeBytes, &d.createdBy, &d.currentVersionID); err != nil {
+			&d.mimeType, &d.sizeBytes, &d.createdBy, &d.currentVersionID,
+			&d.createdByName, &d.createdAt, &d.updatedAt); err != nil {
 			rows.Close()
 			return 0, cursor, err
 		}
@@ -176,6 +188,18 @@ func (s *DocumentService) reindexBatch(ctx context.Context, tx pgx.Tx, tenantID 
 		}
 		if d.createdBy != nil {
 			payload["created_by"] = d.createdBy.String()
+		}
+		if d.createdByName != "" {
+			payload["created_by_name"] = d.createdByName
+		}
+		// Temporal fields — the reason this runbook is also the backfill
+		// for BUG-04: documents indexed before the events carried dates
+		// hold "0001-01-01T00:00:00Z" and are only repaired by a reindex.
+		if !d.createdAt.IsZero() {
+			payload["created_at"] = d.createdAt.UTC().Format(time.RFC3339)
+		}
+		if d.updatedAt != nil && !d.updatedAt.IsZero() {
+			payload["updated_at"] = d.updatedAt.UTC().Format(time.RFC3339)
 		}
 
 		evt, err := model.NewOutboxEvent(tenantID, "dms.document.reindexed.v1", "document", d.id, payload)

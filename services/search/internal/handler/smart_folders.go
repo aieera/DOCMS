@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/search/internal/model"
 )
 
 func (h *Handler) listSmartFolders(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +39,11 @@ func (h *Handler) listSmartFolders(w http.ResponseWriter, r *http.Request) {
 		h.log.Error().Err(err).Msg("list smart folders failed")
 		writeError(w, http.StatusInternalServerError, "list failed")
 		return
+	}
+	if list == nil {
+		// Serialize an empty roster as `[]`, not `null` — same contract
+		// as the other list endpoints on this service.
+		list = []*model.SavedSearch{}
 	}
 	writeJSON(w, http.StatusOK, list)
 }

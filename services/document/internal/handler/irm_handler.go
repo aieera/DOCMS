@@ -179,7 +179,13 @@ func (h *IRMHandler) content(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment; filename=\"protected\"")
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	// This response is the ONE thing the app deliberately frames from its
+	// own origin — the protected-viewer route renders it in an <iframe>.
+	// The global BUG-08 headers send X-Frame-Options: DENY, which blocks
+	// even same-origin framing, so relax both frame controls to 'self'
+	// here. A handler's Set() runs after the middleware's and wins.
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'self'")
 	w.Header().Set("Cache-Control", "private, no-store, max-age=0")
 	w.Header().Set("Content-Length", strconv.Itoa(len(plaintext)))
 	_, _ = w.Write(plaintext)

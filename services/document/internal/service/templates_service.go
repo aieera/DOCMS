@@ -555,10 +555,15 @@ func (s *DocumentService) provisionDoc(ctx context.Context, tx pgx.Tx, tenantID,
 	}
 	evt, err := model.NewOutboxEvent(tenantID, "dms.document.created.v1", "document", doc.ID,
 		model.DocumentCreatedPayload{
-			DocumentID:       doc.ID.String(),
-			WorkspaceID:      workspaceID.String(),
-			FolderID:         folderID.String(),
-			Title:            title,
+			DocumentID:  doc.ID.String(),
+			WorkspaceID: workspaceID.String(),
+			FolderID:    folderID.String(),
+			Title:       title,
+			// Same projection as CreateDocument: without the dates the
+			// search index stored Go's zero time for provisioned docs.
+			LifecycleState:   string(doc.LifecycleState),
+			CreatedAt:        doc.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:        doc.UpdatedAt.UTC().Format(time.RFC3339),
 			CreatedBy:        userID.String(),
 			ReadableBy:       readableBy,
 			ReadableByUsers:  readableUsers,

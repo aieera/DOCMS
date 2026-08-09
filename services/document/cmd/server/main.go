@@ -405,6 +405,24 @@ func main() {
 		// status, keeping the gateway-backed creates consistent with the
 		// hand-written REST handlers that already return 201.
 		runtime.WithForwardResponseOption(httpStatusFromMetadata),
+		// BUG-08 — stop leaking gRPC internals to browsers. The default
+		// outgoing matcher re-emits EVERY key of the gRPC response
+		// metadata as a `Grpc-Metadata-*` HTTP header, and that metadata
+		// includes the transport's own `content-type: application/grpc`
+		// — which is exactly the `grpc-metadata-content-type:
+		// application/grpc` header a client-side scan picked up. Nothing
+		// in this platform's clients reads a Grpc-Metadata-* response
+		// header (the one value that mattered, x-http-code, is consumed
+		// by httpStatusFromMetadata above, which reads the metadata off
+		// the context and never depends on this matcher), so drop them
+		// all. Returning false for every key is grpc-gateway's own
+		// supported way to suppress the headers — no post-hoc scrubbing
+		// of the ResponseWriter.
+		runtime.WithOutgoingHeaderMatcher(func(string) (string, bool) { return "", false }),
+		// Same for trailers: without this, grpc-gateway advertises
+		// `Trailer: Grpc-Trailer-...` and emits `Grpc-Trailer-*` after
+		// the body, exposing internal status plumbing to the browser.
+		runtime.WithOutgoingTrailerMatcher(func(string) (string, bool) { return "", false }),
 	)
 
 	// grpcGatewayInject wraps gwMux so X-Tenant-ID / X-User-ID / role
@@ -1470,9 +1488,14 @@ func main() {
 	// otelhttp extracts the inbound W3C trace context and opens a SERVER
 	// span per request. Inert (global no-op provider/propagator) unless
 	// tracing.Init ran above, so it's safe to wrap unconditionally.
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	// Endpoints that deliberately serve same-origin framed content (the
+	// IRM protected stream) relax X-Frame-Options on their own response.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           otelhttp.NewHandler(wopiAndRoot, "document.http"),
+		Handler:           secHeaders(otelhttp.NewHandler(wopiAndRoot, "document.http")),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

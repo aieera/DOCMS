@@ -71,38 +71,53 @@ func (s *Service) semanticSearch(ctx context.Context, req *model.SearchRequest) 
 	return out, nil
 }
 
-// filterSemanticByACL re-verifies vector (semantic) hits against the
-// AUTHORITATIVE OpenSearch ACL. The Qdrant payload's readable_by is only
-// rewritten by the intelligence service on re-embed (content change), so a
-// permission REVOKE leaves it stale and a raw semantic hit can name a document
-// the caller may no longer view (Epic 9 #3). We keep only the hits whose
-// document id still passes the tenant + readable_by filter in OpenSearch. Fails
-// CLOSED: on an ACL-recheck error the vector hits are dropped rather than
-// returned unverified.
-func (s *Service) filterSemanticByACL(ctx context.Context, req *model.SearchRequest, sem []semanticHit) []semanticHit {
+// hydrateSemantic is the ONE step that turns raw vector candidates into
+// renderable, authorized, filtered results. It runs a single OpenSearch query
+// (opensearch.BuildHydrateByIDsQuery) over the candidate ids that applies the
+// same ACL AND the same request filters as the lexical branch, and returns the
+// full _source for the survivors.
+//
+// Returns (survivors in vector-rank order, id → hydrated hit). A candidate the
+// query didn't return is dropped: it was deleted, revoked, or filtered out, and
+// must appear in neither the results nor the total count.
+//
+// Fails CLOSED: on a hydration error every vector hit is dropped rather than
+// returned unverified/blank.
+func (s *Service) hydrateSemantic(
+	ctx context.Context,
+	req *model.SearchRequest,
+	sem []semanticHit,
+) ([]semanticHit, map[string]opensearch.RawHit) {
 	if len(sem) == 0 {
-		return sem
+		return sem, nil
 	}
 	ids := make([]string, 0, len(sem))
 	for _, h := range sem {
 		ids = append(ids, h.DocumentID)
 	}
-	res, err := s.os.Search(ctx, req.TenantID, opensearch.BuildVisibilityByIDsQuery(req, ids))
+	res, err := s.os.Search(ctx, req.TenantID, opensearch.BuildHydrateByIDsQuery(req, ids))
 	if err != nil {
-		s.log.Warn().Err(err).Msg("semantic ACL re-check failed; dropping vector hits (fail closed)")
-		return nil
+		s.log.Warn().Err(err).Msg("semantic hydration failed; dropping vector hits (fail closed)")
+		return nil, nil
 	}
-	visible := make(map[string]struct{}, len(res.Hits))
+	hydrated := make(map[string]opensearch.RawHit, len(res.Hits))
 	for _, h := range res.Hits {
-		visible[h.ID] = struct{}{}
+		id := h.ID
+		if id == "" {
+			id = hitDocumentID(h)
+		}
+		if id == "" {
+			continue
+		}
+		hydrated[id] = h
 	}
 	out := make([]semanticHit, 0, len(sem))
 	for _, h := range sem {
-		if _, ok := visible[h.DocumentID]; ok {
+		if _, ok := hydrated[h.DocumentID]; ok {
 			out = append(out, h)
 		}
 	}
-	return out
+	return out, hydrated
 }
 
 // readablePrincipals builds the principal set the dense-vector path
@@ -138,13 +153,23 @@ func readablePrincipals(req *model.SearchRequest) []string {
 // fuseHits merges OpenSearch BM25 results with semantic hits via
 // Reciprocal Rank Fusion (blueprint §7.1). Returns a *RawSearchResult
 // shaped like the BM25 output so downstream code (mapHit, pagination)
-// is unchanged. TotalHits becomes the union cardinality.
+// is unchanged.
 //
 // Docs present only in `lex` or only in `sem` are included at their
 // weighted rank; docs in both accumulate score from both rankers.
-// Hit source/highlights come from the OpenSearch hit when available,
-// otherwise a minimal stub with document_id (caller can hydrate).
-func fuseHits(lex *opensearch.RawSearchResult, sem []semanticHit) *opensearch.RawSearchResult {
+// Source/highlights come from the OpenSearch hit for the lexical half and
+// from `hydrated` (opensearch.BuildHydrateByIDsQuery) for the vector-only
+// half — a fused row is NEVER a document_id-only stub. A vector id with no
+// hydrated entry is dropped outright: it is deleted, no longer readable, or
+// filtered out, and must not inflate the result set or the count.
+//
+// TotalHits is the union count over REAL rows: the lexical branch's own
+// (already filtered, all-pages) total plus the hydrated vector hits that
+// were not already on the lexical page. Both terms are post-filter, so an
+// excluding filter yields 0 — never the pre-filter candidate count. (A
+// vector hit that would have appeared on a LATER lexical page is counted
+// twice; bounded by the vector limit and preferable to under-reporting.)
+func fuseHits(lex *opensearch.RawSearchResult, sem []semanticHit, hydrated map[string]opensearch.RawHit) *opensearch.RawSearchResult {
 	lexRanked := make([]fusion.RankedID, 0, len(lex.Hits))
 	srcByID := make(map[string]opensearch.RawHit, len(lex.Hits))
 	for i, h := range lex.Hits {
@@ -161,42 +186,55 @@ func fuseHits(lex *opensearch.RawSearchResult, sem []semanticHit) *opensearch.Ra
 		if h.DocumentID == "" {
 			continue
 		}
+		if _, ok := hydrated[h.DocumentID]; !ok {
+			continue // unhydratable candidate — drop, don't render blank
+		}
 		semRanked = append(semRanked, fusion.RankedID{ID: h.DocumentID, Rank: i + 1})
 	}
 
 	fused := fusion.Fuse(lexRanked, semRanked, fusion.Options{})
 
-	out := &opensearch.RawSearchResult{
-		Aggs: lex.Aggs, // facets come from BM25 side only; semantic isn't faceted.
-	}
+	// Aggs are carried through as OpenSearch computed them — over the BM25
+	// half only. The service replaces them with buckets derived from the
+	// fused rows when the whole result set fits on this page (facetsFromHits).
+	out := &opensearch.RawSearchResult{Aggs: lex.Aggs}
+	semanticOnly := int64(0)
 	for _, r := range fused {
 		if h, ok := srcByID[r.ID]; ok {
 			h.Score = r.Score
 			out.Hits = append(out.Hits, h)
 			continue
 		}
-		out.Hits = append(out.Hits, opensearch.RawHit{
-			Source: map[string]any{"document_id": r.ID},
-			Score:  r.Score,
-		})
+		h, ok := hydrated[r.ID]
+		if !ok {
+			continue
+		}
+		h.Score = r.Score
+		out.Hits = append(out.Hits, h)
+		semanticOnly++
 	}
-	out.TotalHits = int64(len(out.Hits))
+	out.TotalHits = lex.TotalHits + semanticOnly
 	return out
 }
 
 // semToRaw converts pure-semantic hits into a RawSearchResult so the
-// SearchModeSemantic path reuses the same mapHit pipeline. No facets
-// (Qdrant has no aggregation layer).
-func semToRaw(sem []semanticHit) *opensearch.RawSearchResult {
+// SearchModeSemantic path reuses the same mapHit pipeline, taking each
+// document's _source from the shared hydration step. Candidates that failed
+// hydration are dropped, so TotalHits counts only rows the caller can
+// actually render. No facets from OpenSearch (Qdrant has no aggregation
+// layer) — the service derives them from the hits.
+func semToRaw(sem []semanticHit, hydrated map[string]opensearch.RawHit) *opensearch.RawSearchResult {
 	out := &opensearch.RawSearchResult{}
 	for _, h := range sem {
 		if h.DocumentID == "" {
 			continue
 		}
-		out.Hits = append(out.Hits, opensearch.RawHit{
-			Source: map[string]any{"document_id": h.DocumentID},
-			Score:  h.Score,
-		})
+		hit, ok := hydrated[h.DocumentID]
+		if !ok {
+			continue
+		}
+		hit.Score = h.Score
+		out.Hits = append(out.Hits, hit)
 	}
 	out.TotalHits = int64(len(out.Hits))
 	return out

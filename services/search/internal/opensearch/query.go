@@ -359,7 +359,7 @@ func isAnonymousPrincipal(userID string) bool {
 // ACL access paths). §7.3: an unauthenticated share-link follower is scoped to
 // their token only (no user/group/everyone clauses), otherwise the "everyone"
 // clause would leak the tenant-wide corpus. Shared by the main search filter and
-// BuildVisibilityByIDsQuery.
+// BuildHydrateByIDsQuery.
 func aclShoulds(req *model.SearchRequest) []any {
 	if req.ShareToken != "" && isAnonymousPrincipal(req.UserID) {
 		return []any{
@@ -387,27 +387,38 @@ func aclShoulds(req *model.SearchRequest) []any {
 	return shoulds
 }
 
-// BuildVisibilityByIDsQuery returns an OpenSearch body that selects, from the
-// given document ids, ONLY those the request's principals may currently view —
-// using the SAME tenant + readable_by ACL as the main search. It re-verifies
-// vector (semantic) hits against the authoritative index ACL, because the Qdrant
-// payload's readable_by is not updated on a permission revoke and would
-// otherwise keep returning a now-unauthorized document (Epic 9 #3).
-func BuildVisibilityByIDsQuery(req *model.SearchRequest, ids []string) map[string]any {
+// BuildHydrateByIDsQuery returns an OpenSearch body that selects, from the given
+// document ids, ONLY those that (a) the request's principals may currently view
+// and (b) still satisfy the request's own filters — and returns their full
+// _source so the caller can render them.
+//
+// It is the single hydration step behind the dense-vector (semantic / hybrid)
+// path, and it carries THREE guarantees the vector path cannot provide itself:
+//
+//  1. ACL re-verification. The Qdrant payload's readable_by is only rewritten by
+//     the intelligence service on re-embed (content change), so a permission
+//     REVOKE leaves it stale and a raw semantic hit can name a document the
+//     caller may no longer view (Epic 9 #3).
+//  2. Filter parity. buildFilters is the SAME filter set the lexical branch
+//     applies (workspace/folder/class/lifecycle/tags/mime/author/region/date/
+//     size/custom-metadata + the empty-shell hygiene clause). Without it, a
+//     vector hit survived filters the lexical branch correctly removed — an
+//     impossible date range still returned the semantic half of the result set.
+//  3. Metadata hydration. `_source: SourceFields` is exactly what the lexical
+//     branch returns, so a fused row carries title / size / dates / snippet /
+//     lifecycle_state / created_by_name rather than a document_id-only stub
+//     (which the UI rendered as a dead "Untitled document" card).
+//
+// An id absent from the response is one of: deleted, no longer readable, or
+// filtered out — the caller MUST drop it from both the results and the count.
+func BuildHydrateByIDsQuery(req *model.SearchRequest, ids []string) map[string]any {
+	filters := append(buildFilters(req),
+		map[string]any{"ids": map[string]any{"values": ids}})
 	return map[string]any{
-		"_source": false,
+		"_source": SourceFields,
 		"size":    len(ids),
 		"query": map[string]any{
-			"bool": map[string]any{
-				"filter": []any{
-					map[string]any{"term": map[string]any{"tenant_id": req.TenantID}},
-					map[string]any{"bool": map[string]any{
-						"should":               aclShoulds(req),
-						"minimum_should_match": 1,
-					}},
-					map[string]any{"ids": map[string]any{"values": ids}},
-				},
-			},
+			"bool": map[string]any{"filter": filters},
 		},
 	}
 }

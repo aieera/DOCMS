@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -131,6 +132,21 @@ func ensureDateTime(s string) string {
 	return s
 }
 
+// errBadDate is the caller-facing 400 text for an unparseable date
+// bound. A silently-dropped bound is indistinguishable from one that
+// matched everything, so this is an error rather than a shrug.
+var errBadDate = errors.New("must be an RFC3339 timestamp (2026-01-31T00:00:00Z) or a YYYY-MM-DD date")
+
+// parseFilterTime parses a date bound from a request, accepting both
+// RFC3339 and the bare YYYY-MM-DD shape a date picker naturally emits.
+func parseFilterTime(v string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339, ensureDateTime(strings.TrimSpace(v)))
+	if err != nil {
+		return time.Time{}, errBadDate
+	}
+	return t, nil
+}
+
 // parseSearchRequestFromURL builds a model.SearchRequest from the
 // querystring. Identity is read from the SessionAuth-populated ctx
 // (FIX-1 follow-up — Kong strips X-Auth-Tenant-ID and X-User-ID at
@@ -187,6 +203,21 @@ func parseSearchRequestFromURL(r *http.Request) *model.SearchRequest {
 			continue
 		}
 		filterKeyToFilters(key, value, &req.Filters)
+	}
+
+	// Flat date bounds, accepted alongside the bracket syntax
+	// (`filter=created_at:[a,b]`). They are the names the POST body's
+	// `filters` object uses, and clients reached for them here too —
+	// where they were parsed by nothing at all and dropped in silence.
+	if v := q.Get("created_after"); v != "" {
+		if t, err := parseFilterTime(v); err == nil {
+			req.Filters.CreatedAfter = &t
+		}
+	}
+	if v := q.Get("created_before"); v != "" {
+		if t, err := parseFilterTime(v); err == nil {
+			req.Filters.CreatedBefore = &t
+		}
 	}
 
 	return req
