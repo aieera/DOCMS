@@ -169,7 +169,8 @@ function DiffPanes({ data, onBack }: { data: CompareResponse; onBack: () => void
       </header>
       {data.truncated && (
         <p className="rounded-md border border-amber-500/40 bg-amber-50/60 p-2 text-xs dark:bg-amber-950/20">
-          Truncated to 200k chars per side — full diff is too large to render. See ADR 0101.
+          These documents are too large to compare in full — showing the first 200,000 characters
+          of each.
         </p>
       )}
       <div className="grid grid-cols-2 gap-3 overflow-hidden">

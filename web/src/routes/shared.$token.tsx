@@ -68,6 +68,13 @@ function SharedViewerPage() {
         const s = httpStatus(err)
         if (s === 404) { setStatus('not_found'); return }
         if (s === 409) { setStatus('expired'); return }
+        // A public link never asks the recipient to sign in, so a 401/403
+        // on the *peek* (no password was sent yet) is not an auth problem
+        // the visitor can act on — it means the token is bad, revoked, or
+        // no longer valid. Surfacing the server's raw "authentication
+        // required" here told people to log in to a page that has no
+        // login.
+        if (s === 401 || s === 403) { setStatus('not_found'); return }
         setErrorMsg(readErrorMessage(err) ?? 'Failed to load share link')
         setStatus('error')
       })
@@ -122,9 +129,10 @@ function SharedViewerPage() {
     return (
       <CenteredPanel>
         <FileX className="mb-2 h-10 w-10 text-muted-foreground" aria-hidden />
-        <h2 className="text-lg font-semibold">Share link unavailable</h2>
+        <h2 className="text-lg font-semibold">This link isn&apos;t valid</h2>
         <p className="text-sm text-muted-foreground">
-          This link doesn't exist, has been revoked, or the document was deleted.
+          The link may have expired, been revoked, or been copied incorrectly. Ask the
+          sender for a new one.
         </p>
       </CenteredPanel>
     )

@@ -139,7 +139,7 @@ export function ConnectorsPage() {
                       onClick={() => handleInstallClick(p.id)}
                       loading={install.isPending && install.variables === p.id}
                       disabled={p.comingSoon}
-                      title={p.comingSoon ? 'OAuth handshake not implemented yet — track ADR 0111 follow-ups for ETA.' : undefined}
+                      title={p.comingSoon ? 'This connector is not ready to connect yet.' : undefined}
                       data-testid={`install-${p.id}`}
                     >
                       <Sparkles className="me-1 h-3.5 w-3.5" />
@@ -157,8 +157,8 @@ export function ConnectorsPage() {
       <Card className="flex items-start gap-2 border-info/40 bg-info/5 p-3 text-xs">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-info" />
         <p className="text-muted-foreground">
-          Microsoft 365 has a real OAuth handshake (ADR 0111). The other tiles still hit a stub /auth-url
-          endpoint until their providers get the same treatment.
+          Microsoft 365 is the only connector you can authorize today. The others are listed so you
+          can see what is coming, but they can&apos;t be connected yet.
         </p>
       </Card>
 

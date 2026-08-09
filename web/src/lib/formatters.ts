@@ -84,6 +84,68 @@ export function lifecycleStateLabel(state: string | null | undefined): string {
   return base.charAt(0).toUpperCase() + base.slice(1)
 }
 
+// formatUsd renders LLM/API spend. Cost figures are frequently sub-cent,
+// so a fixed 2-decimal money format is useless — but a fixed 5-decimal
+// one is worse ("$0.00230" reads like a rounding bug, and the trailing
+// zero is precision the number doesn't carry). Scale the precision to
+// the magnitude instead and trim trailing zeros.
+export function formatUsd(value: number | null | undefined): string {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n === 0) return '—'
+  if (n >= 1) return `$${n.toFixed(2)}`
+  if (n >= 0.01) return `$${n.toFixed(3)}`
+  if (n >= 0.0001) return `$${n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}`
+  return '< $0.0001'
+}
+
+// Notification `type` values are raw event codes from the
+// dms.{domain}.{action}.v1 taxonomy (e.g. "document.uploaded"). They are
+// an internal contract and must never reach a user-facing surface, so
+// every notification UI runs the code through this labeller first.
+//
+// Irregular codes get an explicit entry; everything else is derived
+// (domain noun + humanised action) so a newly-emitted event type still
+// reads sensibly instead of leaking the raw code.
+const NOTIFICATION_DOMAIN_LABELS: Record<string, string> = {
+  document: 'Document',
+  comment: 'Comment',
+  workflow: 'Workflow',
+  task: 'Task',
+  signature: 'Signature',
+  security: 'Security',
+  auth: 'Sign-in',
+  saved_search: 'Saved search',
+  compliance: 'Compliance',
+  legal_hold: 'Legal hold',
+  mention: 'Mention',
+  share: 'Share',
+  retention: 'Retention',
+}
+
+const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  'document.version_uploaded': 'New version uploaded',
+  'comment.mention': 'Mentioned in a comment',
+  'task.mention': 'Mentioned in a task comment',
+  'task.due_soon': 'Task due soon',
+  'workflow.step_assigned': 'Workflow step assigned',
+}
+
+export function notificationTypeLabel(type: string | null | undefined): string {
+  if (!type) return 'Notification'
+  if (NOTIFICATION_TYPE_LABELS[type]) return NOTIFICATION_TYPE_LABELS[type]
+  // Digest rows carry a `digest.{domain}` type; the domain is noise to
+  // the reader — what matters is that several events were bundled.
+  if (type.startsWith('digest.')) return 'Digest'
+  const [domain, ...rest] = type.split('.')
+  const noun = NOTIFICATION_DOMAIN_LABELS[domain]
+  const action = rest.join(' ').replace(/[._]/g, ' ').trim()
+  if (!noun) {
+    const words = type.replace(/[._]/g, ' ').trim()
+    return words.charAt(0).toUpperCase() + words.slice(1)
+  }
+  return action ? `${noun} ${action}` : noun
+}
+
 export function getMimeTypeLabel(mime: string): string {
   const map: Record<string, string> = {
     'application/pdf': 'PDF',

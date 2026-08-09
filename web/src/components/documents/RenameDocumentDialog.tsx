@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
@@ -12,19 +11,37 @@ interface Props {
   initialTitle: string
 }
 
+// Validation follows the NewFolderDialog pattern: the submit button is
+// disabled until the form can actually be submitted, and the reason
+// shows inline under the field (aria-invalid + aria-describedby via the
+// Input's `error` prop). It used to leave Save enabled and answer an
+// empty title with a bottom-right toast — far from the field the user
+// was looking at, and gone before they could act on it.
 export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTitle }: Props) {
   const [title, setTitle] = useState(initialTitle)
+  // Errors surface only after the user has interacted, so opening the
+  // dialog doesn't greet them with a red "unchanged" complaint.
+  const [touched, setTouched] = useState(false)
   const update = useUpdateDocument()
 
   useEffect(() => {
-    if (open) setTitle(initialTitle)
+    if (open) {
+      setTitle(initialTitle)
+      setTouched(false)
+    }
   }, [open, initialTitle])
 
+  const trimmed = title.trim()
+  const error = !trimmed
+    ? 'Enter a title.'
+    : trimmed === initialTitle
+      ? 'Enter a different title to rename this document.'
+      : null
+  const canSubmit = !error && !update.isPending
+
   const submit = () => {
-    if (update.isPending) return
-    const trimmed = title.trim()
-    if (!trimmed) { toast.error('Title is required'); return }
-    if (trimmed === initialTitle) { toast.error('Enter a new title'); return }
+    setTouched(true)
+    if (!canSubmit) return
     update.mutate(
       { id: documentId, body: { title: trimmed } },
       { onSuccess: () => onOpenChange(false) },
@@ -40,7 +57,8 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
         <Input
           label="Title"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); setTouched(true) }}
+          error={touched && error ? error : undefined}
           autoFocus
           data-testid="rename-document-input"
         />
@@ -55,7 +73,7 @@ export function RenameDocumentDialog({ open, onOpenChange, documentId, initialTi
           </Button>
           <Button
             type="submit"
-            disabled={update.isPending}
+            disabled={!canSubmit}
             loading={update.isPending}
             data-testid="rename-document-submit"
           >

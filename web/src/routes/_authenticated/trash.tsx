@@ -27,7 +27,10 @@ import {
   type TrashEntry,
 } from '@/api/trash'
 import { MyTrashSection } from '@/components/trash/MyTrashSection'
+import { TrashLocation } from '@/components/trash/TrashLocation'
 import { getWorkspace } from '@/api/workspaces'
+import { useMyTrash, myTrashItems, useTrashLocations } from '@/hooks/useTrash'
+import { invalidateDocuments, invalidateTrash } from '@/hooks/queryInvalidation'
 import { formatDateTime, formatFileSize } from '@/lib/formatters'
 import { readErrorMessage } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
@@ -85,14 +88,27 @@ function TrashPage() {
     enabled: canManage,
   })
 
+  // Same ['my-trash'] query MyTrashSection mounts (react-query dedupes
+  // it to one request) — the admin table below subtracts these rows so
+  // nothing is listed twice on this page.
+  const myTrash = useMyTrash()
+
+  // BUG-10: every mutation here invalidated only the admin-side keys,
+  // so the "My trash" section directly above (['my-trash']) and the
+  // workspace document lists kept rendering rows this page had just
+  // restored or purged. invalidateTrash covers both trash roots.
+  const refreshTrash = () => {
+    void invalidateTrash(qc)
+    void invalidateDocuments(qc)
+  }
+
   const restoreFolder = useAppMutation({
     mutationFn: (id: string) => restoreFolderFromTrash(id),
     onSuccess: () => {
       toast.success('Folder restored')
-      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
       // Document trash also changes — the cohort's documents come
       // back too, so they leave the docs trash table.
-      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      refreshTrash()
       qc.invalidateQueries({ queryKey: ['folders'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore folder"),
@@ -102,7 +118,7 @@ function TrashPage() {
     mutationFn: (id: string) => restoreFromTrash(id),
     onSuccess: () => {
       toast.success('Document restored')
-      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      refreshTrash()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't restore"),
   })
@@ -111,7 +127,7 @@ function TrashPage() {
     onSuccess: () => {
       toast.success('Document permanently deleted')
       setPurgeTarget(null)
-      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      refreshTrash()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Permanent delete failed'),
   })
@@ -126,8 +142,7 @@ function TrashPage() {
             ? ` and ${res.documents_deleted} document${res.documents_deleted === 1 ? '' : 's'}`
             : ''),
       )
-      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
-      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      refreshTrash()
       qc.invalidateQueries({ queryKey: ['folders'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Permanent delete failed'),
@@ -145,8 +160,7 @@ function TrashPage() {
       } else {
         toast.success(purged)
       }
-      qc.invalidateQueries({ queryKey: ['admin-trash-folders'] })
-      qc.invalidateQueries({ queryKey: ['admin-trash'] })
+      refreshTrash()
       qc.invalidateQueries({ queryKey: ['folders'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't empty trash"),
@@ -176,6 +190,14 @@ function TrashPage() {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't clean up empty folders"),
   })
 
+  const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
+  const scopedItems = workspaceScope ? allItems.filter((i) => i.workspace_id === workspaceScope) : allItems
+  const items = tenantTrashRows(scopedItems, myTrashItems(myTrash.data?.pages))
+  const hiddenAsMine = scopedItems.length - items.length
+  // Resolved above the member early-return: hook order must not depend
+  // on the role branch.
+  const locationOf = useTrashLocations(items)
+
   // Members get their own Trash — the items THEY deleted, which they can
   // restore themselves. Previously this page told them to go ask an admin.
   if (!canManage) {
@@ -190,13 +212,16 @@ function TrashPage() {
     )
   }
 
-  const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
-  const items = workspaceScope ? allItems.filter((i) => i.workspace_id === workspaceScope) : allItems
   const allFolders = folderTrash.data ?? []
   const folders = workspaceScope ? allFolders.filter((f) => f.workspace_id === workspaceScope) : allFolders
+  // docsEmpty hides the tenant-wide TABLE (which excludes the admin's
+  // own rows); trashEmpty answers "is there anything at all to purge?"
+  // and so must count the hidden rows too — otherwise a tenant whose
+  // only deletions are the current admin's would render "Trash is
+  // empty" beneath a populated My trash, and disable Empty trash.
   const docsEmpty = !trash.isLoading && items.length === 0
   const foldersEmpty = !folderTrash.isLoading && folders.length === 0
-  const trashEmpty = docsEmpty && foldersEmpty
+  const trashEmpty = !trash.isLoading && scopedItems.length === 0 && foldersEmpty
   const emptyCount = emptyScan.data?.count ?? 0
   const emptyTruncated = emptyScan.data?.truncated ?? false
   return (
@@ -305,10 +330,18 @@ function TrashPage() {
           description="Folders and documents you delete will appear here, ready to restore."
         />
       ) : docsEmpty ? null : (
-      <section>
-        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <FileText className="h-4 w-4" /> Documents
+      <section data-testid="tenant-trash-section">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <FileText className="h-4 w-4" /> Deleted by other people
         </h2>
+        {/* The two tables are now disjoint, so say what separates them —
+            otherwise "Documents" reads as a superset that happens to
+            repeat everything above it. */}
+        <p className="mb-2 text-xs text-muted-foreground">
+          Tenant-wide deletions, excluding the {hiddenAsMine > 0 ? `${hiddenAsMine} ` : ''}item
+          {hiddenAsMine === 1 ? '' : 's'} already listed in <strong>My trash</strong> above.
+          Includes items their deleter has cleared from their own trash — still recoverable here.
+        </p>
         <Card className="overflow-hidden">
           {/* overflow-x-auto lets the table scroll instead of the Card
               clipping the Actions column ("Delete perman…") when the
@@ -318,6 +351,8 @@ function TrashPage() {
             <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th scope="col" className="px-4 py-2 text-start font-medium">Title</th>
+                {/* Where Restore puts it back — see MyTrashSection. */}
+                <th scope="col" className="px-4 py-2 text-start font-medium">Original location</th>
                 <th scope="col" className="px-4 py-2 text-start font-medium">Size</th>
                 <th scope="col" className="px-4 py-2 text-start font-medium">Deleted by</th>
                 <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
@@ -356,6 +391,9 @@ function TrashPage() {
                         </Badge>
                       )}
                     </div>
+                  </td>
+                  <td className="max-w-[18rem] px-4 py-2 text-muted-foreground">
+                    <TrashLocation location={locationOf(entry)} />
                   </td>
                   <td className="px-4 py-2 text-muted-foreground">{formatFileSize(entry.total_size_bytes)}</td>
                   <td className="px-4 py-2 text-muted-foreground">
@@ -465,7 +503,10 @@ function TrashPage() {
         open={confirmEmptyTrash}
         onOpenChange={setConfirmEmptyTrash}
         title="Empty trash?"
-        description={`This permanently deletes everything in the trash — ${folders.length} folder${folders.length === 1 ? '' : 's'} and ${items.length}${trash.hasNextPage ? '+' : ''} document${items.length === 1 ? '' : 's'} — including their files in object storage. Items under legal hold or active retention are skipped. This cannot be undone. Type EMPTY to confirm.`}
+        // scopedItems, not items: Empty trash purges the WHOLE tenant
+        // trash including the rows the table hides as "already in My
+        // trash", so the count here must not exclude them.
+        description={`This permanently deletes everything in the trash — ${folders.length} folder${folders.length === 1 ? '' : 's'} and ${scopedItems.length}${trash.hasNextPage ? '+' : ''} document${scopedItems.length === 1 ? '' : 's'} — including their files in object storage. Items under legal hold or active retention are skipped. This cannot be undone. Type EMPTY to confirm.`}
         expectedValue="EMPTY"
         inputLabel="Confirmation"
         confirmLabel="Empty trash"
@@ -476,6 +517,28 @@ function TrashPage() {
       />
     </div>
   )
+}
+
+// tenantTrashRows subtracts the caller's own trash from the tenant-wide
+// listing (BUG-13).
+//
+// The admin listing spans EVERY deletion in the tenant, including the
+// viewing admin's own uncleared ones — which the "My trash" section
+// directly above already renders in full. The page therefore read
+// "My trash (8)" and then repeated the identical 8 rows in a second
+// table headed "Documents", with nothing to say why. Removing the
+// overlap makes the two tables disjoint, so each row appears exactly
+// once and each table has a single clear meaning: what I deleted, and
+// everything else.
+//
+// The subtraction is page-scoped on both sides (each listing pages at
+// 50 rows), so with a very large personal trash a not-yet-loaded row
+// can still surface below until "Load more" pulls it in — a narrower,
+// self-correcting overlap than duplicating every row on first paint.
+export function tenantTrashRows(tenantWide: TrashEntry[], mine: TrashEntry[]): TrashEntry[] {
+  if (mine.length === 0) return tenantWide
+  const mineIds = new Set(mine.map((i) => i.id))
+  return tenantWide.filter((i) => !mineIds.has(i.id))
 }
 
 // TrashFolderRow renders one cohort-root soft-deleted folder with two

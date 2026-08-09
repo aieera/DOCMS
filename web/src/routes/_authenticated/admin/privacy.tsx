@@ -28,7 +28,7 @@ function PrivacyPage() {
     mutationFn: () => requestDSRToken(email),
     onSuccess: () =>
       toast.success(
-        'Verification token sent to subject (check their notifications; SMTP wires in Wave 12)',
+        'Verification token sent — the subject will find it in their notifications',
       ),
     onError: () => toast.error('Token request failed'),
   })
@@ -105,8 +105,8 @@ function PrivacyPage() {
               Request verification token
             </Button>
             <span className="text-xs text-muted-foreground">
-              Subject receives a 24h token via notifications (SMTP in Wave 12). Paste the received
-              token into the field above.
+              The subject receives a token in their notifications, valid for 24 hours. Paste the
+              token they give you into the field above.
             </span>
           </div>
         )}

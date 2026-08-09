@@ -52,7 +52,8 @@ function PermissionLagPage() {
             <p className="font-medium">SLI breach</p>
             <p className="text-xs">
               p95 propagation lag is {data.p95_seconds.toFixed(2)}s — over the {SLI_THRESHOLD_SECONDS}s threshold.
-              Check the search service logs for <code className="rounded bg-destructive/20 px-1 font-mono">debounced propagation failed</code> or stuck OpenSearch updates.
+              Permission changes are taking longer than expected to reach search results. Check the
+              search service logs, or contact support if this persists.
             </p>
           </div>
         </div>

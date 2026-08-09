@@ -340,6 +340,63 @@ describe('<DocumentActionsMenu>', () => {
     expect(dialog).toHaveAttribute('data-rtype', 'document')
   })
 
+  // BUG-15 — the document-detail header used to hand-roll a four-item
+  // menu (Share / Compare with… / Manage access / Create task) with no
+  // rename, move, copy or delete, while the grid card offered all of
+  // them. The detail page now renders THIS component in its inline
+  // variant, so the two surfaces can only drift apart if these
+  // assertions are changed.
+  describe('inline variant (document-detail header)', () => {
+    const CORE = ['rename', 'move', 'copy', 'share', 'protect-share', 'add-to-task', 'manage-access', 'delete']
+
+    it('offers the same core actions as the card menu, with no card surface to wrap', async () => {
+      const user = userEvent.setup()
+      render(wrap(<DocumentActionsMenu doc={doc} variant="inline" />))
+
+      await user.click(screen.getByRole('button', { name: 'Document actions' }))
+      for (const key of CORE) {
+        expect(await screen.findByTestId(`document-action-${key}`)).toBeInTheDocument()
+      }
+    })
+
+    it('appends surface-specific extras and hides the actions the surface already owns', async () => {
+      // The detail header keeps a labelled Download button beside the
+      // menu, and Compare exists only there.
+      const onCompare = vi.fn()
+      const user = userEvent.setup()
+      render(wrap(
+        <DocumentActionsMenu
+          doc={doc}
+          variant="inline"
+          hideActions={['download']}
+          extraActions={[{ key: 'compare', label: 'Compare with…', icon: null, onSelect: onCompare }]}
+        />,
+      ))
+
+      await user.click(screen.getByRole('button', { name: 'Document actions' }))
+      expect(screen.queryByTestId('document-action-download')).not.toBeInTheDocument()
+
+      await user.click(await screen.findByTestId('document-action-compare'))
+      expect(onCompare).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the SAME rename dialog the card menu uses (no duplicated logic)', async () => {
+      const user = userEvent.setup()
+      render(wrap(<DocumentActionsMenu doc={doc} variant="inline" />))
+
+      await user.click(screen.getByRole('button', { name: 'Document actions' }))
+      await user.click(await screen.findByTestId('document-action-rename'))
+
+      const input = await screen.findByTestId('rename-document-input') as HTMLInputElement
+      expect(input.value).toBe('Quarterly report')
+    })
+
+    it('renders no right-click context menu (there is no card to right-click)', () => {
+      render(wrap(<DocumentActionsMenu doc={doc} variant="inline" />))
+      expect(screen.queryByTestId('document-context-menu')).not.toBeInTheDocument()
+    })
+  })
+
   it('disables Delete and Move for legal-hold documents but leaves Rename enabled', async () => {
     const user = userEvent.setup()
     render(wrap(

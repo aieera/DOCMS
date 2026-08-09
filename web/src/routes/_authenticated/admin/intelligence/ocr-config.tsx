@@ -389,8 +389,8 @@ function ThresholdRow({
 // against, so a change here re-routes future OCR jobs.
 const ENGINES: { value: OcrEngine; label: string; help: string }[] = [
   { value: 'auto', label: 'Auto', help: 'Printed OCR; pages below the handwriting floor are re-tried with ICR and merged.' },
-  { value: 'printed', label: 'Printed', help: 'Surya/Paddle only — fastest, best for typed documents.' },
-  { value: 'handwriting', label: 'Handwriting (ICR)', help: 'TrOCR for ink, merged with printed OCR — best for forms & notes.' },
+  { value: 'printed', label: 'Printed', help: 'Printed text only — fastest, best for typed documents.' },
+  { value: 'handwriting', label: 'Handwriting (ICR)', help: 'Handwriting recognition merged with the printed text — best for forms & notes.' },
 ]
 
 function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
@@ -418,8 +418,8 @@ function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
       <div>
         <h3 className="text-sm font-semibold">Default OCR engine</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Applied to new uploads when no per-document engine is forced. Handwriting routes through
-          TrOCR (ICR); the engine that actually ran is recorded on every page and the OCR-completed event.
+          Applied to new uploads when no per-document mode is forced. The mode that actually ran is
+          recorded on every page.
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">

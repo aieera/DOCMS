@@ -128,9 +128,8 @@ export function ResidencyPage() {
           </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Queues a resumable Temporal workflow. Blob ciphertext is rekeyed under the region-local KEK
-          in the storage service's copy step (Wave 12 — today the workflow flips `region_pin` and
-          emits `dms.residency.migrated.v1` per document).
+          Queues a resumable background migration. Each document is re-pinned to the target region
+          and re-encrypted with that region's key. You can safely leave this page while it runs.
         </p>
       </div>
 

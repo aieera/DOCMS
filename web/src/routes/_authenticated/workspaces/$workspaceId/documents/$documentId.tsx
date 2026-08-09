@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 import {
   AlertCircle,
   CheckCircle2,
-  CheckSquare,
   ChevronDown,
   Clock,
   Download,
@@ -16,18 +15,9 @@ import {
   GitCompareArrows,
   History,
   MessageSquare,
-  MoreHorizontal,
   Network,
   RefreshCw,
-  Share2,
-  UserCog,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/shadcn/dropdown-menu'
 
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { useDocument } from '@/hooks/useDocuments'
@@ -50,11 +40,10 @@ import { WorkflowTab } from '@/components/workflows/WorkflowTab'
 import { WorkflowStatusBadge } from '@/components/workflows/WorkflowStatusBadge'
 import { AuditVisualization } from '@/components/documents/AuditVisualization'
 import { SignaturesPanel } from '@/components/documents/SignaturesPanel'
-import { ShareDialog } from '@/components/documents/ShareDialog'
 import { CompareDialog } from '@/components/documents/CompareDialog'
+import { DocumentActionsMenu } from '@/components/documents/DocumentActionsMenu'
 import { VersionHistory } from '@/components/documents/VersionHistory'
 import { RetentionExemptToggle } from '@/components/documents/RetentionExemptToggle'
-import { ManageAccessDialog } from '@/components/documents/ManageAccessDialog'
 import { Pencil } from 'lucide-react'
 import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as ShadcnSelect } from '@/components/ui/shadcn/select'
@@ -77,7 +66,6 @@ import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { fieldLabel } from '@/lib/schemaFields'
 import { formatFileSize, formatDateTime, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
-import { TaskCreateDialog } from '@/components/tasks/TaskCreateDialog'
 import { TagSuggestionsPanel } from '@/components/intelligence/TagSuggestionsPanel'
 import { RouteSuggestionBanner } from '@/components/intelligence/RouteSuggestionBanner'
 import { CompliancePanel } from '@/components/intelligence/CompliancePanel'
@@ -540,10 +528,7 @@ function BadgeLink({
 // owns the dialogs those items open. Lives beside the filename so actions sit
 // with the document they act on — the sidebar no longer carries an icon card.
 function DocumentActions({ doc, documentId, versionId }: { doc: any; documentId: string; versionId?: string }) {
-  const [taskOpen, setTaskOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
-  const [manageAccessOpen, setManageAccessOpen] = useState(false)
 
   // Cookie-authenticated decrypt-stream alias: one URL for every mime type;
   // the `download` attribute hints the original filename.
@@ -557,6 +542,23 @@ function DocumentActions({ doc, documentId, versionId }: { doc: any; documentId:
     a.remove()
   }
 
+  // BUG-15: this menu used to offer only Share / Compare / Manage
+  // access / Create task — no rename, move, copy or delete, all of
+  // which the grid card's ⋮ menu has offered for months. Rather than
+  // re-implement four dialogs here, render the SAME DocumentActionsMenu
+  // the card uses, in its inline variant. Download stays a dedicated
+  // labelled button (it is the action people reach for), so the menu
+  // hides its own duplicate; Compare is detail-page-only and rides in
+  // as an extra action.
+  //
+  // "Upload new version" is deliberately absent: there is no
+  // version-upload call in web/src/api (createVersion needs a
+  // content_blob_id that only the initiate→PUT→complete storage flow
+  // produces, and useUpload only ever creates NEW documents), and
+  // VersionHistory has no upload affordance either. Shipping the item
+  // would mean shipping a dead button.
+  const menuDoc = { ...(doc as object), id: documentId } as Document
+
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -568,53 +570,25 @@ function DocumentActions({ doc, documentId, versionId }: { doc: any; documentId:
       >
         <Download className="h-4 w-4" /> Download
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="More actions" data-testid="action-more">
-            <MoreHorizontal className="h-4 w-4" aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onClick={() => setShareOpen(true)}>
-            <Share2 className="me-2 h-4 w-4" aria-hidden /> Share
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setCompareOpen(true)}>
-            <GitCompareArrows className="me-2 h-4 w-4" aria-hidden /> Compare with…
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setManageAccessOpen(true)}>
-            <UserCog className="me-2 h-4 w-4" aria-hidden /> Manage access
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTaskOpen(true)}>
-            <CheckSquare className="me-2 h-4 w-4" aria-hidden /> Create task
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DocumentActionsMenu
+        doc={menuDoc}
+        variant="inline"
+        hideActions={['download']}
+        extraActions={[
+          {
+            key: 'compare',
+            label: 'Compare with…',
+            icon: <GitCompareArrows className="h-4 w-4" />,
+            onSelect: () => setCompareOpen(true),
+          },
+        ]}
+      />
 
-      <TaskCreateDialog
-        open={taskOpen}
-        onOpenChange={setTaskOpen}
-        defaultDocument={{ document_id: documentId, title: doc?.title ?? '' }}
-      />
-      <ShareDialog
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-        documentId={documentId}
-        documentTitle={doc.title}
-      />
       <CompareDialog
         open={compareOpen}
         onOpenChange={setCompareOpen}
         baseDocumentId={documentId}
         baseDocumentTitle={doc.title ?? 'document'}
-      />
-      <ManageAccessDialog
-        open={manageAccessOpen}
-        onOpenChange={setManageAccessOpen}
-        resourceType="document"
-        resourceId={documentId}
-        resourceTitle={doc.title ?? 'this document'}
-        workspaceId={doc.workspace_id}
-        folderId={doc.folder_id}
       />
     </div>
   )

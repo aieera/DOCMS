@@ -133,14 +133,11 @@ export function UsersPage() {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
         <div className="space-y-1">
           <p>
-            <strong className="text-foreground">&ldquo;Last Login&rdquo;</strong> is the most-recent sign-in timestamp &mdash; not last activity. A
-            per-request &ldquo;last seen&rdquo; timestamp ships with Phase 7 (Manage Access) when we surface
-            workspace ACL.
+            <strong className="text-foreground">&ldquo;Last Login&rdquo;</strong> is the most-recent sign-in timestamp &mdash; not last activity.
           </p>
           <p>
             Per-workspace role assignment lives under the individual workspace&rsquo;s{' '}
-            <Link to="/workspaces" className="text-primary underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link> today; finer-grained
-            workspace ACL ships with Phase 7.
+            <Link to="/workspaces" className="text-primary underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link>.
           </p>
         </div>
       </div>

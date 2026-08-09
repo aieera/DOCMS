@@ -119,7 +119,7 @@ export async function runPersistedQuery<TVars, TData>(
         // not valid JSON; fall through with raw
       }
     }
-    throw new Error(`graphql ${res.status}: ${body}`)
+    throw new Error(`Request failed (${res.status}): ${body}`)
   }
   return res.json()
 }

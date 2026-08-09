@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { getDocuments, getDocument, updateDocument, deleteDocument, moveDocument, copyDocument } from '@/api/documents'
 import { readErrorMessage } from '@/api/client'
 import { useAppMutation } from './useAppMutation'
+import { invalidateDocuments, invalidateTrash } from './queryInvalidation'
 
 export function useDocuments(workspaceId: string, params: Record<string, string> = {}) {
   return useQuery({
@@ -97,7 +98,14 @@ export function useDeleteDocument() {
   const qc = useQueryClient()
   return useAppMutation({
     mutationFn: deleteDocument,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+    // BUG-10: a soft delete moves the row INTO the trash, so the two
+    // trash listings (['my-trash'] / ['admin-trash']) are as stale as
+    // the document lists — bare ['documents'] reached neither, and
+    // /trash kept showing a pre-delete list until a reload.
+    onSuccess: () => {
+      void invalidateDocuments(qc)
+      void invalidateTrash(qc)
+    },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? 'Could not delete document'),
   })
@@ -107,7 +115,11 @@ export function useMoveDocument() {
   const qc = useQueryClient()
   return useAppMutation({
     mutationFn: ({ id, folderId }: { id: string; folderId: string }) => moveDocument(id, folderId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+    // Source and target folder cards both change document_count.
+    onSuccess: () => {
+      void invalidateDocuments(qc)
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+    },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? 'Could not move document'),
   })
@@ -117,7 +129,10 @@ export function useCopyDocument() {
   const qc = useQueryClient()
   return useAppMutation({
     mutationFn: ({ id, folderId }: { id: string; folderId: string }) => copyDocument(id, folderId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+    onSuccess: () => {
+      void invalidateDocuments(qc)
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+    },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? 'Could not copy document'),
   })

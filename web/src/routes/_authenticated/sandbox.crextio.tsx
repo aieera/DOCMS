@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, notFound } from '@tanstack/react-router'
 import {
   Bell,
   Briefcase,
@@ -377,5 +377,11 @@ function DevicesPanel() {
 }
 
 export const Route = createFileRoute('/_authenticated/sandbox/crextio')({
+  // Dev-only surface: a mock HR dashboard with invented people and
+  // numbers. It has no nav entry, but a URL anyone can guess is not a
+  // guard — in a production build this resolves to the normal 404.
+  beforeLoad: () => {
+    if (import.meta.env.PROD) throw notFound()
+  },
   component: CrextioSandbox,
 })

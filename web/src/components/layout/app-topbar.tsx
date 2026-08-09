@@ -16,6 +16,7 @@ import { Breadcrumbs } from './breadcrumbs'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { formatRelativeTime } from '@/lib/formatters'
+import { isMacPlatform } from '@/lib/platform'
 import { Button } from '@/components/ui/shadcn/button'
 import { Separator } from '@/components/ui/shadcn/separator'
 import {
@@ -141,9 +142,9 @@ function CommandTrigger() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Show Ctrl on non-Mac, ⌘ on Mac. navigator.platform is deprecated
-  // but still the most reliable signal here; userAgentData is uneven.
-  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+  // Show Ctrl on non-Mac, ⌘ on Mac — shared with the dashboard's
+  // "Search documents" quick-action card so the two never disagree.
+  const isMac = isMacPlatform()
 
   return (
     <div className="relative hidden sm:block">

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { AnswerMarkdown } from '@/components/ai/AnswerMarkdown'
 import { CitationList } from './CitationHighlight'
 import { SuggestedQuestions } from './SuggestedQuestions'
+import { formatUsd } from '@/lib/formatters'
 
 interface Props {
   documentId: string
@@ -307,12 +308,7 @@ function Bubble({
 }
 
 function UsageChip({ usage }: { usage: NonNullable<UIMessage['usage']> }) {
-  const cost =
-    usage.cost_usd >= 0.01
-      ? `$${usage.cost_usd.toFixed(3)}`
-      : usage.cost_usd > 0
-        ? `$${usage.cost_usd.toFixed(5)}`
-        : '—'
+  const cost = formatUsd(usage.cost_usd)
   const seconds = (usage.elapsed_ms / 1000).toFixed(1)
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-border/60 pt-1.5 text-[10px] text-muted-foreground">

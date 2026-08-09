@@ -29,13 +29,27 @@ import { ManageAccessDialog } from './ManageAccessDialog'
 
 import type { Document } from '@/types/api'
 
+/**
+ * A surface-specific action appended after the shared core actions
+ * (e.g. "Compare with…", which only makes sense on the detail page).
+ * Kept as data so both the dropdown and the context menu render it
+ * through the same path as everything else.
+ */
+export interface ExtraAction {
+  key: string
+  label: string
+  icon: ReactNode
+  onSelect: () => void
+}
+
 interface Props {
   doc: Document
   /**
    * The card surface to wrap. Right-clicking anywhere inside fires the
    * ContextMenu; the ⋯-button is positioned absolutely on top-right.
+   * Only used by variant="card".
    */
-  children: ReactNode
+  children?: ReactNode
   /**
    * Opens the document viewer. When provided, an "Open" item is added
    * to the top of the menu so users have a discoverable single-action
@@ -48,6 +62,27 @@ interface Props {
    * the trigger lands in the row's trailing gutter.
    */
   triggerClassName?: string
+  /**
+   * 'card' (default) wraps `children` with a right-click context menu
+   * and floats the ⋯ trigger over the tile. 'inline' renders the
+   * trigger on its own, in flow — for toolbars like the document
+   * detail header, which has no card surface to wrap.
+   *
+   * BUG-15: the detail header used to hand-roll its own four-item menu
+   * (Share / Compare / Manage access / Create task) with no rename,
+   * move, copy or delete. Reusing this component there is what keeps
+   * the two surfaces from drifting apart again — the item list and
+   * every dialog it opens live in exactly one place.
+   */
+  variant?: 'card' | 'inline'
+  /** Items to append after the core actions, before the delete group. */
+  extraActions?: ExtraAction[]
+  /**
+   * Core action keys to omit. Used by surfaces that already offer the
+   * action as a dedicated control (the detail header has a labelled
+   * Download button, so it hides the menu's duplicate).
+   */
+  hideActions?: string[]
 }
 
 type MenuItem =
@@ -86,7 +121,15 @@ async function downloadLatest(documentId: string) {
   a.click()
 }
 
-export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }: Props) {
+export function DocumentActionsMenu({
+  doc,
+  children,
+  onOpen,
+  triggerClassName,
+  variant = 'card',
+  extraActions,
+  hideActions,
+}: Props) {
   const [renameOpen, setRenameOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -107,7 +150,7 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
   // blocked; update_title (rename) is explicitly allowed.
   const isOnHold = doc.lifecycle_state === 'legal_hold'
 
-  const items: MenuItem[] = [
+  const coreItems: MenuItem[] = [
     ...(onOpen
       ? ([
           { kind: 'action', key: 'open', label: 'Open', icon: <Eye className="h-4 w-4" />, onSelect: onOpen },
@@ -135,6 +178,7 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
       icon: <ShieldCheck className="h-4 w-4" />,
       onSelect: () => setManageAccessOpen(true),
     },
+    ...(extraActions ?? []).map((a): MenuItem => ({ kind: 'action', ...a })),
     { kind: 'separator', key: 'sep' },
     {
       kind: 'action', key: 'delete', label: 'Delete', icon: <Trash2 className="h-4 w-4" />,
@@ -143,6 +187,11 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
       ...(isOnHold ? { disabledHint: 'Document is under legal hold — delete is not permitted' } : {}),
     },
   ]
+
+  const hidden = new Set(hideActions ?? [])
+  const items = hidden.size === 0
+    ? coreItems
+    : coreItems.filter((it) => it.kind === 'separator' || !hidden.has(it.key))
 
   const handleSelect = (it: Extract<MenuItem, { kind: 'action' }>) => {
     if (it.disabledHint) {
@@ -199,44 +248,43 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
       </ContextMenuItem>
     ))
 
-  return (
-    <div className="group relative">
-      <ContextMenu>
-        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent data-testid="document-context-menu">
-          {renderContextItems()}
-        </ContextMenuContent>
-      </ContextMenu>
-
-      <div className={triggerClassName ?? 'absolute end-2 top-2'}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
+  const dropdown = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={
+            variant === 'inline'
+              ? 'h-8 w-8'
               // 40% opacity always, 100% on hover/focus — gives the
               // affordance a discoverable visual anchor even before
               // hover, instead of the previous hover-only reveal.
-              className="h-7 w-7 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-              // The card body is itself a navigable link. Stop bubbling
-              // so opening the menu doesn't also navigate. NO
-              // preventDefault here: Radix composes the trigger's click
-              // handler with checkForDefaultPrevented, so preventing
-              // default killed keyboard (Enter/Space) opening — pointer
-              // still worked via pointerdown, masking the bug.
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Document actions"
-              data-testid={`document-actions-trigger-${doc.id}`}
-            >
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" data-testid="document-actions-menu">
-            {renderDropdownItems()}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              : 'h-7 w-7 opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100'
+          }
+          // The card body is itself a navigable link. Stop bubbling
+          // so opening the menu doesn't also navigate. NO
+          // preventDefault here: Radix composes the trigger's click
+          // handler with checkForDefaultPrevented, so preventing
+          // default killed keyboard (Enter/Space) opening — pointer
+          // still worked via pointerdown, masking the bug.
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Document actions"
+          data-testid={`document-actions-trigger-${doc.id}`}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56" data-testid="document-actions-menu">
+        {renderDropdownItems()}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
+  // Every dialog the items open. Shared by both variants — this is the
+  // logic the detail header used to duplicate.
+  const dialogs = (
+    <>
       <RenameDocumentDialog
         open={renameOpen}
         onOpenChange={setRenameOpen}
@@ -295,6 +343,30 @@ export function DocumentActionsMenu({ doc, children, onOpen, triggerClassName }:
         workspaceId={doc.workspace_id}
         folderId={doc.folder_id}
       />
+    </>
+  )
+
+  if (variant === 'inline') {
+    return (
+      <>
+        {dropdown}
+        {dialogs}
+      </>
+    )
+  }
+
+  return (
+    <div className="group relative">
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+        <ContextMenuContent data-testid="document-context-menu">
+          {renderContextItems()}
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <div className={triggerClassName ?? 'absolute end-2 top-2'}>{dropdown}</div>
+
+      {dialogs}
     </div>
   )
 }

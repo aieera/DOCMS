@@ -6,13 +6,7 @@ import { getLLMUsage, type LLMUsageRow } from '@/api/llm-usage'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/Skeleton'
-
-function fmtCost(n: number): string {
-  if (!n) return '—'
-  if (n >= 1) return `$${n.toFixed(2)}`
-  if (n >= 0.01) return `$${n.toFixed(3)}`
-  return `$${n.toFixed(5)}`
-}
+import { formatUsd as fmtCost } from '@/lib/formatters'
 
 export function LLMUsagePage() {
   const { data, isLoading } = useQuery({

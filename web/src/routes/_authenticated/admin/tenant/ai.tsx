@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { LabeledSelect as Select } from '@/components/ui/shadcn/select'
 import { Spinner } from '@/components/ui/Spinner'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { formatUsd } from '@/lib/formatters'
 
 const PROVIDER_OPTIONS = [
   { value: 'anthropic',  label: 'Anthropic (Claude)' },
@@ -179,7 +180,7 @@ export function TenantAIPage() {
           <UsageCard label="Total tokens" value={((usage?.totals.input_tokens ?? 0) + (usage?.totals.output_tokens ?? 0)).toLocaleString()} />
           <UsageCard
             label="Cost"
-            value={`$${(usage?.totals.cost_usd ?? 0).toFixed(4)}`}
+            value={formatUsd(usage?.totals.cost_usd)}
             icon={<Coins className="h-4 w-4 text-warning" />}
           />
         </div>

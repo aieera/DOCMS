@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ArchiveRestore, FileText, Lock, Trash2 } from 'lucide-react'
 
 import { useAppMutation } from '@/hooks/useAppMutation'
+import { useMyTrash, myTrashItems, useTrashLocations } from '@/hooks/useTrash'
+import { invalidateDocuments, invalidateTrash } from '@/hooks/queryInvalidation'
 import { readErrorMessage } from '@/api/client'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
-import { clearFromMyTrash, listMyTrash, restoreMyTrash, type TrashEntry } from '@/api/trash'
+import { clearFromMyTrash, restoreMyTrash, type TrashEntry } from '@/api/trash'
+import { TrashLocation } from './TrashLocation'
 import { formatDateTime, formatFileSize } from '@/lib/formatters'
 
 // My Trash — what THIS user deleted, for every role.
@@ -32,20 +35,14 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
   const qc = useQueryClient()
   const [clearTarget, setClearTarget] = useState<TrashEntry | null>(null)
 
-  const trash = useInfiniteQuery({
-    queryKey: ['my-trash'],
-    initialPageParam: '',
-    queryFn: ({ pageParam }) => listMyTrash((pageParam as string) || undefined),
-    getNextPageParam: (last, _all, lastParam) => {
-      const next = last.next_page_token
-      return !next || next === lastParam ? undefined : next
-    },
-  })
+  const trash = useMyTrash()
 
+  // BUG-10: the middle key here used to be ['trash'] — a root NO query
+  // in the app ever used, so restoring from this list left the admin
+  // table on the SAME page showing the row it had just moved.
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['my-trash'] })
-    qc.invalidateQueries({ queryKey: ['trash'] })
-    qc.invalidateQueries({ queryKey: ['documents'] })
+    void invalidateTrash(qc)
+    void invalidateDocuments(qc)
   }
 
   const restore = useAppMutation({
@@ -69,8 +66,9 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? "Couldn't remove that item"),
   })
 
-  const allItems = trash.data?.pages.flatMap((p) => p.items) ?? []
+  const allItems = myTrashItems(trash.data?.pages)
   const items = workspaceId ? allItems.filter((i) => i.workspace_id === workspaceId) : allItems
+  const locationOf = useTrashLocations(items)
 
   return (
     <section data-testid="my-trash-section">
@@ -94,6 +92,9 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-2 text-start font-medium">Title</th>
+                  {/* Where Restore puts it back. Without this the button
+                      was a blind action. */}
+                  <th scope="col" className="px-4 py-2 text-start font-medium">Original location</th>
                   <th scope="col" className="px-4 py-2 text-start font-medium">Size</th>
                   <th scope="col" className="px-4 py-2 text-start font-medium">Deleted</th>
                   <th scope="col" className="px-4 py-2 text-end font-medium">Actions</th>
@@ -119,6 +120,9 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
                           </Badge>
                         )}
                       </div>
+                    </td>
+                    <td className="max-w-[18rem] px-4 py-2 text-muted-foreground">
+                      <TrashLocation location={locationOf(entry)} />
                     </td>
                     <td className="px-4 py-2 text-muted-foreground">
                       {formatFileSize(entry.total_size_bytes)}

@@ -59,20 +59,32 @@ const InputBase = forwardRef<
 })
 InputBase.displayName = 'InputBase'
 
-const Input = forwardRef<HTMLInputElement, InputProps>(({ label, error, id, ...props }, ref) => {
-  const generated = useId()
-  const inputId = id ?? generated
-  if (!label && !error) {
-    return <InputBase ref={ref} id={inputId} {...props} />
-  }
-  return (
-    <div className="space-y-1.5">
-      {label && <Label htmlFor={inputId} className={error ? 'text-destructive' : undefined}>{label}</Label>}
-      <InputBase ref={ref} id={inputId} hasError={!!error} {...props} />
-      {error && <p className="text-xs font-medium text-destructive">{error}</p>}
-    </div>
-  )
-})
+const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, id, 'aria-describedby': describedBy, ...props }, ref) => {
+    const generated = useId()
+    const inputId = id ?? generated
+    if (!label && !error) {
+      return <InputBase ref={ref} id={inputId} aria-describedby={describedBy} {...props} />
+    }
+    // Point the input at its own error text so a screen reader reads the
+    // reason after announcing the invalid state — aria-invalid alone only
+    // says "invalid", not why.
+    const errorId = `${inputId}-error`
+    return (
+      <div className="space-y-1.5">
+        {label && <Label htmlFor={inputId} className={error ? 'text-destructive' : undefined}>{label}</Label>}
+        <InputBase
+          ref={ref}
+          id={inputId}
+          hasError={!!error}
+          aria-describedby={[describedBy, error ? errorId : null].filter(Boolean).join(' ') || undefined}
+          {...props}
+        />
+        {error && <p id={errorId} className="text-xs font-medium text-destructive">{error}</p>}
+      </div>
+    )
+  },
+)
 Input.displayName = 'Input'
 
 export { Input }

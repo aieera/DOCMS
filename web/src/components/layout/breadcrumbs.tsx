@@ -4,88 +4,7 @@ import { Fragment, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import type { Workspace } from '@/types/api'
-
-// Maps URL segments to a human label. Anything not in the map gets a
-// title-cased version of the segment as a fallback ("audit-log" →
-// "Audit log"). Add entries here as new sections ship; keeping this
-// table tiny is intentional — it's just for navigation crumbs, not a
-// full route registry.
-const SEGMENT_LABELS: Record<string, string> = {
-  '': 'Home',
-  workspaces: 'Workspaces',
-  documents: 'Document',
-  search: 'Search',
-  ask: 'Ask',
-  trash: 'Trash',
-  tasks: 'Tasks',
-  notifications: 'Notifications',
-  'saved-searches': 'Saved searches',
-  templates: 'Templates',
-  reports: 'Reports',
-  settings: 'Settings',
-  security: 'Security',
-  mfa: 'MFA',
-  recovery: 'Recovery',
-  admin: 'Admin',
-  users: 'Users',
-  groups: 'Groups',
-  permissions: 'Permissions',
-  'permission-lag': 'Permission lag',
-  'api-keys': 'API keys',
-  'audit-log': 'Audit log',
-  billing: 'Billing',
-  compliance: 'Compliance',
-  connectors: 'Connectors',
-  integrations: 'Integrations',
-  'legal-holds': 'Legal holds',
-  'metadata-schema': 'Metadata schema',
-  privacy: 'Privacy',
-  residency: 'Residency',
-  retention: 'Retention',
-  'share-links': 'Share links',
-  sso: 'SSO',
-  tags: 'Tags',
-  webhooks: 'Webhooks',
-  workflows: 'Workflows',
-  designer: 'Designer',
-  instances: 'Instances',
-  intelligence: 'Intelligence',
-  anomalies: 'Anomalies',
-  'auto-tag': 'Auto-tag',
-  'compliance-config': 'Compliance config',
-  'filing-analytics': 'Filing analytics',
-  models: 'Models',
-  'ner-config': 'NER config',
-  'ocr-review': 'OCR review',
-  'ocr-config': 'OCR quality config',
-  'routing-rules': 'Routing rules',
-  'tag-review': 'Tag review',
-  usage: 'Usage',
-  platform: 'Platform',
-  'support-search': 'Support search',
-  'db-info': 'Db-info',
-  'load-tests': 'Load tests',
-  ipaas: 'IPaaS',
-  tenant: 'Tenant',
-  ai: 'AI',
-  identity: 'Identity',
-  ldap: 'LDAP',
-  sign: 'Sign',
-  signatures: 'Signatures',
-  send: 'Send',
-}
-
-function humanize(segment: string): string {
-  if (SEGMENT_LABELS[segment]) return SEGMENT_LABELS[segment]
-  // Looks like a UUID or hex id → keep short ellipsis form so the
-  // crumb stays readable. Stops the breadcrumb from showing
-  // "33333333-3333-7333-…" as a label.
-  if (/^[0-9a-f-]{8,}$/i.test(segment)) return segment.slice(0, 8) + '…'
-  return segment
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
-}
+import { humanizeSegment } from '@/lib/segmentLabels'
 
 // UUID_RE matches v4/v7-style UUIDs as they appear in route params.
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -158,7 +77,7 @@ export function Breadcrumbs() {
       if (segment === workspaceId) label = workspaceName
       else if (segment === documentId) label = documentQ.data?.title
       else if (segment === workflowId) label = workflow.data?.definition_name
-      return { segment, href, label: label ?? humanize(segment) }
+      return { segment, href, label: label ?? humanizeSegment(segment) }
     })
   }, [
     segments,

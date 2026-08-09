@@ -326,7 +326,7 @@ function ModelField({
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs uppercase tracking-wide text-muted-foreground">
-        Model (litellm provider/model)
+        Model (provider/model)
       </span>
       {custom ? (
         <Input

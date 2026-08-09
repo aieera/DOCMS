@@ -72,7 +72,7 @@ export function RerunOcrButton({
       rerunOCR(documentId, versionId, engine ? { forceEngine: engine } : {}),
     onSuccess: (_data, engine) => {
       const labels: Record<ForcibleEngine, string> = {
-        surya: 'Surya', printed: 'printed', handwriting: 'handwriting (ICR)',
+        surya: 'full page scan', printed: 'printed text', handwriting: 'handwriting (ICR)',
       }
       toast.success(
         engine ? `${successMessage} (engine: ${labels[engine]})` : successMessage,
@@ -120,7 +120,7 @@ export function RerunOcrButton({
           >
             <div>
               <p className="text-sm font-medium">Auto (default)</p>
-              <p className="text-xs text-muted-foreground">Fast path for PDFs with a text layer; Surya otherwise.</p>
+              <p className="text-xs text-muted-foreground">Reuses the text already inside a PDF when there is one; scans the pages otherwise.</p>
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -129,7 +129,7 @@ export function RerunOcrButton({
           >
             <div>
               <p className="text-sm font-medium">Printed (force)</p>
-              <p className="text-xs text-muted-foreground">Bypass the fast path; always run full Surya/Paddle detection + recognition.</p>
+              <p className="text-xs text-muted-foreground">Always scan the pages, even when the PDF already contains text.</p>
             </div>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -138,7 +138,7 @@ export function RerunOcrButton({
           >
             <div>
               <p className="text-sm font-medium">Handwriting (ICR)</p>
-              <p className="text-xs text-muted-foreground">Route through TrOCR for handwritten ink, merged with printed OCR. Best for forms &amp; notes.</p>
+              <p className="text-xs text-muted-foreground">Recognises handwritten ink and merges it with the printed text. Best for forms &amp; notes.</p>
             </div>
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Activity, AlertTriangle, Brain, CreditCard, Database, FileJson, FileSearch, FolderSync, FolderTree, KeyRound, Link2, Lock, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Tags as TagsIcon, Upload, UserCog, Users, Workflow, type LucideIcon } from 'lucide-react'
+import { Activity, AlertTriangle, Brain, CreditCard, Database, FileJson, FileSearch, FolderSync, FolderTree, KeyRound, LayoutTemplate, Link2, Lock, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Tags as TagsIcon, Upload, UserCog, Users, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/store/authStore'
@@ -74,6 +74,11 @@ const TENANT_GROUP: SectionGroup = {
         { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
         { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Visual field builder + raw JSON Schema' },
         { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
+        // /templates has no sidebar entry (removed 2026-07-28 by request)
+        // and nothing else linked to it, so the page was reachable only
+        // by typing the URL. Provisioning a workspace from a template is
+        // a setup task, so the admin hub is where it belongs.
+        { to: '/templates', icon: LayoutTemplate, label: 'Workspace templates', desc: 'Reusable folder structures — create a workspace from a template' },
         { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
         { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
       ],

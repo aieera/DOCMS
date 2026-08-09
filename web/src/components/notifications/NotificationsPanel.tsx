@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'
-import { formatRelativeTime } from '@/lib/formatters'
+import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
 
 interface Props {
   open: boolean
@@ -159,8 +159,8 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                         className="h-7 w-7 p-0"
                         onClick={() => snooze.mutate(n.type)}
                         loading={snooze.isPending && snooze.variables === n.type}
-                        title={`Mute "${n.type}" for 1 hour`}
-                        aria-label={`Snooze ${n.type} for 1 hour`}
+                        title={`Mute "${notificationTypeLabel(n.type)}" notifications for 1 hour`}
+                        aria-label={`Snooze ${notificationTypeLabel(n.type)} notifications for 1 hour`}
                         data-testid={`notif-panel-snooze-${n.id}`}
                       >
                         <BellOff className="h-3.5 w-3.5" />
@@ -173,13 +173,24 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-3">
+        {/* The full inbox has richer filtering (category rail, date
+            grouping, snooze) than this panel. Without this link it was
+            only reachable from the dashboard. */}
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
+          <Link
+            to="/notifications"
+            className="text-xs font-medium text-primary hover:underline"
+            onClick={() => onOpenChange(false)}
+            data-testid="notif-panel-open-inbox"
+          >
+            Open notification inbox →
+          </Link>
           <Link
             to="/settings/notifications"
             className="text-xs text-muted-foreground hover:text-foreground hover:underline"
             onClick={() => onOpenChange(false)}
           >
-            Notification preferences →
+            Preferences
           </Link>
         </div>
       </SheetContent>

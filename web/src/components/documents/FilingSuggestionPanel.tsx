@@ -155,8 +155,8 @@ export function FilingSuggestionPanel({ filename, mimeType, workspaceId, onChang
       ) : (
         <p className="rounded-md border border-dashed border-border px-2 py-1.5 text-[11px] text-muted-foreground">
           <FolderTree className="me-1 inline h-3 w-3" />
-          No folder suggestion — not enough filing history yet. ADR 0102 Phase 1 needs ≥5 similar
-          docs before suggesting.
+          No folder suggestion yet — we need a few more documents like this one before we can
+          recommend where it belongs.
         </p>
       )}
 

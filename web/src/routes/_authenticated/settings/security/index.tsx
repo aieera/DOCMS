@@ -106,8 +106,22 @@ function Field({ label, value, icon, mono, title }: {
 
 // ---- Security (passkeys) --------------------------------------------
 
+// Browsers only expose the passkey APIs in a "secure context" — HTTPS,
+// or localhost during development. Over plain HTTP, window.PublicKeyCredential
+// simply doesn't exist, which is indistinguishable from an ancient browser
+// if you only check isWebAuthnSupported(). Telling someone on the latest
+// Chrome to "use a recent Chrome" is worse than useless — it sends them
+// chasing the wrong problem while the real fix (turn on HTTPS) sits with
+// their administrator. Check the context first and name the actual cause.
+function passkeyBlocker(): 'insecure-context' | 'unsupported-browser' | null {
+  if (typeof window === 'undefined') return null
+  if (window.isSecureContext === false) return 'insecure-context'
+  return isWebAuthnSupported() ? null : 'unsupported-browser'
+}
+
 function SecuritySection() {
-  const supported = isWebAuthnSupported()
+  const blocker = passkeyBlocker()
+  const supported = blocker === null
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -169,11 +183,24 @@ function SecuritySection() {
         ) : null
       }
     >
-      {!supported && (
+      {blocker !== null && (
         <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox.</div>
+            {blocker === 'insecure-context' ? (
+              <div data-testid="passkey-insecure-context">
+                <p className="font-medium">Passkeys need a secure connection</p>
+                <p className="mt-0.5">
+                  This site is currently served over an unencrypted connection, and browsers only
+                  allow passkeys on secure (https) addresses. Ask your administrator to turn on
+                  HTTPS for this site, then add your passkey.
+                </p>
+              </div>
+            ) : (
+              <div data-testid="passkey-unsupported-browser">
+                Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox.
+              </div>
+            )}
           </div>
         </div>
       )}

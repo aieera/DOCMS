@@ -68,6 +68,13 @@ export function useAppMutation<
     onError:
       onError ??
       ((e: TError) => {
+        // Left on the plain toast.error deliberately: several existing
+        // call-site tests mock '@/api/client' partially and assert the
+        // exact single-argument call here, so routing this through
+        // api/client's deduping toastError would break them for no
+        // user-visible gain — the stacking that BUG-31 reports comes
+        // from the response interceptor (many parallel queries failing
+        // with one message), which does dedupe.
         toast.error(
           readErrorMessage(e) ?? defaultErrorMessage ?? 'Something went wrong',
         )

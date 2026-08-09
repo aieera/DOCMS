@@ -336,7 +336,7 @@ function AddEdgeDialog({
       open
       onOpenChange={(o) => { if (!o) onClose() }}
       title="Add relationship"
-      description="Manually link this document to another. The future contract-reference extractor (Phase 2) will add edges automatically; manual edges always win."
+      description="Manually link this document to another. Links you add here always take precedence over any automatically detected ones."
       size="lg"
     >
       <div className="space-y-3">

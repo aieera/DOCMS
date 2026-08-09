@@ -54,9 +54,8 @@ function DBInfoPage() {
                   </p>
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
-                  ADR <a href="/docs/adr/0094-alternative-db-adapters" className="underline">{data.adr}</a> covers the
-                  multi-quarter plan to add MySQL / Oracle / SQL Server support. The matrix below
-                  surfaces what works on each driver and what doesn't.
+                  Support for MySQL, Oracle, and SQL Server is planned. The matrix below shows what
+                  each database can and cannot do today.
                 </p>
               </div>
             </div>
@@ -103,9 +102,9 @@ function DBInfoPage() {
           </section>
 
           <section className="mt-6 rounded-lg border border-amber-500/30 bg-amber-50/60 p-4 text-sm dark:bg-amber-950/20">
-            <strong>Honest status:</strong> only PostgreSQL is implemented today. The columns for
-            MySQL, Oracle, and SQL Server reflect the design plan, not shipped code.
-            Each driver phase is multi-month work.
+            <strong>Current status:</strong> only PostgreSQL is available today. The columns for
+            MySQL, Oracle, and SQL Server describe planned support, not something you can switch
+            to yet.
           </section>
         </>
       )}

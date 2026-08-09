@@ -220,14 +220,95 @@ api.interceptors.request.use(async (config) => {
   return config
 })
 
+// ---- status-string humanization (BUG-31) ---------------------------
+//
+// Backend status codes leak to users verbatim. pkg/errors ToGRPCError
+// sends KindValidation as `status.Error(codes.InvalidArgument,
+// e.Error())`, and Error() formats as "<CODE>: <message>" — so the
+// grpc-gateway body is {"code":3,"message":"INVALID_ARGUMENT: required"}
+// and the toast read literally "INVALID_ARGUMENT: required". The direct
+// HTTP handlers emit the same vocabulary through pkg/errors HTTPError
+// ({type, message}).
+//
+// This is deliberately a SMALL, GENERAL map keyed on the shared status
+// vocabulary — one entry per pkg/errors Code plus the canonical gRPC
+// code names — NOT a per-endpoint dictionary. Anything we don't
+// recognize is passed through untouched rather than mangled.
+const STATUS_SENTENCES: Record<string, string> = {
+  // pkg/errors codes
+  INVALID_ARGUMENT: 'That request was rejected as invalid.',
+  NOT_FOUND: "We couldn't find that — it may have been moved or deleted.",
+  ALREADY_EXISTS: 'That already exists.',
+  FORBIDDEN: "You don't have permission to do that.",
+  UNAUTHORIZED: 'Your session has expired — sign in again.',
+  CONFLICT: 'Someone else changed this first — reload and try again.',
+  LEGAL_HOLD: 'This document is under legal hold and cannot be changed.',
+  RECORD_DECLARED: 'This document is a declared record — it stays immutable until disposition.',
+  WORM_LOCKED: 'This document is locked until its retention date.',
+  REGION_VIOLATION: 'That would move data outside its pinned region.',
+  RATE_LIMITED: 'Too many requests — try again in a moment.',
+  INTERNAL: 'Something went wrong on the server.',
+  // canonical gRPC code names (grpc-gateway / non-domain errors)
+  PERMISSION_DENIED: "You don't have permission to do that.",
+  UNAUTHENTICATED: 'Your session has expired — sign in again.',
+  FAILED_PRECONDITION: "That isn't allowed in this item's current state.",
+  ABORTED: 'Someone else changed this first — reload and try again.',
+  RESOURCE_EXHAUSTED: 'Too many requests — try again in a moment.',
+  DEADLINE_EXCEEDED: 'The server took too long to respond — try again.',
+  UNAVAILABLE: 'That service is temporarily unavailable — try again.',
+  UNIMPLEMENTED: "That isn't supported yet.",
+  OUT_OF_RANGE: 'That value is out of range.',
+  CANCELLED: 'The request was cancelled.',
+  UNKNOWN: 'Something went wrong on the server.',
+  DATA_LOSS: 'Something went wrong on the server.',
+}
+
+// The validation messages pkg/errors emits are terse field-level
+// fragments ("required", "not a uuid"). Appending them to the sentence
+// above reads worse than replacing it, so the handful that are truly
+// generic (not endpoint-specific) get their own sentence.
+const TERSE_DETAIL_SENTENCES: Record<string, string> = {
+  required: 'A required value was missing.',
+  'not a uuid': "That identifier isn't valid.",
+  'invalid uuid': "That identifier isn't valid.",
+  'malformed cursor': 'That page link is no longer valid — reload the list.',
+}
+
+const STATUS_PREFIX_RE = /^([A-Z][A-Z0-9_]{2,}):\s*(.*)$/s
+
+/** Rewrite a "<STATUS_CODE>: <detail>" backend string as a human
+ *  sentence. Strings that don't carry a status prefix — or carry one we
+ *  don't know — come back unchanged. */
+export function humanizeStatusMessage(raw: string): string {
+  const m = STATUS_PREFIX_RE.exec(raw.trim())
+  if (!m) return raw
+  const [, code, rest] = m
+  const sentence = STATUS_SENTENCES[code]
+  if (!sentence) return raw
+  const detail = rest.trim()
+  const terse = TERSE_DETAIL_SENTENCES[detail.toLowerCase()]
+  if (terse) return terse
+  // A detail that is itself a sentence carries more information than
+  // the generic lead-in, so prefer it and keep the lead-in as context.
+  if (!detail || detail.toLowerCase() === code.toLowerCase()) return sentence
+  return `${sentence} (${detail})`
+}
+
 // readErrorMessage extracts a human-readable message from an axios
 // error response. Tries the common shapes our backend services emit
 // — { error }, { message }, { detail }, FieldError envelopes — then
-// falls back to the raw status text. Surfaced in toasts so the user
-// (or QA) sees what the server actually rejected, not just "400".
-// Exported so route/component error handlers can stop reaching into
-// `(e as any).response.data.error` chains (Wave 5 pattern 4).
+// falls back to the raw status text. Every extracted string is run
+// through humanizeStatusMessage so a raw gRPC/domain status code never
+// reaches a toast. Surfaced in toasts so the user (or QA) sees what the
+// server actually rejected, not just "400". Exported so route/component
+// error handlers can stop reaching into `(e as any).response.data.error`
+// chains (Wave 5 pattern 4).
 export function readErrorMessage(err: unknown): string | null {
+  const raw = rawErrorMessage(err)
+  return raw === null ? null : humanizeStatusMessage(raw)
+}
+
+function rawErrorMessage(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null
   const data = (err as { response?: { data?: unknown } }).response?.data
   if (typeof data === 'string') return data
@@ -240,6 +321,12 @@ export function readErrorMessage(err: unknown): string | null {
       const ne = d.error as { code?: string; message?: string }
       if (typeof ne.message === 'string') return ne.message
     }
+    // pkg/errors HTTPError envelope: {type: "<CODE>", message: "<detail>"}.
+    // Re-joining them lets humanizeStatusMessage see the code it needs —
+    // reading `message` alone surfaced bare fragments like "required".
+    if (typeof d.type === 'string' && typeof d.message === 'string') {
+      return `${d.type}: ${d.message}`
+    }
     if (typeof d.message === 'string') return d.message
     if (typeof d.detail === 'string') return d.detail
     if (Array.isArray(d.field_errors) && d.field_errors.length > 0) {
@@ -251,6 +338,17 @@ export function readErrorMessage(err: unknown): string | null {
     }
   }
   return null
+}
+
+// toastError — an error toast that collapses duplicates instead of
+// stacking them. sonner keys toasts by id, so reusing an id derived
+// from the message replaces the live toast rather than adding an
+// identical second one. Without this, a page whose queries all fail
+// with the same backend error (e.g. every request against a
+// non-existent workspace id) buried the viewport under a column of
+// identical toasts.
+export function toastError(message: string, options?: Parameters<typeof toast.error>[1]): void {
+  toast.error(message, { id: `err:${message}`, ...options })
 }
 
 // sessionIsDead answers the question a bare 401 can't: did OUR SeDoc
@@ -304,7 +402,7 @@ api.interceptors.response.use(
       const url = error.config?.url ?? ''
       const isAuthProbe = url.startsWith('/auth/')
       if (!isAuthProbe && !(await sessionIsDead())) {
-        toast.error(detail || 'Not authorized for that request.')
+        toastError(detail || 'Not authorized for that request.')
         return Promise.reject(error)
       }
       useAuthStore.getState().logout()
@@ -315,23 +413,23 @@ api.interceptors.response.use(
       // `suppressErrorToast` — a red "Access denied" on page load for
       // a widget the user never asked for reads as breakage.
       if (!(error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast) {
-        toast.error(detail ? `Access denied — ${detail}` : 'Access denied')
+        toastError(detail ? `Access denied — ${detail}` : 'Access denied')
       }
     } else if (status === 402) {
       // ADR 0095 RequireLicenseFeature — feature not in the license.
-      toast.error(detail ?? 'This feature is not included in your license.')
+      toastError(detail ?? 'This feature is not included in your license.')
     } else if (status === 423) {
       // ADR 0095 LicenseWriteGate — grace/expired license locks writes.
-      toast.error(detail ?? 'License expired — writes are locked. Renew to restore write access.')
+      toastError(detail ?? 'License expired — writes are locked. Renew to restore write access.')
     } else if (status === 429) {
-      toast.error('Rate limited — try again in a moment')
+      toastError('Rate limited — try again in a moment')
     } else if (status && status >= 500) {
-      toast.error(detail ? `Server error: ${detail}` : 'Server error — please retry')
+      toastError(detail ? `Server error: ${detail}` : 'Server error — please retry')
     } else if (status === 400 && detail) {
       // Validation errors weren't surfaced before — toast the first
       // field error / message so the user sees what to fix instead
       // of a silent failure.
-      toast.error(detail)
+      toastError(detail)
     }
     return Promise.reject(error)
   },

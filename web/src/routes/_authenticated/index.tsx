@@ -15,6 +15,7 @@ import { getWorkspaces } from '@/api/workspaces'
 import { getUnreadCount, getNotifications } from '@/api/notifications'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import { shortcutLabel } from '@/lib/platform'
 
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
@@ -251,12 +252,16 @@ interface QuickAction {
   href?: string
   action?: 'upload'
   description: string
-  kbd?: string
+  // Bare shortcut key. The Cmd-vs-Ctrl modifier is resolved at render
+  // time from the viewer's platform (lib/platform.ts) — hard-coding ⌘
+  // here told every Windows user the wrong key while the topbar chip
+  // beside it correctly said Ctrl.
+  shortcutKey?: string
 }
 
 const QUICK_ACTIONS: readonly QuickAction[] = [
-  { icon: Search, label: 'Search documents', href: '/search', description: 'Full-text + semantic across the tenant', kbd: '⌘K' },
-  { icon: Sparkles, label: 'Ask the corpus', href: '/ask', description: 'RAG over the documents you can see' },
+  { icon: Search, label: 'Search documents', href: '/search', description: 'Search the words inside your documents, not just their names', shortcutKey: 'K' },
+  { icon: Sparkles, label: 'Ask a question', href: '/ask', description: 'Get answers from the documents you can see' },
   { icon: Upload, label: 'Upload', action: 'upload', description: 'Pick a workspace and drop files in' },
 ]
 
@@ -267,7 +272,7 @@ function QuickActions({
   onUploadClick: () => void
   onUploadDrop: (files: File[]) => void
 }) {
-  const cardBody = ({ icon: Icon, label, description, kbd, action }: QuickAction) => (
+  const cardBody = ({ icon: Icon, label, description, shortcutKey, action }: QuickAction) => (
     <WarmCard
       padded="md"
       className={cn(
@@ -290,9 +295,9 @@ function QuickActions({
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">{label}</p>
-            {kbd && (
+            {shortcutKey && (
               <kbd className="pointer-events-none inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-foreground/70">
-                {kbd}
+                {shortcutLabel(shortcutKey)}
               </kbd>
             )}
           </div>

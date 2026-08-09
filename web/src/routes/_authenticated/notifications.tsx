@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'
-import { formatRelativeTime } from '@/lib/formatters'
+import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
 // Map the event-type taxonomy (dms.{domain}.{action}) onto an icon +
@@ -348,6 +348,9 @@ interface RowProps {
 
 function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
   const { Icon, tint } = typeVisual(n.type)
+  // Never render n.type directly — it's a raw dms.{domain}.{action}
+  // event code.
+  const kind = notificationTypeLabel(n.type)
   // Digest-produced rows carry a `digest.*` type prefix
   // (notification service's flushDigestsOnce in
   // services/notification/internal/service/decide.go).
@@ -399,7 +402,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
             {formatRelativeTime(n.created_at)}
           </time>
           <span aria-hidden>·</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{n.type}</span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{kind}</span>
         </div>
       </div>
 
@@ -424,8 +427,8 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
           className="h-8 w-8 p-0"
           onClick={onSnooze}
           loading={snoozing}
-          title={`Mute "${n.type}" for 1 hour`}
-          aria-label={`Snooze ${n.type} for 1 hour`}
+          title={`Mute "${kind}" notifications for 1 hour`}
+          aria-label={`Snooze ${kind} notifications for 1 hour`}
           data-testid={`notif-snooze-${n.id}`}
         >
           <BellOff className="h-4 w-4" />

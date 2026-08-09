@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Settings as SettingsIcon, Search, FolderOpen, StickyNote } from 'lucide-react'
 
@@ -31,6 +31,7 @@ import { BulkActionBar } from '@/components/documents/BulkActionBar'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { WorkspaceSettingsDialog } from '@/components/workspaces/WorkspaceSettingsDialog'
 import { Button } from '@/components/ui/shadcn/button'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { Input } from '@/components/ui/shadcn/input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ViewModeToggle } from '@/components/ui/ViewModeToggle'
@@ -54,7 +55,21 @@ function WorkspacePage() {
     navigate({ search: (s: Record<string, unknown>) => ({ ...s, folder: folderId ?? undefined }) })
   }
 
-  const ws = useQuery({ queryKey: ['workspace', workspaceId], queryFn: () => getWorkspace(workspaceId), staleTime: 60_000 })
+  const ws = useQuery({
+    queryKey: ['workspace', workspaceId],
+    queryFn: () => getWorkspace(workspaceId),
+    staleTime: 60_000,
+    // A workspace that doesn't exist (or isn't ours) will not start
+    // existing on a retry — retrying only multiplies the error toasts.
+    retry: (failureCount, err) => !isMissingWorkspace(err) && failureCount < 2,
+  })
+  // BUG-07: the workspace query IS this page's identity, and its
+  // failure used to be ignored entirely — /workspaces/<bogus-uuid>
+  // rendered a complete, operable browser (breadcrumb "Workspace",
+  // live New folder + Upload) whose every action then failed with a
+  // raw "INVALID_ARGUMENT: required" toast. Failure is terminal for
+  // the page, so nothing below should render.
+  const wsFailure = workspaceFailureKind(ws.isError ? ws.error : null)
   const { data: foldersData, isLoading: foldersLoading } = useFolders(workspaceId, currentFolderId ?? undefined)
   const folderDetail = useQuery({ queryKey: ['folder', currentFolderId], queryFn: () => getFolder(currentFolderId!), enabled: !!currentFolderId })
   // At the workspace root, list the designated root folder's documents —
@@ -73,7 +88,9 @@ function WorkspacePage() {
       // unfiltered query first would flash the whole workspace's files.
       // A workspace with no root folder shows no root-level files at all
       // (documents cannot exist outside folders).
-      !!currentFolderId || (!foldersLoading && !!rootFolder),
+      // Also skip entirely once the workspace itself is known-bad —
+      // it can only produce another copy of the same error toast.
+      !wsFailure && (!!currentFolderId || (!foldersLoading && !!rootFolder)),
     )
   const { uploadFiles } = useUpload(workspaceId, currentFolderId ?? undefined)
   const qc = useQueryClient()
@@ -406,6 +423,10 @@ function WorkspacePage() {
     fn()
   }
 
+  // Terminal states. Placed after every hook so the hook order never
+  // depends on the query outcome.
+  if (wsFailure) return <WorkspaceUnavailable kind={wsFailure} />
+
   const loadingTiles = (n: number) =>
     Array.from({ length: n }).map((_, i) => (
       <Skeleton key={i} className={viewMode === 'grid' ? 'h-[152px] rounded-2xl' : 'h-11 rounded-xl'} />
@@ -707,6 +728,57 @@ function WorkspacePage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ---- workspace-unavailable handling (BUG-07) -----------------------
+
+export type WorkspaceFailureKind = 'not-found' | 'forbidden'
+
+/** 400 covers the invalid-uuid case: the backend rejects a malformed
+ *  workspace id with INVALID_ARGUMENT long before it looks anything up,
+ *  which for a URL the user opened means exactly "no such workspace". */
+function isMissingWorkspace(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status
+  return status === 400 || status === 403 || status === 404
+}
+
+export function workspaceFailureKind(err: unknown): WorkspaceFailureKind | null {
+  if (!err) return null
+  const status = (err as { response?: { status?: number } }).response?.status
+  if (status === 403) return 'forbidden'
+  if (status === 400 || status === 404) return 'not-found'
+  // Anything else (5xx, network) is transient — keep rendering the page
+  // so its own retry/refetch paths still apply.
+  return null
+}
+
+/** Replaces the whole browser when the workspace can't be opened, so
+ *  there is no New folder / Upload / New note affordance left to click.
+ *  Reuses EmptyState (the app's standard nothing-here surface) rather
+ *  than inventing a second 404 look. */
+export function WorkspaceUnavailable({ kind }: { kind: WorkspaceFailureKind }) {
+  const forbidden = kind === 'forbidden'
+  return (
+    <div
+      className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-border bg-card shadow-sm"
+      data-testid={forbidden ? 'workspace-forbidden' : 'workspace-not-found'}
+    >
+      <EmptyState
+        icon={<FolderOpen className="h-6 w-6" />}
+        title={forbidden ? "You don't have access to this workspace" : 'Workspace not found'}
+        description={
+          forbidden
+            ? 'Ask a workspace owner or an administrator to add you, then reopen this link.'
+            : "This workspace doesn't exist, or it was deleted. The link may be stale or mistyped."
+        }
+        action={
+          <Button asChild>
+            <Link to="/workspaces">Back to workspaces</Link>
+          </Button>
+        }
+      />
     </div>
   )
 }

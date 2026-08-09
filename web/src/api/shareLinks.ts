@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { api } from './client'
 import type { Document } from '@/types/api'
 
@@ -57,13 +58,23 @@ export async function deleteShareLink(linkId: string) {
 // otherwise the full document + download URL. Pass a password to
 // verify; a wrong password still returns 200 with password_required=true
 // (server-side: backend does not leak existence-vs-wrong-password).
+//
+// Deliberately a BARE axios call rather than the shared `api` instance.
+// The share link is the entitlement — the endpoint is anonymous by
+// design (deploy/gateway/routes.yaml lists /api/v1/shared as an
+// unauthenticated route class), so none of the `api` interceptor's
+// session behaviour applies. Riding `api` meant a dud token produced
+// two failures at once: the page's own error panel AND the interceptor's
+// "Not authorized for that request." toast — and for a genuinely
+// anonymous visitor it went further and hard-redirected them to /login.
 export async function accessShareLink(
   token: string,
   password?: string,
 ): Promise<ShareLinkAccessResult> {
-  const { data } = await api.post<ShareLinkAccessResult>(
-    `/shared/${token}`,
+  const { data } = await axios.post<ShareLinkAccessResult>(
+    `/api/v1/shared/${token}`,
     password ? { password } : {},
+    { withCredentials: true },
   )
   return data
 }

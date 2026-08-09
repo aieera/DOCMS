@@ -35,11 +35,20 @@ export function LanguageSelector() {
   const { i18n, t } = useTranslation('common')
   const updateUser = useAuthStore((s) => s.updateUser)
   const isAuthed   = useAuthStore((s) => s.isAuthenticated)
-  // i18n.language may include a region tag (e.g. 'en-US'); the
-  // select keys on the base language. resolvedLanguage is the i18next
-  // helper that strips regions for us, but it can be undefined
-  // during the brief window before init resolves.
-  const current = (i18n.resolvedLanguage ?? 'en') as SupportedLocale
+  // i18n.language may include a region tag (e.g. 'en-US'); the select
+  // keys on the base language. resolvedLanguage strips the region for
+  // us but is NOT always populated — it stays undefined on init paths
+  // that never run a changeLanguage. Falling straight through to 'en'
+  // there made the picker disagree with the rest of the app (which
+  // derives direction from i18n.language — see hooks/useDirection): the
+  // UI rendered Arabic RTL while the trigger read "English" and the
+  // active locale lost its checkmark. Mirror useDirection's resolution
+  // order, then keep the value inside the supported set so Radix always
+  // has a matching item.
+  const detected = (i18n.resolvedLanguage ?? i18n.language ?? 'en').split('-')[0]
+  const current = (
+    SUPPORTED_LOCALES.includes(detected as SupportedLocale) ? detected : 'en'
+  ) as SupportedLocale
 
   const onChange = async (val: string) => {
     const locale = val as SupportedLocale

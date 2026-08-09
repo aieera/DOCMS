@@ -22,7 +22,7 @@ function LoadTestsPage() {
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
         title="Load test history"
-        description="Blueprint §16 sign-off runs. Each entry is a campaign with full ramp/hold/burst/cool protocol against 100 tenants × 1M docs. Add a new run by following docs/load-tests/RUNBOOK.md — the index here regenerates at build time."
+        description="Release sign-off runs. Each entry is a campaign with full ramp/hold/burst/cool protocol against 100 tenants × 1M docs. Add a new run by following docs/load-tests/RUNBOOK.md — the index here regenerates at build time."
       />
 
       {REPORTS.length === 0 ? <EmptyState /> : (
@@ -69,7 +69,7 @@ function EmptyState() {
       <Activity className="h-10 w-10 text-muted-foreground" />
       <h2 className="text-base font-semibold">No campaigns recorded yet</h2>
       <p className="max-w-md text-sm text-muted-foreground">
-        §16 sign-off requires a populated summary in
+        Sign-off requires a populated summary in
         <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs">docs/load-tests/&lt;YYYY-MM-DD&gt;/summary.md</code>.
         Follow the runbook at <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs">docs/load-tests/RUNBOOK.md</code>,
         then rebuild the frontend — the list regenerates from the repo at build time.
@@ -107,7 +107,7 @@ function ReportDetail({ report }: { report: LoadTestReport }) {
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 p-2 text-xs dark:bg-amber-950/20">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
           <span>
-            Verdict is "pending" — this campaign has not been finalised. A buyer-facing report MUST have every §16 SLO row filled in and the verdict flipped to <code>passed</code> or <code>failed</code> before it counts.
+            Verdict is "pending" — this campaign has not been finalised. A buyer-facing report MUST have every SLO row filled in and the verdict flipped to <code>passed</code> or <code>failed</code> before it counts.
           </span>
         </div>
       )}

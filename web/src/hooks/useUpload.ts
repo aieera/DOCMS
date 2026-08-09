@@ -8,6 +8,7 @@ import { findRootFolder } from '@/lib/rootFolder'
 import { sendFilingFeedback } from '@/api/predictiveFiling'
 import { sha256HexOfFile } from '@/lib/hash'
 import { randomId } from '@/lib/id'
+import { invalidateDocuments, invalidateNotifications } from './queryInvalidation'
 import type { FilingDecision } from '@/components/documents/FilingSuggestionPanel'
 import { toast } from 'sonner'
 
@@ -68,6 +69,26 @@ export function preflightFile(file: File): string | null {
 export function useUpload(workspaceId?: string, folderId?: string) {
   const { addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision } = useUploadStore()
   const qc = useQueryClient()
+
+  // Everything a completed upload makes stale, in one place — the two
+  // completion paths (dedup hit and full PUT) had drifted into two
+  // near-identical copies of this block.
+  //
+  // invalidateDocuments covers the document lists (bare ['documents']
+  // is the only prefix that also reaches ['documents','infinite',…]),
+  // the per-folder document_count / child_folder_count on the folder
+  // cards, the breadcrumb's current-folder detail, and the workspace
+  // summary at the top of the page.
+  //
+  // BUG-10: the notification surfaces were missing. The backend emits
+  // a document.uploaded notification, so the topbar/dashboard unread
+  // badge and the dashboard's Recent activity list are both stale the
+  // moment an upload lands — that is exactly the reported "badge stuck
+  // at 17 until a full reload, then 18".
+  const refreshAfterUpload = useCallback(async () => {
+    await invalidateDocuments(qc, { workspaceId, folderId })
+    await invalidateNotifications(qc)
+  }, [qc, workspaceId, folderId])
 
   // ADR 0102 — optional per-file filing decisions from
   // UploadReviewDialog. Same length & index as `files` when supplied;
@@ -232,22 +253,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
           }
           setStatus(id, 'completed')
           toast.success(`${file.name} — deduplicated, no upload needed`)
-          // Bare ['documents'] on purpose: the folder browser reads from
-        // ['documents', 'infinite', wsId, …], which ['documents', wsId]
-        // does NOT prefix-match — that near-miss kept freshly uploaded
-        // files invisible until an unrelated refetch (tab refocus).
-        await qc.invalidateQueries({ queryKey: ['documents'] })
-        // BUG: folder card counts went stale after upload. The folders
-        // list query carries per-folder document_count + child_folder_count
-        // and was never invalidated, so the card grid kept showing "00
-        // items" until a manual reload. Also refresh the current-folder
-        // detail (breadcrumb count) and the workspace summary at the
-        // top of the page.
-        await qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
-        await qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
-        if (folderId) {
-          await qc.invalidateQueries({ queryKey: ['folder', folderId] })
-        }
+          await refreshAfterUpload()
           onComplete?.(file, doc.id)
           continue
         }
@@ -279,22 +285,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
 
         setStatus(id, 'completed')
         toast.success(`${file.name} uploaded`)
-        // Bare ['documents'] on purpose: the folder browser reads from
-        // ['documents', 'infinite', wsId, …], which ['documents', wsId]
-        // does NOT prefix-match — that near-miss kept freshly uploaded
-        // files invisible until an unrelated refetch (tab refocus).
-        await qc.invalidateQueries({ queryKey: ['documents'] })
-        // BUG: folder card counts went stale after upload. The folders
-        // list query carries per-folder document_count + child_folder_count
-        // and was never invalidated, so the card grid kept showing "00
-        // items" until a manual reload. Also refresh the current-folder
-        // detail (breadcrumb count) and the workspace summary at the
-        // top of the page.
-        await qc.invalidateQueries({ queryKey: ['folders', workspaceId] })
-        await qc.invalidateQueries({ queryKey: ['workspace', workspaceId] })
-        if (folderId) {
-          await qc.invalidateQueries({ queryKey: ['folder', folderId] })
-        }
+        await refreshAfterUpload()
         onComplete?.(file, doc.id)
 
         // ADR 0102 — record the filing decision for the training
@@ -355,7 +346,7 @@ export function useUpload(workspaceId?: string, folderId?: string) {
         toast.error(`${file.name} — ${detail}`)
       }
     }
-  }, [workspaceId, folderId, addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision, qc])
+  }, [workspaceId, folderId, addUpload, updateProgress, setStatus, removeUpload, requestDuplicateDecision, refreshAfterUpload])
 
   return { uploadFiles }
 }

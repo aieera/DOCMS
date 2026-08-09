@@ -82,7 +82,7 @@ export function WorkspaceAISettingsSection({ workspaceId }: { workspaceId: strin
         <div>
           <div className="text-sm font-medium">Enable Ask in this workspace</div>
           <div className="text-xs text-muted-foreground">
-            When off, the Ask page (RAG) rejects with 403 for this workspace.
+            When off, this workspace's documents can't be used to answer questions on the Ask page.
           </div>
         </div>
         <input
