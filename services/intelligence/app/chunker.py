@@ -264,7 +264,17 @@ def build_payload(
     """Spec-shaped Qdrant payload. tenant_id is mandatory and every
     search query MUST filter on it to enforce isolation. ADR 0080
     additions: section_path + page_number ride along so retrieval
-    can return precise citations without a second fetch."""
+    can return precise citations without a second fetch.
+
+    Two text fields, deliberately:
+      `text`          — the FULL chunk body. RAG retrieval feeds this to
+                        the model. It used to be capped at 500 chars,
+                        which silently truncated every chunk to ~25% of
+                        its content and starved Doc Q&A prompts down to a
+                        few hundred input tokens (BUG-11).
+      `text_snippet`  — 500-char preview for search-hit / citation
+                        rendering, where the full body is wasted bytes.
+    """
     if not tenant_id:
         raise ValueError("tenant_id is required for embed payload")
     payload = {
@@ -275,7 +285,8 @@ def build_payload(
         "start_char": start_char,
         "end_char": end_char,
         "token_count": token_count,
-        "text": text_snippet[:500],
+        "text": text_snippet,
+        "text_snippet": text_snippet[:500],
         "readable_by": readable_by or ["everyone"],
     }
     if section_path:

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import statistics
 import time
@@ -243,9 +244,16 @@ def _language_score(text: str) -> float:
 
 
 def _line_regularity_score(boxes: list) -> float | None:
-    """Boxes is the bounding_boxes JSONB. We expect each entry to have
-    a `bbox` of [x0, y0, x1, y1] or a height field. Returns None when
-    the engine didn't supply enough boxes to compute regularity."""
+    """Boxes is the bounding_boxes JSONB. Returns None when the engine
+    didn't supply enough boxes to compute regularity.
+
+    Three accepted shapes, because that is what actually lands in the
+    column: `{"bbox": [x0,y0,x1,y1]}` / `{"height": h}` (the shapes this
+    function was written for) and `{"x1","y1","x2","y2"}` — which is what
+    every engine in app/models/ocr_model.py emits and app/tasks/ocr.py
+    persists. Without the third shape line_regularity was ALWAYS None in
+    production, so a fifth of the composite weight silently vanished.
+    """
     heights: list[float] = []
     for b in boxes or []:
         if isinstance(b, dict):
@@ -253,6 +261,14 @@ def _line_regularity_score(boxes: list) -> float | None:
             if isinstance(bbox, list) and len(bbox) == 4:
                 try:
                     h = float(bbox[3]) - float(bbox[1])
+                    if h > 0:
+                        heights.append(h)
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            if b.get("y1") is not None and b.get("y2") is not None:
+                try:
+                    h = float(b["y2"]) - float(b["y1"])
                     if h > 0:
                         heights.append(h)
                         continue
@@ -276,13 +292,23 @@ def _score_page(page: dict, cfg: dict) -> dict:
     char_count = len(text)
     word_count = len(text.split())
 
-    # char_confidence: trust engine when > 0; treat 0.0 as "missing" so
-    # we re-normalise weights instead of penalising unfairly.
+    # char_confidence: trust engine when > 0; treat 0.0 / non-finite as
+    # "missing" so we re-normalise weights instead of penalising
+    # unfairly. `ocr_results.confidence` is NOT NULL DEFAULT 0.0, so 0.0
+    # is the only way the OCR row can say "the engine reported nothing" —
+    # which is why a stored 0.0 must NEVER be surfaced as a real
+    # "0.0 % char confidence". Missing stays NULL all the way out to the
+    # API, and the page carries a `confidence_unavailable` issue so the
+    # UI has a positive signal to render "not available" (BUG-16).
     raw_conf = page.get("confidence")
-    if raw_conf is None or raw_conf <= 0.0:
+    try:
+        conf_value = float(raw_conf) if raw_conf is not None else None
+    except (TypeError, ValueError):
+        conf_value = None
+    if conf_value is None or not math.isfinite(conf_value) or conf_value <= 0.0:
         char_conf = None
     else:
-        char_conf = max(0.0, min(1.0, float(raw_conf)))
+        char_conf = max(0.0, min(1.0, conf_value))
 
     word_density   = _word_density_score(word_count)
     line_reg       = _line_regularity_score(page.get("bounding_boxes") or [])
@@ -307,7 +333,13 @@ def _score_page(page: dict, cfg: dict) -> dict:
     composite = max(0.0, min(1.0, round(composite, 4)))
 
     issues = []
-    if char_conf is not None and char_conf < LOW_CONFIDENCE_AT:
+    if char_conf is None:
+        # Distinguishes "engine reported nothing" from "engine reported a
+        # bad number". Both the header grade and the page row read this
+        # one scored row, so the two can no longer disagree about whether
+        # a confidence exists.
+        issues.append("confidence_unavailable")
+    elif char_conf < LOW_CONFIDENCE_AT:
         issues.append("low_confidence")
     if word_density < SPARSE_TEXT_AT:
         issues.append("sparse_text")

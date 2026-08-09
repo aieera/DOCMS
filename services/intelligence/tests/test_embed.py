@@ -112,7 +112,12 @@ class TestPayloadShape:
                 readable_by=None,
             )
 
-    def test_text_is_truncated(self) -> None:
+    def test_snippet_is_truncated_but_body_is_not(self) -> None:
+        """`text_snippet` is the render-only preview; `text` is what RAG
+        feeds the model and MUST stay complete. Capping `text` at 500
+        chars truncated every chunk to ~25% of its content and starved
+        Doc Q&A prompts down to a few hundred input tokens (BUG-11)."""
+        body = "x" * 10000
         p = build_payload(
             tenant_id="t",
             document_id="d",
@@ -121,10 +126,11 @@ class TestPayloadShape:
             start_char=0,
             end_char=10000,
             token_count=10,
-            text_snippet="x" * 10000,
+            text_snippet=body,
             readable_by=None,
         )
-        assert len(p["text"]) <= 500
+        assert len(p["text_snippet"]) <= 500
+        assert p["text"] == body
 
     def test_readable_by_default(self) -> None:
         p = build_payload(

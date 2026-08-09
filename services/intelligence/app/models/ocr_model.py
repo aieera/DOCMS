@@ -2,6 +2,8 @@
 TrOCR (handwriting / ICR)."""
 from __future__ import annotations
 import logging
+import math
+import threading
 
 from app.config import settings
 
@@ -12,6 +14,31 @@ _surya_rec = None
 _paddle = None
 _trocr = None
 
+# Loaders are called from Celery tasks AND (when ocr_preload_models is on)
+# from a worker-startup thread. Without this the check-then-set on the
+# module globals can load Surya twice, doubling ~2 GB of weights.
+_load_lock = threading.RLock()
+
+
+def mean_confidence(values) -> float:
+    """Mean of the finite confidences in `values`, 0.0 when there are none.
+
+    Surya's per-line score is `sum(scores)/count(scores != 0)`, which is
+    NaN for a detected region that decoded to no tokens (blank line,
+    rule, stamp). A single NaN used to poison the whole page average via
+    `sum(confidences)/len(confidences)`, so a perfectly-good page was
+    persisted with confidence 0.0 while its text and composite quality
+    score were fine — that is the "OCR: Good" + "0.0 % char conf"
+    contradiction in BUG-16. Drop the non-finite entries instead.
+    """
+    finite = [
+        float(v) for v in values
+        if isinstance(v, (int, float)) and math.isfinite(float(v))
+    ]
+    if not finite:
+        return 0.0
+    return sum(finite) / len(finite)
+
 # Map our language codes to a PaddleOCR `lang` value. Paddle takes a single
 # language; for the ar+en mix we OCR with Surya, the fallback just needs latin.
 _PADDLE_LANG = {"en": "en", "ar": "arabic", "fr": "fr", "de": "german", "es": "es"}
@@ -19,10 +46,11 @@ _PADDLE_LANG = {"en": "en", "ar": "arabic", "fr": "fr", "de": "german", "es": "e
 
 def load_paddle(lang: str = "en"):
     global _paddle
-    if _paddle is None:
-        from paddleocr import PaddleOCR
-        log.info("loading PaddleOCR models (lang=%s)", lang)
-        _paddle = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
+    with _load_lock:
+        if _paddle is None:
+            from paddleocr import PaddleOCR
+            log.info("loading PaddleOCR models (lang=%s)", lang)
+            _paddle = PaddleOCR(use_angle_cls=True, lang=lang, show_log=False)
     return _paddle
 
 
@@ -63,7 +91,7 @@ def paddle_ocr_page(image, languages: list[str] | None = None) -> dict | None:
             "x1": min(xs), "y1": min(ys), "x2": max(xs), "y2": max(ys),
             "text": txt, "confidence": float(conf),
         })
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    avg_conf = mean_confidence(confidences)
     return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}
 
 def load_surya():
@@ -72,13 +100,14 @@ def load_surya():
     # so we alias them locally to keep the call sites readable. (Pre-0.4
     # exported load_det_model/load_rec_model directly.)
     global _surya_det, _surya_rec
-    if _surya_det is None:
-        from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
-        from surya.model.recognition.model import load_model as load_rec_model
-        from surya.model.recognition.processor import load_processor as load_rec_processor
-        log.info("loading surya OCR models")
-        _surya_det = load_det_model(), load_det_processor()
-        _surya_rec = load_rec_model(), load_rec_processor()
+    with _load_lock:
+        if _surya_det is None:
+            from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
+            from surya.model.recognition.model import load_model as load_rec_model
+            from surya.model.recognition.processor import load_processor as load_rec_processor
+            log.info("loading surya OCR models")
+            _surya_det = load_det_model(), load_det_processor()
+            _surya_rec = load_rec_model(), load_rec_processor()
     return _surya_det, _surya_rec
 
 def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
@@ -113,7 +142,7 @@ def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
             "x2": bbox[2], "y2": bbox[3],
             "text": text, "confidence": conf,
         })
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    avg_conf = mean_confidence(confidences)
     return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}
 
 
@@ -129,14 +158,15 @@ def surya_ocr_page(image, languages: list[str] | None = None) -> dict:
 
 def load_trocr():
     global _trocr
-    if _trocr is None:
-        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-        name = settings.ocr_trocr_model
-        log.info("loading TrOCR handwriting model (%s)", name)
-        proc = TrOCRProcessor.from_pretrained(name)
-        model = VisionEncoderDecoderModel.from_pretrained(name)
-        model.eval()
-        _trocr = (proc, model)
+    with _load_lock:
+        if _trocr is None:
+            from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+            name = settings.ocr_trocr_model
+            log.info("loading TrOCR handwriting model (%s)", name)
+            proc = TrOCRProcessor.from_pretrained(name)
+            model = VisionEncoderDecoderModel.from_pretrained(name)
+            model.eval()
+            _trocr = (proc, model)
     return _trocr
 
 
@@ -209,5 +239,5 @@ def trocr_ocr_page(image, languages: list[str] | None = None) -> dict:
             "text": text, "confidence": conf,
         })
 
-    avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
+    avg_conf = mean_confidence(confidences)
     return {"text": "\n".join(text_lines), "confidence": avg_conf, "boxes": boxes}

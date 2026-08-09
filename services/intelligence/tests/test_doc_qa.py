@@ -66,7 +66,7 @@ def test_stream_ask_emits_citations_then_chunks_then_done():
          mock.patch("app.llm_gateway.stream_completion", new=_stub_llm_stream):
         events = list(stream_ask(
             tenant_id="t1", user_id="u1", user_groups=["g1"],
-            question="What is the answer?", document_id="doc-1",
+            question="What is the answer?", scope="document", scope_id="doc-1",
         ))
 
     types = [e[0] for e in events]
@@ -77,6 +77,7 @@ def test_stream_ask_emits_citations_then_chunks_then_done():
     citations_evt = events[0][1]["citations"]
     assert len(citations_evt) == 1
     c = citations_evt[0]
+    assert c["marker"] == 1
     assert c["chunk_index"] == 7
     assert c["page"] == 3
     assert c["start_char"] == 100
@@ -96,12 +97,15 @@ def test_stream_ask_no_results_returns_friendly_message():
     with mock.patch("app.tasks.rag._retrieve", return_value=[]):
         events = list(stream_ask(
             tenant_id="t1", user_id="u1", user_groups=["g1"],
-            question="Q?", document_id="doc-1",
+            question="Q?", scope="document", scope_id="doc-1",
         ))
     types = [e[0] for e in events]
     assert types == ["citations", "chunk", "done"]
     chunk_text = events[1][1]["text"]
     assert "couldn't find" in chunk_text.lower()
+    # "found nothing" and a citation list can never ship together.
+    assert events[0][1]["citations"] == []
+    assert events[-1][1]["citations"] == []
     # No LLM was invoked (no tokens charged).
     assert events[-1][1]["output_tokens"] == 0
 
@@ -116,7 +120,7 @@ def test_stream_ask_passes_document_scope_to_retrieve():
     with mock.patch("app.tasks.rag._retrieve", side_effect=capture):
         list(stream_ask(
             tenant_id="t1", user_id="u1", user_groups=[],
-            question="q", document_id="doc-xyz",
+            question="q", scope="document", scope_id="doc-xyz",
         ))
     assert captured["scope"] == "document"
     assert captured["scope_id"] == "doc-xyz"

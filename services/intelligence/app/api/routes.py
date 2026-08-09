@@ -301,7 +301,12 @@ async def qa_stream_endpoint(
             tenant_id=tenant, conversation_id=conv_id,
             role="assistant",
             content=last_done.get("full_text") or "",
-            citations=last_done.get("citations") or last_citations,
+            # `done` is authoritative, INCLUDING an explicit empty list:
+            # stream_ask empties the citations when the answer says it
+            # found nothing, and `or last_citations` would have resurrected
+            # the pre-generation list and re-created the contradiction on
+            # every reload of the thread (BUG-11).
+            citations=last_done.get("citations", last_citations),
             model_used=last_done.get("model"),
             tokens_used=last_done.get("output_tokens"),
         )
@@ -356,7 +361,10 @@ async def qa_sync_endpoint(
                 out["full_text"] += payload.get("text") or ""
             elif etype == "done":
                 out["full_text"] = payload.get("full_text") or out["full_text"]
-                out["citations"] = payload.get("citations") or out["citations"]
+                # Key presence, not truthiness — an empty list from `done`
+                # is the "answer found nothing, show no chips" signal and
+                # must not fall back to the pre-generation list (BUG-11).
+                out["citations"] = payload.get("citations", out["citations"])
                 out["model"] = payload.get("model", "")
                 out["input_tokens"] = payload.get("input_tokens", 0)
                 out["output_tokens"] = payload.get("output_tokens", 0)

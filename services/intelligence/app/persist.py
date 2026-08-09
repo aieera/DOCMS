@@ -55,6 +55,73 @@ async def upsert_classification(
             )
 
 
+# A human correction writes classification_confidence = 1.0 (see
+# services/document/internal/service/classify_correction_service.go). Any
+# document at or above this is human-owned and automation must not touch it.
+HUMAN_CONFIDENCE = 1.0
+
+
+async def apply_document_class(
+    *,
+    tenant_id: str,
+    document_id: str,
+    version_id: str,
+    category_key: str,
+    confidence: float,
+) -> bool:
+    """Write a high-confidence classification onto `documents.document_class`.
+
+    Until this existed the classify pipeline only ever wrote
+    `document_classifications`; nothing propagated the result to the
+    document row, so `documents.document_class` stayed '' forever and every
+    document rendered as "Unclassified" / grouped under "(uncategorized)"
+    no matter how confident the classifier was (BUG-30).
+
+    Never overwrites a label a person owns. The UPDATE only fires when the
+    document is still unclassified, or when its current label is exactly
+    the one automation last wrote for an *earlier* version (so a re-upload
+    can correct a stale auto-label), and never when
+    classification_confidence has been pinned to 1.0 by a human correction.
+
+    Returns True when a row was updated.
+    """
+    if not category_key:
+        return False
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, true)", tenant_id
+            )
+            prev = await conn.fetchval(
+                """
+                SELECT category_key
+                  FROM document_classifications
+                 WHERE tenant_id = $1 AND document_id = $2 AND version_id <> $3
+                 ORDER BY classified_at DESC
+                 LIMIT 1
+                """,
+                tenant_id, document_id, version_id,
+            )
+            tag = await conn.execute(
+                """
+                UPDATE documents
+                   SET document_class = $3,
+                       classification_confidence = $4,
+                       updated_at = now()
+                 WHERE tenant_id = $1
+                   AND id = $2
+                   AND deleted_at IS NULL
+                   AND classification_confidence < $5
+                   AND (COALESCE(document_class, '') = ''
+                        OR ($6::text IS NOT NULL AND document_class = $6))
+                """,
+                tenant_id, document_id, category_key, float(confidence),
+                HUMAN_CONFIDENCE, prev,
+            )
+    return tag.endswith(" 1")
+
+
 async def load_ocr_text(*, tenant_id: str, version_id: str) -> str:
     """Concatenate a version's OCR pages back into one document string,
     in page order. Returns "" when no OCR rows exist yet."""

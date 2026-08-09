@@ -1,6 +1,15 @@
 from __future__ import annotations
+import logging
+import threading
+
 from celery import Celery
+from celery.signals import worker_ready
+
 from app.config import settings
+
+log = logging.getLogger(__name__)
+
+OCR_QUEUE = "intelligence-ocr"
 
 celery_app = Celery(
     "vaultdms-intelligence",
@@ -57,3 +66,43 @@ celery_app.conf.update(
         "app.tasks.rag.*": {"queue": "intelligence-rag"},
     },
 )
+
+
+def _consumes_ocr_queue() -> bool:
+    """True when this worker was started with the OCR queue selected.
+
+    `-Q` narrows `app.amqp.queues` to the selected set, so the misc worker
+    (which deliberately excludes `intelligence-ocr` so a 30-minute Surya
+    run can't block classify/embed) never pays the 2 GB model load.
+    """
+    try:
+        return OCR_QUEUE in set(celery_app.amqp.queues)
+    except Exception:  # noqa: BLE001 — introspection must never block boot
+        log.exception("could not resolve consumed queues; skipping OCR preload")
+        return False
+
+
+def preload_ocr_models() -> None:
+    """Warm the Surya weights so the first document doesn't pay for them.
+
+    Runs on a daemon thread: with --pool=solo the consumer thread must stay
+    free to answer `celery inspect ping` (the container healthcheck) while
+    the ~99s load runs. load_surya() takes a lock, so a task that arrives
+    mid-load simply waits for the same instance instead of loading twice.
+    """
+    try:
+        from app.models.ocr_model import load_surya
+        log.info("preloading surya OCR models at worker startup")
+        load_surya()
+        log.info("surya OCR models preloaded")
+    except Exception:  # noqa: BLE001 — a failed warm-up must not kill the worker
+        log.exception("OCR model preload failed; falling back to lazy load")
+
+
+@worker_ready.connect
+def _warm_models(**_kwargs) -> None:
+    if not settings.ocr_preload_models or not _consumes_ocr_queue():
+        return
+    threading.Thread(
+        target=preload_ocr_models, name="ocr-model-preload", daemon=True,
+    ).start()

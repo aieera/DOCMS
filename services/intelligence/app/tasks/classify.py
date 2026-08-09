@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ from app.metrics import (
     classify_duration_seconds,
     classify_method_total,
 )
-from app.persist import upsert_classification
+from app.persist import apply_document_class, upsert_classification
 from app.worker import celery_app
 from app.events.subjects import CLASSIFY_COMPLETED_SUBJECT
 
@@ -74,21 +75,47 @@ def _tier1_rules(text: str) -> tuple[str, float, list[dict]]:
     return top, min(top_score / 10.0, 0.99), top3
 
 
-def _tier2_ml(text: str, tenant_id: str = "") -> tuple[str, float, str]:
+# transformers gives a model with no id2label mapping the placeholder
+# labels LABEL_0, LABEL_1, ... The configured default classifier
+# (`distilbert-base-uncased`) is a BASE checkpoint: its sequence
+# classification head is randomly initialised, so it emits exactly these
+# placeholders with meaningless ~0.5 confidences. Persisting that as a
+# document category produced garbage classes like "label_0" and, worse,
+# out-scored the rule tier. Treat a placeholder label as "tier-2 has no
+# trained model" so the pipeline falls through to the LLM tier.
+_PLACEHOLDER_LABEL_RE = re.compile(r"^label[_-]?\d+$", re.IGNORECASE)
+
+
+def _is_untrained_label(label: str) -> bool:
+    return bool(_PLACEHOLDER_LABEL_RE.match((label or "").strip()))
+
+
+def _tier2_ml(text: str, tenant_id: str = "") -> tuple[str, float, str] | None:
     """Tier-2 classifier. ADR 0060 — when a tenant has a production
     fine-tuned model, use it; otherwise fall through to the default
-    classifier so behaviour is unchanged for opt-out tenants."""
+    classifier so behaviour is unchanged for opt-out tenants.
+
+    Returns None when no usable trained classifier is available (see
+    `_is_untrained_label`), so the caller skips the tier entirely instead
+    of adopting a placeholder label.
+    """
     if tenant_id:
         try:
             from app.tenant_classifier import classify_with_tenant_model
             cls, conf, model_tag = classify_with_tenant_model(tenant_id, text)
-            if cls is not None:
+            if cls is not None and not _is_untrained_label(cls):
                 return cls, conf, model_tag
         except Exception:
             log.exception("tenant model load failed; falling back to default")
     from app.models.classifier import classify
     cls, conf = classify(text)
-    return cls, conf, "distilbert-base-uncased"
+    if _is_untrained_label(cls):
+        log.debug(
+            "tier2 ML returned placeholder label %r (%s is an untrained base "
+            "checkpoint) — skipping tier", cls, settings.classifier_model,
+        )
+        return None
+    return cls, conf, settings.classifier_model
 
 
 def _tier3_llm(text: str, tenant_id: str) -> tuple[str, float, str, str]:
@@ -128,6 +155,7 @@ def _build_completed_envelope(
     model_version: str,
     top3: list[dict],
     correlation_id: str,
+    auto_applied: bool = False,
 ) -> dict:
     return {
         "specversion": "1.0",
@@ -149,6 +177,10 @@ def _build_completed_envelope(
             "model_version": model_version,
             "top_3_categories": top3,
             "document_class": category,  # back-compat alias
+            # True when the result cleared classify_auto_apply_threshold
+            # AND was written onto documents.document_class. False means
+            # "suggestion only — the document is still unclassified".
+            "auto_applied": auto_applied,
         },
     }
 
@@ -191,9 +223,11 @@ def classify_document(
 
         if conf < 0.85:
             try:
-                ml_cls, ml_conf, ml_version = _tier2_ml(text, tenant_id)
-                if ml_conf > conf:
-                    cls, conf, method, model_version = ml_cls, ml_conf, "ml", ml_version
+                tier2 = _tier2_ml(text, tenant_id)
+                if tier2 is not None:
+                    ml_cls, ml_conf, ml_version = tier2
+                    if ml_conf > conf:
+                        cls, conf, method, model_version = ml_cls, ml_conf, "ml", ml_version
             except Exception as e:
                 log.warning("tier2 ML failed: %s", e)
 
@@ -219,6 +253,25 @@ def classify_document(
             top3=top3,
         ))
 
+        # Human-in-the-loop by design: below the threshold the row above is
+        # a *suggestion* and the document stays unclassified. At or above
+        # it, promote the result onto the document so the type actually
+        # lands instead of every document reading "Unclassified" (BUG-30).
+        auto_applied = False
+        if conf >= settings.classify_auto_apply_threshold:
+            try:
+                auto_applied = asyncio.run(apply_document_class(
+                    tenant_id=tenant_id,
+                    document_id=document_id,
+                    version_id=version_id,
+                    category_key=cls,
+                    confidence=conf,
+                ))
+            except Exception:
+                # The suggestion is already committed; a failed promotion
+                # must not fail (and retry) the whole classification.
+                log.exception("classify: document_class auto-apply failed")
+
         envelope = _build_completed_envelope(
             tenant_id=tenant_id,
             document_id=document_id,
@@ -229,6 +282,7 @@ def classify_document(
             model_version=model_version,
             top3=top3,
             correlation_id=correlation_id,
+            auto_applied=auto_applied,
         )
         try:
             asyncio.run(publish_cloudevent(
@@ -252,6 +306,7 @@ def classify_document(
                 "category": cls,
                 "confidence": round(conf, 3),
                 "method": method,
+                "auto_applied": auto_applied,
                 "attempt": self.request.retries + 1,
             },
         )
@@ -264,6 +319,7 @@ def classify_document(
             "confidence": round(conf, 3),
             "method": method,
             "model_version": model_version,
+            "auto_applied": auto_applied,
             "processing_time_ms": int((time.monotonic() - start) * 1000),
         }
     except Exception as exc:

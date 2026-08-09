@@ -37,7 +37,12 @@ from app.metrics import (
     ocr_processing_seconds,
     ocr_publish_failed_total,
 )
-from app.models.ocr_model import paddle_ocr_page, surya_ocr_page, trocr_ocr_page
+from app.models.ocr_model import (
+    mean_confidence,
+    paddle_ocr_page,
+    surya_ocr_page,
+    trocr_ocr_page,
+)
 from app.worker import celery_app
 from app.events.subjects import OCR_COMPLETED_SUBJECT
 
@@ -355,7 +360,7 @@ def _merge_ocr_results(printed: dict, handwriting: dict) -> dict:
     confs = [b["confidence"] for b in kept if b.get("confidence") is not None]
     return {
         "text": text,
-        "confidence": (sum(confs) / len(confs)) if confs else 0.0,
+        "confidence": mean_confidence(confs),
         "boxes": kept,
     }
 
@@ -693,7 +698,7 @@ def ocr_file(src: str, mime_type: str, language: str = "en",
     total_text = "\n\n".join(p["text"] for p in pages if p["text"])
     if len(total_text.encode("utf-8")) > MAX_FULL_TEXT_BYTES:
         total_text = total_text.encode("utf-8")[:MAX_FULL_TEXT_BYTES].decode("utf-8", errors="ignore")
-    avg_conf = (sum(p["confidence"] for p in pages) / len(pages)) if pages else 0.0
+    avg_conf = mean_confidence(p["confidence"] for p in pages)
     return pages, total_text, engine, avg_conf
 
 

@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     embedding_dim: int = 384
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     classifier_model: str = "distilbert-base-uncased"
+    # Minimum confidence before a classification is written onto
+    # documents.document_class. Below it the result still lands in
+    # document_classifications as a suggestion for human review; the
+    # document stays unclassified. Matches auto_tag's auto_apply_threshold
+    # so "auto-apply" means the same thing across the intelligence surface.
+    #
+    # Do NOT lower this to make dashboards look classified — a wrong
+    # document_class silently changes extraction profiles, routing rules
+    # and retention.
+    classify_auto_apply_threshold: float = 0.85
 
     # Default model used by RAG (Doc Q&A) and other litellm-routed paths
     # when no per-tenant override exists in Redis (llm_config:{tenant_id}).
@@ -83,6 +93,13 @@ class Settings(BaseSettings):
     ocr_trocr_model: str = "microsoft/trocr-base-handwritten"
     ocr_handwriting_autodetect: bool = True
     ocr_handwriting_threshold: float = 0.65
+    # Load the Surya detection + recognition weights when the OCR worker
+    # comes up instead of on the first document. Measured cold-start on a
+    # CPU worker is ~99s, which the first user's upload pays in full and
+    # which dominated a 91.7s end-to-end for a 43 KB image. Preloading
+    # moves it to worker boot. Only workers subscribed to the
+    # `intelligence-ocr` queue preload; set false to restore lazy loading.
+    ocr_preload_models: bool = True
     ocr_page_timeout_seconds: int = 90
     ocr_total_timeout_seconds: int = 1800  # 30 min hard abort
     ocr_max_retries: int = 3
@@ -90,6 +107,15 @@ class Settings(BaseSettings):
     ocr_retry_jitter: float = 0.2
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64
+
+    # RAG retrieval budget. `rag_top_k` chunks survive re-ranking and are
+    # what the model actually sees; `rag_rerank_candidates` is the pool the
+    # cross-encoder scores. 8 x 512-token chunks = ~4k tokens, comfortably
+    # inside rag_context_max_tokens so a sane top-k is never silently
+    # trimmed by the context budget.
+    rag_top_k: int = 8
+    rag_rerank_candidates: int = 20
+    rag_context_max_tokens: int = 6000
 
     # Structured field extraction (Workstream "Activate structured field
     # extraction"). When the per-field regex coverage for a document falls
