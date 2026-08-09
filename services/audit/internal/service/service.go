@@ -488,10 +488,30 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			ctx = auth.SetCorrelationID(ctx, corrID)
 		}
 		if err := s.IngestEvent(ctx, msg.Subject, msg.Data); err != nil {
-			s.log.Error().Err(err).Str("subject", msg.Subject).Msg("audit ingest failed")
-			_ = msg.Nak()
+			// BUG-01 — an ingest failure is evidence loss, so it must be
+			// counted, not just logged. The partition outage that emptied
+			// the audit log produced one of these lines per event for
+			// weeks and nothing on any dashboard moved, because the only
+			// signal was an error log nobody was tailing.
+			//
+			// The message is NAK'd (never acked-and-lost), but a bare Nak
+			// is redelivered immediately, so the consumer's five delivery
+			// attempts burn in milliseconds against a fault — a DB blip,
+			// a missing partition — that needs seconds to clear. Spacing
+			// the redeliveries turns those five attempts into a retry
+			// window of minutes. Delay only; the consumer's MaxDeliver /
+			// AckWait config is untouched.
+			delivered := nakDelayFor(msg)
+			auditIngestTotal.WithLabelValues("error").Inc()
+			auditIngestFailures.WithLabelValues(msg.Subject).Inc()
+			s.log.Error().Err(err).
+				Str("subject", msg.Subject).
+				Dur("nak_delay", delivered).
+				Msg("audit ingest FAILED — event NAK'd for redelivery; it is lost if redelivery is exhausted")
+			_ = msg.NakWithDelay(delivered)
 			return
 		}
+		auditIngestTotal.WithLabelValues("ok").Inc()
 		_ = msg.Ack()
 	}
 	for _, subj := range subjects {
@@ -504,6 +524,32 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 		s.log.Info().Str("subject", subj).Str("durable", durable).Msg("audit subscribed")
 	}
 	return nil
+}
+
+// nakRetryDelays is the redelivery backoff applied to a failed audit
+// ingest, indexed by (delivery attempt - 1). The tail value is reused for
+// any attempt beyond the slice, so the schedule stays defined whatever
+// MaxDeliver is configured to.
+var nakRetryDelays = []time.Duration{
+	2 * time.Second,
+	10 * time.Second,
+	30 * time.Second,
+	2 * time.Minute,
+	5 * time.Minute,
+}
+
+// nakDelayFor picks the redelivery delay for a failed message from its
+// JetStream delivery count. Messages without JetStream metadata (a plain
+// core-NATS message, as in unit tests) get the first delay.
+func nakDelayFor(msg *nats.Msg) time.Duration {
+	attempt := uint64(1)
+	if meta, err := msg.Metadata(); err == nil && meta.NumDelivered > 0 {
+		attempt = meta.NumDelivered
+	}
+	if attempt > uint64(len(nakRetryDelays)) {
+		return nakRetryDelays[len(nakRetryDelays)-1]
+	}
+	return nakRetryDelays[attempt-1]
 }
 
 // ---- internals ------------------------------------------------------------

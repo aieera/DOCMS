@@ -86,6 +86,25 @@ func main() {
 		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
 	})
 
+	// BUG-01 — audit_events is range-partitioned on created_at, and the
+	// only partitions that ever existed were the four the initial
+	// migration hard-coded (through 2026-08-01). Past that bound every
+	// INSERT failed with "no partition of relation found for row" and the
+	// audit log — and with it legal hold, e-discovery, SIEM forwarding,
+	// GDPR/DSR and retention — silently had no data. Migration 000005 adds
+	// a DEFAULT partition so routing can never fail again; this runs the
+	// rolling maintenance that keeps real monthly partitions ahead of the
+	// clock, BEFORE the consumer starts so a booting service never accepts
+	// events against a table with no partition for today.
+	//
+	// Non-fatal: the DEFAULT partition means ingest still captures
+	// everything if a pass fails, and the maintainer retries on its own
+	// (PartitionRetryInterval) — crash-looping the audit service would
+	// drop more evidence than it saves.
+	if err := svc.StartPartitionMaintainer(ctx); err != nil {
+		log.Error(ctx).Err(err).Msg("audit partition maintenance failed at startup; rows will land in the DEFAULT partition until a retry succeeds")
+	}
+
 	if err := svc.StartConsumer(ctx, js); err != nil {
 		log.Fatal(ctx).Err(err).Msg("start consumer")
 	}
@@ -136,7 +155,10 @@ func main() {
 	// at the edge, so audit handlers must read identity from the
 	// SessionAuth-populated ctx instead of headers. SessionAuthOptional
 	// lets sessionless paths (none today on audit) keep working.
-	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux)), ReadHeaderTimeout: 5 * time.Second}
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
+	httpSrv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.HTTPPort), Handler: secHeaders(middleware.RequireGatewaySignature()(middleware.SessionAuthOptional(middleware.SessionAuthConfig{Pool: pool})(mux))), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Info(ctx).Int("port", cfg.HTTPPort).Msg("http listening")
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
