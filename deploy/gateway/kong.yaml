@@ -66,6 +66,49 @@ plugins:
           # them (fail-closed at the preview key check). The in-cluster
           # document→preview call bypasses this gateway.
           - "X-Service-Key"
+  # BUG-08 — browser response hardening at the edge.
+  #
+  # pkg/middleware.SecurityHeaders already stamps these on every response
+  # a backend produces; this block is the safety net for the responses
+  # that never reach a backend at all — Kong's own 404 "no Route matched",
+  # the 429 from the rate-limiting plugin above, and 502/503 when an
+  # upstream is down. Those are just as scriptable as any other response.
+  #
+  # `add` (not `replace`) is deliberate: it only sets a header the
+  # upstream left unset, so the one endpoint that intentionally relaxes
+  # its frame policy — the IRM protected-content stream, which the
+  # protected-viewer route loads in a same-origin <iframe> — keeps its
+  # own X-Frame-Options: SAMEORIGIN.
+  #
+  # Strict-Transport-Security is deliberately ABSENT here. Kong's
+  # listener in this stack is plain HTTP (KONG_PROXY_LISTEN 0.0.0.0:8080)
+  # and TLS terminates in front of it, so Kong cannot tell whether the
+  # client connection was encrypted. Emitting HSTS unconditionally would
+  # pin browsers to https:// for a host that may have no TLS listener.
+  # The backends decide it per request from X-Forwarded-Proto instead.
+  #
+  # Only frame-ancestors is enforced as CSP here. The full policy ships
+  # report-only from the services (see pkg/middleware/secheaders.go) and
+  # a second, broader policy at the edge would intersect with it and
+  # block things neither policy meant to block.
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Content-Type-Options:nosniff"
+          - "X-Frame-Options:DENY"
+          - "Referrer-Policy:no-referrer"
+          - "Permissions-Policy:camera=(), microphone=(), geolocation=()"
+          - "Content-Security-Policy:frame-ancestors 'none'"
+      remove:
+        headers:
+          # Defence in depth. The real fix is in the document service's
+          # grpc-gateway mux (runtime.WithOutgoingHeaderMatcher /
+          # WithOutgoingTrailerMatcher), which stops these being produced
+          # at all. Kong's remove list takes exact names, not wildcards,
+          # so only the header an external scan actually observed is
+          # listed — a new grpc-gateway surface must fix it at the mux.
+          - "grpc-metadata-content-type"
   - name: prometheus
     config:
       per_consumer: false

@@ -85,9 +85,12 @@ func main() {
 	h.Register(httpMux)
 	var httpRoot http.Handler = httpMux
 	httpRoot = middleware.SessionAuth(middleware.SessionAuthConfig{Pool: pool})(httpRoot)
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(httpRoot),
+		Handler:           secHeaders(middleware.RequireGatewaySignature()(httpRoot)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

@@ -130,9 +130,12 @@ func main() {
 	rootMux.Handle("/api/v1/mcp", apiAuth(mcpLimit(mcpFeature(mux))))
 	rootMux.Handle("/api/v1/mcp/sse", apiAuth(mcpLimit(mcpFeature(mux))))
 
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           middleware.RequireGatewaySignature()(rootMux),
+		Handler:           secHeaders(middleware.RequireGatewaySignature()(rootMux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

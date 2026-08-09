@@ -50,19 +50,16 @@ func WAFMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// SecurityHeadersMiddleware adds hardened security headers to every response.
-func SecurityHeadersMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("X-XSS-Protection", "0") // deprecated but set to 0 per OWASP
-		next.ServeHTTP(w, r)
-	})
-}
+// Security headers used to live here as SecurityHeadersMiddleware. It
+// was never wired into any service — so no response ever carried a
+// security header (BUG-08) — and it was unsafe to wire as written: it
+// set Strict-Transport-Security unconditionally, which on a plain-HTTP
+// deployment pins every browser to https:// for a host that has no TLS
+// listener. Superseded by pkg/middleware.SecurityHeaders, which makes
+// HSTS conditional on the request actually being HTTPS, ships the CSP
+// report-only until an operator opts in, and is configurable through
+// pkg/config. Removed rather than deprecated so it cannot be wired up
+// by mistake.
 
 // silence unused
 var _ = io.Discard

@@ -180,7 +180,10 @@ func main() {
 	// upstream gRPC client interceptor reads them. The gateway previously
 	// omitted this, so any audit event produced on a gateway-originated
 	// call had no IP/User-Agent attribution.
-	root := middleware.CorrelationHTTP(mw(sessAuth(limited)))
+	// BUG-08 — response security headers, wrapped outermost so they also
+	// land on the 401/403/429 responses written by the middleware below.
+	secHeaders := middleware.SecurityHeaders(middleware.SecurityHeadersFromConfig(cfg))
+	root := secHeaders(middleware.CorrelationHTTP(mw(sessAuth(limited))))
 
 	hs := health.NewServerWithMeta("graphql-gateway", cfg.Region, nil, rdb, nil, nil)
 	go func() {

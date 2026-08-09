@@ -302,6 +302,24 @@ sudo systemctl restart caddy
 Caddy fetches a Let's Encrypt cert automatically. Your product is now at
 `https://dms.yourdomain.com`. Log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
 
+**HTTPS is what makes passkeys work.** Browsers expose WebAuthn only in a
+*secure context* — an HTTPS origin, or `localhost`. Served over plain HTTP
+the browser removes `window.PublicKeyCredential` altogether and the Security
+settings page will (correctly) tell users the site needs a secure connection.
+The same applies to the clipboard helpers. Do not skip §9 and then debug
+passkeys.
+
+Response security headers are on by default from every service, and Kong adds
+them to the responses it generates itself. The one knob worth knowing here:
+the Content-Security-Policy ships as `Content-Security-Policy-Report-Only`
+so a policy that is one directive short cannot white-screen the SPA. Watch
+the browser console on your own deployment, then set `SEDOC_CSP_ENFORCE=true`
+to make it blocking. The full list of `SEDOC_*` header knobs is tabulated in
+[`windows-test-server.md`](./windows-test-server.md#response-security-headers).
+Strict-Transport-Security is only ever emitted on a request that actually
+arrived over HTTPS, so bringing the stack up before §9 cannot pin browsers to
+a scheme the box does not serve.
+
 > If you enabled OnlyOffice, also expose `:8195` (SG → your IP) and set
 > `SEDOC_ONLYOFFICE_PUBLIC_URL` to a host the browser can reach.
 

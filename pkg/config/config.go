@@ -181,6 +181,71 @@ type Config struct {
 	// ESignStateHMAC seeds the OAuth-state HMAC. Must be ≥ 32 bytes
 	// hex; service auto-generates one at boot if empty (logs once).
 	ESignStateHMAC string `mapstructure:"esign_state_hmac"`
+
+	// ---- Browser response security headers (BUG-08) ----------------------
+	// Consumed by pkg/middleware.SecurityHeadersFromConfig, which every
+	// service wraps outermost on its HTTP handler. What each header does
+	// and why its default was chosen is documented once, in
+	// pkg/middleware/secheaders.go.
+	//
+	// Convention for the string knobs below: EMPTY means "use the
+	// built-in default"; the literal "off" disables that one header.
+	// The built-in values themselves live in pkg/middleware so there is
+	// only ever one copy of them.
+
+	// SecurityHeadersEnabled is the master switch. Default true; set
+	// false only when a reverse proxy already owns these headers and
+	// the duplicate values conflict. Env: SEDOC_SECURITY_HEADERS_ENABLED.
+	SecurityHeadersEnabled bool `mapstructure:"security_headers_enabled"`
+
+	// ContentSecurityPolicy overrides the built-in policy
+	// (middleware.DefaultCSP). Env: SEDOC_CONTENT_SECURITY_POLICY.
+	ContentSecurityPolicy string `mapstructure:"content_security_policy"`
+
+	// CSPEnforce flips the policy from Content-Security-Policy-Report-Only
+	// (the default — observe first, a wrong CSP white-screens the SPA
+	// rather than degrading it) to the blocking Content-Security-Policy
+	// header. Turn it on once the deployment's violation reports are
+	// clean. Env: SEDOC_CSP_ENFORCE.
+	CSPEnforce bool `mapstructure:"csp_enforce"`
+
+	// CSPReportURI optionally points browsers at a violation collector.
+	// Env: SEDOC_CSP_REPORT_URI.
+	CSPReportURI string `mapstructure:"csp_report_uri"`
+
+	// FrameOptions is the X-Frame-Options value: DENY (default) or
+	// SAMEORIGIN. Env: SEDOC_FRAME_OPTIONS.
+	FrameOptions string `mapstructure:"frame_options"`
+
+	// ReferrerPolicy defaults to no-referrer — document and workspace
+	// UUIDs live in request paths and must not travel to third parties.
+	// Env: SEDOC_REFERRER_POLICY.
+	ReferrerPolicy string `mapstructure:"referrer_policy"`
+
+	// PermissionsPolicy defaults to denying camera/microphone/geolocation.
+	// Do NOT add publickey-credentials-* here: naming them with an empty
+	// allowlist would disable passkeys. Env: SEDOC_PERMISSIONS_POLICY.
+	PermissionsPolicy string `mapstructure:"permissions_policy"`
+
+	// HSTSEnabled arms Strict-Transport-Security (default true). Even
+	// when armed the header is only ever emitted on a request that
+	// actually arrived over HTTPS, so a plain-HTTP test server can never
+	// pin itself out of reach. Env: SEDOC_HSTS_ENABLED.
+	HSTSEnabled bool `mapstructure:"hsts_enabled"`
+	// HSTSMaxAgeSeconds overrides the two-year default. 0 = default.
+	// Env: SEDOC_HSTS_MAX_AGE.
+	HSTSMaxAgeSeconds     int  `mapstructure:"hsts_max_age"`
+	HSTSIncludeSubdomains bool `mapstructure:"hsts_include_subdomains"`
+	// HSTSPreload is off by default: submission to the browser preload
+	// list is effectively irreversible. Env: SEDOC_HSTS_PRELOAD.
+	HSTSPreload bool `mapstructure:"hsts_preload"`
+
+	// TrustForwardedProto lets X-Forwarded-Proto: https satisfy the
+	// HTTPS test above. True by default because TLS terminates at the
+	// reverse proxy (Caddy / Kong / ingress-nginx) and the services
+	// themselves always see plain HTTP.
+	// Env: SEDOC_TRUST_FORWARDED_PROTO.
+	TrustForwardedProto bool `mapstructure:"trust_forwarded_proto"`
 }
 
 // Load reads configuration from (in order): env vars (SEDOC_* prefix),
@@ -281,6 +346,19 @@ func Load(serviceName string) (*Config, error) {
 	_ = v.BindEnv("esign_adobe_sign_authorize_url", "SEDOC_ESIGN_ADOBE_SIGN_AUTHORIZE_URL")
 	_ = v.BindEnv("esign_adobe_sign_token_url", "SEDOC_ESIGN_ADOBE_SIGN_TOKEN_URL")
 	_ = v.BindEnv("esign_adobe_sign_redirect_uri", "SEDOC_ESIGN_ADOBE_SIGN_REDIRECT_URI")
+
+	// BUG-08 security headers. The four boolean switches are registered
+	// via SetDefault (so AutomaticEnv already knows them); everything
+	// below deliberately has no default — bind it explicitly or an
+	// operator-supplied override is silently dropped by Unmarshal.
+	_ = v.BindEnv("content_security_policy", "SEDOC_CONTENT_SECURITY_POLICY")
+	_ = v.BindEnv("csp_enforce", "SEDOC_CSP_ENFORCE")
+	_ = v.BindEnv("csp_report_uri", "SEDOC_CSP_REPORT_URI")
+	_ = v.BindEnv("frame_options", "SEDOC_FRAME_OPTIONS")
+	_ = v.BindEnv("referrer_policy", "SEDOC_REFERRER_POLICY")
+	_ = v.BindEnv("permissions_policy", "SEDOC_PERMISSIONS_POLICY")
+	_ = v.BindEnv("hsts_max_age", "SEDOC_HSTS_MAX_AGE")
+	_ = v.BindEnv("hsts_preload", "SEDOC_HSTS_PRELOAD")
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -390,6 +468,17 @@ func setDefaults(v *viper.Viper, serviceName string) {
 	v.SetDefault("smtp_port", 587)
 	v.SetDefault("smtp_starttls", true)
 	v.SetDefault("smtp_from", "noreply@vaultdms.local")
+
+	// Security headers (BUG-08). Only the on/off switches are defaulted
+	// here; the header VALUES stay empty so pkg/middleware can supply
+	// them from its own constants — one copy of each default, no drift.
+	// csp_enforce and hsts_preload keep their false zero value on
+	// purpose: report-only first, and never auto-enrol in the preload
+	// list.
+	v.SetDefault("security_headers_enabled", true)
+	v.SetDefault("hsts_enabled", true)
+	v.SetDefault("hsts_include_subdomains", true)
+	v.SetDefault("trust_forwarded_proto", true)
 }
 
 // MustLoad is like Load but panics on error. Suitable for use in main().
