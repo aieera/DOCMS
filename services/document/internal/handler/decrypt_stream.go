@@ -199,10 +199,26 @@ func (h *DecryptStreamHandler) streamVersion(w http.ResponseWriter, r *http.Requ
 	// for progress + on inline disposition to not get prompted as
 	// a download. Pass-through previously emitted neither, which
 	// looked like a hang on slow connections.
-	w.Header().Set("Content-Disposition", "inline")
+	// Only trusted media renders inline. Anything else — notably a
+	// document whose stored mime is text/html or image/svg+xml — is
+	// forced to download, so it can never execute in our origin. Same
+	// rule the watermark path already applies (inlineSafeMime).
+	if inlineSafeMime(mimeType) {
+		w.Header().Set("Content-Disposition", "inline")
+		// The viewer frames THIS endpoint (same origin) to render PDFs
+		// and images, and the global X-Frame-Options: DENY blocks even
+		// same-origin framing — it broke every preview. Relax to
+		// SAMEORIGIN for these safe types only. Handler headers run
+		// after the middleware and win.
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	} else {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
 	// Caching off — the URL itself doesn't carry version info beyond
 	// the path, and a re-encrypted blob would serve stale plaintext.
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	// Unencrypted path: pass-through. AES-GCM never decorated this
 	// object so we just copy raw bytes to the client.
