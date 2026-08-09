@@ -63,8 +63,8 @@ interface Props {
    */
   triggerClassName?: string
   /**
-   * 'card' (default) wraps `children` with a right-click context menu
-   * and floats the ⋯ trigger over the tile. 'inline' renders the
+   * 'card' (default) wraps `children` with a secondary-click context
+   * menu and floats the ⋯ trigger over the tile. 'inline' renders the
    * trigger on its own, in flow — for toolbars like the document
    * detail header, which has no card surface to wrap.
    *

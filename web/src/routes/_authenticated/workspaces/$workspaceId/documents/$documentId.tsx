@@ -1730,7 +1730,14 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
                   Page {p.page_number}
                   <span className="ms-2 text-xs font-normal text-muted-foreground">
-                    · {(p.confidence * 100).toFixed(1)}% char conf
+                    {/* A page whose OCR produced no scoreable lines has no
+                        confidence at all. Rendering the absent value as
+                        "0.0 %" put a hard zero next to the header's "Good"
+                        grade — the two read different sources. Say
+                        "not available" instead of inventing a number. */}
+                    · {Number.isFinite(p.confidence) && p.confidence > 0
+                        ? `${(p.confidence * 100).toFixed(1)}% char conf`
+                        : 'char confidence not available'}
                     {p.processing_time_ms ? ` · ${p.processing_time_ms}ms` : ''}
                     {p.language ? ` · ${p.language}` : ''}
                     {highlight && pageEntities.length > 0 && (

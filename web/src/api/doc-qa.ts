@@ -11,6 +11,14 @@ export interface Citation {
   document_id: string
   document_title?: string
   version_id: string
+  /** 1-based join key: `[2]` in the answer maps to the citation whose
+   *  marker is 2. Prefer this over array position — the answer's
+   *  numbering is the server's, not ours. */
+  marker?: number
+  /** Needed to build the document link. Absent for chunks embedded
+   *  before the field existed; those chips stay unlinked. */
+  workspace_id?: string | null
+  section_path?: string | null
 }
 
 export interface QAMessage {

@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -356,32 +356,61 @@ function MessageBubble({ m }: { m: UIMessage }) {
   )
 }
 
+// The page promises "answers cite the source pages", so a chip has to be
+// a way in. Chips carry the server's own marker (the [N] the answer text
+// uses) and link to the cited document when we know its workspace —
+// chunks embedded before workspace_id was returned stay unlinked rather
+// than pointing somewhere wrong.
 function CitationChips({ citations }: { citations: Citation[] }) {
   const groups = useMemo(() => {
-    const map = new Map<string, { title: string; pages: number[]; n: number }>()
-    let n = 0
+    const map = new Map<string, { title: string; pages: number[]; n: number; workspaceId?: string | null }>()
+    let fallbackN = 0
     for (const c of citations) {
       let g = map.get(c.document_id)
-      if (!g) { g = { title: c.document_title || 'Document', pages: [], n: ++n }; map.set(c.document_id, g) }
-      if (c.document_title && (!g.title || g.title === 'Document')) g.title = c.document_title
+      if (!g) {
+        g = {
+          title: c.document_title || 'Untitled document',
+          pages: [],
+          n: c.marker ?? ++fallbackN,
+          workspaceId: c.workspace_id,
+        }
+        map.set(c.document_id, g)
+      }
+      if (c.document_title && g.title === 'Untitled document') g.title = c.document_title
+      if (!g.workspaceId && c.workspace_id) g.workspaceId = c.workspace_id
       if (c.page != null && !g.pages.includes(c.page)) g.pages.push(c.page)
     }
     return [...map.entries()].map(([id, g]) => ({ id, ...g, pages: g.pages.sort((a, b) => a - b) }))
   }, [citations])
   if (!groups.length) return null
+  const chipClass =
+    'inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground'
   return (
     <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
-      {groups.map((g) => (
-        <span
-          key={g.id}
-          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
-          title={g.title}
-        >
-          <span className="font-semibold text-foreground">[{g.n}]</span>
-          <span className="max-w-[220px] truncate">{g.title}</span>
-          {g.pages.length > 0 && <span className="shrink-0">· p.{g.pages.join(', ')}</span>}
-        </span>
-      ))}
+      {groups.map((g) => {
+        const body = (
+          <>
+            <span className="font-semibold text-foreground">[{g.n}]</span>
+            <span className="max-w-[220px] truncate">{g.title}</span>
+            {g.pages.length > 0 && <span className="shrink-0">· p.{g.pages.join(', ')}</span>}
+          </>
+        )
+        return g.workspaceId ? (
+          <Link
+            key={g.id}
+            to="/workspaces/$workspaceId/documents/$documentId"
+            params={{ workspaceId: g.workspaceId, documentId: g.id }}
+            className={cn(chipClass, 'transition-colors hover:border-primary/40 hover:text-foreground')}
+            title={`Open ${g.title}`}
+          >
+            {body}
+          </Link>
+        ) : (
+          <span key={g.id} className={chipClass} title={g.title}>
+            {body}
+          </span>
+        )
+      })}
     </div>
   )
 }

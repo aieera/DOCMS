@@ -391,7 +391,7 @@ describe('<DocumentActionsMenu>', () => {
       expect(input.value).toBe('Quarterly report')
     })
 
-    it('renders no right-click context menu (there is no card to right-click)', () => {
+    it('renders no context menu (there is no card surface to secondary-click)', () => {
       render(wrap(<DocumentActionsMenu doc={doc} variant="inline" />))
       expect(screen.queryByTestId('document-context-menu')).not.toBeInTheDocument()
     })
