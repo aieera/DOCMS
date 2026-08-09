@@ -64,23 +64,26 @@ transaction; safe to re-run (idempotent upserts).
 
 ## Running it
 
-The endpoint lives on the internal mux (not routed by the gateway).
-Same calling convention as the records cutoff-sweep CronJob: in-cluster
-call with the internal identity headers carrying the tenant.
+The endpoint lives on the internal mux (not routed by the gateway), so
+the call must carry BOTH the shared gateway secret and the tenant
+header — `X-Auth-Tenant-ID`, not the legacy `X-Tenant-ID`. Omitting
+either returns 401.
 
 Whole tenant:
 
 ```bash
 curl -sf -X POST "http://document:8080/internal/v1/search/reindex" \
-  -H "X-Tenant-ID: <tenant-uuid>" -H "X-User-ID: <admin-user-uuid>"
-# → {"reindexed": <count>}
+  -H "X-Gateway-Signature: $SEDOC_GATEWAY_SECRET" \
+  -H "X-Auth-Tenant-ID: <tenant-uuid>" -H "X-User-ID: <admin-user-uuid>"
+# → {"reindexed": <count>}   (counts only live documents: deleted_at IS NULL)
 ```
 
 Single document (spot repair):
 
 ```bash
 curl -sf -X POST "http://document:8080/internal/v1/search/reindex" \
-  -H "X-Tenant-ID: <tenant-uuid>" -H "X-User-ID: <admin-user-uuid>" \
+  -H "X-Gateway-Signature: $SEDOC_GATEWAY_SECRET" \
+  -H "X-Auth-Tenant-ID: <tenant-uuid>" -H "X-User-ID: <admin-user-uuid>" \
   -H "Content-Type: application/json" \
   -d '{"document_id": "<doc-uuid>"}'
 ```
@@ -91,7 +94,8 @@ All tenants (deploy repair — run once after shipping the indexer fix):
 for t in $(psql "$DATABASE_URL" -Atc \
     "SELECT id FROM organizations WHERE deleted_at IS NULL"); do
   curl -sf -X POST "http://document:8080/internal/v1/search/reindex" \
-    -H "X-Tenant-ID: $t" -H "X-User-ID: 00000000-0000-0000-0000-000000000000"
+    -H "X-Gateway-Signature: $SEDOC_GATEWAY_SECRET" \
+    -H "X-Auth-Tenant-ID: $t" -H "X-User-ID: 00000000-0000-0000-0000-000000000000"
   echo " tenant $t done"
 done
 ```
