@@ -4,6 +4,7 @@
 package service
 
 import (
+	"github.com/aieera/sedoc/services/auth/internal/model"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -126,4 +127,13 @@ func TestSha256HexStable(t *testing.T) {
 	require.Equal(t, a, b)
 	require.NotEqual(t, a, sha256Hex("hell0"))
 	require.Equal(t, 64, len(a))
+}
+
+// TestValidScopes_DocumentsDelete pins the API-key scope the ERP needs to
+// remove documents it created (DELETE /api/v1/documents/{id}). Delete is
+// deliberately its own scope rather than folded into documents:write so an
+// existing write-only key never silently gains destructive power.
+func TestValidScopes_DocumentsDelete(t *testing.T) {
+	_, ok := model.ValidScopes()["documents:delete"]
+	require.True(t, ok, "documents:delete must be an issuable scope")
 }

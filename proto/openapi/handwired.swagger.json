@@ -10,7 +10,7 @@
       "type": "apiKey",
       "name": "Authorization",
       "in": "header",
-      "description": "ERP / service-to-service auth. Send `Authorization: Bearer vdms_<key>`. The key carries scopes (documents:read, documents:write, upload); each route below names the scope it requires. The browser uses the dms_session cookie instead — the same routes accept either."
+      "description": "ERP / service-to-service auth. Send `Authorization: Bearer vdms_<key>`. The key carries scopes (documents:read, documents:write, documents:delete, upload); each route below names the scope it requires. The browser uses the dms_session cookie instead — the same routes accept either."
     }
   },
   "parameters": {

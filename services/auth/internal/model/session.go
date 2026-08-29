@@ -82,9 +82,15 @@ type APIKeyIssued struct {
 }
 
 // Valid scopes. Handlers check endpoint scope against this allowlist.
+//
+// documents:delete gates DELETE /api/v1/documents/{id} for API-key callers
+// (the ERP removing documents it created). It is deliberately separate from
+// documents:write so an existing write-only key never silently gains
+// destructive power on upgrade.
 const (
 	ScopeDocumentsRead     = "documents:read"
 	ScopeDocumentsWrite    = "documents:write"
+	ScopeDocumentsDelete   = "documents:delete"
 	ScopeSearchRead        = "search:read"
 	ScopeUpload            = "upload"
 	ScopeWebhooksManage    = "webhooks:manage"
@@ -97,6 +103,7 @@ func ValidScopes() map[string]struct{} {
 	return map[string]struct{}{
 		ScopeDocumentsRead:     {},
 		ScopeDocumentsWrite:    {},
+		ScopeDocumentsDelete:   {},
 		ScopeSearchRead:        {},
 		ScopeUpload:            {},
 		ScopeWebhooksManage:    {},

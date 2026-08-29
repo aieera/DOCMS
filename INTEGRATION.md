@@ -30,6 +30,7 @@ Keys carry **scopes**; each route requires one:
 |---|---|
 | `documents:read` | byExternalKey, list ingestion items, list/get review queue, downloads |
 | `documents:write` | upsert, ingest, review resolve |
+| `documents:delete` | `DELETE /documents/{document_id}` — remove a document the ERP created |
 | `upload` | storage upload proxy (initiate / complete / abort) |
 
 The browser uses the `dms_session` cookie instead; the same routes accept either.
@@ -131,6 +132,14 @@ existence isn't leaked).
 
 Use `:upsert` when **you** decide the document identity. Use `/ingest` (next)
 when you want the system to read the file and decide.
+
+**Removing a document you created** — `DELETE /api/v1/documents/{document_id}`
+(scope `documents:delete`) → `200` with an empty `{}` body. This is a soft delete: the document moves
+to the tenant's Trash (an admin can restore it), the search index drops it, and
+`dms.document.deleted.v1` is emitted. Repeating the call → `404` (already
+gone). Refused with `423 LEGAL_HOLD` while the document is under legal hold,
+and with `409` when it is a declared record or inside WORM retention — those
+are disposed through their own flows, never through delete.
 
 ---
 

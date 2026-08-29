@@ -56,12 +56,15 @@ and policy checks behave identically regardless of which path ran.
 |---|---|
 | `upload` | the storage initiate → complete → abort → download flow |
 | `documents:write` | create document, create version, create folder |
+| `documents:delete` | delete (soft-delete to Trash) a document — lets the ERP clean up after itself |
 | `documents:read` | read a document, list folders |
 | `integrations:read` | poll the iPaaS/reconcile trigger feed |
 | `webhooks:manage` | create/list/delete subscriptions, rotate secret, test-send, redeliver |
 
 Issue **one key per tenant** carrying the union of scopes the ERP needs
-(`upload`, `documents:read`, `documents:write`, `integrations:read`, `webhooks:manage`).
+(`upload`, `documents:read`, `documents:write`, `integrations:read`, `webhooks:manage`,
+and `documents:delete` if the ERP should be able to remove documents it created — leave it
+off for a read+create-only posture).
 Keys are tenant-scoped: a key can only ever touch its own tenant's data (Postgres RLS
 fails closed otherwise).
 
@@ -102,6 +105,7 @@ Base path: `{DMS_BASE_URL}/api/v1`.
 | `POST /documents` | `documents:write` | **yes** (`Idempotency-Key`) | Create the document record |
 | `GET  /documents/{document_id}` | `documents:read` | yes | Read current document state (lifecycle, metadata) |
 | `POST /documents/{document_id}/versions` | `documents:write` | **yes** (`Idempotency-Key`) | Attach a new version to a document |
+| `DELETE /documents/{document_id}` | `documents:delete` | yes (repeat → `404`) | Soft-delete a document to Trash; emits `dms.document.deleted.v1`. `423` under legal hold |
 | `GET  /workspaces/{workspace_id}/folders` | `documents:read` | yes | List folders (to resolve/ensure target folder) |
 | `POST /workspaces/{workspace_id}/folders` | `documents:write` | yes | Create a folder |
 | `GET  /integrations/triggers/documents?since=&limit=` | `integrations:read` | yes | Poll documents updated since a cursor (reconcile) |
@@ -432,12 +436,12 @@ SeDoc web admin. For reference, the relevant screens:
 
 ### Two UI caveats for the full ERP flow
 
-1. **API-key scopes from the UI are limited.** The `/admin/api-keys` create form issues keys
-   with `documents:read` + `documents:write` only
-   ([api-keys.tsx:46](../../web/src/routes/_authenticated/admin/api-keys.tsx#L46)). The ERP
-   ingest flow also needs **`upload`** (storage) and **`integrations:read`** (reconcile poll).
-   Until the form exposes scope selection, mint the ERP key via the API
-   (`POST /api/v1/api-keys` with the full scope set) rather than the UI.
+1. **Pick the scopes deliberately.** The `/admin/api-keys` create form defaults to
+   `documents:read` + `documents:write`
+   ([api-keys.tsx](../../web/src/routes/_authenticated/admin/api-keys.tsx)); toggle on
+   **`upload`** (storage), **`integrations:read`** (reconcile poll), **`webhooks:manage`**
+   (self-managed subscription) and, if wanted, **`documents:delete`** before issuing. Scopes
+   are fixed at issue time — to change a key's scopes, issue a new key and revoke the old one.
 2. **`state_changed` isn't in the webhook preset list.** The `/admin/webhooks` event presets
    include `document.created/updated/deleted`, `version.uploaded`, and `signature.completed`,
    but **not** `dms.document.state_changed.v1`

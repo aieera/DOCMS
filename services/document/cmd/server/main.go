@@ -1366,6 +1366,12 @@ func main() {
 	rootMux.Handle("POST /api/v1/folders/{folder_id}/visibility", apiKeyGatewayMutate("documents:write"))
 	rootMux.Handle("POST /api/v1/documents/{document_id}/move", apiKeyGatewayMutate("documents:write"))
 	rootMux.Handle("POST /api/v1/documents/batch/metadata", apiKeyGatewayMutate("documents:write"))
+	// Delete — lets the ERP clean up documents it created. Same soft-delete
+	// (→ Trash) handler the UI uses; its own scope, documents:delete, so a
+	// write-only key never silently gains destructive power. Without this
+	// registration the route fell through to the cookie-only catch-all and
+	// API-key callers got a misleading 401 "missing or invalid tenant".
+	rootMux.Handle("DELETE /api/v1/documents/{document_id}", apiKeyGatewayMutate("documents:delete"))
 
 	// §3/§5 sync delta + device API. Session (web UI) OR API key (headless sync
 	// agent, documents:read/write). Same SessionOrAPIKey + TenantHTTP chain as

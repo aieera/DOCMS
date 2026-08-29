@@ -29,10 +29,12 @@ interface APIKeyRow {
 }
 
 // Mirrors model.ValidScopes() in services/auth. The ERP integration needs
-// documents:read, documents:write, upload, and integrations:read.
+// documents:read, documents:write, upload, and integrations:read — plus
+// documents:delete if it should be able to remove documents it created.
 const AVAILABLE_SCOPES = [
   'documents:read',
   'documents:write',
+  'documents:delete',
   'upload',
   'search:read',
   'integrations:read',
