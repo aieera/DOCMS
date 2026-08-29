@@ -143,6 +143,48 @@ The CSP default assumes the layout above (SPA and API on one origin). If you
 put the collaboration WebSocket or an object store on a *different* host,
 extend `connect-src` / `img-src` before switching `SEDOC_CSP_ENFORCE` on.
 
+## Updating an existing test server
+
+The installer is idempotent, so an update is "pull, re-run, rebuild the web
+bundle". Nothing here touches the database contents.
+
+```bat
+git pull origin main
+install.bat            REM or: install.bat -Prebuilt   (pulls ghcr.io/aieera/sedoc/*:main)
+cd web && npm ci && npm run build && cd ..
+```
+
+(Linux/WSL: `git pull origin main && ./install.sh [--prebuilt] && (cd web && npm ci && npm run build)`.)
+
+What that does: `docker compose up -d --build` rebuilds only the services
+whose source changed and recreates just those containers; migrations and the
+seed re-run inside containers and are no-ops when already applied; the health
+wait confirms every API port answers. `--prebuilt` pulls the `main`-tagged
+images CI publishes on every push to `main` (`.github/workflows/images.yml`;
+`SEDOC_IMAGE_TAG=sha-<short>` pins a specific commit). If a host port comes
+back dead or cross-wired afterwards, `make wake`. The reverse proxy keeps
+serving `web\dist`, so the bundle rebuild is the only web step.
+
+### Changes that also need an operator step
+
+- **2026-08-29 — API keys can delete (`documents:delete` scope).** The ERP's
+  key was issued before the scope existed, so it will keep getting
+  `403 missing scope: documents:delete` on `DELETE /api/v1/documents/{id}` and
+  `DELETE /api/v1/folders/{id}` until you either **re-issue** it from
+  *Admin → API keys* with `documents:delete` ticked (and hand the ERP the new
+  key), or **append the scope** to the existing key so nothing changes on the
+  ERP side:
+
+  ```bat
+  docker compose exec postgres psql -U sedoc -d sedoc -c "update api_keys set scopes = array_append(scopes, 'documents:delete') where key_prefix = 'vdms_XXXXXXX' and revoked_at is null and not (scopes @> array['documents:delete']::text[]);"
+  ```
+
+  (`key_prefix` is the first 12 characters shown in *Admin → API keys*.) Check
+  with a scratch document: `DELETE /api/v1/documents/{id}` with the key must
+  return `200 {}` — a `401 missing or invalid tenant` means the document
+  service is still the old image; a `403 missing scope` means the key was not
+  updated. Leave the scope off if the ERP should stay read+create only.
+
 ## Known Windows footguns
 
 - **Don't bind-mount a Windows folder for connector watched-folder intake** —

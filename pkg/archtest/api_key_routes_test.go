@@ -36,6 +36,7 @@ func TestERPContractRoutesAcceptAPIKey(t *testing.T) {
 		"DELETE /api/v1/documents/{document_id}":                  "documents:delete",
 		"POST /api/v1/documents/{document_id}/versions":           "documents:write",
 		"POST /api/v1/documents/{document_id}/move":               "documents:write",
+		"DELETE /api/v1/folders/{folder_id}":                      "documents:delete",
 		"GET /api/v1/workspaces/{workspace_id}/folders":           "documents:read",
 		"POST /api/v1/workspaces/{workspace_id}/folders":          "documents:write",
 		"GET /api/v1/workspaces/{workspace_id}/documents":         "documents:read",

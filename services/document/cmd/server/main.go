@@ -1372,6 +1372,10 @@ func main() {
 	// registration the route fell through to the cookie-only catch-all and
 	// API-key callers got a misleading 401 "missing or invalid tenant".
 	rootMux.Handle("DELETE /api/v1/documents/{document_id}", apiKeyGatewayMutate("documents:delete"))
+	// Folder delete cascades (soft) over the subtree as one restorable
+	// cohort and needs "admin" on the folder — same scope, so the ERP can
+	// also retire the per-customer folders it provisions.
+	rootMux.Handle("DELETE /api/v1/folders/{folder_id}", apiKeyGatewayMutate("documents:delete"))
 
 	// §3/§5 sync delta + device API. Session (web UI) OR API key (headless sync
 	// agent, documents:read/write). Same SessionOrAPIKey + TenantHTTP chain as

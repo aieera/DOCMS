@@ -30,7 +30,7 @@ Keys carry **scopes**; each route requires one:
 |---|---|
 | `documents:read` | byExternalKey, list ingestion items, list/get review queue, downloads |
 | `documents:write` | upsert, ingest, review resolve |
-| `documents:delete` | `DELETE /documents/{document_id}` — remove a document the ERP created |
+| `documents:delete` | `DELETE /documents/{document_id}`, `DELETE /folders/{folder_id}` — remove a document or a folder subtree the ERP created |
 | `upload` | storage upload proxy (initiate / complete / abort) |
 
 The browser uses the `dms_session` cookie instead; the same routes accept either.
@@ -140,6 +140,11 @@ to the tenant's Trash (an admin can restore it), the search index drops it, and
 gone). Refused with `423 LEGAL_HOLD` while the document is under legal hold,
 and with `409` when it is a declared record or inside WORM retention — those
 are disposed through their own flows, never through delete.
+
+`DELETE /api/v1/folders/{folder_id}` (same scope) soft-deletes the folder **and
+everything under it** as one restorable cohort, emitting `dms.folder.deleted.v1`
+with the affected `folder_ids` / `document_ids`. It requires *admin* on the
+folder — which the key's owning user has on folders the ERP provisioned.
 
 ---
 
