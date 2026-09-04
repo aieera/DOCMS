@@ -104,7 +104,7 @@ export function EntitiesPanel({
   }, [data])
 
   if (isLoading) {
-    return <div className="rounded border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-secondary)]">Loading entities…</div>
+    return <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">Loading entities…</div>
   }
 
   const total = data?.total ?? 0
@@ -114,9 +114,9 @@ export function EntitiesPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-neu-sm">
         <span className="font-medium">{total.toLocaleString()} entities</span>
-        <span className="text-[var(--color-text-secondary)]">
+        <span className="text-muted-foreground">
           ({Object.keys(grouped).length} types)
         </span>
         <span className="flex-1" />
@@ -150,15 +150,15 @@ export function EntitiesPanel({
       </div>
 
       {showInContext && versionId && (
-        <section className="rounded border border-[var(--color-border)]" data-testid="entities-in-context">
-          <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+        <section className="rounded-lg bg-card shadow-neu" data-testid="entities-in-context">
+          <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             In context
           </header>
           <div className="max-h-80 overflow-y-auto p-3">
             {ocr.isLoading ? (
-              <div className="text-xs text-[var(--color-text-secondary)]">Loading text…</div>
+              <div className="text-xs text-muted-foreground">Loading text…</div>
             ) : !fullText ? (
-              <div className="text-xs text-[var(--color-text-secondary)]">
+              <div className="text-xs text-muted-foreground">
                 OCR text not available — entities are still listed below.
               </div>
             ) : (
@@ -172,11 +172,11 @@ export function EntitiesPanel({
         const types = g.types.filter((t) => grouped[t]?.length)
         if (types.length === 0) return null
         return (
-          <section key={g.label} className="rounded border border-[var(--color-border)]">
-            <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+          <section key={g.label} className="rounded-lg bg-card shadow-neu">
+            <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {g.label}
             </header>
-            <ul className="divide-y divide-[var(--color-border)]">
+            <ul className="divide-y divide-border">
               {types.flatMap((t) => grouped[t].map((e) => (
                 <EntityRow key={e.id} entity={e} documentId={documentId} qc={qc} />
               )))}
@@ -192,11 +192,11 @@ export function EntitiesPanel({
         const others = Object.keys(grouped).filter((t) => !canon.has(t))
         if (others.length === 0) return null
         return (
-          <section className="rounded border border-[var(--color-border)]">
-            <header className="border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+          <section className="rounded-lg bg-card shadow-neu">
+            <header className="border-b border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Other
             </header>
-            <ul className="divide-y divide-[var(--color-border)]">
+            <ul className="divide-y divide-border">
               {others.flatMap((t) => grouped[t].map((e) => (
                 <EntityRow key={e.id} entity={e} documentId={documentId} qc={qc} />
               )))}
@@ -210,7 +210,7 @@ export function EntitiesPanel({
 
 function EmptyEntities() {
   return (
-    <div className="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-text-secondary)]">
+    <div className="rounded border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
       No entities detected for this document yet.
       <br />
       OCR + NER run automatically once a document is uploaded.
@@ -283,7 +283,7 @@ function EntityRow({ entity, documentId, qc }: EntityRowProps) {
     })
   }
 
-  const colorClass = ENTITY_COLOR[entity.entity_type] ?? 'bg-zinc-100 text-zinc-900 border-zinc-200'
+  const colorClass = ENTITY_COLOR[entity.entity_type] ?? 'bg-muted text-muted-foreground border-border'
 
   return (
     <li className="flex items-center gap-2 px-3 py-2 text-sm">

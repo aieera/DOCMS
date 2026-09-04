@@ -242,7 +242,7 @@ function CapturePage() {
           </div>
 
           {result != null && (
-            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800" data-testid="capture-result">
+            <div className="rounded-md border border-success/40 bg-success/10 p-3 text-sm text-success" data-testid="capture-result">
               Created {result} document{result === 1 ? '' : 's'} from the scan. OCR + classification run in the background.
             </div>
           )}

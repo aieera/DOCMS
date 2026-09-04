@@ -218,7 +218,7 @@ function SectionCard({ section: { to, icon: Icon, label, desc } }: { section: Se
           matching the workspace cards' pattern so the admin grid feels
           part of the same product. Icon sits in a fixed 40px tile with
           a primary-tinted background that intensifies on hover. */}
-      <Card className="group flex h-full items-start gap-3 border p-4 transition-all hover:border-primary/40 hover:bg-accent/50 hover:shadow-sm">
+      <Card className="group flex h-full items-start gap-3 border border-transparent p-4 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-accent/50">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
           <Icon className="h-6 w-6" />
         </span>

@@ -192,7 +192,7 @@ export function TranslationViewer({
                   lang={targetLang || undefined}
                   data-testid="translation-text"
                   className={cn(
-                    'mx-auto max-w-prose whitespace-pre-wrap rounded-lg border border-border bg-card p-6 text-start shadow-sm',
+                    'mx-auto max-w-prose whitespace-pre-wrap rounded-xl bg-muted p-6 text-start shadow-neu-inset',
                     // Arabic/Hebrew/Persian glyphs render visually smaller and
                     // need more leading than Latin at the same px.
                     rtl ? 'text-[15px] leading-loose' : 'text-sm leading-relaxed',

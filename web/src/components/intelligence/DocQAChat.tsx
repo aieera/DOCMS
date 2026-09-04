@@ -173,7 +173,7 @@ export function DocQAChat({ documentId, onJumpToCitation }: Props) {
   }
 
   return (
-    <div className="flex h-[600px] flex-col rounded-2xl border border-border bg-card">
+    <div className="flex h-[600px] flex-col rounded-2xl bg-card shadow-neu">
       <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm font-medium">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-primary" />
@@ -275,7 +275,7 @@ function Bubble({
     <div className={['flex', isUser ? 'justify-end' : 'justify-start'].join(' ')}>
       <div
         className={[
-          'max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm',
+          'max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-neu-sm',
           isUser
             ? 'bg-primary text-primary-foreground'
             : 'bg-muted text-foreground',

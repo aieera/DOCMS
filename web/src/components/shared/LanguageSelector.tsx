@@ -71,7 +71,7 @@ export function LanguageSelector() {
 
   return (
     <Select value={current} onValueChange={onChange}>
-      <SelectTrigger className="w-[110px] gap-1.5 border-white/15 bg-white/10 text-white hover:bg-white/15 focus:ring-white/30 [&_svg]:text-white/70" aria-label={t('language.label')}>
+      <SelectTrigger className="w-[110px] gap-1.5 border-input bg-background text-foreground hover:bg-muted focus:ring-ring [&_svg]:text-muted-foreground" aria-label={t('language.label')}>
         <Languages className="h-4 w-4 opacity-60" />
         <SelectValue />
       </SelectTrigger>

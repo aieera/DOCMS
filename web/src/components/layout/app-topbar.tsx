@@ -336,7 +336,7 @@ function NotificationsDropdown() {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-lg"
+        className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-neu"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-sm font-semibold">Notifications</span>

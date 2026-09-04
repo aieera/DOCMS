@@ -17,7 +17,7 @@ interface Props {
 export function ComplianceDashboard({ docsByState = [], storageByRegion = [], encryptionCoverage = 0 }: Props) {
   return (
     <div className="grid grid-cols-2 gap-6">
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 text-sm font-semibold">Documents by Lifecycle State</h3>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={docsByState}>
@@ -32,7 +32,7 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 text-sm font-semibold">Storage by Region</h3>
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
@@ -59,11 +59,11 @@ export function ComplianceDashboard({ docsByState = [], storageByRegion = [], en
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="col-span-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] p-4">
+      <div className="col-span-2 rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 text-sm font-semibold">Encryption Coverage</h3>
         <div className="flex items-center gap-4">
-          <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-            <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${encryptionCoverage}%` }} />
+          <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-success transition-all" style={{ width: `${encryptionCoverage}%` }} />
           </div>
           <span className="text-sm font-medium">{encryptionCoverage}%</span>
         </div>

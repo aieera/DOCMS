@@ -158,8 +158,8 @@ export function UploadWizard() {
             <span className="text-muted-foreground">{humanBytes(plan.totalBytes)} total</span>
           </div>
           {flagged.length > 0 && (
-            <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20">
-              <div className="mb-1 flex items-center gap-1 font-medium text-amber-800 dark:text-amber-200">
+            <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <div className="mb-1 flex items-center gap-1 font-medium text-warning-strong">
                 <AlertTriangle className="h-3.5 w-3.5" /> {flagged.length} file(s) will be skipped
               </div>
               <ul className="ps-4 text-muted-foreground">
@@ -260,7 +260,7 @@ export function UploadWizard() {
           {result && (
             <div className="mt-3 space-y-2 text-sm">
               <div className="flex flex-wrap gap-x-6 gap-y-1">
-                <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                <span className="inline-flex items-center gap-1 text-success">
                   <CheckCircle2 className="h-4 w-4" /> {result.created} created
                 </span>
                 {result.skipped > 0 && <span className="text-muted-foreground">{result.skipped} skipped</span>}

@@ -33,9 +33,9 @@ function categoryOf(tag: string): string {
 }
 
 function bandColor(confidence: number): string {
-  if (confidence >= HIGH_CONFIDENCE) return 'bg-emerald-500'
-  if (confidence >= MEDIUM_CONFIDENCE) return 'bg-amber-500'
-  return 'bg-orange-500'
+  if (confidence >= HIGH_CONFIDENCE) return 'bg-success'
+  if (confidence >= MEDIUM_CONFIDENCE) return 'bg-warning/60'
+  return 'bg-warning'
 }
 
 function sourceLabel(source: TagSuggestion['source']): string {
@@ -101,7 +101,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
 
   if (isLoading) {
     return (
-      <div className="rounded border border-zinc-200 p-4 text-sm text-zinc-600">
+      <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu-sm">
         Loading tag suggestions…
       </div>
     )
@@ -127,18 +127,18 @@ export function TagSuggestionsPanel({ documentId }: Props) {
   }
 
   return (
-    <div className="rounded border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 text-sm font-medium dark:border-zinc-800">
+    <div className="rounded-lg bg-card shadow-neu">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-sm font-medium">
         <Sparkles className="h-4 w-4 text-violet-500" />
         Suggested tags
         {pending.length > 0 && (
-          <span className="ms-1 text-xs text-zinc-600">({pending.length} pending)</span>
+          <span className="ms-1 text-xs text-muted-foreground">({pending.length} pending)</span>
         )}
       </div>
 
       {autoApplied.length > 0 && (
-        <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-900">
-          <div className="mb-2 text-xs uppercase tracking-wide text-zinc-600">Auto-applied</div>
+        <div className="border-b border-border px-4 py-3">
+          <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Auto-applied</div>
           <div className="flex flex-wrap gap-2">
             {autoApplied.map((s) => (
               <Badge key={s.id} variant="default" className="gap-1">
@@ -158,7 +158,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
           {/* Bulk actions live at the TOP: with 20+ rows the old
               bottom placement scrolled out of sight, which is exactly
               when you need them. */}
-          <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-2 dark:border-zinc-900">
+          <div className="flex items-center gap-2 border-b border-border px-4 py-2">
             {/* A disabled control with no reason reads as broken. Say
                 why: usually "nothing here clears the 90% bar". */}
             <Button
@@ -185,7 +185,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
           </div>
 
           {grouped ? (
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
+            <div className="divide-y divide-border">
               {groups.map(([cat, items]) => {
                 const open = openGroups.has(cat)
                 return (
@@ -206,10 +206,10 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                         className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <ChevronRight
-                          className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-90' : ''}`}
+                          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
                         />
                         <span className="truncate font-medium">{cat}</span>
-                        <span className="text-xs text-zinc-600">({items.length})</span>
+                        <span className="text-xs text-muted-foreground">({items.length})</span>
                       </button>
                       <Button
                         size="sm"
@@ -219,7 +219,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                         aria-label={`Accept all ${cat} suggestions`}
                         title={`Accept all ${cat}`}
                       >
-                        <Check className="h-4 w-4 text-emerald-600" />
+                        <Check className="h-4 w-4 text-success" />
                       </Button>
                       <Button
                         size="sm"
@@ -229,11 +229,11 @@ export function TagSuggestionsPanel({ documentId }: Props) {
                         aria-label={`Dismiss all ${cat} suggestions`}
                         title={`Dismiss all ${cat}`}
                       >
-                        <X className="h-4 w-4 text-zinc-600" />
+                        <X className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </div>
                     {open && (
-                      <ul className="divide-y divide-zinc-100 border-t border-zinc-100 dark:divide-zinc-900 dark:border-zinc-900">
+                      <ul className="divide-y divide-border border-t border-border">
                         {items.map((s) => (
                           <SuggestionRow
                             key={s.id}
@@ -250,7 +250,7 @@ export function TagSuggestionsPanel({ documentId }: Props) {
               })}
             </div>
           ) : (
-            <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
+            <ul className="divide-y divide-border">
               {pending.map((s) => (
                 <SuggestionRow
                   key={s.id}
@@ -290,15 +290,15 @@ function SuggestionRow({
       <span className="min-w-0 flex-1 truncate text-sm" title={s.tag_name}>
         {s.tag_name}
       </span>
-      <span className="w-10 shrink-0 text-end text-xs tabular-nums text-zinc-600">{pct}%</span>
+      <span className="w-10 shrink-0 text-end text-xs tabular-nums text-muted-foreground">{pct}%</span>
       <Badge variant="outline" className="shrink-0 text-[10px]">
         {sourceLabel(s.source)}
       </Badge>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onAccept} aria-label={`Accept ${s.tag_name}`}>
-        <Check className="h-4 w-4 text-emerald-600" />
+        <Check className="h-4 w-4 text-success" />
       </Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={onReject} aria-label={`Reject ${s.tag_name}`}>
-        <X className="h-4 w-4 text-zinc-600" />
+        <X className="h-4 w-4 text-muted-foreground" />
       </Button>
     </li>
   )

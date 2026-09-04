@@ -54,7 +54,7 @@ export function BulkPage() {
             aria-selected={tab === t}
             onClick={() => setTab(t)}
             className={`rounded-sm px-3 py-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              tab === t ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              tab === t ? 'bg-background font-medium text-foreground shadow-neu-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
             data-testid={`bulk-tab-${t}`}
           >
@@ -138,7 +138,7 @@ function ImportPanel() {
         spellCheck={false}
         rows={10}
         placeholder={`{"resource":"workspace","workspace":{"external_id":"W-1","name":"Legal","region_pin":"eu-west-1"}}\n{"resource":"document","document":{"external_id":"D-1","workspace_external_id":"W-1","title":"Contract.pdf","tags":["contract"]}}\n…`}
-        className="h-64 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-xs"
+        className="h-64 w-full resize-y rounded-lg border border-input bg-muted p-2 font-mono text-xs shadow-neu-inset"
         data-testid="bulk-import-textarea"
       />
 
@@ -155,7 +155,7 @@ function ImportPanel() {
           <p className="text-xs font-semibold uppercase text-muted-foreground">
             {summary ? 'Last 50 results' : 'Live results'}
           </p>
-          <ul className="max-h-64 space-y-0.5 overflow-y-auto rounded border border-border bg-muted/40 p-2 font-mono text-[11px]" data-testid="bulk-import-results">
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto rounded-xl bg-muted p-2 font-mono text-[11px] shadow-neu-inset" data-testid="bulk-import-results">
             {summary?.globalErrors.map((e, i) => (
               <li key={`g-${i}`} className="flex items-start gap-1 text-destructive">
                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" /> {e}

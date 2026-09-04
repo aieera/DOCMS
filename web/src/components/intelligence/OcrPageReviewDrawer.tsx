@@ -37,10 +37,10 @@ interface Props {
 }
 
 const GRADE_DOT: Record<QualityGrade, string> = {
-  excellent: 'bg-emerald-500',
-  good:      'bg-blue-500',
-  fair:      'bg-amber-500',
-  poor:      'bg-red-500',
+  excellent: 'bg-success',
+  good:      'bg-info',
+  fair:      'bg-warning',
+  poor:      'bg-destructive',
 }
 
 const ISSUE_LABEL: Record<string, string> = {
@@ -213,7 +213,7 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
         </div>
 
         {summary && flaggedRemaining === 0 && (data?.pages?.length ?? 0) > 0 && (
-          <div className="mt-4 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+          <div className="mt-4 flex items-center gap-2 rounded-md border border-success/40 bg-success/5 px-3 py-2 text-sm text-success">
             <CheckCircle2 className="h-4 w-4" />
             All flagged pages reviewed.
           </div>
@@ -235,10 +235,10 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
 
   const pct = Math.round(page.overall_score * 100)
   const scoreColor =
-    page.overall_score >= 0.9 ? 'bg-emerald-500'
-    : page.overall_score >= 0.75 ? 'bg-blue-500'
-    : page.overall_score >= 0.6 ? 'bg-amber-500'
-    : 'bg-red-500'
+    page.overall_score >= 0.9 ? 'bg-success'
+    : page.overall_score >= 0.75 ? 'bg-info'
+    : page.overall_score >= 0.6 ? 'bg-warning'
+    : 'bg-destructive'
 
   return (
     <li className="px-3 py-3 text-sm" data-testid={`ocr-page-row-${page.page_number}`}>
@@ -261,7 +261,7 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {page.reviewed ? (
-            <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+            <span className="inline-flex items-center gap-1 text-xs text-success">
               <CheckCircle2 className="h-3 w-3" /> Reviewed
             </span>
           ) : page.needs_review ? (

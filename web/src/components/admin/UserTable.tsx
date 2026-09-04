@@ -122,7 +122,7 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
             : r === 'admin'
               ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
               : r === 'compliance_officer'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                ? 'border-warning/40 bg-warning/10 text-warning-strong'
                 : r === 'viewer' || r === 'guest'
                   ? 'border-border bg-muted text-muted-foreground'
                   : 'border-border bg-card text-foreground'
@@ -145,9 +145,9 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
           neverLoggedIn
             ? 'border-border bg-muted text-muted-foreground'
             : s === 'active'
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              ? 'border-success/40 bg-success/10 text-success'
               : s === 'suspended'
-                ? 'border-destructive/40 bg-destructive/10 text-red-700 dark:text-red-300'
+                ? 'border-destructive/40 bg-destructive/10 text-destructive'
                 : 'border-border bg-muted text-muted-foreground'
         const label = neverLoggedIn ? 'Never logged in' : s
         return (

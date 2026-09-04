@@ -135,13 +135,13 @@ function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; t
   }
   if (status === 'expiring_soon') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning" data-testid={testId}>
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning-strong" data-testid={testId}>
         <AlertTriangle className="h-3 w-3" /> Token expiring soon
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" data-testid={testId}>
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success" data-testid={testId}>
       <CheckCircle2 className="h-3 w-3" /> Connected
     </span>
   )
@@ -251,7 +251,7 @@ function ESignatureSection() {
               {PROVIDERS.map((p) => {
                 const conn = connectionFor(p.id)
                 return (
-                  <li key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4" data-testid={`provider-row-${p.id}`}>
+                  <li key={p.id} className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu" data-testid={`provider-row-${p.id}`}>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
@@ -350,17 +350,17 @@ function ESignatureSection() {
       {tab === 'notifications' && (
         <section data-testid="notifications-section" className="space-y-3">
           {/* Twilio card */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">Twilio (SMS MFA)</h3>
                   {twilioQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                       <CheckCircle2 className="h-3 w-3" /> Configured
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                       Not configured
                     </span>
                   )}
@@ -381,17 +381,17 @@ function ESignatureSection() {
           </div>
 
           {/* SMTP card */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">SMTP (email)</h3>
                   {smtpQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                       <CheckCircle2 className="h-3 w-3" /> Configured
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                       Not configured
                     </span>
                   )}
@@ -417,17 +417,17 @@ function ESignatureSection() {
       {tab === 'connectors' && (
         <section data-testid="connectors-section" className="space-y-3">
           {/* Google Workspace */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">Google Workspace</h3>
                   {googleQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                       <CheckCircle2 className="h-3 w-3" /> Connected
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                       Not configured
                     </span>
                   )}

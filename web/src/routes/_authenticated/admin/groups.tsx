@@ -360,7 +360,7 @@ function UserPicker({
       </div>
       {open && (
         <ul
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card text-sm shadow-md"
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md bg-card text-sm shadow-neu"
           data-testid="member-picker-results"
         >
           {usersQ.isLoading ? (

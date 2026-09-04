@@ -49,7 +49,7 @@ export function SignatureValidityBadge({ documentId, tier1, tier2 }: BadgeProps)
 
   return (
     <div
-      className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 text-xs ${tone.cls}`}
+      className={`inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs ${tone.cls}`}
       data-testid="signature-validity-badge"
       data-tone={tone.id}
     >
@@ -63,7 +63,7 @@ export function SignatureValidityBadge({ documentId, tier1, tier2 }: BadgeProps)
       {tier2 && (
         <span
           className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-            tier2.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+            tier2.passed ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
           }`}
           data-testid="tier2-pill"
         >
@@ -93,23 +93,23 @@ interface Tone {
 
 function badgeTone(r: PAdESReport | null): Tone {
   if (!r || r.signature_count === 0) {
-    return { id: 'unsigned', cls: 'border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300', icon: ShieldQuestion }
+    return { id: 'unsigned', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
   }
   if (!r.tamper_evident) {
-    return { id: 'invalid', cls: 'border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200', icon: ShieldOff }
+    return { id: 'invalid', cls: 'bg-destructive/15 text-destructive shadow-neu-sm', icon: ShieldOff }
   }
   // Aggregate cert status across all signatures: any revoked → invalid;
   // any indeterminate → indeterminate; all valid → valid.
   const worst = aggregateStatus(r.signatures.map((s) => s.cert_status))
   switch (worst) {
     case 'revoked':
-      return { id: 'invalid', cls: 'border-red-300 bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-200', icon: ShieldOff }
+      return { id: 'invalid', cls: 'bg-destructive/15 text-destructive shadow-neu-sm', icon: ShieldOff }
     case 'indeterminate':
-      return { id: 'indeterminate', cls: 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200', icon: AlertTriangle }
+      return { id: 'indeterminate', cls: 'bg-warning/15 text-warning-strong shadow-neu-sm', icon: AlertTriangle }
     case 'valid':
-      return { id: 'valid', cls: 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200', icon: CheckCircle2 }
+      return { id: 'valid', cls: 'bg-success/15 text-success shadow-neu-sm', icon: CheckCircle2 }
     default:
-      return { id: 'unknown', cls: 'border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-200', icon: ShieldQuestion }
+      return { id: 'unknown', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
   }
 }
 
