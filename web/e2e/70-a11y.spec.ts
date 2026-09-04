@@ -158,12 +158,28 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
 
   test('tasks inbox', async ({ page }) => {
     await mockCore(page)
+    // The "My tasks" list itself reads GET /tasks?filter=mine&… (the
+    // paginated TaskPage envelope) — /tasks/mine is a separate,
+    // array-shaped back-compat endpoint kept for the topbar badge and
+    // the mobile app. Mocking only /tasks/mine here left the visible
+    // list backed by the aborted-request catch-all, so the page
+    // silently rendered its EMPTY state and the a11y scan never
+    // exercised the populated row.
     await page.unroute('**/api/v1/tasks/mine**')
     await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([{
       id: 't-1', title: 'Review the NDA', description: 'Second pass',
       status: 'open', priority: 'high', due_at: null, source: 'user',
       created_by: USER, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }])))
+    await page.route('**/api/v1/tasks?**', (r) => r.fulfill(json({
+      items: [{
+        id: 't-1', title: 'Review the NDA', description: 'Second pass',
+        status: 'open', priority: 'high', due_at: null, source: 'user',
+        created_by: USER, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        assignees: [], documents: [],
+      }],
+      total: 1, limit: 50, offset: 0,
+    })))
     await page.goto('/tasks')
     await expect(page.getByText('Review the NDA')).toBeVisible()
     await scan(page, '/tasks')

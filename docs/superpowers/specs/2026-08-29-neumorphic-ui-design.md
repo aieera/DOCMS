@@ -132,6 +132,14 @@ Mobile-first; verify at 360 / 768 / 1024 / 1440. Rail → existing mobile drawer
 7. Responsive + RTL + dark pass.
 8. Gates, visual capture, spec finalize.
 
-## 8. Open questions
-- Exact accent-blue hue after AA tuning (Task 1 resolves via the contrast test).
-- Whether any chart/data-viz colors need a neumorphic-friendly palette beyond the accent (Task 5 decides per widget).
+## 8. Open questions — resolved (Task 10)
+
+- **Accent blue, final value.** `--primary: 223 75% 47%` light (`#1e50d2`), `--primary: 221 100% 69%` dark (`#5b8cff`). Both AA as text and as a solid-fill button (`neu-tokens.test.ts` — `primary/background` and `primary-foreground/primary`, ≥4.5:1 in both themes). Note from the Task 10 gate sweep: `text-primary` on a `bg-primary/NN` translucent tint is a *separate* pairing the token test doesn't cover, and it can drop under 4.5:1 once the tint lightens (dark) or darkens (light) the effective background enough — three call sites (`BrowserTreeSidebar` selected item, the document-detail sub-tab, `admin/users`' "Transfer ownership" link on a tinted info panel) needed `text-foreground` instead of `text-primary` for exactly this reason. Same finding applies to `text-success`/`text-destructive` as plain label text (see below) — treat any *colored text on a translucent same-color tint* combo as needing its own contrast check, not an inherited pass from the plain-token result.
+- **Count-badge recolor: red → blue.** Accepted design decision — notification/task count badges use `bg-primary`/`text-primary-foreground` (cool blue) rather than a red/destructive fill, keeping "you have N items" a neutral-attention cue distinct from the destructive-red vocabulary reserved for actual errors/danger states.
+- **Categorical-legend carve-outs — accepted, out of the neumorphic monochrome sweep.** These stay on their own established palettes rather than being pulled onto the neutral/accent token set, because their whole job is per-category *differentiation*, which a single-hue system can't provide:
+  - Chart/data-viz series colors (crextio `vertical-bar-chart`, dashboard KPI charts).
+  - Workspace accent colors (per-workspace color tags in the sidebar/switcher).
+  - NER entity-type colors (intelligence entity highlighting).
+  - Tag colors (user-assigned document tags).
+- **Chart/data-viz palette beyond the accent.** Resolved by the carve-out above — charts keep their existing categorical palette; only their surrounding chrome (card, axes, gridlines, tooltips) took the neumorphic surface treatment.
+- **`text-success`/`text-destructive`/`text-info` as plain label text — a token-test gap, not a token defect.** `neu-tokens.test.ts` only verifies `<x>-foreground` on solid `<x>` fill (e.g. white-on-red buttons) and `primary` on `background`; it never asserted `success`/`destructive`/`info` as directly-rendered text. The Task 10 axe sweep found `text-destructive` alone is only ~3.65:1 against the dark canvas (below 4.5) regardless of any background tint, and `text-success`/`text-destructive` badges at higher tint opacities (`/15`) missed AA in light. Fixed at the call sites the gate exercises (`Badge`'s `active`/`success`/`disposed` variants, `UserTable`'s inline suspended-status pill) by keeping the colored border/tint for the visual cue and rendering the label in `text-foreground`. Any other `text-success`/`text-destructive`/`text-info` label-text usage elsewhere in the app should get the same treatment if/when a route exercising it is added to the a11y gate.
