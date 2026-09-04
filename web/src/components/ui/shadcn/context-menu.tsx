@@ -42,7 +42,7 @@ const ContextMenuSubContent = forwardRef<
   <ContextMenuPrimitive.SubContent
     ref={ref}
     className={cn(
-      'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg',
+      'z-50 min-w-[8rem] overflow-hidden rounded-2xl bg-popover p-1 text-popover-foreground shadow-neu',
       className,
     )}
     {...props}
@@ -58,7 +58,7 @@ const ContextMenuContent = forwardRef<
     <ContextMenuPrimitive.Content
       ref={ref}
       className={cn(
-        'z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
+        'z-50 min-w-[10rem] overflow-hidden rounded-2xl bg-popover p-1 text-popover-foreground shadow-neu',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         className,
       )}
