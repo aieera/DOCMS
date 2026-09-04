@@ -87,6 +87,9 @@ function Combobox({
                       onChange?.(opt.value)
                       setOpen(false)
                     }}
+                    className={cn(
+                      value === opt.value && 'bg-primary text-primary-foreground shadow-neu-sm rounded-lg',
+                    )}
                   >
                     {opt.label}
                     {value === opt.value && <Check className="ms-auto" />}

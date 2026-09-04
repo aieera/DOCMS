@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 // API so the strangler import-swap stays mechanical.
 
 const avatarVariants = cva(
-  'relative flex shrink-0 overflow-hidden rounded-full bg-muted',
+  'relative flex shrink-0 overflow-hidden rounded-full bg-muted shadow-neu-sm',
   {
     variants: {
       size: {
@@ -43,7 +43,7 @@ const AvatarFallback = forwardRef<
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Fallback
     ref={ref}
-    className={cn('flex h-full w-full items-center justify-center rounded-full bg-primary text-primary-foreground font-medium', className)}
+    className={cn('flex h-full w-full items-center justify-center rounded-full bg-muted text-muted-foreground font-medium', className)}
     {...props}
   />
 ))
