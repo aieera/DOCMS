@@ -28,9 +28,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <MobileSidebar open={mobileOpen} onOpenChange={setMobileOpen} />
       <div
         className={cn(
-          // Navy backdrop so the content panel's rounded top-left corner
-          // reveals navy where it meets the navy sidebar + topbar.
-          'flex h-full flex-col bg-sidebar transition-[padding] duration-200 ease-out motion-reduce:transition-none',
+          // Single soft canvas behind the rail, topbar, and content —
+          // no separate backdrop/panel treatment.
+          'flex h-full flex-col bg-background transition-[padding] duration-200 ease-out motion-reduce:transition-none',
           // The sidebar is hidden below lg; on lg+ we reserve space
           // for it so the content doesn't slide under the panel.
           'lg:ps-[260px]',
@@ -38,9 +38,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         <AppTopbar onOpenMobileNav={() => setMobileOpen(true)} />
-        {/* Content panel — curved top-left corner tucks the light canvas
-            under the navy topbar/sidebar like a nested card. */}
-        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-tl-[28px] bg-background">
+        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background">
           <div className="mx-auto flex w-full flex-1 flex-col p-4 sm:p-6 lg:p-8">{children}</div>
         </main>
       </div>

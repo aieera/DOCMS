@@ -13,6 +13,7 @@ import { createSavedSearch, deleteSavedSearch, listSavedSearches } from '@/api/s
 import { getRecentSearches, recordRecentSearch, removeRecentSearch } from '@/lib/recentSearches'
 import { SearchDropdown } from '@/components/search/SearchDropdown'
 import { Breadcrumbs } from './breadcrumbs'
+import { ThemeToggle } from './theme-toggle'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
 import { formatRelativeTime } from '@/lib/formatters'
@@ -37,16 +38,15 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
     <header
       role="banner"
       aria-label="Application toolbar"
-      // Navy toolbar matching the sidebar. `text-sidebar-foreground`
-      // sets a light default so icons + breadcrumbs read on navy; the
-      // white search pill provides the contrast input surface.
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 text-sidebar-foreground lg:px-6"
+      // Soft canvas toolbar matching the shell — a hairline bottom edge
+      // separates it from the content below instead of a navy fill.
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 text-foreground lg:px-6"
     >
       <Button
         variant="ghost"
         size="icon"
         onClick={onOpenMobileNav}
-        className="text-sidebar-foreground hover:bg-white/10 hover:text-white lg:hidden"
+        className="lg:hidden"
         aria-label="Open navigation"
       >
         <Menu className="h-5 w-5" />
@@ -59,13 +59,14 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
 
       <div className="flex items-center gap-2">
         <CommandTrigger />
-        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <div className="flex items-center gap-2">
           <MyTasksBadge />
           <NotificationsDropdown />
           <LanguageSelector />
+          <ThemeToggle />
         </div>
-        <Separator orientation="vertical" className="hidden h-6 bg-white/15 sm:block" />
+        <Separator orientation="vertical" className="hidden h-6 sm:block" />
         <UserMenu />
       </div>
     </header>
@@ -157,9 +158,9 @@ function CommandTrigger() {
           runQuery(trimmed)
         }}
         className={
-          'group flex h-10 items-center gap-2 rounded-full border border-input bg-card px-4 shadow-sm ' +
-          'transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 ' +
-          'hover:border-ring/60 sm:w-64 md:w-80'
+          'group flex h-10 items-center gap-2 rounded-full border border-input bg-muted px-4 shadow-neu-inset ' +
+          'transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background ' +
+          'sm:w-64 md:w-80'
         }
       >
         <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
@@ -237,7 +238,7 @@ function MyTasksBadge() {
       variant="ghost"
       size="icon"
       onClick={() => navigate({ to: '/tasks' })}
-      className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
+      className="relative"
       aria-label={count > 0 ? `${count} open tasks` : 'My tasks'}
       title={count > 0 ? `${count} open task${count === 1 ? '' : 's'}` : 'My tasks'}
       data-testid="my-tasks-badge"
@@ -245,7 +246,7 @@ function MyTasksBadge() {
       <CheckSquare className="h-[1.1rem] w-[1.1rem]" />
       {count > 0 && (
         <span
-          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+          className="pointer-events-none absolute end-1 top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
           data-testid="my-tasks-count"
         >
           {count > 99 ? '99+' : count}
@@ -311,7 +312,7 @@ function NotificationsDropdown() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative text-sidebar-foreground hover:bg-white/10 hover:text-white"
+          className="relative"
           aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
           data-testid="notifications-button"
         >
@@ -322,7 +323,7 @@ function NotificationsDropdown() {
               total existed only in the aria-label. */}
           {unreadCount > 0 && (
             <span
-              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+              className="pointer-events-none absolute -end-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
               aria-hidden
               data-testid="notifications-unread-dot"
             >
@@ -463,7 +464,7 @@ function UserMenu() {
           size="icon"
           aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
           data-testid="user-avatar-button"
-          className="rounded-full border border-white/15 bg-white/10 font-semibold text-white hover:bg-white/20"
+          className="rounded-full font-semibold"
           disabled={isHydrating}
         >
           {isHydrating ? (
