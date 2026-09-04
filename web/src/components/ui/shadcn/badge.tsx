@@ -29,7 +29,12 @@ const badgeVariants = cva(
         draft: 'bg-muted text-muted-foreground shadow-neu-sm',
         in_review: 'bg-warning/15 text-warning-strong shadow-neu-sm',
         active: 'bg-success/8 text-success shadow-neu-sm',
-        superseded: 'bg-info/15 text-info shadow-neu-sm',
+        // superseded/info: --info is byte-identical to --primary in both
+        // themes, so text-info on bg-info/15 has the same defect as
+        // text-destructive below (~4.30:1 light / ~3.65:1 dark, both
+        // under 4.5) — never caught by the gate because no scanned
+        // mock uses a superseded/info lifecycle_state. Same fix.
+        superseded: 'bg-info/15 text-foreground shadow-neu-sm',
         archived: 'bg-muted text-muted-foreground shadow-neu-sm',
         // disposed: text-destructive on ANY destructive-tinted bg fails
         // AA in dark (the token is only ~3.65:1 as plain text there,
@@ -37,7 +42,7 @@ const badgeVariants = cva(
         // pair) — text-foreground carries the label, the tint still
         // carries the "destructive" cue.
         disposed: 'bg-destructive/15 text-foreground shadow-neu-sm',
-        info: 'bg-info/15 text-info shadow-neu-sm',
+        info: 'bg-info/15 text-foreground shadow-neu-sm',
         success: 'bg-success/8 text-success shadow-neu-sm',
         warning: 'bg-warning/15 text-warning-strong shadow-neu-sm',
       },
