@@ -66,7 +66,7 @@ const tileBase =
   'hover:-translate-y-0.5 hover:shadow-neu ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
 const tileState = (selected?: boolean) =>
-  selected ? 'border-primary/45 bg-primary/5' : 'border-transparent hover:border-border hover:bg-card'
+  selected ? 'border-primary/45 bg-primary/5' : 'border-transparent hover:bg-card'
 
 export function FolderTile({
   folder, selected, onOpen, onSelect,
