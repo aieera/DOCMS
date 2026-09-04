@@ -129,8 +129,8 @@ export function UsersPage() {
         }
       />
 
-      <div className="flex items-start gap-2.5 rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
+      <div className="flex items-start gap-2.5 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
         <div className="space-y-1">
           <p>
             <strong className="text-foreground">&ldquo;Last Login&rdquo;</strong> is the most-recent sign-in timestamp &mdash; not last activity.
@@ -249,7 +249,7 @@ function ModeTabs({ mode, onChange, disabled }: { mode: Mode; onChange: (m: Mode
             className={cn(
               'flex-1 rounded-sm px-3 py-1.5 transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              active ? 'bg-background text-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-background text-foreground shadow-neu-sm font-medium' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {o.label}
@@ -273,7 +273,7 @@ function ActivationLinkPanel({ issued, onClose }: { issued: InviteUserResponse; 
           Activation URL for {issued.user.email}
         </p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">{url}</code>
+          <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1 text-xs font-mono shadow-neu-inset">{url}</code>
           <Button type="button" size="sm" variant="outline" onClick={copy} aria-label="Copy link">
             <Copy className="h-3 w-3" />
           </Button>

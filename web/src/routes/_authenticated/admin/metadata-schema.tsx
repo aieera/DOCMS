@@ -236,7 +236,7 @@ function MetadataSchemaPage() {
                             <span
                               aria-hidden
                               className={cn(
-                                'absolute top-0.5 inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-[inset-inline-start]',
+                                'absolute top-0.5 inline-block h-4 w-4 rounded-full bg-background shadow-neu-sm transition-[inset-inline-start]',
                                 f.required ? 'start-[18px]' : 'start-0.5',
                               )}
                             />
@@ -289,7 +289,7 @@ function MetadataSchemaPage() {
                 <textarea
                   spellCheck={false}
                   className={cn(
-                    'min-h-0 w-full flex-1 resize-none border-0 bg-background p-3 font-mono text-xs leading-relaxed',
+                    'min-h-0 w-full flex-1 resize-none border-0 bg-muted p-3 font-mono text-xs leading-relaxed shadow-neu-inset',
                     'focus:outline-none focus:ring-1 focus:ring-ring',
                     parsed && !parsed.ok && 'text-destructive',
                   )}

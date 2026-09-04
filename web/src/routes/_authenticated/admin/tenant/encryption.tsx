@@ -68,7 +68,7 @@ function EncryptionPage() {
 
       {isLoading && <Spinner />}
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-50 p-4 text-sm dark:bg-red-950/30">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           Failed to load key status: {(error as Error).message}
         </div>
       )}
@@ -87,9 +87,9 @@ function EncryptionPage() {
 
 function CustodyWarning() {
   return (
-    <section className="mb-6 rounded-lg border border-amber-500/40 bg-amber-50/60 p-4 dark:bg-amber-950/20">
+    <section className="mb-6 rounded-lg border border-warning/40 bg-warning/10 p-4">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
         <div className="text-sm">
           <p className="font-semibold">You hold custody of the external key.</p>
           <p className="mt-1 text-muted-foreground">
@@ -210,14 +210,14 @@ function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => voi
       </p>
 
       {rotate.isPending && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
+        <div className="mb-4 flex items-center gap-2 rounded-md bg-muted p-3 text-sm shadow-neu-inset">
           <Spinner />
           <span>Rotating &amp; re-wrapping key metadata…</span>
         </div>
       )}
 
       {note && !rotate.isPending && (
-        <div className="mb-4 rounded-md border border-blue-500/40 bg-blue-50/60 p-3 text-sm dark:bg-blue-950/20">
+        <div className="mb-4 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
           <p className="font-medium">Next step — re-wrap DEKs</p>
           <p className="mt-1 text-muted-foreground">{note}</p>
         </div>
@@ -260,7 +260,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
       {versions.length === 0 ? (
         <p className="text-sm text-muted-foreground">No key versions yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
@@ -285,7 +285,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="gap-1 text-red-600 hover:text-red-700"
+                        className="gap-1 text-destructive hover:text-destructive/80"
                         onClick={() => onRevoke(v)}
                         disabled={revoke.isPending}
                       >
@@ -306,13 +306,13 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
 function StatusBadge({ v }: { v: KEKVersion }) {
   if (v.revoked_at)
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-200">
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
         <ShieldOff className="h-3 w-3" /> Revoked
       </span>
     )
   if (v.active)
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+      <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
         <CheckCircle2 className="h-3 w-3" /> Active
       </span>
     )

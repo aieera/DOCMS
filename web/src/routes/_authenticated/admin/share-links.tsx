@@ -31,7 +31,7 @@ function TimeCell({ iso, fallback, warnPast = false }: { iso?: string | null; fa
   return (
     <span
       title={formatDateTime(iso)}
-      className={cn('text-muted-foreground', past && 'font-medium text-amber-600 dark:text-amber-400')}
+      className={cn('text-muted-foreground', past && 'font-medium text-warning-strong')}
     >
       {past ? `expired ${formatRelativeTime(iso)}` : formatRelativeTime(iso)}
     </span>
@@ -266,7 +266,7 @@ function SegmentedFilter({ value, onChange }: { value: Filter; onChange: (v: Fil
             className={cn(
               'rounded-sm px-3 py-1.5 transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              active ? 'bg-background text-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground',
+              active ? 'bg-background text-foreground shadow-neu-sm font-medium' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {o.label}

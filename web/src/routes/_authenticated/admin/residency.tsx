@@ -75,7 +75,7 @@ export function ResidencyPage() {
       ) : !stats.data || stats.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">No documents yet.</p>
       ) : (
-        <div className="mb-6 overflow-hidden rounded-lg border border-border">
+        <div className="mb-6 overflow-hidden rounded-2xl bg-card shadow-neu">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr className="text-start">
@@ -97,20 +97,20 @@ export function ResidencyPage() {
         </div>
       )}
 
-      <div className="mb-6 rounded-lg border border-border bg-card p-4">
+      <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 flex items-center gap-2 font-medium">
           <DirectionalIcon name="ArrowRight" className="h-4 w-4" /> Migrate documents
         </h3>
         <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
           <input
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+            className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
             placeholder="source region (e.g. us-east-1)"
             value={src}
             onChange={(e) => setSrc(e.target.value)}
           />
           <DirectionalIcon name="ArrowRight" className="h-4 w-4 text-muted-foreground" />
           <input
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+            className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
             placeholder="target region (e.g. eu-west-1)"
             value={tgt}
             onChange={(e) => setTgt(e.target.value)}
@@ -147,7 +147,7 @@ export function ResidencyPage() {
           {migrations.data.map((m) => (
             <li
               key={m.id}
-              className="rounded-lg border border-border bg-card p-3"
+              className="rounded-lg bg-card p-3 shadow-neu"
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium">
@@ -192,11 +192,11 @@ function ResidencyBanner({
 }) {
   if (!clusterRegion || clusterRegion === 'unknown') {
     return (
-      <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 p-3 text-sm dark:bg-amber-950/30">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+      <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         <div>
-          <p className="font-medium text-amber-900 dark:text-amber-200">Cluster region unknown</p>
-          <p className="text-xs text-amber-800 dark:text-amber-300">
+          <p className="font-medium text-warning-strong">Cluster region unknown</p>
+          <p className="text-xs text-warning-strong/80">
             <code>/healthz</code> did not return a region. Confirm the service was started with <code>SEDOC_REGION_ID</code>.
           </p>
         </div>
@@ -206,13 +206,13 @@ function ResidencyBanner({
   const drift = statRegions.filter((r) => r.toLowerCase() !== clusterRegion)
   if (drift.length === 0) {
     return (
-      <div className="mb-4 flex items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-50/60 p-3 text-sm dark:bg-emerald-950/30">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+      <div className="mb-4 flex items-start gap-2 rounded-md border border-success/40 bg-success/10 p-3 text-sm">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
         <div>
-          <p className="font-medium text-emerald-900 dark:text-emerald-200">
+          <p className="font-medium text-success">
             Residency OK — cluster region <code>{clusterRegion}</code>
           </p>
-          <p className="text-xs text-emerald-800 dark:text-emerald-300">
+          <p className="text-xs text-success/80">
             Every document lives in this region. New uploads will be pinned here.
           </p>
         </div>

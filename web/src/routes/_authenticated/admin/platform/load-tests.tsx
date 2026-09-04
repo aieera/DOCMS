@@ -34,8 +34,8 @@ function LoadTestsPage() {
                   onClick={() => setSelected(r)}
                   className={`flex w-full items-start gap-3 rounded-md border p-3 text-start text-sm transition-colors ${
                     selected?.slug === r.slug
-                      ? 'border-violet-500/50 bg-violet-50/40 dark:bg-violet-950/15'
-                      : 'border-border bg-card hover:bg-accent'
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'border-transparent bg-card shadow-neu-sm hover:bg-accent'
                   }`}
                 >
                   <VerdictIcon verdict={r.meta.verdict} />
@@ -79,14 +79,14 @@ function EmptyState() {
 }
 
 function VerdictIcon({ verdict }: { verdict: Verdict }) {
-  if (verdict === 'passed') return <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" aria-label="passed" />
+  if (verdict === 'passed') return <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" aria-label="passed" />
   if (verdict === 'failed') return <XCircle className="mt-0.5 h-4 w-4 text-destructive" aria-label="failed" />
-  return <Clock className="mt-0.5 h-4 w-4 text-amber-500" aria-label="pending" />
+  return <Clock className="mt-0.5 h-4 w-4 text-warning" aria-label="pending" />
 }
 
 function ReportDetail({ report }: { report: LoadTestReport }) {
   return (
-    <article className="space-y-4 rounded-md border border-border bg-card p-5">
+    <article className="space-y-4 rounded-md bg-card p-5 shadow-neu">
       <header className="space-y-1">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
           <FileText className="h-5 w-5 text-muted-foreground" />
@@ -104,8 +104,8 @@ function ReportDetail({ report }: { report: LoadTestReport }) {
       </header>
 
       {report.meta.verdict === 'pending' && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 p-2 text-xs dark:bg-amber-950/20">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 text-warning" />
           <span>
             Verdict is "pending" — this campaign has not been finalised. A buyer-facing report MUST have every SLO row filled in and the verdict flipped to <code>passed</code> or <code>failed</code> before it counts.
           </span>
@@ -117,7 +117,7 @@ function ReportDetail({ report }: { report: LoadTestReport }) {
           shipping one to render a single static doc is overkill.
           Operators copy/paste the relevant table out when they need
           to share it. */}
-      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-mono text-xs leading-5">
+      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs leading-5 shadow-neu-inset">
         {report.body}
       </pre>
     </article>
@@ -135,9 +135,9 @@ function Field({ label, value }: { label: string; value: string }) {
 
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   const styles: Record<Verdict, string> = {
-    passed:  'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    passed:  'border-success/40 bg-success/10 text-success',
     failed:  'border-destructive/40 bg-destructive/10 text-destructive',
-    pending: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    pending: 'border-warning/40 bg-warning/10 text-warning-strong',
   }
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold uppercase ${styles[verdict]}`}>

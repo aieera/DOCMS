@@ -18,9 +18,9 @@ function copy(text: string) {
 }
 
 function ActionIcon({ action }: { action: ScimLogEntry['action'] }) {
-  if (action === 'provisioned') return <UserPlus className="h-4 w-4 text-emerald-500" />
-  if (action === 'deprovisioned' || action === 'deleted') return <UserMinus className="h-4 w-4 text-red-500" />
-  return <UserCog className="h-4 w-4 text-blue-500" />
+  if (action === 'provisioned') return <UserPlus className="h-4 w-4 text-success" />
+  if (action === 'deprovisioned' || action === 'deleted') return <UserMinus className="h-4 w-4 text-destructive" />
+  return <UserCog className="h-4 w-4 text-primary" />
 }
 
 export function ScimPage() {
@@ -48,11 +48,11 @@ export function ScimPage() {
         description="Automatic user + group provisioning from your IdP (SCIM 2.0). Point your IdP at the base URL below with the bearer token."
       />
 
-      <div className="mt-6 space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className="mt-6 space-y-3 rounded-lg bg-card p-4 shadow-neu">
         <div>
           <label className="text-xs font-semibold uppercase text-muted-foreground">SCIM base URL</label>
           <div className="mt-1 flex items-center gap-2">
-            <code className="flex-1 truncate rounded border border-border bg-background px-2 py-1.5 text-sm" data-testid="scim-base-url">
+            <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm shadow-neu-inset" data-testid="scim-base-url">
               {baseURL || '—'}
             </code>
             <Button size="sm" variant="outline" onClick={() => copy(baseURL)} disabled={!baseURL}>
@@ -67,7 +67,7 @@ export function ScimPage() {
             // A SCIM token is stored ON the tenant's active SSO config, so
             // rotation 409s ("register an IdP first") when there's none.
             // Don't offer a doomed button — explain and point to SSO setup.
-            <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="scim-needs-sso">
+            <div className="mt-1 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm" data-testid="scim-needs-sso">
               <p className="font-medium text-foreground">Set up single sign-on first</p>
               <p className="mt-1 text-muted-foreground">
                 SCIM tokens attach to your active SSO configuration. Register a SAML or OIDC
@@ -80,7 +80,7 @@ export function ScimPage() {
           ) : (
             <div className="mt-1 flex items-center gap-2">
               {freshToken ? (
-                <code className="flex-1 truncate rounded border border-amber-500/50 bg-amber-500/10 px-2 py-1.5 text-sm" data-testid="scim-token">
+                <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1.5 text-sm shadow-neu-inset" data-testid="scim-token">
                   {freshToken}
                 </code>
               ) : (
@@ -100,7 +100,7 @@ export function ScimPage() {
         </div>
       </div>
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+      <div className="mt-4 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground shadow-neu-inset">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           <p className="font-medium text-foreground">Attribute mapping</p>
@@ -109,7 +109,7 @@ export function ScimPage() {
       </div>
 
       <h3 className="mt-6 text-sm font-semibold">Recent provisioning activity</h3>
-      <div className="mt-2 overflow-hidden rounded-lg border border-border">
+      <div className="mt-2 overflow-hidden rounded-2xl bg-card shadow-neu">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
             <tr><th className="p-2 w-8" /><th className="p-2">Action</th><th className="p-2">Detail</th><th className="p-2">When</th></tr>

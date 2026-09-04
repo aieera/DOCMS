@@ -78,9 +78,9 @@ export function IrmPage() {
 
 function ExplainerBanner() {
   return (
-    <section className="mb-6 rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
+    <section className="mb-6 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
-        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
         <div className="text-muted-foreground">
           <p className="font-semibold text-foreground">How it works</p>
           <p className="mt-1">
@@ -127,7 +127,7 @@ function ContainerRow({
           </div>
         </div>
         {container.revoked && (
-          <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
             Revoked
           </span>
         )}
@@ -199,11 +199,11 @@ function LicenseList({ containerId }: { containerId: string }) {
                 <td className="px-3 py-2">{fmt(lic.last_opened_at)}</td>
                 <td className="px-3 py-2">
                   {lic.revoked_at ? (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
                       Revoked
                     </span>
                   ) : (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
                       Active
                     </span>
                   )}
@@ -213,7 +213,7 @@ function LicenseList({ containerId }: { containerId: string }) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="gap-1 text-red-600 hover:text-red-700"
+                      className="gap-1 text-destructive hover:text-destructive/80"
                       onClick={() => setConfirm(lic)}
                       disabled={revoke.isPending}
                     >

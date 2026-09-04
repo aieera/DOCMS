@@ -70,7 +70,7 @@ export function MCPPage() {
       {/* ---- Server status -------------------------------------------- */}
       <section className="mb-6">
         <h2 className="mb-2 text-lg font-semibold">Server</h2>
-        <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
+        <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu">
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4" />
@@ -78,7 +78,7 @@ export function MCPPage() {
               {toolsQ.isLoading ? (
                 <span className="text-xs text-muted-foreground">checking…</span>
               ) : (toolsQ.data?.length ?? 0) > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                   Reachable · {toolsQ.data?.length} tools
                 </span>
               ) : (
@@ -95,7 +95,7 @@ export function MCPPage() {
         {(toolsQ.data?.length ?? 0) > 0 && (
           <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {toolsQ.data!.map((t) => (
-              <li key={t.name} className="rounded border border-border bg-card/40 p-2 text-xs">
+              <li key={t.name} className="rounded-lg bg-card/40 p-2 text-xs shadow-neu-sm">
                 <code className="font-mono font-semibold">{t.name}</code>
                 <p className="mt-0.5 text-muted-foreground">{t.description}</p>
               </li>
@@ -122,7 +122,7 @@ export function MCPPage() {
             {mcpKeys.map((k) => (
               <li
                 key={k.key_id}
-                className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
+                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu"
                 data-testid={`mcp-key-row-${k.key_id}`}
               >
                 <div className="flex-1">
@@ -203,7 +203,7 @@ export function MCPPage() {
 function Snippet({ title, file, code }: { title: string; file: string; code: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="mb-3 rounded-lg border border-border bg-card p-3">
+    <div className="mb-3 rounded-lg bg-card p-3 shadow-neu">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-sm font-medium">{title}</span>
         <Button
@@ -215,7 +215,7 @@ function Snippet({ title, file, code }: { title: string; file: string; code: str
         </Button>
       </div>
       <p className="mb-1 text-xs text-muted-foreground">Add to: <code className="font-mono">{file}</code></p>
-      <pre className="overflow-x-auto rounded bg-muted/60 p-2 text-xs">{code}</pre>
+      <pre className="overflow-x-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">{code}</pre>
     </div>
   )
 }
@@ -336,7 +336,7 @@ function RevealedKeyDialog({ plaintext, onClose }: { plaintext: string; onClose:
           <DialogDescription>This is the only time we'll show this value.</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 py-2">
-          <code className="flex-1 truncate rounded border border-amber-500/40 bg-amber-50 px-3 py-2 font-mono text-xs dark:bg-amber-950/30">
+          <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
             {plaintext}
           </code>
           <Button

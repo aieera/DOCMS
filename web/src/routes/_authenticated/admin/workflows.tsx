@@ -110,7 +110,7 @@ function WorkflowsAdminPage() {
                   params={{ templateId: d.id }}
                   className="block"
                 >
-                  <Card className="flex h-full items-start gap-3 p-3 transition-shadow hover:shadow-md">
+                  <Card className="flex h-full items-start gap-3 p-3 transition-shadow hover:shadow-neu">
                     <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
                       <GitBranch className="h-4 w-4" />
                     </span>

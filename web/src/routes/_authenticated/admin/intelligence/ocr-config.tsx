@@ -81,8 +81,8 @@ export function OcrConfigPage() {
           title="OCR quality config"
           description="Per-tenant scoring thresholds, auto-retry, and notifications."
         />
-        <div className="mt-6 flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="mt-6 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <div>
             <p className="font-medium">Admin access required</p>
             <p className="mt-0.5 text-muted-foreground">
@@ -175,8 +175,8 @@ export function OcrConfigPage() {
       />
 
       {!canEdit && (
-        <div className="mt-6 flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="ocr-config-readonly-notice">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="mt-6 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm" data-testid="ocr-config-readonly-notice">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <div>
             <p className="font-medium">View-only</p>
             <p className="text-muted-foreground">
@@ -188,7 +188,7 @@ export function OcrConfigPage() {
 
       <EngineDefaultCard canEdit={canEdit} />
 
-      <div className="mt-6 space-y-6 rounded-lg border border-border bg-card p-5" data-testid="ocr-config-form">
+      <div className="mt-6 space-y-6 rounded-lg bg-card p-5 shadow-neu" data-testid="ocr-config-form">
         <Toggle
           label="Score OCR quality on upload"
           help="When off, every page is treated as 'fair' and no review-queue routing happens."
@@ -274,8 +274,8 @@ export function OcrConfigPage() {
         )}
 
         {warnings.length > 0 && (
-          <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm" data-testid="ocr-config-warnings">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm" data-testid="ocr-config-warnings">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div>
               <p className="font-medium">Threshold ordering looks unusual</p>
               <ul className="mt-1 list-disc space-y-0.5 ps-4 text-muted-foreground">
@@ -375,7 +375,7 @@ function ThresholdRow({
             if (Number.isNaN(raw)) return
             onChange(frac(raw))
           }}
-          className={`w-20 rounded-md border bg-background px-2 py-1 text-end text-sm ${outOfRange ? 'border-destructive' : 'border-border'}`}
+          className={`w-20 rounded-md border bg-muted px-2 py-1 text-end text-sm shadow-neu-inset ${outOfRange ? 'border-destructive' : 'border-input'}`}
         />
         <span className="text-xs text-muted-foreground">%</span>
       </div>
@@ -414,7 +414,7 @@ function EngineDefaultCard({ canEdit }: { canEdit: boolean }) {
 
   const current = engine ?? data?.engine ?? 'auto'
   return (
-    <div className="mt-6 space-y-3 rounded-lg border border-border bg-card p-5" data-testid="ocr-engine-config">
+    <div className="mt-6 space-y-3 rounded-lg bg-card p-5 shadow-neu" data-testid="ocr-engine-config">
       <div>
         <h3 className="text-sm font-semibold">Default OCR engine</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">

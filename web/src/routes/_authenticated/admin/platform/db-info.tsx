@@ -30,7 +30,7 @@ function DBInfoPage() {
 
       {isLoading && <Spinner />}
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-50 p-4 text-sm dark:bg-red-950/30">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           Failed to load DB info: {(error as Error).message}
         </div>
       )}
@@ -38,13 +38,13 @@ function DBInfoPage() {
       {data && (
         <>
           {/* ---- Active driver banner ---- */}
-          <section className="mb-6 rounded-lg border border-border bg-card p-4">
+          <section className="mb-6 rounded-lg bg-card p-4 shadow-neu">
             <div className="flex items-start gap-3">
-              <Database className="mt-0.5 h-5 w-5 text-emerald-500" />
+              <Database className="mt-0.5 h-5 w-5 text-success" />
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{data.active.display_name}</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                     Active
                   </span>
                 </div>
@@ -64,7 +64,7 @@ function DBInfoPage() {
           {/* ---- Capability matrix ---- */}
           <section>
             <h2 className="mb-3 text-lg font-semibold">Feature matrix</h2>
-            <div className="overflow-x-auto rounded-lg border border-border">
+            <div className="overflow-x-auto rounded-2xl bg-card shadow-neu">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
@@ -101,7 +101,7 @@ function DBInfoPage() {
             </div>
           </section>
 
-          <section className="mt-6 rounded-lg border border-amber-500/30 bg-amber-50/60 p-4 text-sm dark:bg-amber-950/20">
+          <section className="mt-6 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm">
             <strong>Current status:</strong> only PostgreSQL is available today. The columns for
             MySQL, Oracle, and SQL Server describe planned support, not something you can switch
             to yet.
@@ -141,17 +141,17 @@ function StatusBadge({ status }: { status: CapabilityStatus }) {
   const config = {
     native: {
       icon: <CheckCircle2 className="h-3 w-3" />,
-      cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+      cls: 'bg-success/15 text-success',
       label: 'Native',
     },
     degraded: {
       icon: <AlertTriangle className="h-3 w-3" />,
-      cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+      cls: 'bg-warning/15 text-warning-strong',
       label: 'Degraded',
     },
     unsupported: {
       icon: <XCircle className="h-3 w-3" />,
-      cls: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+      cls: 'bg-destructive/10 text-destructive',
       label: 'Unsupported',
     },
     not_implemented: {

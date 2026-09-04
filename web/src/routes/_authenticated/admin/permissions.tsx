@@ -77,7 +77,7 @@ export function PermissionsPage() {
         description="View the permissions assigned to each role across all resource types. This matrix is read-only and reflects the current access policy."
       />
 
-      <div className="overflow-auto rounded-lg border border-border">
+      <div className="overflow-auto rounded-2xl bg-card shadow-neu">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
@@ -115,7 +115,7 @@ export function PermissionsPage() {
                                 key={cap}
                                 className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs ${
                                   caps.includes(cap)
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+                                    ? 'bg-success/15 text-success'
                                     : 'bg-muted text-muted-foreground line-through '
                                 }`}
                               >
@@ -140,7 +140,7 @@ export function PermissionsPage() {
         </table>
       </div>
 
-      <div className="mt-6 space-y-2 rounded-lg border border-border bg-card p-4 text-sm">
+      <div className="mt-6 space-y-2 rounded-lg bg-card p-4 shadow-neu text-sm">
         <div className="flex items-center gap-2 font-medium">
           <ShieldCheck className="h-4 w-4" />
           Notes

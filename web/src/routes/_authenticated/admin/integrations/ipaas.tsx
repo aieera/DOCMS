@@ -80,7 +80,7 @@ export function IPaaSPage() {
             {(keysQ.data ?? []).map((k) => (
               <li
                 key={k.key_id}
-                className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
+                className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu"
                 data-testid={`api-key-row-${k.key_id}`}
               >
                 <div className="flex-1">
@@ -190,11 +190,11 @@ export function IPaaSPage() {
 function CopyableEndpoint({ trigger, url }: { trigger: string; url: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="rounded-lg bg-card p-3 shadow-neu">
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Zap className="h-3.5 w-3.5 text-amber-500" /> {trigger}
+            <Zap className="h-3.5 w-3.5 text-primary" /> {trigger}
           </div>
           <code className="mt-1 block truncate text-xs text-muted-foreground">{url}</code>
         </div>
@@ -216,7 +216,7 @@ function PortalCard({ name, description, url }: { name: string; description: str
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary"
+      className="block rounded-lg border border-transparent bg-card p-4 shadow-neu transition-all hover:-translate-y-0.5 hover:border-primary/40"
     >
       <div className="flex items-center gap-2">
         <span className="font-semibold">{name}</span>
@@ -341,7 +341,7 @@ function RevealedKeyDialog({ open, plaintext, onClose }: {
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded border border-amber-500/40 bg-amber-50 px-3 py-2 font-mono text-xs dark:bg-amber-950/30">
+            <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
               {plaintext}
             </code>
             <Button

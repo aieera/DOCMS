@@ -127,7 +127,7 @@ export function UploadPolicyPage() {
               onClick={() => save.mutate()}
               disabled={isLoading || save.isPending}
               loading={save.isPending}
-              className="gap-2 shadow-sm hover:shadow-md"
+              className="gap-2"
             >
               Save policy
             </Button>
@@ -210,7 +210,7 @@ function ListSection({
           items.map((v, i) => (
             <span
               key={v}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted py-1 ps-2.5 pe-1 text-xs"
+              className="inline-flex items-center gap-1 rounded-full bg-muted py-1 ps-2.5 pe-1 text-xs shadow-neu-sm"
             >
               <code className="font-mono">{v}</code>
               <button

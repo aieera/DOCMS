@@ -74,9 +74,9 @@ function SyncDevicesPage() {
 
 function ExplainerBanner() {
   return (
-    <section className="mb-6 rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
+    <section className="mb-6 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
-        <FolderSync className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
+        <FolderSync className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
         <div className="text-muted-foreground">
           <p className="font-semibold text-foreground">Selective-sync devices</p>
           <p className="mt-1">
@@ -191,7 +191,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
           No devices registered. Register one above to start mirroring folders to a machine.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
@@ -241,7 +241,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="gap-1 text-red-600 hover:text-red-700"
+                          className="gap-1 text-destructive hover:text-destructive/80"
                           onClick={() => setRevokeId(d.id)}
                           disabled={d.revoked}
                         >
@@ -281,13 +281,13 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
 function StatusBadge({ revoked }: { revoked: boolean }) {
   if (revoked) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600">
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
         <CircleSlash className="h-3 w-3" /> Revoked
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600">
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
       <CheckCircle2 className="h-3 w-3" /> Active
     </span>
   )
@@ -373,7 +373,7 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
           folder first, then return here to select it.
         </p>
       ) : (
-        <div className="max-h-64 overflow-y-auto rounded-md border border-border bg-background">
+        <div className="max-h-64 overflow-y-auto rounded-md bg-muted shadow-neu-inset">
           <ul className="divide-y divide-border">
             {rows.map(({ workspaceName, folder }) => (
               <li key={folder.id}>
@@ -396,7 +396,7 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
                 <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
                   <input type="checkbox" checked onChange={() => toggle(id)} />
                   <span className="font-mono text-xs">{id}</span>
-                  <span className="text-xs text-amber-600">unresolved — uncheck to remove</span>
+                  <span className="text-xs text-warning-strong">unresolved — uncheck to remove</span>
                 </label>
               </li>
             ))}

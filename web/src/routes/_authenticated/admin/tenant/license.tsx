@@ -42,7 +42,7 @@ export function LicensePage() {
 
       {isLoading && <Spinner />}
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-50 p-4 text-sm dark:bg-red-950/30">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           Failed to load license: {(error as Error).message}
         </div>
       )}
@@ -89,26 +89,26 @@ function bannerConfig(status: LicenseStatus, daysRemaining?: number) {
     case 'unlicensed_dev_mode':
       return {
         Icon: AlertTriangle,
-        cls: 'border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20',
+        cls: 'border-warning/40 bg-warning/10',
         title: 'Unlicensed (dev mode)',
       }
     case 'expired':
       return {
         Icon: AlertTriangle,
-        cls: 'border-red-500/40 bg-red-50/60 dark:bg-red-950/20',
+        cls: 'border-destructive/40 bg-destructive/5',
         title: 'License expired (read-only mode)',
       }
     case 'grace':
       return {
         Icon: Clock,
-        cls: 'border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20',
+        cls: 'border-warning/40 bg-warning/10',
         title: `License in grace period — ${Math.abs(daysRemaining ?? 0)} days into grace`,
       }
     case 'active':
     default:
       return {
         Icon: CheckCircle2,
-        cls: 'border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-950/20',
+        cls: 'border-success/40 bg-success/10',
         title: 'License active',
       }
   }
@@ -131,7 +131,7 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
     <>
       <section className="mb-6">
         <h2 className="mb-3 text-lg font-semibold">Claims</h2>
-        <div className="rounded-lg border border-border bg-card">
+        <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
             {placeholders.map((p) => (
               <div key={p.label} className="flex items-center justify-between px-4 py-3 text-sm">
@@ -145,7 +145,7 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">Feature flags (future)</h2>
-        <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+        <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu">
           <p>
             When enforcement ships, this section will show per-feature toggles (eSign, MCP, iPaaS,
             Intel LLM, allowed connectors, allowed regions) derived from the JWT.
@@ -168,7 +168,7 @@ function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed
     <>
       <section className="mb-6">
         <h2 className="mb-3 text-lg font-semibold">Claims</h2>
-        <div className="rounded-lg border border-border bg-card">
+        <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
             <Row label="Tenant name" value={data.tenant_name ?? '—'} />
             <Row label="Seat usage" value={`${used ?? '—'} / ${data.seat_limit ?? 0}`} />
@@ -186,7 +186,7 @@ function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">Feature flags</h2>
-        <div className="rounded-lg border border-border bg-card">
+        <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
             <Flag label="eSignature" enabled={data.feature_flags?.esign} />
             <Flag label="MCP server" enabled={data.feature_flags?.mcp} />
@@ -223,7 +223,7 @@ function Flag({ label, enabled }: { label: string; enabled?: boolean }) {
       <dd
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
           enabled
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+            ? 'bg-success/15 text-success'
             : 'bg-muted text-muted-foreground'
         }`}
       >
