@@ -70,8 +70,8 @@ function ProfileSection() {
         <Field label="Role"         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
         <Field label="Tenant ID"    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
       </dl>
-      <div className="mt-4 flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+      <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
         <p>
           Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
         </p>
@@ -281,7 +281,7 @@ function PasskeyRow({ p, onRemove, removing }: {
           <Fingerprint className="h-4 w-4 text-primary" />
           <span className="font-medium">{p.name}</span>
           {p.backup_state && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
               Synced
             </span>
           )}
@@ -413,7 +413,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
           <Monitor className="h-4 w-4 text-primary" />
           <span className="font-medium">{ua}</span>
           {s.current && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
               This device
             </span>
           )}
@@ -447,7 +447,7 @@ function Section({ title, icon, action, children }: {
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <section className="rounded-xl bg-card p-5 shadow-neu">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           {icon}{title}

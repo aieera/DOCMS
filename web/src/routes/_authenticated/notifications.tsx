@@ -329,7 +329,7 @@ function RailButton({
           accent && count > 0
             ? 'bg-destructive/10 text-destructive'
             : active
-              ? 'bg-primary/15 text-primary'
+              ? 'bg-primary/10 text-primary'
               : 'bg-muted text-muted-foreground',
         )}
       >

@@ -609,7 +609,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
       <div
         role="tablist"
         aria-label="Document sections"
-        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted/60 p-1 [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
+        className="inline-flex min-w-full gap-1 overflow-x-auto rounded-md bg-muted p-1 shadow-neu-inset [mask-image:linear-gradient(to_right,black_0,black_calc(100%-1.5rem),transparent)] [&::-webkit-scrollbar]:hidden"
       >
         {TAB_GROUPS.map(({ key, label, icon: Icon, tabs }) => {
           const active = key === activeGroup.key
@@ -625,7 +625,7 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm px-3 py-1.5 text-xs font-medium transition-all',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 active
-                  ? 'bg-background text-foreground shadow-sm'
+                  ? 'bg-background text-foreground shadow-neu-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -1395,10 +1395,10 @@ function LegalHoldBanner({ doc }: { doc: Document }) {
   if (doc.lifecycle_state !== 'legal_hold') return null
   return (
     <Card
-      className="flex items-start gap-3 border-amber-500/40 bg-amber-500/5 p-4"
+      className="flex items-start gap-3 border-warning/40 bg-warning/10 p-4"
       data-testid="legal-hold-banner"
     >
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning-strong" />
       <div className="text-sm">
         <p className="font-semibold text-foreground">Legal hold active</p>
         <p className="mt-0.5 text-muted-foreground">

@@ -140,7 +140,7 @@ function SavedSearchesPage() {
                 <span className="font-medium">{s.name}</span>
                 {s.notify ? (
                   <span
-                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
+                    className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning-strong"
                     data-testid={`alert-badge-${s.id}`}
                     title="An alert fires when new matches show up"
                   >
@@ -180,7 +180,7 @@ function SavedSearchesPage() {
                   data-testid={`demote-${s.id}`}
                   title="Remove from sidebar"
                 >
-                  <Sparkles className="h-4 w-4 text-violet-500" /> Unpin
+                  <Sparkles className="h-4 w-4 text-primary" /> Unpin
                 </Button>
               ) : (
                 <Button
@@ -384,11 +384,11 @@ function VisibilityOption({
       disabled={disabled}
       className={`flex w-full items-start gap-3 rounded-md border p-2 text-start text-sm transition-colors ${
         active
-          ? 'border-violet-500/50 bg-violet-50/40 dark:bg-violet-950/15'
+          ? 'border-primary/50 bg-primary/10'
           : 'border-border bg-card hover:bg-accent'
       } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
     >
-      <Icon className={`mt-0.5 h-4 w-4 ${active ? 'text-violet-500' : 'text-muted-foreground'}`} />
+      <Icon className={`mt-0.5 h-4 w-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
       <div className="min-w-0 flex-1">
         <div className="font-medium">{label}</div>
         <div className="text-xs text-muted-foreground">{description}</div>

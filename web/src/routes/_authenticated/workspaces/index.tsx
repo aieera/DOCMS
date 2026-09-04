@@ -49,7 +49,7 @@ function WorkspacesPage() {
           <Button
             onClick={() => setCreateOpen(true)}
             data-testid="new-workspace"
-            className="shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
+            className="shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
           >
             <Plus className="h-4 w-4" /> New workspace
           </Button>
@@ -167,7 +167,7 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
       params={{ workspaceId: ws.id }}
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
     >
-      <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-shadow transition-colors motion-reduce:transition-none hover:border-foreground/20 hover:shadow-md', accent.split(' ')[0])}>
+      <Card className={cn('group h-full border-s-[3px] rounded-2xl p-5 transition-all motion-reduce:transition-none hover:-translate-y-0.5 hover:border-foreground/20', accent.split(' ')[0])}>
         <div className="flex items-start justify-between gap-2">
           <span className={cn('flex h-10 w-10 items-center justify-center rounded-lg', accent.split(' ').slice(1).join(' '))}>
             <FolderOpen className="h-5 w-5" />

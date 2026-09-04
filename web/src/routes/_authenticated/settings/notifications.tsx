@@ -142,7 +142,7 @@ function NotificationsSettings() {
                                 setGrid((g) => ({ ...g, [keyOf(ev.id, ch)]: { ...cell, digest_enabled: !cell.digest_enabled } }))
                                 setDirty(true)
                               }}
-                              className={`rounded px-1 text-[10px] ${cell.digest_enabled ? 'bg-blue-500 text-white' : 'bg-slate-200 text-muted-foreground dark:text-slate-300'}`}
+                              className={`rounded px-1 text-[10px] ${cell.digest_enabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
                               title="Bundle into 5-minute digest"
                               aria-label={`Toggle digest for ${ev.label} on ${ch}`}
                               data-testid={`prefs-digest-${ev.id}-${ch}`}
@@ -215,17 +215,17 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
           <div>
             <label className="block text-xs text-muted-foreground">Start</label>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)} data-testid="dnd-start"
-              className="mt-1 h-9 rounded-md border border-border bg-background px-2 text-sm" />
+              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">End</label>
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="dnd-end"
-              className="mt-1 h-9 rounded-md border border-border bg-background px-2 text-sm" />
+              className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground">Timezone</label>
             <input type="text" value={tz} onChange={(e) => setTz(e.target.value)} data-testid="dnd-tz"
-              className="mt-1 h-9 w-56 rounded-md border border-border bg-background px-2 text-sm" />
+              className="mt-1 h-9 w-56 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
           <Button
             size="sm"

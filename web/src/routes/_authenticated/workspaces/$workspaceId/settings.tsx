@@ -240,7 +240,7 @@ function DetailsSection({
             onChange={(e) => setDescription(e.target.value)}
             disabled={!canEdit}
             rows={3}
-            className="w-full rounded-md border border-border bg-background p-2 text-sm disabled:opacity-50"
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm shadow-neu-inset disabled:opacity-50"
             data-testid="ws-settings-description"
           />
         </div>
@@ -483,7 +483,7 @@ function MemberPicker({
       </div>
       {open && (
         <ul
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card text-sm shadow-md"
+          className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md bg-card text-sm shadow-neu"
           data-testid="ws-member-picker-results"
         >
           {usersQ.isLoading ? (

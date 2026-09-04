@@ -268,7 +268,7 @@ function TemplateCard({
   const isPrivate = def.visibility === 'private'
   return (
     <li>
-      <Card className="flex h-full flex-col p-4 transition-shadow hover:shadow-md">
+      <Card className="flex h-full flex-col p-4 transition-all hover:-translate-y-0.5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <GitBranch className="h-4 w-4" />

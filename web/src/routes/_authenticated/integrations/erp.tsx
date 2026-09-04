@@ -27,12 +27,10 @@ function bytesHuman(n: number): string {
 function StatusBadge({ state }: { state: string }) {
   const tone =
     state === 'active'
-      ? 'bg-emerald-100 text-emerald-700'
+      ? 'bg-success/15 text-success'
       : state === 'in_review' || state === 'draft'
-        ? 'bg-amber-100 text-amber-700'
-        : state === 'archived' || state === 'disposed'
-          ? 'bg-muted text-muted-foreground'
-          : 'bg-slate-100 text-slate-700'
+        ? 'bg-warning/15 text-warning-strong'
+        : 'bg-muted text-muted-foreground'
   return (
     <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize', tone)}>
       {state.replace(/_/g, ' ') || '—'}
@@ -155,7 +153,7 @@ function ErpExplorerPage() {
           <select
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            className="h-9 min-w-[15rem] rounded-lg border border-border bg-background px-3 text-sm"
+            className="h-9 min-w-[15rem] rounded-lg border border-input bg-muted px-3 text-sm shadow-neu-inset"
             aria-label="Select customer"
           >
             <option value="">

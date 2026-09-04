@@ -131,7 +131,7 @@ function ClausesPage() {
         actions={
           <Button
             onClick={() => setCreateOpen(true)}
-            className="gap-2 shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
+            className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
           >
             <Plus className="h-4 w-4" /> New clause
           </Button>
@@ -139,7 +139,7 @@ function ClausesPage() {
       />
 
       <section className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 items-center gap-2 rounded-md border border-border bg-card px-2">
+        <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-muted px-2 shadow-neu-inset">
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             value={q}
@@ -289,7 +289,7 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
           v{clause.version}
         </span>
         {clause.approved_at && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
             <CheckCircle2 className="h-3 w-3" /> Approved
           </span>
         )}
@@ -333,7 +333,7 @@ function ClauseDetail({
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">{clause.name}</h2>
             {clause.approved_at && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
                 ✓ Approved
               </span>
             )}
@@ -383,7 +383,7 @@ function ClauseDetail({
         ))}
       </div>
 
-      <div className="rounded-md border border-border bg-background p-3">
+      <div className="rounded-md bg-muted p-3 shadow-neu-inset">
         <pre className="whitespace-pre-wrap font-sans text-sm">{clause.body_text}</pre>
       </div>
 
@@ -489,7 +489,7 @@ function CreateClauseDialog({
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
             placeholder="Each party shall indemnify and hold harmless…"
             rows={8}
-            className="w-full rounded-md border border-border bg-background p-2 text-sm font-mono"
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset"
           />
         </div>
         <Input
@@ -589,7 +589,7 @@ function EditClauseDialog({
             value={form.body_text}
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
             rows={10}
-            className="w-full rounded-md border border-border bg-background p-2 text-sm font-mono"
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset"
           />
         </div>
         <Input

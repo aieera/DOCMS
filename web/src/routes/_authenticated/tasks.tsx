@@ -182,7 +182,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
           <input type="checkbox" checked={includeCompleted} onChange={(e) => { setIncludeCompleted(e.target.checked); resetPaging() }} />
           Show completed
         </label>
-        <div className="ms-auto flex items-center gap-1 rounded-md border border-border p-1">
+        <div className="ms-auto flex items-center gap-1 rounded-md bg-muted p-1 shadow-neu-inset">
           <button
             onClick={() => setView('table')}
             data-testid="view-table"
@@ -199,7 +199,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         <Button
           onClick={() => setCreating(true)}
           data-testid="new-task"
-          className="gap-2 shadow-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md"
+          className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
         >
           <Plus className="h-4 w-4" /> New task
         </Button>
@@ -365,7 +365,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
               onClick={() => complete.mutate()}
               disabled={complete.isPending}
               data-testid={`complete-${task.id}`}
-              className="gap-1 border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
+              className="gap-1 border-success/50 text-success hover:bg-success/10"
             >
               <Check className="h-3 w-3" /> Complete
             </Button>

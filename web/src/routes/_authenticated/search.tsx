@@ -367,7 +367,7 @@ function SearchPage() {
               id="ws-select"
               value={params.workspace_id ?? ''}
               onChange={(e) => setParam('workspace_id', e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs shadow-neu-inset"
               data-testid="filter-workspace-select"
             >
               <option value="">All workspaces</option>
@@ -389,7 +389,7 @@ function SearchPage() {
                 value={params.created_after ?? ''}
                 max={params.created_before || undefined}
                 onChange={(e) => setParam('created_after', e.target.value)}
-                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                className="flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs shadow-neu-inset"
                 data-testid="filter-date-from"
               />
             </div>
@@ -401,7 +401,7 @@ function SearchPage() {
                 value={params.created_before ?? ''}
                 min={params.created_after || undefined}
                 onChange={(e) => setParam('created_before', e.target.value)}
-                className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                className="flex-1 rounded-md border border-input bg-muted px-2 py-1 text-xs shadow-neu-inset"
                 data-testid="filter-date-to"
               />
             </div>
@@ -414,7 +414,7 @@ function SearchPage() {
             id="size-select"
             value={params.size ?? ''}
             onChange={(e) => setParam('size', e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            className="w-full rounded-md border border-input bg-muted px-2 py-1.5 text-xs shadow-neu-inset"
             data-testid="filter-size-select"
           >
             {SIZE_OPTIONS.map((o) => (
@@ -490,7 +490,7 @@ function SearchPage() {
               }}
               autoFocus
               data-testid="search-input"
-              className="h-12 text-base shadow-sm"
+              className="h-12 text-base"
             />
           </div>
           <Button
@@ -576,7 +576,7 @@ function SearchPage() {
                   id="sort-select"
                   value={params.sort ?? 'relevance'}
                   onChange={(e) => setParam('sort', e.target.value === 'relevance' ? undefined : e.target.value)}
-                  className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                  className="h-8 rounded-md border border-input bg-muted px-2 text-xs shadow-neu-inset"
                   data-testid="sort-select"
                 >
                   {SORT_OPTIONS.map((o) => (
@@ -868,7 +868,7 @@ function VersionsInline({ documentId }: { documentId: string }) {
 
   if (isLoading) {
     return (
-      <div className="ms-8 mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-3" data-testid={`versions-panel-${documentId}`}>
+      <div className="ms-8 mt-1 space-y-1 rounded-md bg-muted p-3 shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
         <Skeleton className="h-4 w-2/3" />
         <Skeleton className="h-4 w-1/2" />
       </div>
@@ -876,13 +876,13 @@ function VersionsInline({ documentId }: { documentId: string }) {
   }
   if (isError || !versions) {
     return (
-      <div className="ms-8 mt-1 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground" data-testid={`versions-panel-${documentId}`}>
+      <div className="ms-8 mt-1 rounded-md bg-muted p-3 text-xs text-muted-foreground shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
         Could not load versions.
       </div>
     )
   }
   return (
-    <ul className="ms-8 mt-1 divide-y divide-border rounded-md border border-border bg-muted/40" data-testid={`versions-panel-${documentId}`}>
+    <ul className="ms-8 mt-1 divide-y divide-border rounded-md bg-muted shadow-neu-inset" data-testid={`versions-panel-${documentId}`}>
       {versions.map((v) => (
         <li key={v.id} className="flex items-center gap-3 px-3 py-2 text-sm">
           <span className="font-medium">v{v.version_number}</span>

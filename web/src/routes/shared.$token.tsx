@@ -141,7 +141,7 @@ function SharedViewerPage() {
   if (status === 'expired') {
     return (
       <CenteredPanel>
-        <AlertTriangle className="mb-2 h-10 w-10 text-amber-500" aria-hidden />
+        <AlertTriangle className="mb-2 h-10 w-10 text-warning-strong" aria-hidden />
         <h2 className="text-lg font-semibold">Link no longer accessible</h2>
         <p className="text-sm text-muted-foreground">
           This share link has expired or reached its view limit. Ask the
@@ -165,7 +165,7 @@ function SharedViewerPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <form
-          className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-8 shadow-lg"
+          className="w-full max-w-sm space-y-4 rounded-xl bg-card p-8 shadow-neu"
           onSubmit={(e) => { e.preventDefault(); void handleUnlock() }}
         >
           <div className="flex flex-col items-center gap-2">
@@ -207,7 +207,7 @@ function SharedViewerPage() {
   }
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
-      <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-8 shadow-lg">
+      <div className="w-full max-w-2xl rounded-xl bg-card p-8 shadow-neu">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <FileIcon mime={doc.mime_type} className="h-8 w-8" />
@@ -230,11 +230,11 @@ function SharedViewerPage() {
           )}
         </div>
         {doc.description ? (
-          <div className="mb-4 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <div className="mb-4 rounded-md bg-muted p-3 text-sm shadow-neu-inset">
             {doc.description}
           </div>
         ) : null}
-        <div className="rounded-lg bg-muted/40 px-4 py-12 text-center">
+        <div className="rounded-lg bg-muted px-4 py-12 text-center shadow-neu-inset">
           <FileIcon mime={doc.mime_type} className="mx-auto mb-3 h-12 w-12" />
           <p className="text-sm text-muted-foreground">
             Inline preview isn't available on public share links.
@@ -250,7 +250,7 @@ function SharedViewerPage() {
 function CenteredPanel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex w-full max-w-sm flex-col items-center gap-2 rounded-xl border border-border bg-card p-8 text-center shadow-lg">
+      <div className="flex w-full max-w-sm flex-col items-center gap-2 rounded-xl bg-card p-8 text-center shadow-neu">
         {children}
       </div>
     </div>

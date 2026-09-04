@@ -183,9 +183,7 @@ function KpiCard({ icon: Icon, label, value, hint, hintTone = 'muted', href }: K
       padded="md"
       className={cn(
         'group relative h-full overflow-hidden transition-all',
-        'hover:-translate-y-0.5 hover:border-primary/50',
-        'hover:shadow-[0_16px_38px_-14px_rgba(16,24,40,0.18)]',
-        'dark:hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
+        'hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-neu',
       )}
     >
       <div className="flex items-start justify-between">
@@ -276,9 +274,7 @@ function QuickActions({
     <WarmCard
       padded="md"
       className={cn(
-        'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50',
-        'group-hover:shadow-[0_14px_34px_-12px_rgba(80,60,10,0.22)]',
-        'dark:group-hover:shadow-[0_16px_40px_-18px_rgba(0,0,0,0.6)]',
+        'h-full transition-all group-hover:-translate-y-0.5 group-hover:border-primary/50 group-hover:shadow-neu',
         // The Upload card is an ACTION, not a navigation link — give it
         // a standing accent so it reads as the dashboard's upload
         // button rather than one more shortcut tile.
@@ -356,7 +352,7 @@ function OpenTasksCard() {
   const open = (data ?? []).filter((t) => t.status === 'open' || t.status === 'in_progress')
 
   return (
-    <Card className="shadow-sm">
+    <Card>
       <div className="flex items-center justify-between border-b border-border p-4">
         <div>
           <h2 className="text-sm font-semibold">My open tasks</h2>
@@ -470,7 +466,7 @@ function RecentActivityCard() {
   const items = ((data as { items?: NotificationLite[] } | undefined)?.items ?? []).slice(0, 6)
 
   return (
-    <Card className="shadow-sm">
+    <Card>
       <div className="flex items-center justify-between border-b border-border p-4">
         <div>
           <h2 className="text-sm font-semibold">Recent activity</h2>
@@ -525,7 +521,7 @@ function RecentActivityCard() {
                   <span className="truncate">{n.title ?? 'Update'}</span>
                   {n.type?.startsWith('digest.') && (
                     <span
-                      className="inline-flex items-center rounded bg-blue-500/15 px-1.5 py-0 text-[10px] font-semibold text-blue-700 dark:text-blue-300"
+                      className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
                       title="This is a digest notification combining multiple events."
                       aria-label="Digest notification combining multiple events"
                     >

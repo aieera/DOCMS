@@ -463,7 +463,7 @@ function WorkspacePage() {
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={(e) => { e.preventDefault(); dragCounter.current = Math.max(0, dragCounter.current - 1); if (dragCounter.current === 0) setDragOver(false) }}
       onDrop={onDrop}
-      className="relative flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+      className="relative flex min-h-0 flex-1 overflow-hidden rounded-2xl bg-card shadow-neu"
     >
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onChange} />
 
@@ -523,7 +523,7 @@ function WorkspacePage() {
               Still loading this workspace&rsquo;s folders.
             </p>
           )}
-          <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-sm hover:shadow-md" data-testid="open-upload">
+          <Button onClick={onPick} className="h-12 gap-2 rounded-xl px-5 shadow-neu-sm hover:shadow-neu" data-testid="open-upload">
             <Upload className="h-[18px] w-[18px]" /> Upload
           </Button>
         </div>
@@ -730,7 +730,7 @@ function WorkspacePage() {
 
       {dragOver && (
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm" aria-hidden>
-          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-xl">
+          <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary bg-card px-10 py-8 text-center shadow-neu">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground"><Upload className="h-6 w-6" /></span>
             <p className="text-base font-semibold">Drop to upload</p>
             <p className="max-w-xs text-sm text-muted-foreground">Files will be added to <strong className="text-foreground">{ws.data?.name ?? 'this workspace'}</strong>.</p>
@@ -771,7 +771,7 @@ export function WorkspaceUnavailable({ kind }: { kind: WorkspaceFailureKind }) {
   const forbidden = kind === 'forbidden'
   return (
     <div
-      className="flex min-h-0 flex-1 items-center justify-center rounded-2xl border border-border bg-card shadow-sm"
+      className="flex min-h-0 flex-1 items-center justify-center rounded-2xl bg-card shadow-neu"
       data-testid={forbidden ? 'workspace-forbidden' : 'workspace-not-found'}
     >
       <EmptyState
