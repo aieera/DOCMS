@@ -167,6 +167,13 @@ function CommandTrigger() {
         <input
           ref={inputRef}
           type="search"
+          // role="combobox" is what makes aria-expanded/aria-controls
+          // valid here — a plain type="search" input's implicit role
+          // (searchbox) doesn't support either (axe: aria-allowed-attr).
+          // input[type=search] explicitly permits the combobox role
+          // override per the ARIA-in-HTML spec.
+          role="combobox"
+          aria-haspopup="dialog"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={openDropdown}
@@ -174,6 +181,7 @@ function CommandTrigger() {
           placeholder={t('search_placeholder') ?? 'Search documents…'}
           aria-label={t('sidebar.search') ?? 'Search'}
           aria-expanded={open}
+          aria-controls={open ? 'topbar-search-panel' : undefined}
           className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           autoComplete="off"
           spellCheck={false}
@@ -196,6 +204,7 @@ function CommandTrigger() {
           the blur-close. */}
       {open && (
         <div
+          id="topbar-search-panel"
           className="absolute inset-x-0 top-11 z-50"
           onMouseDown={(e) => e.preventDefault()}
         >

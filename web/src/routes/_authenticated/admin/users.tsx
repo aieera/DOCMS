@@ -137,7 +137,11 @@ export function UsersPage() {
           </p>
           <p>
             Per-workspace role assignment lives under the individual workspace&rsquo;s{' '}
-            <Link to="/workspaces" className="text-primary underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link>.
+            {/* text-primary here failed AA in dark (axe: 4.24:1 on this
+                bg-primary/5 tinted panel, needs 4.5) — text-foreground
+                plus the underline keeps it legible and still reads as
+                a link without relying on the marginal primary token. */}
+            <Link to="/workspaces" className="text-foreground underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link>.
           </p>
         </div>
       </div>

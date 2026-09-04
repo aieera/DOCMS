@@ -22,14 +22,23 @@ const badgeVariants = cva(
         outline: 'text-foreground border border-input',
         // Lifecycle / state variants — colour-on-tinted-bg to read
         // legibly in light + dark without per-variant dark: classes.
+        // active/success: axe measured bg-success/15 + text-success at
+        // 4.21:1 in light (needs 4.5) — the /15 tint lightens the card
+        // bg enough to erode the token's own AA margin. /8 keeps the
+        // tint visible while staying >=4.5 in both themes.
         draft: 'bg-muted text-muted-foreground shadow-neu-sm',
         in_review: 'bg-warning/15 text-warning-strong shadow-neu-sm',
-        active: 'bg-success/15 text-success shadow-neu-sm',
+        active: 'bg-success/8 text-success shadow-neu-sm',
         superseded: 'bg-info/15 text-info shadow-neu-sm',
         archived: 'bg-muted text-muted-foreground shadow-neu-sm',
-        disposed: 'bg-destructive/15 text-destructive shadow-neu-sm',
+        // disposed: text-destructive on ANY destructive-tinted bg fails
+        // AA in dark (the token is only ~3.65:1 as plain text there,
+        // below the 4.5 the neu-tokens test never exercised for this
+        // pair) — text-foreground carries the label, the tint still
+        // carries the "destructive" cue.
+        disposed: 'bg-destructive/15 text-foreground shadow-neu-sm',
         info: 'bg-info/15 text-info shadow-neu-sm',
-        success: 'bg-success/15 text-success shadow-neu-sm',
+        success: 'bg-success/8 text-success shadow-neu-sm',
         warning: 'bg-warning/15 text-warning-strong shadow-neu-sm',
       },
     },

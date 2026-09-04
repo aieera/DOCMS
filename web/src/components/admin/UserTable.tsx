@@ -147,7 +147,12 @@ export function UserTable({ users, isLoading }: { users: User[]; isLoading?: boo
             : s === 'active'
               ? 'border-success/40 bg-success/10 text-success'
               : s === 'suspended'
-                ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                // text-destructive fails AA in dark against any
+                // destructive-tinted bg (axe: 3.29:1, needs 4.5) — the
+                // token was never verified as plain label text, only
+                // as white-on-solid-fill. text-foreground carries the
+                // label; the red border/tint still reads as a warning.
+                ? 'border-destructive/40 bg-destructive/10 text-foreground'
                 : 'border-border bg-muted text-muted-foreground'
         const label = neverLoggedIn ? 'Never logged in' : s
         return (

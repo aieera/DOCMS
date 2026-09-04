@@ -291,6 +291,7 @@ function ReportsPage() {
             <div className="divide-y divide-border">
               <BuilderStep n={1} title="Dataset">
                 <select
+                  aria-label="Dataset"
                   value={dataset}
                   onChange={(e) => {
                     setDataset(e.target.value)
@@ -340,6 +341,7 @@ function ReportsPage() {
                 {filters.map((f, i) => (
                   <div key={i} className="mb-1.5 flex items-center gap-1">
                     <select
+                      aria-label="Filter field"
                       value={f.field}
                       onChange={(e) => setFilters((fs) => fs.map((x, xi) => (xi === i ? { ...x, field: e.target.value } : x)))}
                       className="h-7 w-28 rounded border border-input bg-muted px-1 text-xs shadow-neu-inset"

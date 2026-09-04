@@ -37,7 +37,12 @@ export function BrowserTreeSidebar({ workspaceId, currentFolderId, onNavigate, w
           onClick={() => onNavigate(null)}
           className={cn(
             'mb-1 flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-sm font-semibold transition-colors',
-            currentFolderId === null ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-accent/40',
+            // text-primary on bg-primary/10 fails AA in dark (axe:
+            // 3.93:1, needs 4.5) — the tint lightens the sidebar bg
+            // enough to erode the token's already-narrow plain-text
+            // margin. text-foreground keeps the selected cue legible;
+            // the tint still marks which row is active.
+            currentFolderId === null ? 'bg-primary/10 text-foreground' : 'text-foreground hover:bg-accent/40',
           )}
         >
           <FolderGlyph size={22} />
@@ -138,7 +143,9 @@ function TreeNode({
         className={cn(
           'flex h-10 cursor-pointer items-center gap-2 rounded-xl px-2 text-sm transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          active ? 'bg-primary/10 font-semibold text-primary' : 'font-medium text-foreground hover:bg-accent/40',
+          // Same AA fix as the root item above (text-primary on
+          // bg-primary/10 fails 4.5:1 in dark).
+          active ? 'bg-primary/10 font-semibold text-foreground' : 'font-medium text-foreground hover:bg-accent/40',
           validDrop && 'ring-2 ring-primary',
           invalidDrop && 'cursor-not-allowed ring-2 ring-red-400',
         )}

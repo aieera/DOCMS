@@ -656,8 +656,13 @@ function DocumentTabs({ tab, onChange }: { tab: TabKey; onChange: (k: TabKey) =>
                 className={cn(
                   'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  // text-primary on bg-primary/10 fails AA in dark
+                  // (axe: 3.93:1, needs 4.5). Match the parent group
+                  // tabs' active style just above — bg-background +
+                  // text-foreground + shadow-neu-sm — which is already
+                  // proven AA-safe in both themes.
                   active
-                    ? 'bg-primary/10 text-primary'
+                    ? 'bg-background text-foreground shadow-neu-sm'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
