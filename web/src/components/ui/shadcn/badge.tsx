@@ -12,25 +12,25 @@ import { cn } from '@/lib/cn'
 // from ~30 places.
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground hover:bg-primary/80',
-        secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive: 'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
-        outline: 'text-foreground',
+        default: 'bg-primary text-primary-foreground shadow-neu-sm hover:bg-primary/80',
+        secondary: 'bg-secondary text-secondary-foreground shadow-neu-sm hover:bg-secondary/80',
+        destructive: 'bg-destructive text-destructive-foreground shadow-neu-sm hover:bg-destructive/80',
+        outline: 'text-foreground border border-input',
         // Lifecycle / state variants — colour-on-tinted-bg to read
         // legibly in light + dark without per-variant dark: classes.
-        draft: 'border-transparent bg-muted text-muted-foreground',
-        in_review: 'border-transparent bg-warning/15 text-warning-strong',
-        active: 'border-transparent bg-success/15 text-success',
-        superseded: 'border-transparent bg-info/15 text-info',
-        archived: 'border-transparent bg-muted text-muted-foreground',
-        disposed: 'border-transparent bg-destructive/15 text-destructive',
-        info: 'border-transparent bg-info/15 text-info',
-        success: 'border-transparent bg-success/15 text-success',
-        warning: 'border-transparent bg-warning/15 text-warning-strong',
+        draft: 'bg-muted text-muted-foreground shadow-neu-sm',
+        in_review: 'bg-warning/15 text-warning-strong shadow-neu-sm',
+        active: 'bg-success/15 text-success shadow-neu-sm',
+        superseded: 'bg-info/15 text-info shadow-neu-sm',
+        archived: 'bg-muted text-muted-foreground shadow-neu-sm',
+        disposed: 'bg-destructive/15 text-destructive shadow-neu-sm',
+        info: 'bg-info/15 text-info shadow-neu-sm',
+        success: 'bg-success/15 text-success shadow-neu-sm',
+        warning: 'bg-warning/15 text-warning-strong shadow-neu-sm',
       },
     },
     defaultVariants: { variant: 'default' },
