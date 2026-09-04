@@ -186,13 +186,13 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
           <button
             onClick={() => setView('table')}
             data-testid="view-table"
-            className={`rounded p-1 ${view === 'table' ? 'bg-muted' : ''}`}
+            className={`rounded p-1 ${view === 'table' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
             aria-label="Table view"
           ><List className="h-4 w-4" /></button>
           <button
             onClick={() => setView('kanban')}
             data-testid="view-kanban"
-            className={`rounded p-1 ${view === 'kanban' ? 'bg-muted' : ''}`}
+            className={`rounded p-1 ${view === 'kanban' ? 'bg-background text-primary shadow-neu-sm' : 'text-muted-foreground'}`}
             aria-label="Kanban view"
           ><LayoutGrid className="h-4 w-4" /></button>
         </div>
