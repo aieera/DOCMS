@@ -84,7 +84,7 @@ export function RealtimePresence({ documentId }: { documentId: string }) {
 }
 
 function ConnectionDot({ status }: { status: 'connecting' | 'connected' | 'disconnected' | 'auth_failed' }) {
-  if (status === 'connected') return <Wifi className="h-3.5 w-3.5 text-emerald-500" aria-label="Connected" />
+  if (status === 'connected') return <Wifi className="h-3.5 w-3.5 text-success" aria-label="Connected" />
   if (status === 'auth_failed') return <WifiOff className="h-3.5 w-3.5 text-red-500" aria-label="Auth failed" />
   return <WifiOff className="h-3.5 w-3.5 text-muted-foreground" aria-label={status} />
 }

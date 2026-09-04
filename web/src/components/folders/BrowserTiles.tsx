@@ -63,7 +63,7 @@ export function FileTypeIcon({ mime, title, size = 52 }: { mime?: string; title:
 
 const tileBase =
   'group/card relative block w-full rounded-2xl border p-4 text-start transition-all duration-150 ' +
-  'hover:-translate-y-0.5 hover:shadow-[0_14px_30px_-16px_rgba(46,50,70,0.30)] ' +
+  'hover:-translate-y-0.5 hover:shadow-neu ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
 const tileState = (selected?: boolean) =>
   selected ? 'border-primary/45 bg-primary/5' : 'border-transparent hover:border-border hover:bg-card'

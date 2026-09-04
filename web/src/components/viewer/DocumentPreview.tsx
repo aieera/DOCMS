@@ -64,7 +64,7 @@ export function DocumentPreview({ documentId, versionId, mimeType, title }: Prop
         aria-busy
         aria-label="Loading preview"
       >
-        <div className="relative h-12 w-9 rounded-sm border border-border bg-background shadow-sm">
+        <div className="relative h-12 w-9 rounded-sm bg-background shadow-neu-sm">
           <div className="absolute inset-x-2 top-2 h-1 rounded bg-muted-foreground/30" />
           <div className="absolute inset-x-2 top-4 h-1 rounded bg-muted-foreground/20" />
           <div className="absolute inset-x-2 top-6 h-1 w-5 rounded bg-muted-foreground/20" />
@@ -376,7 +376,7 @@ function SegmentButton({
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         'disabled:cursor-not-allowed disabled:opacity-40',
         selected
-          ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
+          ? 'bg-background text-foreground shadow-neu-sm'
           : 'text-muted-foreground hover:text-foreground',
       )}
     >

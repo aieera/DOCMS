@@ -8,7 +8,7 @@ import type { Document } from '@/types/api'
 
 const LEVEL_STYLE: Record<string, string> = {
   restricted: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-  confidential: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  confidential: 'bg-warning/15 text-warning-strong',
   internal: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
   unclassified: 'bg-muted text-muted-foreground',
 }
@@ -39,7 +39,7 @@ export function SensitivityBadge({ doc, className }: { doc: Pick<Document, 'secu
         </span>
       )}
       {hasPII && (
-        <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/40 dark:text-orange-200">
+        <span className="inline-flex items-center rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning-strong">
           PII
         </span>
       )}

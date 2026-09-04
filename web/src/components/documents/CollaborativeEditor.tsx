@@ -250,7 +250,7 @@ function SavedIndicator({
     )
   }
   return (
-    <span className="flex items-center gap-1.5 text-emerald-600">
+    <span className="flex items-center gap-1.5 text-success">
       <Wifi className="h-3.5 w-3.5" />
       {readOnly ? 'Read-only' : saving ? 'Saving…' : 'Saved'}
     </span>

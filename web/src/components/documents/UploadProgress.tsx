@@ -16,7 +16,7 @@ export function UploadProgress() {
   const label = active.length > 0 ? `Uploading ${active.length} file${active.length > 1 ? 's' : ''}` : 'Uploads complete'
 
   return (
-    <div className="fixed bottom-4 end-4 z-40 w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-lg">
+    <div className="fixed bottom-4 end-4 z-40 w-80 rounded-lg bg-[var(--color-bg-secondary)] shadow-neu">
       <button onClick={() => setCollapsed(!collapsed)} className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium">
         <span>{label}</span>
         <div className="flex items-center gap-1">
@@ -43,12 +43,12 @@ function UploadRow({ item, onRemove }: { item: UploadItem; onRemove: () => void 
           {item.status === 'uploading' && <span>{item.progress}%</span>}
         </div>
         {item.status === 'uploading' && (
-          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted shadow-neu-inset">
             <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${item.progress}%` }} />
           </div>
         )}
       </div>
-      {item.status === 'completed' && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />}
+      {item.status === 'completed' && <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />}
       {item.status === 'failed' && <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />}
       <button onClick={onRemove} className="shrink-0" aria-label="Remove"><X className="h-3.5 w-3.5 text-[var(--color-text-secondary)]" /></button>
     </div>

@@ -103,7 +103,7 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
                 onClick={() => seek(p.at_seconds)}
                 title={`${formatTime(p.at_seconds)} — ${p.body}`}
                 style={{ left: `${(p.at_seconds / duration) * 100}%` }}
-                className="absolute -top-1 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-amber-500 shadow"
+                className="absolute -top-1 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background bg-primary shadow-neu-sm"
                 data-testid={`video-pin-${p.id}`}
               />
             ))}

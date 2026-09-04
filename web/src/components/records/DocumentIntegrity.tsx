@@ -53,7 +53,7 @@ export function DocumentIntegrity({ documentId, canManage }: { documentId: strin
 
       {/* integrity badge + proof detail */}
       {proof && (proof.valid ? (
-        <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-600" data-testid="badge-verified">
+        <span className="inline-flex items-center gap-1 rounded bg-success/15 px-1.5 py-0.5 text-success" data-testid="badge-verified">
           <ShieldCheck className="h-3.5 w-3.5" /> Verified
         </span>
       ) : (

@@ -161,14 +161,14 @@ function DiffPanes({ data, onBack }: { data: CompareResponse; onBack: () => void
           <span className="font-mono">{data.doc_b.title}</span>
         </div>
         <div className="flex items-center gap-3 text-muted-foreground">
-          <span className="text-emerald-500">+{data.summary.added_chars}</span>
+          <span className="text-success">+{data.summary.added_chars}</span>
           <span className="text-red-500">−{data.summary.removed_chars}</span>
           <span>{data.summary.changed_blocks} blocks</span>
           <Button variant="ghost" size="sm" onClick={onBack}>back</Button>
         </div>
       </header>
       {data.truncated && (
-        <p className="rounded-md border border-amber-500/40 bg-amber-50/60 p-2 text-xs dark:bg-amber-950/20">
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
           These documents are too large to compare in full — showing the first 200,000 characters
           of each.
         </p>
@@ -206,7 +206,7 @@ function DiffPane({ title, ops, side }: { title: string; ops: DiffOperation[]; s
             return (
               <span
                 key={i}
-                className="whitespace-pre-wrap bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                className="whitespace-pre-wrap bg-success/15 text-success"
               >
                 {o.text}
               </span>

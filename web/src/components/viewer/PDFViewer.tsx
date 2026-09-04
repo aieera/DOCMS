@@ -280,7 +280,7 @@ function renderAnnotation(a: Annotation): JSX.Element | null {
           role="listitem"
           aria-label={`Note: ${body ?? ''}`}
           data-testid={`pdf-annotation-${a.id}`}
-          className="pointer-events-auto absolute -ms-3 -mt-3 h-6 w-6 rounded-full bg-blue-500 text-[10px] font-bold text-white shadow hover:bg-blue-600"
+          className="pointer-events-auto absolute -ms-3 -mt-3 h-6 w-6 rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-neu-sm hover:bg-blue-600"
           style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%` }}
           title={body}
         >N</button>

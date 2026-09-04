@@ -213,8 +213,8 @@ export function RelationshipsGraph({ documentId, workspaceId }: Props) {
         </div>
       )}
       {data.truncated && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50/60 p-2 text-xs dark:bg-amber-950/20">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5" />
           <span>
             Graph truncated to 500 nodes — increase depth carefully or filter by edge type.
           </span>

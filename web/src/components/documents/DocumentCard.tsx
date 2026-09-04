@@ -19,7 +19,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
         to="/workspaces/$workspaceId"
         params={{ workspaceId: doc.workspace_id }}
         search={{ doc: doc.id }}
-        className="group flex flex-col rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group flex flex-col rounded-2xl bg-card p-4 shadow-neu transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         data-testid={`document-card-${doc.id}`}
       >
         <div className="mb-3 flex items-center gap-3">

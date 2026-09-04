@@ -199,7 +199,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
                 data-testid="share-people-input"
               />
               {suggestions.length > 0 && (
-                <ul className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-border bg-card shadow-lg" data-testid="share-people-suggestions">
+                <ul className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md bg-card shadow-neu" data-testid="share-people-suggestions">
                   {suggestions.map((u) => (
                     <li key={u.id}>
                       <button
@@ -267,14 +267,14 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
         )}
 
         {mode === 'zt' && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20">
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
             <div className="flex items-start gap-2">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <div>
-                <p className="font-semibold text-amber-900 dark:text-amber-100">
+                <p className="font-semibold">
                   View-only mode
                 </p>
-                <p className="mt-1 text-amber-800 dark:text-amber-200">
+                <p className="mt-1">
                   Blocks copy, print, and download. Every page is watermarked with the
                   recipient's email so leaks can be traced. <strong>Does not prevent
                   screenshots taken with the recipient's device.</strong>
@@ -338,7 +338,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
               // dialog" bug).
               <div
                 data-testid="share-link-result"
-                className="flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
+                className="flex min-w-0 items-center gap-2 overflow-hidden rounded-xl bg-muted p-2 shadow-neu-inset"
               >
                 <Link2 className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
                 <code className="min-w-0 flex-1 truncate text-xs" title={shareUrl}>{shareUrl}</code>

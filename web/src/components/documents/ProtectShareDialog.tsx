@@ -115,12 +115,12 @@ export function ProtectShareDialog({ open, onOpenChange, documentId, documentTit
     >
       {result ? (
         <div className="space-y-4">
-          <div className="rounded-md border border-emerald-500/40 bg-emerald-50/60 p-3 text-xs dark:bg-emerald-950/20">
+          <div className="rounded-md border border-success/40 bg-success/10 p-3 text-xs text-success">
             <div className="flex items-start gap-2">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
-              <div className="text-emerald-900 dark:text-emerald-100">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
                 <p className="font-semibold">Deliver these links to your recipients</p>
-                <p className="mt-1 text-emerald-800 dark:text-emerald-200">
+                <p className="mt-1">
                   Each link is bound to one recipient. Opening a link requires an online
                   license check that validates the recipient, logs the open, and can be
                   revoked at any time from Protected exports — a revoked license blocks the
@@ -138,7 +138,7 @@ export function ProtectShareDialog({ open, onOpenChange, documentId, documentTit
                 <div
                   key={lic.license_id}
                   data-testid="irm-license-result"
-                  className="rounded-md border border-[var(--color-border)] bg-slate-50 p-2 dark:bg-slate-800"
+                  className="rounded-xl bg-muted p-2 shadow-neu-inset"
                 >
                   <div className="mb-1 text-xs text-muted-foreground">
                     {lic.recipient_type === 'user' ? 'User' : 'Email'}:{' '}

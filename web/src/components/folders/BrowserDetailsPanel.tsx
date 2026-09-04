@@ -194,7 +194,7 @@ function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Wo
     <div>
       <Preview>
         {doc.has_thumbnail && doc.thumbnail_url
-          ? <img src={doc.thumbnail_url} alt="" className="max-h-[120px] rounded-lg object-contain shadow-sm" />
+          ? <img src={doc.thumbnail_url} alt="" className="max-h-[120px] rounded-lg object-contain shadow-neu-sm" />
           : <FileTypeIcon mime={doc.mime_type} title={doc.title} size={86} />}
       </Preview>
       <Name>{doc.title}</Name>
@@ -259,7 +259,7 @@ function Switch({ checked, onChange, disabled }: { checked: boolean; onChange: (
       type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={onChange}
       className={cn('relative h-6 w-11 flex-none rounded-full transition-colors disabled:opacity-60', checked ? 'bg-primary' : 'bg-muted-foreground/30')}
     >
-      <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+      <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-background shadow-neu-sm transition-transform', checked ? 'translate-x-[22px]' : 'translate-x-0.5')} />
     </button>
   )
 }

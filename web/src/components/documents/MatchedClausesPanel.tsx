@@ -46,7 +46,7 @@ export function MatchedClausesPanel({ documentId }: { documentId: string }) {
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
               {m.approved && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-1.5 py-0.5 text-success">
                   <ShieldCheck className="h-3 w-3" /> Approved
                 </span>
               )}
