@@ -85,6 +85,12 @@ export default {
         '2xl': 'calc(var(--radius) + 8px)',
         '3xl': 'calc(var(--radius) + 16px)',
       },
+      boxShadow: {
+        neu: 'var(--nm-shadow)',
+        'neu-sm': 'var(--nm-shadow-sm)',
+        'neu-inset': 'var(--nm-shadow-inset)',
+        'neu-pressed': 'var(--nm-shadow-pressed)',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: '0' },

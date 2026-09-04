@@ -24,90 +24,66 @@
 
 @layer base {
   :root {
-    /* "gig share" reference theme — cool, clean, lots of whitespace.
-     * Light cool-grey canvas, white cards, dark-slate sidebar, emerald
-     * call-to-action, pastel accent surfaces for folder/feature cards. */
-    --background: 220 24% 96%;
-    --foreground: 222 24% 19%;
+    /* Neumorphic light palette (spec 2026-08-29). Surfaces share the
+     * canvas color; depth comes from dual shadows (--nm-*), not fill.
+     * Text/icons stay high-contrast (verified by neu-tokens.test.ts). */
+    --background: 220 22% 91%;   /* #e3e7ee soft cool-grey canvas */
+    --foreground: 217 25% 16%;   /* #1f2733 near-black slate (~11:1) */
 
-    --muted: 220 16% 93%;
-    /* ≥4.5:1 on --background/--muted (was 46% → 4.38:1, an AA hair-miss). */
-    --muted-foreground: 220 10% 39%;
+    --muted: 220 20% 87%;        /* recessed well, slightly darker */
+    --muted-foreground: 218 17% 34%;  /* #465063 (>=4.5 on canvas+muted) */
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 24% 19%;
+    --popover: 220 22% 91%;
+    --popover-foreground: 217 25% 16%;
+    --card: 220 22% 91%;          /* SAME as canvas — neumorphic */
+    --card-foreground: 217 25% 16%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 24% 19%;
+    --border: 220 16% 80%;        /* faint real line kept under insets */
+    --input: 220 16% 78%;
 
-    --border: 220 16% 89%;
-    --input: 220 16% 89%;
-
-    /* Emerald — the primary call-to-action (the reference's green
-     * "Upgrade Plan" button). */
-    /* Darkened from 43% so BOTH white-on-primary and primary-as-text
-     * clear 4.5:1 (AA). Same emerald hue. */
-    --primary: 152 46% 29%;
+    --primary: 223 75% 47%;       /* #1e50d2 cool blue; AA both ways */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 16% 94%;
-    --secondary-foreground: 222 24% 19%;
+    --secondary: 220 22% 91%;
+    --secondary-foreground: 217 25% 16%;
+    --accent: 220 20% 87%;
+    --accent-foreground: 217 25% 16%;
 
-    /* Neutral cool hover surface so hovers don't flash a loud colour. */
-    --accent: 220 16% 94%;
-    --accent-foreground: 222 24% 19%;
-
-    /* Coral red for destructive. */
-    --destructive: 0 72% 55%;
+    --destructive: 3 71% 42%;     /* #b3271f */
     --destructive-foreground: 0 0% 100%;
-
-    /* Success shares the emerald family. */
-    --success: 152 46% 31%;
+    --success: 157 55% 27%;       /* #1f6b4c */
     --success-foreground: 0 0% 100%;
-
-    /* Amber warning. --warning stays a SURFACE tone (paired with the
-     * dark warning-foreground); --warning-strong is the AA-safe TEXT
-     * tone for amber text on tinted/light backgrounds (badges). */
     --warning: 38 92% 50%;
     --warning-foreground: 30 40% 14%;
     --warning-strong: 35 90% 27%;
-
-    /* Indigo info — matches the reference's "02 / Branding" card. */
-    --info: 234 50% 56%;
+    --info: 223 75% 47%;
     --info-foreground: 0 0% 100%;
 
-    --ring: 152 46% 43%;
+    --ring: 223 75% 47%;
+    --radius: 1.25rem;
 
-    --radius: 1rem;
-
-    /* Deep midnight-navy sidebar (the signature left panel). */
-    --sidebar: 224 50% 13%;
-    --sidebar-foreground: 217 40% 90%;
-    --sidebar-border: 223 38% 26%;
-    --sidebar-accent: 223 42% 24%;
+    /* Sidebar shares the canvas (neumorphic rail). */
+    --sidebar: 220 22% 91%;
+    --sidebar-foreground: 217 25% 16%;
+    --sidebar-border: 220 16% 80%;
+    --sidebar-accent: 223 75% 47%;
     --sidebar-accent-foreground: 0 0% 100%;
 
-    /* Pastel accent surfaces for folder / feature cards (sage, indigo,
-     * coral) — soft tints designed to read on the light canvas. */
-    --folder-sage: 152 33% 70%;
-    --folder-sage-foreground: 158 42% 18%;
-    --folder-indigo: 234 45% 60%;
-    --folder-indigo-foreground: 0 0% 100%;
-    --folder-coral: 8 78% 66%;
-    --folder-coral-foreground: 0 0% 100%;
+    /* Folder/feature tints reduced to one accent-blue family. */
+    --folder-sage: 220 20% 87%;
+    --folder-sage-foreground: 223 75% 40%;
+    --folder-indigo: 220 20% 87%;
+    --folder-indigo-foreground: 223 75% 40%;
+    --folder-coral: 220 20% 87%;
+    --folder-coral-foreground: 223 75% 40%;
 
-    /* Legacy aliases — kept so existing `var(--color-*)` usages don't
-     * break while pages migrate. Phase 2/3 will remove these. */
+    /* Legacy aliases (kept so var(--color-*) consumers don't break). */
     --color-bg: hsl(var(--background));
     --color-bg-secondary: hsl(var(--card));
     --color-text: hsl(var(--foreground));
     --color-text-secondary: hsl(var(--muted-foreground));
-    /* Track the AA-safe --primary token (ADR 0120 darkened it to 29% L so
-     * primary-as-text clears 4.5:1 on white). The old hardcoded #34a06a was
-     * only 3.29:1 as text — an AA miss on every `text-[var(--color-primary)]`
-     * link (e.g. the doc-detail "Send for signature" link the gate caught). */
     --color-primary: hsl(var(--primary));
-    --color-primary-hover: hsl(152 46% 22%);
+    --color-primary-hover: hsl(223 75% 40%);
     --color-border: hsl(var(--border));
     --color-accent: hsl(var(--accent));
     --color-danger: hsl(var(--destructive));
@@ -116,57 +92,70 @@
 
     --font-sans: 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    /* Neumorphic shadow layer. */
+    --nm-dist: 6px;
+    --nm-blur: 14px;
+    --nm-light: 220 30% 98%;   /* highlight ≈ #f7f9fc */
+    --nm-dark: 220 22% 74%;    /* shadow ≈ #b3bcce */
+    --nm-shadow: var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
+    --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
+    --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
+    --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
   }
 
   .dark {
-    --background: 30 12% 8%;
-    --foreground: 45 60% 92%;
-
-    --muted: 30 10% 14%;
-    --muted-foreground: 35 12% 65%;
-
-    --popover: 30 12% 10%;
-    --popover-foreground: 45 60% 92%;
-
-    --card: 30 12% 10%;
-    --card-foreground: 45 60% 92%;
-
-    --border: 30 10% 18%;
-    --input: 30 10% 18%;
-
-    --primary: 43 90% 60%;
-    --primary-foreground: 0 0% 10%;
-
-    --secondary: 30 10% 14%;
-    --secondary-foreground: 45 60% 92%;
-
-    --accent: 30 10% 16%;
-    --accent-foreground: 45 60% 92%;
-
-    --destructive: 5 65% 50%;
-    --destructive-foreground: 45 60% 92%;
-
-    --success: 100 30% 50%;
-    --success-foreground: 0 0% 10%;
-
-    --warning: 35 85% 55%;
-    --warning-foreground: 0 0% 10%;
-    --warning-strong: 35 85% 65%;
-
-    --info: 200 55% 55%;
-    --info-foreground: 0 0% 10%;
-
-    --ring: 43 90% 60%;
-
-    --sidebar: 30 12% 6%;
-    --sidebar-foreground: 45 60% 92%;
-    --sidebar-border: 30 10% 18%;
-    --sidebar-accent: 43 90% 60%;
-    --sidebar-accent-foreground: 0 0% 10%;
-
-    /* Legacy alias overrides for dark mode */
+    --background: 218 13% 19%;   /* #2a2e35 */
+    --foreground: 220 25% 92%;   /* #e6e9ef */
+    --muted: 218 13% 15%;
+    --muted-foreground: 219 14% 70%;  /* #a7afbd (>=4.5 on dark canvas) */
+    --popover: 218 13% 19%;
+    --popover-foreground: 220 25% 92%;
+    --card: 218 13% 19%;
+    --card-foreground: 220 25% 92%;
+    --border: 220 10% 30%;
+    --input: 220 10% 32%;
+    --primary: 221 100% 69%;     /* #5b8cff */
+    --primary-foreground: 220 40% 12%;
+    --secondary: 218 13% 19%;
+    --secondary-foreground: 220 25% 92%;
+    --accent: 218 13% 15%;
+    --accent-foreground: 220 25% 92%;
+    --destructive: 3 74% 60%;
+    --destructive-foreground: 220 40% 12%;
+    --success: 157 45% 55%;
+    --success-foreground: 220 40% 12%;
+    --warning: 38 90% 60%;
+    --warning-foreground: 30 40% 12%;
+    --warning-strong: 38 90% 68%;
+    --info: 221 100% 69%;
+    --info-foreground: 220 40% 12%;
+    --ring: 221 100% 68%;
+    --sidebar: 218 13% 19%;
+    --sidebar-foreground: 220 25% 92%;
+    --sidebar-border: 220 10% 30%;
+    --sidebar-accent: 221 100% 68%;
+    --sidebar-accent-foreground: 220 40% 12%;
+    --folder-sage: 218 13% 15%;
+    --folder-sage-foreground: 221 100% 72%;
+    --folder-indigo: 218 13% 15%;
+    --folder-indigo-foreground: 221 100% 72%;
+    --folder-coral: 218 13% 15%;
+    --folder-coral-foreground: 221 100% 72%;
     --color-bg-secondary: hsl(var(--card));
     --color-accent: hsl(var(--accent));
+    --nm-dist: 6px;
+    --nm-blur: 14px;
+    --nm-light: 218 13% 25%;   /* highlight lighter than canvas */
+    --nm-dark: 220 14% 9%;     /* shadow darker than canvas */
+    --nm-shadow: var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
+    --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
+    --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
+    --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
+  }
+
+  @media (max-width: 640px) {
+    :root, .dark { --nm-dist: 4px; --nm-blur: 9px; }
   }
 
   * {

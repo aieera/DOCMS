@@ -34,20 +34,23 @@ export function ThemeProvider({ children, defaultMode = 'system' }: { children: 
     const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null
     return stored ?? defaultMode
   })
-  // The product ships a single fixed theme (the navy/light design) — no
-  // light/dark switching. `resolved` is pinned to 'light' and the `dark`
-  // class is never applied, regardless of stored preference or OS
-  // setting. `mode`/`setMode` stay on the context so the (now removed)
-  // toggle and any callers don't break.
-  const [resolved] = useState<'light' | 'dark'>('light')
+  const [resolved, setResolved] = useState<'light' | 'dark'>('light')
 
   useEffect(() => {
-    applyClass('light')
-    window.localStorage.setItem(STORAGE_KEY, 'light')
-  }, [])
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    const compute = (): 'light' | 'dark' => (mode === 'system' ? (mql.matches ? 'dark' : 'light') : mode)
+    const apply = () => { const r = compute(); setResolved(r); applyClass(r) }
+    apply()
+    window.localStorage.setItem(STORAGE_KEY, mode)
+    if (mode === 'system') {
+      mql.addEventListener('change', apply)
+      return () => mql.removeEventListener('change', apply)
+    }
+  }, [mode])
 
+  const setMode = (m: ThemeMode) => setModeState(m)
   return (
-    <ThemeContext.Provider value={{ mode, resolved, setMode: setModeState }}>
+    <ThemeContext.Provider value={{ mode, resolved, setMode }}>
       {children}
     </ThemeContext.Provider>
   )
