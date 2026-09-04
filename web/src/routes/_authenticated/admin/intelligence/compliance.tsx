@@ -64,7 +64,7 @@ export function ComplianceAdminDashboard() {
         description="Tenant-wide PII/PHI findings produced by the intelligence pipeline."
       />
 
-      <div className="mt-6 grid grid-cols-4 gap-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Documents scanned" value={dash.total_documents_scanned} />
         <Metric label="With findings" value={dash.documents_with_findings} />
         <Metric label="Open findings" value={dash.open_findings} />
@@ -133,6 +133,7 @@ export function ComplianceAdminDashboard() {
         ) : (findings?.findings ?? []).length === 0 ? (
           <div className="text-sm text-muted-foreground">No matching findings.</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-start text-xs uppercase text-muted-foreground">
               <tr>
@@ -165,6 +166,7 @@ export function ComplianceAdminDashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         {(findings?.total ?? 0) > PAGE && (
           <div className="mt-3 flex items-center justify-between text-xs">

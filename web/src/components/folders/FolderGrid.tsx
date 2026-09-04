@@ -253,7 +253,7 @@ function FolderCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+              className="h-9 w-9 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               onClick={(e) => e.stopPropagation()}
               aria-label={t('actions_aria_label')}
               data-testid={`folder-menu-${folder.id}`}

@@ -111,6 +111,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
       )}
 
       <div className="overflow-hidden rounded-lg border border-border">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
             <tr><th className="p-2">Name</th><th className="p-2">Trigger</th><th className="p-2">Retention</th><th className="p-2">Action</th><th /></tr>
@@ -134,6 +135,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
             {schedules.length === 0 && <tr><td colSpan={5} className="p-3 text-center text-muted-foreground">No schedules yet.</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

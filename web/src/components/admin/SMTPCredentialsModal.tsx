@@ -86,8 +86,8 @@ export function SMTPCredentialsModal({ open, onOpenChange, onSaved }: Props) {
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium">Host</label>
               <Input
                 value={host}

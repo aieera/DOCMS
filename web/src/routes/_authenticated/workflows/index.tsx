@@ -301,7 +301,7 @@ function TemplateCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground"
+                  className="h-9 w-9 shrink-0 text-muted-foreground"
                   aria-label={t('templates.actions_aria_label')}
                   data-testid={`tpl-menu-${def.id}`}
                 >

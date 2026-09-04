@@ -451,7 +451,7 @@ export function ManageAccessDialog({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            className="h-9 w-9 text-destructive hover:text-destructive"
                             onClick={() => setRemoveTarget(perm)}
                             aria-label={`Remove access for ${p.name}`}
                             data-testid={`remove-access-${perm.principal_id}`}

@@ -135,7 +135,7 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8"
+                          className="h-9 w-9"
                           title="Restore"
                           aria-label={`Restore ${entry.title}`}
                           disabled={restore.isPending}
@@ -146,7 +146,7 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          className="h-9 w-9 text-destructive hover:text-destructive"
                           title="Remove from my trash"
                           aria-label={`Remove ${entry.title} from my trash`}
                           disabled={clear.isPending}

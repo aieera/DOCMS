@@ -386,7 +386,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
             onClick={() => setConfirmDelete(true)}
             aria-label={`Delete task: ${task.title}`}
             title={`Delete task: ${task.title}`}
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            className="h-9 w-9 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </Button>

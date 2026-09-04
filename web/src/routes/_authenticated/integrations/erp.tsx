@@ -231,6 +231,7 @@ function ErpExplorerPage() {
             ) : (docsQ.data?.length ?? 0) === 0 ? (
               <EmptyState icon={<FileText className="h-6 w-6" />} title="No documents in this folder" />
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-start text-xs text-muted-foreground">
@@ -265,6 +266,7 @@ function ErpExplorerPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </Card>
 

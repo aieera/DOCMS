@@ -110,6 +110,7 @@ export function ScimPage() {
 
       <h3 className="mt-6 text-sm font-semibold">Recent provisioning activity</h3>
       <div className="mt-2 overflow-hidden rounded-2xl bg-card shadow-neu">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
             <tr><th className="p-2 w-8" /><th className="p-2">Action</th><th className="p-2">Detail</th><th className="p-2">When</th></tr>
@@ -126,6 +127,7 @@ export function ScimPage() {
             {log.length === 0 && <tr><td colSpan={4} className="p-3 text-center text-muted-foreground">No provisioning activity yet.</td></tr>}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

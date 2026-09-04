@@ -187,7 +187,7 @@ export function BulkInviteDialog({ open, onOpenChange }: Props) {
                 <span className="text-destructive">{invalidCount} with errors</span>
               )}
             </div>
-            <div className="max-h-80 overflow-y-auto rounded-md border border-border">
+            <div className="max-h-80 overflow-x-auto overflow-y-auto rounded-md border border-border">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40">
                   <tr>

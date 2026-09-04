@@ -76,6 +76,7 @@ export function ResidencyPage() {
         <p className="text-sm text-muted-foreground">No documents yet.</p>
       ) : (
         <div className="mb-6 overflow-hidden rounded-2xl bg-card shadow-neu">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr className="text-start">
@@ -94,6 +95,7 @@ export function ResidencyPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

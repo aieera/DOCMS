@@ -140,7 +140,7 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
         size="icon"
         onClick={onToggle}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="h-8 w-8 text-sidebar-foreground"
+        className="h-9 w-9 text-sidebar-foreground"
       >
         {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </Button>
@@ -198,7 +198,7 @@ function SmartFolderLink({ sf }: { sf: SavedSearch }) {
     <Link
       to="/search"
       search={{ q: sf.query, saved: sf.id } as any}
-      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-[box-shadow,color] duration-150 hover:text-primary hover:shadow-neu-sm"
+      className="group relative mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-[box-shadow,color] duration-150 hover:text-primary hover:shadow-neu-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid={`smart-folder-${sf.id}`}
     >
       <Sparkles className="h-[18px] w-[18px] shrink-0 text-violet-300" />

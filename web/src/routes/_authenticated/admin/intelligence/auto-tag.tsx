@@ -119,7 +119,7 @@ export function AutoTagAdminPage() {
           <p className="mt-1 text-xs text-muted-foreground">
             Multipliers applied to the model's raw confidence before threshold comparison.
           </p>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {SOURCE_KEYS.map((src) => {
               const w = (draft.source_weights ?? {})[src] ?? 0
               return (

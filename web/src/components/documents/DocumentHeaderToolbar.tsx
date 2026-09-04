@@ -63,7 +63,7 @@ export function DocumentHeaderToolbar(props: DocumentHeaderToolbarProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0"
+                className="h-9 w-9 p-0"
                 aria-label={label}
                 disabled={key === 'download' && props.canDownload === false}
                 onClick={props[cb]}
@@ -78,7 +78,7 @@ export function DocumentHeaderToolbar(props: DocumentHeaderToolbarProps) {
         {hasOverflow && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="More actions">
+              <Button variant="ghost" size="sm" className="h-9 w-9 p-0" aria-label="More actions">
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>

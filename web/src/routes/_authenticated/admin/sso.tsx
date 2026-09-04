@@ -328,7 +328,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
               onChange={(e) => setIssuerURL(e.target.value)}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Client ID">
               <input
                 className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
@@ -434,7 +434,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       )}
 
       {step === 'done' && (
-        <div className="flex items-center gap-2 text-sm text-success dark:text-emerald-400">
+        <div className="flex items-center gap-2 text-sm text-success">
           <CheckCircle2 className="h-5 w-5" />
           Connection created. You can pause/delete it from the list below.
         </div>

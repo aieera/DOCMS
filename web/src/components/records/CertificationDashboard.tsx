@@ -111,6 +111,7 @@ export function CertificationDashboard() {
           </div>
 
           <div className="overflow-hidden rounded-lg border border-border">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
                 <tr><th className="p-2 w-8" /><th className="p-2">Requirement</th><th className="p-2">SeDoc mechanism</th><th className="p-2">Detail</th></tr>
@@ -129,6 +130,7 @@ export function CertificationDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             Coverage = (pass + attested) / total. <span className="text-blue-600">Attested</span> = SeDoc provides the

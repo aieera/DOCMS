@@ -16,7 +16,7 @@ interface Props {
 
 export function ComplianceDashboard({ docsByState = [], storageByRegion = [], encryptionCoverage = 0 }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
       <div className="rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 text-sm font-semibold">Documents by Lifecycle State</h3>
         <ResponsiveContainer width="100%" height={220}>

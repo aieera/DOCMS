@@ -411,7 +411,7 @@ function NotificationsDropdown() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 shrink-0 p-0"
+                      className="h-9 w-9 shrink-0 p-0"
                       onClick={(e) => { e.stopPropagation(); readOne.mutate(n.id) }}
                       title="Mark as read"
                       data-testid={`notif-read-${n.id}`}

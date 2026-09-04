@@ -173,7 +173,7 @@ function DiffPanes({ data, onBack }: { data: CompareResponse; onBack: () => void
           of each.
         </p>
       )}
-      <div className="grid grid-cols-2 gap-3 overflow-hidden">
+      <div className="grid grid-cols-1 gap-3 overflow-hidden sm:grid-cols-2">
         <DiffPane title={data.doc_a.title} ops={left} side="a" />
         <DiffPane title={data.doc_b.title} ops={right} side="b" />
       </div>

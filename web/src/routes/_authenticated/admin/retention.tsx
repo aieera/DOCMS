@@ -343,7 +343,7 @@ export function RetentionPage() {
                 No documents currently match these filters.
               </p>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded-md border border-border">
+              <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-md border border-border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40">
                     <tr>

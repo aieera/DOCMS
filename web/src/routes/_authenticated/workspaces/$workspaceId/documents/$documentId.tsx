@@ -994,7 +994,7 @@ function CustomFieldsSidebarSlot({ doc }: { doc: Document }) {
           onClick={() => setEditOpen(true)}
           aria-label="Edit custom fields"
           title="Edit custom fields"
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid="edit-custom-fields"
         >
           <Pencil className="h-3.5 w-3.5" />

@@ -110,7 +110,7 @@ export function CompliancePanel({ documentId }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 px-4 py-3 text-xs">
+      <div className="grid grid-cols-1 gap-3 px-4 py-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="PII" value={s.pii_count} />
         <Stat label="PHI" value={s.phi_count} />
         <Stat label="Open critical" value={s.critical_count} />

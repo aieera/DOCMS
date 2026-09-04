@@ -174,6 +174,7 @@ function LicenseList({ containerId }: { containerId: string }) {
       {licenses.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">No licenses on this container.</p>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
             <tr>
@@ -225,6 +226,7 @@ function LicenseList({ containerId }: { containerId: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <ConfirmDialog

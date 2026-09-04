@@ -407,7 +407,7 @@ function TrashPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8"
+                        className="h-9 w-9"
                         title="Restore"
                         aria-label={`Restore ${entry.title}`}
                         onClick={() => restore.mutate(entry.id)}
@@ -419,7 +419,7 @@ function TrashPage() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         title="Delete permanently"
                         aria-label={`Permanently delete ${entry.title}`}
                         onClick={() => setPurgeTarget(entry)}
@@ -588,7 +588,7 @@ function TrashFolderRow({
             <Button
               size="icon"
               variant="ghost"
-              className="h-8 w-8"
+              className="h-9 w-9"
               title="Restore folder and its contents"
               aria-label={`Restore ${f.name}`}
               onClick={onRestore}
@@ -602,7 +602,7 @@ function TrashFolderRow({
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
             title="Delete permanently"
             aria-label={`Permanently delete ${f.name}`}
             onClick={onPurge}

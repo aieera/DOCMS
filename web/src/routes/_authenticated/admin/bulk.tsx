@@ -143,7 +143,7 @@ function ImportPanel() {
       />
 
       {summary && (
-        <div className="grid grid-cols-3 gap-2 text-xs" data-testid="bulk-import-summary">
+        <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3" data-testid="bulk-import-summary">
           <Card className="p-3"><span className="text-muted-foreground">Processed</span><p className="text-lg font-semibold">{summary.totalLines}</p></Card>
           <Card className="p-3"><span className="text-success">Succeeded</span><p className="text-lg font-semibold">{summary.successCount}</p></Card>
           <Card className="p-3"><span className="text-destructive">Failed</span><p className="text-lg font-semibold">{summary.failureCount}</p></Card>

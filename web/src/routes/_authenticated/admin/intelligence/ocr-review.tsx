@@ -59,7 +59,7 @@ export function OcrReviewPage() {
       />
 
       {stats && (
-        <div className="mt-6 grid grid-cols-4 gap-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Metric label="Documents scanned" value={stats.total_documents} />
           <Metric label="Open review pages" value={stats.open_review_pages} />
           <Metric label="Auto-retried docs" value={stats.auto_retried_documents} />
@@ -70,7 +70,7 @@ export function OcrReviewPage() {
       {stats && (
         <div className="mt-6 rounded border border-border p-4">
           <h2 className="mb-3 text-sm font-medium">Documents by grade</h2>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {GRADES.map((g) => (
               <button
                 key={g}
@@ -106,6 +106,7 @@ export function OcrReviewPage() {
             </Button>
           )}
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
@@ -149,6 +150,7 @@ export function OcrReviewPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {(page > 0 || hasMore) && (
           <div className="flex items-center justify-between border-t border-border px-4 py-2 text-sm">
             <span className="text-muted-foreground">Showing {(queue?.items?.length ?? 0)} of {total}</span>

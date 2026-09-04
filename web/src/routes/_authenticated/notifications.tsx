@@ -413,7 +413,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 w-8 p-0"
+            className="h-9 w-9 p-0"
             onClick={onRead}
             title="Mark as read"
             data-testid={`notif-read-${n.id}`}
@@ -424,7 +424,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-8 w-8 p-0"
+          className="h-9 w-9 p-0"
           onClick={onSnooze}
           loading={snoozing}
           title={`Mute "${kind}" notifications for 1 hour`}

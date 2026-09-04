@@ -220,7 +220,7 @@ export function ManageFolderAccessDialog({ open, onOpenChange, folder }: Props) 
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                        className="h-9 w-9 text-destructive hover:bg-destructive/10"
                         onClick={() => handleRemove(g.grantee_type, g.grantee_id)}
                         disabled={removeGrant.isPending}
                         aria-label={t('manage_access_dialog.revoke')}

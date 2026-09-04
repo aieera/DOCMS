@@ -165,7 +165,7 @@ function RoutingRulesPage() {
 
       {creating && (
         <div className="mt-4 rounded border border-border p-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <LabeledInput label="Name">
               <Input
                 value={creating.name}
@@ -206,7 +206,7 @@ function RoutingRulesPage() {
         </div>
       )}
 
-      <div className="mt-6 rounded border border-border">
+      <div className="mt-6 overflow-x-auto rounded border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-start text-xs uppercase tracking-wide text-muted-foreground">
             <tr>

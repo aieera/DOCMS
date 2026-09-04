@@ -101,6 +101,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
         </div>
       </div>
 
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="text-start text-xs uppercase text-muted-foreground">
           <tr>
@@ -172,6 +173,7 @@ export function OcrQualityPanel({ documentId, onJumpToPage }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {flagged.length > 1 && (
         <div className="flex justify-end border-t border-border px-4 py-2">

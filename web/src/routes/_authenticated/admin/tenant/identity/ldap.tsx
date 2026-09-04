@@ -429,6 +429,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
     <Section icon={<Network className="h-5 w-5" />} title="Group mappings"
       hint="Map AD/LDAP group DNs to DMS groups, and optionally a SeDoc role. On login, the highest-precedence mapped role (owner > admin > member > guest) is assigned; unmapped LDAP groups are ignored.">
       <div className="overflow-hidden rounded border border-border">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
@@ -464,6 +465,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-2">
@@ -526,6 +528,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
         </Button>
       </div>
       <div className="overflow-hidden rounded border border-border">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
@@ -553,6 +556,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </Section>
   )

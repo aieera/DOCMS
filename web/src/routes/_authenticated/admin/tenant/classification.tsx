@@ -241,6 +241,7 @@ function RulesTable({
         </p>
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
@@ -275,6 +276,7 @@ function RulesTable({
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </Card>

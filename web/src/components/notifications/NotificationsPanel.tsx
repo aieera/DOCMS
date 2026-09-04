@@ -145,7 +145,7 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 w-7 p-0"
+                          className="h-9 w-9 p-0"
                           onClick={() => readOne.mutate(n.id)}
                           title="Mark as read"
                           data-testid={`notif-panel-read-${n.id}`}
@@ -156,7 +156,7 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0"
+                        className="h-9 w-9 p-0"
                         onClick={() => snooze.mutate(n.type)}
                         loading={snooze.isPending && snooze.variables === n.type}
                         title={`Mute "${notificationTypeLabel(n.type)}" notifications for 1 hour`}

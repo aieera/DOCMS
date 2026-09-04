@@ -117,7 +117,7 @@ export function ModelsPage() {
         }
       />
 
-      <div className="mt-6 grid grid-cols-4 gap-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Production"
           value={production ? production.version_tag : '—'}
@@ -155,6 +155,7 @@ export function ModelsPage() {
         <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Model versions
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
@@ -240,6 +241,7 @@ export function ModelsPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {stats.data && stats.data.per_label.length > 0 && (
@@ -288,7 +290,7 @@ function ConfigPanel({ initial }: { initial: ActiveLearningConfig }) {
       <div className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Active-learning configuration
       </div>
-      <div className="grid grid-cols-2 gap-4 p-4 text-sm">
+      <div className="grid grid-cols-1 gap-4 p-4 text-sm sm:grid-cols-2">
         <Toggle
           label="Enabled"
           help="Collect corrections and trigger retraining."

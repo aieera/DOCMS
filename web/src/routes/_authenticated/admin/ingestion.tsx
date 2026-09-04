@@ -203,7 +203,7 @@ function StagedItemsTab() {
     )
   }
   return (
-    <div className="rounded border border-border">
+    <div className="overflow-x-auto rounded border border-border">
       <table className="w-full text-sm">
         <thead className="text-start text-xs uppercase text-muted-foreground">
           <tr>

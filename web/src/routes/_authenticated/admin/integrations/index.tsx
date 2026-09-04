@@ -319,6 +319,7 @@ function ESignatureSection() {
           {envsQ.isLoading ? <Spinner /> : (envsQ.data ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">No envelopes in progress.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="envelopes-table">
               <thead>
                 <tr className="border-b border-border text-start">
@@ -343,6 +344,7 @@ function ESignatureSection() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
       )}

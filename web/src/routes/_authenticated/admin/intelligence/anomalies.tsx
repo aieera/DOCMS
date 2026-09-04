@@ -110,7 +110,7 @@ function AnomalyDashboardPage() {
         }
       />
 
-      <div className="mt-6 grid grid-cols-3 gap-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Metric label="Reports" value={(reports?.total ?? 0).toLocaleString()} />
         <Metric label="Findings reported" value={reportedCount.toLocaleString()} />
         <Metric
@@ -144,6 +144,7 @@ function AnomalyDashboardPage() {
             </span>
           )}
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-start text-xs uppercase text-muted-foreground">
             <tr>
@@ -189,6 +190,7 @@ function AnomalyDashboardPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {openReport && (

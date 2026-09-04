@@ -192,6 +192,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
@@ -261,6 +262,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

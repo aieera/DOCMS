@@ -80,7 +80,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700"
+                  className="h-9 w-9 p-0 text-emerald-600 hover:text-emerald-700"
                   aria-label={`Accept tag ${s.tag_name}`}
                   disabled={review.isPending}
                   onClick={(e) => {
@@ -93,7 +93,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  className="h-9 w-9 p-0 text-muted-foreground hover:text-destructive"
                   aria-label={`Reject tag ${s.tag_name}`}
                   disabled={review.isPending}
                   onClick={(e) => {
