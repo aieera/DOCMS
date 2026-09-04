@@ -39,13 +39,15 @@ export const SegmentedProgress = forwardRef<HTMLDivElement, SegmentedProgressPro
               )}
             >
               {variant === 'empty' && (
+                // Token-colored repeating gradient, not a fixed-stroke SVG
+                // data URI — see metric-bar.tsx for why (dark-mode --muted
+                // has the same luminance as a hardcoded near-black stroke).
                 <span
                   aria-hidden
                   className="pointer-events-none absolute inset-0"
                   style={{
                     backgroundImage:
-                      "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><path d='M-1,1 l2,-2 M0,6 l6,-6 M5,7 l2,-2' stroke='%231A1A1A' stroke-width='0.6' opacity='0.16'/></svg>\")",
-                    backgroundSize: '6px 6px',
+                      'repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.16) 0, hsl(var(--muted-foreground) / 0.16) 1px, transparent 1px, transparent 6px)',
                   }}
                 />
               )}

@@ -52,14 +52,17 @@ export const MetricBar = forwardRef<HTMLDivElement, MetricBarProps>(
           aria-valuemax={100}
           aria-label={typeof label === 'string' ? label : undefined}
         >
-          {/* hatched empty fill */}
+          {/* hatched empty fill — a token-colored repeating gradient
+              (not a fixed-stroke SVG data URI) so the texture stays
+              visible against both the light and dark --muted track;
+              a hardcoded near-black stroke disappears against dark
+              mode's near-black --muted (same luminance). */}
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
               backgroundImage:
-                "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><path d='M-1,1 l2,-2 M0,6 l6,-6 M5,7 l2,-2' stroke='%231A1A1A' stroke-width='0.6' opacity='0.18'/></svg>\")",
-              backgroundSize: '6px 6px',
+                'repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.18) 0, hsl(var(--muted-foreground) / 0.18) 1px, transparent 1px, transparent 6px)',
             }}
           />
           {value > 0 && (

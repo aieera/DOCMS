@@ -157,14 +157,16 @@ export interface StackedAvatarProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 // Token-driven so every tone stays legible in both themes — no
-// hardcoded warm gradients. Alternates the primary accent against
-// neutral muted chips for differentiation between stacked people.
-const TONE: Record<NonNullable<StackedAvatarProps['tone']>, string> = {
+// hardcoded warm gradients. Five mutually-distinct treatments built
+// from --primary/--muted/--foreground at varying strength/inversion
+// so a group of stacked avatars stays visually distinguishable in
+// both light and dark (neu-crextio.test.tsx asserts all 5 differ).
+export const TONE: Record<NonNullable<StackedAvatarProps['tone']>, string> = {
   a: 'bg-primary text-primary-foreground',
   b: 'bg-muted text-foreground',
-  c: 'bg-primary/70 text-primary-foreground',
-  d: 'bg-muted text-foreground',
-  e: 'bg-primary/40 text-foreground',
+  c: 'bg-primary/15 text-primary',
+  d: 'bg-foreground text-background',
+  e: 'bg-primary/30 text-foreground',
 }
 
 export const StackedAvatar = forwardRef<HTMLSpanElement, StackedAvatarProps>(
