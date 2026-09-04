@@ -8,16 +8,13 @@ import { cn } from '@/lib/cn'
 // bar reads as "in progress" even at low values.
 
 const fillVariants = cva(
-  cn(
-    'absolute inset-0 flex items-center rounded-full font-mono text-[11px] font-semibold tracking-[0.03em]',
-    'shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]',
-  ),
+  'absolute inset-0 flex items-center rounded-full font-mono text-[11px] font-semibold tracking-[0.03em]',
   {
     variants: {
       variant: {
-        dark: 'bg-[#1A1A1A] text-[#FAFAFA] px-[14px]',
-        accent: 'bg-[#F5C13B] text-[#1A1A1A] px-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]',
-        muted: 'bg-[#F4E8C8] text-[#8C8273] px-[14px]',
+        dark: 'bg-foreground text-background px-[14px] shadow-neu-sm',
+        accent: 'bg-primary text-primary-foreground px-[14px] shadow-neu-sm',
+        muted: 'bg-background text-muted-foreground px-[14px] shadow-neu-sm',
       },
       compact: { true: 'px-[10px] text-[10px]', false: '' },
     },
@@ -45,13 +42,10 @@ export const MetricBar = forwardRef<HTMLDivElement, MetricBarProps>(
     return (
       <div ref={ref} className={cn('flex flex-col gap-2', className)} {...props}>
         {showCaption && (
-          <span className="text-[11.5px] font-medium tracking-[0.02em] text-[#8C8273]">{label}</span>
+          <span className="text-[11.5px] font-medium tracking-[0.02em] text-muted-foreground">{label}</span>
         )}
         <div
-          className={cn(
-            'relative h-7 overflow-hidden rounded-full border',
-            'border-[rgba(26,26,26,0.08)] bg-[#FFFAEF] shadow-[0_2px_8px_-2px_rgba(80,60,10,0.10)]',
-          )}
+          className="relative h-7 overflow-hidden rounded-full bg-muted shadow-neu-inset"
           role="progressbar"
           aria-valuenow={value}
           aria-valuemin={0}

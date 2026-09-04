@@ -67,25 +67,25 @@ export function CommandPalette() {
     <div className="fixed inset-0 z-[100]" data-testid="command-palette" onClick={() => setOpen(false)}>
       <div className="fixed inset-0 bg-black/50" />
       <div className="fixed start-1/2 top-[20%] z-[101] w-full max-w-lg -translate-x-1/2" onClick={(e) => e.stopPropagation()}>
-        <Command className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] shadow-2xl"
+        <Command className="rounded-2xl bg-popover text-popover-foreground shadow-neu"
           // shouldFilter=false: cmdk's built-in filter would re-rank
           // server-supplied groups by its own match algorithm. We
           // already get a relevance-ordered list back; let it stand.
           shouldFilter={false}
         >
-          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4">
-            <Search className="h-4 w-4 text-[var(--color-text-secondary)]" />
+          <div className="flex items-center gap-2 border-b border-border px-4">
+            <Search className="h-4 w-4 text-muted-foreground" />
             <Command.Input
               value={q}
               onValueChange={setQ}
               placeholder="Search documents, tags, people…"
-              className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-text-secondary)]"
+              className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               data-testid="command-palette-input"
             />
           </div>
           <Command.List className="max-h-96 overflow-y-auto p-2" data-testid="command-palette-list">
             {empty && (
-              <Command.Empty className="p-4 text-center text-sm text-[var(--color-text-secondary)]">
+              <Command.Empty className="p-4 text-center text-sm text-muted-foreground">
                 No matches for &ldquo;{q}&rdquo;
               </Command.Empty>
             )}
@@ -100,7 +100,7 @@ export function CommandPalette() {
                 {recent.map((r) => (
                   <Item
                     key={`recent-${r.text}`}
-                    icon={<Clock className="h-4 w-4 text-[var(--color-text-secondary)]" />}
+                    icon={<Clock className="h-4 w-4 text-muted-foreground" />}
                     label={r.text}
                     onSelect={() => {
                       setOpen(false)
@@ -208,7 +208,7 @@ function Item({ icon, label, badge, onSelect, testId }: {
   return (
     <Command.Item
       onSelect={onSelect}
-      className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm aria-selected:bg-slate-100 dark:aria-selected:bg-slate-700"
+      className="flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
       data-testid={testId}
     >
       <span className="flex items-center gap-2 truncate">
@@ -216,7 +216,7 @@ function Item({ icon, label, badge, onSelect, testId }: {
         <span className="truncate">{label}</span>
       </span>
       {badge && (
-        <span className="shrink-0 text-xs text-[var(--color-text-secondary)]">{badge}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{badge}</span>
       )}
     </Command.Item>
   )

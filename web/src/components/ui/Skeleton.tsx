@@ -4,5 +4,5 @@ import { cn } from '@/lib/cn'
 // shimmer matches whatever surface it's parked on (Card, page bg,
 // sidebar) in both light + dark.
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-md bg-muted', className)} />
+  return <div className={cn('animate-pulse rounded-md bg-muted shadow-neu-inset', className)} />
 }

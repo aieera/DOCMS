@@ -12,9 +12,9 @@ export interface TimerRingProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   size?: number
   /** Stroke width in SVG units (radius is 60 - strokeWidth) */
   strokeWidth?: number
-  /** Color of the active (filled) arc */
+  /** Color of the active (filled) arc — defaults to the theme accent (--primary) */
   trackColor?: string
-  /** Color of the inactive arc */
+  /** Color of the inactive arc — defaults to the theme well (--muted) */
   bgColor?: string
 }
 
@@ -30,8 +30,8 @@ export const TimerRing = forwardRef<HTMLDivElement, TimerRingProps>(
     sublabel,
     size = 168,
     strokeWidth = 10,
-    trackColor = '#F5C13B',
-    bgColor = '#F4E8C8',
+    trackColor = 'hsl(var(--primary))',
+    bgColor = 'hsl(var(--muted))',
     ...props
   }, ref) => {
     const r = 60 - strokeWidth / 2 - 2
@@ -57,7 +57,7 @@ export const TimerRing = forwardRef<HTMLDivElement, TimerRingProps>(
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             style={{
-              filter: 'drop-shadow(0 4px 10px rgba(245,193,59,0.35))',
+              filter: 'drop-shadow(0 4px 10px hsl(var(--primary) / 0.35))',
               transition: 'stroke-dashoffset 600ms cubic-bezier(.2,.7,.2,1)',
             }}
           />
@@ -70,7 +70,7 @@ export const TimerRing = forwardRef<HTMLDivElement, TimerRingProps>(
             {label}
           </span>
           {sublabel && (
-            <span className="text-[11px] tracking-[0.03em] text-[#8C8273]">{sublabel}</span>
+            <span className="text-[11px] tracking-[0.03em] text-muted-foreground">{sublabel}</span>
           )}
         </div>
       </div>

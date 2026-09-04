@@ -48,9 +48,9 @@ export const TaskItem = forwardRef<HTMLLIElement, TaskItemProps>(
           'group/task grid grid-cols-[32px_1fr_22px] items-center gap-3 py-[7px]',
           'border-b last:border-b-0',
           '[[data-surface=dark]_&]:border-white/[0.06]',
-          '[[data-surface=cream]_&]:border-[rgba(26,26,26,0.06)]',
+          '[[data-surface=cream]_&]:border-border',
           surface === 'dark' && 'border-white/[0.06]',
-          surface === 'cream' && 'border-[rgba(26,26,26,0.06)]',
+          surface === 'cream' && 'border-border',
           className,
         )}
         {...props}
@@ -60,7 +60,7 @@ export const TaskItem = forwardRef<HTMLLIElement, TaskItemProps>(
           className={cn(
             'inline-flex h-8 w-8 items-center justify-center rounded-[10px]',
             '[[data-surface=dark]_&]:bg-white/[0.06] [[data-surface=dark]_&]:text-[#FAFAFA]',
-            '[[data-surface=cream]_&]:bg-[#F4E8C8] [[data-surface=cream]_&]:text-[#1A1A1A]',
+            '[[data-surface=cream]_&]:bg-muted [[data-surface=cream]_&]:text-foreground',
           )}
         >
           {icon}
@@ -72,7 +72,7 @@ export const TaskItem = forwardRef<HTMLLIElement, TaskItemProps>(
               isDone && cn(
                 'line-through decoration-current/30',
                 '[[data-surface=dark]_&]:text-[#8A8175]',
-                '[[data-surface=cream]_&]:text-[#8C8273]',
+                '[[data-surface=cream]_&]:text-muted-foreground',
               ),
             )}
           >
@@ -83,7 +83,7 @@ export const TaskItem = forwardRef<HTMLLIElement, TaskItemProps>(
               className={cn(
                 'font-mono text-[10.5px] tracking-[0.02em]',
                 '[[data-surface=dark]_&]:text-[#8A8175]',
-                '[[data-surface=cream]_&]:text-[#8C8273]',
+                '[[data-surface=cream]_&]:text-muted-foreground',
               )}
             >
               {time}
@@ -94,14 +94,11 @@ export const TaskItem = forwardRef<HTMLLIElement, TaskItemProps>(
           className={cn(
             'inline-flex h-[22px] w-[22px] items-center justify-center rounded-full',
             isDone
-              ? cn(
-                  'bg-[#F5C13B] text-[#1A1A1A]',
-                  'shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]',
-                )
+              ? 'bg-primary text-primary-foreground shadow-neu-sm'
               : cn(
                   'border border-dashed',
                   '[[data-surface=dark]_&]:border-white/20',
-                  '[[data-surface=cream]_&]:border-[rgba(26,26,26,0.18)]',
+                  '[[data-surface=cream]_&]:border-border',
                 ),
           )}
           aria-label={isDone ? 'completed' : 'pending'}

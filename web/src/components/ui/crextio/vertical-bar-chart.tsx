@@ -6,7 +6,7 @@ export interface VerticalBarDatum {
   label: string
   /** 0-100, where 100 = full bar height */
   value: number
-  /** Render this bar in the accent (mustard) color */
+  /** Render this bar in the theme accent (--primary) color */
   accent?: boolean
   /** Optional floating tooltip text above the bar */
   tooltip?: string
@@ -14,9 +14,9 @@ export interface VerticalBarDatum {
 
 export interface VerticalBarChartProps extends HTMLAttributes<HTMLDivElement> {
   data: VerticalBarDatum[]
-  /** axis-label color override (default uses the warm muted token) */
+  /** axis-label color override (default uses the muted-foreground token) */
   labelClassName?: string
-  /** className for each bar — useful if the host overrides the cream fill */
+  /** className for each bar — useful if the host overrides the default fill */
   barClassName?: string
 }
 
@@ -41,9 +41,7 @@ export const VerticalBarChart = forwardRef<HTMLDivElement, VerticalBarChartProps
             <div
               className={cn(
                 'relative w-full rounded-full',
-                d.accent
-                  ? 'bg-[#F5C13B] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_14px_-6px_rgba(245,193,59,0.55)]'
-                  : 'bg-[#F4E8C8]',
+                d.accent ? 'bg-primary shadow-neu-sm' : 'bg-muted',
                 barClassName,
               )}
               style={{ height: `${Math.max(d.value, 4)}%`, minHeight: 8 }}
@@ -54,10 +52,10 @@ export const VerticalBarChart = forwardRef<HTMLDivElement, VerticalBarChartProps
                 <span
                   className={cn(
                     'absolute start-1/2 top-[-34px] -translate-x-1/2 whitespace-nowrap',
-                    'rounded-full bg-[#1A1A1A] px-2.5 py-1 font-mono text-[10.5px] font-semibold',
-                    'tracking-[0.02em] text-[#FAFAFA]',
+                    'rounded-full bg-popover px-2.5 py-1 font-mono text-[10.5px] font-semibold',
+                    'tracking-[0.02em] text-popover-foreground shadow-neu-sm',
                     'after:absolute after:bottom-[-4px] after:start-1/2 after:h-2 after:w-2',
-                    'after:-translate-x-1/2 after:rotate-45 after:bg-[#1A1A1A]',
+                    'after:-translate-x-1/2 after:rotate-45 after:bg-popover',
                   )}
                 >
                   {d.tooltip}
@@ -75,7 +73,7 @@ export const VerticalBarChart = forwardRef<HTMLDivElement, VerticalBarChartProps
           <span
             key={i}
             className={cn(
-              'text-center text-[11px] font-medium text-[#8C8273]',
+              'text-center text-[11px] font-medium text-muted-foreground',
               labelClassName,
             )}
           >

@@ -25,7 +25,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', deboun
 
   return (
     <div className={cn('relative', className)}>
-      <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-[var(--color-text-secondary)]" />
+      <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-muted-foreground" />
       <input
         value={local}
         onChange={(e) => handleChange(e.target.value)}
@@ -35,7 +35,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', deboun
       />
       {local && (
         <button onClick={() => handleChange('')} className="absolute inset-y-0 end-3 my-auto" aria-label="Clear">
-          <X className="h-4 w-4 text-[var(--color-text-secondary)]" />
+          <X className="h-4 w-4 text-muted-foreground" />
         </button>
       )}
     </div>

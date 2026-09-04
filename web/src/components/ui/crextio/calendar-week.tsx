@@ -53,7 +53,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
         {/* month switcher */}
         <header className="mb-2.5 flex items-baseline gap-3.5">
           {prevMonth && (
-            <span className="text-[12.5px] font-medium text-[#B9AC95]">{prevMonth}</span>
+            <span className="text-[12.5px] font-medium text-muted-foreground">{prevMonth}</span>
           )}
           <span
             className="font-serif text-[18px] font-normal tracking-[-0.01em]"
@@ -62,7 +62,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
             {monthLabel}
           </span>
           {nextMonth && (
-            <span className="ms-auto text-[12.5px] font-medium text-[#B9AC95]">{nextMonth}</span>
+            <span className="ms-auto text-[12.5px] font-medium text-muted-foreground">{nextMonth}</span>
           )}
         </header>
 
@@ -70,12 +70,12 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
         <div className="grid" style={{ gridTemplateColumns: cols }}>
           <span />
           {days.map((d, i) => (
-            <div key={i} className="flex flex-col items-center gap-0.5 pb-3 text-[11px] text-[#8C8273]">
+            <div key={i} className="flex flex-col items-center gap-0.5 pb-3 text-[11px] text-muted-foreground">
               <span>{d.label}</span>
               <span
                 className={cn(
                   'font-serif text-[16px] font-normal tracking-[-0.01em]',
-                  d.today ? 'text-[#D9A422]' : 'text-[#1A1A1A]',
+                  d.today ? 'text-primary' : 'text-foreground',
                 )}
                 style={{ fontVariationSettings: '"opsz" 96' }}
               >
@@ -87,7 +87,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
 
         {/* timeline grid */}
         <div
-          className="relative grid flex-1 border-t border-dashed border-[rgba(26,26,26,0.14)]"
+          className="relative grid flex-1 border-t border-dashed border-border"
           style={{
             gridTemplateColumns: cols,
             gridTemplateRows: `repeat(${hours.length}, minmax(38px, 1fr))`,
@@ -97,7 +97,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
           {hours.map((h, i) => (
             <span
               key={`h-${i}`}
-              className="border-b border-dashed border-[rgba(26,26,26,0.08)] pe-2 pt-1.5 text-end font-mono text-[10.5px] text-[#8C8273]"
+              className="border-b border-dashed border-border pe-2 pt-1.5 text-end font-mono text-[10.5px] text-muted-foreground"
               style={{ gridColumn: 1, gridRow: i + 1 }}
             >
               {h}
@@ -109,7 +109,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
             days.map((_, dayIdx) => (
               <span
                 key={`c-${hourIdx}-${dayIdx}`}
-                className="border-b border-s border-dashed border-[rgba(26,26,26,0.08)]"
+                className="border-b border-s border-dashed border-border"
                 style={{ gridColumn: dayIdx + 2, gridRow: hourIdx + 1 }}
               />
             )),
@@ -122,9 +122,8 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
               <div
                 key={ev.id}
                 className={cn(
-                  'relative m-0.5 mx-1 flex flex-col gap-0.5 overflow-hidden rounded-[14px] p-2.5',
-                  'shadow-[0_2px_8px_-2px_rgba(80,60,10,0.10)]',
-                  isDark ? 'bg-[#1A1A1A] text-[#FAFAFA]' : 'border border-[rgba(26,26,26,0.08)] bg-[#FBF1D9] text-[#1A1A1A]',
+                  'relative m-0.5 mx-1 flex flex-col gap-0.5 overflow-hidden rounded-[14px] p-2.5 shadow-neu-sm',
+                  isDark ? 'bg-[#1A1A1A] text-[#FAFAFA]' : 'bg-card text-card-foreground',
                 )}
                 style={{
                   gridColumn: `${ev.day + 1} / span ${ev.daySpan ?? 1}`,
@@ -136,7 +135,7 @@ export const CalendarWeek = forwardRef<HTMLDivElement, CalendarWeekProps>(
                   <span className="text-[11px] leading-tight opacity-70">{ev.sub}</span>
                 )}
                 {ev.avatars && (
-                  <div className={cn('mt-auto flex pt-1.5', isDark ? '[&_*]:!border-[#1A1A1A]' : '[&_*]:!border-[#FBF1D9]')}>
+                  <div className={cn('mt-auto flex pt-1.5', isDark ? '[&_*]:!border-[#1A1A1A]' : '[&_*]:!border-card')}>
                     {ev.avatars}
                   </div>
                 )}
@@ -157,12 +156,15 @@ export interface StackedAvatarProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: 'a' | 'b' | 'c' | 'd' | 'e'
 }
 
+// Token-driven so every tone stays legible in both themes — no
+// hardcoded warm gradients. Alternates the primary accent against
+// neutral muted chips for differentiation between stacked people.
 const TONE: Record<NonNullable<StackedAvatarProps['tone']>, string> = {
-  a: 'bg-gradient-to-br from-[#FFD58A] to-[#E89B1F]',
-  b: 'bg-gradient-to-br from-[#C8B89A] to-[#8A7758]',
-  c: 'bg-gradient-to-br from-[#FFE2A4] to-[#C99B3D]',
-  d: 'bg-gradient-to-br from-[#F0E0B8] to-[#A88C58]',
-  e: 'bg-gradient-to-br from-[#FFCC80] to-[#BA6E1E]',
+  a: 'bg-primary text-primary-foreground',
+  b: 'bg-muted text-foreground',
+  c: 'bg-primary/70 text-primary-foreground',
+  d: 'bg-muted text-foreground',
+  e: 'bg-primary/40 text-foreground',
 }
 
 export const StackedAvatar = forwardRef<HTMLSpanElement, StackedAvatarProps>(
@@ -171,7 +173,7 @@ export const StackedAvatar = forwardRef<HTMLSpanElement, StackedAvatarProps>(
       ref={ref}
       className={cn(
         'inline-flex h-[22px] w-[22px] -me-1.5 items-center justify-center rounded-full',
-        'border-2 text-[10px] font-semibold text-[#1A1A1A]',
+        'border-2 text-[10px] font-semibold shadow-neu-sm',
         TONE[tone],
         className,
       )}
