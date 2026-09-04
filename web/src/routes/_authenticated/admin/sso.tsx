@@ -82,7 +82,7 @@ export function SsoPage() {
           {data.map((c) => (
             <li
               key={c.id}
-              className="flex items-start justify-between rounded-lg border border-border bg-card p-3"
+              className="flex items-start justify-between rounded-lg bg-card p-3 shadow-neu"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -96,7 +96,7 @@ export function SsoPage() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   Updated {formatRelativeTime(c.updated_at)}
                 </div>
-                <pre className="mt-2 max-h-32 overflow-auto rounded bg-background p-2 text-xs">
+                <pre className="mt-2 max-h-32 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
 {JSON.stringify(c.config, null, 2)}
                 </pre>
               </div>
@@ -222,13 +222,13 @@ function Wizard({ onDone }: { onDone: () => void }) {
   ]
 
   return (
-    <div className="mb-6 rounded-lg border border-border bg-card p-4">
+    <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
       <div className="mb-4 flex items-center gap-2 text-xs">
         {steps.map((s, i) => (
           <span key={s.id} className="flex items-center gap-2">
             <span
               className={`rounded-full px-2 py-0.5 ${
-                step === s.id ? 'bg-primary text-white' : 'bg-background'
+                step === s.id ? 'bg-primary text-primary-foreground' : 'bg-background'
               }`}
             >
               {s.label}
@@ -242,7 +242,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label="Connection name">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
               placeholder="Corporate Okta"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -298,7 +298,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           {metaSource === 'url' ? (
             <Field label="IdP metadata URL (https://…)">
               <input
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
                 placeholder="https://idp.example.com/metadata.xml"
                 value={metaURL}
                 onChange={(e) => setMetaURL(e.target.value)}
@@ -307,7 +307,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           ) : (
             <Field label="IdP metadata XML">
               <textarea
-                className="h-40 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
+                className="h-40 w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 font-mono text-xs"
                 placeholder="<EntityDescriptor …>"
                 value={metaXML}
                 onChange={(e) => setMetaXML(e.target.value)}
@@ -322,7 +322,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
         <div className="space-y-3">
           <Field label="Issuer URL (https://…)">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="https://id.example.com"
               value={issuerURL}
               onChange={(e) => setIssuerURL(e.target.value)}
@@ -331,7 +331,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Client ID">
               <input
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+                className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
                 value={clientID}
                 onChange={(e) => setClientID(e.target.value)}
               />
@@ -346,7 +346,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </div>
           <Field label="Redirect URL (registered with the IdP)">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="https://vaultdms.example.com/api/v1/auth/oidc/<slug>/callback"
               value={redirectURL}
               onChange={(e) => setRedirectURL(e.target.value)}
@@ -354,7 +354,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Scopes (space-separated)">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
               value={scopesText}
               onChange={(e) => setScopesText(e.target.value)}
             />
@@ -371,7 +371,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </p>
           <Field label="Email attribute">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
               value={attrEmail}
               onChange={(e) => setAttrEmail(e.target.value)}
@@ -379,7 +379,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Display name attribute">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.microsoft.com/ws/2008/06/identity/claims/displayname"
               value={attrName}
               onChange={(e) => setAttrName(e.target.value)}
@@ -387,7 +387,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           </Field>
           <Field label="Groups attribute">
             <input
-              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm font-mono"
+              className="w-full rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm font-mono"
               placeholder="http://schemas.xmlsoap.org/claims/Group"
               value={attrGroups}
               onChange={(e) => setAttrGroups(e.target.value)}
@@ -469,8 +469,8 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
     <div
       className={`rounded-md border p-3 text-sm ${
         result.ok
-          ? 'border-emerald-500 bg-success/10/30'
-          : 'border-red-500 bg-destructive/10 dark:bg-red-950/30'
+          ? 'border-success/40 bg-success/10'
+          : 'border-destructive/40 bg-destructive/10'
       }`}
     >
       <div className="flex items-center gap-2 font-medium">
@@ -493,7 +493,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
         </ul>
       )}
       {result.details && Object.keys(result.details).length > 0 && (
-        <pre className="mt-2 overflow-auto rounded bg-background p-2 text-xs">
+        <pre className="mt-2 overflow-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">
 {JSON.stringify(result.details, null, 2)}
         </pre>
       )}
@@ -520,9 +520,9 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
   defaultRole: string
   setDefaultRole: (r: string) => void
 }) {
-  const roleSelect = 'rounded-md border border-border bg-background px-2 py-1 text-sm'
+  const roleSelect = 'rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm'
   return (
-    <div className="space-y-2 rounded-md border border-border p-3">
+    <div className="space-y-2 rounded-md bg-muted p-3 shadow-neu-inset">
       <p className="text-xs font-semibold uppercase text-muted-foreground">Claim → role mapping</p>
       <p className="text-xs text-muted-foreground">
         Map a group/role claim value to a SeDoc role for JIT-provisioned users. First match wins; otherwise the default applies.
@@ -530,7 +530,7 @@ function RoleMappingEditor({ rules, setRules, defaultRole, setDefaultRole }: {
       {rules.map((r, i) => (
         <div key={i} className="flex items-center gap-2" data-testid={`role-rule-${i}`}>
           <input
-            className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
+            className="flex-1 rounded-md border border-input bg-muted shadow-neu-inset px-2 py-1 text-sm"
             placeholder="claim value (e.g. Admins)"
             value={r.claim_value}
             onChange={(e) => setRules(rules.map((x, k) => (k === i ? { ...x, claim_value: e.target.value } : x)))}
