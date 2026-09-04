@@ -235,7 +235,7 @@ function APIKeySection({
             </Button>
           </div>
         ) : (
-          <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning dark:">
+          <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-strong">
             No key configured. The LLM tier silently skips when enabled without a key — only regex + SpaCy results land in the database.
           </div>
         )}

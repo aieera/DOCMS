@@ -136,7 +136,7 @@ function Field({ label, value }: { label: string; value: string }) {
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   const styles: Record<Verdict, string> = {
     passed:  'border-success/40 bg-success/10 text-success',
-    failed:  'border-destructive/40 bg-destructive/10 text-destructive',
+    failed:  'border-destructive/40 bg-destructive/10 text-foreground',
     pending: 'border-warning/40 bg-warning/10 text-warning-strong',
   }
   return (

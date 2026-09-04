@@ -529,7 +529,7 @@ function BuilderStep({ n, title, hint, action, children }: {
     <section className="px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-2 text-xs font-medium">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-foreground">
             {n}
           </span>
           {title}
@@ -556,7 +556,7 @@ function Chip({ selected, onClick, children, testid }: {
       className={cn(
         'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
         selected
-          ? 'border-primary/50 bg-primary/10 font-medium text-primary'
+          ? 'border-primary/50 bg-primary/10 font-medium text-foreground'
           : 'border-border text-muted-foreground hover:border-primary/30 hover:text-foreground',
       )}
       data-testid={testid}

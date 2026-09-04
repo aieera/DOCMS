@@ -184,7 +184,7 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
   return (
     <Section icon={<MessageSquare className="h-5 w-5" />} title="SMS one-time codes"
       hint="Discouraged — SMS is the weakest factor. Provided for compatibility with enterprise policies that require it.">
-      <div className="mb-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+      <div className="mb-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning-strong">
         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
           SMS is vulnerable to SIM-swap and SS7 attacks. Prefer a passkey, TOTP app, or push instead.

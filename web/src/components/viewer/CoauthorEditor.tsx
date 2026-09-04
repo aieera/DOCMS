@@ -97,7 +97,7 @@ export function CoauthorEditor({
 
       {/* Fallback: editor unreachable. Show desktop-app option. */}
       {unreachable && (
-        <div className="mt-2 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning" data-testid="coauth-fallback">
+        <div className="mt-2 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning-strong" data-testid="coauth-fallback">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="flex-1">
             <p>The browser editor isn't reachable from your network.</p>

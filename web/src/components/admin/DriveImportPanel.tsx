@@ -117,7 +117,7 @@ export function DriveImportPanel() {
       </div>
 
       {result?.errors && result.errors.length > 0 && (
-        <ul className="max-h-24 overflow-auto rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+        <ul className="max-h-24 overflow-auto rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-foreground">
           {result.errors.slice(0, 10).map((err, i) => <li key={i}>{err}</li>)}
         </ul>
       )}

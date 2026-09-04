@@ -223,7 +223,7 @@ function Flag({ label, enabled }: { label: string; enabled?: boolean }) {
       <dd
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
           enabled
-            ? 'bg-success/15 text-success'
+            ? 'bg-success/15 text-foreground'
             : 'bg-muted text-muted-foreground'
         }`}
       >

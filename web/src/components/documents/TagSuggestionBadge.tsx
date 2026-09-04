@@ -51,7 +51,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
           // composed click handler (it skips when defaultPrevented) and
           // the popover would never open.
           onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+          className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-primary/20"
           aria-label={`${pending.length} AI tag suggestions — review`}
           data-testid={`tag-suggestion-badge-${documentId}`}
         >

@@ -115,7 +115,7 @@ export function PermissionsPage() {
                                 key={cap}
                                 className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs ${
                                   caps.includes(cap)
-                                    ? 'bg-success/15 text-success'
+                                    ? 'bg-success/15 text-foreground'
                                     : 'bg-muted text-muted-foreground line-through '
                                 }`}
                               >

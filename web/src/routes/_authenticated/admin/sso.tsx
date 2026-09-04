@@ -485,7 +485,7 @@ function ValidationBanner({ result }: { result: ValidateResult }) {
       {result.warnings && result.warnings.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs">
           {result.warnings.map((w, i) => (
-            <li key={i} className="flex items-center gap-1 text-warning dark:text-warning">
+            <li key={i} className="flex items-center gap-1 text-warning-strong">
               <AlertTriangle className="h-3 w-3" />
               {w}
             </li>

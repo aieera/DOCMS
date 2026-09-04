@@ -63,7 +63,7 @@ export function SignatureValidityBadge({ documentId, tier1, tier2 }: BadgeProps)
       {tier2 && (
         <span
           className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-            tier2.passed ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
+            tier2.passed ? 'bg-success/15 text-foreground' : 'bg-destructive/15 text-foreground'
           }`}
           data-testid="tier2-pill"
         >
@@ -96,18 +96,18 @@ function badgeTone(r: PAdESReport | null): Tone {
     return { id: 'unsigned', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
   }
   if (!r.tamper_evident) {
-    return { id: 'invalid', cls: 'bg-destructive/15 text-destructive shadow-neu-sm', icon: ShieldOff }
+    return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-neu-sm', icon: ShieldOff }
   }
   // Aggregate cert status across all signatures: any revoked → invalid;
   // any indeterminate → indeterminate; all valid → valid.
   const worst = aggregateStatus(r.signatures.map((s) => s.cert_status))
   switch (worst) {
     case 'revoked':
-      return { id: 'invalid', cls: 'bg-destructive/15 text-destructive shadow-neu-sm', icon: ShieldOff }
+      return { id: 'invalid', cls: 'bg-destructive/15 text-foreground shadow-neu-sm', icon: ShieldOff }
     case 'indeterminate':
       return { id: 'indeterminate', cls: 'bg-warning/15 text-warning-strong shadow-neu-sm', icon: AlertTriangle }
     case 'valid':
-      return { id: 'valid', cls: 'bg-success/15 text-success shadow-neu-sm', icon: CheckCircle2 }
+      return { id: 'valid', cls: 'bg-success/15 text-foreground shadow-neu-sm', icon: CheckCircle2 }
     default:
       return { id: 'unknown', cls: 'bg-muted text-muted-foreground shadow-neu-sm', icon: ShieldQuestion }
   }

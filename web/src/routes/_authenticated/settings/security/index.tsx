@@ -184,7 +184,7 @@ function SecuritySection() {
       }
     >
       {blocker !== null && (
-        <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+        <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-strong">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {blocker === 'insecure-context' ? (
@@ -281,7 +281,7 @@ function PasskeyRow({ p, onRemove, removing }: {
           <Fingerprint className="h-4 w-4 text-primary" />
           <span className="font-medium">{p.name}</span>
           {p.backup_state && (
-            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
               Synced
             </span>
           )}
@@ -413,7 +413,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
           <Monitor className="h-4 w-4 text-primary" />
           <span className="font-medium">{ua}</span>
           {s.current && (
-            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
               This device
             </span>
           )}

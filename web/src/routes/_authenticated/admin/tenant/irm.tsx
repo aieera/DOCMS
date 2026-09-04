@@ -127,7 +127,7 @@ function ContainerRow({
           </div>
         </div>
         {container.revoked && (
-          <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+          <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
             Revoked
           </span>
         )}
@@ -200,11 +200,11 @@ function LicenseList({ containerId }: { containerId: string }) {
                 <td className="px-3 py-2">{fmt(lic.last_opened_at)}</td>
                 <td className="px-3 py-2">
                   {lic.revoked_at ? (
-                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
                       Revoked
                     </span>
                   ) : (
-                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
+                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-foreground">
                       Active
                     </span>
                   )}

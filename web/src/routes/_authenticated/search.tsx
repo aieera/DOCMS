@@ -753,7 +753,7 @@ function ActiveFilterChips({
       {chips.map((chip) => (
         <span
           key={`${chip.key}:${chip.value}`}
-          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-foreground"
         >
           {chip.display}
           <button

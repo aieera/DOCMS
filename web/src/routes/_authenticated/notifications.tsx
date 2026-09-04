@@ -317,7 +317,7 @@ function RailButton({
         'flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors lg:w-full',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
         active
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-primary/10 text-foreground'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
@@ -327,9 +327,9 @@ function RailButton({
         className={cn(
           'rounded-full px-1.5 text-[11px] font-semibold tabular-nums',
           accent && count > 0
-            ? 'bg-destructive/10 text-destructive'
+            ? 'bg-destructive/10 text-foreground'
             : active
-              ? 'bg-primary/10 text-primary'
+              ? 'bg-primary/10 text-foreground'
               : 'bg-muted text-muted-foreground',
         )}
       >
@@ -382,7 +382,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
           )}
           {isDigest && (
             <span
-              className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
+              className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
               title="This is a digest notification combining multiple events."
               aria-label="Digest notification combining multiple events"
               data-testid={`notif-digest-badge-${n.id}`}

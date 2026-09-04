@@ -289,7 +289,7 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
           v{clause.version}
         </span>
         {clause.approved_at && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
             <CheckCircle2 className="h-3 w-3" /> Approved
           </span>
         )}
@@ -333,7 +333,7 @@ function ClauseDetail({
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">{clause.name}</h2>
             {clause.approved_at && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                 ✓ Approved
               </span>
             )}

@@ -27,7 +27,7 @@ function bytesHuman(n: number): string {
 function StatusBadge({ state }: { state: string }) {
   const tone =
     state === 'active'
-      ? 'bg-success/15 text-success'
+      ? 'bg-success/15 text-foreground'
       : state === 'in_review' || state === 'draft'
         ? 'bg-warning/15 text-warning-strong'
         : 'bg-muted text-muted-foreground'
@@ -203,7 +203,7 @@ function ErpExplorerPage() {
                       onClick={() => setFolderId(f.id)}
                       className={cn(
                         'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm transition-colors',
-                        f.id === folderId ? 'bg-primary/10 text-primary' : 'hover:bg-muted',
+                        f.id === folderId ? 'bg-primary/10 text-foreground' : 'hover:bg-muted',
                       )}
                     >
                       <FolderTree className="h-4 w-4 shrink-0 opacity-70" />

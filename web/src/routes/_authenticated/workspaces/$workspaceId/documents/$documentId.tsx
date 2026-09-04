@@ -1610,7 +1610,7 @@ function OCRPanel({ documentId, versionId, uploadedAt, mimeType }: { documentId:
           LTR without crowding the toolbar. */}
       {isPdf && totalBoxes === 0 && pages.length > 0 && (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong"
           data-testid="layout-skipped-notice"
         >
           <span>

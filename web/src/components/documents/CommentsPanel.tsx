@@ -216,7 +216,7 @@ function CommentBubble({ c, currentUserId, authorNames }: { c: Comment; currentU
       <p className="mt-1 whitespace-pre-wrap break-words">
         {segments.map((s, i) =>
           s.userId ? (
-            <span key={i} className="rounded bg-primary/10 px-1 text-primary">
+            <span key={i} className="rounded bg-primary/10 px-1 text-foreground">
               {s.text}
             </span>
           ) : (

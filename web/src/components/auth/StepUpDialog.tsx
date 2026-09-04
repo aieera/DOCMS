@@ -81,7 +81,7 @@ export function StepUpDialog({ open, reason, onComplete, onCancel }: Props) {
         </div>
 
         {!supported && (
-          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-start text-destructive">
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-start text-foreground">
             Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox to continue this operation.
           </div>
         )}

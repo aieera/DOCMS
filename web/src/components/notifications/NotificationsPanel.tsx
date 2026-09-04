@@ -121,7 +121,7 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                         <p className="truncate text-sm font-medium">{n.title}</p>
                         {isDigest && (
                           <span
-                            className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
+                            className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
                             title="This is a digest notification combining multiple events."
                             aria-label="Digest notification combining multiple events"
                           >

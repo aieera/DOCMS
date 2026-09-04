@@ -104,7 +104,7 @@ export function WorkspaceSettingsSections({
   }
   if (wsQ.isError || !wsQ.data) {
     return (
-      <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+      <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-foreground">
         Could not load workspace.
       </p>
     )
@@ -314,7 +314,7 @@ function MembersSection({
       {membersQ.isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : membersQ.isError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-foreground">
           {readErrorMessage(membersQ.error) ?? 'Could not load members.'}
         </p>
       ) : (membersQ.data?.length ?? 0) === 0 ? (
@@ -340,7 +340,7 @@ function MembersSection({
                         {m.display_name || m.email}
                       </span>
                       {isCreator && (
-                        <span className="rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium uppercase text-primary">
+                        <span className="rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium uppercase text-foreground">
                           Owner
                         </span>
                       )}

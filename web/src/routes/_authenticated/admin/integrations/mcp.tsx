@@ -78,7 +78,7 @@ export function MCPPage() {
               {toolsQ.isLoading ? (
                 <span className="text-xs text-muted-foreground">checking…</span>
               ) : (toolsQ.data?.length ?? 0) > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                   Reachable · {toolsQ.data?.length} tools
                 </span>
               ) : (

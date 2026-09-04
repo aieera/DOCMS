@@ -168,7 +168,7 @@ function DiffPanes({ data, onBack }: { data: CompareResponse; onBack: () => void
         </div>
       </header>
       {data.truncated && (
-        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning-strong">
           These documents are too large to compare in full — showing the first 200,000 characters
           of each.
         </p>
@@ -206,7 +206,7 @@ function DiffPane({ title, ops, side }: { title: string; ops: DiffOperation[]; s
             return (
               <span
                 key={i}
-                className="whitespace-pre-wrap bg-success/15 text-success"
+                className="whitespace-pre-wrap bg-success/15 text-foreground"
               >
                 {o.text}
               </span>

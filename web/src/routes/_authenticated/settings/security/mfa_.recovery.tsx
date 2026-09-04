@@ -56,7 +56,7 @@ function RecoveryCodesPage() {
         description="Single-use codes that let you sign in if you lose every other factor. Store them in a password manager."
       />
 
-      <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+      <div className="flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-3 text-sm text-warning-strong">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           Generating new codes <strong>invalidates every previous code</strong>.

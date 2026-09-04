@@ -283,13 +283,13 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
 function StatusBadge({ revoked }: { revoked: boolean }) {
   if (revoked) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
         <CircleSlash className="h-3 w-3" /> Revoked
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-foreground">
       <CheckCircle2 className="h-3 w-3" /> Active
     </span>
   )

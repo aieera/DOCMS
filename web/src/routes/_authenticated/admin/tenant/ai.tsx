@@ -188,7 +188,7 @@ export function TenantAIPage() {
         <Section title="Provider" icon={<KeyRound className="h-4 w-4" />}>
           {showExportControlWarning && (
             <div
-              className="mb-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning dark:border-warning/40"
+              className="mb-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong dark:border-warning/40"
               data-testid="export-control-warning"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

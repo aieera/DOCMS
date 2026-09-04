@@ -224,7 +224,7 @@ export function StepConfigPanel({ step, onChange, onRemove, issues }: Props) {
 
       {issues.length > 0 && (
         <ul
-          className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning"
+          className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning-strong"
           data-testid="step-config-issues"
         >
           {issues.map((i, k) => (

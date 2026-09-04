@@ -82,7 +82,7 @@ function SignDonePage() {
           )}
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-destructive" data-testid="qes-status-failed">
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-foreground" data-testid="qes-status-failed">
           <XCircle className="mt-0.5 h-5 w-5" />
           <div>
             <div className="font-medium">Signing did not complete.</div>

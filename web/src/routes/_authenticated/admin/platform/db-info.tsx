@@ -44,7 +44,7 @@ function DBInfoPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{data.active.display_name}</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                     Active
                   </span>
                 </div>
@@ -141,7 +141,7 @@ function StatusBadge({ status }: { status: CapabilityStatus }) {
   const config = {
     native: {
       icon: <CheckCircle2 className="h-3 w-3" />,
-      cls: 'bg-success/15 text-success',
+      cls: 'bg-success/15 text-foreground',
       label: 'Native',
     },
     degraded: {
@@ -151,7 +151,7 @@ function StatusBadge({ status }: { status: CapabilityStatus }) {
     },
     unsupported: {
       icon: <XCircle className="h-3 w-3" />,
-      cls: 'bg-destructive/10 text-destructive',
+      cls: 'bg-destructive/10 text-foreground',
       label: 'Unsupported',
     },
     not_implemented: {

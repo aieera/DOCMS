@@ -171,7 +171,7 @@ function ApiKeysPage() {
               </div>
             </Card>
             {issued.warning && (
-              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
+              <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 <span>{issued.warning}</span>
               </div>

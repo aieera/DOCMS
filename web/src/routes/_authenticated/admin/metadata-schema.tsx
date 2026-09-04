@@ -210,7 +210,7 @@ function MetadataSchemaPage() {
                               <span className="truncate font-mono text-sm font-medium">{f.name}</span>
                               <Badge variant="outline" className="text-[10px]">{describeSpec(spec)}</Badge>
                               {f.required && (
-                                <Badge className="bg-destructive/10 text-[10px] text-destructive hover:bg-destructive/10">
+                                <Badge className="bg-destructive/10 text-[10px] text-foreground hover:bg-destructive/10">
                                   Required
                                 </Badge>
                               )}

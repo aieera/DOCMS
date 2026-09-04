@@ -267,7 +267,7 @@ export function ShareDialog({ open, onOpenChange, documentId, documentTitle }: P
         )}
 
         {mode === 'zt' && (
-          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-strong">
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <div>

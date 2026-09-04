@@ -382,7 +382,7 @@ function StatusPane({ configId, lastError }: { configId: string; lastError?: str
       <Stat label="Failed" value={data.messages_failed.toLocaleString()} accent={data.messages_failed > 0 ? 'error' : undefined} />
       <Stat label="Next run" value={nextIn ?? '—'} />
       {lastError && (
-        <div className="sm:col-span-4 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive" data-testid={`email-error-${configId}`}>
+        <div className="sm:col-span-4 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-foreground" data-testid={`email-error-${configId}`}>
           <strong>Last error:</strong> {lastError}
         </div>
       )}
@@ -395,7 +395,7 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
     <div className="rounded-md border border-border bg-card p-2">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={cn('mt-0.5 text-lg font-semibold tabular-nums',
-        accent === 'warn'  && 'text-warning',
+        accent === 'warn'  && 'text-warning-strong',
         accent === 'error' && 'text-destructive')}>
         {value}
       </div>

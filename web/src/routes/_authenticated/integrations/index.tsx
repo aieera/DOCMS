@@ -32,7 +32,7 @@ function StatusPill({ status }: { status: IntegrationDef['status'] }) {
     <span
       className={cn(
         'inline-flex w-fit items-center rounded-full px-2 py-0.5 text-[11px] font-medium',
-        active ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground',
+        active ? 'bg-success/15 text-foreground' : 'bg-muted text-muted-foreground',
       )}
     >
       {active ? 'Active' : 'Coming soon'}

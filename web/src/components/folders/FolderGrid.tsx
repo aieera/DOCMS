@@ -230,7 +230,7 @@ function FolderCard({
           </h3>
           {isPrivate && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning"
+              className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 py-0 text-[10px] font-medium text-warning-strong"
               title={t('private_tooltip')}
             >
               <Lock className="h-3 w-3" />

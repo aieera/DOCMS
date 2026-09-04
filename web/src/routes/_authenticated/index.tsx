@@ -521,7 +521,7 @@ function RecentActivityCard() {
                   <span className="truncate">{n.title ?? 'Update'}</span>
                   {n.type?.startsWith('digest.') && (
                     <span
-                      className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary"
+                      className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
                       title="This is a digest notification combining multiple events."
                       aria-label="Digest notification combining multiple events"
                     >

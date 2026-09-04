@@ -128,7 +128,7 @@ function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; t
   const status = conn.status ?? 'healthy'
   if (status === 'expired') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive" data-testid={testId}>
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-foreground" data-testid={testId}>
         <AlertTriangle className="h-3 w-3" /> Token expired
       </span>
     )
@@ -141,7 +141,7 @@ function ConnectionPill({ conn, testId }: { conn: ESignConnection | undefined; t
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success" data-testid={testId}>
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground" data-testid={testId}>
       <CheckCircle2 className="h-3 w-3" /> Connected
     </span>
   )
@@ -358,7 +358,7 @@ function ESignatureSection() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">Twilio (SMS MFA)</h3>
                   {twilioQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                       <CheckCircle2 className="h-3 w-3" /> Configured
                     </span>
                   ) : (
@@ -389,7 +389,7 @@ function ESignatureSection() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">SMTP (email)</h3>
                   {smtpQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                       <CheckCircle2 className="h-3 w-3" /> Configured
                     </span>
                   ) : (
@@ -425,7 +425,7 @@ function ESignatureSection() {
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold">Google Workspace</h3>
                   {googleQ.data ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
                       <CheckCircle2 className="h-3 w-3" /> Connected
                     </span>
                   ) : (

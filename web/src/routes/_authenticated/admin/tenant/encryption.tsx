@@ -308,13 +308,13 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
 function StatusBadge({ v }: { v: KEKVersion }) {
   if (v.revoked_at)
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
+      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-foreground">
         <ShieldOff className="h-3 w-3" /> Revoked
       </span>
     )
   if (v.active)
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-success">
+      <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
         <CheckCircle2 className="h-3 w-3" /> Active
       </span>
     )
