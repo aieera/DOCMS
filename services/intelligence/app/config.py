@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # with no error. 120s is generous headroom for a full answer while
     # still bounding a hung provider.
     llm_timeout_seconds: int = 120
+    # Pre-sale item 10 (2026-09-08 review): when a tenant has no API key,
+    # litellm would fall back to the DEPLOY's env credentials — tenant
+    # document content silently billed to (and shared with) the operator's
+    # account. Fail closed by default; an operator explicitly opts in with
+    # SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS=true (dev stacks do).
+    llm_allow_deploy_credentials: bool = False
     llm_max_concurrent_per_tenant: int = 10
 
     ocr_gpu: bool = False

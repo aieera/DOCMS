@@ -24,6 +24,7 @@ from typing import Any
 import litellm
 
 from app.config import settings
+from app.llm_key_guard import MissingTenantLLMKeyError, require_tenant_key
 
 log = logging.getLogger(__name__)
 
@@ -319,6 +320,11 @@ def _try_call(
     underlying litellm exception on failure; returns (response, provider)
     on success."""
     provider = resolve_provider(model)
+    # Pre-sale item 10: never let a missing tenant key silently fall
+    # back to the deploy's env credentials (litellm does exactly that
+    # when api_key is None). Single choke point for primary AND
+    # fallback attempts.
+    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
     _check_breaker(tenant_id, provider)
     try:
         resp = litellm.completion(
