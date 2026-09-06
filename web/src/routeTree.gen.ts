@@ -35,7 +35,6 @@ import { Route as AuthenticatedClausesIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSignDoneRouteImport } from './routes/_authenticated/sign.done'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
-import { Route as AuthenticatedSandboxCrextioRouteImport } from './routes/_authenticated/sandbox.crextio'
 import { Route as AuthenticatedIntegrationsErpRouteImport } from './routes/_authenticated/integrations/erp'
 import { Route as AuthenticatedAdminWorkflowsRouteImport } from './routes/_authenticated/admin/workflows'
 import { Route as AuthenticatedAdminWebhooksRouteImport } from './routes/_authenticated/admin/webhooks'
@@ -263,12 +262,6 @@ const AuthenticatedSettingsNotificationsRoute =
   AuthenticatedSettingsNotificationsRouteImport.update({
     id: '/settings/notifications',
     path: '/settings/notifications',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedSandboxCrextioRoute =
-  AuthenticatedSandboxCrextioRouteImport.update({
-    id: '/sandbox/crextio',
-    path: '/sandbox/crextio',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedIntegrationsErpRoute =
@@ -864,7 +857,6 @@ export interface FileRoutesByFullPath {
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
-  '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/sign/done': typeof AuthenticatedSignDoneRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -981,7 +973,6 @@ export interface FileRoutesByTo {
   '/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
-  '/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/sign/done': typeof AuthenticatedSignDoneRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
@@ -1101,7 +1092,6 @@ export interface FileRoutesById {
   '/_authenticated/admin/webhooks': typeof AuthenticatedAdminWebhooksRoute
   '/_authenticated/admin/workflows': typeof AuthenticatedAdminWorkflowsRoute
   '/_authenticated/integrations/erp': typeof AuthenticatedIntegrationsErpRoute
-  '/_authenticated/sandbox/crextio': typeof AuthenticatedSandboxCrextioRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/sign/done': typeof AuthenticatedSignDoneRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -1221,7 +1211,6 @@ export interface FileRouteTypes {
     | '/admin/webhooks'
     | '/admin/workflows'
     | '/integrations/erp'
-    | '/sandbox/crextio'
     | '/settings/notifications'
     | '/sign/done'
     | '/admin/'
@@ -1338,7 +1327,6 @@ export interface FileRouteTypes {
     | '/admin/webhooks'
     | '/admin/workflows'
     | '/integrations/erp'
-    | '/sandbox/crextio'
     | '/settings/notifications'
     | '/sign/done'
     | '/admin'
@@ -1457,7 +1445,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/webhooks'
     | '/_authenticated/admin/workflows'
     | '/_authenticated/integrations/erp'
-    | '/_authenticated/sandbox/crextio'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/sign/done'
     | '/_authenticated/admin/'
@@ -1706,13 +1693,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/notifications'
       fullPath: '/settings/notifications'
       preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/sandbox/crextio': {
-      id: '/_authenticated/sandbox/crextio'
-      path: '/sandbox/crextio'
-      fullPath: '/sandbox/crextio'
-      preLoaderRoute: typeof AuthenticatedSandboxCrextioRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/integrations/erp': {
@@ -2431,7 +2411,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminWebhooksRoute: typeof AuthenticatedAdminWebhooksRoute
   AuthenticatedAdminWorkflowsRoute: typeof AuthenticatedAdminWorkflowsRoute
   AuthenticatedIntegrationsErpRoute: typeof AuthenticatedIntegrationsErpRoute
-  AuthenticatedSandboxCrextioRoute: typeof AuthenticatedSandboxCrextioRoute
   AuthenticatedSettingsNotificationsRoute: typeof AuthenticatedSettingsNotificationsRoute
   AuthenticatedSignDoneRoute: typeof AuthenticatedSignDoneRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -2541,7 +2520,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminWebhooksRoute: AuthenticatedAdminWebhooksRoute,
   AuthenticatedAdminWorkflowsRoute: AuthenticatedAdminWorkflowsRoute,
   AuthenticatedIntegrationsErpRoute: AuthenticatedIntegrationsErpRoute,
-  AuthenticatedSandboxCrextioRoute: AuthenticatedSandboxCrextioRoute,
   AuthenticatedSettingsNotificationsRoute:
     AuthenticatedSettingsNotificationsRoute,
   AuthenticatedSignDoneRoute: AuthenticatedSignDoneRoute,

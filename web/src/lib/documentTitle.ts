@@ -40,7 +40,6 @@ const ROUTE_TITLES: Record<string, string> = {
   '/_authenticated/sign/in-person/$requestId': 'Sign document',
   '/_authenticated/sign/done': 'Signing complete',
   '/_authenticated/signatures/send/$documentId': 'Send for signature',
-  '/_authenticated/sandbox/crextio': 'Component sandbox',
   '/protected/$containerId': 'Protected document',
   '/shared/$token': 'Shared document',
   '/zt/$token': 'Secure document view',
