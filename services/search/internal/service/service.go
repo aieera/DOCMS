@@ -623,12 +623,27 @@ func (s *Service) getRecentSearches(ctx context.Context, tenantID, userID string
 
 // ---- mappers --------------------------------------------------------------
 
+func maskHighlights(h map[string][]string) map[string][]string {
+	if len(h) == 0 {
+		return h
+	}
+	out := make(map[string][]string, len(h))
+	for field, frags := range h {
+		m := make([]string, len(frags))
+		for i, f := range frags {
+			m[i] = MaskSensitive(f)
+		}
+		out[field] = m
+	}
+	return out
+}
+
 func mapHit(h opensearch.RawHit) model.DocumentHit {
 	src := h.Source
 	hit := model.DocumentHit{
 		DocumentID:     strFromSource(src, "document_id"),
 		Title:          strFromSource(src, "title"),
-		Description:    strFromSource(src, "description"),
+		Description:    MaskSensitive(strFromSource(src, "description")),
 		DocumentClass:  strFromSource(src, "document_class"),
 		LifecycleState: strFromSource(src, "lifecycle_state"),
 		WorkspaceID:    strFromSource(src, "workspace_id"),
@@ -636,9 +651,13 @@ func mapHit(h opensearch.RawHit) model.DocumentHit {
 		CreatedBy:      strFromSource(src, "created_by"),
 		CreatedByName:  strFromSource(src, "created_by_name"),
 		MimeType:       strFromSource(src, "mime_type"),
-		ContentSnippet: strFromSource(src, "content_snippet"),
+		// QA SD-22: snippets, descriptions and highlight fragments carry
+		// extracted document content — mask cards/SSNs on the way out.
+		// mapHit is the single funnel for lexical, semantic AND federated
+		// results, so this covers every rendering path.
+		ContentSnippet: MaskSensitive(strFromSource(src, "content_snippet")),
 		Score:          h.Score,
-		Highlights:     h.Highlight,
+		Highlights:     maskHighlights(h.Highlight),
 	}
 	if v, ok := src["size_bytes"].(float64); ok {
 		hit.SizeBytes = int64(v)
