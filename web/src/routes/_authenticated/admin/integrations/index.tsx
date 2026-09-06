@@ -46,6 +46,7 @@ import { EmailIngestionPage } from './email'
 import { EventStreamPage } from './events'
 import { MCPPage } from './mcp'
 import { IPaaSPage } from './ipaas'
+import { formatDateTime } from '@/lib/formatters'
 
 type TopTab = 'esign' | 'connectors' | 'webhooks' | 'email' | 'events' | 'mcp' | 'ipaas'
 const TOP_TABS: readonly TopTab[] = ['esign', 'connectors', 'webhooks', 'email', 'events', 'mcp', 'ipaas']
@@ -263,7 +264,7 @@ function ESignatureSection() {
                       )}
                       {conn && (
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          Token {conn.status === 'expired' ? 'expired' : 'expires'} {new Date(conn.expires_at).toLocaleString()}
+                          Token {conn.status === 'expired' ? 'expired' : 'expires'} {formatDateTime(conn.expires_at)}
                         </p>
                       )}
                       {conn && (
@@ -439,7 +440,7 @@ function ESignatureSection() {
                 </p>
                 {googleQ.data?.last_sync_at && (
                   <p className="mt-1 text-xs">
-                    Last sync: <span className="font-mono">{new Date(googleQ.data.last_sync_at).toLocaleString()}</span>
+                    Last sync: <span className="font-mono">{formatDateTime(googleQ.data.last_sync_at)}</span>
                   </p>
                 )}
               </div>

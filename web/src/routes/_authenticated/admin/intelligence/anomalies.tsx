@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { useAuthStore } from '@/store/authStore'
 import { IntelligenceConfigCard, type ConfigField } from '@/components/admin/IntelligenceConfigCard'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
+import { formatDateTime } from '@/lib/formatters'
 
 const SEVERITY_VARIANT: Record<Severity, string> = {
   high:   'disposed',   // red
@@ -116,7 +117,7 @@ function AnomalyDashboardPage() {
         <Metric
           label="Last scan"
           value={(reports?.reports?.[0]?.created_at
-            ? new Date(reports.reports[0].created_at).toLocaleString()
+            ? formatDateTime(reports.reports[0].created_at)
             : '—')}
         />
       </div>

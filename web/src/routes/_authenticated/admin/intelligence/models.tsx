@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { formatDateTime } from '@/lib/formatters'
 
 const STATUS_VARIANT: Record<ModelStatus, string> = {
   training:   'in_review',
@@ -209,7 +210,7 @@ export function ModelsPage() {
                   <td className="px-4 py-2 text-end tabular-nums">
                     {acc !== null ? `${(acc * 100).toFixed(1)}%` : '—'}
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{new Date(v.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{formatDateTime(v.created_at)}</td>
                   <td className="px-4 py-2 text-end">
                     <div className="flex justify-end gap-1">
                       {v.status === 'candidate' && (

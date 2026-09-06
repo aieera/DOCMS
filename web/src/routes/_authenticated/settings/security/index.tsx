@@ -73,7 +73,7 @@ function ProfileSection() {
       <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
         <p>
-          Self-service profile editing is coming soon. To update your display name, contact your tenant admin.
+          Display names are managed by your tenant administrator.
         </p>
       </div>
     </Section>

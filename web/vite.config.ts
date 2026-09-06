@@ -35,6 +35,11 @@ function withSig(target: string, secret: string) {
   return {
     target,
     changeOrigin: false,
+    // QA SD-23: without xfwd the dev proxy dropped the browser's address,
+    // so Kong only ever saw the Docker bridge and every audit row /
+    // session listed 172.18.0.1. xfwd adds X-Forwarded-For with the real
+    // client IP; the backend's clientIP() takes the first entry.
+    xfwd: true,
     configure: (proxy: any) => {
       proxy.on('proxyReq', (proxyReq: any) => {
         proxyReq.setHeader('X-Gateway-Signature', secret)

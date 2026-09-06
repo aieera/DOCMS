@@ -2,6 +2,7 @@ import { DataTable } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { type ColumnDef } from '@tanstack/react-table'
 import { formatDateTime, formatShortId } from '@/lib/formatters'
+import { humanizeEventSummary } from '@/lib/eventSummary'
 
 interface AuditEntry {
   id: string
@@ -39,7 +40,12 @@ const columns: ColumnDef<AuditEntry, unknown>[] = [
   {
     accessorKey: 'action',
     header: 'Action',
-    cell: ({ row }) => <Badge>{row.original.action}</Badge>,
+    // SD-11 retest: the raw event topic (dms.document.deleted.v1) is fine
+    // in a CSV export, not as the primary Action label. Humanized label
+    // up front; the machine name stays one hover away.
+    cell: ({ row }) => (
+      <Badge title={row.original.action}>{humanizeEventSummary(row.original.action)}</Badge>
+    ),
   },
   {
     accessorKey: 'resource_type',

@@ -372,7 +372,9 @@ function rawErrorMessage(err: unknown): string | null {
 // non-existent workspace id) buried the viewport under a column of
 // identical toasts.
 export function toastError(message: string, options?: Parameters<typeof toast.error>[1]): void {
-  toast.error(message, { id: `err:${message}`, ...options })
+  // Errors get twice the success lifetime (QA SD-04 retest suggestion) —
+  // long enough to read, still self-dismissing.
+  toast.error(message, { id: `err:${message}`, duration: 8000, ...options })
 }
 
 // sessionIsDead answers the question a bare 401 can't: did OUR SeDoc

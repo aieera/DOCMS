@@ -26,6 +26,7 @@ import {
 // /admin/integrations?tab=mcp. MCPPage is exported below so the
 // canonical page can render it inside its 'mcp' tab.
 import { redirect } from '@tanstack/react-router'
+import { formatDateTime } from '@/lib/formatters'
 export const Route = createFileRoute('/_authenticated/admin/integrations/mcp')({
   beforeLoad: () => {
     throw redirect({ to: '/admin/integrations', search: { tab: 'mcp' }, replace: true })
@@ -136,8 +137,8 @@ export function MCPPage() {
                     ))}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Created {new Date(k.created_at).toLocaleString()}
-                    {k.last_used_at && ` · last used ${new Date(k.last_used_at).toLocaleString()}`}
+                    Created {formatDateTime(k.created_at)}
+                    {k.last_used_at && ` · last used ${formatDateTime(k.last_used_at)}`}
                   </p>
                 </div>
                 <Button

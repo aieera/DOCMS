@@ -31,6 +31,16 @@ const LABELS: Record<SupportedLocale, string> = {
   ar: 'العربية',
 }
 
+// QA SD-07 (retest): the Arabic catalogue covers navigation only —
+// ~180 page-content strings across Dashboard/Reports/Clauses/Workspaces/
+// Tasks/Trash are still English. A switcher that promises Arabic and
+// delivers a mixed page is worse than no switcher, so incomplete locales
+// hide behind VITE_INCOMPLETE_LOCALES=true (translation-QA builds) until
+// the catalogue is finished. A user already ON such a locale keeps it
+// listed — hiding their current language would strand the picker.
+const SHOW_INCOMPLETE_LOCALES = import.meta.env.VITE_INCOMPLETE_LOCALES === 'true'
+const INCOMPLETE_LOCALES: ReadonlySet<string> = new Set(['ar'])
+
 export function LanguageSelector() {
   const { i18n, t } = useTranslation('common')
   const updateUser = useAuthStore((s) => s.updateUser)
@@ -76,9 +86,11 @@ export function LanguageSelector() {
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end">
-        {SUPPORTED_LOCALES.map((l) => (
-          <SelectItem key={l} value={l}>{LABELS[l]}</SelectItem>
-        ))}
+        {SUPPORTED_LOCALES
+          .filter((l) => SHOW_INCOMPLETE_LOCALES || !INCOMPLETE_LOCALES.has(l) || l === current)
+          .map((l) => (
+            <SelectItem key={l} value={l}>{LABELS[l]}</SelectItem>
+          ))}
       </SelectContent>
     </Select>
   )

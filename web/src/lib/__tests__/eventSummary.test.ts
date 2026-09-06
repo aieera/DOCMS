@@ -18,6 +18,12 @@ describe('humanizeEventSummary (SD-11)', () => {
     expect(humanizeEventSummary('dms.workflow.step_completed.v2')).toBe('Workflow step completed')
   })
 
+  it('uppercases acronyms when de-slugging (SD-11 retest)', () => {
+    // "Ocr quality completed" reads as a typo; the acronym table fixes it.
+    expect(humanizeEventSummary('dms.ocr.quality.completed.v1')).toBe('OCR quality completed')
+    expect(humanizeEventSummary('dms.pii.finding_raised.v1')).toBe('PII finding raised')
+  })
+
   it('leaves human sentences alone', () => {
     expect(humanizeEventSummary('Signature requested from Manu')).toBe('Signature requested from Manu')
   })

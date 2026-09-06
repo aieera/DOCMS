@@ -10,8 +10,10 @@ import { Activity, AlertCircle, CheckCircle2, Clock, FileText, XCircle } from 'l
 import { REPORTS, type LoadTestReport, type Verdict } from '@/generated/load-test-reports'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import { requirePlatformBuild } from '@/lib/platformBuild'
 
 export const Route = createFileRoute('/_authenticated/admin/platform/load-tests')({
+  beforeLoad: requirePlatformBuild,
   component: LoadTestsPage,
 })
 

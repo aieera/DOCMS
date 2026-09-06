@@ -5,12 +5,14 @@ import { Database, CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-re
 import { getDBInfo, type Capability, type CapabilityStatus, type DriverInfo } from '@/api/platform'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Spinner } from '@/components/ui/Spinner'
+import { requirePlatformBuild } from '@/lib/platformBuild'
 
 // /admin/platform/db-info — driver + version + capability matrix (ADR 0094).
 // Today: PostgreSQL 16 only; alt drivers all "not_implemented".
 // Future: same UI surfaces the actual state as alt-driver phases ship.
 
 export const Route = createFileRoute('/_authenticated/admin/platform/db-info')({
+  beforeLoad: requirePlatformBuild,
   component: DBInfoPage,
 })
 

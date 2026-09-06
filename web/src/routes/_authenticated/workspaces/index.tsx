@@ -19,6 +19,7 @@ import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { cn } from '@/lib/cn'
 import { WorkspaceAccessBadge } from '@/components/workspaces/WorkspaceAccessBadge'
+import { formatDate } from '@/lib/formatters'
 
 function WorkspacesPage() {
   const { data, isLoading, isError } = useQuery({
@@ -201,7 +202,7 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
           </span>
           <span className="ms-auto flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
-            {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+            {formatDate(ws.updated_at ?? ws.created_at)}
           </span>
         </div>
       </Card>
@@ -249,7 +250,7 @@ function WorkspaceRow({ ws }: { ws: Workspace }) {
         </span>
         <span className="flex w-20 items-center justify-end gap-1 tabular-nums">
           <Calendar className="h-3.5 w-3.5" />
-          {new Date(ws.updated_at ?? ws.created_at).toLocaleDateString()}
+          {formatDate(ws.updated_at ?? ws.created_at)}
         </span>
       </span>
       <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

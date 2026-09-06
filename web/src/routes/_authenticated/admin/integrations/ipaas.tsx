@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
+import { formatDateTime } from '@/lib/formatters'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -94,9 +95,9 @@ export function IPaaSPage() {
                     ))}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Created {new Date(k.created_at).toLocaleString()}
-                    {k.last_used_at && ` · last used ${new Date(k.last_used_at).toLocaleString()}`}
-                    {k.expires_at && ` · expires ${new Date(k.expires_at).toLocaleString()}`}
+                    Created {formatDateTime(k.created_at)}
+                    {k.last_used_at && ` · last used ${formatDateTime(k.last_used_at)}`}
+                    {k.expires_at && ` · expires ${formatDateTime(k.expires_at)}`}
                   </p>
                 </div>
                 <Button

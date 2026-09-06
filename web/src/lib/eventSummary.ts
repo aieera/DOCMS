@@ -23,6 +23,14 @@ const TOPIC_LABELS: Record<string, string> = {
 
 const TOPIC_RE = /^dms\.([a-z0-9_]+(?:\.[a-z0-9_]+)*)\.v\d+$/
 
+// De-slugged acronyms come out lowercased ("Ocr quality completed" —
+// SD-11 retest); restore the casing readers expect.
+const ACRONYMS: Record<string, string> = {
+  ocr: 'OCR', pii: 'PII', phi: 'PHI', ai: 'AI', llm: 'LLM', erp: 'ERP',
+  irm: 'IRM', sso: 'SSO', scim: 'SCIM', ldap: 'LDAP', mfa: 'MFA',
+  api: 'API', ner: 'NER', siem: 'SIEM', dlq: 'DLQ',
+}
+
 export function humanizeEventSummary(summary: string): string {
   const m = TOPIC_RE.exec(summary.trim())
   if (!m) return summary
@@ -31,6 +39,9 @@ export function humanizeEventSummary(summary: string): string {
   if (known) return known
   // Unknown topic: strip the taxonomy scaffolding and sentence-case what
   // remains ("workflow.step_completed" → "Workflow step completed").
-  const words = key.replace(/[._]/g, ' ')
+  const words = key
+    .split(/[._]/)
+    .map((w) => ACRONYMS[w] ?? w)
+    .join(' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }

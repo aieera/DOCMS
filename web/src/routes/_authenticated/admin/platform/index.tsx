@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
+import { requirePlatformBuild } from '@/lib/platformBuild'
 
 // /admin/platform — hub for cross-tenant platform-admin tools (ADR 0069).
 // Members of the `platform_admins` table see this in the /admin grid.
@@ -67,5 +68,6 @@ function SectionCard({ section: { to, icon: Icon, label, desc } }: { section: Se
 }
 
 export const Route = createFileRoute('/_authenticated/admin/platform/')({
+  beforeLoad: requirePlatformBuild,
   component: PlatformHubPage,
 })

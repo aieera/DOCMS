@@ -258,7 +258,7 @@ export function TenantAIPage() {
           <p className="mb-2 text-sm text-muted-foreground">
             {draft.key_set
               ? <>Key set <strong>{relativeTime(draft.key_set_at)}</strong>. Stored AES-256-GCM encrypted at rest. Never returned in plaintext after save.</>
-              : <>No key set. Without a key, calls fall back to the deploy-default credentials.</>}
+              : <>No key set — AI features stay off for this tenant until a key is configured. (Deploy-credential fallback is an explicit operator opt-in.)</>}
           </p>
           <PasswordInput
             label="New API key (write-only)"

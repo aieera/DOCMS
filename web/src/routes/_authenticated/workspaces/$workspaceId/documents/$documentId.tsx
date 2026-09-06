@@ -1877,13 +1877,17 @@ function ActivityFeed({ documentId }: { documentId: string }) {
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-              <span className="font-medium text-foreground">{humanizeEventSummary(evt.summary)}</span>
+              {/* SD-11 retest: the raw topic chip (dms.document.updated.v1)
+                  read as the feed's second line. Machine name stays one
+                  hover away; the visible line is product vocabulary. */}
+              <span className="font-medium text-foreground" title={evt.kind}>
+                {humanizeEventSummary(evt.summary)}
+              </span>
               <span className="text-xs text-muted-foreground">{formatDateTime(evt.occurredAt)}</span>
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              <code className="rounded bg-muted px-1 font-mono text-[10px]">{evt.kind}</code>
-              {evt.actorName ? ` · ${evt.actorName}` : ''}
-            </p>
+            {evt.actorName && (
+              <p className="mt-0.5 text-xs text-muted-foreground">{evt.actorName}</p>
+            )}
           </div>
         </li>
       ))}

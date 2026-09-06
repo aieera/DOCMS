@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { formatDateTime } from '@/lib/formatters'
 
 const RISK_LEVELS: RiskLevel[] = ['critical', 'high', 'medium', 'low']
 // Severity display order. risk_distribution arrives as a Go map → JSON keys in
@@ -161,7 +162,7 @@ export function ComplianceAdminDashboard() {
                   </td>
                   <td className="py-2 font-mono text-xs text-muted-foreground">{f.document_id.slice(0, 8)}…</td>
                   <td className="py-2 text-end tabular-nums">{f.occurrence_count}</td>
-                  <td className="py-2 text-muted-foreground">{new Date(f.created_at).toLocaleString()}</td>
+                  <td className="py-2 text-muted-foreground">{formatDateTime(f.created_at)}</td>
                 </tr>
               ))}
             </tbody>

@@ -62,6 +62,14 @@ function ThemedSonner() {
       richColors
       closeButton
       position="bottom-right"
+      // QA SD-04 retest hardening: make lifetimes explicit rather than
+      // relying on the library default (4s success; errors pass their own
+      // longer duration via toastError), and cap how many can stack so a
+      // burst of actions can't wall off the lower-right of the screen.
+      // Note sonner pauses timers while the page is hidden — background
+      // automation measures inflated lifetimes by design.
+      duration={4000}
+      visibleToasts={4}
       toastOptions={{ classNames: { toast: 'border border-border' } }}
     />
   )

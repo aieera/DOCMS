@@ -70,14 +70,11 @@ function StatusBanner({ data }: { data: LicenseResponse }) {
         <div className="flex-1">
           <p className="font-semibold">{config.title}</p>
           <p className="mt-1 text-sm">{data.enforcement_message}</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            ADR{' '}
-            <a href="/docs/adr/0095-license-enforcement" className="underline">
-              {data.adr}
-            </a>{' '}
-            covers the multi-phase plan to ship the JWT signer, validator middleware, feature-flag
-            gates, and grace-period state machine.
-          </p>
+          {/* Pre-sale item 04: this used to cite ADR 0095 and describe the
+              enforcement engineering plan — internal references that told a
+              customer our licence enforcement is a work in progress. The
+              banner already says everything a tenant admin needs (status,
+              enforcement message, days remaining). */}
         </div>
       </div>
     </section>
