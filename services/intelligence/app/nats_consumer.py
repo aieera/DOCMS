@@ -54,10 +54,10 @@ from app.tasks.ocr import process_ocr
 
 log = logging.getLogger(__name__)
 
-OCR_MIMES = {
-    "application/pdf", "image/jpeg", "image/png", "image/tiff",
-    "image/webp", "image/gif", "image/bmp",
-}
+# Single source of truth shared with tasks.ocr — this consumer's private
+# copy of OCR_MIMES is the reason uploaded text files were never extracted
+# or indexed (QA SD-02/SD-13): it lacked the text-mime branch.
+from app.mime_gate import OCR_MIMES, is_extractable_mime
 
 # Default per-tenant concurrency cap — 8 parallel OCR tasks per tenant.
 # Overridable via SEDOC_OCR_PER_TENANT_CAP.
@@ -261,9 +261,9 @@ class IntelligenceConsumer:
             await msg.term()
             return
 
-        if mime not in OCR_MIMES:
-            # Not OCR-able: ACK and move on. No dedupe needed because
-            # skipping is idempotent.
+        if not is_extractable_mime(mime):
+            # Neither OCR-able nor already-textual: ACK and move on.
+            # No dedupe needed because skipping is idempotent.
             await msg.ack()
             return
 

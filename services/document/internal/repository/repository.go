@@ -108,7 +108,7 @@ type FolderRepository interface {
 	// can publish a folder.deleted.v1 event that lets the search
 	// consumer DeleteByQuery without re-walking the tree.
 	SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID, deletedBy uuid.UUID) (*SubtreeDeleteResult, error)
-	RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error
+	RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) ([]uuid.UUID, error)
 	// PurgeTargets / HardDeleteFolders power permanent delete from
 	// Trash: resolve the cohort (or legacy subtree) a purge covers,
 	// then drop the folder rows once documents/blobs are gone.

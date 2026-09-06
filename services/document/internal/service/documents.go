@@ -612,7 +612,18 @@ func (s *DocumentService) RestoreDocument(ctx context.Context, id uuid.UUID) err
 		if err != nil {
 			return err
 		}
-		return s.repos.Outbox.Insert(ctx, tx, evt)
+		if err := s.repos.Outbox.Insert(ctx, tx, evt); err != nil {
+			return err
+		}
+		// Restore symmetry for the search index (QA SD-02): delete removed
+		// the doc from OpenSearch, and nothing consumed restored.v1 — a
+		// restored document silently vanished from search forever. Re-emit
+		// the full projection through the same repair path as the admin
+		// reindex endpoint, inside this tx (the row is live again here).
+		if _, _, err := s.reindexBatch(ctx, tx, tenantID, &id, uuid.UUID{}); err != nil {
+			return fmt.Errorf("queue restore reindex: %w", err)
+		}
+		return nil
 	})
 }
 

@@ -33,11 +33,20 @@ type Hit struct {
 //  2. POST qdrant://collections/<coll>/points/search → []Hit
 //
 // Zero value is unusable; use New().
+// DefaultMinScore is the minimum cosine similarity a chunk must reach
+// to count as a semantic match. ANN search always returns the K nearest
+// neighbours — with no floor, a nonsense query "matched" every document
+// in the tenant at ~0.1 similarity (QA SD-02). Unrelated text pairs
+// score ≲0.2 with the current sentence-transformer models; genuine
+// matches sit well above 0.3.
+const DefaultMinScore = 0.25
+
 type Client struct {
 	httpc        *http.Client
 	embedURL     string // e.g. "http://intelligence:8080/internal/v1/embed-query"
 	qdrantBase   string // e.g. "http://qdrant:6333"
 	collection   string // e.g. "vaultdms_chunks"
+	minScore     float64
 }
 
 // Config is the DI shape; each field is required.
@@ -53,6 +62,9 @@ type Config struct {
 	// `tenant_id` payload filter (blueprint §6.8); tenant-specific
 	// collections are a future optimization.
 	Collection string
+	// MinScore overrides DefaultMinScore when > 0 (env:
+	// SEDOC_SEMANTIC_MIN_SCORE in the search service's main).
+	MinScore float64
 }
 
 // New constructs a Client. A 5-second default timeout is applied when
@@ -72,11 +84,16 @@ func New(cfg Config) (*Client, error) {
 	if httpc == nil {
 		httpc = &http.Client{Timeout: 5 * time.Second}
 	}
+	minScore := cfg.MinScore
+	if minScore <= 0 {
+		minScore = DefaultMinScore
+	}
 	return &Client{
 		httpc:      httpc,
 		embedURL:   cfg.IntelligenceEmbedURL,
 		qdrantBase: cfg.QdrantBaseURL,
 		collection: cfg.Collection,
+		minScore:   minScore,
 	}, nil
 }
 
@@ -162,7 +179,11 @@ func (c *Client) qdrantSearch(ctx context.Context, vec []float32, tenantID strin
 	body, _ := json.Marshal(map[string]any{
 		"vector": vec,
 		"limit":  limit,
-		"filter": map[string]any{"must": must},
+		// Relevance floor (QA SD-02): without it ANN returns the K
+		// nearest neighbours for ANY query, so nonsense terms matched
+		// the whole tenant. Also enforced client-side below.
+		"score_threshold": c.minScore,
+		"filter":          map[string]any{"must": must},
 		// with_payload=false — we only need the point id (document id)
 		// and score; the search service hydrates the rest from the
 		// OpenSearch _source. Saves ~10 KB of payload round-trip
@@ -199,6 +220,12 @@ func (c *Client) qdrantSearch(ctx context.Context, vec []float32, tenantID strin
 	hits := make([]Hit, 0, len(r.Result))
 	seen := make(map[string]bool, len(r.Result))
 	for _, p := range r.Result {
+		// Belt-and-braces with the score_threshold sent to Qdrant: a
+		// backend (or test double) that ignores it must not reintroduce
+		// match-everything semantics.
+		if p.Score < c.minScore {
+			continue
+		}
 		docID, _ := p.Payload["document_id"].(string)
 		if docID == "" || seen[docID] {
 			// Collapse multiple chunks of the same document into a

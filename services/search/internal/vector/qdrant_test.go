@@ -128,3 +128,54 @@ func TestSemanticSearch_ReadableByFilterPropagated(t *testing.T) {
 		t.Fatalf("expected 2 must clauses (tenant + readable_by), got %d", len(must))
 	}
 }
+
+// TestSemanticSearch_RelevanceFloor pins the minimum-similarity floor
+// (QA SD-02): without it, ANN returns the K nearest neighbours for ANY
+// query — nonsense terms "matched" every document in the tenant at
+// cosine ~0.1, and hybrid fusion surfaced them as results. The floor is
+// sent to Qdrant as score_threshold AND enforced client-side so a
+// non-honouring backend can't reintroduce the bug.
+func TestSemanticSearch_RelevanceFloor(t *testing.T) {
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(embedResp{Embedding: []float32{0.1}, Dimension: 1, Model: "m"})
+	}))
+	defer embedSrv.Close()
+
+	var gotThreshold float64
+	qdrantSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotThreshold, _ = body["score_threshold"].(float64)
+		// Simulate a backend that ignores score_threshold entirely.
+		_, _ = w.Write([]byte(`{"result":[
+			{"score": 0.92, "payload": {"document_id": "doc-relevant"}},
+			{"score": 0.18, "payload": {"document_id": "doc-noise-1"}},
+			{"score": 0.12, "payload": {"document_id": "doc-noise-2"}}
+		]}`))
+	}))
+	defer qdrantSrv.Close()
+
+	c, err := New(Config{
+		IntelligenceEmbedURL: embedSrv.URL,
+		QdrantBaseURL:        qdrantSrv.URL,
+		Collection:           "chunks",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := c.SemanticSearch(context.Background(), "banana", "tenant-1", nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotThreshold != DefaultMinScore {
+		t.Errorf("qdrant request score_threshold = %v, want %v", gotThreshold, DefaultMinScore)
+	}
+	if len(hits) != 1 || hits[0].DocumentID != "doc-relevant" {
+		got := make([]string, len(hits))
+		for i, h := range hits {
+			got[i] = h.DocumentID
+		}
+		t.Errorf("hits = %v, want only doc-relevant (noise below the floor must be dropped)", got)
+	}
+}

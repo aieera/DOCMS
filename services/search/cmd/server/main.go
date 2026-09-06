@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -126,10 +127,13 @@ func main() {
 		if coll == "" {
 			coll = "vaultdms_chunks"
 		}
+		// Relevance floor for the ANN leg; 0/unset → vector.DefaultMinScore.
+		minScore, _ := strconv.ParseFloat(os.Getenv("SEDOC_SEMANTIC_MIN_SCORE"), 64)
 		vecClient, err = vector.New(vector.Config{
 			IntelligenceEmbedURL: embedURL,
 			QdrantBaseURL:        qdrantURL,
 			Collection:           coll,
+			MinScore:             minScore,
 		})
 		if err != nil {
 			log.Warn(ctx).Err(err).Msg("vector client init failed; hybrid search disabled")

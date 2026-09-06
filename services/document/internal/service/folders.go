@@ -728,8 +728,16 @@ func (s *DocumentService) RestoreFolder(ctx context.Context, id uuid.UUID) error
 		}); err != nil {
 			return err
 		}
-		if err := s.repos.Folders.RestoreSubtree(ctx, tx, tenantID, id); err != nil {
+		docIDs, err := s.repos.Folders.RestoreSubtree(ctx, tx, tenantID, id)
+		if err != nil {
 			return err
+		}
+		// Cascade delete removed every cohort document from the search
+		// index; re-emit each one's full projection (QA SD-02).
+		for i := range docIDs {
+			if _, _, err := s.reindexBatch(ctx, tx, tenantID, &docIDs[i], uuid.UUID{}); err != nil {
+				return fmt.Errorf("queue restore reindex: %w", err)
+			}
 		}
 		evt, err := model.NewOutboxEvent(tenantID, "dms.folder.restored.v1", "folder", id, map[string]any{
 			"folder_id":    id.String(),

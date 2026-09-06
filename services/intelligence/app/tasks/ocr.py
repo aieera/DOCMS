@@ -22,6 +22,7 @@ from contextlib import contextmanager
 import fitz
 from PIL import Image
 
+from app import mime_gate as _mime_gate
 from app.config import settings
 from app.db.pool import get_pool
 from app.dedupe import mark_completed, mark_failed, publish_dlq
@@ -103,10 +104,9 @@ def _resolve_engine(tenant_id: str, doc_type: str, force_engine: str) -> str:
         log.warning("ocr_config lookup failed for tenant %s; using default", tenant_id, exc_info=True)
     return _normalize_engine(settings.ocr_default_engine)
 
-OCR_MIMES = {
-    "application/pdf", "image/jpeg", "image/png", "image/tiff",
-    "image/webp", "image/gif", "image/bmp",
-}
+# Re-exported from app.mime_gate (single source of truth shared with the
+# upload-event consumer — see that module's docstring for the drift bug).
+OCR_MIMES = _mime_gate.OCR_MIMES
 
 
 # Cap the full_text payload to 10 MiB so a single pathological PDF cannot
@@ -126,18 +126,7 @@ def _s3():
     )
 
 
-def _is_text_mime(mime: str) -> bool:
-    """True for already-textual files (plain text, markdown, csv, json, …).
-    These don't need OCR — the bytes ARE the text — but they DO need their
-    content extracted so it flows to lang_detect + embed + index. Without
-    this they were skipped as 'not OCR-able', so email bodies + dropped .txt
-    files landed as documents with no searchable content."""
-    if mime.startswith("text/"):
-        return True
-    return mime in {
-        "application/json", "application/xml", "application/x-ndjson",
-        "application/csv", "application/x-yaml",
-    }
+_is_text_mime = _mime_gate.is_text_mime
 
 
 def _extract_text_file(path: str) -> list[dict]:
