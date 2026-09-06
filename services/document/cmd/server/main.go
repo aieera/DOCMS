@@ -473,6 +473,10 @@ func main() {
 			if userErr == nil && user.Email != "" {
 				r.Header.Set("Grpc-Metadata-X-User-Name", user.Email)
 			}
+			// QA SD-23: forward client IP / user agent / correlation id
+			// too — without this, document & folder audit rows had no
+			// IP (ctx values don't survive the loopback gRPC dial).
+			middleware.StampGatewayClientMeta(r)
 			next.ServeHTTP(w, r)
 		})
 	}
