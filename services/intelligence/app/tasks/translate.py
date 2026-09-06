@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.error_classifier import classify_error_reason
+from app.lang_policy import routable_language
 from app.intel_dedupe import (
     already_completed,
     mark_completed,
@@ -339,12 +340,17 @@ async def _fetch_source_language(tenant_id: str, version_id: str) -> str | None:
             )
             row = await conn.fetchrow(
                 """
-                SELECT detected_language FROM document_languages
+                SELECT detected_language, confidence FROM document_languages
                  WHERE tenant_id = $1 AND version_id = $2
                 """,
                 tenant_id, version_id,
             )
-    return row["detected_language"] if row else None
+    if not row:
+        return None
+    # QA SD-18: a coin-flip detection (English PDF called Estonian at
+    # 50%) must not pick the translation source language — below the
+    # routing floor the caller falls back to its default.
+    return routable_language(row["detected_language"], row["confidence"])
 
 
 async def _set_translation_status(tenant_id: str, translation_id: str, status: str) -> None:
