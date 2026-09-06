@@ -1,7 +1,12 @@
 FROM node:22-alpine
 WORKDIR /app
-COPY package.json ./
-RUN npm install --production
+# Copy the lockfile and install with `npm ci` — the old bare
+# `npm install --production` re-resolved the tree on every build
+# (non-reproducible) and started dying with npm's arborist
+# "Cannot read properties of null (reading 'edgesOut')" bug,
+# which broke the Images pipeline for this service.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY src/ src/
 RUN adduser -D appuser && chown -R appuser:appuser /app
 USER appuser
