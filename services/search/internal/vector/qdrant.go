@@ -36,10 +36,13 @@ type Hit struct {
 // DefaultMinScore is the minimum cosine similarity a chunk must reach
 // to count as a semantic match. ANN search always returns the K nearest
 // neighbours — with no floor, a nonsense query "matched" every document
-// in the tenant at ~0.1 similarity (QA SD-02). Unrelated text pairs
-// score ≲0.2 with the current sentence-transformer models; genuine
-// matches sit well above 0.3.
-const DefaultMinScore = 0.25
+// in the tenant at ~0.1 similarity (QA SD-02). Measured on the live
+// corpus (all-MiniLM-L6-v2): gibberish-vs-short-content pairs reach
+// 0.32-0.33, genuine weak matches start ~0.34-0.40, clear matches sit
+// 0.4+. 0.35 excludes the noise band; weak matches it also excludes are
+// covered by the lexical leg in hybrid mode. Tune per deployment via
+// SEDOC_SEMANTIC_MIN_SCORE.
+const DefaultMinScore = 0.35
 
 type Client struct {
 	httpc        *http.Client
