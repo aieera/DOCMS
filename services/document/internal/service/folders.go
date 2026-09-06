@@ -17,6 +17,15 @@ import (
 	"github.com/aieera/sedoc/services/document/internal/repository"
 )
 
+// folderNameTaken keeps the ALREADY_EXISTS kind/code (errors.Is still
+// matches) with copy in the user's vocabulary (QA SD-05/SD-08).
+func folderNameTaken(name string) error {
+	return &vdmserr.Error{
+		Kind: vdmserr.KindAlreadyExists, Code: "ALREADY_EXISTS",
+		Message: fmt.Sprintf("a folder named %q already exists here — pick a different name", name),
+	}
+}
+
 // CreateFolder creates a workspace-scoped folder under an optional parent.
 // Emits dms.folder.created.v1.
 func (s *DocumentService) CreateFolder(ctx context.Context, in *CreateFolderInput) (*model.Folder, error) {
@@ -83,6 +92,12 @@ func (s *DocumentService) CreateFolder(ctx context.Context, in *CreateFolderInpu
 		}
 
 		if err := s.repos.Folders.Create(ctx, tx, folder); err != nil {
+			// Unique index idx_folders_unique_name_per_parent (QA SD-05):
+			// keep the ALREADY_EXISTS kind/code (so errors.Is still
+			// matches) but say it in the user's vocabulary.
+			if errors.Is(err, vdmserr.ErrAlreadyExists) {
+				return folderNameTaken(in.Name)
+			}
 			return err
 		}
 
@@ -397,6 +412,9 @@ func (s *DocumentService) UpdateFolder(ctx context.Context, in *UpdateFolderInpu
 
 		if in.Name != nil && *in.Name != cur.Name {
 			if err := s.repos.Folders.UpdateName(ctx, tx, tenantID, cur.ID, *in.Name); err != nil {
+				if errors.Is(err, vdmserr.ErrAlreadyExists) {
+					return folderNameTaken(*in.Name)
+				}
 				return err
 			}
 			cur.Name = *in.Name
@@ -417,6 +435,9 @@ func (s *DocumentService) UpdateFolder(ctx context.Context, in *UpdateFolderInpu
 				return vdmserr.Validation("new_parent_folder_id", "max folder nesting depth exceeded")
 			}
 			if err := s.repos.Folders.Move(ctx, tx, tenantID, cur.ID, cur.Path, parent.Path, parent.Depth+1); err != nil {
+				if errors.Is(err, vdmserr.ErrAlreadyExists) {
+					return folderNameTaken(cur.Name)
+				}
 				return err
 			}
 			evt, err := model.NewOutboxEvent(tenantID, "dms.folder.moved.v1", "folder", cur.ID,
