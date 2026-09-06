@@ -188,6 +188,9 @@ function CommandTrigger() {
         />
         <kbd
           aria-hidden
+          // dir=ltr: the two-span "Ctrl"+"K" pair re-ordered to "KCtrl"
+          // under RTL (QA SD-07) — a keyboard chord is always LTR.
+          dir="ltr"
           className={
             'pointer-events-none inline-flex h-5 select-none items-center gap-0.5 rounded border ' +
             'border-border bg-background px-1.5 font-mono text-[11px] font-medium text-foreground/70 ' +

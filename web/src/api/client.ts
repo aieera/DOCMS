@@ -274,23 +274,47 @@ const TERSE_DETAIL_SENTENCES: Record<string, string> = {
   'malformed cursor': 'That page link is no longer valid — reload the list.',
 }
 
-const STATUS_PREFIX_RE = /^([A-Z][A-Z0-9_]{2,}):\s*(.*)$/s
+// Matches both spellings a code prefix arrives in: our pkg/errors SNAKE
+// ("INVALID_ARGUMENT:") and grpc-gateway's CamelCase Go code names
+// ("InvalidArgument:", "NotFound:"). QA SD-08 caught the latter passing
+// through untouched — and doubled, since the gateway prefixes the
+// domain string: "InvalidArgument: INVALID_ARGUMENT: must be > 0".
+const STATUS_PREFIX_RE = /^([A-Z][A-Z0-9_]{2,}|[A-Z][a-z]+(?:[A-Z][a-z]+)+):\s*(.*)$/s
+
+function normalizeStatusCode(code: string): string {
+  if (code.includes('_') || code === code.toUpperCase()) return code
+  return code.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
+}
 
 /** Rewrite a "<STATUS_CODE>: <detail>" backend string as a human
  *  sentence. Strings that don't carry a status prefix — or carry one we
- *  don't know — come back unchanged. */
+ *  don't know — come back otherwise unchanged (lower-case fragments get
+ *  sentence-cased so raw validator strings don't look like debug spew). */
 export function humanizeStatusMessage(raw: string): string {
-  const m = STATUS_PREFIX_RE.exec(raw.trim())
-  if (!m) return raw
-  const [, code, rest] = m
-  const sentence = STATUS_SENTENCES[code]
-  if (!sentence) return raw
-  const detail = rest.trim()
+  let text = raw.trim()
+  let sentence: string | undefined
+  // Peel stacked code prefixes (gateway code + domain code) down to the
+  // innermost detail; the first recognised code picks the sentence.
+  for (;;) {
+    const m = STATUS_PREFIX_RE.exec(text)
+    if (!m) break
+    const code = normalizeStatusCode(m[1])
+    const known = STATUS_SENTENCES[code]
+    if (!known) break
+    sentence = sentence ?? known
+    text = m[2].trim()
+  }
+  if (!sentence) {
+    // No recognised code — pass through, but sentence-case a raw
+    // lower-case fragment ("user with this email already exists").
+    return /^[a-z]/.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : raw
+  }
+  const detail = text
   const terse = TERSE_DETAIL_SENTENCES[detail.toLowerCase()]
   if (terse) return terse
   // A detail that is itself a sentence carries more information than
   // the generic lead-in, so prefer it and keep the lead-in as context.
-  if (!detail || detail.toLowerCase() === code.toLowerCase()) return sentence
+  if (!detail || STATUS_SENTENCES[normalizeStatusCode(detail)] === sentence) return sentence
   return `${sentence} (${detail})`
 }
 
@@ -389,6 +413,10 @@ api.interceptors.response.use(
   async (error) => {
     const status = error.response?.status
     const detail = readErrorMessage(error)
+    // Callers that show their own contextual message (e.g. the upload
+    // hook's "<filename> — <reason>") opt out of the interceptor's
+    // generic toast — one failure must raise ONE toast (QA SD-08).
+    const silent = (error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast
     if (status === 401) {
       // A 401 is NOT proof the session died. Force-logging-out on every
       // 401 meant a single feature endpoint — notably the ERP
@@ -402,7 +430,7 @@ api.interceptors.response.use(
       const url = error.config?.url ?? ''
       const isAuthProbe = url.startsWith('/auth/')
       if (!isAuthProbe && !(await sessionIsDead())) {
-        toastError(detail || 'Not authorized for that request.')
+        if (!silent) toastError(detail || 'Not authorized for that request.')
         return Promise.reject(error)
       }
       useAuthStore.getState().logout()
@@ -412,24 +440,24 @@ api.interceptors.response.use(
       // EXPECTED to 403 for non-admin roles) opt out via
       // `suppressErrorToast` — a red "Access denied" on page load for
       // a widget the user never asked for reads as breakage.
-      if (!(error.config as { suppressErrorToast?: boolean } | undefined)?.suppressErrorToast) {
+      if (!silent) {
         toastError(detail ? `Access denied — ${detail}` : 'Access denied')
       }
     } else if (status === 402) {
       // ADR 0095 RequireLicenseFeature — feature not in the license.
-      toastError(detail ?? 'This feature is not included in your license.')
+      if (!silent) toastError(detail ?? 'This feature is not included in your license.')
     } else if (status === 423) {
       // ADR 0095 LicenseWriteGate — grace/expired license locks writes.
-      toastError(detail ?? 'License expired — writes are locked. Renew to restore write access.')
+      if (!silent) toastError(detail ?? 'License expired — writes are locked. Renew to restore write access.')
     } else if (status === 429) {
-      toastError('Rate limited — try again in a moment')
+      if (!silent) toastError('Rate limited — try again in a moment')
     } else if (status && status >= 500) {
-      toastError(detail ? `Server error: ${detail}` : 'Server error — please retry')
+      if (!silent) toastError(detail ? `Server error: ${detail}` : 'Server error — please retry')
     } else if (status === 400 && detail) {
       // Validation errors weren't surfaced before — toast the first
       // field error / message so the user sees what to fix instead
       // of a silent failure.
-      toastError(detail)
+      if (!silent) toastError(detail)
     }
     return Promise.reject(error)
   },

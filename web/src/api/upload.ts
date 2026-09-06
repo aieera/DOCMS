@@ -6,7 +6,11 @@ export async function initiateUpload(params: {
   filename: string; mime_type: string; size_bytes: number; sha256_hash?: string;
   workspace_id?: string; folder_id?: string;
 }) {
-  const { data } = await api.post<UploadSession>('/storage/uploads/initiate', params)
+  // suppressErrorToast: useUpload shows its own "<filename> — <reason>"
+  // failure message; without this the interceptor raised a second,
+  // near-duplicate toast for the same failure (QA SD-08).
+  const { data } = await api.post<UploadSession>('/storage/uploads/initiate', params,
+    { suppressErrorToast: true } as Parameters<typeof api.post>[2])
   return data
 }
 
@@ -43,6 +47,7 @@ export async function uploadToPresigned(
 }
 
 export async function completeUpload(uploadId: string, sha256?: string) {
-  const { data } = await api.post(`/storage/uploads/${uploadId}/complete`, { sha256_hash: sha256 })
+  const { data } = await api.post(`/storage/uploads/${uploadId}/complete`, { sha256_hash: sha256 },
+    { suppressErrorToast: true } as Parameters<typeof api.post>[2])
   return data
 }

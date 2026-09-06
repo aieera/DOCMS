@@ -55,13 +55,17 @@ function ApiKeysPage() {
   const [issued, setIssued] = useState<APIKeyIssued | null>(null)
   const [revokeId, setRevokeId] = useState<string | null>(null)
 
+  // QA SD-21: refusals were a native browser bubble (from `required`),
+  // a silent numeric min, and toasts — three styles in one dialog. House
+  // style is inline-under-the-field after a submit attempt.
+  const [submitted, setSubmitted] = useState(false)
+  const expiresNum = Number(expiresDays)
+  const expiresError = !expiresDays.trim() || Number.isNaN(expiresNum) || expiresNum < 1 || expiresNum > 3650
+    ? 'Enter a number of days between 1 and 3650.'
+    : undefined
   const handleCreate = async () => {
-    if (!name.trim()) {
-      toast.error('Name is required'); return
-    }
-    if (scopes.length === 0) {
-      toast.error('Select at least one scope'); return
-    }
+    setSubmitted(true)
+    if (!name.trim() || scopes.length === 0 || expiresError) return
     try {
       const k = await createMut.mutateAsync({
         name: name.trim(),
@@ -185,17 +189,26 @@ function ApiKeysPage() {
             onSubmit={(e) => { e.preventDefault(); handleCreate() }}
             className="space-y-4"
           >
-            <Input label="Name" placeholder="e.g. CI pipeline" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            <Input
+              label="Name"
+              placeholder="e.g. CI pipeline"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              error={submitted && !name.trim() ? 'Enter a name for this key.' : undefined}
+              autoFocus
+            />
             <Input
               label="Expires in (days)"
               type="number"
-              min="1"
-              max="3650"
               value={expiresDays}
               onChange={(e) => setExpiresDays(e.target.value)}
+              error={submitted ? expiresError : undefined}
             />
             <div className="space-y-1.5">
               <span className="text-sm font-medium">Scopes</span>
+              {submitted && scopes.length === 0 && (
+                <p className="text-xs font-medium text-destructive">Select at least one scope.</p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {AVAILABLE_SCOPES.map((s) => {
                   const on = scopes.includes(s)

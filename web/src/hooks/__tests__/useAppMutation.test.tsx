@@ -57,7 +57,7 @@ describe('useAppMutation — default onError', () => {
       result.current.mutate(undefined as void)
     })
     await waitFor(() => expect(result.current.isError).toBe(true))
-    expect(toast.error).toHaveBeenCalledWith('name already taken')
+    expect(toast.error).toHaveBeenCalledWith('Name already taken')
   })
 
   it('falls back to defaultErrorMessage when the server message is missing', async () => {
@@ -190,7 +190,7 @@ describe('useAppMutation — onSuccess preservation (the migration invariant)', 
     expect(onMutate).toHaveBeenCalledTimes(1)
     expect(onSettled).toHaveBeenCalledTimes(1)
     // Default toast still fired (no override).
-    expect(toast.error).toHaveBeenCalledWith('denied')
+    expect(toast.error).toHaveBeenCalledWith('Denied')
   })
 
   it('preserves onSuccess + caller onError together (no toast on either path)', async () => {

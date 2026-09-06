@@ -16,11 +16,14 @@ dayjs.extend(relativeTime)
 export function formatFileSize(bytes: number | string | null | undefined): string {
   const n = typeof bytes === 'string' ? (bytes.trim() === '' ? NaN : Number(bytes)) : bytes
   if (n == null || !Number.isFinite(n) || n < 0) return '—'
-  if (n === 0) return '0 B'
+  if (n === 0) return '0\u00A0B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
   const raw = Math.floor(Math.log(n) / Math.log(1024))
   const i = Math.min(raw, units.length - 1) // clamp for ZB+ inputs
-  return `${(n / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
+  // LRI…PDI (U+2066/U+2069) bidi-isolate the "<number> <unit>" pair, and
+  // NBSP glues it: under RTL the neutral pair re-ordered as "KB 7.9"
+  // (QA SD-07). Isolation keeps internal LTR order in any context.
+  return `\u2066${(n / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)}\u00A0${units[i]}\u2069`
 }
 
 // Reject obviously-bogus input (null/undefined/empty, invalid, or the

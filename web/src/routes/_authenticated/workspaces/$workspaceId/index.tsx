@@ -479,6 +479,11 @@ function WorkspacePage() {
 
       {/* ── center ── */}
       <section className="flex min-w-0 flex-1 flex-col">
+        {/* QA SD-17: this route had no h1 at all (outline was h2,h2). The
+            visual title is the breadcrumb trail, so the h1 is offscreen. */}
+        <h1 className="sr-only">
+          {folderDetail.data?.name ?? ws.data?.name ?? 'Workspace'}
+        </h1>
         <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-3.5">
           <FolderBreadcrumbs
             ancestors={folderDetail.data?.ancestors ?? []}
@@ -610,8 +615,13 @@ function WorkspacePage() {
                 </div>
               )
             })}
+            {/* QA SD-19: this second empty state used to read a bare
+                "No files here yet.", dropping the drop-target hint the
+                full-empty state carries — same state, same message. */}
             {!isLoading && shownDocs.length === 0 && !nothingHere && (
-              <p className="col-span-full py-6 text-sm text-muted-foreground">No files here yet.</p>
+              <p className="col-span-full py-6 text-sm text-muted-foreground">
+                No files here yet — drop files here or use Upload to add documents.
+              </p>
             )}
           </div>
 

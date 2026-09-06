@@ -75,3 +75,28 @@ describe('RenameDocumentDialog validation', () => {
     expect(screen.getByTestId('rename-document-submit')).toBeDisabled()
   })
 })
+
+// QA SD-10: the field had maxlength -1, accepted a 288-char paste, and
+// the server bounced it with a developer-facing toast — after which
+// focus fell out of the dialog. The limit is now enforced in the field
+// (mirror of the server's 1..255) with a live counter as it approaches.
+describe('RenameDocumentDialog length limit (SD-10)', () => {
+  it('caps the field at 255 characters', () => {
+    open()
+    expect(screen.getByTestId('rename-document-input')).toHaveAttribute('maxlength', '255')
+  })
+
+  it('shows a live character counter near the limit', async () => {
+    open()
+    const input = screen.getByTestId('rename-document-input')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'x'.repeat(60))
+    expect(screen.queryByText(/\/\s*255/)).not.toBeInTheDocument()
+
+    await userEvent.clear(input)
+    // fireEvent-style fill: typing 240 chars with userEvent is slow.
+    await userEvent.click(input)
+    await userEvent.paste('y'.repeat(240))
+    expect(screen.getByText(/240\s*\/\s*255/)).toBeInTheDocument()
+  })
+})

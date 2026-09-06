@@ -226,26 +226,11 @@ describe('useUpload — BUG-C3 folder_id consistency', () => {
 // --- BUG-C2: rollback on failure -------------------------------------
 
 describe('useUpload — BUG-C2 rollback on failure', () => {
-  it('calls deleteDocument with the new doc id when initiateUpload throws', async () => {
-    createDocument.mockResolvedValue({ id: 'doc-2' })
-    initiateUpload.mockRejectedValue(new Error('storage 500'))
-
-    const { result } = renderHook(
-      () => useUpload('ws-1', 'folder-A'),
-      { wrapper: wrap },
-    )
-
-    await act(async () => {
-      await result.current.uploadFiles([new File(['x'], 'b.txt', { type: 'text/plain' })])
-    })
-
-    expect(createDocument).toHaveBeenCalledTimes(1)
-    expect(deleteDocument).toHaveBeenCalledTimes(1)
-    expect(deleteDocument).toHaveBeenCalledWith('doc-2')
-  })
-
-  it('calls deleteDocument when uploadToPresigned throws', async () => {
-    createDocument.mockResolvedValue({ id: 'doc-3' })
+  // The SD-06 reorder moved createDocument to AFTER the transfer, so
+  // failures in initiate/PUT/complete now leave nothing to roll back —
+  // covered in the SD-06 describe below. What remains of BUG-C2 is the
+  // window between createDocument and createVersion.
+  it('does not create (and cannot leak) a document when the PUT fails', async () => {
     initiateUpload.mockResolvedValue({
       upload_id: 'up-1',
       presigned_put_url: 'https://example.test/put',
@@ -261,10 +246,17 @@ describe('useUpload — BUG-C2 rollback on failure', () => {
       await result.current.uploadFiles([new File(['x'], 'c.txt', { type: 'text/plain' })])
     })
 
-    expect(deleteDocument).toHaveBeenCalledWith('doc-3')
+    expect(createDocument).not.toHaveBeenCalled()
+    expect(deleteDocument).not.toHaveBeenCalled()
   })
 
   it('does NOT call deleteDocument when createDocument itself throws (nothing to roll back)', async () => {
+    initiateUpload.mockResolvedValue({
+      upload_id: 'up-1',
+      presigned_put_url: 'https://example.test/put',
+    })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
     createDocument.mockRejectedValue(new Error('forbidden'))
 
     const { result } = renderHook(
@@ -285,8 +277,14 @@ describe('useUpload — BUG-C2 rollback on failure', () => {
     const toastError = vi.mocked(sonner.toast.error)
     toastError.mockClear()
 
+    initiateUpload.mockResolvedValue({
+      upload_id: 'up-1',
+      presigned_put_url: 'https://example.test/put',
+    })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
     createDocument.mockResolvedValue({ id: 'doc-4' })
-    initiateUpload.mockRejectedValue(new Error('upload-original-error'))
+    createVersion.mockRejectedValue(new Error('upload-original-error'))
     deleteDocument.mockRejectedValue(new Error('cleanup-also-broken'))
 
     const { result } = renderHook(
@@ -305,5 +303,70 @@ describe('useUpload — BUG-C2 rollback on failure', () => {
     const toastArg = String(toastError.mock.calls[0][0])
     expect(toastArg).toContain('upload-original-error')
     expect(toastArg).not.toContain('cleanup-also-broken')
+  })
+})
+
+// --- SD-06: rejected uploads must leave nothing behind ----------------
+//
+// QA (2026-09-06): a zero-byte upload was refused with an error toast,
+// but the file appeared in Trash — the document row was created before
+// content validation ran and only soft-deleted afterwards. The flow now
+// (a) rejects empty files client-side with human copy, and (b) creates
+// the document row only AFTER the bytes are stored, so a refused upload
+// has no row to roll back into Trash.
+
+describe('preflightFile — empty files (SD-06)', () => {
+  it('rejects a zero-byte file with human-readable copy', () => {
+    const file = new File([], 'qa-zero-bytes.txt', { type: 'text/plain' })
+    expect(preflightFile(file)).toMatch(/file is empty/i)
+  })
+})
+
+describe('useUpload — no phantom rows on refused uploads (SD-06)', () => {
+  it('creates no document row when initiate is refused', async () => {
+    initiateUpload.mockRejectedValue(Object.assign(new Error('rejected'), {
+      response: { data: { message: 'INVALID_ARGUMENT: must be > 0' } },
+    }))
+
+    const { result } = renderHook(() => useUpload('ws-1', 'folder-A'), { wrapper: wrap })
+    await act(async () => {
+      await result.current.uploadFiles([new File(['x'], 'a.txt', { type: 'text/plain' })])
+    })
+
+    expect(createDocument).not.toHaveBeenCalled()
+    expect(deleteDocument).not.toHaveBeenCalled()
+  })
+
+  it('creates the document row only after the bytes are stored', async () => {
+    createDocument.mockResolvedValue({ id: 'doc-1' })
+    initiateUpload.mockResolvedValue({ upload_id: 'up-1', presigned_put_url: 'https://example.test/put' })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
+    createVersion.mockResolvedValue({ id: 'ver-1' })
+
+    const { result } = renderHook(() => useUpload('ws-1', 'folder-A'), { wrapper: wrap })
+    await act(async () => {
+      await result.current.uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })])
+    })
+
+    const order = (fn: ReturnType<typeof vi.fn>) => fn.mock.invocationCallOrder[0]
+    expect(createDocument).toHaveBeenCalledTimes(1)
+    expect(order(createDocument)).toBeGreaterThan(order(completeUpload))
+    expect(order(createVersion)).toBeGreaterThan(order(createDocument))
+  })
+
+  it('still rolls the document back if version linking fails after creation', async () => {
+    createDocument.mockResolvedValue({ id: 'doc-1' })
+    initiateUpload.mockResolvedValue({ upload_id: 'up-1', presigned_put_url: 'https://example.test/put' })
+    uploadToPresigned.mockResolvedValue(undefined)
+    completeUpload.mockResolvedValue({ content_blob_id: 'blob-1' })
+    createVersion.mockRejectedValue(new Error('boom'))
+
+    const { result } = renderHook(() => useUpload('ws-1', 'folder-A'), { wrapper: wrap })
+    await act(async () => {
+      await result.current.uploadFiles([new File(['hello'], 'a.txt', { type: 'text/plain' })])
+    })
+
+    expect(deleteDocument).toHaveBeenCalledWith('doc-1')
   })
 })

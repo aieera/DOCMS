@@ -182,7 +182,9 @@ function WorkspaceCard({ ws }: { ws: Workspace }) {
             <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>
-        <h3 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h3>
+        {/* QA SD-17: h2, not h3 — the page's h1 is the PageHeader and
+            nothing sits between, so h3 skipped a level. */}
+        <h2 className="mt-4 truncate text-base font-semibold tracking-tight">{ws.name}</h2>
         <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm">
           {ws.description?.trim()
             ? <span className="text-muted-foreground">{ws.description}</span>

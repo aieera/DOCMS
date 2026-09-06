@@ -16,6 +16,7 @@ import { getUnreadCount, getNotifications } from '@/api/notifications'
 import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { shortcutLabel } from '@/lib/platform'
+import { formatDate } from '@/lib/formatters'
 
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
@@ -86,7 +87,7 @@ function relTime(iso: string, opts: { addSuffix?: boolean } = {}): string {
   else if (abs < day) { value = Math.round(abs / hr); unit = 'hour' }
   else if (abs < wk) { value = Math.round(abs / day); unit = 'day' }
   else if (abs < mo) { value = Math.round(abs / wk); unit = 'wk' }
-  else return new Date(iso).toLocaleDateString()
+  else return formatDate(iso)
   const plural = value === 1 ? '' : 's'
   if (!opts.addSuffix) return `${value} ${unit}${plural}`
   return past ? `${value} ${unit}${plural} ago` : `in ${value} ${unit}${plural}`

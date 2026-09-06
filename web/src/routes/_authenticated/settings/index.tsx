@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Bell, ChevronRight, LifeBuoy, ShieldCheck, Smartphone } from 'lucide-react'
+import { Bell, LifeBuoy, ShieldCheck, Smartphone } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 // /settings — landing hub for the personal settings area.
 //
@@ -85,7 +86,7 @@ function SettingsIndexPage() {
             <span className="min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-foreground">{title}</span>
-                <ChevronRight
+                <DirectionalIcon name="ChevronRight"
                   className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180"
                   aria-hidden
                 />

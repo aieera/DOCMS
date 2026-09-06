@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
 import { createSnooze } from '@/api/notification-prefs'
-import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
+import { formatRelativeTime, notificationTypeLabel, formatDateTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
 // Map the event-type taxonomy (dms.{domain}.{action}) onto an icon +
@@ -398,7 +398,7 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
           </p>
         )}
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          <time dateTime={n.created_at} title={new Date(n.created_at).toLocaleString()}>
+          <time dateTime={n.created_at} title={formatDateTime(n.created_at)}>
             {formatRelativeTime(n.created_at)}
           </time>
           <span aria-hidden>·</span>

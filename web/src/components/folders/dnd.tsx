@@ -19,10 +19,24 @@ export type DropData = { folderId: string }
 // working: a drag only starts after real pointer travel.
 export function DraggableTile({ dndId, data, children }: { dndId: string; data: DragData; children: ReactNode }) {
   const { listeners, setNodeRef, isDragging } = useDraggable({ id: dndId, data })
+  // Dialogs/menus opened from tile children render through React portals,
+  // so their events bubble through the REACT tree into these listeners
+  // while their DOM nodes live under document.body. dnd-kit's keyboard
+  // activator preventDefault()s Space/Enter ("start drag"), which ate
+  // those keys inside every dialog opened from a tile. Only activate for
+  // events whose target is a real DOM descendant of the tile.
+  const guarded = Object.fromEntries(
+    Object.entries(listeners ?? {}).map(([name, handler]) => [
+      name,
+      (e: { currentTarget: HTMLElement; target: EventTarget }) => {
+        if (e.currentTarget.contains(e.target as Node)) (handler as (e: unknown) => void)(e)
+      },
+    ]),
+  )
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
+      {...guarded}
       className={cn('group/tile relative', isDragging && 'opacity-40')}
       data-testid={`drag-${data.kind}-${data.id}`}
     >

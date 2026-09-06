@@ -15,6 +15,7 @@ import {
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
+import { formatDateTime } from '@/lib/formatters'
 
 // /settings/notifications — ADR 0086 unified preferences page.
 //
@@ -274,7 +275,7 @@ function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type:
               <div>
                 <div className="font-medium">{s.event_type === '*' ? 'All events' : s.event_type}</div>
                 <div className="text-xs text-muted-foreground">
-                  Until {new Date(s.until_at).toLocaleString()}
+                  Until {formatDateTime(s.until_at)}
                 </div>
               </div>
               <Button

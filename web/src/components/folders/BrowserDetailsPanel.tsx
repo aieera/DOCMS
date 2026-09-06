@@ -4,6 +4,7 @@ import { FolderOpen, X } from 'lucide-react'
 
 import { cn } from '@/lib/cn'
 import { formatFileSize, formatDateTime, formatRelativeTime } from '@/lib/formatters'
+import { humanizeEventSummary } from '@/lib/eventSummary'
 import { Button } from '@/components/ui/shadcn/button'
 import { useSetFolderVisibility } from '@/hooks/useFolders'
 import { useActivityForDocument } from '@/hooks/useDocumentDetailGQL'
@@ -180,7 +181,7 @@ function FileActivity({ documentId }: { documentId: string }) {
   if (q.isError) return null
   const rows: ActivityRow[] = (q.data?.nodes ?? []).slice(0, 5).map((n) => ({
     id: n.id,
-    summary: n.summary,
+    summary: humanizeEventSummary(n.summary),
     actor: n.actorName || undefined,
     at: n.occurredAt,
   }))

@@ -135,6 +135,7 @@ function TreeNode({
         // previously only Enter worked (WCAG 2.1.1 keyboard).
         onClick={() => onNavigate(folder.id)}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return // portal-bubbled (dialog/menu) keys are not activation
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             onNavigate(folder.id)

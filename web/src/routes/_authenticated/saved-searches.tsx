@@ -22,6 +22,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { useAuthStore } from '@/store/authStore'
+import { formatDateTime } from '@/lib/formatters'
 
 // ADR 0085 — saved-searches management page.
 //
@@ -158,7 +159,7 @@ function SavedSearchesPage() {
               </p>
               {s.last_run_at && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Last run {new Date(s.last_run_at).toLocaleString()}
+                  Last run {formatDateTime(s.last_run_at)}
                 </p>
               )}
             </div>

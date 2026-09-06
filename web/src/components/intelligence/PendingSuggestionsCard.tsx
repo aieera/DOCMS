@@ -48,7 +48,10 @@ export function PendingSuggestionsCard() {
       </span>
       <p className="min-w-0 truncate text-sm">
         <span className="font-semibold">{q.data.total}</span>
-        <span className="text-muted-foreground"> AI tag suggestions waiting</span>
+        {/* QA SD-14: "1 AI tag suggestions waiting" — pluralize. */}
+        <span className="text-muted-foreground">
+          {q.data.total === 1 ? ' AI tag suggestion waiting' : ' AI tag suggestions waiting'}
+        </span>
       </p>
       <Link
         to="/admin/tagging"

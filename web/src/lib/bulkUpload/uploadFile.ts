@@ -3,9 +3,13 @@ import { createDocument, createVersion } from '@/api/documents'
 
 /**
  * Upload one file as a new document under (workspaceId, folderId), reusing the
- * standard pipeline: createDocument → initiate → (dedup ? link : PUT + complete)
+ * standard pipeline: initiate → (dedup ? skip : PUT + complete) → createDocument
  * → createVersion. Because it goes through the same endpoints as a normal single
  * upload, virus scan / OCR / dedup / region_pin all apply automatically.
+ *
+ * The document row is created only AFTER the bytes are stored (QA SD-06):
+ * this path had no rollback, so the old create-first order left an orphan
+ * "No content" document behind every refused upload.
  */
 export async function uploadFileToFolder(args: {
   file: File
@@ -15,8 +19,6 @@ export async function uploadFileToFolder(args: {
   onProgress?: (pct: number) => void
 }): Promise<{ documentId: string; deduplicated: boolean }> {
   const { file, title, workspaceId, folderId, onProgress } = args
-
-  const doc = await createDocument({ workspace_id: workspaceId, folder_id: folderId, title })
 
   const session = await initiateUpload({
     filename: file.name,
@@ -29,6 +31,7 @@ export async function uploadFileToFolder(args: {
   const dedupBlob =
     (session as { content_blob_id?: string }).content_blob_id ?? session.existing_blob_id
   if (session.deduplicated && dedupBlob) {
+    const doc = await createDocument({ workspace_id: workspaceId, folder_id: folderId, title })
     await createVersion({ document_id: doc.id, content_blob_id: dedupBlob, change_summary: 'initial' })
     return { documentId: doc.id, deduplicated: true }
   }
@@ -41,6 +44,7 @@ export async function uploadFileToFolder(args: {
     session.existing_blob_id
   if (!blobId) throw new Error('storage did not return a content_blob_id')
 
+  const doc = await createDocument({ workspace_id: workspaceId, folder_id: folderId, title })
   await createVersion({ document_id: doc.id, content_blob_id: blobId, change_summary: 'initial' })
   return { documentId: doc.id, deduplicated: false }
 }

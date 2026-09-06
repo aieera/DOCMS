@@ -46,3 +46,20 @@ it('throws when storage returns no blob id', async () => {
   completeUpload.mockResolvedValue({})
   await expect(uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1' })).rejects.toThrow(/content_blob_id/)
 })
+
+// SD-06: a refused upload must leave no document row behind. The old
+// order created the row first, so an initiate/PUT/scan refusal left an
+// orphan "No content" document (with no rollback at all in this path).
+it('creates no document row when initiate is refused (SD-06)', async () => {
+  initiateUpload.mockRejectedValue(new Error('INVALID_ARGUMENT: must be > 0'))
+  await expect(uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1' })).rejects.toThrow()
+  expect(createDocument).not.toHaveBeenCalled()
+})
+
+it('creates the document only after the bytes are stored (SD-06)', async () => {
+  initiateUpload.mockResolvedValue({ upload_id: 'u1', presigned_put_url: 'http://put', deduplicated: false })
+  completeUpload.mockResolvedValue({ content_blob_id: 'blob1' })
+  await uploadFileToFolder({ file, title: 'x.pdf', workspaceId: 'ws1' })
+  expect(createDocument.mock.invocationCallOrder[0])
+    .toBeGreaterThan(completeUpload.mock.invocationCallOrder[0])
+})

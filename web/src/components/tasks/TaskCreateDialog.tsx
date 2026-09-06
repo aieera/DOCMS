@@ -43,6 +43,7 @@ export function TaskCreateDialog({
   const me = useAuthStore((s) => s.user)
 
   const [title, setTitle] = useState('')
+  const [submitted, setSubmitted] = useState(false)
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TaskPriority>('normal')
   const [dueAt, setDueAt] = useState('')
@@ -53,6 +54,7 @@ export function TaskCreateDialog({
   // task, and so defaultDocument/self-assignment are applied fresh.
   useEffect(() => {
     if (!open) return
+    setSubmitted(false)
     setTitle(defaultDocument ? `Follow up: ${defaultDocument.title}` : '')
     setDescription('')
     setPriority('normal')
@@ -91,6 +93,7 @@ export function TaskCreateDialog({
             maxLength={200}
             autoFocus
             data-testid="task-title"
+            error={submitted && title.trim() === '' ? 'Enter a title.' : undefined}
           />
         </label>
 
@@ -126,15 +129,29 @@ export function TaskCreateDialog({
             onChange={(e) => setDueAt(e.target.value)}
             data-testid="task-due"
           />
+          {/* QA SD-20: a past due date was accepted silently — deliberate
+              backdating stays allowed, but question it at entry. */}
+          {dueAt && new Date(dueAt).getTime() < Date.now() && (
+            <span className="block text-xs font-medium text-warning-strong" aria-live="polite">
+              This due date is in the past — the task will start out overdue.
+            </span>
+          )}
         </label>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
+          {/* QA SD-21: the button used to be silently disabled at 50%
+              opacity with no explanation. It stays clickable; an empty
+              title now answers with the inline message on the field. */}
           <Button
-            onClick={() => create.mutate(undefined)}
-            disabled={title.trim() === '' || create.isPending}
+            onClick={() => {
+              setSubmitted(true)
+              if (title.trim() === '') return
+              create.mutate(undefined)
+            }}
+            disabled={create.isPending}
             data-testid="task-create-submit"
           >
             Create

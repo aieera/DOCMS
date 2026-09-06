@@ -327,9 +327,14 @@ export function DocumentActionsMenu({
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title="Delete document?"
-        description={`"${doc.title}" will be moved to the disposed state. This cannot be undone from the UI.`}
-        confirmLabel="Delete"
+        title="Move to Trash?"
+        // QA SD-09: the old copy warned "moved to the disposed state.
+        // This cannot be undone from the UI" — but the document lands in
+        // Trash and restores cleanly from there. Say what actually
+        // happens; the genuinely irreversible action (Remove from your
+        // trash) carries its own honest warning.
+        description={`"${doc.title}" will be moved to Trash. You can restore it from there.`}
+        confirmLabel="Move to Trash"
         destructive
         loading={del.isPending}
         onConfirm={() => del.mutate(doc.id, { onSuccess: () => setConfirmDelete(false) })}

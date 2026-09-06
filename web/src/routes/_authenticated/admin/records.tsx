@@ -15,6 +15,7 @@ import { useAppMutation } from '@/hooks/useAppMutation'
 import { useAuthStore } from '@/store/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
+import { formatDate } from '@/lib/formatters'
 
 const WRITE_ROLES = ['owner', 'admin', 'compliance_officer']
 const TRIGGERS: TriggerEvent[] = ['declaration', 'creation', 'event', 'superseded', 'fixed_date']
@@ -312,7 +313,7 @@ function QueueRow({ row, canWrite, onDispose, busy }: {
         <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{row.disposition_state}</span>
         {row.disposition_action && <span className="text-xs text-muted-foreground">→ {row.disposition_action}</span>}
         <span className="ms-auto text-xs text-muted-foreground">
-          cutoff {row.cutoff_date ? new Date(row.cutoff_date).toLocaleDateString() : '—'}
+          cutoff {formatDate(row.cutoff_date)}
         </span>
       </div>
       {canWrite && row.disposition_action !== 'permanent' && (

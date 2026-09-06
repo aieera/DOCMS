@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { formatFileSize } from '@/lib/formatters'
@@ -14,15 +15,20 @@ import type { Document, Folder } from '@/types/api'
  * ───────────────────────────────────────────────────────────── */
 
 // Friendly yellow folder (fixed amber — the browser's signature mark).
+// QA SD-16: every glyph carried id="fgrad", so a page with N folders had
+// N duplicate DOM ids and url(#fgrad) resolved to whichever came first —
+// invalid HTML and a real rendering risk the moment icons differ. One
+// per-instance id via useId keeps each gradient self-contained.
 export function FolderGlyph({ size = 56, variant = null }: { size?: number; variant?: 'music' | 'image' | 'doc' | null }) {
+  const gradId = `fgrad-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   let inner = ''
   if (variant === 'music') inner = `<g opacity=".92"><circle cx="27" cy="41" r="3" fill="#fff"/><circle cx="38" cy="39" r="3" fill="#fff"/><path d="M30 41V31l11-2v10" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
   if (variant === 'image') inner = `<g opacity=".92"><rect x="22" y="30" width="20" height="15" rx="2.5" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="28" cy="36" r="2" fill="#fff"/><path d="M24 44l6-6 4 4 5-5 3 3" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
   if (variant === 'doc')   inner = `<g stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".9"><path d="M26 34h12M26 39h12M26 44h7"/></g>`
   const svg = `<svg width="${size}" height="${Math.round(size * 0.875)}" viewBox="0 0 64 56" fill="none">
-      <defs><linearGradient id="fgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd989"/><stop offset="1" stop-color="#f6c557"/></linearGradient></defs>
+      <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd989"/><stop offset="1" stop-color="#f6c557"/></linearGradient></defs>
       <path d="M4 14a8 8 0 0 1 8-8h13a3 3 0 0 1 2.3 1.1l3 3.4a3 3 0 0 0 2.3 1.1h21.4a8 8 0 0 1 8 8v4H4z" fill="#f2b53f"/>
-      <rect x="4" y="18" width="56" height="34" rx="9" fill="url(#fgrad)"/>${inner}
+      <rect x="4" y="18" width="56" height="34" rx="9" fill="url(#${gradId})"/>${inner}
     </svg>`
   return <span className="drop-shadow-[0_8px_14px_rgba(214,168,40,0.28)]" dangerouslySetInnerHTML={{ __html: svg }} />
 }

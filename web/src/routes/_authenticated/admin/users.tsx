@@ -84,23 +84,17 @@ export function UsersPage() {
   const passwordOk = password.length >= 12 && password.length <= 128
   const busy = invite.isPending || create.isPending
 
+  // QA SD-21: `required` handed refusals to the native browser bubble
+  // ("Please fill out this field.") while other failures were toasts —
+  // three styles in one dialog. House style is inline-under-the-field:
+  // errors appear after a submit attempt, wired via the Input's error prop.
+  const [submitted, setSubmitted] = useState(false)
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (busy) return
-    // Surface why submission is blocked instead of silently failing
-    // — empty + invalid email both used to render as a no-op click.
-    if (email.trim() === '') {
-      toast.error('Email is required')
-      return
-    }
-    if (!emailOk) {
-      toast.error('Enter a valid email address')
-      return
-    }
-    if (mode === 'direct' && !passwordOk) {
-      toast.error('Password must be 12–128 characters')
-      return
-    }
+    setSubmitted(true)
+    if (email.trim() === '' || !emailOk) return
+    if (mode === 'direct' && !passwordOk) return
     if (mode === 'invite') invite.mutate()
     else create.mutate()
   }
@@ -177,12 +171,11 @@ export function UsersPage() {
                 placeholder="colleague@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
                 autoFocus
                 autoComplete="email"
                 error={
                   email.trim() === ''
-                    ? undefined
+                    ? (submitted ? 'Enter an email address.' : undefined)
                     : !emailOk
                       ? 'Enter a valid email address'
                       : undefined
@@ -202,11 +195,10 @@ export function UsersPage() {
                   placeholder="≥12 chars, mix of upper/lower/digit/special"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                   autoComplete="new-password"
                   error={
                     password === ''
-                      ? undefined
+                      ? (submitted ? 'Enter an initial password (12–128 characters).' : undefined)
                       : password.length < 12
                         ? 'Must be at least 12 characters'
                         : password.length > 128

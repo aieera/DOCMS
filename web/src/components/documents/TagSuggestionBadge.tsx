@@ -52,7 +52,7 @@ export function TagSuggestionBadge({ documentId }: { documentId: string }) {
           // the popover would never open.
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-primary/20"
-          aria-label={`${pending.length} AI tag suggestions — review`}
+          aria-label={`${pending.length} AI tag ${pending.length === 1 ? 'suggestion' : 'suggestions'} — review`}
           data-testid={`tag-suggestion-badge-${documentId}`}
         >
           <Sparkles className="h-3 w-3" aria-hidden />

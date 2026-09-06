@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
 import { getQESSession, getQESCertificates } from '@/api/signatures'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { formatDate } from '@/lib/formatters'
 
 // /sign/done?session=…&status=…[&reason=…]
 //
@@ -74,7 +75,7 @@ function SignDonePage() {
                   <dt className="text-muted-foreground">Issuer</dt><dd className="font-mono">{c.issuer_dn}</dd>
                   <dt className="text-muted-foreground">Serial</dt><dd className="font-mono">{c.serial_hex}</dd>
                   <dt className="text-muted-foreground">Valid</dt>
-                  <dd>{new Date(c.not_before).toLocaleDateString()} — {new Date(c.not_after).toLocaleDateString()}</dd>
+                  <dd>{formatDate(c.not_before)} — {formatDate(c.not_after)}</dd>
                   <dt className="text-muted-foreground">Provider</dt><dd>{c.provider}</dd>
                 </dl>
               ))}

@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Spinner } from '@/components/ui/Spinner'
 import { Dialog } from '@/components/ui/Dialog'
 import { useAuthStore } from '@/store/authStore'
+import { formatDateTime } from '@/lib/formatters'
 
 export const Route = createFileRoute('/_authenticated/clauses/')({
   component: ClausesPage,
@@ -339,7 +340,7 @@ function ClauseDetail({
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            v{clause.version} · {clause.jurisdiction || 'no jurisdiction'} · updated {new Date(clause.updated_at).toLocaleString()}
+            v{clause.version} · {clause.jurisdiction || 'no jurisdiction'} · updated {formatDateTime(clause.updated_at)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -461,6 +462,12 @@ function CreateClauseDialog({
 }) {
   const [form, setForm] = useState<CreateClauseInput>({ name: '', body_text: '', jurisdiction: '', tags: [] })
   const [tagText, setTagText] = useState('')
+  // QA SD-21: refusals were toast-only ("Name is required" bottom-right,
+  // far from the field). House style is the New-workspace pattern —
+  // inline message under the field after the user tries to submit.
+  const [submitted, setSubmitted] = useState(false)
+  const nameError = submitted && !form.name.trim() ? 'Enter a name.' : undefined
+  const bodyError = submitted && !form.body_text.trim() ? 'Enter the clause body.' : undefined
   const mut = useAppMutation({
     mutationFn: createClause,
     onSuccess: (created) => {
@@ -481,16 +488,21 @@ function CreateClauseDialog({
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           placeholder="Indemnification — mutual"
+          error={nameError}
         />
         <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground">Body</label>
+          <label htmlFor="clause-body" className="text-xs font-semibold text-muted-foreground">Body</label>
           <textarea
+            id="clause-body"
             value={form.body_text}
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
             placeholder="Each party shall indemnify and hold harmless…"
             rows={8}
-            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset"
+            aria-invalid={bodyError ? true : undefined}
+            aria-describedby={bodyError ? 'clause-body-error' : undefined}
+            className="w-full rounded-md border border-input bg-muted p-2 text-sm font-mono shadow-neu-inset aria-[invalid=true]:border-destructive"
           />
+          {bodyError && <p id="clause-body-error" className="text-xs font-medium text-destructive">{bodyError}</p>}
         </div>
         <Input
           label="Jurisdiction (optional)"
@@ -510,8 +522,8 @@ function CreateClauseDialog({
         <Button
           onClick={() => {
             if (mut.isPending) return
-            if (!form.name.trim()) { toast.error('Name is required'); return }
-            if (!form.body_text.trim()) { toast.error('Body is required'); return }
+            setSubmitted(true)
+            if (!form.name.trim() || !form.body_text.trim()) return
             mut.mutate(form)
           }}
           disabled={mut.isPending}

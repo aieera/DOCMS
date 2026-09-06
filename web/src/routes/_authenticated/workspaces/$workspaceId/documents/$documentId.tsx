@@ -82,6 +82,7 @@ import { HighlightedText } from '@/components/intelligence/HighlightedText'
 import { RedactionReviewPanel } from '@/components/intelligence/RedactionReviewPanel'
 import { MatchedClausesPanel } from '@/components/documents/MatchedClausesPanel'
 import { DocumentTasksPanel } from '@/components/tasks/DocumentTasksPanel'
+import { humanizeEventSummary } from '@/lib/eventSummary'
 
 type TabKey = 'preview' | 'text' | 'qa' | 'compliance' | 'entities' | 'relationships' | 'workflow' | 'comments' | 'signatures' | 'redaction' | 'activity'
 
@@ -1876,7 +1877,7 @@ function ActivityFeed({ documentId }: { documentId: string }) {
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-              <span className="font-medium text-foreground">{evt.summary}</span>
+              <span className="font-medium text-foreground">{humanizeEventSummary(evt.summary)}</span>
               <span className="text-xs text-muted-foreground">{formatDateTime(evt.occurredAt)}</span>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">

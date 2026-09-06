@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
 import {
-  FolderTree, Plus, Trash2, Edit, Rocket, FileText, ChevronRight, ChevronDown, X,
+  FolderTree, Plus, Trash2, Edit, Rocket, FileText, ChevronDown, X,
 } from 'lucide-react'
 
 import {
@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/shadcn/input'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export const Route = createFileRoute('/_authenticated/templates')({
   component: TemplatesPage,
@@ -271,7 +272,7 @@ function NodeEditor({
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} folder settings for ${node.name || 'folder'}`}
         >
-          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <DirectionalIcon name="ChevronRight" className="h-3.5 w-3.5" />}
         </button>
         <Input
           value={node.name}

@@ -11,7 +11,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
-import { Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
+import { AlertCircle, Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
 import {
@@ -340,8 +340,21 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
         {task.description && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">{task.description}</p>}
       </td>
       <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge></td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">
-        {task.due_at ? formatRelativeTime(task.due_at) : '—'}
+      {/* QA SD-20: an overdue task rendered in the same neutral grey as
+          every other row — lateness must be visible in a work inbox. */}
+      <td className="px-3 py-2 text-xs">
+        {task.due_at ? (
+          !isDone && new Date(task.due_at).getTime() < Date.now() ? (
+            <span className="inline-flex items-center gap-1 font-medium text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" aria-hidden />
+              Overdue — {formatRelativeTime(task.due_at)}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{formatRelativeTime(task.due_at)}</span>
+          )
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </td>
       <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
       <td className="px-3 py-2 text-end">
