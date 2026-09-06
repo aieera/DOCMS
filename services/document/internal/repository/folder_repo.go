@@ -397,22 +397,24 @@ func (r *folderRepo) SoftDeleteSubtree(ctx context.Context, tx pgx.Tx, tenantID,
 // INDEPENDENTLY (different cohort, different cohort=NULL legacy
 // soft-delete) stays deleted.
 //
-// Returns ErrNotFound if the root is not currently deleted or has
-// no cohort id (legacy soft-deletes without cohort cannot be
-// restored — they have no scope).
-func (r *folderRepo) RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) error {
+// Returns the ids of the documents it un-deleted (so the caller can
+// re-emit their search projections — QA SD-02: cascade delete removed
+// them from the index, restore re-indexed nothing) and ErrNotFound if
+// the root is not currently deleted or has no cohort id (legacy
+// soft-deletes without cohort cannot be restored — they have no scope).
+func (r *folderRepo) RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, rootID uuid.UUID) ([]uuid.UUID, error) {
 	var cohort *uuid.UUID
 	if err := tx.QueryRow(ctx, `
 		SELECT deleted_cohort_id FROM folders
 		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NOT NULL
 	`, tenantID, rootID).Scan(&cohort); err != nil {
 		if err == pgx.ErrNoRows {
-			return vdmserr.ErrNotFound
+			return nil, vdmserr.ErrNotFound
 		}
-		return mapPgError(err)
+		return nil, mapPgError(err)
 	}
 	if cohort == nil {
-		return vdmserr.Validation("folder", "deleted before cascade support; cannot restore")
+		return nil, vdmserr.Validation("folder", "deleted before cascade support; cannot restore")
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE folders
@@ -422,19 +424,30 @@ func (r *folderRepo) RestoreSubtree(ctx context.Context, tx pgx.Tx, tenantID, ro
 		       updated_at = now()
 		 WHERE tenant_id = $1 AND deleted_cohort_id = $2
 	`, tenantID, *cohort); err != nil {
-		return mapPgError(err)
+		return nil, mapPgError(err)
 	}
-	if _, err := tx.Exec(ctx, `
+	rows, err := tx.Query(ctx, `
 		UPDATE documents
 		   SET deleted_at = NULL,
 		       deleted_cohort_id = NULL,
 		       deleted_by = NULL,
 		       updated_at = now()
 		 WHERE tenant_id = $1 AND deleted_cohort_id = $2
-	`, tenantID, *cohort); err != nil {
-		return mapPgError(err)
+		 RETURNING id
+	`, tenantID, *cohort)
+	if err != nil {
+		return nil, mapPgError(err)
 	}
-	return nil
+	defer rows.Close()
+	var docIDs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		docIDs = append(docIDs, id)
+	}
+	return docIDs, rows.Err()
 }
 
 // FolderPurgeTargets is what a permanent folder delete will remove.

@@ -43,12 +43,15 @@ x-go-env: &go-env
   # (same address the CRM uses); override per environment.
   SEDOC_INTEGRATION_BFF_URL: "${SEDOC_INTEGRATION_BFF_URL:-http://192.168.70.22:18091}"
   SEDOC_S3_ENDPOINT:  "http://minio:9000"
-  # Browser-reachable address. Storage service signs presigned URLs
-  # against this so the Host header matches in dev (browser can't
-  # resolve "minio:9000" — that's docker-internal DNS). In prod set
-  # to whatever the customer's browser hits, usually equal to the
-  # internal endpoint (e.g. "s3.amazonaws.com").
-  SEDOC_S3_PUBLIC_BASE: "localhost:9000"
+  # CLIENT-reachable address. Storage service signs presigned URLs
+  # against this so the Host header matches (SigV4 binds to Host; the
+  # URL cannot be rewritten after signing). "localhost:9000" is only
+  # right when every client runs on this machine — any remote client
+  # (LAN browser, the ERP) resolves localhost to ITSELF and the PUT
+  # dies with ECONNREFUSED. Override in .env with the address clients
+  # actually reach MinIO/S3 at (e.g. "192.168.70.237:9000", or
+  # "s3.amazonaws.com" in prod).
+  SEDOC_S3_PUBLIC_BASE: "${SEDOC_S3_PUBLIC_BASE:-localhost:9000}"
   SEDOC_S3_ACCESS_KEY: "minioadmin"
   SEDOC_S3_SECRET_KEY: "minioadmin"
   SEDOC_OPENSEARCH_URL: "http://opensearch:9200"
