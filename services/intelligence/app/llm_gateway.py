@@ -11,6 +11,7 @@ import litellm
 import redis
 
 from app.config import settings
+from app.llm_key_guard import require_tenant_key
 from app.events.subjects import BILLING_LLM_USAGE_SUBJECT
 
 log = logging.getLogger(__name__)
@@ -125,6 +126,10 @@ def stream_completion(
     api_base = config.get("base_url")
 
     provider = resolve_provider(llm_model)
+    # Pre-sale item 10: streaming path must fail closed too — no tenant
+    # key means no call, unless the operator explicitly opted in to
+    # deploy-credential fallback.
+    require_tenant_key(api_key, tenant_id=tenant_id, provider=provider)
     _check_air_gapped(config, provider)
     _check_budget(tenant_id, config.get("daily_budget_usd") or 0.0)
     _check_breaker(tenant_id, provider)

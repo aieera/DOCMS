@@ -62,6 +62,11 @@ x-go-env: &go-env
   # degrades to lexical and logs a notice.
   SEDOC_INTELLIGENCE_EMBED_URL: "http://intelligence:8080/internal/v1/embed-query"
   SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+  # Pre-sale item 10: tenant-keyless LLM calls fail closed by default in
+  # code. The DEV stack opts in to deploy-default credentials so AI
+  # features work without per-tenant keys; customer-facing deployments
+  # must set this to "false" (or leave the env unset outside compose).
+  SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "${SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS:-true}"
   # §10.3 / E6 — OnlyOffice integration
   SEDOC_ONLYOFFICE_URL: "http://onlyoffice"  # in-cluster DNS
   SEDOC_ONLYOFFICE_PUBLIC_URL: "http://localhost:8195"  # what the browser sees
@@ -613,6 +618,11 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Pre-sale item 10: tenant-keyless LLM calls fail closed by default
+      # in code. The DEV stack opts in to deploy-default credentials so AI
+      # features work without per-tenant keys; customer-facing deployments
+      # must set this to "false" (or leave the env unset outside compose).
+      SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "${SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS:-true}"
       # Per-request LLM budget (streaming included). The 30s code default
       # cut long doc-QA answers mid-stream; see app/config.py.
       SEDOC_LLM_TIMEOUT_SECONDS: "120"
@@ -670,6 +680,11 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Pre-sale item 10: tenant-keyless LLM calls fail closed by default
+      # in code. The DEV stack opts in to deploy-default credentials so AI
+      # features work without per-tenant keys; customer-facing deployments
+      # must set this to "false" (or leave the env unset outside compose).
+      SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "${SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS:-true}"
       # Per-request LLM budget (streaming included). The 30s code default
       # cut long doc-QA answers mid-stream; see app/config.py.
       SEDOC_LLM_TIMEOUT_SECONDS: "120"
@@ -738,6 +753,11 @@ services:
       # collection than search queries → semantic search silently returns
       # nothing and hybrid degrades to lexical-only.
       SEDOC_QDRANT_COLLECTION: "vaultdms_chunks"
+      # Pre-sale item 10: tenant-keyless LLM calls fail closed by default
+      # in code. The DEV stack opts in to deploy-default credentials so AI
+      # features work without per-tenant keys; customer-facing deployments
+      # must set this to "false" (or leave the env unset outside compose).
+      SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "${SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS:-true}"
       # Per-request LLM budget (streaming included). The 30s code default
       # cut long doc-QA answers mid-stream; see app/config.py.
       SEDOC_LLM_TIMEOUT_SECONDS: "120"
