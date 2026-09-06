@@ -445,3 +445,15 @@ services:
       # Moved off the document upstream by the 2026-07-28 task-service
       # design; the path is unchanged so clients don't notice.
       - { name: tasks, paths: [/api/v1/tasks], strip_path: false }
+
+  # API liveness for integrators (2026-09-01 ERP integration report: a
+  # health probe against the SPA dev server returned a false green while
+  # every API call failed). Proxies auth's /readyz — dependency-checked
+  # (DB/Redis, 2s timeout), so it goes red when the platform is actually
+  # broken, not just when the gateway is down. Representative core-service
+  # readiness, not an all-services aggregate. Unauthenticated by design,
+  # like every /readyz.
+  - name: platform-health
+    url: http://auth:8081/readyz
+    routes:
+      - { name: api-health, paths: [/api/v1/health], methods: [GET], strip_path: true }

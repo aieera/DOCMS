@@ -94,6 +94,22 @@ Bearer key — the per-route middleware is on the service, not only the gateway.
 
 Base path: `{DMS_BASE_URL}/api/v1`.
 
+`DMS_BASE_URL` **must be the Kong gateway origin** (`http://<dms-host>:8080` on
+a test server) — never the web UI on `:3000`. The web port is a browser SPA:
+it answers any unknown path with `200 text/html` (a wrong URL looks like a
+healthy DMS returning garbage), while Kong answers with a JSON 404. Two
+consequences worth wiring in:
+
+- **Probe `GET /api/v1/health`** for liveness. It proxies a dependency-checked
+  readiness endpoint (DB/Redis, 2s timeout) — it goes red when the platform is
+  actually broken, unlike a `200` from the SPA.
+- **Presigned URLs bypass the gateway by design.** `uploads/initiate` returns
+  a URL pointing at the object store itself; the DMS operator must have
+  `SEDOC_S3_PUBLIC_BASE` set to an address reachable from the ERP host, or the
+  URL will name a host (e.g. `localhost:9000`) that only resolves on the DMS
+  machine. SigV4 binds the Host header, so the ERP cannot rewrite the URL —
+  it has to be signed correctly server-side.
+
 ### 3.1 Endpoint reference
 
 | Method & path | Scope | Idempotent | Purpose |

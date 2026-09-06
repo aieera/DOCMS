@@ -69,6 +69,18 @@ The same installer exists for Linux/WSL2 as `./install.sh` (`--prebuilt`).
 - **ERP integration**: `SEDOC_INTEGRATION_BFF_URL` defaults to a dev-LAN IP
   (`http://192.168.70.22:18091`). Set it in `.env` to your ERP BFF, or ignore
   it — the proxy features fail gracefully when unreachable.
+- **Anything remote uploads? Set `SEDOC_S3_PUBLIC_BASE`.** Presigned
+  upload/download URLs are signed against this host (SigV4 binds the Host
+  header — the URL cannot be rewritten after signing). The compose default is
+  `localhost:9000`, which only works for clients on the box itself; a remote
+  client (LAN browser, the ERP) resolves `localhost` to *itself* and the
+  transfer dies with `ECONNREFUSED`. In `.env` set it to the machine's
+  reachable address, e.g. `SEDOC_S3_PUBLIC_BASE=192.168.70.237:9000`, then
+  `docker compose up -d storage` to recreate the signer.
+- **API clients call Kong on `:8080`, not the web server.** The gateway is
+  the API edge: it injects the gateway signature itself, answers unknown
+  paths with a JSON 404 instead of the SPA's `200 text/html`, and serves
+  `GET /api/v1/health` (dependency-checked readiness) for probes.
 - **Change the seeded admin password** (`admin@acme.local` /
   `ChangeMe!Now2026` unless overridden via `SEED_*` in `.env`).
 
