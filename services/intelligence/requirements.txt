@@ -6,7 +6,10 @@ pydantic-settings==2.1.0
 nats-py==2.6.0
 boto3==1.34.0
 httpx==0.26.0
-litellm==1.52.0
+# 1.52.x was yanked from PyPI (2026-09: every 1.52.* release gone), which
+# made this image unbuildable — any cache-miss rebuild died at pip. 1.53.1
+# is the nearest surviving release.
+litellm==1.53.1
 PyMuPDF==1.24.10
 Pillow==10.2.0
 # Barcode / patch-code decode for the scan-capture separation pipeline
