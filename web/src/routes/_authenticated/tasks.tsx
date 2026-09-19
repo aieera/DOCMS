@@ -231,14 +231,14 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         </div>
       )}
 
-      {!isLoading && tasks.length > 0 && view === 'table' && (
+      {!isLoading && !isError && tasks.length > 0 && view === 'table' && (
         <TaskTable tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
-      {!isLoading && tasks.length > 0 && view === 'kanban' && (
+      {!isLoading && !isError && tasks.length > 0 && view === 'kanban' && (
         <TaskKanban tasks={tasks} onChange={refreshAll} onOpen={setOpenTaskId} />
       )}
 
-      {total > PAGE && (
+      {!isError && total > PAGE && (
         <nav className="mt-3 flex items-center justify-between text-xs" aria-label="Task pages">
           <span className="text-muted-foreground">
             {offset + 1}–{Math.min(offset + PAGE, total)} of {total}
