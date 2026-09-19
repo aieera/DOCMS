@@ -9,6 +9,10 @@ import { humanizeSegment } from '@/lib/segmentLabels'
 // UUID_RE matches v4/v7-style UUIDs as they appear in route params.
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
+// Segments that exist only as URL structure — there is no route at that
+// prefix, so linking them ejects the user onto a shell-less 404.
+const STRUCTURAL_SEGMENTS = new Set(['documents', 'instances'])
+
 // findIdAfter — return segments[i+1] when segments[i] === marker AND
 // that following segment is a UUID. Lets us subscribe to a specific
 // entity's React Query cache key for the visible URL.
@@ -106,6 +110,15 @@ export function Breadcrumbs() {
             {isLast ? (
               <span
                 className="block max-w-[32ch] truncate font-semibold text-foreground sm:max-w-[56ch]"
+                title={crumb.label}
+              >
+                {crumb.label}
+              </span>
+            ) : STRUCTURAL_SEGMENTS.has(crumb.segment) ? (
+              // No route lives at this prefix — render as plain text so
+              // the crumb can't eject the user onto a shell-less 404.
+              <span
+                className="block max-w-[28ch] truncate text-muted-foreground sm:max-w-[40ch]"
                 title={crumb.label}
               >
                 {crumb.label}

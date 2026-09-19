@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -87,8 +87,27 @@ type View = 'all' | 'unread' | (typeof CATEGORIES)[number]['key']
 function NotificationsPage() {
   const { t } = useTranslation('common')
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [view, setView] = useState<View>('all')
   const list = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
+
+  // Row activation — the notification carries only its own resource id
+  // (see services/notification/internal/service/notify_send.go and
+  // services/task/internal/service/events.go), never a workspace id, so
+  // a document notification can't route straight to the detail route
+  // (which needs both). /search?q=<id> reaches it in one click without
+  // a new lookup query.
+  const openNotification = (n: Notification) => {
+    if (n.resource_type === 'document' && n.resource_id) {
+      navigate({ to: '/search', search: { q: n.resource_id } })
+      return
+    }
+    if (n.resource_type === 'task' && n.resource_id) {
+      navigate({ to: '/tasks' })
+      return
+    }
+    navigate({ to: '/notifications' })
+  }
 
   // Both mutations also invalidate the unread-count query so the
   // bell's red dot in the topbar clears without waiting for the
@@ -279,6 +298,7 @@ function NotificationsPage() {
                         <NotificationRow
                           key={n.id}
                           n={n}
+                          onOpen={() => openNotification(n)}
                           onRead={() => readOne.mutate(n.id)}
                           onSnooze={() => snooze.mutate(n.type)}
                           snoozing={snooze.isPending && snooze.variables === n.type}
@@ -349,12 +369,13 @@ function RailButton({
 
 interface RowProps {
   n: Notification
+  onOpen: () => void
   onRead: () => void
   onSnooze: () => void
   snoozing: boolean
 }
 
-function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
+function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
   const { Icon, tint } = typeVisual(n.type)
   // Never render n.type directly — it's a raw dms.{domain}.{action}
   // event code.
@@ -373,46 +394,56 @@ function NotificationRow({ n, onRead, onSnooze, snoozing }: RowProps) {
       }`}
       data-testid={`notif-row-${n.id}`}
     >
-      <span
-        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tint}`}
-        aria-hidden
+      {/* Row body is the activator — mark-read/snooze below are
+          siblings, not nested inside, so keyboard/AT never see an
+          interactive control inside another one. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        data-testid={`notif-open-${n.id}`}
       >
-        <Icon className="h-4 w-4" />
-      </span>
+        <span
+          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tint}`}
+          aria-hidden
+        >
+          <Icon className="h-4 w-4" />
+        </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <h3 className={`text-sm ${n.read ? 'font-medium text-muted-foreground' : 'font-semibold'}`}>
-            {n.title}
-          </h3>
-          {!n.read && (
-            <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Unread" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <h3 className={`text-sm ${n.read ? 'font-medium text-muted-foreground' : 'font-semibold'}`}>
+              {n.title}
+            </h3>
+            {!n.read && (
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Unread" />
+            )}
+            {isDigest && (
+              <span
+                className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
+                title="This is a digest notification combining multiple events."
+                aria-label="Digest notification combining multiple events"
+                data-testid={`notif-digest-badge-${n.id}`}
+              >
+                <span aria-hidden="true">D</span>
+                <span className="sr-only">Digest</span>
+              </span>
+            )}
+          </div>
+          {n.body && (
+            <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+              {n.body}
+            </p>
           )}
-          {isDigest && (
-            <span
-              className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
-              title="This is a digest notification combining multiple events."
-              aria-label="Digest notification combining multiple events"
-              data-testid={`notif-digest-badge-${n.id}`}
-            >
-              <span aria-hidden="true">D</span>
-              <span className="sr-only">Digest</span>
-            </span>
-          )}
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <time dateTime={n.created_at} title={formatDateTime(n.created_at)}>
+              {formatRelativeTime(n.created_at)}
+            </time>
+            <span aria-hidden>·</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{kind}</span>
+          </div>
         </div>
-        {n.body && (
-          <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
-            {n.body}
-          </p>
-        )}
-        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          <time dateTime={n.created_at} title={formatDateTime(n.created_at)}>
-            {formatRelativeTime(n.created_at)}
-          </time>
-          <span aria-hidden>·</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{kind}</span>
-        </div>
-      </div>
+      </button>
 
       {/* Row actions surface on hover/focus on pointer devices and
           stay visible on touch (no hover to reveal them there). */}

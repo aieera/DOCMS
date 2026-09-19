@@ -64,5 +64,9 @@
     "notifications_load": "Couldn't load notifications",
     "workspaces_load": "Couldn't load workspaces",
     "users_load": "Couldn't load users"
+  },
+  "upload": {
+    "done": "Upload complete",
+    "view": "View"
   }
 }

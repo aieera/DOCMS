@@ -13,8 +13,11 @@
 // the async auto-tag pipeline.
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Loader2, Upload as UploadIcon, X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 
 import { getFolders, getWorkspaces } from '@/api/workspaces'
 import { Dialog } from '@/components/ui/Dialog'
@@ -31,6 +34,8 @@ interface Props {
 }
 
 export function DashboardUploadDialog({ open, onOpenChange, initialFiles }: Props) {
+  const navigate = useNavigate()
+  const { t } = useTranslation('common')
   const [files, setFiles] = useState<File[]>(initialFiles ?? [])
 
   // The dialog stays mounted with open=false; a drop on the dashboard
@@ -96,6 +101,21 @@ export function DashboardUploadDialog({ open, onOpenChange, initialFiles }: Prop
       // The workspace grid the user lands on next should show the new
       // docs without a manual refresh.
       qc.invalidateQueries({ queryKey: ['documents'] })
+      // Land the user somewhere instead of just closing the dialog —
+      // the destination is whatever workspace/folder they picked above.
+      const destWorkspaceId = workspaceId
+      const destFolderId = folderId || undefined
+      toast.success(t('upload.done', 'Upload complete'), {
+        action: {
+          label: t('upload.view', 'View'),
+          onClick: () =>
+            navigate({
+              to: '/workspaces/$workspaceId',
+              params: { workspaceId: destWorkspaceId },
+              search: { folder: destFolderId },
+            }),
+        },
+      })
       close(false)
     } finally {
       setSubmitting(false)

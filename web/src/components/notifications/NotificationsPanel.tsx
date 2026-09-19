@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -8,6 +8,7 @@ import { Bell, BellOff, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/shadcn/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
+import type { Notification } from '@/types/api'
 import { createSnooze } from '@/api/notification-prefs'
 import { formatRelativeTime, notificationTypeLabel } from '@/lib/formatters'
 
@@ -22,6 +23,24 @@ interface Props {
 // Sheet so the user keeps their current page context.
 export function NotificationsPanel({ open, onOpenChange }: Props) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+
+  // Row activation — see notifications.tsx's openNotification for the
+  // same routing rationale (payload carries only the resource's own id,
+  // never a workspace id, so a document notification routes through
+  // search instead of the detail route).
+  const openNotification = (n: Notification) => {
+    onOpenChange(false)
+    if (n.resource_type === 'document' && n.resource_id) {
+      navigate({ to: '/search', search: { q: n.resource_id } })
+      return
+    }
+    if (n.resource_type === 'task' && n.resource_id) {
+      navigate({ to: '/tasks' })
+      return
+    }
+    navigate({ to: '/notifications' })
+  }
 
   // Shares the ['notifications-inbox'] cache with the bell dropdown
   // and the full page; lazy (enabled: open) so an unopened panel
@@ -109,37 +128,47 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                     }`}
                     data-testid={`notif-panel-row-${n.id}`}
                   >
-                    <span className="mt-1.5 shrink-0">
-                      {!n.read ? (
-                        <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
-                      ) : (
-                        <span className="block h-2 w-2" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">{n.title}</p>
-                        {isDigest && (
-                          <span
-                            className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
-                            title="This is a digest notification combining multiple events."
-                            aria-label="Digest notification combining multiple events"
-                          >
-                            <span aria-hidden="true">D</span>
-                            <span className="sr-only">Digest</span>
-                          </span>
+                    {/* Activator — mark-read/snooze stay siblings below,
+                        not nested inside, so keyboard/AT don't see an
+                        interactive control inside another one. */}
+                    <button
+                      type="button"
+                      onClick={() => openNotification(n)}
+                      className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                      data-testid={`notif-panel-open-${n.id}`}
+                    >
+                      <span className="mt-1.5 shrink-0">
+                        {!n.read ? (
+                          <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
+                        ) : (
+                          <span className="block h-2 w-2" />
                         )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium">{n.title}</p>
+                          {isDigest && (
+                            <span
+                              className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
+                              title="This is a digest notification combining multiple events."
+                              aria-label="Digest notification combining multiple events"
+                            >
+                              <span aria-hidden="true">D</span>
+                              <span className="sr-only">Digest</span>
+                            </span>
+                          )}
+                        </div>
+                        {n.body && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{n.body}</p>
+                        )}
+                        <p
+                          className="mt-0.5 text-[10px] text-muted-foreground"
+                          title={new Date(n.created_at).toLocaleString()}
+                        >
+                          {formatRelativeTime(n.created_at)}
+                        </p>
                       </div>
-                      {n.body && (
-                        <p className="mt-0.5 text-xs text-muted-foreground">{n.body}</p>
-                      )}
-                      <p
-                        className="mt-0.5 text-[10px] text-muted-foreground"
-                        title={new Date(n.created_at).toLocaleString()}
-                      >
-                        {formatRelativeTime(n.created_at)}
-                      </p>
-                    </div>
+                    </button>
                     <div className="flex shrink-0 items-center">
                       {!n.read && (
                         <Button

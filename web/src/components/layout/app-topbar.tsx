@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useLogout } from '@/hooks/useAuth'
 import { listMyTasks, taskKeys } from '@/api/tasks'
 import { getNotifications, getUnreadCount, markAllRead, markAsRead } from '@/api/notifications'
+import type { Notification } from '@/types/api'
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from '@/api/savedSearches'
 import { getRecentSearches, recordRecentSearch, removeRecentSearch } from '@/lib/recentSearches'
 import { SearchDropdown } from '@/components/search/SearchDropdown'
@@ -275,8 +276,26 @@ function MyTasksBadge() {
 // is no longer a click target here.
 function NotificationsDropdown() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+
+  // Row activation — see notifications.tsx's openNotification for the
+  // same routing rationale (payload carries only the resource's own id,
+  // never a workspace id, so a document notification routes through
+  // search instead of the detail route).
+  const openNotification = (n: Notification) => {
+    setOpen(false)
+    if (n.resource_type === 'document' && n.resource_id) {
+      navigate({ to: '/search', search: { q: n.resource_id } })
+      return
+    }
+    if (n.resource_type === 'task' && n.resource_id) {
+      navigate({ to: '/tasks' })
+      return
+    }
+    navigate({ to: '/notifications' })
+  }
 
   // Unread count polls every 30s — drives the red dot on the bell.
   // Cheap endpoint (single SQL COUNT) so polling is fine.
@@ -400,25 +419,35 @@ function NotificationsDropdown() {
                   }`}
                   data-testid={`notif-row-${n.id}`}
                 >
-                  <span className="mt-1.5 shrink-0">
-                    {!n.read ? (
-                      <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
-                    ) : (
-                      <span className="block h-2 w-2" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{n.title}</p>
-                    {n.body && (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
-                    )}
-                    <p
-                      className="mt-0.5 text-[10px] text-muted-foreground"
-                      title={new Date(n.created_at).toLocaleString()}
-                    >
-                      {formatRelativeTime(n.created_at)}
-                    </p>
-                  </div>
+                  {/* Activator — mark-read stays a sibling below, not
+                      nested inside, so keyboard/AT don't see an
+                      interactive control inside another one. */}
+                  <button
+                    type="button"
+                    onClick={() => openNotification(n)}
+                    className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                    data-testid={`notif-open-${n.id}`}
+                  >
+                    <span className="mt-1.5 shrink-0">
+                      {!n.read ? (
+                        <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
+                      ) : (
+                        <span className="block h-2 w-2" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{n.title}</p>
+                      {n.body && (
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</p>
+                      )}
+                      <p
+                        className="mt-0.5 text-[10px] text-muted-foreground"
+                        title={new Date(n.created_at).toLocaleString()}
+                      >
+                        {formatRelativeTime(n.created_at)}
+                      </p>
+                    </div>
+                  </button>
                   {!n.read && (
                     <Button
                       size="sm"
