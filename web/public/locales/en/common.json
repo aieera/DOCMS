@@ -67,6 +67,7 @@
   },
   "upload": {
     "done": "Upload complete",
-    "view": "View"
+    "view": "View",
+    "partial": "{{done}} of {{total}} uploaded"
   }
 }

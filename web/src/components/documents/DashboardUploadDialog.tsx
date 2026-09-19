@@ -23,6 +23,7 @@ import { getFolders, getWorkspaces } from '@/api/workspaces'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/shadcn/button'
 import { useUpload } from '@/hooks/useUpload'
+import { useUploadStore } from '@/store/uploadStore'
 import { FilingSuggestionPanel, type FilingDecision } from './FilingSuggestionPanel'
 
 interface Props {
@@ -97,25 +98,57 @@ export function DashboardUploadDialog({ open, onOpenChange, initialFiles }: Prop
       const decisions = effectiveDecision
         ? files.map((_, i) => (i === 0 ? effectiveDecision : null))
         : undefined
+      // Snapshot the tray BEFORE upload so we can tell this batch's
+      // items apart from anything already sitting in the global upload
+      // store (an earlier batch, a drag-drop upload elsewhere, etc.).
+      // Imperative getState() reads — a subscription here would
+      // re-render the dialog on every progress tick.
+      const before = new Set(useUploadStore.getState().uploads.keys())
       await uploadFiles(files, decisions)
       // The workspace grid the user lands on next should show the new
       // docs without a manual refresh.
       qc.invalidateQueries({ queryKey: ['documents'] })
-      // Land the user somewhere instead of just closing the dialog —
-      // the destination is whatever workspace/folder they picked above.
-      const destWorkspaceId = workspaceId
-      const destFolderId = folderId || undefined
-      toast.success(t('upload.done', 'Upload complete'), {
-        action: {
-          label: t('upload.view', 'View'),
-          onClick: () =>
-            navigate({
-              to: '/workspaces/$workspaceId',
-              params: { workspaceId: destWorkspaceId },
-              search: { folder: destFolderId },
-            }),
-        },
-      })
+
+      // Only claim success when something in THIS batch actually
+      // uploaded. uploadFiles already toasts per-file failures, but
+      // closing with an unconditional "Upload complete" — even when
+      // every file failed — is exactly the dishonest-UI defect this
+      // phase removes. useUpload's addUpload/setStatus write into this
+      // same store (UploadProgress.tsx reads it the same way), so no
+      // new query/mutation is needed to know what happened.
+      const after = useUploadStore.getState().uploads
+      const batchItems = Array.from(after.entries())
+        .filter(([id]) => !before.has(id))
+        .map(([, item]) => item)
+      const completedCount = batchItems.filter((i) => i.status === 'completed').length
+      const failedCount = batchItems.filter((i) => i.status === 'failed').length
+
+      if (completedCount > 0) {
+        // Land the user somewhere instead of just closing the dialog —
+        // the destination is whatever workspace/folder they picked above.
+        const destWorkspaceId = workspaceId
+        const destFolderId = folderId || undefined
+        const message =
+          failedCount > 0
+            ? t('upload.partial', '{{done}} of {{total}} uploaded', {
+                done: completedCount,
+                total: batchItems.length,
+              })
+            : t('upload.done', 'Upload complete')
+        toast.success(message, {
+          action: {
+            label: t('upload.view', 'View'),
+            onClick: () =>
+              navigate({
+                to: '/workspaces/$workspaceId',
+                params: { workspaceId: destWorkspaceId },
+                search: { folder: destFolderId },
+              }),
+          },
+        })
+      }
+      // Per-file failures already surfaced their own toast.error inside
+      // uploadFiles — nothing further to say when nothing completed.
       close(false)
     } finally {
       setSubmitting(false)

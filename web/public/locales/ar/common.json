@@ -67,6 +67,7 @@
   },
   "upload": {
     "done": "اكتمل الرفع",
-    "view": "عرض"
+    "view": "عرض",
+    "partial": "تم رفع {{done}} من {{total}}"
   }
 }
