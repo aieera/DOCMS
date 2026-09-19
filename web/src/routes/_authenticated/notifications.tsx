@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { readErrorMessage } from '@/api/client'
 import {
   Bell,
@@ -23,6 +24,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { Notification } from '@/types/api'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/shadcn/button'
 import { Spinner } from '@/components/ui/Spinner'
 import { getNotifications, markAllRead, markAsRead } from '@/api/notifications'
@@ -83,6 +85,7 @@ function dateGroup(iso: string): GroupLabel {
 type View = 'all' | 'unread' | (typeof CATEGORIES)[number]['key']
 
 function NotificationsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [view, setView] = useState<View>('all')
   const list = useQuery({ queryKey: ['notifications-inbox'], queryFn: () => getNotifications() })
@@ -197,6 +200,11 @@ function NotificationsPage() {
 
       {list.isLoading ? (
         <Spinner />
+      ) : list.isError ? (
+        <ErrorState
+          message={t('errors.notifications_load', "Couldn't load notifications")}
+          onRetry={() => void list.refetch()}
+        />
       ) : items.length === 0 ? (
         <EmptyState
           icon={<Bell className="h-12 w-12" />}

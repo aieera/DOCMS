@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Search, Bookmark, X, ChevronDown } from 'lucide-react'
 import { search } from '@/api/search'
 import { getVersions } from '@/api/documents'
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/shadcn/badge'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { parseFieldSyntax } from '@/lib/searchParser'
@@ -111,6 +113,7 @@ function asArray(v: string | string[] | undefined): string[] {
 }
 
 function SearchPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate({ from: '/search' })
   const params = Route.useSearch() as SearchParams
 
@@ -196,7 +199,7 @@ function SearchPage() {
   // spinner on every keystroke; the previous page stays visible until
   // the new one resolves so the user can see what changed instead of
   // a thrashing skeleton.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['search', searchBody],
     queryFn: () => search(searchBody),
     enabled,
@@ -540,6 +543,13 @@ function SearchPage() {
           </div>
         )}
 
+        {!isLoading && isError && enabled && (
+          <ErrorState
+            message={t('errors.search_load', "Couldn't load search results")}
+            onRetry={() => void refetch()}
+          />
+        )}
+
         {/* M-5: explicit hint for the 1-char-query window. Previously
             the input swallowed single keystrokes silently because
             `enabled` only flips at length >= 2 — looked like search
@@ -553,7 +563,7 @@ function SearchPage() {
           />
         )}
 
-        {data && (data.results?.length ?? 0) === 0 && enabled && (
+        {data && !isError && (data.results?.length ?? 0) === 0 && enabled && (
           <EmptyState
             title="No results"
             description={
@@ -564,7 +574,7 @@ function SearchPage() {
           />
         )}
 
-        {data && (data.results?.length ?? 0) > 0 && (
+        {data && !isError && (data.results?.length ?? 0) > 0 && (
           <div className="space-y-2" data-testid="search-results">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="whitespace-nowrap text-sm text-muted-foreground">

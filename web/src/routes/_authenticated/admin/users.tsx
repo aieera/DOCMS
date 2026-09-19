@@ -5,6 +5,7 @@ import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { Copy, Plus, FileUp, Info } from 'lucide-react'
 
 import { createUser, getUsers, inviteUser, type InviteUserResponse } from '@/api/admin'
@@ -12,6 +13,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { UserTable } from '@/components/admin/UserTable'
 import { BulkInviteDialog } from '@/components/admin/BulkInviteDialog'
 import { Button } from '@/components/ui/shadcn/button'
+import { ErrorState } from '@/components/ui/ErrorState'
 import {
   Dialog,
   DialogContent,
@@ -40,8 +42,9 @@ function buildActivationURL(slug: string, token: string): string {
 }
 
 export function UsersPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin', 'users'],
     queryFn: () => getUsers(),
   })
@@ -143,8 +146,18 @@ export function UsersPage() {
       {/* UserTable wraps the canonical DataTable internally — its
           isLoading + empty handling now flow through the shared
           chrome (skeleton row + "No results" text). The Card wrapper
-          here just gives it a single shadowed surface. */}
-      <UserTable users={users} isLoading={isLoading} />
+          here just gives it a single shadowed surface. On a query
+          failure `data` is undefined too, so without this branch
+          DataTable would render its "No users yet" empty copy on a
+          fetch error — swap in ErrorState with a real retry instead. */}
+      {isError ? (
+        <ErrorState
+          message={t('errors.users_load', "Couldn't load users")}
+          onRetry={() => void refetch()}
+        />
+      ) : (
+        <UserTable users={users} isLoading={isLoading} />
+      )}
 
       <BulkInviteDialog open={bulkOpen} onOpenChange={setBulkOpen} />
 

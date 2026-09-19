@@ -56,5 +56,13 @@
     "load_error": "Couldn't load folders",
     "empty": "No folders"
   },
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "errors": {
+    "tasks_load": "Couldn't load tasks",
+    "approvals_load": "Couldn't load approvals",
+    "search_load": "Couldn't load search results",
+    "notifications_load": "Couldn't load notifications",
+    "workspaces_load": "Couldn't load workspaces",
+    "users_load": "Couldn't load users"
+  }
 }

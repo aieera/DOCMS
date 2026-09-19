@@ -4,6 +4,7 @@ import { useAppMutation } from '@/hooks/useAppMutation'
 import { useMemo, useState } from 'react'
 import { Plus, FolderOpen, Users, FileText, Search, Calendar, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 
 import { getWorkspaces, createWorkspace } from '@/api/workspaces'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -15,6 +16,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Card } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import type { Workspace } from '@/types/api'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { cn } from '@/lib/cn'
@@ -22,7 +24,8 @@ import { WorkspaceAccessBadge } from '@/components/workspaces/WorkspaceAccessBad
 import { formatDate } from '@/lib/formatters'
 
 function WorkspacesPage() {
-  const { data, isLoading, isError } = useQuery({
+  const { t } = useTranslation('common')
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['workspaces'],
     queryFn: getWorkspaces,
     staleTime: 60_000,
@@ -89,10 +92,9 @@ function WorkspacesPage() {
       {isLoading ? (
         <WorkspacesSkeleton />
       ) : isError ? (
-        <EmptyState
-          icon={<FolderOpen />}
-          title="Couldn't load workspaces"
-          description="Something went wrong reaching the document service. Try again in a moment."
+        <ErrorState
+          message={t('errors.workspaces_load', "Couldn't load workspaces")}
+          onRetry={() => void refetch()}
         />
       ) : (data?.length ?? 0) === 0 ? (
         <EmptyState

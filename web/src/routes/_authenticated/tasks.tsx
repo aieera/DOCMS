@@ -11,6 +11,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { AlertCircle, Check, X, CheckSquare, Plus, LayoutGrid, List, Play, Trash2, UserPlus } from 'lucide-react'
 
 import { getMyTasks, signalStep, type WorkflowTask } from '@/api/workflows'
@@ -25,6 +26,7 @@ import { readErrorMessage } from '@/api/client'
 import { formatRelativeTime } from '@/lib/formatters'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { Button } from '@/components/ui/shadcn/button'
@@ -110,6 +112,7 @@ function TasksPage() {
 // ---- My tasks (ADR 0068) ------------------------------------------------
 
 function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [view, setView] = useState<View>('table')
   const [sort, setSort] = useState<SortKey>('due_at')
@@ -132,7 +135,7 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
     limit: PAGE,
     offset,
   }
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: taskKeys.list(params),
     queryFn: () => listTasks(params),
   })
@@ -208,7 +211,13 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
       <TaskCreateDialog open={creating} onOpenChange={setCreating} />
 
       {isLoading && <Skeleton className="h-32" />}
-      {!isLoading && tasks.length === 0 && (
+      {isError && (
+        <ErrorState
+          message={t('errors.tasks_load', "Couldn't load tasks")}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {!isLoading && !isError && tasks.length === 0 && (
         <div className="flex min-h-[60vh] items-center justify-center">
           <EmptyState
             icon={<CheckSquare className="h-10 w-10" />}
@@ -496,6 +505,7 @@ function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => vo
 // ---- Approvals (existing workflow_tasks) ------------------------------
 
 function ApprovalsSection() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const me = useAuthStore((s) => s.user)
   type Filter = 'pending' | 'completed' | 'all'
@@ -528,7 +538,7 @@ function ApprovalsSection() {
     }
   }
   const statusParam = filter === 'all' ? undefined : filter
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['workflow-tasks', filter],
     queryFn: () => getMyTasks({ status: statusParam }),
   })
@@ -561,7 +571,13 @@ function ApprovalsSection() {
         ))}
       </div>
       {isLoading && <Skeleton className="h-32" />}
-      {!isLoading && (data ?? []).length === 0 && (
+      {isError && (
+        <ErrorState
+          message={t('errors.approvals_load', "Couldn't load approvals")}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {!isLoading && !isError && (data ?? []).length === 0 && (
         // Center the empty state in the available area below the
         // page header + tab bar + filter chips. 60vh keeps the
         // anchor visually balanced on 800-tall viewports and grows
@@ -574,7 +590,7 @@ function ApprovalsSection() {
           />
         </div>
       )}
-      {!isLoading && (data ?? []).length > 0 && (
+      {!isLoading && !isError && (data ?? []).length > 0 && (
         <ul className="space-y-2">
           {(data ?? []).map((task) => (
             <li key={task.id} className="flex items-start gap-3 rounded-md border border-border bg-card p-3">
