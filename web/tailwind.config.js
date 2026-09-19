@@ -90,6 +90,7 @@ export default {
         'neu-sm': 'var(--nm-shadow-sm)',
         'neu-inset': 'var(--nm-shadow-inset)',
         'neu-pressed': 'var(--nm-shadow-pressed)',
+        'neu-lg': 'var(--nm-shadow-lg)',
       },
       keyframes: {
         'accordion-down': {

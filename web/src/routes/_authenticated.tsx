@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/layout/app-layout'
 import { useAuthStore } from '@/store/authStore'
 import { getCurrentUser } from '@/api/auth'
 import { DuplicateUploadDialog } from '@/components/documents/DuplicateUploadDialog'
+import { UploadProgress } from '@/components/documents/UploadProgress'
 
 function AuthenticatedLayout() {
   return (
@@ -12,6 +13,10 @@ function AuthenticatedLayout() {
           prompt via the upload store from any page, so the dialog lives
           here rather than at each upload call site. */}
       <DuplicateUploadDialog />
+      {/* Global mount: uploadStore already tracks every in-flight/failed
+          upload regardless of which page started it; the tray reads
+          that store directly, so it belongs at the layout level too. */}
+      <UploadProgress />
     </AppLayout>
   )
 }

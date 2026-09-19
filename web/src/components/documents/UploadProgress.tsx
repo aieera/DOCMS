@@ -47,6 +47,9 @@ function UploadRow({ item, onRemove }: { item: UploadItem; onRemove: () => void 
             <div className="h-full rounded-full bg-[var(--color-primary)] transition-all" style={{ width: `${item.progress}%` }} />
           </div>
         )}
+        {item.status === 'failed' && item.error && (
+          <p className="truncate text-xs text-destructive" title={item.error}>{item.error}</p>
+        )}
       </div>
       {item.status === 'completed' && <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />}
       {item.status === 'failed' && <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />}

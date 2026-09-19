@@ -102,6 +102,7 @@
     --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
     --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
     --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
+    --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
   }
 
   .dark {
@@ -152,6 +153,7 @@
     --nm-shadow-sm: 3px 3px 7px hsl(var(--nm-dark)), -3px -3px 7px hsl(var(--nm-light));
     --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
     --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
+    --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
   }
 
   @media (max-width: 640px) {
