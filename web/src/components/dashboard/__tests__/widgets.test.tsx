@@ -3,6 +3,16 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WidgetCard } from '../WidgetCard'
 import { ChartDataTable } from '../ChartDataTable'
+import { Sparkline } from '../Sparkline'
+import { FolderOpen } from 'lucide-react'
+import { KpiTile } from '../KpiTile'
+
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string } & Record<string, unknown>) =>
+    <a href={to} {...rest}>{children}</a>,
+  useNavigate: () => vi.fn(),
+}))
 
 describe('WidgetCard', () => {
   it('shows the failure state with Retry, and never the empty copy, when a query failed', async () => {
@@ -47,5 +57,47 @@ describe('ChartDataTable', () => {
     expect(table).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Jan' })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '12' })).toBeInTheDocument()
+  })
+})
+
+describe('Sparkline', () => {
+  it('renders nothing for fewer than two points — a one-point line is not a trend', () => {
+    const { container } = render(<Sparkline points={[{ label: 'Jan', iso: '2026-01-01', value: 3 }]} />)
+    expect(container.querySelector('svg')).toBeNull()
+  })
+
+  it('draws a polyline for a real series', () => {
+    const { container } = render(
+      <Sparkline points={[
+        { label: 'Jan', iso: '2026-01-01', value: 3 },
+        { label: 'Feb', iso: '2026-02-01', value: 9 },
+      ]} />,
+    )
+    expect(container.querySelector('polyline')).not.toBeNull()
+  })
+
+  it('survives a flat series without producing NaN coordinates', () => {
+    const { container } = render(
+      <Sparkline points={[
+        { label: 'Jan', iso: '2026-01-01', value: 5 },
+        { label: 'Feb', iso: '2026-02-01', value: 5 },
+      ]} />,
+    )
+    expect(container.querySelector('polyline')?.getAttribute('points')).not.toMatch(/NaN/)
+  })
+})
+
+describe('KpiTile', () => {
+  it('shows a skeleton instead of a zero while the value is still undefined', () => {
+    const { container } = render(
+      <KpiTile icon={FolderOpen} label="Documents" value={undefined} href="/workspaces" />,
+    )
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-testid="kpi-skeleton"]')).not.toBeNull()
+  })
+
+  it('names the tile for assistive tech as label plus value', () => {
+    render(<KpiTile icon={FolderOpen} label="Documents" value={42} href="/workspaces" />)
+    expect(screen.getByRole('link', { name: /Documents: 42/ })).toBeInTheDocument()
   })
 })
