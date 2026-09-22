@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle } from 'lucide-react'
 
-import { Button } from '@/components/ui/shadcn/button'
+import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/cn'
 
@@ -38,6 +37,7 @@ export function WidgetCard({
   return (
     <section
       aria-label={title}
+      aria-busy={Boolean(isLoading)}
       className={cn(
         'dash-rise flex min-w-0 flex-col rounded-lg bg-card p-5 shadow-neu',
         'transition-shadow duration-200 hover:shadow-neu-lg',
@@ -55,21 +55,18 @@ export function WidgetCard({
 
       <div className={cn('min-w-0 flex-1', bodyClassName)}>
         {isError ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-muted px-4 py-10 text-center shadow-neu-inset">
-            <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
-            <p className="text-sm text-muted-foreground">Couldn&apos;t load this.</p>
-            {onRetry && (
-              <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
-            )}
-          </div>
+          <ErrorState size="sm" message="Couldn't load this." onRetry={onRetry} />
         ) : isLoading ? (
-          // Geometry-matched so the loaded card occupies the same box:
-          // CLS stays at 0 on a slow connection.
-          <div className="flex flex-col gap-3" aria-hidden>
-            <Skeleton className="h-4 w-2/5 rounded-md" />
-            <Skeleton className="h-28 w-full rounded-xl" />
-            <Skeleton className="h-4 w-3/5 rounded-md" />
-          </div>
+          <>
+            <span className="sr-only" role="status">{`Loading ${title}`}</span>
+            {/* Geometry-matched so the loaded card occupies the same box:
+                CLS stays at 0 on a slow connection. */}
+            <div className="flex flex-col gap-3" aria-hidden>
+              <Skeleton className="h-4 w-2/5 rounded-md" />
+              <Skeleton className="h-28 w-full rounded-xl" />
+              <Skeleton className="h-4 w-3/5 rounded-md" />
+            </div>
+          </>
         ) : isEmpty ? (
           <div className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-10 text-center shadow-neu-inset">
             <p className="text-sm font-medium text-foreground">{emptyLabel ?? 'Nothing here yet'}</p>

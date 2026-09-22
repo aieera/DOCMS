@@ -101,3 +101,19 @@ describe('KpiTile', () => {
     expect(screen.getByRole('link', { name: /Documents: 42/ })).toBeInTheDocument()
   })
 })
+
+describe('WidgetCard — loading a11y (fix round 1)', () => {
+  it('marks the region busy and announces loading via a status role while isLoading', () => {
+    render(<WidgetCard title="Lifecycle" isLoading><p>rows</p></WidgetCard>)
+    const region = screen.getByRole('region', { name: 'Lifecycle' })
+    expect(region).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('status')).toHaveTextContent(/loading lifecycle/i)
+  })
+
+  it('clears aria-busy once loaded', () => {
+    render(<WidgetCard title="Lifecycle"><p>rows</p></WidgetCard>)
+    const region = screen.getByRole('region', { name: 'Lifecycle' })
+    expect(region).not.toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
