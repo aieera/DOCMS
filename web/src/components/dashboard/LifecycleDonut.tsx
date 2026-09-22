@@ -39,34 +39,47 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       delayIndex={delayIndex}
     >
       <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={`Documents by lifecycle state, ${total} in total`}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={lifecycle}
-              dataKey="value"
-              nameKey="label"
-              cx="50%"
-              cy="50%"
-              innerRadius={52}
-              outerRadius={78}
-              paddingAngle={2}
-              stroke="none"
-              isAnimationActive={!reduced}
-              animationDuration={800}
-            >
-              {lifecycle.map((s, i) => <Cell key={s.key} fill={color(i)} />)}
-            </Pie>
-            <Tooltip
-              contentStyle={{
-                background: 'hsl(var(--popover))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '12px',
-                color: 'hsl(var(--popover-foreground))',
-                fontSize: '12px',
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        {/*
+          aria-hidden on the recharts subtree: Recharts' Pie renders each
+          slice via `Sector`, which hardcodes `role="img"` on its `<path>`
+          with no accessible name (recharts es6/shape/Sector.js) — axe's
+          svg-img-alt then fires per slice. The parent div above already
+          carries one composite role="img" + aria-label for the whole
+          chart (numbers live in the ChartDataTable below), so the
+          interactive SVG itself is redundant to assistive tech and is
+          hidden rather than given per-slice labels it can't use.
+        */}
+        <div aria-hidden="true" className="h-full w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={lifecycle}
+                dataKey="value"
+                nameKey="label"
+                cx="50%"
+                cy="50%"
+                innerRadius={52}
+                outerRadius={78}
+                paddingAngle={2}
+                stroke="none"
+                isAnimationActive={!reduced}
+                animationDuration={800}
+                rootTabIndex={-1}
+              >
+                {lifecycle.map((s, i) => <Cell key={s.key} fill={color(i)} />)}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  background: 'hsl(var(--popover))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '12px',
+                  color: 'hsl(var(--popover-foreground))',
+                  fontSize: '12px',
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Below sm: one stacked bar carrying the same proportions. */}
