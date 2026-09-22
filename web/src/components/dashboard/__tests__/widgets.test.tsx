@@ -6,6 +6,8 @@ import { ChartDataTable } from '../ChartDataTable'
 import { Sparkline } from '../Sparkline'
 import { FolderOpen } from 'lucide-react'
 import { KpiTile } from '../KpiTile'
+import { ActivityChart } from '../ActivityChart'
+import * as metricsHook from '../useDashboardMetrics'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -115,5 +117,34 @@ describe('WidgetCard — loading a11y (fix round 1)', () => {
     const region = screen.getByRole('region', { name: 'Lifecycle' })
     expect(region).not.toHaveAttribute('aria-busy', 'true')
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})
+
+const emptyMetrics = {
+  activity: [], lifecycle: [], fileTypes: [], contributors: [],
+  isLoading: false, isError: false, refetch: vi.fn(),
+}
+
+describe('ActivityChart', () => {
+  it('renders the failure state with Retry, not the empty state', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
+    render(<ActivityChart />)
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    expect(screen.queryByText(/no documents added yet/i)).not.toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  it('exposes the series as an accessible table so the numbers are not trapped in an image', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...emptyMetrics,
+      activity: [
+        { label: 'Jan', iso: '2026-01-01T00:00:00.000Z', value: 12 },
+        { label: 'Feb', iso: '2026-02-01T00:00:00.000Z', value: 48 },
+      ],
+    })
+    render(<ActivityChart />)
+    expect(screen.getByRole('table', { name: /documents added per month/i })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: '48' })).toBeInTheDocument()
+    vi.restoreAllMocks()
   })
 })
