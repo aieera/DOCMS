@@ -118,7 +118,13 @@ export function KpiTile({
           I4: the line itself always renders (min-h-4 = one text-xs line)
           so the tile does not grow when the data lands. */}
       <p
-        className={cn('min-h-4 text-xs', tone === 'alert' ? 'text-destructive' : 'text-muted-foreground')}
+        className={cn(
+          'min-h-4 text-xs',
+          // dark: the dark palette's --destructive is 3.65:1 on --card,
+          // short of AA for 12px text (found by the dark axe scan of /),
+          // so the alert hint falls back to the foreground token there.
+          tone === 'alert' ? 'text-destructive dark:text-foreground' : 'text-muted-foreground',
+        )}
         data-testid="kpi-hint"
       >
         {showHint ? hint : null}

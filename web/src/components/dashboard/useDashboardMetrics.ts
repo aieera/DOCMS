@@ -44,7 +44,13 @@ export interface DashboardMetrics {
 export function useDashboardMetrics(): DashboardMetrics {
   const query = useQuery({
     queryKey: dashboardMetricsKey,
-    queryFn: () => search({ query: '', facets: [...FACETS], page_size: 1, search_mode: 'lexical' }),
+    // Each facet widget shows its own failure and Retry, so the global
+    // "Server error" toast would report the same outage twice (and its
+    // richColors palette misses AA — found by the R20 axe scan).
+    queryFn: () => search(
+      { query: '', facets: [...FACETS], page_size: 1, search_mode: 'lexical' },
+      { suppressErrorToast: true },
+    ),
     staleTime: 120_000,
   })
 

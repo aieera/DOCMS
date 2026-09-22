@@ -134,6 +134,88 @@ async function mockUsers(page: Page) {
   })))
 }
 
+// ---- Dashboard (/) ---------------------------------------------------------
+// Scanned POPULATED. The shared mockSearch answers `facets: {}`, which leaves
+// all four facet widgets EMPTY — the LifecycleDonut, where c76599b1's
+// violations lived, would never mount and the scan would guard nothing.
+const DAY = 86_400_000
+
+// created_at buckets are computed from the clock: the activity chart only
+// plots the last 12 calendar months, so hard-coded dates would slide out
+// of the window and silently turn the chart into its empty state.
+function monthStart(monthsBack: number): string {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1)).toISOString()
+}
+
+async function mockDashboard(page: Page, { search = 'ok' }: { search?: 'ok' | 'down' } = {}) {
+  const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
+  const task = (over: Record<string, unknown>) => ({
+    description: '', status: 'open', priority: 'normal', source: 'user', due_at: null,
+    created_by: USER, created_at: at(-5 * DAY), updated_at: at(-DAY), assignees: [], documents: [],
+    ...over,
+  })
+
+  // The real wire type: Workspace.document_count is a proto3 int64, which
+  // the gateway's protojson emits as a STRING.
+  await page.unroute('**/api/v1/workspaces')
+  await page.route('**/api/v1/workspaces', (r) => r.fulfill(json({
+    workspaces: [{ id: WS, name: 'Contracts', description: 'Legal contracts', member_count: 3, document_count: '12', created_at: at(0) }],
+  })))
+  // An overdue urgent task (the destructive tint) and a workflow task (the
+  // Stamp row) so both row styles are sampled.
+  await page.unroute('**/api/v1/tasks/mine**')
+  await page.route('**/api/v1/tasks/mine**', (r) => r.fulfill(json([
+    task({ id: 't-1', title: 'Renew the supplier NDA', priority: 'urgent', due_at: at(-2 * DAY) }),
+    task({ id: 't-2', title: 'Approve the Q3 invoice batch', source: 'workflow' }),
+  ])))
+  // The ['notifications-inbox'] query: one unread mention for NeedsAttention.
+  await page.unroute('**/api/v1/notifications')
+  await page.route('**/api/v1/notifications', (r) => r.fulfill(json({
+    items: [{
+      id: 'n-1', type: 'comment.mention', title: 'Alice mentioned you',
+      body: 'Can you check clause 4.2 before Friday?', read: false,
+      created_at: at(-3_600_000), resource_type: 'comment', resource_id: 'c-1',
+    }],
+    total_count: 1,
+  })))
+  // PendingSuggestionsCard (owner role) — scan it populated too.
+  await page.route('**/api/v1/admin/tag-suggestions**', (r) => r.fulfill(json({
+    suggestions: [], total: 2, limit: 1, offset: 0,
+  })))
+  await page.route('**/api/v1/search', (r) => (search === 'down'
+    ? r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'search unavailable' }) })
+    : r.fulfill(json({
+      results: [], total_count: 57, latency_ms: 5, search_mode: 'lexical',
+      facets: {
+        created_at: [
+          { value: monthStart(3), count: 9 },
+          { value: monthStart(1), count: 14 },
+          { value: monthStart(0), count: 6 },
+        ],
+        lifecycle_state: [
+          { value: 'active', count: 30 }, { value: 'draft', count: 15 },
+          { value: 'in_review', count: 8 }, { value: 'archived', count: 4 },
+        ],
+        doc_type: [
+          { value: 'application/pdf', count: 32 },
+          { value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', count: 14 },
+          { value: 'text/plain', count: 6 },
+        ],
+        author: [{ value: 'Alice Admin', count: 25 }, { value: 'Bob Member', count: 17 }, { value: 'Carol Chen', count: 9 }],
+      },
+    }))))
+}
+
+// The dashboard's entrance motion fades cards in from opacity 0; axe would
+// sample contrast mid-fade. Wait until no dash-* animation is running.
+async function settleDashboard(page: Page) {
+  await page.waitForFunction(() => document.getAnimations().every((a) => {
+    const name = (a as Animation & { animationName?: string }).animationName ?? ''
+    return !name.startsWith('dash-') || a.playState !== 'running'
+  }))
+}
+
 test.describe('Journey 70 — accessibility (axe AA)', () => {
   test('login page', async ({ page }) => {
     await page.goto('/login')
@@ -264,6 +346,39 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
     await page.goto('/admin/users')
     await expect(page.getByText('alice@example.com')).toBeVisible()
     await scan(page, '/admin/users')
+  })
+  // ---- Dashboard (R19, R20) ---------------------------------------------
+  test('dashboard (populated), light then dark', async ({ page }) => {
+    await mockCore(page)
+    await mockDashboard(page)
+    await page.goto('/')
+    await expect(page.getByText('Active', { exact: true }).first()).toBeVisible()
+    await expect(page.getByRole('img', { name: /documents added in the last 12 months/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
+    await expect(page.getByText('Mentioned in a comment')).toBeVisible()
+    await expect(page.getByText('Approve the Q3 invoice batch')).toBeVisible()
+    await settleDashboard(page)
+    await scan(page, '/ dashboard')
+    await forceDark(page)
+    await scan(page, 'dark / dashboard')
+  })
+
+  // The search service down (OpenSearch stopped): the four facet widgets
+  // fail on their own with Retry while every other figure keeps working.
+  test('dashboard with search down (503)', async ({ page }) => {
+    await mockCore(page)
+    await mockDashboard(page, { search: 'down' })
+    await page.goto('/')
+    for (const name of ['Documents added', 'Lifecycle', 'File types', 'Top contributors']) {
+      await expect(page.getByRole('region', { name }).getByRole('button', { name: 'Retry' })).toBeVisible()
+    }
+    await expect(page.getByRole('link', { name: 'Documents: 12, across 1 workspace' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Open tasks: 2, 1 overdue$/ })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Awaiting approval: 1, / })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Unread: 2, notifications' })).toBeVisible()
+    await expect(page.getByText('Mentioned in a comment')).toBeVisible()
+    await settleDashboard(page)
+    await scan(page, '/ dashboard, search down')
   })
 })
 

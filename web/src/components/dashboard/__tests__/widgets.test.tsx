@@ -685,6 +685,19 @@ describe('useDashboardMetrics — facet honesty (I1, I2)', () => {
     expect(result.current.isUnavailable).toBe(true)
   })
 
+  // Found by the R20 axe scan: a search outage raised the global "Server
+  // error" toast on top of four widgets that already show their own
+  // failure and Retry. The facet read opts out, like the upload flow.
+  it('asks the API client not to toast a failure the widgets already show', async () => {
+    vi.mocked(search).mockResolvedValue({ results: [], facets: {}, total_count: 0, latency_ms: 1, search_mode: 'lexical' })
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(search).toHaveBeenCalledWith(
+      { query: '', facets: ['created_at', 'lifecycle_state', 'doc_type', 'author'], page_size: 1, search_mode: 'lexical' },
+      { suppressErrorToast: true },
+    )
+  })
+
   it('a tenant with no documents is empty, not unavailable', async () => {
     vi.mocked(search).mockResolvedValue(
       { results: [], total_count: 0, latency_ms: 1, search_mode: 'lexical' } as unknown as SearchResult,
