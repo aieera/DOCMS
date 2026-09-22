@@ -31,6 +31,21 @@ describe('monthSeries', () => {
   it('skips buckets whose value is not a parseable date', () => {
     expect(monthSeries([{ value: 'not-a-date', count: 5 }])).toEqual([])
   })
+
+  it('labels a month-boundary UTC bucket by its UTC month, not the local one', () => {
+    // Backend buckets are midnight UTC on the 1st. West of UTC, formatting
+    // that instant in the local zone rolls it back to the previous month
+    // (e.g. America/New_York reads 2026-01-01T00:00:00.000Z as Dec 31
+    // 19:00 local) which mislabels the bar. A mid-month timestamp can't
+    // catch this: it takes a month-boundary instant to cross the line.
+    const iso = '2026-01-01T00:00:00.000Z'
+    const [p] = monthSeries([{ value: iso, count: 1 }])
+    const expected = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' }).format(
+      new Date(iso),
+    )
+    expect(p.label).toBe(expected)
+    expect(p.label).toBe('Jan')
+  })
 })
 
 describe('toSlices', () => {
@@ -58,6 +73,26 @@ describe('toSlices', () => {
     const out = toSlices([{ value: 'in_review', count: 2 }], (v) => v.toUpperCase())
     expect(out[0].label).toBe('IN_REVIEW')
     expect(out[0].key).toBe('in_review')
+  })
+
+  it('keeps share against the grand total when truncated, so shown shares sum to less than 1', () => {
+    const buckets = [
+      { value: 'a', count: 50 },
+      { value: 'b', count: 40 },
+      { value: 'c', count: 30 },
+      { value: 'd', count: 20 },
+      { value: 'e', count: 10 },
+      { value: 'f', count: 5 },
+      { value: 'g', count: 1 },
+    ]
+    const grandTotal = buckets.reduce((sum, b) => sum + b.count, 0)
+    const out = toSlices(buckets, (v) => v, 3)
+    expect(out.map((s) => s.key)).toEqual(['a', 'b', 'c'])
+    for (const s of out) {
+      expect(s.share).toBeCloseTo(s.value / grandTotal)
+    }
+    const shownTotal = out.reduce((sum, s) => sum + s.share, 0)
+    expect(shownTotal).toBeLessThan(1)
   })
 })
 

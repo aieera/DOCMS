@@ -4,7 +4,11 @@ import type { Task } from '@/api/tasks'
 export interface Point { label: string; iso: string; value: number }
 export interface Slice { key: string; label: string; value: number; share: number }
 
-const MONTH_LABEL = new Intl.DateTimeFormat(undefined, { month: 'short' })
+// timeZone: 'UTC' is required — backend buckets are midnight UTC on the
+// 1st, and without it any viewer west of UTC (all of the Americas) sees
+// the instant roll back to the previous local day, mislabelling every
+// bar one month early.
+const MONTH_LABEL = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' })
 
 /**
  * Turns the `created_at` date_histogram facet into a chronological series.
@@ -28,9 +32,13 @@ export function monthSeries(buckets: FacetBucket[] | undefined, months = 12): Po
 
 /**
  * Terms-facet buckets → labelled slices with their share of the total.
- * Share is computed against the summed total so the slices add to 1 —
- * dividing by the largest bucket (the obvious mistake) would make the
- * donut and the bars disagree with their own percentages.
+ * Share is each slice's share of ALL positive buckets, not of only the
+ * `top` slices returned — dividing by the largest bucket, or by the sum
+ * of just the shown slices, would inflate a small contributor's share
+ * once the list is truncated (e.g. 5 documents out of 1000 rendering as
+ * "20%" because it happened to be one of the top 3). Consequence: once
+ * truncated, the returned shares sum to less than 1; the remainder is
+ * the share held by the untruncated tail.
  */
 export function toSlices(
   buckets: FacetBucket[] | undefined,
