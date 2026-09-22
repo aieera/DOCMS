@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { monthSeries, toSlices, taskStats, trendSummary } from '../metrics'
 import type { Task } from '@/api/tasks'
 
@@ -83,19 +83,23 @@ describe('monthSeries', () => {
     expect(monthSeries([{ value: 'not-a-date', count: 5 }])).toEqual([])
   })
 
-  it('labels a month-boundary UTC bucket by its UTC month, not the local one', () => {
-    // Backend buckets are midnight UTC on the 1st. West of UTC, formatting
-    // that instant in the local zone rolls it back to the previous month
-    // (e.g. America/New_York reads 2026-01-01T00:00:00.000Z as Dec 31
-    // 19:00 local) which mislabels the bar. A mid-month timestamp can't
-    // catch this: it takes a month-boundary instant to cross the line.
-    const iso = '2026-01-01T00:00:00.000Z'
-    const [p] = monthSeries([{ value: iso, count: 1 }], 1, new Date('2026-01-20T00:00:00.000Z'))
-    const expected = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' }).format(
-      new Date(iso),
-    )
-    expect(p.label).toBe(expected)
-    expect(p.label).toBe('Jan')
+  // L69: backend buckets are midnight UTC on the 1st; formatting that
+  // instant in a zone west of UTC rolls it into the previous month
+  // (America/New_York reads 2026-01-01T00:00Z as Dec 31). A behavioural
+  // assertion can't catch a regression on a UTC host — and CI is UTC — so
+  // guard the formatter's construction instead: it must pin timeZone UTC,
+  // whatever the host zone.
+  describe('month label time zone', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('builds the month formatter with timeZone UTC, independent of the host zone', async () => {
+      vi.resetModules()
+      const ctor = vi.spyOn(Intl, 'DateTimeFormat')
+      await import('../metrics')
+      expect(ctor).toHaveBeenCalledWith(undefined, expect.objectContaining({ month: 'short', timeZone: 'UTC' }))
+    })
   })
 })
 

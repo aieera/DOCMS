@@ -160,12 +160,17 @@ const emptyMetrics = {
 }
 
 describe('ActivityChart', () => {
+  // L101/L113: restore in afterEach, so a failing assertion can't skip
+  // the restore and leak its spy into every test after it.
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('renders the failure state with Retry, not the empty state', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
     render(<ActivityChart />)
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.queryByText(/no documents added/i)).not.toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 
   // I3: an empty 12-month window is not an empty tenant — an archive
@@ -175,7 +180,6 @@ describe('ActivityChart', () => {
     render(<ActivityChart />)
     expect(screen.getByText('No documents added in the last 12 months')).toBeInTheDocument()
     expect(screen.queryByText(/yet/i)).not.toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 
   it('exposes the series as an accessible table so the numbers are not trapped in an image', () => {
@@ -189,7 +193,6 @@ describe('ActivityChart', () => {
     render(<ActivityChart />)
     expect(screen.getByRole('table', { name: /documents added per month/i })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: '48' })).toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 })
 
@@ -512,6 +515,12 @@ describe('BreakdownBars', () => {
 })
 
 describe('LifecycleDonut', () => {
+  // L101/L113: restore in afterEach, so a failing assertion can't skip
+  // the restore and leak its spy into every test after it.
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('lists every state with its count in the accessible table', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
       ...emptyMetrics,
@@ -523,7 +532,6 @@ describe('LifecycleDonut', () => {
     render(<LifecycleDonut />)
     expect(screen.getByRole('table', { name: /documents by lifecycle state/i })).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'Active' })).toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 
   // react-query hazard check (Task 5 review, Critical A/B): a subtitle
@@ -536,7 +544,6 @@ describe('LifecycleDonut', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
     render(<LifecycleDonut />)
     expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 
   it('never shows a fabricated "0 indexed documents" subtitle after the query failed', () => {
@@ -544,7 +551,6 @@ describe('LifecycleDonut', () => {
     render(<LifecycleDonut />)
     expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
-    vi.restoreAllMocks()
   })
 })
 
