@@ -68,7 +68,10 @@ describe('monthSeries', () => {
     expect(out.reduce((sum, p) => sum + p.value, 0)).toBe(4)
   })
 
-  it('returns [] when no month in the window has documents, so the empty state still shows', () => {
+  // [] means "none in THIS window", not "none ever": a tenant whose
+  // archive predates the window still has documents. The ActivityChart
+  // empty copy must therefore say "in the last 12 months" (I3), never "yet".
+  it('returns [] when no month in the window has documents, even if older months do', () => {
     expect(monthSeries(
       [{ value: '2024-01-01T00:00:00.000Z', count: 9 }],
       12,
@@ -121,6 +124,18 @@ describe('toSlices', () => {
     const out = toSlices([{ value: 'in_review', count: 2 }], (v) => v.toUpperCase())
     expect(out[0].label).toBe('IN_REVIEW')
     expect(out[0].key).toBe('in_review')
+  })
+
+  // I1: doc_type and author are size-20 terms aggregations, so the sum of
+  // the RETURNED buckets undercounts once a tenant has more than 20 values.
+  // The caller passes the true document total as the denominator.
+  it('divides by an explicit denominator when one is given', () => {
+    const out = toSlices([
+      { value: 'a', count: 30 },
+      { value: 'b', count: 10 },
+    ], (v) => v, 5, 200)
+    expect(out[0].share).toBeCloseTo(30 / 200, 6)
+    expect(out[1].share).toBeCloseTo(10 / 200, 6)
   })
 
   it('keeps share against the grand total when truncated, so shown shares sum to less than 1', () => {
@@ -179,24 +194,30 @@ describe('taskStats', () => {
 
 describe('trendSummary', () => {
   it('describes an empty series without inventing a direction', () => {
-    expect(trendSummary([])).toMatch(/no documents/i)
+    expect(trendSummary([])).toBe('No documents added in the last 12 months.')
   })
 
-  it('names the direction, both endpoints and the total', () => {
+  // M4: after zero-fill both endpoints are usually 0, so a first-vs-last
+  // summary read "flat from 0 in Oct to 0 in Sep" for a series with 50
+  // documents in March. Describe the total, the peak and the latest month.
+  it('names the total, the peak month and the latest month of a zero-filled series', () => {
+    const months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
+    const points = months.map((label, i) => ({ label, iso: `m${i}`, value: label === 'Mar' ? 50 : 0 }))
+    const s = trendSummary(points)
+    expect(s).not.toMatch(/flat|rising|falling/i)
+    expect(s).toContain('50 documents added in the last 12 months')
+    expect(s).toContain('most in Mar (50)')
+    expect(s).toContain('0 in Sep, the latest month')
+  })
+
+  it('reports the first peak when two months tie', () => {
     const s = trendSummary([
       { label: 'Jan', iso: '2026-01-01', value: 12 },
       { label: 'Feb', iso: '2026-02-01', value: 48 },
+      { label: 'Mar', iso: '2026-03-01', value: 48 },
     ])
-    expect(s).toContain('12')
-    expect(s).toContain('48')
-    expect(s).toMatch(/rising/i)
-  })
-
-  it('says falling when the series ends lower', () => {
-    const s = trendSummary([
-      { label: 'Jan', iso: '2026-01-01', value: 48 },
-      { label: 'Feb', iso: '2026-02-01', value: 12 },
-    ])
-    expect(s).toMatch(/falling/i)
+    expect(s).toContain('108 documents added in the last 3 months')
+    expect(s).toContain('most in Feb (48)')
+    expect(s).toContain('48 in Mar, the latest month')
   })
 })

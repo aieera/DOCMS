@@ -1,5 +1,5 @@
 import { WidgetCard } from './WidgetCard'
-import type { Slice } from './metrics'
+import { FACETS_UNAVAILABLE_LABEL, type Slice } from './metrics'
 
 /**
  * Horizontal proportion bars. Plain divs rather than a chart library:
@@ -9,19 +9,21 @@ import type { Slice } from './metrics'
  * compositor.
  *
  * `slices` may legitimately sum to less than 100% of `share` — Slice.share
- * is each item's share of ALL positive buckets, computed before the list
- * is truncated to the top N (see metrics.ts). That's intentional; this
- * component does not renormalise, so the bars read as "this many of the
- * total" rather than inflating a small contributor's share once truncated.
+ * is each item's share of the document total, computed before the list is
+ * truncated to the top N (see toSlices in metrics.ts). That's intentional;
+ * this component does not renormalise, so the bars read as "this many of
+ * the total" rather than inflating a small contributor's share.
  */
 export function BreakdownBars({
-  title, subtitle, slices, isLoading, isError, onRetry, emptyLabel, unit, delayIndex = 0,
+  title, subtitle, slices, isLoading, isError, isUnavailable = false, onRetry, emptyLabel, unit, delayIndex = 0,
 }: {
   title: string
   subtitle?: string
   slices: Slice[]
   isLoading: boolean
   isError: boolean
+  /** The facets were not returned at all (I2): not the same as empty. */
+  isUnavailable?: boolean
   onRetry: () => void
   emptyLabel: string
   unit: string
@@ -33,8 +35,8 @@ export function BreakdownBars({
       subtitle={subtitle}
       isLoading={isLoading}
       isError={isError}
-      isEmpty={slices.length === 0}
-      emptyLabel={emptyLabel}
+      isEmpty={isUnavailable || slices.length === 0}
+      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : emptyLabel}
       onRetry={onRetry}
       delayIndex={delayIndex}
     >

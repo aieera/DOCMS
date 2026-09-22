@@ -10,11 +10,10 @@ import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/cn'
 import { shortcutLabel } from '@/lib/platform'
 import { ActivityChart } from '@/components/dashboard/ActivityChart'
-import { BreakdownBars } from '@/components/dashboard/BreakdownBars'
+import { FileTypesAndContributors } from '@/components/dashboard/FileTypesAndContributors'
 import { KpiStrip } from '@/components/dashboard/KpiStrip'
 import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
 import { NeedsAttention } from '@/components/dashboard/NeedsAttention'
-import { useDashboardMetrics } from '@/components/dashboard/useDashboardMetrics'
 
 function DashboardPage() {
   const user = useAuthStore((s) => s.user)
@@ -67,36 +66,6 @@ function DashboardPage() {
           if (!v) setDroppedFiles([])
         }}
         initialFiles={droppedFiles}
-      />
-    </div>
-  )
-}
-
-// Both panels read the same facet query, so they share one hook call
-// rather than each mounting their own.
-function FileTypesAndContributors() {
-  const { fileTypes, contributors, isLoading, isError, refetch } = useDashboardMetrics()
-  return (
-    <div className="grid gap-6 sm:grid-cols-2">
-      <BreakdownBars
-        title="File types"
-        slices={fileTypes}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={refetch}
-        emptyLabel="No files indexed"
-        unit="documents"
-        delayIndex={7}
-      />
-      <BreakdownBars
-        title="Top contributors"
-        slices={contributors}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={refetch}
-        emptyLabel="No contributors yet"
-        unit="documents"
-        delayIndex={8}
       />
     </div>
   )

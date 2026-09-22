@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, renderHook, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { onlineManager } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { WidgetCard } from '../WidgetCard'
 import { ChartDataTable } from '../ChartDataTable'
 import { Sparkline } from '../Sparkline'
@@ -13,11 +13,13 @@ import { KpiStrip } from '../KpiStrip'
 import { BreakdownBars } from '../BreakdownBars'
 import { LifecycleDonut } from '../LifecycleDonut'
 import { NeedsAttention } from '../NeedsAttention'
+import { FileTypesAndContributors } from '../FileTypesAndContributors'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { getWorkspaces } from '@/api/workspaces'
 import { listMyTasks } from '@/api/tasks'
 import { getUnreadCount } from '@/api/notifications'
-import type { Workspace } from '@/types/api'
+import { search } from '@/api/search'
+import type { SearchResult, Workspace } from '@/types/api'
 import type { Task } from '@/api/tasks'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -147,7 +149,7 @@ describe('WidgetCard — loading a11y (fix round 1)', () => {
 
 const emptyMetrics = {
   activity: [], lifecycle: [], fileTypes: [], contributors: [],
-  isLoading: false, isError: false, refetch: vi.fn(),
+  isLoading: false, isError: false, isUnavailable: false, refetch: vi.fn(),
 }
 
 describe('ActivityChart', () => {
@@ -155,7 +157,17 @@ describe('ActivityChart', () => {
     vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
     render(<ActivityChart />)
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
-    expect(screen.queryByText(/no documents added yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/no documents added/i)).not.toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  // I3: an empty 12-month window is not an empty tenant — an archive
+  // imported more than a year ago sits right beside a Documents KPI of 500.
+  it('says the window is empty, never that no documents exist "yet"', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics })
+    render(<ActivityChart />)
+    expect(screen.getByText('No documents added in the last 12 months')).toBeInTheDocument()
+    expect(screen.queryByText(/yet/i)).not.toBeInTheDocument()
     vi.restoreAllMocks()
   })
 
@@ -419,18 +431,6 @@ describe('number formatting (M3)', () => {
 // undefined` for it. Gating on `isLoading` rendered confident zeros and
 // "nothing here" copy across the whole dashboard. Every widget here runs
 // its REAL query (no hook spies) so the paused state is the genuine one.
-function FacetBars() {
-  const { fileTypes, contributors, isLoading, isError, refetch } = metricsHook.useDashboardMetrics()
-  return (
-    <>
-      <BreakdownBars title="File types" slices={fileTypes} isLoading={isLoading} isError={isError}
-        onRetry={refetch} emptyLabel="No files indexed" unit="documents" />
-      <BreakdownBars title="Top contributors" slices={contributors} isLoading={isLoading} isError={isError}
-        onRetry={refetch} emptyLabel="No contributors yet" unit="documents" />
-    </>
-  )
-}
-
 describe('offline first mount (C2)', () => {
   beforeEach(() => {
     vi.mocked(getWorkspaces).mockReset().mockResolvedValue([wireWorkspace('w1', '4')])
@@ -451,7 +451,7 @@ describe('offline first mount (C2)', () => {
         <ActivityChart />
         <LifecycleDonut />
         <NeedsAttention />
-        <FacetBars />
+        <FileTypesAndContributors />
       </>,
     )
 
@@ -597,5 +597,120 @@ describe('NeedsAttention', () => {
     vi.mocked(listMyTasks).mockReturnValue(new Promise<Task[]>(() => {}))
     const { container } = renderWithProviders(<NeedsAttention />)
     expect(container.querySelectorAll('li').length).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------
+// Final fix wave, commit 2 — the facet widgets are honest.
+// ---------------------------------------------------------------------
+
+function metricsWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } } })
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+}
+
+describe('useDashboardMetrics — facet honesty (I1, I2)', () => {
+  beforeEach(() => {
+    vi.mocked(search).mockReset()
+  })
+
+  // I1: `author` is a size-20 terms aggregation. With 21 authors the
+  // response carries only the top 20, so dividing by the returned sum
+  // inflates every share. lifecycle_state (size 10, 7 states) is never
+  // truncated, so its sum is the real document total.
+  it('divides a truncated facet by the lifecycle total: 21 authors, the server returns 20', async () => {
+    const authors = Array.from({ length: 21 }, (_, i) => ({ value: `Author ${i + 1}`, count: 10 }))
+    vi.mocked(search).mockResolvedValue({
+      results: [], total_count: 210, latency_ms: 1, search_mode: 'lexical',
+      facets: {
+        lifecycle_state: [{ value: 'active', count: 150 }, { value: 'draft', count: 60 }],
+        author: authors.slice(0, 20),
+        doc_type: [{ value: 'application/pdf', count: 210 }],
+        created_at: [],
+      },
+    } satisfies SearchResult)
+
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.contributors).toHaveLength(5)
+    for (const s of result.current.contributors) expect(s.share).toBeCloseTo(10 / 210, 6)
+    expect(result.current.fileTypes[0].share).toBeCloseTo(1, 6)
+  })
+
+  it('never lets a share pass 100%: the denominator is at least the facet\'s own sum', async () => {
+    // Fewer lifecycle-bucketed documents than typed ones (e.g. documents
+    // indexed without a lifecycle_state): fall back to the facet's own sum.
+    vi.mocked(search).mockResolvedValue({
+      results: [], total_count: 40, latency_ms: 1, search_mode: 'lexical',
+      facets: {
+        lifecycle_state: [{ value: 'active', count: 10 }],
+        doc_type: [{ value: 'application/pdf', count: 30 }, { value: 'text/plain', count: 10 }],
+        author: [], created_at: [],
+      },
+    } satisfies SearchResult)
+
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    expect(result.current.fileTypes.map((s) => s.share)).toEqual([0.75, 0.25])
+  })
+
+  // I2: above 1M documents the search service strips the aggregations and
+  // `facets` (json omitempty) disappears from the response.
+  it('reports the facets unavailable — not empty — when documents exist but no facets came back', async () => {
+    vi.mocked(search).mockResolvedValue(
+      { results: [], total_count: 1_200_000, latency_ms: 1, search_mode: 'lexical' } as unknown as SearchResult,
+    )
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.isUnavailable).toBe(true)
+  })
+
+  it('a tenant with no documents is empty, not unavailable', async () => {
+    vi.mocked(search).mockResolvedValue(
+      { results: [], total_count: 0, latency_ms: 1, search_mode: 'lexical' } as unknown as SearchResult,
+    )
+    const { result } = renderHook(() => metricsHook.useDashboardMetrics(), { wrapper: metricsWrapper() })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.isUnavailable).toBe(false)
+  })
+})
+
+describe('facet widgets when the facets are unavailable (I2) and scope labels (M7)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('all four facet widgets say "Too many documents to chart", never a "No … yet" claim', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isUnavailable: true })
+    render(
+      <>
+        <ActivityChart />
+        <LifecycleDonut />
+        <FileTypesAndContributors />
+      </>,
+    )
+    expect(screen.getAllByText('Too many documents to chart')).toHaveLength(4)
+    expect(
+      screen.queryByText(/no documents added|nothing indexed|no files indexed|no contributors/i),
+    ).not.toBeInTheDocument()
+    // The donut's count subtitle would read a false "0 indexed documents".
+    expect(screen.queryByText(/^[\d,]+ indexed documents$/)).not.toBeInTheDocument()
+  })
+
+  it('File types and Top contributors say what they are a share of', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...emptyMetrics,
+      fileTypes: [{ key: 'application/pdf', label: 'PDF', value: 3, share: 1 }],
+      contributors: [{ key: 'Alice', label: 'Alice', value: 3, share: 1 }],
+    })
+    render(<FileTypesAndContributors />)
+    for (const name of ['File types', 'Top contributors']) {
+      const region = screen.getByRole('region', { name })
+      expect(region).toHaveTextContent('Of indexed documents')
+    }
   })
 })

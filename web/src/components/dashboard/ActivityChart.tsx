@@ -5,7 +5,7 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { ChartDataTable } from './ChartDataTable'
 import { WidgetCard } from './WidgetCard'
 import { useChartTheme } from './chartTheme'
-import { trendSummary } from './metrics'
+import { FACETS_UNAVAILABLE_LABEL, trendSummary } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
 /**
@@ -16,7 +16,7 @@ import { useDashboardMetrics } from './useDashboardMetrics'
  * axis says what the data actually is.
  */
 export function ActivityChart({ delayIndex = 0, className }: { delayIndex?: number; className?: string }) {
-  const { activity, isLoading, isError, refetch } = useDashboardMetrics()
+  const { activity, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
   const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
   const gradientId = useId()
@@ -27,8 +27,10 @@ export function ActivityChart({ delayIndex = 0, className }: { delayIndex?: numb
       subtitle="Last 12 months, of indexed documents"
       isLoading={isLoading}
       isError={isError}
-      isEmpty={activity.length === 0}
-      emptyLabel="No documents added yet"
+      isEmpty={isUnavailable || activity.length === 0}
+      // I3: the window can be empty while older documents exist, so the
+      // copy names the window — never "yet".
+      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : 'No documents added in the last 12 months'}
       onRetry={refetch}
       delayIndex={delayIndex}
       className={className}

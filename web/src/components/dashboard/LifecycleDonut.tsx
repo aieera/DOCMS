@@ -4,6 +4,7 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { ChartDataTable } from './ChartDataTable'
 import { WidgetCard } from './WidgetCard'
 import { useChartTheme } from './chartTheme'
+import { FACETS_UNAVAILABLE_LABEL } from './metrics'
 import { useDashboardMetrics } from './useDashboardMetrics'
 
 /**
@@ -12,7 +13,7 @@ import { useDashboardMetrics } from './useDashboardMetrics'
  * labels collide and the legend is the only thing anyone reads anyway.
  */
 export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
-  const { lifecycle, isLoading, isError, refetch } = useDashboardMetrics()
+  const { lifecycle, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
   const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
 
@@ -24,8 +25,9 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
   // `lifecycle` is `[]` both while loading and after a failed fetch, so
   // an unguarded `${total} indexed documents` would render a confident,
   // lying "0 indexed documents" under the skeleton or the error card
-  // (the exact hazard class fixed in KpiStrip's fix round 1).
-  const subtitle = isLoading || isError ? undefined : `${total.toLocaleString()} indexed documents`
+  // (the exact hazard class fixed in KpiStrip's fix round 1). The same
+  // goes for unavailable facets (I2): `total` is 0 there too, and false.
+  const subtitle = isLoading || isError || isUnavailable ? undefined : `${total.toLocaleString()} indexed documents`
 
   return (
     <WidgetCard
@@ -33,8 +35,8 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       subtitle={subtitle}
       isLoading={isLoading}
       isError={isError}
-      isEmpty={lifecycle.length === 0}
-      emptyLabel="Nothing indexed yet"
+      isEmpty={isUnavailable || lifecycle.length === 0}
+      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : 'Nothing indexed yet'}
       onRetry={refetch}
       delayIndex={delayIndex}
     >

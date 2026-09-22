@@ -57,24 +57,43 @@ export function monthSeries(
 }
 
 /**
- * Terms-facet buckets → labelled slices with their share of the total.
- * Share is each slice's share of ALL positive buckets, not of only the
- * `top` slices returned — dividing by the largest bucket, or by the sum
- * of just the shown slices, would inflate a small contributor's share
- * once the list is truncated (e.g. 5 documents out of 1000 rendering as
- * "20%" because it happened to be one of the top 3). Consequence: once
- * truncated, the returned shares sum to less than 1; the remainder is
- * the share held by the untruncated tail.
+ * What every facet widget says when the facets are unavailable — the
+ * search service dropped the aggregations (see useDashboardMetrics
+ * `isUnavailable`). Never an empty-state "No … yet" claim.
+ */
+export const FACETS_UNAVAILABLE_LABEL = 'Too many documents to chart'
+
+/** Sum of the positive bucket counts — the documents a facet accounts for. */
+export function bucketTotal(buckets: FacetBucket[] | undefined): number {
+  return (buckets ?? []).reduce((sum, b) => (b.count > 0 ? sum + b.count : sum), 0)
+}
+
+/**
+ * Terms-facet buckets → the top `top` labelled slices, each with its
+ * share of `denominator`.
+ *
+ * The contract: `share = count / denominator`, where `denominator`
+ * defaults to the sum of ALL positive buckets passed in — not just the
+ * `top` slices returned, so a small contributor is never inflated by the
+ * list being cut to 5. That default is only "share of all documents" when
+ * the buckets are complete. They are NOT for `doc_type` and `author`: the
+ * search service returns at most 20 buckets for those (size-20 terms
+ * aggregations, search/internal/opensearch/facets.go), so a tenant with
+ * more than 20 uploaders would divide by an undercount. Callers that know
+ * the true document total pass it as `denominator`; it must be at least
+ * the buckets' own sum or shares can exceed 1. Either way the returned
+ * shares may sum to less than 1 — the remainder is the untruncated tail.
  */
 export function toSlices(
   buckets: FacetBucket[] | undefined,
   label: (value: string) => string,
   top = 6,
+  denominator?: number,
 ): Slice[] {
   if (!buckets?.length) return []
   const positive = buckets.filter((b) => b.count > 0)
-  const total = positive.reduce((sum, b) => sum + b.count, 0)
-  if (total === 0) return []
+  const total = denominator ?? bucketTotal(positive)
+  if (!positive.length || !(total > 0)) return []
   return positive
     .slice()
     .sort((a, b) => b.count - a.count)
@@ -108,15 +127,21 @@ export function taskStats(tasks: Task[] | undefined): {
   }
 }
 
-/** The text alternative announced for the activity chart (WCAG 1.1.1). */
+/**
+ * The text alternative announced for the activity chart (WCAG 1.1.1).
+ * After zero-fill the first and last months are usually 0, so a
+ * first-vs-last "rising/falling" reading described nothing (M4). Say the
+ * total, the peak month (the first one, on a tie) and the latest month.
+ */
 export function trendSummary(points: Point[]): string {
   if (!points.length) return 'No documents added in the last 12 months.'
-  const first = points[0]
-  const last = points[points.length - 1]
   const total = points.reduce((sum, p) => sum + p.value, 0)
   if (points.length === 1) {
-    return `${first.value} documents added in ${first.label}.`
+    return `${total.toLocaleString()} documents added in ${points[0].label}.`
   }
-  const direction = last.value > first.value ? 'rising' : last.value < first.value ? 'falling' : 'flat'
-  return `Documents added per month, ${direction} from ${first.value} in ${first.label} to ${last.value} in ${last.label}. ${total} in total.`
+  const peak = points.reduce((best, p) => (p.value > best.value ? p : best), points[0])
+  const latest = points[points.length - 1]
+  return `${total.toLocaleString()} documents added in the last ${points.length} months, `
+    + `most in ${peak.label} (${peak.value.toLocaleString()}); `
+    + `${latest.value.toLocaleString()} in ${latest.label}, the latest month.`
 }
