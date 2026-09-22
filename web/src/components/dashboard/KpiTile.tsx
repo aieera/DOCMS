@@ -46,6 +46,9 @@ export function KpiTile({
   // what the caller passed, since a failed query is never routine.
   const showHint = Boolean(hint) && !loading
   const tone = isError ? 'alert' : hintTone
+  // L106: the sparkline belongs to the numeral. Beside a skeleton or a
+  // failed "—" it would be a real trend under a number we don't have.
+  const numeralShown = !loading && !isError
 
   const accessibleName = loading
     ? label
@@ -111,15 +114,24 @@ export function KpiTile({
       )}
 
       {/* The hint is real data or nothing — never a placeholder while the
-          query is still loading. On failure it's forced to alert tone. */}
-      {showHint && (
-        <p className={cn('text-xs', tone === 'alert' ? 'text-destructive' : 'text-muted-foreground')}>
-          {hint}
-        </p>
-      )}
+          query is still loading. On failure it's forced to alert tone.
+          I4: the line itself always renders (min-h-4 = one text-xs line)
+          so the tile does not grow when the data lands. */}
+      <p
+        className={cn('min-h-4 text-xs', tone === 'alert' ? 'text-destructive' : 'text-muted-foreground')}
+        data-testid="kpi-hint"
+      >
+        {showHint ? hint : null}
+      </p>
 
-      {sparkline && sparkline.length > 1 && (
-        <Sparkline points={sparkline} className="text-primary" />
+      {/* I4: whenever a series is supplied, its h-8 slot is reserved from
+          the first render, so the tile does not grow when the search lands. */}
+      {sparkline && (
+        <div className="h-8" data-testid="kpi-sparkline">
+          {numeralShown && sparkline.length > 1 && (
+            <Sparkline points={sparkline} className="text-primary" />
+          )}
+        </div>
       )}
     </Link>
   )

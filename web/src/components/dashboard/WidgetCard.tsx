@@ -34,6 +34,7 @@ export function WidgetCard({
   isLoading, isError, isEmpty, emptyLabel, emptyAction, onRetry,
   delayIndex = 0, className, bodyClassName, children,
 }: WidgetCardProps) {
+  const settled = !isLoading && !isError
   return (
     <section
       aria-label={title}
@@ -48,22 +49,32 @@ export function WidgetCard({
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-foreground">{title}</h2>
-          {subtitle && <p className="mt-0.5 truncate text-xs text-muted-foreground">{subtitle}</p>}
+          {/* R17: the subtitle sits outside the state switch below, so it
+              gets its own gate — a data-derived subtitle ("12 indexed
+              documents") must never render above a skeleton or an error
+              card. The slot itself always renders (min-h-4 = one text-xs
+              line) so the header keeps its height across states. */}
+          <p className="mt-0.5 min-h-4 truncate text-xs text-muted-foreground">{settled ? subtitle : null}</p>
         </div>
         {action && !isError && <div className="shrink-0">{action}</div>}
       </header>
 
-      <div className={cn('min-w-0 flex-1', bodyClassName)}>
+      {/* flex-col so the loading skeleton can fill the body's min-height. */}
+      <div className={cn('flex min-w-0 flex-1 flex-col', bodyClassName)}>
         {isError ? (
           <ErrorState size="sm" message="Couldn't load this." onRetry={onRetry} />
         ) : isLoading ? (
           <>
             <span className="sr-only" role="status">{`Loading ${title}`}</span>
-            {/* Geometry-matched so the loaded card occupies the same box:
-                CLS stays at 0 on a slow connection. */}
-            <div className="flex flex-col gap-3" aria-hidden>
+            {/* The skeleton fills the body, and each widget sets the body's
+                min-height (via `bodyClassName`) to its typical loaded
+                height, so a slow response does not push the page down.
+                Not a strict CLS-0 guarantee: content taller than that
+                reservation (more lifecycle states, longer lists) can still
+                grow the card when it arrives. */}
+            <div className="flex flex-1 flex-col gap-3" aria-hidden>
               <Skeleton className="h-4 w-2/5 rounded-md" />
-              <Skeleton className="h-28 w-full rounded-xl" />
+              <Skeleton className="min-h-12 w-full flex-1 rounded-xl" />
               <Skeleton className="h-4 w-3/5 rounded-md" />
             </div>
           </>

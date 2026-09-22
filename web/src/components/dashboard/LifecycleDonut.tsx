@@ -39,6 +39,10 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : 'Nothing indexed yet'}
       onRetry={refetch}
       delayIndex={delayIndex}
+      // I4: the loaded body with four states, measured live — sm+: 190px
+      // donut + 16px gap + 88px legend; below sm the 12px stacked bar
+      // replaces the donut. More states can still grow it.
+      bodyClassName="min-h-[116px] sm:min-h-[294px]"
     >
       <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={`Documents by lifecycle state, ${total.toLocaleString()} in total`}>
         {/*

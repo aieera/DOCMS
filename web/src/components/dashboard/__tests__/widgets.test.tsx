@@ -714,3 +714,113 @@ describe('facet widgets when the facets are unavailable (I2) and scope labels (M
     }
   })
 })
+
+// ---------------------------------------------------------------------
+// Final fix wave, commit 3 — geometry and motion.
+// ---------------------------------------------------------------------
+
+describe('WidgetCard subtitle (R17)', () => {
+  // A data-derived subtitle ("12 indexed documents") above a skeleton or an
+  // error card is a fabricated number. The slot stays (header geometry);
+  // its text waits for settled data.
+  it('keeps the subtitle slot but renders no text while loading or failed', () => {
+    const { rerender } = render(
+      <WidgetCard title="Lifecycle" subtitle="12 indexed documents" isLoading><p>rows</p></WidgetCard>,
+    )
+    const slot = () => screen.getByRole('region', { name: 'Lifecycle' }).querySelector('header p')
+    expect(slot()).not.toBeNull()
+    expect(screen.queryByText('12 indexed documents')).not.toBeInTheDocument()
+
+    rerender(<WidgetCard title="Lifecycle" subtitle="12 indexed documents" isError onRetry={vi.fn()}><p>rows</p></WidgetCard>)
+    expect(slot()).not.toBeNull()
+    expect(screen.queryByText('12 indexed documents')).not.toBeInTheDocument()
+
+    rerender(<WidgetCard title="Lifecycle" subtitle="12 indexed documents"><p>rows</p></WidgetCard>)
+    expect(screen.getByText('12 indexed documents')).toBeInTheDocument()
+  })
+})
+
+describe('KpiTile geometry (I4, L106)', () => {
+  const series = [
+    { label: 'Aug', iso: '2026-08-01T00:00:00.000Z', value: 3 },
+    { label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 9 },
+  ]
+
+  it('reserves the hint line and the sparkline slot while loading, and draws no sparkline yet', () => {
+    const { container } = render(
+      <KpiTile icon={FolderOpen} label="Documents" value={undefined} hint="across 2 workspaces"
+        sparkline={series} href="/workspaces" />,
+    )
+    const hint = container.querySelector('[data-testid="kpi-hint"]')
+    expect(hint).not.toBeNull()
+    expect(hint).toBeEmptyDOMElement()
+    expect(container.querySelector('[data-testid="kpi-sparkline"]')).not.toBeNull()
+    expect(container.querySelector('svg polyline')).toBeNull()
+  })
+
+  it('draws no sparkline under a failed numeral, but keeps its slot', () => {
+    const { container } = render(
+      <KpiTile icon={FolderOpen} label="Documents" value={undefined} isError hint="unable to load"
+        sparkline={series} href="/workspaces" />,
+    )
+    expect(container.querySelector('[data-testid="kpi-sparkline"]')).not.toBeNull()
+    expect(container.querySelector('svg polyline')).toBeNull()
+  })
+
+  it('draws the sparkline beside a real numeral', () => {
+    const { container } = render(
+      <KpiTile icon={FolderOpen} label="Documents" value={12} hint="across 2 workspaces"
+        sparkline={series} href="/workspaces" />,
+    )
+    expect(container.querySelector('[data-testid="kpi-sparkline"] svg polyline')).not.toBeNull()
+  })
+
+  it('reserves no sparkline slot for a tile that has no series', () => {
+    const { container } = render(<KpiTile icon={FolderOpen} label="Unread" value={undefined} href="/notifications" />)
+    expect(container.querySelector('[data-testid="kpi-sparkline"]')).toBeNull()
+  })
+})
+
+describe('widget bodies reserve their loaded height while loading (I4)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const bodyClass = (name: string) =>
+    screen.getByRole('region', { name }).children[1].getAttribute('class') ?? ''
+
+  it('ActivityChart, LifecycleDonut and the breakdown bars keep one min-height across states', () => {
+    const loaded = {
+      ...emptyMetrics,
+      activity: [{ label: 'Sep', iso: '2026-09-01T00:00:00.000Z', value: 4 }],
+      lifecycle: [{ key: 'active', label: 'Active', value: 4, share: 1 }],
+      fileTypes: [{ key: 'application/pdf', label: 'PDF', value: 4, share: 1 }],
+      contributors: [{ key: 'Alice', label: 'Alice', value: 4, share: 1 }],
+    }
+    const names = ['Documents added', 'Lifecycle', 'File types', 'Top contributors']
+    const ui = <><ActivityChart /><LifecycleDonut /><FileTypesAndContributors /></>
+
+    const spy = vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
+    const { rerender } = render(ui)
+    const loading = names.map(bodyClass)
+    spy.mockReturnValue(loaded)
+    rerender(<>{ui}</>)
+    const ready = names.map(bodyClass)
+
+    for (const [i, name] of names.entries()) {
+      expect(loading[i], name).toMatch(/\bmin-h-\[\d+px\]/)
+      expect(loading[i], name).toBe(ready[i])
+    }
+  })
+
+  it('NeedsAttention keeps one min-height across states', async () => {
+    let resolve: (t: Task[]) => void = () => {}
+    vi.mocked(listMyTasks).mockReset().mockReturnValue(new Promise<Task[]>((r) => { resolve = r }))
+    renderWithProviders(<NeedsAttention />)
+    const loading = bodyClass('Needs your attention')
+    resolve([])
+    await screen.findByText('Nothing needs you right now')
+    expect(loading).toMatch(/\bmin-h-\[\d+px\]/)
+    expect(bodyClass('Needs your attention')).toBe(loading)
+  })
+})

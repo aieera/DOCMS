@@ -39,6 +39,8 @@ export function BreakdownBars({
       emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : emptyLabel}
       onRetry={onRetry}
       delayIndex={delayIndex}
+      // I4: five bars (toSlices top=5), measured live.
+      bodyClassName="min-h-[224px]"
     >
       <ul className="flex flex-col gap-3.5">
         {slices.map((s, i) => (

@@ -55,6 +55,8 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
       emptyLabel="Nothing needs you right now"
       onRetry={() => { void refetch() }}
       delayIndex={delayIndex}
+      // I4: five 54px rows plus their gaps, measured live.
+      bodyClassName="min-h-[286px]"
     >
       <ul className="flex flex-col gap-1">
         {rows.map((t) => {

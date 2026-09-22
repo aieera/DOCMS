@@ -34,6 +34,8 @@ export function ActivityChart({ delayIndex = 0, className }: { delayIndex?: numb
       onRetry={refetch}
       delayIndex={delayIndex}
       className={className}
+      // I4: the loaded body is the 220px chart; reserve it while loading.
+      bodyClassName="min-h-[220px]"
     >
       <div className="h-[220px] w-full" role="img" aria-label={trendSummary(activity)}>
         <ResponsiveContainer width="100%" height="100%">
