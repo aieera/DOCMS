@@ -10,24 +10,50 @@ export interface Slice { key: string; label: string; value: number; share: numbe
 // bar one month early.
 const MONTH_LABEL = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' })
 
+const monthKey = (d: Date) => `${d.getUTCFullYear()}-${d.getUTCMonth()}`
+
 /**
- * Turns the `created_at` date_histogram facet into a chronological series.
- * The backend pins the interval to calendar month
- * (search/internal/opensearch/facets.go), so each bucket is one month and
- * `value` is an ISO timestamp for the start of it.
+ * Turns the `created_at` date_histogram facet into the last `months`
+ * calendar months, ending with the month containing `now`.
+ *
+ * The backend pins the interval to calendar month and sets
+ * `min_doc_count: 1` (search/internal/opensearch/facets.go), so a month
+ * with no documents is OMITTED from the response rather than returned
+ * as 0. Plotting the raw buckets therefore drew a lone dot when only one
+ * month had documents, and joined distant months with a straight line
+ * that hid the empty months between them. The histogram covers every
+ * document the viewer can read, so an absent month genuinely means zero:
+ * fill it. Buckets outside the window are dropped, which also discards
+ * the Go zero-value `0001-01-01` bucket that documents indexed without a
+ * `created_at` land in.
+ *
+ * Returns [] when no month in the window has documents, so callers can
+ * show their empty state instead of a flat line at zero.
  */
-export function monthSeries(buckets: FacetBucket[] | undefined, months = 12): Point[] {
-  if (!buckets?.length) return []
-  return buckets
-    .map((b) => ({ time: new Date(b.value).getTime(), bucket: b }))
-    .filter((r) => Number.isFinite(r.time))
-    .sort((a, b) => a.time - b.time)
-    .slice(-months)
-    .map(({ time, bucket }) => ({
-      label: MONTH_LABEL.format(new Date(time)),
-      iso: new Date(time).toISOString(),
-      value: bucket.count,
-    }))
+export function monthSeries(
+  buckets: FacetBucket[] | undefined,
+  months = 12,
+  now: Date = new Date(),
+): Point[] {
+  const counts = new Map<string, number>()
+  for (const b of buckets ?? []) {
+    const start = new Date(b.value)
+    if (!Number.isFinite(start.getTime())) continue
+    const key = monthKey(start)
+    counts.set(key, (counts.get(key) ?? 0) + b.count)
+  }
+
+  const points: Point[] = []
+  for (let back = months - 1; back >= 0; back--) {
+    // Date.UTC rolls a negative month back into the previous year.
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1))
+    points.push({
+      label: MONTH_LABEL.format(start),
+      iso: start.toISOString(),
+      value: counts.get(monthKey(start)) ?? 0,
+    })
+  }
+  return points.some((p) => p.value > 0) ? points : []
 }
 
 /**

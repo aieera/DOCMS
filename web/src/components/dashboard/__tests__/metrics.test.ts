@@ -18,14 +18,62 @@ describe('monthSeries', () => {
       { value: '2026-03-01T00:00:00.000Z', count: 3 },
       { value: '2026-01-01T00:00:00.000Z', count: 1 },
       { value: '2026-02-01T00:00:00.000Z', count: 2 },
-    ], 2)
+    ], 2, new Date('2026-03-15T00:00:00.000Z'))
     expect(out.map((p) => p.value)).toEqual([2, 3])
   })
 
   it('labels buckets by short month name', () => {
-    const [p] = monthSeries([{ value: '2026-01-15T00:00:00.000Z', count: 7 }])
+    const [p] = monthSeries(
+      [{ value: '2026-01-15T00:00:00.000Z', count: 7 }],
+      1,
+      new Date('2026-01-20T00:00:00.000Z'),
+    )
     expect(p.label).toMatch(/Jan/)
     expect(p.value).toBe(7)
+  })
+
+  // The backend histogram uses min_doc_count: 1, so a month with no
+  // documents is OMITTED rather than returned as 0. Plotting the raw
+  // buckets drew a single dot when only one month had documents, and
+  // would join two distant months with a straight line that hides the
+  // empty months between them.
+  it('fills months absent from the histogram with zero across the whole window', () => {
+    const out = monthSeries(
+      [{ value: '2026-09-01T00:00:00.000Z', count: 4 }],
+      12,
+      new Date('2026-09-22T00:00:00.000Z'),
+    )
+    expect(out).toHaveLength(12)
+    expect(out.map((p) => p.value)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4])
+    expect(out[0].label).toBe('Oct')
+    expect(out[11].label).toBe('Sep')
+  })
+
+  it('keeps a gap as zeros rather than joining distant months directly', () => {
+    const out = monthSeries([
+      { value: '2026-01-01T00:00:00.000Z', count: 2 },
+      { value: '2026-09-01T00:00:00.000Z', count: 5 },
+    ], 12, new Date('2026-09-22T00:00:00.000Z'))
+    // Oct 2025 .. Sep 2026: Jan is index 3, Sep is index 11.
+    expect(out[3].value).toBe(2)
+    expect(out.slice(4, 11).every((p) => p.value === 0)).toBe(true)
+    expect(out[11].value).toBe(5)
+  })
+
+  it('drops buckets outside the window, including the Go zero-value year-1 date', () => {
+    const out = monthSeries([
+      { value: '0001-01-01T00:00:00.000Z', count: 2 },
+      { value: '2026-09-01T00:00:00.000Z', count: 4 },
+    ], 12, new Date('2026-09-22T00:00:00.000Z'))
+    expect(out.reduce((sum, p) => sum + p.value, 0)).toBe(4)
+  })
+
+  it('returns [] when no month in the window has documents, so the empty state still shows', () => {
+    expect(monthSeries(
+      [{ value: '2024-01-01T00:00:00.000Z', count: 9 }],
+      12,
+      new Date('2026-09-22T00:00:00.000Z'),
+    )).toEqual([])
   })
 
   it('skips buckets whose value is not a parseable date', () => {
@@ -39,7 +87,7 @@ describe('monthSeries', () => {
     // 19:00 local) which mislabels the bar. A mid-month timestamp can't
     // catch this: it takes a month-boundary instant to cross the line.
     const iso = '2026-01-01T00:00:00.000Z'
-    const [p] = monthSeries([{ value: iso, count: 1 }])
+    const [p] = monthSeries([{ value: iso, count: 1 }], 1, new Date('2026-01-20T00:00:00.000Z'))
     const expected = new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' }).format(
       new Date(iso),
     )
