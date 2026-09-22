@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { onlineManager } from '@tanstack/react-query'
 import { WidgetCard } from '../WidgetCard'
 import { ChartDataTable } from '../ChartDataTable'
 import { Sparkline } from '../Sparkline'
@@ -36,6 +37,9 @@ vi.mock('@/api/tasks', () => ({
   listMyTasks: vi.fn(),
 }))
 vi.mock('@/api/notifications', () => ({ getUnreadCount: vi.fn() }))
+// The facet query behind useDashboardMetrics. Only the offline test
+// uses the real hook; every other test spies the hook itself.
+vi.mock('@/api/search', () => ({ search: vi.fn() }))
 
 describe('WidgetCard', () => {
   it('shows the failure state with Retry, and never the empty copy, when a query failed', async () => {
@@ -240,9 +244,19 @@ describe('KpiTile — fix round 1', () => {
   })
 })
 
-const okWorkspace: Workspace = {
-  id: 'w1', name: 'Acme', document_count: 5, member_count: 1, created_at: '2026-01-01T00:00:00Z',
+// The REAL wire type: `Workspace.document_count` is a proto3 int64, which
+// protojson emits as a STRING ("4"), even though types/api.ts says
+// `number`. A numeric fixture here masked a string-concatenated total
+// ("0412" instead of 16) for the whole branch, so the fixtures carry
+// strings and cast past the lying type.
+function wireWorkspace(id: string, documentCount: string): Workspace {
+  return {
+    id, name: `Workspace ${id}`, document_count: documentCount as unknown as number,
+    member_count: 1, created_at: '2026-01-01T00:00:00Z',
+  }
 }
+
+const okWorkspace: Workspace = wireWorkspace('w1', '5')
 
 describe('KpiStrip — fix round 1', () => {
   beforeEach(() => {
@@ -313,6 +327,148 @@ describe('KpiStrip — fix round 1', () => {
 
     await waitFor(() => expect(screen.getByRole('link', { name: /^Unread: 0/ })).toBeInTheDocument())
     expect(container.querySelector('[data-testid="kpi-failed"]')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------
+// Final fix wave, commit 1 — the KPI numbers are real.
+// C1: document_count arrives as a string; summing it concatenated.
+// M2: singular "workspace", and no "0d" for a task created today.
+// ---------------------------------------------------------------------
+
+describe('KpiStrip — real document total (C1, M2)', () => {
+  beforeEach(() => {
+    vi.mocked(getWorkspaces).mockReset()
+    vi.mocked(listMyTasks).mockReset()
+    vi.mocked(getUnreadCount).mockReset()
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics })
+    vi.mocked(listMyTasks).mockResolvedValue([])
+    vi.mocked(getUnreadCount).mockResolvedValue(0)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sums string document counts numerically: "4" + "12" is 16, not "0412"', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([wireWorkspace('w1', '4'), wireWorkspace('w2', '12')])
+    renderWithProviders(<KpiStrip />)
+    expect(await screen.findByRole('link', { name: 'Documents: 16, across 2 workspaces' })).toBeInTheDocument()
+    expect(screen.queryByText('0412')).not.toBeInTheDocument()
+  })
+
+  it('treats a non-numeric count as an unavailable total, never as 0', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([wireWorkspace('w1', '4'), wireWorkspace('w2', 'n/a')])
+    const { container } = renderWithProviders(<KpiStrip />)
+    expect(await screen.findByRole('link', { name: 'Documents: unavailable' })).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="kpi-failed"]')).not.toBeNull()
+  })
+
+  it('says "across 1 workspace", singular', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([wireWorkspace('w1', '4')])
+    renderWithProviders(<KpiStrip />)
+    expect(await screen.findByRole('link', { name: 'Documents: 4, across 1 workspace' })).toBeInTheDocument()
+  })
+
+  it('describes an approval created today as waiting since today, not "0d"', async () => {
+    vi.mocked(getWorkspaces).mockResolvedValue([])
+    vi.mocked(listMyTasks).mockResolvedValue([{
+      id: 't-wf', title: 'Approve contract', description: '', status: 'open', priority: 'normal',
+      source: 'workflow', due_at: null, created_by: 'u1', created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(), assignees: [], documents: [],
+    }])
+    renderWithProviders(<KpiStrip />)
+    expect(await screen.findByRole('link', { name: 'Awaiting approval: 1, waiting since today' })).toBeInTheDocument()
+    expect(screen.queryByText(/0d\b/)).not.toBeInTheDocument()
+  })
+})
+
+describe('number formatting (M3)', () => {
+  const big = 12345
+  const formatted = big.toLocaleString()
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('KpiTile renders its numeral with locale grouping', async () => {
+    render(<KpiTile icon={FolderOpen} label="Documents" value={big} href="/workspaces" />)
+    expect(await screen.findByText(formatted, {}, { timeout: 2000 })).toBeInTheDocument()
+  })
+
+  it('BreakdownBars renders each figure with locale grouping', () => {
+    render(
+      <BreakdownBars title="File types" slices={[{ key: 'pdf', label: 'PDF', value: big, share: 1 }]}
+        isLoading={false} isError={false} onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+    )
+    expect(screen.getByText(formatted)).toBeInTheDocument()
+  })
+
+  it('LifecycleDonut renders legend figures with locale grouping', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...emptyMetrics,
+      lifecycle: [{ key: 'active', label: 'Active', value: big, share: 1 }],
+    })
+    render(<LifecycleDonut />)
+    expect(screen.getByText(formatted)).toBeInTheDocument()
+  })
+})
+
+// C2: a query that starts while offline is `fetchStatus: 'paused'` —
+// react-query v5 reports `isLoading: false, isError: false, data:
+// undefined` for it. Gating on `isLoading` rendered confident zeros and
+// "nothing here" copy across the whole dashboard. Every widget here runs
+// its REAL query (no hook spies) so the paused state is the genuine one.
+function FacetBars() {
+  const { fileTypes, contributors, isLoading, isError, refetch } = metricsHook.useDashboardMetrics()
+  return (
+    <>
+      <BreakdownBars title="File types" slices={fileTypes} isLoading={isLoading} isError={isError}
+        onRetry={refetch} emptyLabel="No files indexed" unit="documents" />
+      <BreakdownBars title="Top contributors" slices={contributors} isLoading={isLoading} isError={isError}
+        onRetry={refetch} emptyLabel="No contributors yet" unit="documents" />
+    </>
+  )
+}
+
+describe('offline first mount (C2)', () => {
+  beforeEach(() => {
+    vi.mocked(getWorkspaces).mockReset().mockResolvedValue([wireWorkspace('w1', '4')])
+    vi.mocked(listMyTasks).mockReset().mockResolvedValue([])
+    vi.mocked(getUnreadCount).mockReset().mockResolvedValue(0)
+    onlineManager.setOnline(false)
+  })
+
+  afterEach(() => {
+    onlineManager.setOnline(true)
+    vi.restoreAllMocks()
+  })
+
+  it('renders skeletons — no "0" and no empty-state copy — while every query is paused', () => {
+    const { container } = renderWithProviders(
+      <>
+        <KpiStrip />
+        <ActivityChart />
+        <LifecycleDonut />
+        <NeedsAttention />
+        <FacetBars />
+      </>,
+    )
+
+    // Prove the queries really are paused, not merely in flight.
+    expect(getWorkspaces).not.toHaveBeenCalled()
+    expect(listMyTasks).not.toHaveBeenCalled()
+
+    expect(container.querySelectorAll('[data-testid="kpi-skeleton"]')).toHaveLength(4)
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /: 0\b/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/across \d+ workspace/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/no documents added|nothing indexed|no files indexed|no contributors|nothing needs you/i),
+    ).not.toBeInTheDocument()
+    for (const name of ['Documents added', 'Lifecycle', 'Needs your attention', 'File types', 'Top contributors']) {
+      expect(screen.getByRole('region', { name })).toHaveAttribute('aria-busy', 'true')
+    }
   })
 })
 

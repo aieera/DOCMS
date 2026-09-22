@@ -26,7 +26,7 @@ function rank(t: Task, now: number): number {
 }
 
 export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: taskKeys.mine(),
     queryFn: () => listMyTasks(false),
     staleTime: 30_000,
@@ -47,7 +47,9 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
           <Link to="/tasks">View all</Link>
         </Button>
       }
-      isLoading={isLoading}
+      // isPending, not isLoading: a paused (offline) query is not loading
+      // but has no data, and must not read as "Nothing needs you".
+      isLoading={isPending}
       isError={isError}
       isEmpty={rows.length === 0}
       emptyLabel="Nothing needs you right now"

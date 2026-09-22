@@ -59,8 +59,8 @@ export function KpiTile({
       // visually alongside the numeral, so it belongs in the
       // accessible name too, or it never reaches assistive tech.
       : showHint
-        ? `${label}: ${value}, ${hint}`
-        : `${label}: ${value}`
+        ? `${label}: ${value?.toLocaleString()}, ${hint}`
+        : `${label}: ${value?.toLocaleString()}`
 
   return (
     <Link
@@ -103,7 +103,8 @@ export function KpiTile({
       ) : (
         <div className="min-h-[64px]">
           <span className="block text-[34px] font-semibold leading-none tracking-[-0.025em] tabular-nums text-foreground">
-            {shown}
+            {/* M3: count up numerically, group digits only at render. */}
+            {shown.toLocaleString()}
           </span>
           <span className="mt-1.5 block text-[13px] font-medium text-muted-foreground">{label}</span>
         </div>

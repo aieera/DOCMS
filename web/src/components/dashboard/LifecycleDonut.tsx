@@ -25,7 +25,7 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
   // an unguarded `${total} indexed documents` would render a confident,
   // lying "0 indexed documents" under the skeleton or the error card
   // (the exact hazard class fixed in KpiStrip's fix round 1).
-  const subtitle = isLoading || isError ? undefined : `${total} indexed documents`
+  const subtitle = isLoading || isError ? undefined : `${total.toLocaleString()} indexed documents`
 
   return (
     <WidgetCard
@@ -38,7 +38,7 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       onRetry={refetch}
       delayIndex={delayIndex}
     >
-      <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={`Documents by lifecycle state, ${total} in total`}>
+      <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={`Documents by lifecycle state, ${total.toLocaleString()} in total`}>
         {/*
           aria-hidden on the recharts subtree: Recharts' Pie renders each
           slice via `Sector`, which hardcodes `role="img"` on its `<path>`
@@ -100,7 +100,7 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>
-            <span className="shrink-0 font-semibold tabular-nums text-foreground">{s.value}</span>
+            <span className="shrink-0 font-semibold tabular-nums text-foreground">{s.value.toLocaleString()}</span>
           </li>
         ))}
       </ul>

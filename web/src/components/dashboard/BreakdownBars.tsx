@@ -44,7 +44,7 @@ export function BreakdownBars({
             <div className="mb-1.5 flex items-baseline justify-between gap-2">
               <span className="truncate text-[13px] font-medium text-foreground">{s.label}</span>
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                <span className="font-semibold text-foreground">{s.value}</span>
+                <span className="font-semibold text-foreground">{s.value.toLocaleString()}</span>
                 <span className="sr-only"> {unit}, </span>
                 {' '}
                 {Math.round(s.share * 100)}%

@@ -19,6 +19,13 @@ export interface DashboardMetrics {
   lifecycle: Slice[]
   fileTypes: Slice[]
   contributors: Slice[]
+  /**
+   * True until the facet response exists. Derived from react-query's
+   * `isPending`, NOT `isLoading`: a query that starts offline is paused
+   * (`isLoading: false`, `data: undefined`), and gating on `isLoading`
+   * rendered four false empty states. The prop keeps its name so the
+   * widgets' `WidgetCard isLoading` wiring is unchanged.
+   */
   isLoading: boolean
   isError: boolean
   refetch: () => void
@@ -41,7 +48,7 @@ export function useDashboardMetrics(): DashboardMetrics {
 
   return {
     ...derived,
-    isLoading: query.isLoading,
+    isLoading: query.isPending,
     isError: query.isError,
     refetch: () => { void query.refetch() },
   }
