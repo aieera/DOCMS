@@ -17,9 +17,9 @@ import { FileTypesAndContributors } from '../FileTypesAndContributors'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { getWorkspaces } from '@/api/workspaces'
 import { listMyTasks } from '@/api/tasks'
-import { getUnreadCount } from '@/api/notifications'
+import { getNotifications, getUnreadCount, markAsRead } from '@/api/notifications'
 import { search } from '@/api/search'
-import type { SearchResult, Workspace } from '@/types/api'
+import type { Notification, SearchResult, Workspace } from '@/types/api'
 import type { Task } from '@/api/tasks'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -38,7 +38,14 @@ vi.mock('@/api/tasks', () => ({
   taskKeys: { mine: () => ['tasks', 'mine'] },
   listMyTasks: vi.fn(),
 }))
-vi.mock('@/api/notifications', () => ({ getUnreadCount: vi.fn() }))
+// getNotifications feeds NeedsAttention's unread mentions (R24). The
+// default resolves an empty inbox so tests that don't care stay green;
+// markAsRead is here only so a test can prove it is never called.
+vi.mock('@/api/notifications', () => ({
+  getUnreadCount: vi.fn(),
+  getNotifications: vi.fn(() => Promise.resolve({ items: [], total_count: 0 })),
+  markAsRead: vi.fn(),
+}))
 // The facet query behind useDashboardMetrics. Only the offline test
 // uses the real hook; every other test spies the hook itself.
 vi.mock('@/api/search', () => ({ search: vi.fn() }))
@@ -436,6 +443,7 @@ describe('offline first mount (C2)', () => {
     vi.mocked(getWorkspaces).mockReset().mockResolvedValue([wireWorkspace('w1', '4')])
     vi.mocked(listMyTasks).mockReset().mockResolvedValue([])
     vi.mocked(getUnreadCount).mockReset().mockResolvedValue(0)
+    vi.mocked(getNotifications).mockReset().mockResolvedValue({ items: [], total_count: 0 })
     onlineManager.setOnline(false)
   })
 
@@ -458,6 +466,7 @@ describe('offline first mount (C2)', () => {
     // Prove the queries really are paused, not merely in flight.
     expect(getWorkspaces).not.toHaveBeenCalled()
     expect(listMyTasks).not.toHaveBeenCalled()
+    expect(getNotifications).not.toHaveBeenCalled()
 
     expect(container.querySelectorAll('[data-testid="kpi-skeleton"]')).toHaveLength(4)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
@@ -555,6 +564,7 @@ describe('NeedsAttention', () => {
 
   beforeEach(() => {
     vi.mocked(listMyTasks).mockReset()
+    vi.mocked(getNotifications).mockReset().mockResolvedValue({ items: [], total_count: 0 })
   })
 
   afterEach(() => {
@@ -822,5 +832,193 @@ describe('widget bodies reserve their loaded height while loading (I4)', () => {
     await screen.findByText('Nothing needs you right now')
     expect(loading).toMatch(/\bmin-h-\[\d+px\]/)
     expect(bodyClass('Needs your attention')).toBe(loading)
+  })
+})
+
+// ---------------------------------------------------------------------
+// Final fix wave, commit 4 — R24 unread mentions in NeedsAttention, + I6.
+// ---------------------------------------------------------------------
+
+describe('NeedsAttention — unread mentions (R24) and honest priority (I6)', () => {
+  const DAY = 86_400_000
+  const mkTask = (o: Partial<Task> & Pick<Task, 'id' | 'title'>): Task => ({
+    description: '', status: 'open', priority: 'normal', source: 'user', due_at: null,
+    created_by: 'u1', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    assignees: [], documents: [], ...o,
+  })
+  const mkNote = (o: Partial<Notification> & Pick<Notification, 'id' | 'type'>): Notification => ({
+    title: 'Someone mentioned you', body: 'Can you check clause 4.2?', read: false,
+    created_at: new Date(Date.now() - 3_600_000).toISOString(), ...o,
+  })
+  const inbox = (items: Notification[]) => ({ items, total_count: items.length })
+  const rowTexts = () => screen.getAllByRole('listitem').map((li) => li.textContent ?? '')
+
+  beforeEach(() => {
+    vi.mocked(listMyTasks).mockReset()
+    vi.mocked(getNotifications).mockReset()
+    vi.mocked(markAsRead).mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('reads the shared notifications-inbox query: getNotifications() with no params', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
+    const { client } = renderWithProviders(<NeedsAttention />)
+    await screen.findByText('Nothing needs you right now')
+    expect(getNotifications).toHaveBeenCalledWith()
+    expect(client.getQueryData(['notifications-inbox'])).toEqual(inbox([]))
+  })
+
+  // Review §5 case 1.
+  it('lists only UNREAD mentions — not read mentions, not other notification types', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'n-unread', type: 'comment.mention', body: 'Unread mention body' }),
+      mkNote({ id: 'n-read', type: 'comment.mention', body: 'Read mention body', read: true }),
+      mkNote({ id: 'n-share', type: 'document.shared', body: 'Shared doc body' }),
+      mkNote({ id: 'n-digest', type: 'digest.comment', body: 'Digest body' }),
+    ]))
+    renderWithProviders(<NeedsAttention />)
+    expect(await screen.findByText('Unread mention body')).toBeInTheDocument()
+    expect(screen.queryByText('Read mention body')).not.toBeInTheDocument()
+    expect(screen.queryByText('Shared doc body')).not.toBeInTheDocument()
+    expect(screen.queryByText('Digest body')).not.toBeInTheDocument()
+    expect(screen.getByText('Mentioned in a comment')).toBeInTheDocument()
+    expect(markAsRead).not.toHaveBeenCalled()
+  })
+
+  // Review §5 case 2 (+ I6 rank order).
+  it('ranks overdue, then a mention, then urgent, high, workflow approval, then other open work', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([
+      mkTask({ id: 't-other', title: 'Other task' }),
+      mkTask({ id: 't-wf', title: 'Workflow task', source: 'workflow' }),
+      mkTask({ id: 't-high', title: 'High task', priority: 'high' }),
+      mkTask({ id: 't-urgent', title: 'Urgent task', priority: 'urgent' }),
+      mkTask({ id: 't-overdue', title: 'Overdue task', due_at: new Date(Date.now() - DAY).toISOString() }),
+    ])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'n-1', type: 'task.mention', body: 'Mention body' }),
+    ]))
+    renderWithProviders(<NeedsAttention />)
+    await screen.findByText('Mention body')
+    const order = ['Overdue task', 'Mention body', 'Urgent task', 'High task', 'Workflow task', 'Other task']
+    const texts = rowTexts()
+    const at = order.map((t) => texts.findIndex((x) => x.includes(t)))
+    expect(at).toEqual([0, 1, 2, 3, 4, 5])
+  })
+
+  it('links a task mention to /tasks and a comment mention to /notifications, with collision-free keys', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 'same-id', title: 'A task' })])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'same-id', type: 'comment.mention', body: 'Comment mention', resource_type: 'comment' }),
+      mkNote({ id: 'n-2', type: 'task.mention', body: 'Task mention', resource_type: 'task' }),
+    ]))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderWithProviders(<NeedsAttention />)
+    expect((await screen.findByText('Comment mention')).closest('a')).toHaveAttribute('href', '/notifications')
+    expect(screen.getByText('Task mention').closest('a')).toHaveAttribute('href', '/tasks')
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false)
+  })
+
+  // I6: priority is shown as text, and the subtitle promises only what the
+  // list holds — static, never a count.
+  it('names urgent and high priority in text, and keeps a static subtitle', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([
+      mkTask({ id: 't-u', title: 'Urgent one', priority: 'urgent' }),
+      mkTask({ id: 't-h', title: 'High one', priority: 'high' }),
+      mkTask({ id: 't-l', title: 'Low one', priority: 'low' }),
+    ])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
+    renderWithProviders(<NeedsAttention />)
+    await screen.findByText('Urgent one')
+    const texts = rowTexts()
+    expect(texts.find((t) => t.includes('Urgent one'))).toMatch(/\bUrgent\b.*No due date/)
+    expect(texts.find((t) => t.includes('High one'))).toMatch(/\bHigh\b.*No due date/)
+    expect(texts.find((t) => t.includes('Low one'))).not.toMatch(/\b(Urgent|High|Low)\b ·/)
+    expect(screen.getByText('Overdue tasks, urgent work and unread mentions')).toBeInTheDocument()
+  })
+
+  it('shows six rows, and never lets a pile of overdue tasks bury every unread mention', async () => {
+    const past = new Date(Date.now() - DAY).toISOString()
+    vi.mocked(listMyTasks).mockResolvedValue(
+      Array.from({ length: 7 }, (_, i) => mkTask({ id: `t-${i}`, title: `Overdue ${i}`, due_at: past })),
+    )
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'n-new', type: 'comment.mention', body: 'Newest mention' }),
+      mkNote({ id: 'n-old', type: 'comment.mention', body: 'Older mention' }),
+    ]))
+    renderWithProviders(<NeedsAttention />)
+    await screen.findByText('Overdue 0')
+    // Mentions rank 1, so with 7 overdue tasks (rank 0) none makes the cut
+    // on rank alone; the newest takes the last of the six rows.
+    const texts = rowTexts()
+    expect(texts).toHaveLength(6)
+    expect(texts[5]).toContain('Newest mention')
+    expect(screen.queryByText('Older mention')).not.toBeInTheDocument()
+  })
+
+  // Review §5 case 3.
+  it('tasks OK, notifications failed: task rows plus an inline mentions notice — never the empty copy', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
+    vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
+    renderWithProviders(<NeedsAttention />)
+    expect(await screen.findByText(/couldn.t load mentions/i)).toBeInTheDocument()
+    expect(screen.getByText('Real task')).toBeInTheDocument()
+    expect(screen.queryByText('Nothing needs you right now')).not.toBeInTheDocument()
+
+    // The inline Retry refetches only the failed query.
+    vi.mocked(listMyTasks).mockClear()
+    vi.mocked(getNotifications).mockClear().mockResolvedValue(inbox([]))
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+    await waitFor(() => expect(getNotifications).toHaveBeenCalledTimes(1))
+    expect(listMyTasks).not.toHaveBeenCalled()
+  })
+
+  // Review §5 case 4.
+  it('tasks failed, notifications OK with no mentions: an inline tasks notice — never the empty copy', async () => {
+    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
+    vi.mocked(getNotifications).mockResolvedValue(inbox([]))
+    renderWithProviders(<NeedsAttention />)
+    expect(await screen.findByText(/couldn.t load your tasks/i)).toBeInTheDocument()
+    expect(screen.queryByText('Nothing needs you right now')).not.toBeInTheDocument()
+  })
+
+  it('both failed: one whole-card failure whose Retry refetches both', async () => {
+    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
+    vi.mocked(getNotifications).mockRejectedValue(new Error('boom'))
+    renderWithProviders(<NeedsAttention />)
+    const retry = await screen.findByRole('button', { name: /retry/i })
+    expect(screen.getAllByRole('button', { name: /retry/i })).toHaveLength(1)
+    vi.mocked(listMyTasks).mockClear().mockResolvedValue([])
+    vi.mocked(getNotifications).mockClear().mockResolvedValue(inbox([]))
+    await userEvent.click(retry)
+    await waitFor(() => expect(listMyTasks).toHaveBeenCalledTimes(1))
+    expect(getNotifications).toHaveBeenCalledTimes(1)
+  })
+
+  // Review §5 case 5.
+  it('renders no rows while either query is still pending', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([mkTask({ id: 't-1', title: 'Real task' })])
+    vi.mocked(getNotifications).mockReturnValue(new Promise(() => {}))
+    const { container } = renderWithProviders(<NeedsAttention />)
+    await waitFor(() => expect(listMyTasks).toHaveBeenCalled())
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelectorAll('li')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: 'Needs your attention' })).toHaveAttribute('aria-busy', 'true')
+  })
+
+  // Review §5 case 6.
+  it('never renders a raw notification type code', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([])
+    vi.mocked(getNotifications).mockResolvedValue(inbox([
+      mkNote({ id: 'n-1', type: 'comment.mention' }),
+      mkNote({ id: 'n-2', type: 'task.mention' }),
+    ]))
+    const { container } = renderWithProviders(<NeedsAttention />)
+    await screen.findByText('Mentioned in a comment')
+    expect(container.textContent).not.toMatch(/comment\.mention|task\.mention/)
   })
 })
