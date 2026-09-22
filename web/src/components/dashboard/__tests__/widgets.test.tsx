@@ -9,11 +9,15 @@ import { KpiTile } from '../KpiTile'
 import { ActivityChart } from '../ActivityChart'
 import * as metricsHook from '../useDashboardMetrics'
 import { KpiStrip } from '../KpiStrip'
+import { BreakdownBars } from '../BreakdownBars'
+import { LifecycleDonut } from '../LifecycleDonut'
+import { NeedsAttention } from '../NeedsAttention'
 import { renderWithProviders } from '@/test/renderWithProviders'
 import { getWorkspaces } from '@/api/workspaces'
 import { listMyTasks } from '@/api/tasks'
 import { getUnreadCount } from '@/api/notifications'
 import type { Workspace } from '@/types/api'
+import type { Task } from '@/api/tasks'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -309,5 +313,133 @@ describe('KpiStrip — fix round 1', () => {
 
     await waitFor(() => expect(screen.getByRole('link', { name: /^Unread: 0/ })).toBeInTheDocument())
     expect(container.querySelector('[data-testid="kpi-failed"]')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------
+// Task 7 — lifecycle donut, breakdown bars, needs-attention.
+// ---------------------------------------------------------------------
+
+describe('BreakdownBars', () => {
+  const slices = [
+    { key: 'pdf', label: 'PDF', value: 30, share: 0.75 },
+    { key: 'docx', label: 'Word', value: 10, share: 0.25 },
+  ]
+
+  it('prints the figure beside every bar so colour is never the only encoding', () => {
+    render(
+      <BreakdownBars title="File types" slices={slices} isLoading={false} isError={false}
+        onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+    )
+    expect(screen.getByText('30')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.getByText('PDF')).toBeInTheDocument()
+  })
+
+  it('shows Retry and hides the rows when the query failed', () => {
+    render(
+      <BreakdownBars title="File types" slices={[]} isLoading={false} isError
+        onRetry={vi.fn()} emptyLabel="No files yet" unit="documents" />,
+    )
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    expect(screen.queryByText('No files yet')).not.toBeInTheDocument()
+  })
+})
+
+describe('LifecycleDonut', () => {
+  it('lists every state with its count in the accessible table', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({
+      ...emptyMetrics,
+      lifecycle: [
+        { key: 'active', label: 'Active', value: 30, share: 0.75 },
+        { key: 'draft', label: 'Draft', value: 10, share: 0.25 },
+      ],
+    })
+    render(<LifecycleDonut />)
+    expect(screen.getByRole('table', { name: /documents by lifecycle state/i })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Active' })).toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  // react-query hazard check (Task 5 review, Critical A/B): a subtitle
+  // derived from fetched data ("N indexed documents") must never render
+  // a confident count while the query is loading or after it failed —
+  // `lifecycle` is `[]` in both those states, so an unguarded subtitle
+  // would lie "0 indexed documents" under the loading skeleton / error
+  // card instead of describing nothing.
+  it('never shows a fabricated "0 indexed documents" subtitle while loading', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isLoading: true })
+    render(<LifecycleDonut />)
+    expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+
+  it('never shows a fabricated "0 indexed documents" subtitle after the query failed', () => {
+    vi.spyOn(metricsHook, 'useDashboardMetrics').mockReturnValue({ ...emptyMetrics, isError: true })
+    render(<LifecycleDonut />)
+    expect(screen.queryByText(/indexed documents/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    vi.restoreAllMocks()
+  })
+})
+
+// NeedsAttention isn't covered by the Step 1 snippet in the task-7
+// brief (it only exercises BreakdownBars/LifecycleDonut), but the
+// component is a produced interface with its own ranking rule (R4) and
+// asChild link (R3) that need direct coverage rather than trust.
+describe('NeedsAttention', () => {
+  const baseTask: Omit<Task, 'id' | 'title' | 'status' | 'priority' | 'source' | 'due_at'> = {
+    description: '',
+    created_by: 'u1',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    assignees: [],
+    documents: [],
+  }
+
+  beforeEach(() => {
+    vi.mocked(listMyTasks).mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders "View all" as a real link to /tasks via Button asChild (R3)', async () => {
+    vi.mocked(listMyTasks).mockResolvedValue([])
+    renderWithProviders(<NeedsAttention />)
+    const link = await screen.findByRole('link', { name: /view all/i })
+    expect(link).toHaveAttribute('href', '/tasks')
+  })
+
+  it('ranks an overdue task ahead of a merely high-priority one, and drops completed tasks', async () => {
+    const now = Date.now()
+    const tasks: Task[] = [
+      { ...baseTask, id: 't-done', title: 'Finished thing', status: 'done', priority: 'urgent', source: 'user', due_at: null },
+      { ...baseTask, id: 't-high', title: 'High priority task', status: 'open', priority: 'high', source: 'user', due_at: null },
+      { ...baseTask, id: 't-overdue', title: 'Overdue task', status: 'open', priority: 'normal', source: 'user', due_at: new Date(now - 86_400_000).toISOString() },
+    ]
+    vi.mocked(listMyTasks).mockResolvedValue(tasks)
+    renderWithProviders(<NeedsAttention />)
+
+    await screen.findByText('Overdue task')
+    const titles = screen.getAllByText(/task$/i).map((el) => el.textContent)
+    expect(titles.indexOf('Overdue task')).toBeLessThan(titles.indexOf('High priority task'))
+    expect(screen.queryByText('Finished thing')).not.toBeInTheDocument()
+  })
+
+  it('shows Retry, not a stale row list, when the task query fails', async () => {
+    vi.mocked(listMyTasks).mockRejectedValue(new Error('boom'))
+    renderWithProviders(<NeedsAttention />)
+    expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
+  })
+
+  // react-query hazard check: while the query is pending, `isLoading` is
+  // still true and WidgetCard must suppress the row list entirely —
+  // nothing derived from the not-yet-arrived `data` may reach the DOM.
+  it('renders no task rows while the query is still pending', () => {
+    vi.mocked(listMyTasks).mockReturnValue(new Promise<Task[]>(() => {}))
+    const { container } = renderWithProviders(<NeedsAttention />)
+    expect(container.querySelectorAll('li').length).toBe(0)
   })
 })
