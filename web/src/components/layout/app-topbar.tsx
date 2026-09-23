@@ -183,7 +183,7 @@ function CommandTrigger() {
           aria-label={t('sidebar.search') ?? 'Search'}
           aria-expanded={open}
           aria-controls={open ? 'topbar-search-panel' : undefined}
-          className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           autoComplete="off"
           spellCheck={false}
         />
