@@ -103,7 +103,10 @@ export function ResidencyPage() {
         <h3 className="mb-3 flex items-center gap-2 font-medium">
           <DirectionalIcon name="ArrowRight" className="h-4 w-4" /> Migrate documents
         </h3>
-        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-3">
+        {/* See admin/privacy: 1fr floors at min-content and grid items
+            default to min-width:auto, so the region fields shoved the
+            Migrate button out of the card once Arabic widened the row. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-3 [&>*]:min-w-0">
           <input
             className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
             placeholder="source region (e.g. us-east-1)"

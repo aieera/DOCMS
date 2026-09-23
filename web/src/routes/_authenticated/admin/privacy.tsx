@@ -62,7 +62,13 @@ function PrivacyPage() {
           <Shield className="h-4 w-4" />
           <h3 className="font-medium">New request</h3>
         </div>
-        <div className="grid grid-cols-[auto_1fr_1fr_auto] items-center gap-3">
+        {/* minmax(0,…) + min-w-0 on the items: a 1fr track floors at
+            min-content and a grid item's min-width defaults to auto, so
+            the two text fields refused to shrink and pushed the token
+            input and Submit outside the card. Only visible in Arabic,
+            where the wider translated labels grow the auto tracks past
+            what is left. */}
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 [&>*]:min-w-0">
           <select
             className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             value={type}

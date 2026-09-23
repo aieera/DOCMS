@@ -62,7 +62,11 @@ export function SIEMPage() {
         description="Forward normalised audit + domain events to your SIEM (syslog, Splunk HEC, Microsoft Sentinel). Delivery retries then routes to a DLQ on persistent failure."
       />
 
-      <div className="mt-6 grid gap-2 rounded-lg border border-border bg-card p-4 sm:grid-cols-6" data-testid="sink-form">
+      {/* [&>*]:min-w-0 — stacked in one column on a phone, each control
+          is a grid item whose min-width defaults to auto, which for an
+          <input> is its intrinsic ~20-character width. Every field hung
+          out of the card in Arabic. */}
+      <div className="mt-6 grid gap-2 rounded-lg border border-border bg-card p-4 [&>*]:min-w-0 sm:grid-cols-6" data-testid="sink-form">
         <input className="rounded border border-border bg-background px-2 py-1.5 text-sm sm:col-span-2"
           placeholder="Sink name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <select className="rounded border border-border bg-background px-2 py-1.5 text-sm"
