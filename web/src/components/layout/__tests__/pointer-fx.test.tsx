@@ -86,21 +86,38 @@ describe('PointerFx layer', () => {
     expect(root.style.getPropertyValue('--fx-x')).toBe('')
   })
 
-  it('renders no trailing orbs under reduced motion', () => {
+  it('renders the cursor grid backdrop on a fine pointer, inert and hidden', () => {
+    const { container } = renderShell()
+    const grid = container.querySelector('[data-testid="cursor-grid"]') as HTMLElement
+    expect(grid).toBeTruthy()
+    expect(grid.getAttribute('aria-hidden')).toBe('true')
+    // It must never intercept a click on the form behind it.
+    expect(grid.style.pointerEvents).toBe('none')
+    expect(grid.querySelector('canvas')).toBeTruthy()
+  })
+
+  it('covers the whole viewport, not just one pane', () => {
+    const { container } = renderShell()
+    const grid = container.querySelector('[data-testid="cursor-grid"]') as HTMLElement
+    expect(grid.style.position).toBe('fixed')
+    expect(grid.style.inset).toBe('0px')
+  })
+
+  it('does not mount the cursor grid under reduced motion', () => {
     mockMedia({ 'prefers-reduced-motion': true, 'pointer: coarse': false })
     const { container } = renderShell()
-    expect(container.querySelectorAll('[data-part="orb"]').length).toBe(0)
+    expect(container.querySelector('[data-testid="cursor-grid"]')).toBeNull()
   })
 
-  it('renders no trailing orbs on a touch device', () => {
+  it('does not mount the cursor grid on a touch device', () => {
     mockMedia({ 'prefers-reduced-motion': false, 'pointer: coarse': true })
     const { container } = renderShell()
-    expect(container.querySelectorAll('[data-part="orb"]').length).toBe(0)
+    expect(container.querySelector('[data-testid="cursor-grid"]')).toBeNull()
   })
 
-  it('renders trailing orbs on a fine pointer', () => {
+  it('leaves no trailing orb behind — it was replaced by the cursor grid', () => {
     const { container } = renderShell()
-    expect(container.querySelectorAll('[data-part="orb"]').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('[data-part="orb"]').length).toBe(0)
   })
 
   it('never re-renders the form while the pointer moves', () => {

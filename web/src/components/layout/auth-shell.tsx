@@ -7,6 +7,7 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { usePointerParallax } from '@/hooks/usePointerParallax'
 import { AuthHero } from './AuthHero'
 import { PointerFx } from './PointerFx'
+import { CursorGrid } from './CursorGrid'
 
 interface AuthShellProps {
   children: ReactNode
@@ -50,6 +51,10 @@ export function AuthShell({ children, title, description, footer, stepKey }: Aut
       data-motion={motion}
       className="min-h-screen bg-background text-foreground"
     >
+      {/* Page-wide backdrop: cells light as the pointer crosses them and a
+          click sends a ring outward. It sits behind the panes, which is why
+          the brand pane below is transparent rather than filled. */}
+      <CursorGrid />
       <PointerFx surfaceRef={surfaceRef} />
       <div className="grid min-h-screen lg:grid-cols-2">
         <BrandStage motion={motion} />
@@ -103,7 +108,7 @@ function BrandStage({ motion }: { motion: 'animated' | 'static' }) {
 
   return (
     <aside
-      className="relative hidden flex-col justify-between overflow-hidden border-e border-border bg-sidebar p-12 text-sidebar-foreground lg:flex"
+      className="relative hidden flex-col justify-between overflow-hidden border-e border-border p-12 text-sidebar-foreground lg:flex"
       {...parallax.handlers}
     >
       {/* The light source, in two layers so the pointer-follow and the idle
@@ -129,6 +134,7 @@ function BrandStage({ motion }: { motion: 'animated' | 'static' }) {
           }}
         />
       </div>
+
 
       <div className="relative">
         <BrandMark size="md" />
