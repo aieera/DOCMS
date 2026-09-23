@@ -20,6 +20,7 @@ import { readErrorMessage } from '@/api/client'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/shadcn/input'
@@ -358,7 +359,7 @@ export function RetentionPage() {
                       <tr key={d.id} className="border-t border-border">
                         <td className="px-3 py-2">{d.title}</td>
                         <td className="px-3 py-2 text-xs">{d.document_class || <span className="text-muted-foreground">—</span>}</td>
-                        <td className="px-3 py-2"><Badge variant={d.lifecycle_state}>{d.lifecycle_state}</Badge></td>
+                        <td className="px-3 py-2"><Badge variant={lifecycleVariant(d.lifecycle_state)}>{d.lifecycle_state}</Badge></td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">{formatRelativeTime(d.created_at)}</td>
                       </tr>
                     ))}

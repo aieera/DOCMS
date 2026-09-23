@@ -2,6 +2,7 @@ import type { Document } from '@/types/api'
 import { Activity } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { Avatar } from '@/components/ui/shadcn/avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { formatFileSize, formatDateTime, lifecycleStateLabel } from '@/lib/formatters'
@@ -28,7 +29,7 @@ export function MetadataPanel({ doc, open, onClose }: Props) {
           <TabsContent value="info">
             <div className="space-y-4">
               <div className="space-y-2 text-sm">
-                <Row label="Status"><Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge></Row>
+                <Row label="Status"><Badge variant={lifecycleVariant(doc.lifecycle_state)}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge></Row>
                 <Row label="Class">{doc.document_class ? <span className="capitalize">{doc.document_class}</span> : <span className="italic text-muted-foreground">Unclassified</span>}</Row>
                 {(doc.security_classification || doc.has_phi || doc.has_pii) && <Row label="Sensitivity"><SensitivityBadge doc={doc} /></Row>}
                 <Row label="Size">{formatFileSize(doc.total_size_bytes)}</Row>

@@ -4,6 +4,7 @@ import { Maximize2, X } from 'lucide-react'
 
 import { getDocument } from '@/api/documents'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { Button } from '@/components/ui/shadcn/button'
 import { FileIcon } from '@/components/ui/FileIcon'
 import {
@@ -85,7 +86,7 @@ export function DocumentViewerModal({ open, onOpenChange, documentId, workspaceI
                 {doc?.title ?? 'Loading…'}
               </h2>
               {doc?.lifecycle_state && (
-                <Badge variant={doc.lifecycle_state} className="shrink-0">
+                <Badge variant={lifecycleVariant(doc.lifecycle_state)} className="shrink-0">
                   {lifecycleStateLabel(doc.lifecycle_state)}
                 </Badge>
               )}

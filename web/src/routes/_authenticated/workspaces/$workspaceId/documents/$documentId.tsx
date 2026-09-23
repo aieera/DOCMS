@@ -56,6 +56,7 @@ import { getMetadataSchema } from '@/api/metadataSchema'
 import type { Document } from '@/types/api'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/shadcn/sheet'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Spinner } from '@/components/ui/Spinner'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -817,7 +818,7 @@ function DocumentSidebar({
       <RailSection id="details" title="Details" defaultOpen>
         <dl className="space-y-2 text-sm">
           <Row label="Status">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+            <Badge variant={lifecycleVariant(doc.lifecycle_state)}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
           </Row>
           <Row label="Type">
             <span className="flex items-center justify-between gap-2">

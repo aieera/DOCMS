@@ -15,6 +15,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/shadcn/input'
 import { Button } from '@/components/ui/shadcn/button'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -633,7 +634,7 @@ function SearchPage() {
                   )}
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     {hit.lifecycle_state && (
-                      <Badge variant={hit.lifecycle_state}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
+                      <Badge variant={lifecycleVariant(hit.lifecycle_state)}>{lifecycleStateLabel(hit.lifecycle_state)}</Badge>
                     )}
                     {/* Index rows without an uploaded blob carry size 0 —
                         "0 B" reads as breakage, so show nothing. */}

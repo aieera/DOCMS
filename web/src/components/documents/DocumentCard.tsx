@@ -1,5 +1,6 @@
 import type { Document } from '@/types/api'
 import { Badge } from '@/components/ui/shadcn/badge'
+import { lifecycleVariant } from '@/lib/lifecycle'
 import { FileIcon } from '@/components/ui/FileIcon'
 import { formatFileSize, formatRelativeTime, lifecycleStateLabel } from '@/lib/formatters'
 import { Link } from '@tanstack/react-router'
@@ -37,7 +38,7 @@ export function DocumentCard({ doc }: { doc: Document }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
-            <Badge variant={doc.lifecycle_state}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
+            <Badge variant={lifecycleVariant(doc.lifecycle_state)}>{lifecycleStateLabel(doc.lifecycle_state)}</Badge>
             {!(doc as unknown as { current_version_id?: string }).current_version_id && (
               <Badge variant="warning" title="Document has no uploaded content yet">
                 No content
