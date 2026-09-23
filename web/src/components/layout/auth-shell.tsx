@@ -1,11 +1,12 @@
 import { Database } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { usePointerParallax } from '@/hooks/usePointerParallax'
 import { AuthHero } from './AuthHero'
+import { PointerFx } from './PointerFx'
 
 interface AuthShellProps {
   children: ReactNode
@@ -39,12 +40,17 @@ interface AuthShellProps {
 export function AuthShell({ children, title, description, footer, stepKey }: AuthShellProps) {
   const reduced = usePrefersReducedMotion()
   const motion = reduced ? 'static' : 'animated'
+  // PointerFx publishes --fx-x/--fx-y here; the brand pane's light reads
+  // them in CSS, so the pointer never re-renders React.
+  const surfaceRef = useRef<HTMLDivElement>(null)
 
   return (
     <div
+      ref={surfaceRef}
       data-motion={motion}
       className="min-h-screen bg-background text-foreground"
     >
+      <PointerFx surfaceRef={surfaceRef} />
       <div className="grid min-h-screen lg:grid-cols-2">
         <BrandStage motion={motion} />
 
@@ -100,18 +106,29 @@ function BrandStage({ motion }: { motion: 'animated' | 'static' }) {
       className="relative hidden flex-col justify-between overflow-hidden border-e border-border bg-sidebar p-12 text-sidebar-foreground lg:flex"
       {...parallax.handlers}
     >
-      {/* The light source. One transform on a gradient layer moves every
-          soft shadow on the pane, which is far cheaper than animating the
-          shadows themselves. */}
+      {/* The light source, in two layers so the pointer-follow and the idle
+          drift do not fight over one transform: the outer element tracks
+          the pointer via the published custom properties, the inner keeps
+          its slow loop. The transition smooths the follow without a
+          per-frame JS loop of its own. */}
       <div
-        className={cn('pointer-events-none absolute -inset-1/4', motion === 'animated' && 'auth-light-drift')}
+        className="pointer-events-none absolute -inset-1/4"
         aria-hidden
         style={{
-          background:
-            'radial-gradient(38% 34% at 28% 22%, hsl(var(--nm-light) / 0.85) 0%, transparent 70%),'
-            + ' radial-gradient(34% 30% at 76% 78%, hsl(var(--primary) / 0.20) 0%, transparent 70%)',
+          transform:
+            'translate3d(calc((var(--fx-x, 0.5) - 0.5) * 70px), calc((var(--fx-y, 0.5) - 0.5) * 70px), 0)',
+          transition: 'transform 260ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
-      />
+      >
+        <div
+          className={cn('absolute inset-0', motion === 'animated' && 'auth-light-drift')}
+          style={{
+            background:
+              'radial-gradient(38% 34% at 28% 22%, hsl(var(--nm-light) / 0.85) 0%, transparent 70%),'
+              + ' radial-gradient(34% 30% at 76% 78%, hsl(var(--primary) / 0.20) 0%, transparent 70%)',
+          }}
+        />
+      </div>
 
       <div className="relative">
         <BrandMark size="md" />

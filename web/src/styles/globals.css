@@ -363,3 +363,24 @@
     transform: none;
   }
 }
+
+/* Click ripple for the auth screens. Created and removed by PointerFx;
+ * transform/opacity only, and it deletes itself on animationend so a long
+ * session never accumulates nodes. */
+@keyframes auth-ripple {
+  from { opacity: 0.5; transform: translate(-50%, -50%) scale(0.2); }
+  to   { opacity: 0;   transform: translate(-50%, -50%) scale(1); }
+}
+
+.auth-ripple {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 9999px;
+  border: 2px solid hsl(var(--primary) / 0.35);
+  animation: auth-ripple 620ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-ripple { display: none; }
+}

@@ -7,6 +7,7 @@ import { Fingerprint, Mail, MessageSquare, Bell, Smartphone, Loader2 } from 'luc
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/shadcn/button'
+import { Magnetic } from '@/components/ui/Magnetic'
 import { Input } from '@/components/ui/shadcn/input'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import {
@@ -278,7 +279,9 @@ function LoginPage() {
               data-testid="mfa-code"
             />
           )}
-          <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
+          <Magnetic>
+            <Button type="submit" className="w-full" loading={loading}>Verify and continue</Button>
+          </Magnetic>
           <Button type="button" variant="ghost" className="w-full" onClick={() => setChosen(null)}>
             <DirectionalIcon name="ArrowLeft" className="me-1 h-4 w-4" /> Use a different method
           </Button>
@@ -374,7 +377,9 @@ function LoginPage() {
             )}
           />
 
-          <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+          <Magnetic>
+            <Button type="submit" className="w-full" loading={loading}>Sign in</Button>
+          </Magnetic>
         </form>
       </Form>
     </AuthShell>

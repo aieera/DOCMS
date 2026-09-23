@@ -5,7 +5,7 @@ import { usePrefersReducedMotion } from './usePrefersReducedMotion'
 const COARSE = '(pointer: coarse)'
 
 /** True on touch-first devices, where "pointer move" is a tap, not a hover. */
-function useCoarsePointer(): boolean {
+export function useCoarsePointer(): boolean {
   const read = () =>
     typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
