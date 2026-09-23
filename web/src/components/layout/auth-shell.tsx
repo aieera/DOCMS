@@ -1,7 +1,11 @@
-import { Database, ShieldCheck, FileLock2, Workflow } from 'lucide-react'
+import { Database } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+
 import { cn } from '@/lib/cn'
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { usePointerParallax } from '@/hooks/usePointerParallax'
+import { AuthHero } from './AuthHero'
 
 interface AuthShellProps {
   children: ReactNode
@@ -10,29 +14,56 @@ interface AuthShellProps {
   description?: ReactNode
   // Optional action shown bottom-right (e.g. "Already have an account? Sign in")
   footer?: ReactNode
+  /**
+   * Identifies the current step of a multi-step flow (login's credentials
+   * -> method picker -> code). Changing it re-mounts the card so the new
+   * step animates in instead of swapping instantly. Presentational only:
+   * it never drives which step renders.
+   */
+  stepKey?: string
 }
 
-// Two-pane shell used by every unauthenticated route. Left pane
-// is a brand surface with a tagline and three feature bullets —
-// keeps the page from feeling empty on wide monitors. Right pane
-// holds the form. Below `lg` the brand pane collapses and the
-// form gets the full viewport with the brand mark above it.
-export function AuthShell({ children, title, description, footer }: AuthShellProps) {
+/**
+ * Two-pane shell used by every unauthenticated route.
+ *
+ * Left pane is a lit stage: a slow-drifting light source moves the soft
+ * shadows across the whole pane, the hero seals a document stack on a long
+ * loop, and the stage tilts a few degrees toward the pointer. Right pane
+ * holds the form on a raised neumorphic card. Below `lg` the stage
+ * collapses and the card takes the viewport with the brand mark above it.
+ *
+ * All of it stops dead under `prefers-reduced-motion`, which is why the
+ * root carries `data-motion` — the CSS switches every loop off from there
+ * rather than each animated element re-deciding.
+ */
+export function AuthShell({ children, title, description, footer, stepKey }: AuthShellProps) {
+  const reduced = usePrefersReducedMotion()
+  const motion = reduced ? 'static' : 'animated'
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      data-motion={motion}
+      className="min-h-screen bg-background text-foreground"
+    >
       <div className="grid min-h-screen lg:grid-cols-2">
-        <BrandPane />
+        <BrandStage motion={motion} />
+
         <div className="flex flex-col">
           <header className="flex items-center justify-between p-6 lg:hidden">
-            <Link to="/login" className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background">
-                <Database className="h-4 w-4" />
-              </span>
-              <span className="text-sm font-semibold tracking-tight">SeDoc</span>
-            </Link>
+            <BrandMark />
           </header>
+
           <main className="flex flex-1 items-center justify-center px-6 pb-12 pt-2 lg:px-12 lg:py-12">
-            <div className="w-full max-w-sm space-y-6">
+            <div
+              // Re-keyed per step so each one animates in on its own.
+              key={stepKey}
+              data-testid="auth-card"
+              data-step={stepKey}
+              className={cn(
+                'w-full max-w-sm space-y-6 rounded-lg bg-card p-7 shadow-neu sm:p-8',
+                motion === 'animated' && 'auth-card-in',
+              )}
+            >
               {(title || description) && (
                 <div className="space-y-1.5">
                   {title && <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>}
@@ -49,56 +80,56 @@ export function AuthShell({ children, title, description, footer }: AuthShellPro
   )
 }
 
-const FEATURES = [
-  { icon: ShieldCheck, title: 'Tenant-isolated by default', body: 'Postgres RLS plus a NOBYPASSRLS app role mean a buggy query fails closed, not open.' },
-  { icon: FileLock2, title: 'Per-blob envelope encryption', body: 'Each document has its own DEK wrapped by a per-tenant KEK. Crypto-shred on delete.' },
-  { icon: Workflow, title: 'Workflows, signatures, retention', body: 'Approval routing, eIDAS-grade signatures, legal-hold-aware retention out of the box.' },
-]
+function BrandMark({ size = 'sm' }: { size?: 'sm' | 'md' }) {
+  const box = size === 'md' ? 'h-9 w-9' : 'h-7 w-7'
+  return (
+    <Link to="/login" className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+      <span className={cn('flex items-center justify-center rounded-md bg-card text-foreground shadow-neu-sm', box)}>
+        <Database className={size === 'md' ? 'h-5 w-5' : 'h-4 w-4'} />
+      </span>
+      <span className={cn('font-semibold tracking-tight', size === 'md' ? 'text-base' : 'text-sm')}>SeDoc</span>
+    </Link>
+  )
+}
 
-function BrandPane() {
+function BrandStage({ motion }: { motion: 'animated' | 'static' }) {
+  const parallax = usePointerParallax(5)
+
   return (
     <aside
-      className={cn(
-        'relative hidden flex-col justify-between overflow-hidden border-e border-border bg-sidebar p-12 text-sidebar-foreground lg:flex',
-      )}
+      className="relative hidden flex-col justify-between overflow-hidden border-e border-border bg-sidebar p-12 text-sidebar-foreground lg:flex"
+      {...parallax.handlers}
     >
-      {/* Subtle gradient wash for depth without resorting to a real
-          illustration asset. Stays cohesive with the dashboard
-          chrome and respects the active theme. */}
+      {/* The light source. One transform on a gradient layer moves every
+          soft shadow on the pane, which is far cheaper than animating the
+          shadows themselves. */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-60"
+        className={cn('pointer-events-none absolute -inset-1/4', motion === 'animated' && 'auth-light-drift')}
         aria-hidden
         style={{
           background:
-            'radial-gradient(60% 50% at 20% 0%, hsl(var(--accent) / 0.6) 0%, transparent 60%), radial-gradient(40% 40% at 100% 100%, hsl(var(--primary) / 0.18) 0%, transparent 60%)',
+            'radial-gradient(38% 34% at 28% 22%, hsl(var(--nm-light) / 0.85) 0%, transparent 70%),'
+            + ' radial-gradient(34% 30% at 76% 78%, hsl(var(--primary) / 0.20) 0%, transparent 70%)',
         }}
       />
+
       <div className="relative">
-        <Link to="/login" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-foreground text-background">
-            <Database className="h-5 w-5" />
-          </span>
-          <span className="text-base font-semibold tracking-tight">SeDoc</span>
-        </Link>
+        <BrandMark size="md" />
       </div>
 
-      <div className="relative max-w-md space-y-6">
-        <h2 className="text-3xl font-semibold leading-tight tracking-tight">
+      <div
+        data-testid="auth-stage"
+        className="relative flex flex-col items-center gap-10 [perspective:1200px]"
+        style={{
+          transform: parallax.transform,
+          transformStyle: 'preserve-3d',
+          transition: parallax.enabled ? 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)' : undefined,
+        }}
+      >
+        <AuthHero motion={motion} />
+        <h2 className="max-w-md text-balance text-center text-3xl font-semibold leading-tight tracking-tight">
           Document management your security team will actually trust.
         </h2>
-        <ul className="space-y-4">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <li key={title} className="flex gap-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-sidebar-border bg-background/50">
-                <Icon className="h-4 w-4 text-foreground" />
-              </span>
-              <div>
-                <p className="text-sm font-medium leading-tight">{title}</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
       </div>
 
       <p className="relative text-xs text-muted-foreground">

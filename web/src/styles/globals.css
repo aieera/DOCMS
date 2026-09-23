@@ -285,3 +285,81 @@
   .dash-draw { stroke-dasharray: none; stroke-dashoffset: 0; }
   .dash-grow { transform: none; }
 }
+
+/* Auth stage motion (login and the other unauthenticated routes,
+ * 2026-09-23). Every rule animates only transform/opacity, so the soft
+ * shadows never repaint. One master period keeps the hero's parts in
+ * lockstep: equal durations with small delays stagger them permanently
+ * instead of letting them drift apart over a long session.
+ *
+ * `[data-motion="static"]` on the shell root is the single kill switch —
+ * under reduced motion every loop below stops at its finished state
+ * rather than being squashed to ~0ms. */
+@keyframes auth-card-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes auth-light-drift {
+  0%   { transform: translate3d(-4%, -3%, 0) scale(1); }
+  50%  { transform: translate3d(5%, 4%, 0) scale(1.06); }
+  100% { transform: translate3d(-4%, -3%, 0) scale(1); }
+}
+
+/* Pages slide in over the first ~8% of the cycle, hold, then fade out. */
+@keyframes auth-hero-page {
+  0%   { opacity: 0; transform: translate3d(-22px, 14px, 0) rotate(-7deg); }
+  8%   { opacity: 1; transform: none; }
+  88%  { opacity: 1; transform: none; }
+  97%  { opacity: 0; transform: translate3d(0, -10px, 0); }
+  100% { opacity: 0; transform: translate3d(-22px, 14px, 0) rotate(-7deg); }
+}
+
+/* The lock lands after the pages, overshooting slightly as it settles. */
+@keyframes auth-hero-lock {
+  0%, 6% { opacity: 0; transform: translateY(-26px) scale(0.92); }
+  12%    { opacity: 1; transform: translateY(3px) scale(1.02); }
+  15%    { opacity: 1; transform: none; }
+  88%    { opacity: 1; transform: none; }
+  97%    { opacity: 0; transform: translateY(-10px); }
+  100%   { opacity: 0; transform: translateY(-26px) scale(0.92); }
+}
+
+/* The shackle stays open until the body has landed, then clicks shut. */
+@keyframes auth-hero-shackle {
+  0%, 15% { transform: translateY(-7px); }
+  19%     { transform: translateY(1px); }
+  22%     { transform: none; }
+  100%    { transform: none; }
+}
+
+/* The sealed stack breathes through the long hold. */
+@keyframes auth-hero-breathe {
+  0%, 22%  { transform: translateY(0); }
+  45%      { transform: translateY(-7px); }
+  68%      { transform: translateY(0); }
+  100%     { transform: translateY(0); }
+}
+
+.auth-card-in { animation: auth-card-in 520ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+.auth-light-drift { animation: auth-light-drift 26s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.auth-hero-page { animation: auth-hero-page 16s cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+.auth-hero-lock { animation: auth-hero-lock 16s cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+.auth-hero-shackle { animation: auth-hero-shackle 16s cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+.auth-hero-stage { animation: auth-hero-breathe 16s cubic-bezier(0.4, 0, 0.2, 1) infinite both; }
+
+/* Reduced motion: hold the finished, sealed state. The hero's base SVG
+ * already draws that state, so switching the animations off is enough —
+ * no element is left mid-transform or invisible. */
+@media (prefers-reduced-motion: reduce) {
+  .auth-card-in,
+  .auth-light-drift,
+  .auth-hero-page,
+  .auth-hero-lock,
+  .auth-hero-shackle,
+  .auth-hero-stage {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -59,6 +59,18 @@ async function mockCore(page: Page) {
 // mount effect has already run and nothing removes the class again.
 // This audits the `.dark` token block in globals.css, which ADR 0120
 // left unscanned (light-only gate).
+// The auth card fades in over 520ms. axe samples COMPUTED colours, so a
+// scan taken mid-fade measures every element against a half-transparent
+// card and reports contrast failures that do not exist once it lands.
+// (The brand stage's hero and light drift loop forever, so waiting on all
+// animations would hang — wait on the card's opacity only.)
+async function settleAuthCard(page: Page) {
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="auth-card"]')
+    return !!el && getComputedStyle(el).opacity === '1'
+  })
+}
+
 async function forceDark(page: Page) {
   await page.evaluate(() => {
     const root = document.documentElement
@@ -220,6 +232,7 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
   test('login page', async ({ page }) => {
     await page.goto('/login')
     await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+    await settleAuthCard(page)
     await scan(page, '/login')
   })
 
@@ -380,6 +393,30 @@ test.describe('Journey 70 — accessibility (axe AA)', () => {
     await settleDashboard(page)
     await scan(page, '/ dashboard, search down')
   })
+
+  // ---- Unauthenticated routes ------------------------------------------
+  // All four share AuthShell, whose animated brand stage and raised card
+  // were only ever scanned through /login in light. Register, forgot-password
+  // and accept-invite were never scanned at all.
+
+  test('register', async ({ page }) => {
+    await page.goto('/register')
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/register')
+  })
+  test('forgot password', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/forgot-password')
+  })
+  test('accept invite', async ({ page }) => {
+    await page.goto('/accept-invite?tenant=acme&token=inv-token')
+    await expect(page.getByRole('button', { name: 'Activate account' })).toBeVisible()
+    await settleAuthCard(page)
+    await scan(page, '/accept-invite')
+  })
 })
 
 // Dark mode (ADR 0120 scanned light only; the `.dark` palette shipped
@@ -427,5 +464,37 @@ test.describe('Journey 70 — accessibility (axe AA, dark palette)', () => {
     await expect(page.getByText('alice@example.com')).toBeVisible()
     await forceDark(page)
     await scan(page, 'dark /admin/users')
+  })
+
+  test('dark: login', async ({ page }) => {
+    await page.goto('/login')
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /login')
+  })
+  test('dark: register', async ({ page }) => {
+    await page.goto('/register')
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /register')
+  })
+  test('dark: forgot password', async ({ page }) => {
+    await page.goto('/forgot-password')
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /forgot-password')
+  })
+
+  // Needs both search params, or the route renders its invalid-link state
+  // instead of the password form we want to audit.
+  test('dark: accept invite', async ({ page }) => {
+    await page.goto('/accept-invite?tenant=acme&token=inv-token')
+    await expect(page.getByRole('button', { name: 'Activate account' })).toBeVisible()
+    await settleAuthCard(page)
+    await forceDark(page)
+    await scan(page, 'dark /accept-invite')
   })
 })

@@ -210,12 +210,13 @@ function LoginPage() {
   if (mfaToken && !chosen) {
     return (
       <AuthShell
+        stepKey="mfa-picker"
         title="Two-step verification"
         description="Pick how you'd like to confirm it's you. Stronger methods are listed first."
       >
         <div className="space-y-2" data-testid="mfa-picker">
           {methods.length === 0 ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
               No methods enrolled — contact your administrator.
             </p>
           ) : (
@@ -225,9 +226,9 @@ function LoginPage() {
                 type="button"
                 onClick={() => pickMethod(m)}
                 data-testid={`mfa-pick-${m.method}`}
-                className="group flex w-full items-center gap-3 rounded-md border border-input bg-background px-3 py-2.5 text-start transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex w-full items-center gap-3 rounded-md bg-card px-3 py-2.5 text-start shadow-neu-sm transition-shadow hover:shadow-neu active:shadow-neu-pressed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground shadow-neu-inset">
                   <MethodIcon m={m.method} />
                 </span>
                 <span className="flex-1">
@@ -255,12 +256,13 @@ function LoginPage() {
   if (mfaToken && chosen) {
     return (
       <AuthShell
+        stepKey="mfa-verify"
         title={`Enter your ${chosen.method.toUpperCase()} code`}
         description={chosen.destination ? `We sent a code to ${chosen.destination}.` : 'Open your authenticator and enter the 6-digit code.'}
       >
         <form onSubmit={submitCode} className="space-y-4" data-testid="mfa-verify">
           {chosen.method === 'push' ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground shadow-neu-inset">
               Waiting for approval on your device. Tap <strong className="text-foreground">Approve</strong> there to continue.
             </p>
           ) : (
@@ -287,6 +289,7 @@ function LoginPage() {
 
   return (
     <AuthShell
+      stepKey="credentials"
       title="Welcome back"
       description="Sign in to continue to your SeDoc workspace."
       footer={
@@ -348,7 +351,7 @@ function LoginPage() {
           )}
 
           <div className="relative my-1 text-center text-xs uppercase tracking-wider text-muted-foreground">
-            <span className="relative z-10 bg-background px-2">or with password</span>
+            <span className="relative z-10 bg-card px-2">or with password</span>
             <span className="absolute inset-x-0 top-1/2 border-t border-border" aria-hidden />
           </div>
 
