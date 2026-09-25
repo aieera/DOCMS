@@ -147,3 +147,6 @@ web/coverage/
 /*.jpeg
 # Design-mockup render/verification screenshots (regeneratable; the .html mockup is tracked)
 design/*.png
+
+# git worktrees (superpowers:using-git-worktrees)
+.worktrees/
