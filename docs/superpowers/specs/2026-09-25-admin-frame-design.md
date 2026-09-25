@@ -84,7 +84,6 @@ interface AdminPageProps {
   actions?: ReactNode            // page-level actions only
   width?: 'measure' | 'full'     // default 'measure'
   tabs?: TabSpec                 // primary row, rendered in the header
-  subTabs?: TabSpec              // second row; only Identity needs it
   children: ReactNode
 }
 
@@ -117,9 +116,15 @@ Rules:
 2. **Tabs render in the header**, beneath the description, using the canonical
    `@/components/ui/shadcn/tabs`. The frame receives `value` and
    `onValueChange`; the page keeps its `validateSearch` and `navigate` calls
-   exactly as today. `subTabs` is a second controlled row for Identity's
-   `group → sub` contract, so both rows sit in the header instead of stacking
-   above the title. No URL contract changes.
+   exactly as today. No URL contract changes.
+
+   **There is no `subTabs` prop** (changed during planning — see §8). Radix
+   `TabsContent` binds to the *nearest* `Tabs` root, so a frame-owned second
+   root around the column would capture the page's primary-level
+   `TabsContent` and render nothing, and leave the selected primary trigger's
+   `aria-controls` pointing at a missing id. Identity keeps its inner
+   `<Tabs>` inside each primary `TabsContent`, as today; the frame supplies
+   the `h1` and the primary row above it.
 3. **`AdminSection` renders an `h2`** (text-lg, the same scale `PageHeader
    variant="section"` uses today) with its actions right-aligned to the
    section. Embedded children use it; they never render `AdminPage` or
@@ -343,7 +348,10 @@ a `<PageHeader` in one migrated page and confirm `lint:admin` exits non-zero.
 - Frame first; navigation model and deep page redesigns deferred.
 - Component frame (A) over layout route (B) or hybrid (C).
 - `measure` is start-aligned, not centred.
-- `subTabs` is a frame concern, not something Identity draws itself.
+- `subTabs` was agreed as a frame concern in brainstorming and **reversed in
+  planning**: Radix `TabsContent` resolves to the nearest `Tabs` root, so the
+  frame cannot own a second root without breaking the page's primary-level
+  content and its `aria-controls`. Identity draws its inner row itself.
 - The five census overrides in §4.2.
 - The hub filter box is included but marked optional.
 
