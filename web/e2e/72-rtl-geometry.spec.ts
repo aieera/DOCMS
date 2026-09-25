@@ -125,7 +125,7 @@ async function measure(page: Page, route: string, dir: 'ltr' | 'rtl'): Promise<R
 // Routes chosen for layout density rather than coverage: the shell is on
 // every one of them, and these add a data table, a card grid, a filter
 // bar and a settings form.
-const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings']
+const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {

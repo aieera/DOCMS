@@ -46,14 +46,35 @@ import { Spinner } from '@/components/ui/Spinner'
 
 function SettingsPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    // No max-width cap and no padding of its own: app-layout already
+    // wraps every page in `p-4 sm:p-6 lg:p-8`, and the old
+    // `mx-auto max-w-3xl` pinned 768px of content in the middle of a
+    // 1660px column -- three cards scrolling past the fold with ~450px
+    // of dead canvas either side.
+    <div>
       <PageHeader
-        title="Settings"
-        description="Manage your account, security, and active sessions."
+        // Not "Settings": /settings carries that title, and having both
+        // pages announce the same word made the breadcrumb the only way
+        // to tell them apart. This matches the card that links here.
+        title="Account & security"
+        description="Your profile, your passkeys, and the devices signed in to your account."
       />
-      <ProfileSection />
-      <SecuritySection />
-      <SessionsSection />
+      {/* Two columns from xl, not lg: at 1024 the split gave each column
+          338px, which is not enough for a session row carrying a device
+          name, an IPv6 address, a relative time and a revoke button.
+          Profile + passkeys are short and fixed; sessions is the one
+          list that grows, so it gets a column to itself rather than
+          pushing everything else down. items-start keeps each column at
+          its natural height instead of stretching the shorter one. */}
+      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+        <div className="min-w-0 space-y-6">
+          <ProfileSection />
+          <SecuritySection />
+        </div>
+        <div className="min-w-0 space-y-6">
+          <SessionsSection />
+        </div>
+      </div>
     </div>
   )
 }
@@ -72,7 +93,12 @@ function ProfileSection() {
       </dl>
       <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-        <p>
+        {/* dir="auto" throughout this page: the copy is English and stays
+            English while the UI is Arabic, so without it the bidi algorithm
+            throws each trailing full stop to the front -- ".Display names
+            are managed by your tenant administrator". The RTL geometry gate
+            cannot see this; nothing moves, the characters reorder. */}
+        <p dir="auto">
           Display names are managed by your tenant administrator.
         </p>
       </div>
@@ -95,6 +121,7 @@ function Field({ label, value, icon, mono, title }: {
         {icon}{label}
       </dt>
       <dd
+        dir="auto"
         className={`break-all text-sm font-medium ${mono ? 'font-mono text-xs text-muted-foreground' : 'break-words'}`}
         title={title}
       >
@@ -208,10 +235,12 @@ function SecuritySection() {
       {isLoading ? (
         <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
       ) : (passkeys ?? []).length === 0 ? (
-        <div className="rounded-md border border-dashed border-border p-8 text-center">
-          <Fingerprint className="mx-auto mb-3 h-10 w-10 text-primary opacity-70" />
-          <p className="mb-1 font-medium">You don&apos;t have any passkeys yet</p>
-          <p className="mb-4 text-sm text-muted-foreground">
+        // Narrower and shorter than it was: at p-8 with a 40px icon this
+        // empty state was taller than the populated list it stands in for.
+        <div className="rounded-lg border border-dashed border-border p-6 text-center">
+          <Fingerprint className="mx-auto mb-2 h-8 w-8 text-primary opacity-70" />
+          <p dir="auto" className="font-medium">You don&apos;t have any passkeys yet</p>
+          <p dir="auto" className="mx-auto mb-4 mt-1 max-w-sm text-sm text-muted-foreground">
             Passkeys let you sign in without a password — they&apos;re also phishing-resistant.
             Use your laptop&apos;s fingerprint reader, your phone, or a Yubikey.
           </p>
@@ -220,7 +249,13 @@ function SecuritySection() {
           </Button>
         </div>
       ) : (
-        <ul className="space-y-2" data-testid="passkey-list">
+        // Divided list, not a bordered card per row: these already sit
+        // inside a Section card, and a card inside a card gave every row
+        // two nested rounded borders.
+        <ul
+          className="divide-y divide-border overflow-hidden rounded-lg border border-border"
+          data-testid="passkey-list"
+        >
           {(passkeys ?? []).map((p) => (
             <PasskeyRow
               key={p.credential_id} p={p}
@@ -238,7 +273,7 @@ function SecuritySection() {
        
       >
         <div className="space-y-3" data-testid="add-passkey-dialog">
-          <p className="text-sm text-muted-foreground">
+          <p dir="auto" className="text-sm text-muted-foreground">
             Give this passkey a name so you recognize it in the list. The name is local to your account; the authenticator (Yubikey, Touch ID, etc.) doesn&apos;t see it.
           </p>
           <Input
@@ -273,20 +308,20 @@ function PasskeyRow({ p, onRemove, removing }: {
 }) {
   return (
     <li
-      className="flex items-center justify-between rounded-md border border-border p-3"
+      className="flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/40"
       data-testid={`passkey-row-${p.credential_id}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Fingerprint className="h-4 w-4 text-primary" />
-          <span className="font-medium">{p.name}</span>
+          <span dir="auto" className="font-medium">{p.name}</span>
           {p.backup_state && (
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
               Synced
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p dir="auto" className="mt-1 text-xs text-muted-foreground">
           {p.transports.length > 0 ? p.transports.join(' · ') : 'unknown transport'}
           {' · added '}{relativeTime(p.created_at)}
           {p.last_used_at ? ` · last used ${relativeTime(p.last_used_at)}` : ' · never used'}
@@ -370,8 +405,8 @@ function SessionsSection() {
         <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
           <div className="flex-1">
-            <p className="font-medium text-destructive">Could not load active sessions.</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p dir="auto" className="font-medium text-destructive">Could not load active sessions.</p>
+            <p dir="auto" className="mt-0.5 text-xs text-muted-foreground">
               The server returned an unexpected response. Refresh or try again.
             </p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => void refetch()} data-testid="sessions-retry">
@@ -382,7 +417,12 @@ function SessionsSection() {
       ) : (sessions ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">No active sessions found.</p>
       ) : (
-        <ul className="space-y-2" data-testid="session-list">
+        // Same as the passkey list -- one bordered container, rows
+        // separated by a hairline.
+        <ul
+          className="divide-y divide-border overflow-hidden rounded-lg border border-border"
+          data-testid="session-list"
+        >
           {(sessions ?? []).map((s) => (
             <SessionRowView
               key={s.id}
@@ -405,20 +445,20 @@ function SessionRowView({ s, onRevoke, revoking }: {
   const ua = parseUA(s.user_agent ?? '')
   return (
     <li
-      className="flex items-center justify-between rounded-md border border-border p-3"
+      className="flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/40"
       data-testid={`session-row-${s.id}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Monitor className="h-4 w-4 text-primary" />
-          <span className="font-medium">{ua}</span>
+          <span dir="auto" className="font-medium">{ua}</span>
           {s.current && (
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
               This device
             </span>
           )}
         </div>
-        <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+        <p dir="auto" className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
           {s.ip_address && <span className="flex items-center gap-1"><Globe className="h-3 w-3" />{s.ip_address}</span>}
           <span className="flex items-center gap-1"><Clock className="h-3 w-3" />last active {relativeTime(s.last_activity_at)}</span>
         </p>
