@@ -879,7 +879,7 @@ done
 # Any changed line that is not markup is a review stop:
 git diff -U0 -- $A/identity.tsx $A/users.tsx $A/groups.tsx $A/permissions.tsx $A/sso.tsx $A/tenant/identity/ldap.tsx $A/scim.tsx \
   | grep -E '^[-+]' | grep -vE '^(\+\+\+|---)' \
-  | grep -vE 'className|AdminPage|AdminSection|PageHeader|Tabs|import|^[-+]\s*(//|\{/\*|\*)|^[-+]\s*[<>{}()/,]*\s*$|title=|description=|actions=|label:|value:|items:|onValueChange|search:|to:|navigate|width|return \(|^\+\s*\}$|^\+\s*\]$|^\+\s*\)$|^\+\s*\},$|^\+\s*const (groupTabs|subTabs|width)'
+  | grep -vE 'className|AdminPage|AdminSection|PageHeader|Tabs|import|^[-+]\s*(//|\{/\*|\*)|^[-+]\s*[<>{}()/,]*\s*$|title=|description=|actions=|label:|value:|items:|onValueChange|search:|to:|navigate|width|return \(|^\+\s*\}$|^\+\s*\]$|^\+\s*\)$|^\+\s*\},$|^\+\s*const width'
 ```
 Expected: `testids unchanged` ×7 and an empty grep (nothing but markup changed).
 
