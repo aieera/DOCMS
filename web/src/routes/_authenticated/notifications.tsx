@@ -33,23 +33,24 @@ import { formatRelativeTime, notificationTypeLabel, formatDateTime } from '@/lib
 import { cn } from '@/lib/cn'
 
 // Map the event-type taxonomy (dms.{domain}.{action}) onto an icon +
-// tint so the list scans by kind at a glance. Prefix match keeps new
+// colour so the list scans by kind at a glance. Prefix match keeps new
 // actions within a domain (e.g. document.moved) working untouched.
-function typeVisual(type: string): { Icon: LucideIcon; tint: string } {
-  if (type.startsWith('digest.')) return { Icon: Layers, tint: 'bg-primary/10 text-primary' }
-  if (type.startsWith('document.'))
-    return { Icon: FileText, tint: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
-  if (type.startsWith('comment.'))
-    return { Icon: MessageSquare, tint: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' }
-  if (type.startsWith('workflow.'))
-    return { Icon: Workflow, tint: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' }
-  if (type.startsWith('task.'))
-    return { Icon: CheckSquare, tint: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' }
-  if (type.startsWith('signature.'))
-    return { Icon: PenLine, tint: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' }
+//
+// The glyph is tinted; it no longer sits on a filled disc. With most of
+// an inbox coming from one or two domains the discs read as a column of
+// identical coloured circles -- weight without information. Dropping the
+// background also raises contrast, since these text tokens were being
+// measured against a lightening tint of their own hue.
+function typeVisual(type: string): { Icon: LucideIcon; fg: string } {
+  if (type.startsWith('digest.')) return { Icon: Layers, fg: 'text-primary' }
+  if (type.startsWith('document.')) return { Icon: FileText, fg: 'text-blue-600 dark:text-blue-400' }
+  if (type.startsWith('comment.')) return { Icon: MessageSquare, fg: 'text-violet-600 dark:text-violet-400' }
+  if (type.startsWith('workflow.')) return { Icon: Workflow, fg: 'text-amber-600 dark:text-amber-400' }
+  if (type.startsWith('task.')) return { Icon: CheckSquare, fg: 'text-emerald-600 dark:text-emerald-400' }
+  if (type.startsWith('signature.')) return { Icon: PenLine, fg: 'text-rose-600 dark:text-rose-400' }
   if (type.startsWith('security.') || type.startsWith('auth.'))
-    return { Icon: ShieldAlert, tint: 'bg-red-500/10 text-red-600 dark:text-red-400' }
-  return { Icon: Bell, tint: 'bg-muted text-muted-foreground' }
+    return { Icon: ShieldAlert, fg: 'text-red-600 dark:text-red-400' }
+  return { Icon: Bell, fg: 'text-muted-foreground' }
 }
 
 // Category rail is derived from the same domain taxonomy typeVisual uses.
@@ -184,7 +185,11 @@ function NotificationsPage() {
   const activeCategories = CATEGORIES.filter((c) => counts[c.key] > 0)
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    // max-w-6xl, not 5xl: at 5xl the list pane rendered ~630px wide inside
+    // 1180px of available space -- three-line rows crammed into a narrow
+    // column with a dead gutter beside it, which is most of what made the
+    // page feel congested. One-line rows need the width for their body.
+    <div className="mx-auto max-w-6xl p-6">
       <PageHeader
         title="Notifications"
         description={
@@ -376,83 +381,104 @@ interface RowProps {
 }
 
 function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
-  const { Icon, tint } = typeVisual(n.type)
-  // Never render n.type directly — it's a raw dms.{domain}.{action}
-  // event code.
+  const { Icon, fg } = typeVisual(n.type)
+  // Never render n.type directly -- it's a raw dms.{domain}.{action}
+  // event code. Used for the snooze control's label; the row no longer
+  // shows it as a pill, because the pill restated the title on every
+  // row ("Document uploaded" above `Document uploaded`).
   const kind = notificationTypeLabel(n.type)
   // Digest-produced rows carry a `digest.*` type prefix
   // (notification service's flushDigestsOnce in
   // services/notification/internal/service/decide.go).
   // Surface that as a "D" badge so users can recognize
-  // a bundled notification at a glance — matches the
+  // a bundled notification at a glance -- matches the
   // caption on /settings/notifications.
   const isDigest = n.type?.startsWith('digest.') ?? false
   return (
+    // flex-wrap below sm, nowrap from sm up. On a phone the fixed parts
+    // (dot, icon, timestamp, two action buttons) eat ~180px of a 390px
+    // screen, which left the text about twelve characters -- every row
+    // read "Document ...". Letting the text take the full first line and
+    // the timestamp drop underneath keeps the row scannable there; from
+    // sm up it is the single line it was designed as.
     <li
-      className={`group flex items-start gap-3 p-3 transition-colors hover:bg-muted/40 ${
-        n.read ? '' : 'bg-primary/[0.04]'
-      }`}
+      className="group flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2 transition-colors hover:bg-muted/40 sm:flex-nowrap"
       data-testid={`notif-row-${n.id}`}
     >
-      {/* Row body is the activator — mark-read/snooze below are
+      {/* Row body is the activator -- mark-read/snooze below are
           siblings, not nested inside, so keyboard/AT never see an
           interactive control inside another one. */}
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        className="flex w-full min-w-0 items-center gap-2.5 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background sm:w-auto sm:flex-1"
         data-testid={`notif-open-${n.id}`}
       >
-        <span
-          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tint}`}
-          aria-hidden
-        >
-          <Icon className="h-4 w-4" />
+        {/* Fixed-width slot so read and unread rows share one text
+            origin -- otherwise the whole column shifts left as items
+            are read. Unread is signalled here and by the title's
+            weight; the tinted row background it used to carry as a
+            third cue only striped the list. */}
+        <span className="flex w-1.5 shrink-0 justify-center">
+          {!n.read && (
+            <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Unread" />
+          )}
         </span>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <h3 className={`text-sm ${n.read ? 'font-medium text-muted-foreground' : 'font-semibold'}`}>
-              {n.title}
-            </h3>
-            {!n.read && (
-              <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Unread" />
-            )}
-            {isDigest && (
-              <span
-                className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
-                title="This is a digest notification combining multiple events."
-                aria-label="Digest notification combining multiple events"
-                data-testid={`notif-digest-badge-${n.id}`}
-              >
-                <span aria-hidden="true">D</span>
-                <span className="sr-only">Digest</span>
-              </span>
-            )}
-          </div>
-          {n.body && (
-            <p className={`mt-0.5 text-sm ${n.read ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
-              {n.body}
-            </p>
-          )}
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <time dateTime={n.created_at} title={formatDateTime(n.created_at)}>
-              {formatRelativeTime(n.created_at)}
-            </time>
-            <span aria-hidden>·</span>
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">{kind}</span>
-          </div>
-        </div>
+        <Icon className={cn('h-4 w-4 shrink-0', fg)} aria-hidden />
+
+        {/* One truncating line. Title and body are inline inside a
+            single truncating box rather than two flex children: there
+            is no min-width floor to trip over, the separator vanishes
+            with an absent body, and the browser trims whichever tail
+            runs out of room. dir="auto" for the reason PageHeader
+            carries it -- a Latin document name inside an RTL page
+            otherwise has its quotes and full stop thrown to the wrong
+            end. */}
+        <span dir="auto" className="min-w-0 flex-1 truncate text-sm">
+          <span className={n.read ? 'text-muted-foreground' : 'font-medium text-foreground'}>
+            {n.title}
+          </span>
+          {n.body && <span className="text-muted-foreground"> &middot; {n.body}</span>}
+        </span>
+
+        {isDigest && (
+          <span
+            className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
+            title="This is a digest notification combining multiple events."
+            aria-label="Digest notification combining multiple events"
+            data-testid={`notif-digest-badge-${n.id}`}
+          >
+            <span aria-hidden="true">D</span>
+            <span className="sr-only">Digest</span>
+          </span>
+        )}
       </button>
 
-      {/* Row actions surface on hover/focus on pointer devices and
-          stay visible on touch (no hover to reveal them there). */}
-      <div className="flex shrink-0 items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+      <time
+        dateTime={n.created_at}
+        title={formatDateTime(n.created_at)}
+        // dir="auto": "3 days ago" begins with a digit, which is bidi-weak,
+        // so inside the RTL page the number was pushed to the end and the
+        // column read "days ago 3". The first STRONG character is Latin,
+        // so letting the browser choose resolves it to ltr. Same reasoning
+        // as PageHeader's title/description.
+        dir="auto"
+        className="shrink-0 whitespace-nowrap ps-[26px] text-xs tabular-nums text-muted-foreground sm:ps-0"
+      >
+        {formatRelativeTime(n.created_at)}
+      </time>
+
+      {/* Fixed-width slot, not a collapsing one: the buttons fade in on
+          hover rather than appearing, so the time above them never
+          jumps sideways. They stay visible on touch, which has no
+          hover to reveal them. */}
+      <div className="ms-auto flex w-16 shrink-0 items-center justify-end gap-0.5 transition-opacity sm:ms-0 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         {!n.read && (
           <Button
             size="sm"
             variant="ghost"
-            className="h-9 w-9 p-0"
+            className="h-8 w-8 p-0"
             onClick={onRead}
             title="Mark as read"
             data-testid={`notif-read-${n.id}`}
@@ -463,7 +489,7 @@ function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
         <Button
           size="sm"
           variant="ghost"
-          className="h-9 w-9 p-0"
+          className="h-8 w-8 p-0"
           onClick={onSnooze}
           loading={snoozing}
           title={`Mute "${kind}" notifications for 1 hour`}
