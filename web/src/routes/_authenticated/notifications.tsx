@@ -185,11 +185,12 @@ function NotificationsPage() {
   const activeCategories = CATEGORIES.filter((c) => counts[c.key] > 0)
 
   return (
-    // max-w-6xl, not 5xl: at 5xl the list pane rendered ~630px wide inside
-    // 1180px of available space -- three-line rows crammed into a narrow
-    // column with a dead gutter beside it, which is most of what made the
-    // page feel congested. One-line rows need the width for their body.
-    <div className="mx-auto max-w-6xl p-6">
+    // Full width, like every other primary page (dashboard, search, tasks,
+    // trash, reports). The centred max-w cap this page used to carry left
+    // a dead gutter on BOTH sides of a list that was itself too narrow --
+    // cramped and empty at the same time. Nothing here wants centring: the
+    // rail anchors the start edge and the list takes what is left.
+    <div className="p-6">
       <PageHeader
         title="Notifications"
         description={
