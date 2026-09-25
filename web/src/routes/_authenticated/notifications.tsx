@@ -185,12 +185,13 @@ function NotificationsPage() {
   const activeCategories = CATEGORIES.filter((c) => counts[c.key] > 0)
 
   return (
-    // Full width, like every other primary page (dashboard, search, tasks,
-    // trash, reports). The centred max-w cap this page used to carry left
-    // a dead gutter on BOTH sides of a list that was itself too narrow --
-    // cramped and empty at the same time. Nothing here wants centring: the
-    // rail anchors the start edge and the list takes what is left.
-    <div className="p-6">
+    // No padding of its own. app-layout already wraps every page in
+    // `p-4 sm:p-6 lg:p-8`, so a page that adds p-6 is padded twice -- 56px
+    // of gutter at lg where the shell intends 32. Dashboard, tasks, trash,
+    // shared-with-me and ask all rely on the shell alone; this page and the
+    // old centred max-w cap were the outliers, which is why it read as
+    // floating in the middle of the screen.
+    <div>
       <PageHeader
         title="Notifications"
         description={
