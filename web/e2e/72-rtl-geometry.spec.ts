@@ -149,6 +149,20 @@ async function mockApi(page: Page) {
     auto_held_documents: 12,
     risk_distribution: { critical: 12, high: 96, medium: 410, low: 686 },
     top_entity_types: [{ entity_type: 'EMAIL', count: 820 }, { entity_type: 'SSN', count: 96 }] })))
+  // --- Anomaly reports ---
+  await page.route('**/api/v1/admin/anomalies**', (r) => r.fulfill(json({
+    reports: [
+      { id: 'rep-00000001', analysis_type: 'combined', status: 'completed',
+        total_documents: 18422, anomalies_found: 12, summary: {},
+        triggered_by: 'scheduled', created_at: '2026-09-25T08:30:00Z' },
+      { id: 'rep-00000002', analysis_type: 'metadata', status: 'processing',
+        total_documents: 0, anomalies_found: 0, summary: {},
+        triggered_by: 'manual', created_at: '2026-09-24T08:30:00Z' },
+    ], total: 42, limit: 30, offset: 0 })))
+  await page.route('**/api/v1/admin/anomaly-config**', (r) => r.fulfill(json({
+    enabled: true, schedule_cron: '0 2 * * *', z_score_threshold: 3,
+    content_distance_threshold: 0.35, min_documents_for_analysis: 50,
+    analyze_metadata: true, analyze_content: true, analyze_behavioral: false })))
   // --- Routing rules. A negative priority is deliberate: digits AND the
   // minus sign are both bidi-weak, so "-5" is exactly the value that
   // reorders to "5-" if the cell inherits the RTL paragraph direction.
@@ -305,7 +319,7 @@ const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin
   '/admin/tenant/sync', '/admin/records-retention', '/admin/legal',
   '/admin/audit', '/admin/integrations', '/admin/ai', '/admin/tagging',
   '/admin/ocr', '/admin/ingestion', '/admin/pii-scanning',
-  '/admin/intelligence/routing-rules']
+  '/admin/intelligence/routing-rules', '/admin/intelligence/anomalies']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {

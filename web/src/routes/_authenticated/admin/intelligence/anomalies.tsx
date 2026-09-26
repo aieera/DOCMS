@@ -99,7 +99,7 @@ function AnomalyDashboardPage() {
     .reduce((acc, r) => acc + r.anomalies_found, 0)
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
         title="Anomaly detection"
         description="Workspace-level outlier scans across metadata, content embeddings, and upload behavior."
@@ -122,21 +122,7 @@ function AnomalyDashboardPage() {
         />
       </div>
 
-      {canEditConfig && (
-        <div className="mt-6">
-          <IntelligenceConfigCard
-            title="Scan settings"
-            description="Schedule and sensitivity for the workspace outlier scans."
-            queryKey={['anomaly-config']}
-            fetchConfig={getAnomalyConfig}
-            saveConfig={updateAnomalyConfig}
-            fields={ANOMALY_CONFIG_FIELDS}
-            testid="anomaly-config"
-          />
-        </div>
-      )}
-
-      <div className="mt-8 rounded border border-border">
+      <div className="mt-6 rounded border border-border">
         <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <span>Recent reports</span>
           {(reports?.total ?? 0) > 30 && (
@@ -168,7 +154,7 @@ function AnomalyDashboardPage() {
             )}
             {(reports?.reports ?? []).map((r) => (
               <tr key={r.id} className="border-t border-border">
-                <td className="px-4 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
+                <td dir="auto" className="px-4 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
                 <td className="px-4 py-2 capitalize">{r.analysis_type}</td>
                 <td className="px-4 py-2">
                   <Badge variant={r.status === 'completed' ? 'active' : r.status === 'failed' ? 'disposed' : 'in_review'}>
@@ -193,6 +179,20 @@ function AnomalyDashboardPage() {
         </table>
         </div>
       </div>
+
+      {canEditConfig && (
+        <div className="mt-8">
+          <IntelligenceConfigCard
+            title="Scan settings"
+            description="Schedule and sensitivity for the workspace outlier scans."
+            queryKey={['anomaly-config']}
+            fetchConfig={getAnomalyConfig}
+            saveConfig={updateAnomalyConfig}
+            fields={ANOMALY_CONFIG_FIELDS}
+            testid="anomaly-config"
+          />
+        </div>
+      )}
 
       {openReport && (
         <ReportDetailModal
@@ -362,7 +362,10 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-border p-4">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      {/* "Last scan" is a formatted date and the counts are numerals --
+          both start with a bidi-weak character, so without dir="auto"
+          they take the paragraph direction and reorder under RTL. */}
+      <div dir="auto" className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   )
 }
