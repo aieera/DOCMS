@@ -32,7 +32,12 @@ const TabsList = forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-9 items-center justify-center rounded-xl bg-muted p-1 text-muted-foreground shadow-neu-inset',
+      'inline-flex h-9 items-center justify-start rounded-xl bg-muted p-1 text-muted-foreground shadow-neu-inset',
+      // Triggers are whitespace-nowrap, so a four- or five-tab set simply
+      // ran off the side of a phone and those tabs could not be reached
+      // at all. Cap the list at its container and let it scroll instead;
+      // the scrollbar itself is hidden so the pill still reads as a pill.
+      'max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
       className,
     )}
     {...props}
