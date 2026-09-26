@@ -30,8 +30,15 @@ import { formatDateTime, formatFileSize } from '@/lib/formatters'
 // must not promise that it does. Saying "permanently" here would be a lie
 // that stops people asking an admin to recover something recoverable.
 /** When workspaceId is set, only deletions from that workspace are shown
- *  (the workspace browser's Trash link scopes the page this way). */
-export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
+ *  (the workspace browser's Trash link scopes the page this way).
+ *
+ *  hideHeading drops the "My trash" h2 for callers that already name the
+ *  section -- the tabbed Trash page puts that label on the tab itself,
+ *  and repeating it directly underneath reads as a stutter. */
+export function MyTrashSection({ workspaceId, hideHeading }: {
+  workspaceId?: string
+  hideHeading?: boolean
+} = {}) {
   const qc = useQueryClient()
   const [clearTarget, setClearTarget] = useState<TrashEntry | null>(null)
 
@@ -72,10 +79,12 @@ export function MyTrashSection({ workspaceId }: { workspaceId?: string } = {}) {
 
   return (
     <section data-testid="my-trash-section">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-        <Trash2 className="h-4 w-4" /> My trash
-        {items.length > 0 && <span className="font-normal">({items.length})</span>}
-      </h2>
+      {!hideHeading && (
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+          <Trash2 className="h-4 w-4" /> My trash
+          {items.length > 0 && <span className="font-normal">({items.length})</span>}
+        </h2>
+      )}
 
       {trash.isLoading ? (
         <Card className="flex items-center justify-center p-8">

@@ -6,13 +6,13 @@ import { toast } from 'sonner'
 import { ArchiveRestore, FileText, FolderClosed, Lock, Trash2 } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/shadcn/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { TypedConfirmDialog } from '@/components/ui/shadcn/typed-confirm-dialog'
 import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import {
   listTrash,
   listTrashedFolders,
@@ -67,6 +67,7 @@ function TrashPage() {
   const [purgeTarget, setPurgeTarget] = useState<TrashEntry | null>(null)
   const [folderPurgeTarget, setFolderPurgeTarget] = useState<TrashedFolder | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
+  const [tab, setTab] = useState<TrashTab>('mine')
 
   // Infinite query so "Load more" APPENDS pages — the previous
   // useQuery-keyed-by-token version replaced page 1 with page 2,
@@ -94,7 +95,7 @@ function TrashPage() {
   const myTrash = useMyTrash()
 
   // BUG-10: every mutation here invalidated only the admin-side keys,
-  // so the "My trash" section directly above (['my-trash']) and the
+  // so the "My trash" tab (['my-trash']) and the
   // workspace document lists kept rendering rows this page had just
   // restored or purged. invalidateTrash covers both trash roots.
   const refreshTrash = () => {
@@ -168,7 +169,7 @@ function TrashPage() {
 
   // Empty-folder cleanup (admin maintenance). The dry-run scan runs on
   // load so the operator sees the count; cleanup soft-deletes them into
-  // the folder trash above (restorable + audited).
+  // the folder trash on the Folders tab (restorable + audited).
   const [confirmCleanup, setConfirmCleanup] = useState(false)
   const emptyScan = useQuery({
     queryKey: ['empty-folders-scan'],
@@ -194,6 +195,10 @@ function TrashPage() {
   const scopedItems = workspaceScope ? allItems.filter((i) => i.workspace_id === workspaceScope) : allItems
   const items = tenantTrashRows(scopedItems, myTrashItems(myTrash.data?.pages))
   const hiddenAsMine = scopedItems.length - items.length
+  // Same derivation MyTrashSection runs, so the tab's count and the table
+  // underneath it can never disagree.
+  const allMine = myTrashItems(myTrash.data?.pages)
+  const mineCount = (workspaceScope ? allMine.filter((i) => i.workspace_id === workspaceScope) : allMine).length
   // Resolved above the member early-return: hook order must not depend
   // on the role branch.
   const locationOf = useTrashLocations(items)
@@ -247,10 +252,6 @@ function TrashPage() {
         }
       />
 
-      {/* Admins are users too: their own deletions come first, then the
-          tenant-wide surface below. */}
-      <MyTrashSection workspaceId={workspaceScope} />
-
       {/* ---- Maintenance: empty-folder cleanup. Compact single line;
              hidden entirely when there's nothing to clean. ---------- */}
       {emptyCount > 0 && (
@@ -276,14 +277,44 @@ function TrashPage() {
         </div>
       )}
 
-      {/* ---- Folders ---------------------------------------------- */}
-      {!foldersEmpty && (
-        <section data-testid="trash-folders-section">
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+      {/* Three audiences for one pile of deletions: what you deleted,
+          what came back as a whole folder, and what everyone else
+          deleted. They used to stack down the page, so the tenant-wide
+          table -- the longest of the three -- sat below two others and
+          the folder section vanished entirely when empty, which reads as
+          "there is no such thing" rather than "there is none right now".
+          Each is a tab now, each states its own empty case, and the
+          counts sit on the tabs so nothing is hidden behind a click. */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TrashTab)}>
+        <TabsList>
+          <TabsTrigger value="mine" className="gap-1.5" data-testid="trash-tab-mine">
+            <Trash2 className="h-4 w-4" /> My trash
+            <TabCount n={mineCount} />
+          </TabsTrigger>
+          <TabsTrigger value="folders" className="gap-1.5" data-testid="trash-tab-folders">
             <FolderClosed className="h-4 w-4" /> Folders
-          </h2>
+            <TabCount n={folders.length} />
+          </TabsTrigger>
+          <TabsTrigger value="others" className="gap-1.5" data-testid="trash-tab-others">
+            <FileText className="h-4 w-4" /> Deleted by other people
+            <TabCount n={items.length} />
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="mine" className="mt-4">
+          {/* The tab already says "My trash" -- the section repeating it
+              directly underneath reads as a stutter. */}
+          <MyTrashSection workspaceId={workspaceScope} hideHeading />
+        </TabsContent>
+
+        <TabsContent value="folders" className="mt-4" data-testid="trash-folders-section">
           {folderTrash.isLoading ? (
             <div className="flex justify-center py-6"><Spinner className="h-5 w-5" /></div>
+          ) : foldersEmpty ? (
+            <Card className="p-6 text-center text-sm text-muted-foreground">
+              No deleted folders. Deleting a folder moves it here with everything inside
+              it, and restoring one brings the whole cohort back together.
+            </Card>
           ) : (
             <Card className="overflow-hidden">
               {/* Same overflow-x-auto treatment as the documents table
@@ -315,32 +346,26 @@ function TrashPage() {
               </div>
             </Card>
           )}
-        </section>
-      )}
+        </TabsContent>
 
-      {/* ---- Documents. Section hides entirely when empty (same as
-             Folders) — one shared empty-state when the whole trash is
-             empty keeps the page from stacking placeholder cards. --- */}
-      {trash.isLoading ? (
-        <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
-      ) : trashEmpty ? (
-        <EmptyState
-          icon={<Trash2 className="h-12 w-12" />}
-          title="Trash is empty"
-          description="Folders and documents you delete will appear here, ready to restore."
-        />
-      ) : docsEmpty ? null : (
-      <section data-testid="tenant-trash-section">
-        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-          <FileText className="h-4 w-4" /> Deleted by other people
-        </h2>
-        {/* The two tables are now disjoint, so say what separates them —
-            otherwise "Documents" reads as a superset that happens to
-            repeat everything above it. */}
+        <TabsContent value="others" className="mt-4" data-testid="tenant-trash-section">
+        {trash.isLoading ? (
+          <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
+        ) : docsEmpty ? (
+          <Card className="p-6 text-center text-sm text-muted-foreground">
+            {trashEmpty
+              ? 'Trash is empty. Folders and documents anyone deletes appear here, ready to restore.'
+              : 'Nothing deleted by anyone else. Every item currently in this tenant\u2019s trash is your own, listed under My trash.'}
+          </Card>
+        ) : (
+        <>
+        {/* The two tables are disjoint, so say what separates them —
+            otherwise this reads as a superset that happens to repeat
+            everything under My trash. */}
         <p className="mb-2 text-xs text-muted-foreground">
           Tenant-wide deletions, excluding the {hiddenAsMine > 0 ? `${hiddenAsMine} ` : ''}item
-          {hiddenAsMine === 1 ? '' : 's'} already listed in <strong>My trash</strong> above.
-          Includes items their deleter has cleared from their own trash — still recoverable here.
+          {hiddenAsMine === 1 ? '' : 's'} on the <strong>My trash</strong> tab. Includes items
+          their deleter has cleared from their own trash — still recoverable here.
         </p>
         <Card className="overflow-hidden">
           {/* overflow-x-auto lets the table scroll instead of the Card
@@ -448,14 +473,16 @@ function TrashPage() {
             </div>
           )}
         </Card>
-      </section>
-      )}
+        </>
+        )}
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={confirmCleanup}
         onOpenChange={setConfirmCleanup}
         title="Clean up empty folders?"
-        description={`This soft-deletes ${emptyScan.data?.count ?? 0}${emptyScan.data?.truncated ? '+' : ''} folders that contain no documents and no subfolders. They move to the folder Trash above and can be restored. The action is audited.`}
+        description={`This soft-deletes ${emptyScan.data?.count ?? 0}${emptyScan.data?.truncated ? '+' : ''} folders that contain no documents and no subfolders. They move to the Folders tab and can be restored. The action is audited.`}
         confirmLabel="Clean up"
         loading={cleanup.isPending}
         onConfirm={() => cleanup.mutate()}
@@ -519,12 +546,22 @@ function TrashPage() {
   )
 }
 
+type TrashTab = 'mine' | 'folders' | 'others'
+
+// A zero count is left off rather than shown as "(0)": an empty tab is
+// already announced by the panel behind it, and three zeroes on the bar
+// is noise.
+function TabCount({ n }: { n: number }) {
+  if (n <= 0) return null
+  return <span dir="auto" className="font-normal tabular-nums opacity-70">({n})</span>
+}
+
 // tenantTrashRows subtracts the caller's own trash from the tenant-wide
 // listing (BUG-13).
 //
 // The admin listing spans EVERY deletion in the tenant, including the
-// viewing admin's own uncleared ones — which the "My trash" section
-// directly above already renders in full. The page therefore read
+// viewing admin's own uncleared ones — which the "My trash" tab already
+// renders in full. The page therefore read
 // "My trash (8)" and then repeated the identical 8 rows in a second
 // table headed "Documents", with nothing to say why. Removing the
 // overlap makes the two tables disjoint, so each row appears exactly
