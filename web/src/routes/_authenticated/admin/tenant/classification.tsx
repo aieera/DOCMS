@@ -50,35 +50,55 @@ export function ClassificationPage() {
   const invalidate = (k: string) => qc.invalidateQueries({ queryKey: ['admin', 'classification', k] })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    // No mx-auto/max-w cap and no padding of its own: the tab panel is
+    // already 1596px wide inside app-layout's own p-4/sm:p-6/lg:p-8, so
+    // `mx-auto max-w-4xl p-6` pinned 896px of content in the middle and
+    // left ~350px dead on each side -- with the tab bar still hard against
+    // the start edge, so the tabs and their own panel did not line up.
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Classification & access"
         description="Gate document view, download, and share by sensitivity level and per-user clearance."
       />
 
       <ExplainerBanner />
 
-      {cfgQ.isLoading ? <Spinner /> : cfgQ.data && <ConfigCard cfg={cfgQ.data} onDone={() => invalidate('config')} />}
+      {/* Tenant-wide switches on the left, rule authoring on the right.
+          The rule builder and the rules it produces belong together in
+          one column: you add a rule and watch it appear directly below. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(320px,400px)_minmax(0,1fr)]">
+        <div className="space-y-6">
+          {cfgQ.isLoading ? (
+            <Spinner />
+          ) : (
+            cfgQ.data && <ConfigCard cfg={cfgQ.data} onDone={() => invalidate('config')} />
+          )}
+          <ClearanceCard />
+        </div>
 
-      <RuleBuilderCard onDone={() => invalidate('rules')} />
-
-      {rulesQ.isLoading ? (
-        <Spinner />
-      ) : (
-        <RulesTable rules={rulesQ.data ?? []} onDone={() => invalidate('rules')} />
-      )}
-
-      <ClearanceCard />
+        <div className="min-w-0 space-y-6">
+          <RuleBuilderCard onDone={() => invalidate('rules')} />
+          {rulesQ.isLoading ? (
+            <Spinner />
+          ) : (
+            <RulesTable rules={rulesQ.data ?? []} onDone={() => invalidate('rules')} />
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
 function ExplainerBanner() {
   return (
-    <section className="mb-6 rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
+    <section className="rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
-        <div className="text-muted-foreground">
+        {/* max-w-[85ch]: the banner spans the panel, but its prose must
+            not. At 1596px this ran ~200 characters to the line, which is
+            about three times a readable measure. */}
+        <div className="max-w-[85ch] text-muted-foreground">
           <p className="font-semibold text-foreground">How it works</p>
           <p className="mt-1">
             Each document carries a sensitivity level (unclassified → internal → confidential →
@@ -114,19 +134,32 @@ function ConfigCard({
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 text-sm font-semibold">Enforcement</div>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enable classification-based access gating for this tenant
-      </label>
-      <label className="mt-2 flex items-center gap-2 text-sm">
+      {/* items-start + the label text in ONE span. As bare children of a
+          flex row each text run and the <code> were separate flex items,
+          so in a narrow column they wrapped as boxes with gap-2 between
+          them -- "…requires        restricted   clearance" -- instead of
+          reflowing as a sentence. */}
+      <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
+          className="mt-0.5 shrink-0"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>Enable classification-based access gating for this tenant</span>
+      </label>
+      <label className="mt-2 flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 shrink-0"
           checked={phiBackstop}
           onChange={(e) => setPhiBackstop(e.target.checked)}
         />
-        PHI backstop — any PHI document requires <code className="mx-1">restricted</code> clearance
+        <span>
+          PHI backstop — any PHI document requires <code className="mx-1">restricted</code> clearance
+        </span>
       </label>
       {enabled && (
         <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-600">
@@ -168,7 +201,7 @@ function RuleBuilderCard({ onDone }: { onDone: () => void }) {
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Plus className="h-4 w-4" /> Add rule
       </div>
@@ -233,7 +266,7 @@ function RulesTable({
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 text-sm font-semibold">Rules</div>
       {rules.length === 0 ? (
         <p className="text-sm text-muted-foreground">

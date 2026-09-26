@@ -73,25 +73,36 @@ export function WatermarkPage() {
     qc.invalidateQueries({ queryKey: ['admin', 'watermark', k] })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    // See classification.tsx: the old `mx-auto max-w-4xl p-6` centred
+    // 896px of content in a 1596px panel and double-padded it.
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Dynamic viewer watermark"
         description="Burn a per-viewer watermark (email, timestamp, IP, …) into document previews, print, and download so leaks are traceable."
       />
 
-      {cfgQ.isLoading ? (
-        <Spinner />
-      ) : (
-        cfgQ.data && <ConfigCard cfg={cfgQ.data} onDone={() => invalidate('config')} />
-      )}
+      {/* The tenant default on the left, per-classification overrides and
+          the list they produce on the right -- builder above its own
+          results, same pairing as the classification rules. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(340px,440px)_minmax(0,1fr)]">
+        <div className="space-y-6">
+          {cfgQ.isLoading ? (
+            <Spinner />
+          ) : (
+            cfgQ.data && <ConfigCard cfg={cfgQ.data} onDone={() => invalidate('config')} />
+          )}
+        </div>
 
-      <OverrideBuilderCard onDone={() => invalidate('overrides')} />
-
-      {overridesQ.isLoading ? (
-        <Spinner />
-      ) : (
-        <OverridesTable overrides={overridesQ.data ?? []} onDone={() => invalidate('overrides')} />
-      )}
+        <div className="min-w-0 space-y-6">
+          <OverrideBuilderCard onDone={() => invalidate('overrides')} />
+          {overridesQ.isLoading ? (
+            <Spinner />
+          ) : (
+            <OverridesTable overrides={overridesQ.data ?? []} onDone={() => invalidate('overrides')} />
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -124,14 +135,22 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Stamp className="h-4 w-4" /> Watermark configuration
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enable the dynamic viewer watermark for this tenant
+      {/* items-start + one span: see classification.tsx. Bare text beside
+          a checkbox in a flex row wraps as flex items, not as a sentence,
+          which shows up as soon as the card sits in a narrow column. */}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 shrink-0"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <span>Enable the dynamic viewer watermark for this tenant</span>
       </label>
 
       <div className="mt-4">
@@ -208,9 +227,14 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
         </div>
       </div>
 
-      <label className="mt-4 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={tile} onChange={(e) => setTile(e.target.checked)} />
-        Tile — repeat the watermark across the whole page (vs. a single centered mark)
+      <label className="mt-4 flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 shrink-0"
+          checked={tile}
+          onChange={(e) => setTile(e.target.checked)}
+        />
+        <span>Tile — repeat the watermark across the whole page (vs. a single centered mark)</span>
       </label>
 
       <div className="mt-4">
@@ -253,7 +277,7 @@ function OverrideBuilderCard({ onDone }: { onDone: () => void }) {
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Plus className="h-4 w-4" /> Add per-classification override
       </div>
@@ -336,7 +360,7 @@ function OverridesTable({
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Droplet className="h-4 w-4" /> Overrides
       </div>

@@ -45,8 +45,13 @@ export function IrmPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    // See classification.tsx: the old `mx-auto max-w-4xl p-6` centred
+    // 896px of content in a 1596px panel and double-padded it. This tab
+    // stays a single column -- it is one list of containers, and splitting
+    // a list in two would only make it harder to scan down.
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Protected exports"
         description="IRM licenses issued by Protect & share — recipients, expiry, opens, and revocation."
       />
@@ -78,10 +83,12 @@ export function IrmPage() {
 
 function ExplainerBanner() {
   return (
-    <section className="mb-6 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
+    <section className="rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-        <div className="text-muted-foreground">
+        {/* See classification.tsx -- the banner is full width, its prose
+            is capped to a readable measure. */}
+        <div className="max-w-[85ch] text-muted-foreground">
           <p className="font-semibold text-foreground">How it works</p>
           <p className="mt-1">
             Each protected container holds an encrypted copy of a document and a set of
