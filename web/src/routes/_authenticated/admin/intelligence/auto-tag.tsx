@@ -67,13 +67,14 @@ export function AutoTagAdminPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader variant="section"
         title="Auto-tagging"
         description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline."
       />
 
-      <div className="mt-6 space-y-6 rounded border border-border p-5">
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+      <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <Toggle
           label="Enable auto-tagging"
           checked={draft.enabled}
@@ -114,12 +115,15 @@ export function AutoTagAdminPage() {
           />
         </div>
 
+      </div>
+
+      <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <div>
           <div className="text-sm font-medium">Source weights</div>
           <p className="mt-1 text-xs text-muted-foreground">
             Multipliers applied to the model's raw confidence before threshold comparison.
           </p>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3">
             {SOURCE_KEYS.map((src) => {
               const w = (draft.source_weights ?? {})[src] ?? 0
               return (
@@ -146,6 +150,7 @@ export function AutoTagAdminPage() {
           </Button>
         </div>
       </div>
+      </div>
     </div>
   )
 }
@@ -160,7 +165,7 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <label className="flex items-center justify-between text-sm">
+    <label className="flex max-w-[60ch] items-center justify-between text-sm">
       <span>{label}</span>
       <input
         type="checkbox"

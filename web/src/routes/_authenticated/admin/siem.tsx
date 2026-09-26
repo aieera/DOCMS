@@ -56,7 +56,7 @@ export function SIEMPage() {
   const hint = TYPES.find((t) => t.value === draft.type)?.endpointHint
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div>
       <PageHeader
         title="SIEM forwarding"
         description="Forward normalised audit + domain events to your SIEM (syslog, Splunk HEC, Microsoft Sentinel). Delivery retries then routes to a DLQ on persistent failure."
@@ -106,18 +106,18 @@ function SinkRow({ sink, onToggle, onTest, onDelete, testing }: {
   return (
     <div className="rounded-lg border border-border p-3" data-testid={`sink-${sink.id}`}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Radio className={`h-4 w-4 ${sink.enabled ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+        <Radio className={`h-4 w-4 ${sink.enabled ? 'text-success' : 'text-muted-foreground'}`} />
         <span className="font-medium">{sink.name}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{sink.type}</span>
         <span className="text-xs text-muted-foreground">{sink.endpoint}</span>
         <span className="ms-auto flex items-center gap-3">
-          <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" />{sink.delivered_count}</span>
-          <span className="inline-flex items-center gap-1 text-xs text-red-600"><XCircle className="h-3.5 w-3.5" />{sink.failed_count}</span>
+          <span className="inline-flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" />{sink.delivered_count}</span>
+          <span className="inline-flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3.5 w-3.5" />{sink.failed_count}</span>
           <span className="text-xs text-muted-foreground">{rate}% ok</span>
         </span>
       </div>
       {sink.last_error && (
-        <p className="mt-1 text-xs text-red-600" title={sink.last_error}>last error: {sink.last_error.slice(0, 80)}</p>
+        <p className="mt-1 text-xs text-destructive" title={sink.last_error}>last error: {sink.last_error.slice(0, 80)}</p>
       )}
       <div className="mt-2 flex items-center gap-2">
         <Button size="sm" variant="outline" className="h-7" onClick={onTest} disabled={testing} data-testid={`test-${sink.id}`}>

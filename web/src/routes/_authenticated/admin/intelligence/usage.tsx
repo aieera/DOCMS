@@ -46,8 +46,8 @@ export function LLMUsagePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/20">
-                <tr className="text-start">
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Model</th>
+                <tr>
+                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground text-start">Model</th>
                   <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Calls</th>
                   <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Input tokens</th>
                   <th className="px-4 py-2.5 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Output tokens</th>

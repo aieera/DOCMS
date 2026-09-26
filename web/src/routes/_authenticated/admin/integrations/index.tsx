@@ -78,7 +78,7 @@ function IntegrationsPage() {
     }
   }, [esign_error, navigate])
   return (
-    <div className="mx-auto w-full max-w-5xl p-6">
+    <div>
       <PageHeader
         title="Integrations"
         description="Third-party providers, outbound webhooks, inbound email + event streams, and MCP keys for this tenant."
@@ -214,31 +214,35 @@ function ESignatureSection() {
 
   return (
     <div>
-      <div className="mb-4 flex gap-2 border-b border-border">
+      {/* Seven tabs in one row ran off the side of a phone, and unlike
+          the shared TabsList this bar is hand-rolled, so it needs its own
+          scroller. The scrollbar is hidden so the rule still reads as a
+          single underline. */}
+      <div className="mb-4 flex gap-2 overflow-x-auto border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           onClick={() => setTab('connections')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'connections' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connections"
         >
           Connections
         </button>
         <button
           onClick={() => setTab('envelopes')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'envelopes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-envelopes"
         >
           In-progress envelopes
         </button>
         <button
           onClick={() => setTab('notifications')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'notifications' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'notifications' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-notifications"
         >
           Notifications
         </button>
         <button
           onClick={() => setTab('connectors')}
-          className={`px-3 py-2 text-sm font-medium ${tab === 'connectors' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
+          className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${tab === 'connectors' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
           data-testid="tab-connectors"
         >
           Workspace connectors
@@ -252,8 +256,8 @@ function ESignatureSection() {
               {PROVIDERS.map((p) => {
                 const conn = connectionFor(p.id)
                 return (
-                  <li key={p.id} className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu" data-testid={`provider-row-${p.id}`}>
-                    <div className="flex-1">
+                  <li key={p.id} className="flex flex-col gap-3 rounded-lg bg-card p-4 shadow-neu sm:flex-row sm:items-center sm:justify-between" data-testid={`provider-row-${p.id}`}>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold">{p.label}</h3>
                         <ConnectionPill conn={conn} testId={`status-${p.id}`} />
@@ -270,7 +274,7 @@ function ESignatureSection() {
                       {conn && (
                         <p className="mt-2 text-xs">
                           <span className="text-muted-foreground">Webhook URL: </span>
-                          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] " data-testid={`webhook-url-${p.id}`}>
+                          <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[10px]" data-testid={`webhook-url-${p.id}`}>
                             {webhookURL(p.id)}
                           </code>
                         </p>

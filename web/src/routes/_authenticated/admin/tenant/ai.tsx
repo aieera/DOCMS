@@ -146,7 +146,7 @@ export function TenantAIPage() {
   const modelOptions = PROVIDER_DEFAULT_MODELS[draft.provider]?.map((m) => ({ value: m, label: m })) ?? []
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       {/* Autofill honeypot. Chrome ignores autocomplete="off" and fills the
           signed-in user's email + password into the first text + password
           pair it finds — which landed the email in Base URL and the password
@@ -185,6 +185,8 @@ export function TenantAIPage() {
           />
         </div>
 
+        <div className="grid gap-5 xl:grid-cols-2">
+          <div className="min-w-0 space-y-5">
         <Section title="Provider" icon={<KeyRound className="h-4 w-4" />}>
           {showExportControlWarning && (
             <div
@@ -288,6 +290,8 @@ export function TenantAIPage() {
           )}
         </Section>
 
+          </div>
+          <div className="min-w-0 space-y-5">
         <Section title="Limits" icon={<ShieldAlert className="h-4 w-4" />}>
           <div className="grid gap-3 md:grid-cols-2">
             <Input
@@ -324,17 +328,6 @@ export function TenantAIPage() {
           </label>
         </Section>
 
-        <div className="flex justify-end gap-2">
-          <Button
-            onClick={handleSave}
-            disabled={saveMut.isPending}
-            data-testid="llm-save"
-          >
-            {saveMut.isPending ? <Spinner className="h-4 w-4" /> : null}
-            Save
-          </Button>
-        </div>
-
         <Section title="Test the configuration" icon={<Beaker className="h-4 w-4" />}>
           <Input
             label="Prompt"
@@ -361,6 +354,19 @@ export function TenantAIPage() {
             </pre>
           )}
         </Section>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button
+            onClick={handleSave}
+            disabled={saveMut.isPending}
+            data-testid="llm-save"
+          >
+            {saveMut.isPending ? <Spinner className="h-4 w-4" /> : null}
+            Save
+          </Button>
+        </div>
       </div>
     </div>
   )

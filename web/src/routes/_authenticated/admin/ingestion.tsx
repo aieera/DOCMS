@@ -28,7 +28,7 @@ function IngestionPage() {
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'review'
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div>
       <PageHeader
         title="Ingestion"
         description="Pre-commit pipeline: staged blobs are OCR'd and auto-routed, or land here for human triage when the read is low-confidence."
@@ -205,7 +205,7 @@ function StagedItemsTab() {
   return (
     <div className="overflow-x-auto rounded border border-border">
       <table className="w-full text-sm">
-        <thead className="text-start text-xs uppercase text-muted-foreground">
+        <thead className="text-xs uppercase text-muted-foreground">
           <tr>
             <th className="px-4 py-2 text-start">Customer</th>
             <th className="px-4 py-2 text-start">Class</th>

@@ -96,6 +96,63 @@ async function mockApi(page: Page) {
       applied_at: '2026-08-14T09:00:00Z', document_ids: ['d1', 'd2'] },
   ])))
   await page.route('**/api/v1/admin/ediscovery/jobs**', (r) => r.fulfill(json({ jobs: [] })))
+  // --- Integrations: the eSign tab is the default one. getOrNull
+  // surfaces treat null as "not configured", which is a valid state.
+  await page.route('**/api/v1/connectors/google', (r) => r.fulfill(json(null)))
+  await page.route('**/api/v1/admin/notifications/twilio', (r) => r.fulfill(json(null)))
+  await page.route('**/api/v1/admin/notifications/smtp', (r) => r.fulfill(json({
+    host: 'smtp.acme.example', port: 587, username: 'dms@acme.example', has_password: true,
+    from_addr: 'dms@acme.example', starttls: true, updated_at: '2026-08-01T09:00:00Z' })))
+  await page.route('**/api/v1/signatures/esign/connections', (r) => r.fulfill(json({ connections: [
+    { id: 'c-1', provider: 'docusign', account_id: 'acme-legal', status: 'connected',
+      expires_at: '2026-12-01T09:00:00Z' },
+  ] })))
+  await page.route('**/api/v1/signatures/esign/envelopes', (r) => r.fulfill(json({ envelopes: [] })))
+  // --- AI & models ---
+  await page.route('**/api/v1/admin/tenant/llm-config', (r) => r.fulfill(json({
+    provider: 'anthropic', model: 'claude-opus-5-5', fallback_model: 'claude-haiku-4-5-20251001',
+    base_url: null, rate_limit_rpm: 600, daily_budget_usd: 250, air_gapped: false,
+    key_set: true, key_set_at: '2026-07-11T09:00:00Z', updated_at: '2026-09-01T09:00:00Z' })))
+  await page.route('**/api/v1/admin/llm-usage**', (r) => r.fulfill(json({
+    tenant_id: TENANT,
+    by_model: [{ model: 'claude-opus-5-5', calls: 12840, input_tokens: 9120334,
+                 output_tokens: 1204221, cost_usd: 184.22 }],
+    totals: { calls: 12840, input_tokens: 9120334, output_tokens: 1204221, cost_usd: 184.22 } })))
+  // --- Tagging (catalog is the default tab) ---
+  await page.route('**/api/v1/tags**', (r) => r.fulfill(json({ tags: [
+    { id: 'tg-1', name: 'contract', document_count: 412 },
+    { id: 'tg-2', name: 'invoice', document_count: 1880 },
+  ], total: 2 })))
+  await page.route('**/api/v1/admin/auto-tag-config', (r) => r.fulfill(json({
+    enabled: true, auto_apply_threshold: 0.85, suggest_threshold: 0.6,
+    max_tags_per_document: 8, blocked_tags: ['misc'],
+    source_weights: { ner: 1, classification: 0.8, llm: 0.9, pattern: 0.6 } })))
+  // --- OCR ---
+  await page.route('**/api/v1/admin/ocr-quality/config', (r) => r.fulfill(json({
+    enabled: true, review_threshold: 0.7, excellent_threshold: 0.95, good_threshold: 0.85,
+    fair_threshold: 0.7, auto_retry_below: 0.5, notify_on_poor: true })))
+  await page.route('**/api/v1/admin/ocr-quality/stats', (r) => r.fulfill(json({
+    total_documents: 18422, documents_by_grade: { excellent: 12044, good: 4120, fair: 1802, poor: 456 },
+    open_review_pages: 318, auto_retried_documents: 212 })))
+  await page.route('**/api/v1/intelligence/ocr/engine-config', (r) => r.fulfill(json({
+    engine: 'auto', doc_type_overrides: { invoice: 'tesseract' } })))
+  // --- Ingestion ---
+  await page.route('**/api/v1/review-queue**', (r) => r.fulfill(json({ items: [
+    { id: 'rq-1', ingestion_item_id: 'ii-1', workspace_id: WS, target_customer_ref: 'ACME-00182',
+      document_class: 'invoice', extracted_external_key: 'INV-2026-4471', confidence: 0.62,
+      reason: 'low_confidence', status: 'pending' },
+  ] })))
+  await page.route('**/api/v1/ingest/items**', (r) => r.fulfill(json({ items: [] })))
+  // --- PII / PHI (findings is the default tab) ---
+  await page.route('**/api/v1/admin/compliance/dashboard**', (r) => r.fulfill(json({
+    total_documents_scanned: 18422, documents_with_findings: 1204, open_findings: 318,
+    auto_held_documents: 12,
+    risk_distribution: { critical: 12, high: 96, medium: 410, low: 686 },
+    top_entity_types: [{ entity_type: 'EMAIL', count: 820 }, { entity_type: 'SSN', count: 96 }] })))
+  await page.route('**/api/v1/admin/compliance/config**', (r) => r.fulfill(json({
+    enabled: true, auto_hold_on_critical: true, notify_on_high: true,
+    notify_roles: ['admin'], pii_entity_risk_overrides: { EMAIL: 'low' },
+    phi_enabled: false, custom_patterns: [] })))
   // /trash was in this gate measuring an EMPTY state -- roughly 120
   // characters of "nothing here" copy, which mirrors trivially and told
   // us nothing. Give it real rows so the route earns its place.
@@ -230,7 +287,9 @@ async function measure(page: Page, route: string, dir: 'ltr' | 'rtl'): Promise<R
 // every one of them, and these add a data table, a card grid, a filter
 // bar and a settings form.
 const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security', '/admin/tenant/encryption',
-  '/admin/tenant/sync', '/admin/records-retention', '/admin/legal']
+  '/admin/tenant/sync', '/admin/records-retention', '/admin/legal',
+  '/admin/audit', '/admin/integrations', '/admin/ai', '/admin/tagging',
+  '/admin/ocr', '/admin/ingestion', '/admin/pii-scanning']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {

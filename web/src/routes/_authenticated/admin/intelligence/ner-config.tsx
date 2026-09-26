@@ -71,7 +71,7 @@ export function NERConfigPage() {
   }
   if (isLoading || !draft) {
     return (
-      <div className="max-w-3xl">
+      <div>
         <PageHeader variant="section" title="NER configuration" description="Loading…" />
       </div>
     )
@@ -88,7 +88,7 @@ export function NERConfigPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader variant="section"
         title="NER configuration"
         description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach. Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."

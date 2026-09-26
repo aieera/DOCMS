@@ -59,7 +59,7 @@ export function ComplianceAdminDashboard() {
   const totalRisk = Object.values(dash.risk_distribution).reduce((a, b) => a + b, 0) || 1
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader variant="section"
         title="Compliance scanning"
         description="Tenant-wide PII/PHI findings produced by the intelligence pipeline."
@@ -136,14 +136,14 @@ export function ComplianceAdminDashboard() {
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-start text-xs uppercase text-muted-foreground">
+            <thead className="text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="py-2">Type</th>
-                <th className="py-2">Risk</th>
-                <th className="py-2">Source</th>
-                <th className="py-2">Document</th>
+                <th className="py-2 text-start">Type</th>
+                <th className="py-2 text-start">Risk</th>
+                <th className="py-2 text-start">Source</th>
+                <th className="py-2 text-start">Document</th>
                 <th className="py-2 text-end">Count</th>
-                <th className="py-2">Created</th>
+                <th className="py-2 text-start">Created</th>
               </tr>
             </thead>
             <tbody>

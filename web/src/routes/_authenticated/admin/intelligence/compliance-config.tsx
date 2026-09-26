@@ -127,13 +127,14 @@ export function ComplianceConfigPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader variant="section"
         title="Compliance config"
         description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns."
       />
 
-      <div className="mt-6 space-y-6 rounded border border-border p-5">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(380px,1fr)_minmax(0,1fr)]">
+      <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <Toggle
           label="Enable compliance scanning"
           checked={draft.enabled}
@@ -170,6 +171,9 @@ export function ComplianceConfigPage() {
           />
         </div>
 
+      </div>
+
+      <div className="min-w-0 space-y-6 rounded border border-border p-5">
         <div>
           <label className="block text-sm font-medium">Risk-level overrides</label>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -208,6 +212,7 @@ export function ComplianceConfigPage() {
           </Button>
         </div>
       </div>
+      </div>
     </div>
   )
 }
@@ -224,7 +229,7 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 text-sm">
+    <div className="flex max-w-[60ch] items-start justify-between gap-4 text-sm">
       <div>
         <div>{label}</div>
         {help && <p className="mt-1 text-xs text-muted-foreground">{help}</p>}

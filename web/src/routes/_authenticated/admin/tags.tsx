@@ -133,10 +133,10 @@ export function TagsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40">
-                <tr className="text-start">
+                <tr>
                   <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">Tag</th>
                   <th className="px-4 py-2.5 text-start text-xs font-semibold uppercase tracking-widest text-muted-foreground">Documents</th>
-                  <th className="px-4 py-2.5"></th>
+                  <th className="px-4 py-2.5 text-start"></th>
                 </tr>
               </thead>
               <tbody>

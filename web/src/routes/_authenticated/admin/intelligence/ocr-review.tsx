@@ -52,7 +52,7 @@ export function OcrReviewPage() {
   const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader variant="section"
         title="OCR review queue"
         description="Documents whose OCR pipeline flagged at least one page for human review."
@@ -108,13 +108,13 @@ export function OcrReviewPage() {
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-start text-xs uppercase text-muted-foreground">
+          <thead className="text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-2">Document</th>
-              <th className="px-4 py-2">Grade</th>
+              <th className="px-4 py-2 text-start">Document</th>
+              <th className="px-4 py-2 text-start">Grade</th>
               <th className="px-4 py-2 text-end">Avg score</th>
               <th className="px-4 py-2 text-end">Pages flagged</th>
-              <th className="px-4 py-2">Scored</th>
+              <th className="px-4 py-2 text-start">Scored</th>
             </tr>
           </thead>
           <tbody>

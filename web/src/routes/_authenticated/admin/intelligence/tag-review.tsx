@@ -78,7 +78,7 @@ export function TagReviewQueuePage() {
   const hasMore = (page + 1) * PAGE_SIZE < total
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <PageHeader variant="section"
         title="Tag review queue"
         description={`${tenantTotal} pending suggestion${tenantTotal === 1 ? '' : 's'} across the tenant`}

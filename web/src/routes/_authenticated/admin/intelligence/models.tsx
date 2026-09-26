@@ -97,7 +97,7 @@ export function ModelsPage() {
     totalExamples != null && minExamples != null && minExamples > 0 && totalExamples < minExamples
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader variant="section"
         title="Model registry"
         description="Per-tenant fine-tuned classifiers. New versions are trained from your manual corrections."
@@ -132,8 +132,9 @@ export function ModelsPage() {
         />
       </div>
 
-      {/* Filter pill bar */}
-      <div className="mt-6 flex items-center gap-2 text-sm">
+      {/* Filter pill bar — seven pills in one row ran off the side of a
+          phone and the last three could not be reached. */}
+      <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-muted-foreground">Filter:</span>
         {(['', 'production', 'candidate', 'training', 'evaluating', 'retired', 'failed'] as const).map(
           (s) => (
@@ -158,14 +159,14 @@ export function ModelsPage() {
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-start text-xs uppercase text-muted-foreground">
+          <thead className="text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-4 py-2">Version</th>
-              <th className="px-4 py-2">Type</th>
-              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2 text-start">Version</th>
+              <th className="px-4 py-2 text-start">Type</th>
+              <th className="px-4 py-2 text-start">Status</th>
               <th className="px-4 py-2 text-end">Examples</th>
               <th className="px-4 py-2 text-end">Accuracy</th>
-              <th className="px-4 py-2">Trained</th>
+              <th className="px-4 py-2 text-start">Trained</th>
               <th className="px-4 py-2 text-end"></th>
             </tr>
           </thead>

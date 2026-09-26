@@ -76,7 +76,7 @@ export function OcrConfigPage() {
   // (read-only); everyone else gets bounced.
   if (!canView) {
     return (
-      <div className="max-w-3xl">
+      <div>
         <PageHeader variant="section"
           title="OCR quality config"
           description="Per-tenant scoring thresholds, auto-retry, and notifications."
@@ -96,7 +96,7 @@ export function OcrConfigPage() {
 
   if (isError) {
     return (
-      <div className="max-w-3xl">
+      <div>
         <PageHeader variant="section" title="OCR quality config" />
         <div className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -113,7 +113,7 @@ export function OcrConfigPage() {
 
   if (isLoading || !draft) {
     return (
-      <div className="max-w-3xl">
+      <div>
         <PageHeader variant="section" title="OCR quality config" description="Loading current configuration…" />
         <div className="mt-6 space-y-3">
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -168,7 +168,7 @@ export function OcrConfigPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div>
       <PageHeader variant="section"
         title="OCR quality config"
         description="Per-tenant scoring thresholds, auto-retry, and review-queue routing."
@@ -325,7 +325,7 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 text-sm">
+    <div className="flex max-w-[80ch] items-start justify-between gap-4 text-sm">
       <div>
         <div className="font-medium">{label}</div>
         {help && <p className="mt-1 text-xs text-muted-foreground">{help}</p>}
@@ -356,7 +356,7 @@ function ThresholdRow({
   const outOfRange = value < 0 || value > 1
 
   return (
-    <div className="grid grid-cols-[1fr_auto] items-start gap-4 text-sm" data-testid={testid}>
+    <div className="grid max-w-[80ch] grid-cols-[minmax(0,1fr)_auto] items-start gap-4 text-sm" data-testid={testid}>
       <div>
         <label htmlFor={testid} className="font-medium">{label}</label>
         {help && <p className="mt-1 text-xs text-muted-foreground">{help}</p>}
