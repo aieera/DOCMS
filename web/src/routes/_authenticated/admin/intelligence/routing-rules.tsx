@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { Input } from '@/components/ui/shadcn/input'
+import { cn } from '@/lib/cn'
 
 interface CreateForm {
   name: string
@@ -135,7 +136,7 @@ function RoutingRulesPage() {
   }
 
   return (
-    <div className="max-w-5xl">
+    <div>
       <PageHeader
         title="Routing rules"
         description="When a document is classified, matching rules emit folder suggestions."
@@ -165,7 +166,7 @@ function RoutingRulesPage() {
 
       {creating && (
         <div className="mt-4 rounded border border-border p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <LabeledInput label="Name">
               <Input
                 value={creating.name}
@@ -180,7 +181,7 @@ function RoutingRulesPage() {
                 placeholder="invoice"
               />
             </LabeledInput>
-            <LabeledInput label="Target folder">
+            <LabeledInput label="Target folder" className="xl:col-span-2">
               <FolderPicker
                 value={creating.target_folder_id}
                 onChange={(id) => setCreating({ ...creating, target_folder_id: id })}
@@ -208,13 +209,13 @@ function RoutingRulesPage() {
 
       <div className="mt-6 overflow-x-auto rounded border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-start text-xs uppercase tracking-wide text-muted-foreground">
+          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">Category</th>
-              <th className="px-4 py-2">Target folder</th>
-              <th className="px-4 py-2">Priority</th>
-              <th className="px-4 py-2">Status</th>
+              <th className="px-4 py-2 text-start">Name</th>
+              <th className="px-4 py-2 text-start">Category</th>
+              <th className="px-4 py-2 text-start">Target folder</th>
+              <th className="px-4 py-2 text-start">Priority</th>
+              <th className="px-4 py-2 text-start">Status</th>
               <th className="px-4 py-2"></th>
             </tr>
           </thead>
@@ -248,7 +249,7 @@ function RoutingRulesPage() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2 tabular-nums">{r.priority}</td>
+                <td dir="auto" className="px-4 py-2 tabular-nums">{r.priority}</td>
                 <td className="px-4 py-2">
                   <button
                     onClick={() => toggle.mutate(r)}
@@ -282,9 +283,13 @@ function RoutingRulesPage() {
   )
 }
 
-function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
+function LabeledInput({ label, children, className }: {
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <label className="text-sm">
+    <label className={cn('block min-w-0 text-sm', className)}>
       <span className="mb-1 block text-muted-foreground">{label}</span>
       {children}
     </label>

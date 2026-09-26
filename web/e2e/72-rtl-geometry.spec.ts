@@ -149,6 +149,21 @@ async function mockApi(page: Page) {
     auto_held_documents: 12,
     risk_distribution: { critical: 12, high: 96, medium: 410, low: 686 },
     top_entity_types: [{ entity_type: 'EMAIL', count: 820 }, { entity_type: 'SSN', count: 96 }] })))
+  // --- Routing rules. A negative priority is deliberate: digits AND the
+  // minus sign are both bidi-weak, so "-5" is exactly the value that
+  // reorders to "5-" if the cell inherits the RTL paragraph direction.
+  await page.route('**/api/v1/admin/routing-rules**', (r) => r.fulfill(json({ rules: [
+    { id: 'rr-1', name: 'Invoices → Finance', description: '', category_key: 'invoice',
+      target_folder_id: 'f-1', target_workspace_id: WS, priority: 10, enabled: true,
+      created_by: USER, created_at: '2026-05-02T09:00:00Z', updated_at: '2026-09-01T09:00:00Z' },
+    { id: 'rr-2', name: 'Signed contracts → Legal/Executed', description: '',
+      category_key: 'contract', target_folder_id: 'f-2', target_workspace_id: WS,
+      priority: -5, enabled: false, created_by: USER,
+      created_at: '2026-05-02T09:00:00Z', updated_at: '2026-09-01T09:00:00Z' },
+  ] })))
+  await page.route('**/api/v1/admin/smart-routing-config**', (r) => r.fulfill(json({
+    enabled: true, auto_move_threshold: 0.9, suggest_threshold: 0.6,
+    max_suggestions: 3, learn_from_history: true, use_similarity: true })))
   await page.route('**/api/v1/admin/compliance/config**', (r) => r.fulfill(json({
     enabled: true, auto_hold_on_critical: true, notify_on_high: true,
     notify_roles: ['admin'], pii_entity_risk_overrides: { EMAIL: 'low' },
@@ -289,7 +304,8 @@ async function measure(page: Page, route: string, dir: 'ltr' | 'rtl'): Promise<R
 const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security', '/admin/tenant/encryption',
   '/admin/tenant/sync', '/admin/records-retention', '/admin/legal',
   '/admin/audit', '/admin/integrations', '/admin/ai', '/admin/tagging',
-  '/admin/ocr', '/admin/ingestion', '/admin/pii-scanning']
+  '/admin/ocr', '/admin/ingestion', '/admin/pii-scanning',
+  '/admin/intelligence/routing-rules']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {
