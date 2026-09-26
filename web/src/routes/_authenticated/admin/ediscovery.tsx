@@ -61,13 +61,14 @@ export function EDiscoveryPage() {
   })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="E-discovery export"
         description="Hold-scoped search-and-export: pick a legal hold, refine, preview the scope, and export the in-scope documents + metadata + audit trail (EDRM load file)."
       />
 
-      <div className="mt-6 space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
             <label className="text-xs font-semibold uppercase text-muted-foreground">Legal hold</label>
@@ -112,8 +113,9 @@ export function EDiscoveryPage() {
         </div>
       </div>
 
-      <h3 className="mt-6 text-sm font-semibold">Export jobs</h3>
-      <div className="mt-2 space-y-2">
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">Export jobs</h3>
+        <div className="space-y-2">
         {jobs.map((j) => (
           <div key={j.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm" data-testid={`job-${j.id}`}>
             <JobStatusIcon status={j.status} />
@@ -122,7 +124,7 @@ export function EDiscoveryPage() {
             <span className="text-muted-foreground">{j.doc_count} docs · {humanSize(j.size_bytes)}</span>
             {j.query && <span className="text-xs text-muted-foreground">“{j.query}”</span>}
             {j.status === 'failed' && j.error && (
-              <span className="text-xs text-red-600" title={j.error}>{j.error.slice(0, 60)}</span>
+              <span className="text-xs text-destructive" title={j.error}>{j.error.slice(0, 60)}</span>
             )}
             {j.download_ready && (
               <Button size="sm" variant="outline" className="ms-auto h-7" disabled={download.isPending}
@@ -137,15 +139,16 @@ export function EDiscoveryPage() {
             No export jobs yet. Pick a hold and request an export.
           </p>
         )}
+        </div>
       </div>
     </div>
   )
 }
 
 function JobStatusIcon({ status }: { status: ExportJob['status'] }) {
-  if (status === 'completed') return <FileArchive className="h-4 w-4 text-emerald-500" />
-  if (status === 'failed') return <AlertTriangle className="h-4 w-4 text-red-500" />
-  return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+  if (status === 'completed') return <FileArchive className="h-4 w-4 text-success" />
+  if (status === 'failed') return <AlertTriangle className="h-4 w-4 text-destructive" />
+  return <Loader2 className="h-4 w-4 animate-spin text-primary" />
 }
 
 // Merged surface — this standalone URL redirects into the canonical

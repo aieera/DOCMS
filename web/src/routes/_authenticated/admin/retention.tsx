@@ -147,7 +147,7 @@ export function RetentionPage() {
       {showForm && (
         <Card className="space-y-4 p-5">
           <h3 className="text-sm font-semibold">Create policy</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
             <Input label="Description" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             <Input label="Document class (optional)" placeholder="e.g. invoice, contract" value={form.document_class_filter ?? ''} onChange={(e) => setForm({ ...form, document_class_filter: e.target.value })} />
@@ -272,13 +272,13 @@ export function RetentionPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
-                <tr className="text-start">
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Policy</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Scope</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Retain</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Then</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                  <th className="px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Updated</th>
+                <tr>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Policy</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Scope</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Retain</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Then</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+                  <th className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-wider text-muted-foreground">Updated</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
               </thead>
@@ -290,7 +290,7 @@ export function RetentionPage() {
                       {p.description && <div className="text-xs text-muted-foreground">{p.description}</div>}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{scopeSummary(p)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{p.retain_days}d</td>
+                    <td dir="auto" className="px-4 py-3 font-mono text-xs">{p.retain_days}d</td>
                     <td className="px-4 py-3 text-xs">
                       <span className="capitalize">{p.then_action}</span>
                       {p.then_action === 'archive' && p.archive_days ? <span className="text-muted-foreground"> → flag after {p.archive_days}d</span> : ''}
@@ -298,7 +298,7 @@ export function RetentionPage() {
                     <td className="px-4 py-3">
                       <Badge variant={p.is_active ? 'active' : 'archived'}>{p.is_active ? 'Active' : 'Paused'}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatRelativeTime(p.updated_at)}</td>
+                    <td dir="auto" className="px-4 py-3 text-xs text-muted-foreground">{formatRelativeTime(p.updated_at)}</td>
                     <td className="px-4 py-3 text-end">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => toggleActive.mutate(p)} disabled={toggleActive.isPending} aria-label={p.is_active ? 'Pause' : 'Activate'}>

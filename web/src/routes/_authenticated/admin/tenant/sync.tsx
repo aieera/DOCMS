@@ -53,8 +53,9 @@ function SyncDevicesPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: SYNC_KEY })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Devices & Sync"
         description="Register and manage the headless clients that mirror folders to a device via selective sync."
       />
@@ -74,10 +75,12 @@ function SyncDevicesPage() {
 
 function ExplainerBanner() {
   return (
-    <section className="mb-6 rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
+    <section className="rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
         <FolderSync className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-        <div className="text-muted-foreground">
+        {/* Full-width banner, capped prose: uncapped, this paragraph runs
+            ~200 characters to the line and the eye loses the return. */}
+        <div className="max-w-[85ch] text-muted-foreground">
           <p className="font-semibold text-foreground">Selective-sync devices</p>
           <p className="mt-1">
             Each device here is a <strong>headless sync client</strong> (the selective-sync agent)
@@ -124,11 +127,11 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Plus className="h-4 w-4" /> Register device
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
         <div className="space-y-1.5">
           <label className="text-sm font-medium" htmlFor="sync-device-name">
             Name
@@ -153,9 +156,8 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
           options={workspaceOpts}
           placeholder={wsQ.isLoading ? 'Loading…' : 'All workspaces'}
         />
-      </div>
-      <div className="mt-4">
         <Button
+          className="sm:col-span-2 sm:justify-self-start lg:col-span-1"
           onClick={() => create.mutate()}
           disabled={create.isPending || name.trim() === ''}
           loading={create.isPending}
@@ -194,15 +196,18 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
         <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
+            {/* text-start belongs on the th: the UA stylesheet sets
+                `text-align: center` directly on th, which beats a value
+                inherited from thead. */}
+            <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2" />
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Platform</th>
-                <th className="px-3 py-2">Last seen</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Folders</th>
-                <th className="px-3 py-2">Sync position</th>
+                <th className="px-3 py-2 text-start">Name</th>
+                <th className="px-3 py-2 text-start">Platform</th>
+                <th className="px-3 py-2 text-start">Last seen</th>
+                <th className="px-3 py-2 text-start">Status</th>
+                <th className="px-3 py-2 text-start">Folders</th>
+                <th className="px-3 py-2 text-start">Sync position</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -228,7 +233,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                       </td>
                       <td className="px-3 py-2 font-medium">{d.name}</td>
                       <td className="px-3 py-2">{d.platform || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      <td dir="auto" className="px-3 py-2 text-muted-foreground">
                         {d.last_seen_at ? formatDateTime(d.last_seen_at) : 'never'}
                       </td>
                       <td className="px-3 py-2">
@@ -379,26 +384,34 @@ function FolderPicker({ device, onDone }: { device: SyncDevice; onDone: () => vo
           <ul className="divide-y divide-border">
             {rows.map(({ workspaceName, folder }) => (
               <li key={folder.id}>
-                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
+                <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
                   <input
                     type="checkbox"
+                    className="mt-1 shrink-0"
                     checked={selected.has(folder.id)}
                     onChange={() => toggle(folder.id)}
                   />
-                  <span className="font-medium">{folder.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {workspaceName}
-                    {folder.path ? ` · ${folder.path}` : ''}
+                  {/* One text block, not two flex items: as siblings in the
+                      row each run wrapped as its own box instead of
+                      reflowing together as a sentence. */}
+                  <span className="min-w-0">
+                    <span className="font-medium">{folder.name}</span>{' '}
+                    <span className="text-xs text-muted-foreground">
+                      {workspaceName}
+                      {folder.path ? ` · ${folder.path}` : ''}
+                    </span>
                   </span>
                 </label>
               </li>
             ))}
             {orphanIds.map((id) => (
               <li key={id}>
-                <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
-                  <input type="checkbox" checked onChange={() => toggle(id)} />
-                  <span className="font-mono text-xs">{id}</span>
-                  <span className="text-xs text-warning-strong">unresolved — uncheck to remove</span>
+                <label className="flex cursor-pointer items-start gap-2 px-3 py-1.5 text-sm hover:bg-accent/40">
+                  <input type="checkbox" className="mt-1 shrink-0" checked onChange={() => toggle(id)} />
+                  <span className="min-w-0 break-all">
+                    <span className="font-mono text-xs">{id}</span>{' '}
+                    <span className="text-xs text-warning-strong">unresolved — uncheck to remove</span>
+                  </span>
                 </label>
               </li>
             ))}

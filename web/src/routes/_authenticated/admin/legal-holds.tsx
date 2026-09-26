@@ -45,6 +45,7 @@ export function LegalHoldsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Legal holds"
         description="Holds block deletion, disposition, and redaction of attached documents until they're released. Releases are audited."
       />
@@ -77,9 +78,12 @@ export function LegalHoldsPage() {
                     )}
                   </div>
                   {hold.description && (
-                    <p className="mt-1 text-sm text-muted-foreground">{hold.description}</p>
+                    <p className="mt-1 max-w-[85ch] text-sm text-muted-foreground">{hold.description}</p>
                   )}
-                  <div className="mt-1 text-xs text-muted-foreground">
+                  {/* dir="auto" on the whole line: it opens with "Applied"
+                      but the dates inside are bidi-weak, and splitting the
+                      resolution across runs mis-orders them under RTL. */}
+                  <div dir="auto" className="mt-1 text-xs text-muted-foreground">
                     Applied {formatRelativeTime(hold.applied_at)} ({formatDate(hold.applied_at)})
                     {hold.released_at && <> · released {formatRelativeTime(hold.released_at)}</>}
                   </div>

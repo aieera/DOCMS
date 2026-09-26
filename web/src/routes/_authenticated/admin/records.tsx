@@ -29,12 +29,13 @@ export function RecordsAdminPage() {
   const [tab, setTab] = useState<Tab>('plan')
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div>
       <PageHeader
+        noMargin
         title="Records management"
         description="File plan · retention schedules · record declaration & disposition."
       />
-      <div className="mt-4 flex gap-1 border-b border-border">
+      <div className="mt-6 flex gap-1 border-b border-border">
         {([['plan', 'File plan'], ['schedules', 'Retention schedules'], ['queue', 'Disposition queue']] as [Tab, string][]).map(
           ([key, label]) => (
             <button
@@ -85,7 +86,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
   return (
     <div className="space-y-4">
       {canWrite && (
-        <div className="grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-5" data-testid="schedule-builder">
+        <div className="grid items-center gap-2 rounded-lg border border-border p-3 sm:grid-cols-6" data-testid="schedule-builder">
           <input
             className="rounded border border-border bg-background px-2 py-1 text-sm sm:col-span-2"
             placeholder="Schedule name" value={draft.name ?? ''}
@@ -104,7 +105,7 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
             value={draft.disposition_action} onChange={(e) => setDraft({ ...draft, disposition_action: e.target.value as DispositionAction })}>
             {ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
-          <Button size="sm" className="sm:col-span-5 sm:w-40" disabled={!draft.name || create.isPending}
+          <Button size="sm" disabled={!draft.name || create.isPending}
             onClick={() => create.mutate(undefined)} data-testid="schedule-create">
             <Plus className="h-3 w-3" /> Add schedule
           </Button>
@@ -114,8 +115,8 @@ function SchedulesTab({ canWrite }: { canWrite: boolean }) {
       <div className="overflow-hidden rounded-lg border border-border">
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
-            <tr><th className="p-2">Name</th><th className="p-2">Trigger</th><th className="p-2">Retention</th><th className="p-2">Action</th><th /></tr>
+          <thead className="bg-muted/40 text-xs text-muted-foreground">
+            <tr><th className="p-2 text-start">Name</th><th className="p-2 text-start">Trigger</th><th className="p-2 text-start">Retention</th><th className="p-2 text-start">Action</th><th /></tr>
           </thead>
           <tbody>
             {schedules.map((s) => (
@@ -185,8 +186,8 @@ function FilePlanTab({ canWrite }: { canWrite: boolean }) {
   })
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-lg border border-border p-3 md:col-span-2" data-testid="file-plan-tree">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+      <div className="min-w-0 rounded-lg border border-border p-3" data-testid="file-plan-tree">
         {tree.length === 0 ? (
           <p className="text-sm text-muted-foreground">No file plan yet. Add a root category →</p>
         ) : (
@@ -199,7 +200,7 @@ function FilePlanTab({ canWrite }: { canWrite: boolean }) {
       </div>
 
       {canWrite && (
-        <div className="space-y-2 rounded-lg border border-border p-3">
+        <div className="min-w-0 space-y-2 self-start rounded-lg border border-border p-3">
           <h3 className="text-sm font-semibold">Add node</h3>
           <select className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
             value={parentId ?? ''} onChange={(e) => setParentId(e.target.value || null)}>
@@ -232,16 +233,19 @@ function TreeRow({ node, depth, schedules, canWrite, onAttach, onDelete, onAddCh
   const [open, setOpen] = useState(true)
   return (
     <li>
-      <div className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-muted/40" style={{ paddingLeft: depth * 16 }}>
+      <div
+        className="flex flex-wrap items-center gap-2 rounded px-1 py-0.5 hover:bg-muted/40"
+        style={{ paddingInlineStart: depth * 16 }}
+      >
         {node.children.length > 0 ? (
-          <button onClick={() => setOpen(!open)}><ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        ) : <FolderTree className="h-3 w-3 text-muted-foreground" />}
-        <span className="text-sm font-medium">{node.name}</span>
-        {node.code && <span className="text-xs text-muted-foreground">{node.code}</span>}
-        <span className={`rounded px-1.5 text-[10px] uppercase ${node.node_type === 'series' ? 'bg-violet-500/15 text-violet-600' : 'bg-muted text-muted-foreground'}`}>{node.node_type}</span>
+          <button className="shrink-0" onClick={() => setOpen(!open)}><ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        ) : <FolderTree className="h-3 w-3 shrink-0 text-muted-foreground" />}
+        <span className="min-w-0 truncate text-sm font-medium">{node.name}</span>
+        {node.code && <span className="shrink-0 text-xs text-muted-foreground">{node.code}</span>}
+        <span className={`shrink-0 rounded px-1.5 text-[10px] uppercase ${node.node_type === 'series' ? 'bg-primary/15 text-foreground' : 'bg-muted text-muted-foreground'}`}>{node.node_type}</span>
         {canWrite && (
-          <span className="ms-auto flex items-center gap-2">
-            <select className="rounded border border-border bg-background px-1 py-0.5 text-xs" value={node.retention_schedule_id ?? ''}
+          <span className="ms-auto flex shrink-0 items-center gap-2">
+            <select className="max-w-[10rem] rounded border border-border bg-background px-1 py-0.5 text-xs" value={node.retention_schedule_id ?? ''}
               onChange={(e) => onAttach(e.target.value || null)} aria-label="Attach schedule">
               <option value="">no schedule</option>
               {schedules.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -308,7 +312,7 @@ function QueueRow({ row, canWrite, onDispose, busy }: {
   return (
     <div className="rounded-lg border border-border p-3" data-testid={`queue-row-${row.id}`}>
       <div className="flex items-center gap-2 text-sm">
-        <Clock className={`h-4 w-4 ${pending ? 'text-amber-500' : 'text-muted-foreground'}`} />
+        <Clock className={`h-4 w-4 ${pending ? 'text-warning-strong' : 'text-muted-foreground'}`} />
         <span className="font-medium">{row.document_title || row.document_id}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{row.disposition_state}</span>
         {row.disposition_action && <span className="text-xs text-muted-foreground">→ {row.disposition_action}</span>}

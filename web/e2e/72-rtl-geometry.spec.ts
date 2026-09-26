@@ -39,7 +39,21 @@ async function mockApi(page: Page) {
     role: 'owner', tenant_id: TENANT, tenant_slug: 'demo', locale,
   })))
   await page.route('**/api/v1/notifications/unread-count', (r) => r.fulfill(json({ count: 6 })))
-  await page.route('**/api/v1/notifications**', (r) => r.fulfill(json({ items: [], total_count: 0 })))
+  // Real rows, not an empty list: the notification row is the densest
+  // thing in this gate (unread dot, icon, truncating title+body, relative
+  // timestamp, hover actions) and an empty state exercises none of it.
+  await page.route('**/api/v1/notifications**', (r) => r.fulfill(json({
+    items: [
+      { id: 'n-1', type: 'document.shared', read: false, created_at: '2026-09-25T08:30:00Z',
+        title: 'Alice Administrator shared a document with you',
+        body: 'Master Services Agreement — Northwind Traders (executed)' },
+      { id: 'n-2', type: 'task.assigned', read: false, created_at: '2026-09-24T11:05:00Z',
+        title: 'You were assigned a task', body: 'Countersign the renewal' },
+      { id: 'n-3', type: 'workflow.completed', read: true, created_at: '2026-09-21T16:45:00Z',
+        title: 'Approval workflow completed', body: 'Q3 board pack cleared all three reviewers' },
+    ],
+    total_count: 3,
+  })))
   // Open tasks so the topbar's count badge actually renders. An empty
   // list leaves a gap next to the search box, and the regression this
   // gate exists for is the ⌘K chip landing ON that badge — with no
@@ -50,6 +64,65 @@ async function mockApi(page: Page) {
     { id: 'tk-2', title: 'Countersign the renewal', status: 'in_progress', assignee_id: USER, created_at: new Date().toISOString() },
   ])))
   await page.route('**/api/v1/workflows/tasks**', (r) => r.fulfill(json([])))
+  // Devices & Sync — one live device and one revoked, so both badge
+  // variants and a real timestamp are on the page to mirror.
+  await page.route('**/api/v1/sync/devices**', (r) => r.fulfill(json({ devices: [
+    { id: 'd-1', name: 'ops-laptop-01', platform: 'linux', last_seen_at: '2026-09-25T08:30:00Z',
+      revoked: false, selective_folders: ['f-1', 'f-2'], cursor: 'eyJvZmZzZXQiOjQyfQ' },
+    { id: 'd-2', name: 'finance-desktop-dublin', platform: 'windows', last_seen_at: null,
+      revoked: true, selective_folders: [], cursor: '' },
+  ] })))
+  // Records & retention — a two-level file plan, because the tree indent
+  // is the thing that has to mirror.
+  await page.route('**/api/v1/records/schedules**', (r) => r.fulfill(json({ schedules: [
+    { id: 's-1', name: 'Contracts — 7 year', trigger_event: 'declaration',
+      retention_period_days: 2555, disposition_action: 'review' },
+  ] })))
+  await page.route('**/api/v1/records/categories**', (r) => r.fulfill(json({ categories: [
+    { id: 'c-1', parent_id: null, name: 'Corporate', code: 'CORP', node_type: 'category' },
+    { id: 'c-2', parent_id: 'c-1', name: 'Board minutes', code: 'CORP-BM', node_type: 'series',
+      retention_schedule_id: 's-1' },
+  ] })))
+  await page.route('**/api/v1/records/disposition-queue**', (r) => r.fulfill(json({ records: [] })))
+  await page.route('**/api/v1/admin/retention-policies**', (r) => r.fulfill(json([
+    { id: 'p-1', name: 'Invoices — 7 years', description: 'Finance retention baseline',
+      retain_days: 2555, then_action: 'archive', archive_days: 90, is_active: true,
+      updated_at: '2026-09-20T09:00:00Z', document_class_filter: 'invoice', tag_filter: ['finance'] },
+  ])))
+  // Legal holds — the default tab of /admin/legal.
+  await page.route('**/api/v1/compliance/holds**', (r) => r.fulfill(json([
+    { id: 'h-1', name: 'Northwind v. Acme', matter_reference: '2026-CV-1183', is_active: true,
+      description: 'All contract and correspondence records touching the Northwind matter.',
+      applied_at: '2026-08-14T09:00:00Z', document_ids: ['d1', 'd2'] },
+  ])))
+  await page.route('**/api/v1/admin/ediscovery/jobs**', (r) => r.fulfill(json({ jobs: [] })))
+  // /trash was in this gate measuring an EMPTY state -- roughly 120
+  // characters of "nothing here" copy, which mirrors trivially and told
+  // us nothing. Give it real rows so the route earns its place.
+  // /tasks reads the ENVELOPE endpoint (/tasks), not /tasks/mine which
+  // the topbar badge uses -- so the page itself was measuring an empty
+  // state while the badge above it had data.
+  await page.route('**/api/v1/tasks?**', (r) => r.fulfill(json({
+    items: [
+      { id: 'tk-1', title: 'Review the Northwind MSA', status: 'open', priority: 'high',
+        assignee_id: USER, assignee_name: 'Me', created_at: '2026-09-22T09:00:00Z',
+        due_at: '2026-10-01T09:00:00Z', document_title: 'Master Services Agreement' },
+      { id: 'tk-2', title: 'Countersign the renewal', status: 'in_progress', priority: 'normal',
+        assignee_id: USER, assignee_name: 'Me', created_at: '2026-09-19T09:00:00Z' },
+    ],
+    total: 2, limit: 50, offset: 0,
+  })))
+  await page.route('**/api/v1/admin/trash/folders**', (r) => r.fulfill(json({ items: [] })))
+  await page.route('**/api/v1/admin/trash**', (r) => r.fulfill(json({ items: [
+    { id: 'tr-1', title: 'Master Services Agreement — Northwind Traders (executed)',
+      workspace_id: WS, mime_type: 'application/pdf', total_size_bytes: 128934,
+      lifecycle_state: 'LIFECYCLE_STATE_ACTIVE', deleted_by_name: 'Alice Administrator',
+      deleted_at: '2026-09-20T09:00:00Z', user_cleared: true },
+    { id: 'tr-2', title: 'Q3 board pack (draft)', workspace_id: WS,
+      mime_type: 'application/pdf', total_size_bytes: 884120,
+      lifecycle_state: 'LIFECYCLE_STATE_DRAFT', deleted_by_name: 'Bob Reviewer',
+      deleted_at: '2026-09-18T14:30:00Z' },
+  ] })))
   // Three KEK versions so the rotation history has rows to mirror, and a
   // key ARN long enough to be the thing that overflows if anything does.
   await page.route('**/api/v1/admin/encryption/status', (r) => r.fulfill(json({
@@ -133,13 +206,31 @@ async function measure(page: Page, route: string, dir: 'ltr' | 'rtl'): Promise<R
   // geometry against half-English text.
   await page.waitForLoadState('networkidle').catch(() => { /* best effort */ })
   await settle(page)
+  // Nothing to measure passes the differential for the wrong reason --
+  // that is exactly how this gate went vacuously green before. So prove
+  // the page is really on screen before trusting a clean result from it.
+  // The two ways it silently is not: the route error-boundaried, or the
+  // session lapsed and we measured the login page 13 times. The
+  // character floor is only a backstop for anything else; it is set
+  // below the sparsest legitimate page here rather than at the density
+  // we would like, so it never fails an honestly-empty state.
+  const probe = await page.evaluate(() => {
+    const main = document.querySelector('main') ?? document.body
+    const text = main.innerText.trim()
+    return { chars: text.length, boundary: /couldn.t be displayed/i.test(text) }
+  })
+  expect(probe.boundary, `${route} rendered an error boundary in ${dir}`).toBe(false)
+  expect(page.url(), `${route} bounced to login in ${dir}`).not.toContain('/login')
+  expect(probe.chars, `${route} rendered almost nothing in ${dir} — nothing to compare`)
+    .toBeGreaterThan(120)
   return page.evaluate(detectLayout)
 }
 
 // Routes chosen for layout density rather than coverage: the shell is on
 // every one of them, and these add a data table, a card grid, a filter
 // bar and a settings form.
-const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security', '/admin/tenant/encryption']
+const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security', '/admin/tenant/encryption',
+  '/admin/tenant/sync', '/admin/records-retention', '/admin/legal']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {
