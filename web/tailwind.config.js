@@ -91,6 +91,10 @@ export default {
         'neu-inset': 'var(--nm-shadow-inset)',
         'neu-pressed': 'var(--nm-shadow-pressed)',
         'neu-lg': 'var(--nm-shadow-lg)',
+        // Floating layers only -- no neumorphic highlight, which reads as
+        // a glow when there is no surface behind the panel.
+        float: 'var(--nm-shadow-float)',
+        'float-sm': 'var(--nm-shadow-float-sm)',
       },
       keyframes: {
         'accordion-down': {

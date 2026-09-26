@@ -103,6 +103,15 @@
     --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
     --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
     --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
+    /* Floating surfaces -- dialogs, sheets, menus, popovers, tooltips.
+       The neumorphic pair above paints a near-white highlight at the
+       top-left (--nm-light) so a panel looks pressed OUT of the page it
+       sits on. A floating layer has no page behind it: over the dimmed
+       overlay that highlight has nothing to blend into and reads as a
+       glowing border around the panel. Floating layers get a plain
+       downward elevation shadow instead, in the same palette. */
+    --nm-shadow-float: 0 12px 32px -8px hsl(var(--nm-dark) / 0.6), 0 4px 12px -4px hsl(var(--nm-dark) / 0.45);
+    --nm-shadow-float-sm: 0 4px 12px -3px hsl(var(--nm-dark) / 0.55);
   }
 
   .dark {
@@ -154,6 +163,10 @@
     --nm-shadow-inset: inset var(--nm-dist) var(--nm-dist) var(--nm-blur) hsl(var(--nm-dark)), inset calc(-1 * var(--nm-dist)) calc(-1 * var(--nm-dist)) var(--nm-blur) hsl(var(--nm-light));
     --nm-shadow-pressed: inset 3px 3px 7px hsl(var(--nm-dark)), inset -3px -3px 7px hsl(var(--nm-light));
     --nm-shadow-lg: calc(var(--nm-dist) * 1.5) calc(var(--nm-dist) * 1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-dark)), calc(var(--nm-dist) * -1.5) calc(var(--nm-dist) * -1.5) calc(var(--nm-blur) * 1.4) hsl(var(--nm-light));
+    /* Opaquer here: --nm-dark is only slightly darker than the dark
+       canvas, so a 0.6 alpha shadow would barely separate the panel. */
+    --nm-shadow-float: 0 12px 32px -8px hsl(var(--nm-dark) / 0.85), 0 4px 12px -4px hsl(var(--nm-dark) / 0.7);
+    --nm-shadow-float-sm: 0 4px 12px -3px hsl(var(--nm-dark) / 0.8);
   }
 
   @media (max-width: 640px) {

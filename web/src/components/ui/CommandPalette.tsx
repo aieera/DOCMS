@@ -67,7 +67,7 @@ export function CommandPalette() {
     <div className="fixed inset-0 z-[100]" data-testid="command-palette" onClick={() => setOpen(false)}>
       <div className="fixed inset-0 bg-black/50" />
       <div className="fixed start-1/2 top-[20%] z-[101] w-full max-w-lg -translate-x-1/2" onClick={(e) => e.stopPropagation()}>
-        <Command className="rounded-2xl bg-popover text-popover-foreground shadow-neu"
+        <Command className="rounded-2xl bg-popover text-popover-foreground shadow-float"
           // shouldFilter=false: cmdk's built-in filter would re-rank
           // server-supplied groups by its own match algorithm. We
           // already get a relevance-ordered list back; let it stand.
