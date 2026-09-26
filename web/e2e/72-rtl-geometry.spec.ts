@@ -50,6 +50,20 @@ async function mockApi(page: Page) {
     { id: 'tk-2', title: 'Countersign the renewal', status: 'in_progress', assignee_id: USER, created_at: new Date().toISOString() },
   ])))
   await page.route('**/api/v1/workflows/tasks**', (r) => r.fulfill(json([])))
+  // Three KEK versions so the rotation history has rows to mirror, and a
+  // key ARN long enough to be the thing that overflows if anything does.
+  await page.route('**/api/v1/admin/encryption/status', (r) => r.fulfill(json({
+    versions: [
+      { version: 3, alias: 'kek-demo-v3', provider: 'aws_kms',
+        external_key_ref: 'arn:aws:kms:eu-west-1:123456789012:key/8f2a1c34-9b7e-4d51-a0c8-1e6f5b3d9a27',
+        created_at: '2026-09-01T09:00:00Z', active: true },
+      { version: 2, alias: 'kek-demo-v2', provider: 'vault',
+        external_key_ref: 'transit/keys/tenant-demo',
+        created_at: '2026-05-14T09:00:00Z', retired_at: '2026-09-01T09:00:00Z', active: false },
+      { version: 1, alias: 'kek-demo-v1', provider: 'local',
+        created_at: '2025-01-04T09:00:00Z', revoked_at: '2026-05-14T09:00:00Z', active: false },
+    ],
+  })))
   await page.route('**/api/v1/saved-searches**', (r) => r.fulfill(json([])))
   await page.route('**/api/v1/workspaces', (r) => r.fulfill(json({
     workspaces: [{
@@ -125,7 +139,7 @@ async function measure(page: Page, route: string, dir: 'ltr' | 'rtl'): Promise<R
 // Routes chosen for layout density rather than coverage: the shell is on
 // every one of them, and these add a data table, a card grid, a filter
 // bar and a settings form.
-const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security']
+const ROUTES = ['/', '/search', `/workspaces/${WS}`, '/trash', '/tasks', '/admin', '/notifications', '/settings', '/settings/security', '/admin/tenant/encryption']
 
 for (const width of [1440, 768] as const) {
   test.describe(`RTL geometry @ ${width}px`, () => {

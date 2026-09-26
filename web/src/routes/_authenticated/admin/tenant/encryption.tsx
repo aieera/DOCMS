@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, KeyRound, Lock, RotateCw, ShieldOff, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { cn } from '@/lib/cn'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/shadcn/button'
@@ -58,8 +59,15 @@ function EncryptionPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['admin', 'encryption', 'status'] })
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    // The old `mx-auto max-w-4xl p-6` pinned 896px of content in the
+    // middle of a ~1600px shell and added a third layer of padding on
+    // top of app-layout's. Full width now, split into the two things an
+    // operator actually does here: settle what backs the key, and work
+    // its versions. Each action sits beside the state it changes --
+    // Register feeds the Active key card, Rotate appends to the history.
+    <div className="space-y-6">
       <PageHeader
+        noMargin
         title="Encryption & key management"
         description="Register an external KMS key as this tenant's KEK source, rotate it, and manage break-glass revocation."
       />
@@ -75,10 +83,19 @@ function EncryptionPage() {
 
       {data && (
         <>
+          {/* The page's status line: what is live right now. */}
           <ActiveKeyCard active={active} />
-          <RegisterCard active={active} onDone={invalidate} />
-          <RotateCard active={active} onDone={invalidate} />
-          <HistoryCard versions={versions} onDone={invalidate} />
+          <div className="grid gap-6 xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]">
+            {/* Key source — what the envelope layer resolves per tenant. */}
+            <div className="min-w-0">
+              <RegisterCard active={active} onDone={invalidate} />
+            </div>
+            {/* Lifecycle — minting versions and retiring them. */}
+            <div className="min-w-0 space-y-6">
+              <RotateCard active={active} onDone={invalidate} />
+              <HistoryCard versions={versions} onDone={invalidate} />
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -87,10 +104,13 @@ function EncryptionPage() {
 
 function CustodyWarning() {
   return (
-    <section className="mb-6 rounded-lg border border-warning/40 bg-warning/10 p-4">
+    <section className="rounded-lg border border-warning/40 bg-warning/10 p-4">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-        <div className="text-sm">
+        {/* Full-width banner, but the prose is capped to a readable
+            measure -- at 1600px an uncapped paragraph runs ~200 chars
+            to the line and the eye loses its place on the return. */}
+        <div className="max-w-[85ch] text-sm">
           <p className="font-semibold">You hold custody of the external key.</p>
           <p className="mt-1 text-muted-foreground">
             SeDoc wraps each tenant data-encryption key under your KEK; it never stores the KEK
@@ -108,17 +128,27 @@ function CustodyWarning() {
 
 function ActiveKeyCard({ active }: { active?: KEKVersion }) {
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <Lock className="h-4 w-4" /> Active key
       </div>
       {active ? (
-        <dl className="divide-y divide-border text-sm">
-          <Row label="Version" value={`v${active.version}`} />
-          <Row label="Provider" value={providerLabel(active.provider)} />
-          <Row label="Alias (wrap handle)" value={active.alias} mono />
-          <Row label="External key reference" value={active.external_key_ref || '—'} mono />
-          <Row label="Created" value={fmt(active.created_at)} />
+        // Label-above-value, not label/value on one justified line: the
+        // key reference is long enough to wrap, and a justified row puts
+        // its tail on a second line while the label sits alone on the
+        // first. The four short facts band across the width; the
+        // reference takes a row of its own.
+        <dl className="grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Fact label="Version" value={`v${active.version}`} />
+          <Fact label="Provider" value={providerLabel(active.provider)} />
+          <Fact label="Alias (wrap handle)" value={active.alias} mono />
+          <Fact label="Created" value={fmt(active.created_at)} />
+          <Fact
+            className="sm:col-span-2 lg:col-span-4"
+            label="External key reference"
+            value={active.external_key_ref || '—'}
+            mono
+          />
         </dl>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -148,7 +178,7 @@ function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => v
   const disabled = register.isPending || !active || (needsRef && ref.trim() === '')
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <KeyRound className="h-4 w-4" /> Register external KMS
       </div>
@@ -156,7 +186,10 @@ function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => v
         Declare which external key backs the active KEK version. The alias stays the wrap handle;
         the envelope layer resolves the provider + reference recorded here.
       </p>
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* 2-up while the page is a single wide column; stacked again from
+          xl, where this card sits in a ~420px column and a key ARN in a
+          190px input would be unreadable. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <LabeledSelect
           label="Provider"
           value={provider}
@@ -171,10 +204,13 @@ function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => v
             id="kms-ref"
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            placeholder={needsRef ? REF_HINT[provider] : 'n/a'}
+            placeholder={needsRef ? '' : 'n/a'}
             disabled={!needsRef}
+            aria-describedby="kms-ref-hint"
           />
-          <p className="mt-1 text-xs text-muted-foreground">{REF_HINT[provider]}</p>
+          <p id="kms-ref-hint" className="mt-1 text-xs text-muted-foreground">
+            {REF_HINT[provider]}
+          </p>
         </div>
       </div>
       <div className="mt-4">
@@ -200,7 +236,7 @@ function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => voi
   })
 
   return (
-    <Card className="mb-6 p-4">
+    <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <RotateCw className="h-4 w-4" /> Rotate key
       </div>
@@ -263,24 +299,28 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
         <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
+            {/* text-start belongs on the th, not the thead: the UA
+                stylesheet sets `text-align: center` directly on th, which
+                beats a value inherited from thead -- so these headers sat
+                centred over start-aligned cells. */}
+            <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="px-3 py-2">Version</th>
-                <th className="px-3 py-2">Provider</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Created</th>
+                <th className="px-3 py-2 text-start">Version</th>
+                <th className="px-3 py-2 text-start">Provider</th>
+                <th className="px-3 py-2 text-start">Status</th>
+                <th className="px-3 py-2 text-start">Created</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {versions.map((v) => (
                 <tr key={v.version}>
-                  <td className="px-3 py-2 font-mono">v{v.version}</td>
+                  <td dir="auto" className="px-3 py-2 font-mono">v{v.version}</td>
                   <td className="px-3 py-2">{providerLabel(v.provider)}</td>
                   <td className="px-3 py-2">
                     <StatusBadge v={v} />
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{fmt(v.created_at)}</td>
+                  <td dir="auto" className="px-3 py-2 text-muted-foreground">{fmt(v.created_at)}</td>
                   <td className="px-3 py-2 text-end">
                     {!v.revoked_at && (
                       <Button
@@ -325,11 +365,21 @@ function StatusBadge({ v }: { v: KEKVersion }) {
   )
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Fact({
+  label,
+  value,
+  mono,
+  className,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  className?: string
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={mono ? 'break-all font-mono text-xs' : ''}>{value}</dd>
+    <div className={cn('min-w-0', className)}>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd dir="auto" className={cn('mt-1 break-all', mono && 'font-mono text-xs')}>{value}</dd>
     </div>
   )
 }
