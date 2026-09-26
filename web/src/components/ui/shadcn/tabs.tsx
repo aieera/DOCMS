@@ -1,8 +1,29 @@
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
 import * as TabsPrimitive from '@radix-ui/react-tabs'
 import { cn } from '@/lib/cn'
+import { useDirection } from '@/hooks/useDirection'
 
-const Tabs = TabsPrimitive.Root
+// Radix's Tabs.Root defaults to dir="ltr" when the prop is omitted -- it
+// does NOT inherit from the document -- and it stamps that onto a wrapper
+// div around the whole tab set. So every tab panel in the app (18 files
+// import this) laid itself out LTR inside the Arabic UI: headings hugged
+// the wrong edge and panel grids never mirrored.
+//
+// This also made the RTL geometry check useless on tabbed pages. It reports
+// what RTL breaks that LTR holds, and the answer was "nothing" -- not
+// because the layout was sound, but because RTL was rendering byte-identical
+// to LTR. A clean differential is not the same as a correct page.
+//
+// useDirection() is the same source app-sidebar and DirectionalIcon read.
+// An explicit dir prop still wins, for the rare genuinely-physical tab set.
+const Tabs = forwardRef<
+  ElementRef<typeof TabsPrimitive.Root>,
+  ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
+>(({ dir, ...props }, ref) => {
+  const direction = useDirection()
+  return <TabsPrimitive.Root ref={ref} dir={dir ?? direction} {...props} />
+})
+Tabs.displayName = TabsPrimitive.Root.displayName
 
 const TabsList = forwardRef<
   ElementRef<typeof TabsPrimitive.List>,
