@@ -222,11 +222,11 @@ function MyTasksSection({ mode = 'mine' }: { mode?: 'mine' | 'created' }) {
         <div className="flex min-h-[60vh] items-center justify-center">
           <EmptyState
             icon={<CheckSquare className="h-10 w-10" />}
-            title={created ? 'No tasks created' : 'No tasks'}
+            title={created ? t('tasks.empty_created') : t('tasks.empty_mine')}
             description={
               created
-                ? (includeCompleted ? "You haven't created any tasks yet." : "No open tasks you created. Click 'Show completed' to see finished ones, or add one below.")
-                : (includeCompleted ? "You're all caught up." : "No open tasks. Click 'Show completed' to review past work.")
+                ? (includeCompleted ? t('tasks.empty_created_all') : t('tasks.empty_created_open'))
+                : (includeCompleted ? t('tasks.empty_mine_all') : t('tasks.empty_mine_open'))
             }
           />
         </div>
@@ -278,7 +278,7 @@ function TaskTable({ tasks, onChange, onOpen }: { tasks: Task[]; onChange: () =>
         <thead>
           <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_title')}</th>
-            <th scope="col" className="px-3 py-2.5 text-start font-semibold">Priority</th>
+            <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_priority')}</th>
             <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_due')}</th>
             <th scope="col" className="px-3 py-2.5 text-start font-semibold">{t('tasks.col_status')}</th>
             <th scope="col" className="px-3 py-2.5 text-end font-semibold">{t('tasks.col_actions')}</th>
@@ -351,7 +351,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
         )}
         {task.description && <p className="mt-0.5 text-xs text-muted-foreground truncate max-w-md">{task.description}</p>}
       </td>
-      <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge></td>
+      <td className="px-3 py-2"><Badge variant={priorityBadge(task.priority)}>{t(`tasks.prio_${task.priority}_badge`)}</Badge></td>
       {/* QA SD-20: an overdue task rendered in the same neutral grey as
           every other row — lateness must be visible in a work inbox. */}
       <td className="px-3 py-2 text-xs">
@@ -368,7 +368,7 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
           <span className="text-muted-foreground">—</span>
         )}
       </td>
-      <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{task.status}</Badge></td>
+      <td className="px-3 py-2"><Badge variant={statusBadge(task.status)}>{t(`tasks.status_${task.status}`)}</Badge></td>
       <td className="px-3 py-2 text-end">
         <div className="inline-flex items-center gap-1">
           {task.status === 'open' && (
@@ -409,8 +409,8 @@ function TaskRow({ task, onChange, onOpen }: { task: Task; onChange: () => void;
             size="icon"
             variant="ghost"
             onClick={() => setConfirmDelete(true)}
-            aria-label={`Delete task: ${task.title}`}
-            title={`Delete task: ${task.title}`}
+            aria-label={t('tasks.delete_aria', { title: task.title })}
+            title={t('tasks.delete_aria', { title: task.title })}
             className="h-9 w-9 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
@@ -483,7 +483,7 @@ function KanbanCard({ task, onChange, onOpen }: { task: Task; onChange: () => vo
         >
           {task.title}
         </button>
-        <Badge variant={priorityBadge(task.priority)}>{task.priority}</Badge>
+        <Badge variant={priorityBadge(task.priority)}>{t(`tasks.prio_${task.priority}_badge`)}</Badge>
       </div>
       {task.due_at && (
         <p className="mt-1 text-xs text-muted-foreground">Due {formatRelativeTime(task.due_at)}</p>
@@ -605,7 +605,7 @@ function ApprovalsSection() {
                 <div className="mt-1 text-xs text-muted-foreground">
                   Assigned {formatRelativeTime(task.created_at)}
                   {task.due_at && <> · due {formatRelativeTime(task.due_at)}</>}
-                  &nbsp;·&nbsp;<Badge variant={statusBadge(task.status)}>{task.status}</Badge>
+                  &nbsp;·&nbsp;<Badge variant={statusBadge(task.status)}>{t(`tasks.status_${task.status}`)}</Badge>
                 </div>
               </div>
               {task.status === 'pending' && (

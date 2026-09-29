@@ -295,7 +295,7 @@ function ReportsPage() {
             <div className="divide-y divide-border">
               <BuilderStep n={1} title={t('reports.dataset')}>
                 <select
-                  aria-label="Dataset"
+                  aria-label={t('reports.dataset')}
                   value={dataset}
                   onChange={(e) => {
                     setDataset(e.target.value)
@@ -312,7 +312,7 @@ function ReportsPage() {
                 </select>
               </BuilderStep>
 
-              <BuilderStep n={2} title={t('reports.group_by')} hint="max 3">
+              <BuilderStep n={2} title={t('reports.group_by')} hint={t('reports.hint_max3')}>
                 <div className="flex flex-wrap gap-1.5">
                   {(ds?.dimensions ?? []).map((d) => (
                     <Chip key={d} selected={dimensions.includes(d)} onClick={() => toggle(dimensions, setDimensions, d, 3)} testid={`dim-${d}`}>
@@ -335,7 +335,7 @@ function ReportsPage() {
               <BuilderStep
                 n={4}
                 title={t('reports.refine')}
-                hint="optional"
+                hint={t('reports.hint_optional')}
                 action={
                   <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setFilters((f) => [...f, { field: ds?.dimensions[0] ?? '', values: '' }])}>
                     <Plus className="h-3 w-3" /> {t('reports.filter')}

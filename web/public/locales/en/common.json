@@ -180,7 +180,10 @@
     "name_label": "Name",
     "name_placeholder": "Q4 Contracts",
     "desc_label": "Description (optional)",
-    "desc_placeholder": "What lives here?"
+    "desc_placeholder": "What lives here?",
+    "shared_badge": "Shared",
+    "shared_title_one": "{{count}} person has been given access to this workspace.",
+    "shared_title_other": "{{count}} people have been given access to this workspace."
   },
   "trash": {
     "title": "Trash",
@@ -302,7 +305,9 @@
     "back": "Back",
     "next": "Next",
     "done": "Done",
-    "search": "Search"
+    "search": "Search",
+    "switch_list": "Switch to list view",
+    "switch_grid": "Switch to grid view"
   },
   "tasks": {
     "title": "Tasks",
@@ -353,7 +358,24 @@
     "prio_urgent": "Urgent",
     "prio_high": "High",
     "prio_normal": "Normal",
-    "prio_low": "Low"
+    "prio_low": "Low",
+    "col_priority": "Priority",
+    "delete_aria": "Delete task: {{title}}",
+    "status_open": "open",
+    "status_in_progress": "in progress",
+    "status_done": "done",
+    "status_cancelled": "cancelled",
+    "status_blocked": "blocked",
+    "prio_urgent_badge": "urgent",
+    "prio_high_badge": "high",
+    "prio_normal_badge": "normal",
+    "prio_low_badge": "low",
+    "empty_created": "No tasks created",
+    "empty_mine": "No tasks",
+    "empty_created_all": "You haven't created any tasks yet.",
+    "empty_created_open": "No open tasks you created. Click 'Show completed' to see finished ones, or add one below.",
+    "empty_mine_all": "You're all caught up.",
+    "empty_mine_open": "No open tasks. Click 'Show completed' to review past work."
   },
   "ask": {
     "title": "Ask",
@@ -371,7 +393,9 @@
       "q2": "Summarize the key terms of the latest contract.",
       "q3": "What are the main obligations in the partner program?",
       "q4": "Which documents mention renewal or termination?"
-    }
+    },
+    "send": "Ask",
+    "send_hint": "to send · answers come from your readable documents only."
   },
   "clauses": {
     "title": "Clause library",
@@ -472,7 +496,9 @@
     "saved": "Report saved",
     "query_failed": "Query failed",
     "delete_error": "Could not delete report",
-    "save_error": "Could not save report"
+    "save_error": "Could not save report",
+    "hint_max3": "max 3",
+    "hint_optional": "optional"
   },
   "integrations": {
     "title": "Integrations",

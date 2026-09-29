@@ -1,4 +1,5 @@
 import { Lock, Users } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/shadcn/badge'
 import { cn } from '@/lib/cn'
@@ -28,6 +29,7 @@ export function WorkspaceAccessBadge({
   memberCount?: number | string
   className?: string
 }) {
+  const { t } = useTranslation('common')
   // protobuf int64 marshals to a JSON *string*, so these arrive as "3", not
   // 3. Coerce rather than compare loosely — the identical assumption in the
   // meta row (`member_count === 1 ? 'member' : 'members'`) is why every card
@@ -56,12 +58,12 @@ export function WorkspaceAccessBadge({
     <Badge
       variant="secondary"
       className={cn('gap-1 font-normal', className)}
-      title={`${shared} ${shared === 1 ? 'person has' : 'people have'} been given access to this workspace.`}
+      title={t('workspaces.shared_title', { count: shared })}
     >
       <Users className="h-3 w-3" aria-hidden />
       {/* The number is the useful part — "Shared" alone doesn't tell you
           whether that means one colleague or the whole company. */}
-      Shared · <span className="tabular-nums">{shared}</span>
+      {t('workspaces.shared_badge')} · <span className="tabular-nums">{shared}</span>
     </Badge>
   )
 }

@@ -29,7 +29,12 @@ export function PendingSuggestionsCard() {
     enabled: mayReview,
   })
 
-  if (!mayReview || q.isError || !q.data || q.data.total === 0) return null
+  // `!q.data.total`, not `=== 0`: a response missing `total` left the
+  // banner rendering with an undefined count, and since the copy is a
+  // PLURAL lookup, i18next could not pick a form and printed the raw key
+  // — "dashboard.widgets.suggestions_waiting" — on the dashboard. A
+  // card with no count to show has nothing to say either way.
+  if (!mayReview || q.isError || !q.data || !q.data.total) return null
 
   return (
     // Informational banner, NOT a whole-card link — clicking the count

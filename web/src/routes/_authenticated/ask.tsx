@@ -157,9 +157,9 @@ function AskPage() {
   const scopeLabel = activeConv
     ? activeConv.scope === 'workspace'
       ? wsName(activeConv.workspace_id)
-      : 'All workspaces'
+      : t('ask.all_workspaces')
     : workspaceId === ALL_WORKSPACES
-      ? 'All workspaces'
+      ? t('ask.all_workspaces')
       : wsName(workspaceId)
 
   return (
@@ -278,13 +278,13 @@ function AskPage() {
                     loading={streaming}
                     data-testid="ask-send"
                   >
-                    <Send className="h-4 w-4" /> Ask
+                    <Send className="h-4 w-4" /> {t('ask.send')}
                   </Button>
                 </div>
               </div>
             </div>
             <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
-              <kbd className="rounded bg-muted px-1">⌘/Ctrl + Enter</kbd> to send · answers come from your readable documents only.
+              <kbd className="rounded bg-muted px-1" dir="ltr">⌘/Ctrl + Enter</kbd> {t('ask.send_hint')}
             </p>
           </div>
         </div>

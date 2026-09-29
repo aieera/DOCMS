@@ -1,4 +1,5 @@
 import { LayoutGrid, List } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 
 export type ViewMode = 'grid' | 'list'
@@ -8,8 +9,9 @@ export type ViewMode = 'grid' | 'list'
 export function ViewModeToggle({
   value, onChange, className,
 }: { value: ViewMode; onChange: (mode: ViewMode) => void; className?: string }) {
+  const { t } = useTranslation('common')
   const next: ViewMode = value === 'grid' ? 'list' : 'grid'
-  const label = next === 'list' ? 'Switch to list view' : 'Switch to grid view'
+  const label = next === 'list' ? t('actions.switch_list') : t('actions.switch_grid')
   return (
     <button
       type="button"
