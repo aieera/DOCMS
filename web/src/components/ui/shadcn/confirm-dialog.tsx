@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,11 +37,12 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive,
   loading,
   onConfirm,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation('common')
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -49,7 +51,7 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={loading}>{t('actions.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             disabled={loading}
             onClick={(e) => {
@@ -65,7 +67,7 @@ export function ConfirmDialog({
             )}
           >
             {loading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            {confirmLabel}
+            {confirmLabel ?? t('actions.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

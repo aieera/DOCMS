@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import {
   AlertDialog,
@@ -57,12 +58,13 @@ export function TypedConfirmDialog({
   description,
   expectedValue,
   inputLabel,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive,
   loading,
   onConfirm,
   confirmTestId,
 }: TypedConfirmDialogProps) {
+  const { t } = useTranslation('common')
   const [typed, setTyped] = useState('')
   const labelId = useId()
 
@@ -91,7 +93,7 @@ export function TypedConfirmDialog({
         </AlertDialogHeader>
         <Input
           id={labelId}
-          label={inputLabel ?? 'Type to confirm'}
+          label={inputLabel ?? t('actions.type_to_confirm')}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           autoFocus
@@ -99,7 +101,7 @@ export function TypedConfirmDialog({
           data-testid="typed-confirm-input"
         />
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={loading}>{t('actions.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             disabled={!canConfirm}
             onClick={(e) => {
@@ -115,7 +117,7 @@ export function TypedConfirmDialog({
             data-testid={confirmTestId ?? 'typed-confirm-confirm'}
           >
             {loading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            {confirmLabel}
+            {confirmLabel ?? t('actions.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

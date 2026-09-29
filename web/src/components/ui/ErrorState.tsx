@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from './shadcn/button'
 import { cn } from '@/lib/cn'
 
@@ -9,7 +10,9 @@ interface ErrorStateProps {
   size?: 'sm' | 'default'
 }
 
-export function ErrorState({ message = 'Something went wrong', onRetry, size = 'default' }: ErrorStateProps) {
+export function ErrorState({ message, onRetry, size = 'default' }: ErrorStateProps) {
+  const { t } = useTranslation('common')
+  const text = message ?? t('errors.generic')
   const isSm = size === 'sm'
   return (
     <div
@@ -19,9 +22,9 @@ export function ErrorState({ message = 'Something went wrong', onRetry, size = '
       )}
     >
       <AlertTriangle className={cn('text-destructive', isSm ? 'h-8 w-8' : 'h-10 w-10')} aria-hidden />
-      <p className="text-sm text-muted-foreground">{message}</p>
+      <p className="text-sm text-muted-foreground">{text}</p>
       {onRetry && (
-        <Button variant="outline" size={isSm ? 'sm' : 'default'} onClick={onRetry}>Retry</Button>
+        <Button variant="outline" size={isSm ? 'sm' : 'default'} onClick={onRetry}>{t('actions.retry')}</Button>
       )}
     </div>
   )

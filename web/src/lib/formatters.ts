@@ -114,34 +114,17 @@ export function formatRelativeTime(date: string | Date | null | undefined): stri
 // SHOUTY_SNAKE string. Lower-case canonical values (draft, active,
 // …) come from REST endpoints that pre-strip the prefix; both shapes
 // land in the same spot.
-const LIFECYCLE_LABELS: Record<string, string> = {
-  LIFECYCLE_STATE_UNSPECIFIED: 'Unknown',
-  LIFECYCLE_STATE_DRAFT: 'Draft',
-  LIFECYCLE_STATE_IN_REVIEW: 'In review',
-  LIFECYCLE_STATE_ACTIVE: 'Active',
-  LIFECYCLE_STATE_PUBLISHED: 'Published',
-  LIFECYCLE_STATE_SUPERSEDED: 'Superseded',
-  LIFECYCLE_STATE_RETAINED: 'Retained',
-  LIFECYCLE_STATE_ARCHIVED: 'Archived',
-  LIFECYCLE_STATE_DISPOSED: 'Disposed',
-  LIFECYCLE_STATE_LEGAL_HOLD: 'Legal hold',
-  draft: 'Draft',
-  in_review: 'In review',
-  active: 'Active',
-  published: 'Published',
-  superseded: 'Superseded',
-  retained: 'Retained',
-  archived: 'Archived',
-  disposed: 'Disposed',
-  legal_hold: 'Legal hold',
-}
-
+// Lifecycle states arrive in two shapes — the proto enum
+// (LIFECYCLE_STATE_DRAFT) and the REST lower-case form (draft) — so both
+// normalise to one catalogue key. An unknown state still never shows a
+// SHOUTY_SNAKE string: it falls back to a Title-Cased version of itself,
+// which is also what an untranslated locale gets.
 export function lifecycleStateLabel(state: string | null | undefined): string {
-  if (!state) return '—'
-  if (LIFECYCLE_LABELS[state]) return LIFECYCLE_LABELS[state]
-  // Strip a LIFECYCLE_STATE_ prefix if present, then Title Case.
-  const base = state.replace(/^LIFECYCLE_STATE_/i, '').replace(/_/g, ' ').toLowerCase()
-  return base.charAt(0).toUpperCase() + base.slice(1)
+  if (!state) return '\u2014'
+  const base = state.replace(/^LIFECYCLE_STATE_/i, '').replace(/_/g, ' ').trim().toLowerCase()
+  const key = base.replace(/ /g, '_')
+  const titled = base.charAt(0).toUpperCase() + base.slice(1)
+  return i18n.t(`lifecycle.${key}`, { ns: 'common', defaultValue: titled })
 }
 
 // formatUsd renders LLM/API spend. Cost figures are frequently sub-cent,
@@ -163,41 +146,19 @@ export function formatUsd(value: number | null | undefined): string {
 // an internal contract and must never reach a user-facing surface, so
 // every notification UI runs the code through this labeller first.
 //
-// Irregular codes get an explicit entry; everything else is derived
-// (domain noun + humanised action) so a newly-emitted event type still
-// reads sensibly instead of leaking the raw code.
-const NOTIFICATION_DOMAIN_LABELS: Record<string, string> = {
-  document: 'Document',
-  comment: 'Comment',
-  workflow: 'Workflow',
-  task: 'Task',
-  signature: 'Signature',
-  security: 'Security',
-  auth: 'Sign-in',
-  saved_search: 'Saved search',
-  compliance: 'Compliance',
-  legal_hold: 'Legal hold',
-  mention: 'Mention',
-  share: 'Share',
-  retention: 'Retention',
-}
-
-const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
-  'document.version_uploaded': 'New version uploaded',
-  'comment.mention': 'Mentioned in a comment',
-  'task.mention': 'Mentioned in a task comment',
-  'task.due_soon': 'Task due soon',
-  'workflow.step_assigned': 'Workflow step assigned',
-}
-
+// Irregular codes get an explicit catalogue entry; everything else is
+// derived (translated domain noun + humanised action) so a newly-emitted
+// event type still reads sensibly instead of leaking the raw code.
 export function notificationTypeLabel(type: string | null | undefined): string {
-  if (!type) return 'Notification'
-  if (NOTIFICATION_TYPE_LABELS[type]) return NOTIFICATION_TYPE_LABELS[type]
+  const T = (k: string, dflt: string) => i18n.t(k, { ns: 'common', defaultValue: dflt })
+  if (!type) return T('notif_type.fallback', 'Notification')
+  const explicit = i18n.t(`notif_type.${type}`, { ns: 'common', defaultValue: '' })
+  if (explicit) return explicit
   // Digest rows carry a `digest.{domain}` type; the domain is noise to
   // the reader — what matters is that several events were bundled.
-  if (type.startsWith('digest.')) return 'Digest'
+  if (type.startsWith('digest.')) return T('notif_type.digest', 'Digest')
   const [domain, ...rest] = type.split('.')
-  const noun = NOTIFICATION_DOMAIN_LABELS[domain]
+  const noun = i18n.t(`notif_domain.${domain}`, { ns: 'common', defaultValue: '' })
   const action = rest.join(' ').replace(/[._]/g, ' ').trim()
   if (!noun) {
     const words = type.replace(/[._]/g, ' ').trim()
@@ -214,10 +175,11 @@ export function getMimeTypeLabel(mime: string): string {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint',
-    'text/plain': 'Text',
-    'video/mp4': 'Video',
+    'text/plain': i18n.t('mime.text', { ns: 'common', defaultValue: 'Text' }),
+    'video/mp4': i18n.t('mime.video', { ns: 'common', defaultValue: 'Video' }),
   }
-  return map[mime] || mime.split('/').pop()?.toUpperCase() || 'File'
+  return map[mime] || mime.split('/').pop()?.toUpperCase()
+    || i18n.t('mime.file', { ns: 'common', defaultValue: 'File' })
 }
 
 // formatShortId — render a UUID as a compact, copy-friendly identifier.

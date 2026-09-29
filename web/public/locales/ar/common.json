@@ -273,5 +273,63 @@
     "clear_title": "إزالة من مهملاتك؟",
     "clear_desc": "لن يظهر \"{{title}}\" في مهملاتك بعد الآن. لم يُمحَ — ولا يزال بإمكان المسؤول استعادته.",
     "clear_confirm": "إزالة"
+  },
+  "lifecycle": {
+    "unspecified": "غير معروف",
+    "draft": "مسودة",
+    "in_review": "قيد المراجعة",
+    "active": "نشط",
+    "published": "منشور",
+    "superseded": "مستبدَل",
+    "retained": "محتفَظ به",
+    "archived": "مؤرشف",
+    "disposed": "متلَف",
+    "legal_hold": "حجز قانوني"
+  },
+  "notif_type": {
+    "fallback": "إشعار",
+    "digest": "ملخّص",
+    "document.version_uploaded": "تم رفع إصدار جديد",
+    "comment.mention": "تمت الإشارة إليك في تعليق",
+    "task.mention": "تمت الإشارة إليك في تعليق على مهمة",
+    "task.due_soon": "موعد المهمة يقترب",
+    "workflow.step_assigned": "تم إسناد خطوة في سير العمل"
+  },
+  "notif_domain": {
+    "document": "مستند",
+    "comment": "تعليق",
+    "workflow": "سير عمل",
+    "task": "مهمة",
+    "signature": "توقيع",
+    "security": "أمان",
+    "auth": "تسجيل الدخول",
+    "saved_search": "بحث محفوظ",
+    "compliance": "امتثال",
+    "legal_hold": "حجز قانوني",
+    "mention": "إشارة",
+    "share": "مشاركة",
+    "retention": "الاحتفاظ"
+  },
+  "mime": {
+    "text": "نص",
+    "video": "فيديو",
+    "file": "ملف"
+  },
+  "actions": {
+    "retry": "إعادة المحاولة",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد",
+    "type_to_confirm": "اكتب للتأكيد",
+    "save": "حفظ",
+    "close": "إغلاق",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "remove": "إزالة",
+    "create": "إنشاء",
+    "apply": "تطبيق",
+    "back": "رجوع",
+    "next": "التالي",
+    "done": "تم",
+    "search": "بحث"
   }
 }
