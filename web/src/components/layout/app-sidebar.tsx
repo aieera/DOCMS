@@ -125,6 +125,7 @@ function NavLink({ item, collapsed, pathname }: { item: NavItem; collapsed: bool
 }
 
 function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <div className={cn('flex h-14 items-center border-b border-sidebar-border px-3', collapsed && 'justify-center px-2')}>
       {!collapsed && (
@@ -139,7 +140,7 @@ function BrandRow({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =>
         variant="ghost"
         size="icon"
         onClick={onToggle}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={collapsed ? t('a11y.expand_sidebar') : t('a11y.collapse_sidebar')}
         className="h-9 w-9 text-sidebar-foreground"
       >
         {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
@@ -215,6 +216,7 @@ function visibilityIcon(v?: TreeVisibility) {
 }
 
 export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { t } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const role = useAuthStore((s) => s.user?.role ?? '')
   const isPlatformAdmin = useAuthStore((s) => s.user?.is_platform_admin === true)
@@ -233,7 +235,7 @@ export function SidebarContent({ collapsed, onToggle }: { collapsed: boolean; on
           visible scrollbar — the track/thumb read as clutter on the
           rail (same hidden-scrollbar pattern as the document tab bar). */}
       <nav
-        aria-label="Primary"
+        aria-label={t('a11y.primary_nav')}
         className={cn(
           'flex-1 overflow-y-auto px-2 pb-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           collapsed && 'px-1.5',
@@ -272,6 +274,7 @@ export function AppSidebar() {
 // `side` prop is physical; we flip it ourselves rather than vendoring
 // a logical-aware fork.
 export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { t } = useTranslation('common')
   const dir = useDirection()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -279,7 +282,7 @@ export function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenCha
         side={dir === 'rtl' ? 'right' : 'left'}
         className="w-[280px] border-e border-sidebar-border bg-sidebar p-0 lg:hidden"
       >
-        <SheetTitle className="sr-only">Navigation</SheetTitle>
+        <SheetTitle className="sr-only">{t('a11y.navigation')}</SheetTitle>
         <SidebarContent collapsed={false} onToggle={() => onOpenChange(false)} />
       </SheetContent>
     </Sheet>

@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
 import { useUIStore } from '@/store/uiStore'
 import { AppSidebar, MobileSidebar } from './app-sidebar'
@@ -9,6 +10,7 @@ import { AppTopbar } from './app-topbar'
 // previous AppLayout.tsx is kept on disk so any direct imports still
 // work, but all _authenticated routes flow through this one.
 export function AppLayout({ children }: { children: ReactNode }) {
+  const { t } = useTranslation('common')
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
   return (
@@ -22,7 +24,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:start-2 focus:z-50 focus:rounded-md focus:bg-foreground focus:px-3 focus:py-1.5 focus:text-sm focus:text-background"
       >
-        Skip to content
+        {t('a11y.skip_to_content')}
       </a>
       <AppSidebar />
       <MobileSidebar open={mobileOpen} onOpenChange={setMobileOpen} />

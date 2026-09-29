@@ -31,16 +31,6 @@
     "english": "English",
     "arabic": "العربية"
   },
-  "foo": {
-    "bar": ""
-  },
-  "definitely": {
-    "not": {
-      "translated": {
-        "yet": ""
-      }
-    }
-  },
   "theme": {
     "toggle": "تبديل السمة",
     "light": "فاتح",
@@ -69,5 +59,38 @@
     "done": "اكتمل الرفع",
     "view": "عرض",
     "partial": "تم رفع {{done}} من {{total}}"
+  },
+  "a11y": {
+    "skip_to_content": "تخطَّ إلى المحتوى",
+    "primary_nav": "التنقل الرئيسي",
+    "navigation": "التنقل",
+    "app_toolbar": "شريط أدوات التطبيق",
+    "open_navigation": "فتح قائمة التنقل",
+    "expand_sidebar": "توسيع الشريط الجانبي",
+    "collapse_sidebar": "طيّ الشريط الجانبي",
+    "account_menu": "قائمة الحساب",
+    "loading_account": "جارٍ تحميل الحساب…"
+  },
+  "tasks_badge": {
+    "none": "مهامي",
+    "with_count": "مهامي ({{count}} مفتوحة)"
+  },
+  "notifications_menu": {
+    "title": "الإشعارات",
+    "with_count": "الإشعارات ({{count}} غير مقروء)",
+    "mark_all_read": "تعليم الكل كمقروء",
+    "marked_all_read": "تم تعليم الكل كمقروء",
+    "mark_as_read": "تعليم كمقروء",
+    "unread": "غير مقروء",
+    "see_all": "عرض الكل",
+    "empty": "لا جديد لديك",
+    "preferences": "تفضيلات الإشعارات",
+    "error_mark_read": "تعذّر التعليم كمقروء",
+    "error_mark_all": "تعذّر تعليم الكل كمقروء"
+  },
+  "saved_search": {
+    "saved": "تم حفظ البحث",
+    "save_error": "تعذّر حفظ البحث",
+    "unsave_error": "تعذّر إزالة البحث المحفوظ"
   }
 }

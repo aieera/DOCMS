@@ -31,16 +31,6 @@
     "english": "English",
     "arabic": "العربية"
   },
-  "foo": {
-    "bar": ""
-  },
-  "definitely": {
-    "not": {
-      "translated": {
-        "yet": ""
-      }
-    }
-  },
   "theme": {
     "toggle": "Toggle theme",
     "light": "Light",
@@ -69,5 +59,38 @@
     "done": "Upload complete",
     "view": "View",
     "partial": "{{done}} of {{total}} uploaded"
+  },
+  "a11y": {
+    "skip_to_content": "Skip to content",
+    "primary_nav": "Primary",
+    "navigation": "Navigation",
+    "app_toolbar": "Application toolbar",
+    "open_navigation": "Open navigation",
+    "expand_sidebar": "Expand sidebar",
+    "collapse_sidebar": "Collapse sidebar",
+    "account_menu": "Account menu",
+    "loading_account": "Loading account…"
+  },
+  "tasks_badge": {
+    "none": "My tasks",
+    "with_count": "My tasks ({{count}} open)"
+  },
+  "notifications_menu": {
+    "title": "Notifications",
+    "with_count": "Notifications ({{count}} unread)",
+    "mark_all_read": "Mark all read",
+    "marked_all_read": "Marked all read",
+    "mark_as_read": "Mark as read",
+    "unread": "Unread",
+    "see_all": "See all",
+    "empty": "You're all caught up",
+    "preferences": "Notification preferences",
+    "error_mark_read": "Couldn't mark as read",
+    "error_mark_all": "Couldn't mark all as read"
+  },
+  "saved_search": {
+    "saved": "Search saved",
+    "save_error": "Could not save search",
+    "unsave_error": "Could not remove saved search"
   }
 }

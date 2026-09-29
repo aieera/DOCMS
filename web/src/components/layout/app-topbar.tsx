@@ -17,6 +17,7 @@ import { Breadcrumbs } from './breadcrumbs'
 import { ThemeToggle } from './theme-toggle'
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel'
 import { LanguageSelector } from '@/components/shared/LanguageSelector'
+import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 import { formatRelativeTime } from '@/lib/formatters'
 import { isMacPlatform } from '@/lib/platform'
 import { Button } from '@/components/ui/shadcn/button'
@@ -35,10 +36,11 @@ interface AppTopbarProps {
 }
 
 export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
+  const { t } = useTranslation('common')
   return (
     <header
       role="banner"
-      aria-label="Application toolbar"
+      aria-label={t('a11y.app_toolbar')}
       // Soft canvas toolbar matching the shell — a hairline bottom edge
       // separates it from the content below instead of a navy fill.
       className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4 text-foreground lg:px-6"
@@ -48,7 +50,7 @@ export function AppTopbar({ onOpenMobileNav }: AppTopbarProps) {
         size="icon"
         onClick={onOpenMobileNav}
         className="lg:hidden"
-        aria-label="Open navigation"
+        aria-label={t('a11y.open_navigation')}
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -94,14 +96,14 @@ function CommandTrigger() {
     mutationFn: (query: string) => createSavedSearch({ name: query, query }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['saved-searches'] })
-      toast.success('Search saved')
+      toast.success(t('saved_search.saved'))
     },
-    onError: () => toast.error('Could not save search'),
+    onError: () => toast.error(t('saved_search.save_error')),
   })
   const unsaveMut = useAppMutation({
     mutationFn: (id: string) => deleteSavedSearch(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
-    onError: () => toast.error('Could not remove saved search'),
+    onError: () => toast.error(t('saved_search.unsave_error')),
   })
 
   const openDropdown = () => {
@@ -236,6 +238,7 @@ function CommandTrigger() {
 
 function MyTasksBadge() {
   const navigate = useNavigate()
+  const { t } = useTranslation('common')
   // Shares the taskKeys.mine() cache with the dashboard KPI/Open-tasks
   // cards (same listMyTasks(false) query) so navigating to the
   // dashboard doesn't fire a second identical request.
@@ -252,8 +255,11 @@ function MyTasksBadge() {
       size="icon"
       onClick={() => navigate({ to: '/tasks' })}
       className="relative"
-      aria-label={count > 0 ? `${count} open tasks` : 'My tasks'}
-      title={count > 0 ? `${count} open task${count === 1 ? '' : 's'}` : 'My tasks'}
+      // One phrasing for every count rather than an English "s" suffix:
+      // Arabic pluralisation has six categories and does not follow the
+      // singular/plural split this ternary assumed.
+      aria-label={count > 0 ? t('tasks_badge.with_count', { count }) : t('tasks_badge.none')}
+      title={count > 0 ? t('tasks_badge.with_count', { count }) : t('tasks_badge.none')}
       data-testid="my-tasks-badge"
     >
       <CheckSquare className="h-[1.1rem] w-[1.1rem]" />
@@ -277,6 +283,7 @@ function MyTasksBadge() {
 function NotificationsDropdown() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const { t } = useTranslation('common')
   const [open, setOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
 
@@ -323,17 +330,17 @@ function NotificationsDropdown() {
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
       qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
-    onError: () => toast.error("Couldn't mark as read"),
+    onError: () => toast.error(t('notifications_menu.error_mark_read')),
   })
 
   const readAll = useAppMutation({
     mutationFn: markAllRead,
     onSuccess: () => {
-      toast.success('Marked all read')
+      toast.success(t('notifications_menu.marked_all_read'))
       qc.invalidateQueries({ queryKey: ['notifications-inbox'] })
       qc.invalidateQueries({ queryKey: ['notifications', 'unread-count'] })
     },
-    onError: () => toast.error("Couldn't mark all as read"),
+    onError: () => toast.error(t('notifications_menu.error_mark_all')),
   })
 
   return (
@@ -344,7 +351,9 @@ function NotificationsDropdown() {
           variant="ghost"
           size="icon"
           className="relative"
-          aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+          aria-label={unreadCount > 0
+            ? t('notifications_menu.with_count', { count: unreadCount })
+            : t('notifications_menu.title')}
           data-testid="notifications-button"
         >
           <Bell className="h-[1.1rem] w-[1.1rem]" />
@@ -370,7 +379,7 @@ function NotificationsDropdown() {
         className="flex w-80 flex-col overflow-hidden rounded-lg p-0 shadow-neu"
       >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-sm font-semibold">Notifications</span>
+          <span className="text-sm font-semibold">{t('notifications_menu.title')}</span>
           <div className="flex items-center gap-1">
             {items.length > 0 && (
               <Button
@@ -382,7 +391,7 @@ function NotificationsDropdown() {
                 data-testid="notif-mark-all-read"
               >
                 <CheckCheck className="me-1 h-3.5 w-3.5" />
-                Mark all read
+                {t('notifications_menu.mark_all_read')}
               </Button>
             )}
             <button
@@ -394,7 +403,7 @@ function NotificationsDropdown() {
               }}
               data-testid="notif-see-all"
             >
-              See all
+              {t('notifications_menu.see_all')}
             </button>
           </div>
         </div>
@@ -402,12 +411,12 @@ function NotificationsDropdown() {
         <div className="max-h-[420px] overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
-              Loading…
+              {t('loading')}
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <Bell className="h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">You're all caught up</p>
+              <p className="text-sm text-muted-foreground">{t('notifications_menu.empty')}</p>
             </div>
           ) : (
             <ul className="divide-y divide-border">
@@ -430,7 +439,7 @@ function NotificationsDropdown() {
                   >
                     <span className="mt-1.5 shrink-0">
                       {!n.read ? (
-                        <span className="block h-2 w-2 rounded-full bg-destructive" aria-label="Unread" />
+                        <span className="block h-2 w-2 rounded-full bg-destructive" aria-label={t('notifications_menu.unread')} />
                       ) : (
                         <span className="block h-2 w-2" />
                       )}
@@ -454,7 +463,7 @@ function NotificationsDropdown() {
                       variant="ghost"
                       className="h-9 w-9 shrink-0 p-0"
                       onClick={(e) => { e.stopPropagation(); readOne.mutate(n.id) }}
-                      title="Mark as read"
+                      title={t('notifications_menu.mark_as_read')}
                       data-testid={`notif-read-${n.id}`}
                     >
                       <CheckCheck className="h-3.5 w-3.5" />
@@ -469,10 +478,13 @@ function NotificationsDropdown() {
         <div className="border-t border-border px-3 py-2">
           <Link
             to="/settings/notifications"
-            className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
             onClick={() => setOpen(false)}
           >
-            Notification preferences →
+            {t('notifications_menu.preferences')}
+            {/* The old literal "→" kept pointing right in Arabic, back
+                towards the text it was meant to lead away from. */}
+            <DirectionalIcon name="ArrowRight" className="h-3 w-3" aria-hidden />
           </Link>
         </div>
       </DropdownMenuContent>
@@ -503,7 +515,7 @@ function UserMenu() {
         <Button
           variant="secondary"
           size="icon"
-          aria-label={isHydrating ? 'Loading account…' : 'Account menu'}
+          aria-label={isHydrating ? t('a11y.loading_account') : t('a11y.account_menu')}
           data-testid="user-avatar-button"
           className="rounded-full font-semibold"
           disabled={isHydrating}
