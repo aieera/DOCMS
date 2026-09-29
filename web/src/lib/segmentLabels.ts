@@ -1,9 +1,16 @@
+import i18n from '@/i18n'
+
 // Shared URL-segment → human label table.
 //
 // Two consumers: the topbar breadcrumb (components/layout/breadcrumbs.tsx)
 // and the per-route document title (lib/documentTitle.ts). Keeping one
 // table means a page can't be called "Audit log" in the crumb and
 // "Audit-log" in the browser tab.
+//
+// The labels themselves live in the `segment.*` block of the common
+// catalogue so the breadcrumb and the browser tab title follow the UI
+// language. This table stays as the canonical LIST of known segments and
+// as the English fallback when a locale has no entry.
 //
 // Anything not listed falls back to a title-cased version of the segment
 // ("audit-log" → "Audit log"). Add entries only where that fallback reads
@@ -84,7 +91,12 @@ export function looksLikeId(segment: string): boolean {
 }
 
 export function humanizeSegment(segment: string): string {
-  if (SEGMENT_LABELS[segment]) return SEGMENT_LABELS[segment]
+  const known = SEGMENT_LABELS[segment]
+  if (known !== undefined) {
+    // '' is the root crumb; i18next has no empty key, so it is 'home'.
+    const key = segment === '' ? 'home' : segment
+    return i18n.t(`segment.${key}`, { ns: 'common', defaultValue: known })
+  }
   // Looks like a UUID or hex id → keep short ellipsis form so the
   // crumb stays readable. Stops the breadcrumb from showing
   // "33333333-3333-7333-…" as a label.

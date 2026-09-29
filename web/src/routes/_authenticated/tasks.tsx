@@ -571,7 +571,8 @@ function ApprovalsSection() {
             onClick={() => setFilter(f)}
             className={`rounded px-2 py-1 text-xs ${filter === f ? 'bg-muted' : ''}`}
           >
-            {f}
+            {/* These rendered the raw filter value — "pending", "all". */}
+            {t(`tasks.filter_${f}`)}
           </button>
         ))}
       </div>

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { createRootRoute, Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { documentTitleFor, formatDocumentTitle } from '@/lib/documentTitle'
 
@@ -8,12 +9,16 @@ import { documentTitleFor, formatDocumentTitle } from '@/lib/documentTitle'
 // See lib/documentTitle.ts for the resolution order and for why this
 // assigns document.title instead of rendering TanStack's <HeadContent />.
 function DocumentTitle() {
+  // documentTitleFor resolves its labels from the i18n catalogue, so the
+  // title has to be recomputed when the locale changes — otherwise the
+  // tab keeps the language that was active when the route mounted.
+  const { i18n } = useTranslation('common')
   const title = useRouterState({
     select: (s) => documentTitleFor(s.matches, s.location.pathname),
   })
   useEffect(() => {
     document.title = title
-  }, [title])
+  }, [title, i18n.language])
   return null
 }
 

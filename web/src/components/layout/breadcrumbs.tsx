@@ -1,4 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Home } from 'lucide-react'
 import { Fragment, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -25,6 +26,11 @@ function findIdAfter(segments: string[], marker: string): string | undefined {
 }
 
 export function Breadcrumbs() {
+  // Subscribes this component to 'languageChanged'. humanizeSegment is a
+  // plain function reading the i18next singleton, so without a subscriber
+  // the crumbs keep whatever label they were memoised with — which meant
+  // the first page after login rendered English crumbs under an Arabic UI.
+  const { t, i18n } = useTranslation('common')
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const segments = useMemo(() => pathname.split('/').filter(Boolean), [pathname])
 
@@ -84,6 +90,9 @@ export function Breadcrumbs() {
       return { segment, href, label: label ?? humanizeSegment(segment) }
     })
   }, [
+    // i18n.language is a real dependency: the labels come from the
+    // catalogue, so they must be recomputed when the locale changes.
+    i18n.language,
     segments,
     workspaceId,
     workspaceName,
@@ -94,13 +103,13 @@ export function Breadcrumbs() {
   ])
 
   return (
-    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center text-sm">
+    <nav aria-label={t('a11y.breadcrumb')} className="flex min-w-0 items-center text-sm">
       <Link
         to="/"
         className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
       >
         <Home className="h-3.5 w-3.5" />
-        <span className="sr-only">Home</span>
+        <span className="sr-only">{t('segment.home')}</span>
       </Link>
       {crumbs.map((crumb, idx) => {
         const isLast = idx === crumbs.length - 1
