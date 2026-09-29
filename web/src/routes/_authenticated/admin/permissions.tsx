@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { ShieldCheck, Check } from 'lucide-react'
 
@@ -51,6 +52,7 @@ function prettyNote(note: string): string {
 }
 
 export function PermissionsPage() {
+  const { t } = useTranslation('common')
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'permissions-matrix'],
     queryFn: getPermissionMatrix,
@@ -60,8 +62,8 @@ export function PermissionsPage() {
     return (
       <div>
         <PageHeader
-          title="Permission Matrix"
-          description="View the permissions assigned to each role across all resource types. This matrix is read-only and reflects the current access policy."
+          title={t('identity.permissions.title')}
+          description={t('identity.permissions.description')}
         />
         <Skeleton className="h-64" />
       </div>
@@ -73,15 +75,15 @@ export function PermissionsPage() {
   return (
     <div>
       <PageHeader
-        title="Permission Matrix"
-        description="View the permissions assigned to each role across all resource types. This matrix is read-only and reflects the current access policy."
+        title={t('identity.permissions.title')}
+        description={t('identity.permissions.description')}
       />
 
       <div className="overflow-auto rounded-2xl bg-card shadow-neu">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-start">Role</th>
+              <th className="px-4 py-2 text-start">{t('identity.permissions.role')}</th>
               {(data.resource_types ?? []).map((r) => (
                 <th key={r} className="px-4 py-2 text-start">
                   {r}
@@ -143,7 +145,7 @@ export function PermissionsPage() {
       <div className="mt-6 space-y-2 rounded-lg bg-card p-4 shadow-neu text-sm">
         <div className="flex items-center gap-2 font-medium">
           <ShieldCheck className="h-4 w-4" />
-          Notes
+          {t('identity.permissions.notes')}
         </div>
         <ul className="list-disc ps-6 text-xs text-muted-foreground">
           {(data.notes ?? []).map((n, i) => (
@@ -151,9 +153,9 @@ export function PermissionsPage() {
           ))}
         </ul>
         <div className="pt-2">
-          <Badge variant="in_review">Read-only</Badge>
+          <Badge variant="in_review">{t('identity.permissions.read_only')}</Badge>
           <span className="ms-2 text-xs text-muted-foreground">
-            Changes to the matrix ship with platform releases — they can't be edited from this page.
+            {t('identity.permissions.read_only_note')}
           </span>
         </div>
       </div>

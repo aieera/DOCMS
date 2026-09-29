@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -29,6 +30,7 @@ import { cn } from '@/lib/cn'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
 export function GroupsPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: groups, isLoading } = useQuery({ queryKey: ['admin', 'groups'], queryFn: listGroups })
 
@@ -51,13 +53,13 @@ export function GroupsPage() {
       setSelectedId(g.id)
       qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
     },
-    onError: () => toast.error('Create failed'),
+    onError: () => toast.error(t('identity.groups.create_failed')),
   })
 
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteGroup(id),
     onSuccess: (_d, id) => {
-      toast.success('Group deleted')
+      toast.success(t('identity.groups.deleted'))
       setSelectedId(null); setConfirmDelete(false)
       // Drop the deleted group's detail entry first — otherwise
       // invalidating the parent key triggers a refetch of the now-gone
@@ -70,7 +72,7 @@ export function GroupsPage() {
   const rename = useAppMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateGroup(id, { name }),
     onSuccess: (_d, v) => {
-      toast.success('Renamed')
+      toast.success(t('identity.groups.renamed'))
       qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
       qc.invalidateQueries({ queryKey: ['admin', 'groups', v.id] })
     },
@@ -79,17 +81,17 @@ export function GroupsPage() {
   const addMember = useAppMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string }) => addGroupMember(id, userId),
     onSuccess: (_d, v) => {
-      toast.success('Member added')
+      toast.success(t('identity.groups.member_added'))
       qc.invalidateQueries({ queryKey: ['admin', 'groups', v.id] })
       qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
     },
-    onError: () => toast.error('Add failed — check the user ID'),
+    onError: () => toast.error(t('identity.groups.add_failed')),
   })
 
   const removeMember = useAppMutation({
     mutationFn: ({ id, userId }: { id: string; userId: string }) => removeGroupMember(id, userId),
     onSuccess: (_d, v) => {
-      toast.success('Member removed')
+      toast.success(t('identity.groups.member_removed'))
       qc.invalidateQueries({ queryKey: ['admin', 'groups', v.id] })
       qc.invalidateQueries({ queryKey: ['admin', 'groups'] })
     },
@@ -98,11 +100,11 @@ export function GroupsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Groups"
-        description="Bundle members into reusable permission scopes. Groups can be granted access on workspaces, folders, and individual documents."
+        title={t('identity.groups.title')}
+        description={t('identity.groups.description')}
         actions={
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> New group
+            <Plus className="h-4 w-4" /> {t('identity.groups.new')}
           </Button>
         }
       />
@@ -115,9 +117,9 @@ export function GroupsPage() {
       ) : !groups || groups.length === 0 ? (
         <EmptyState
           icon={<Users className="h-6 w-6" />}
-          title="No groups yet"
-          description="Create a group to organize team members and scope permissions."
-          actionLabel="Create your first group"
+          title={t('identity.groups.empty')}
+          description={t('identity.groups.empty_desc')}
+          actionLabel={t('identity.groups.empty_action')}
           onAction={() => setCreateOpen(true)}
         />
       ) : (
@@ -179,7 +181,7 @@ export function GroupsPage() {
 
               <div className="border-t border-border pt-4">
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Add member
+                  {t('identity.groups.add_member')}
                 </h4>
                 <div className="mb-4">
                   <UserPicker
@@ -194,7 +196,7 @@ export function GroupsPage() {
                 </h4>
                 {(detail.data.members?.length ?? 0) === 0 ? (
                   <p className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-                    No members yet. Use the search above to add someone.
+                    {t('identity.groups.no_members')}
                   </p>
                 ) : (
                   <ul className="space-y-1.5">
@@ -215,7 +217,7 @@ export function GroupsPage() {
                           size="sm"
                           onClick={() => removeMember.mutate({ id: selectedId, userId: m.user_id })}
                           disabled={removeMember.isPending}
-                          aria-label="Remove member"
+                          aria-label={t('identity.groups.remove_member')}
                         >
                           <UserMinus className="h-4 w-4" />
                         </Button>
@@ -233,7 +235,7 @@ export function GroupsPage() {
             </Card>
           ) : (
             <Card className="flex h-full items-center justify-center border-dashed p-8 text-center text-sm text-muted-foreground">
-              Select a group to see its members.
+              {t('identity.groups.select_group')}
             </Card>
           )}
         </div>
@@ -257,9 +259,9 @@ export function GroupsPage() {
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title="Delete group"
+        title={t('identity.groups.delete')}
         description={`This removes "${detail.data?.name}" and unscopes any permissions granted to it. Members keep their direct grants.`}
-        confirmLabel="Delete"
+        confirmLabel={t('identity.groups.delete_confirm')}
         destructive
         onConfirm={() => selectedId && remove.mutate(selectedId)}
       />
@@ -276,26 +278,27 @@ function CreateGroupForm({
   onCancel: () => void
   onSubmit: () => void
 }) {
+  const { t } = useTranslation('common')
   // Renders inline above the list as a Card form panel — simpler than
   // a Dialog given users want to see the new group land in the rail.
   return (
     <Card className="space-y-3 p-4">
       <h3 className="flex items-center gap-2 text-sm font-semibold">
-        <Plus className="h-4 w-4" /> New group
+        <Plus className="h-4 w-4" /> {t('identity.groups.new')}
       </h3>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!name.trim()) { toast.error('Group name is required'); return }
+          if (!name.trim()) { toast.error(t('identity.groups.name_required')); return }
           onSubmit()
         }}
         className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]"
       >
-        <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
-        <Input placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+        <Input placeholder={t('identity.groups.name_placeholder')} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        <Input placeholder={t('identity.groups.desc_placeholder')} value={desc} onChange={(e) => setDesc(e.target.value)} />
         <div className="flex gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancel</Button>
-          <Button type="submit" loading={isPending} disabled={isPending}>Create</Button>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>{t('identity.groups.cancel')}</Button>
+          <Button type="submit" loading={isPending} disabled={isPending}>{t('identity.groups.create')}</Button>
         </div>
       </form>
     </Card>
@@ -315,6 +318,7 @@ function UserPicker({
   isPending: boolean
   excludeIds: Set<string>
 }) {
+  const { t } = useTranslation('common')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [debounced, setDebounced] = useState('')
@@ -346,7 +350,7 @@ function UserPicker({
       <div className="relative">
         <UserPlus className="pointer-events-none absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search by name or email to add a member…"
+          placeholder={t('identity.groups.search_placeholder')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => setOpen(true)}
@@ -364,7 +368,7 @@ function UserPicker({
           data-testid="member-picker-results"
         >
           {usersQ.isLoading ? (
-            <li className="px-3 py-2 text-xs text-muted-foreground">Loading…</li>
+            <li className="px-3 py-2 text-xs text-muted-foreground">{t('identity.groups.loading')}</li>
           ) : candidates.length === 0 ? (
             <li className="px-3 py-2 text-xs text-muted-foreground">
               {q ? 'No matching users.' : 'No users available to add.'}

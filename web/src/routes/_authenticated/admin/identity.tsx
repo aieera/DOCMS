@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { UsersPage } from './users'
 import { GroupsPage } from './groups'
@@ -29,6 +30,7 @@ const PEOPLE_SUBS: readonly Sub[] = ['users', 'groups', 'permissions']
 const AUTH_SUBS: readonly Sub[] = ['sso', 'ldap', 'scim']
 
 function IdentityPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { group, sub } = Route.useSearch()
   // Infer the group from the sub when only `sub` is given: a deep link
@@ -56,8 +58,8 @@ function IdentityPage() {
         }
       >
         <TabsList>
-          <TabsTrigger value="people">People &amp; Roles</TabsTrigger>
-          <TabsTrigger value="auth">Authentication</TabsTrigger>
+          <TabsTrigger value="people">{t('identity.tabs.people')}</TabsTrigger>
+          <TabsTrigger value="auth">{t('identity.tabs.auth')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="people" className="mt-4">
@@ -71,9 +73,9 @@ function IdentityPage() {
             }
           >
             <TabsList>
-              <TabsTrigger value="users">Users</TabsTrigger>
-              <TabsTrigger value="groups">Groups</TabsTrigger>
-              <TabsTrigger value="permissions">Permission matrix</TabsTrigger>
+              <TabsTrigger value="users">{t('identity.tabs.users')}</TabsTrigger>
+              <TabsTrigger value="groups">{t('identity.tabs.groups')}</TabsTrigger>
+              <TabsTrigger value="permissions">{t('identity.tabs.permissions')}</TabsTrigger>
             </TabsList>
             <TabsContent value="users" className="mt-4"><UsersPage /></TabsContent>
             <TabsContent value="groups" className="mt-4"><GroupsPage /></TabsContent>
@@ -92,9 +94,9 @@ function IdentityPage() {
             }
           >
             <TabsList>
-              <TabsTrigger value="sso">SSO (SAML / OIDC)</TabsTrigger>
-              <TabsTrigger value="ldap">LDAP / AD</TabsTrigger>
-              <TabsTrigger value="scim">SCIM provisioning</TabsTrigger>
+              <TabsTrigger value="sso">{t('identity.tabs.sso')}</TabsTrigger>
+              <TabsTrigger value="ldap">{t('identity.tabs.ldap')}</TabsTrigger>
+              <TabsTrigger value="scim">{t('identity.tabs.scim')}</TabsTrigger>
             </TabsList>
             <TabsContent value="sso" className="mt-4"><SsoPage /></TabsContent>
             <TabsContent value="ldap" className="mt-4"><LDAPAdminPage /></TabsContent>

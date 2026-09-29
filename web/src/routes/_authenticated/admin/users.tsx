@@ -107,20 +107,20 @@ export function UsersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Users"
-        description="Manage team members, roles, and access. New users can be invited by email or created directly with an initial password."
+        title={t('identity.users.title')}
+        description={t('identity.users.description')}
         actions={
           <>
             <Button
               variant="outline"
               onClick={() => setBulkOpen(true)}
-              aria-label="Bulk invite from CSV"
+              aria-label={t('identity.users.bulk_invite_aria')}
               data-testid="bulk-invite"
             >
-              <FileUp className="h-4 w-4" /> Bulk invite
+              <FileUp className="h-4 w-4" /> {t('identity.users.bulk_invite')}
             </Button>
-            <Button onClick={() => setOpen(true)} aria-label="Add user" data-testid="add-user">
-              <Plus className="h-4 w-4" /> Add user
+            <Button onClick={() => setOpen(true)} aria-label={t('identity.users.add_user')} data-testid="add-user">
+              <Plus className="h-4 w-4" /> {t('identity.users.add_user_btn')}
             </Button>
           </>
         }
@@ -130,15 +130,15 @@ export function UsersPage() {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
         <div className="space-y-1">
           <p>
-            <strong className="text-foreground">&ldquo;Last Login&rdquo;</strong> is the most-recent sign-in timestamp &mdash; not last activity.
+            <strong className="text-foreground">&ldquo;{t('identity.users.hint_last_login_term')}&rdquo;</strong>{' '}{t('identity.users.hint_last_login')}
           </p>
           <p>
-            Per-workspace role assignment lives under the individual workspace&rsquo;s{' '}
+            {t('identity.users.hint_workspace_roles')}{' '}
             {/* text-primary here failed AA in dark (axe: 4.24:1 on this
                 bg-primary/5 tinted panel, needs 4.5) — text-foreground
                 plus the underline keeps it legible and still reads as
                 a link without relying on the marginal primary token. */}
-            <Link to="/workspaces" className="text-foreground underline underline-offset-2">Settings &rsaquo; Transfer ownership</Link>.
+            <Link to="/workspaces" className="text-foreground underline underline-offset-2">{t('identity.users.transfer_hint')}</Link>.
           </p>
         </div>
       </div>
@@ -179,9 +179,9 @@ export function UsersPage() {
             <form className="space-y-4" onSubmit={onSubmit}>
               <ModeTabs mode={mode} onChange={setMode} disabled={busy} />
               <Input
-                label="Email"
+                label={t('identity.users.email')}
                 type="email"
-                placeholder="colleague@example.com"
+                placeholder={t('identity.users.email_placeholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoFocus
@@ -195,17 +195,17 @@ export function UsersPage() {
                 }
               />
               <Input
-                label="Display name (optional)"
-                placeholder="Jane Doe"
+                label={t('identity.users.display_name')}
+                placeholder={t('identity.users.name_placeholder')}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 autoComplete="name"
               />
-              <Select label="Role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
+              <Select label={t('identity.users.role')} value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
               {mode === 'direct' && (
                 <PasswordInput
-                  label="Initial password"
-                  placeholder="≥12 chars, mix of upper/lower/digit/special"
+                  label={t('identity.users.initial_password')}
+                  placeholder={t('identity.users.password_placeholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
@@ -222,7 +222,7 @@ export function UsersPage() {
               )}
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-                  Cancel
+                  {t('identity.users.cancel')}
                 </Button>
                 <Button type="submit" disabled={busy} loading={busy}>
                   {mode === 'invite' ? 'Send invitation' : 'Create user'}
@@ -270,10 +270,11 @@ function ModeTabs({ mode, onChange, disabled }: { mode: Mode; onChange: (m: Mode
 }
 
 function ActivationLinkPanel({ issued, onClose }: { issued: InviteUserResponse; onClose: () => void }) {
+  const { t } = useTranslation('common')
   const url = buildActivationURL(issued.tenant_slug, issued.invite_token)
   const copy = async () => {
-    try { await copyText(url); toast.success('Link copied') }
-    catch { toast.error('Copy failed — select and copy manually') }
+    try { await copyText(url); toast.success(t('identity.users.link_copied')) }
+    catch { toast.error(t('identity.users.copy_failed')) }
   }
   return (
     <div className="space-y-4">
@@ -283,16 +284,16 @@ function ActivationLinkPanel({ issued, onClose }: { issued: InviteUserResponse; 
         </p>
         <div className="mt-2 flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg bg-muted px-2 py-1 text-xs font-mono shadow-neu-inset">{url}</code>
-          <Button type="button" size="sm" variant="outline" onClick={copy} aria-label="Copy link">
+          <Button type="button" size="sm" variant="outline" onClick={copy} aria-label={t('identity.users.copy_link')}>
             <Copy className="h-3 w-3" />
           </Button>
         </div>
       </Card>
       <p className="text-xs text-muted-foreground">
-        SMTP isn't wired in this environment — share this link directly. The token is valid for 72 hours and can only be used once.
+        {t('identity.users.smtp_hint')}
       </p>
       <div className="flex justify-end">
-        <Button type="button" onClick={onClose}>Done</Button>
+        <Button type="button" onClick={onClose}>{t('identity.users.done')}</Button>
       </div>
     </div>
   )

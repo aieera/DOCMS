@@ -1,4 +1,5 @@
 // ADR 0062 — LDAP/AD direct-bind admin page.
+import { useTranslation } from 'react-i18next'
 //
 // One page, three sections:
 //   1. Connection — URL, transport, bind DN, bind password, search
@@ -77,6 +78,7 @@ const DEFAULT_BODY: LDAPWriteBody = {
 }
 
 export function LDAPAdminPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: configs, isLoading } = useQuery({
     queryKey: ['admin', 'ldap', 'configs'],
@@ -93,8 +95,8 @@ export function LDAPAdminPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="LDAP / Active Directory"
-        description="Authenticate against an enterprise directory. Falls back to local password when configured."
+        title={t('identity.ldap.title')}
+        description={t('identity.ldap.description')}
       />
       {isLoading ? (
         <Spinner />
@@ -110,11 +112,12 @@ export function LDAPAdminPage() {
 // ---- Empty state ---------------------------------------------------------
 
 function NoConfigYet({ onCreated }: { onCreated: () => void }) {
+  const { t } = useTranslation('common')
   const [body, setBody] = useState<LDAPWriteBody>(DEFAULT_BODY)
   const create = useAppMutation({
     mutationFn: (b: LDAPWriteBody) => createLDAPConfig(b),
     onSuccess: () => {
-      toast.success('LDAP config saved as draft. Test the connection, then activate.')
+      toast.success(t('identity.ldap.saved_draft'))
       onCreated()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not create LDAP config'),
@@ -124,8 +127,8 @@ function NoConfigYet({ onCreated }: { onCreated: () => void }) {
     <div className="rounded-lg border border-border bg-card p-6">
       <EmptyState
         icon={<Network className="h-10 w-10" />}
-        title="No LDAP integration yet"
-        description="Add the directory's URL, a service-account bind DN, and search bases. The config is saved as a draft — you'll test and activate it next."
+        title={t('identity.ldap.empty')}
+        description={t('identity.ldap.empty_desc')}
       />
       <div className="mt-6">
         <ConfigForm body={body} setBody={setBody} draftMode submitLabel="Save draft" submitting={create.isPending}
@@ -148,6 +151,7 @@ function ConfiguredView({ config }: { config: LDAPConfig }) {
 }
 
 function ConnectionSection({ config }: { config: LDAPConfig }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [body, setBody] = useState<LDAPWriteBody>(() => ({
     url: config.url,
@@ -169,7 +173,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
   const update = useAppMutation({
     mutationFn: (b: Partial<LDAPWriteBody>) => updateLDAPConfig(config.id, b),
     onSuccess: () => {
-      toast.success('LDAP config saved')
+      toast.success(t('identity.ldap.saved'))
       qc.invalidateQueries({ queryKey: ['admin', 'ldap'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not save LDAP config'),
@@ -178,7 +182,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
   const remove = useAppMutation({
     mutationFn: () => deleteLDAPConfig(config.id),
     onSuccess: () => {
-      toast.success('LDAP config deleted')
+      toast.success(t('identity.ldap.deleted'))
       qc.invalidateQueries({ queryKey: ['admin', 'ldap'] })
     },
   })
@@ -192,7 +196,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
   }
 
   return (
-    <Section icon={<Network className="h-5 w-5" />} title="Connection">
+    <Section icon={<Network className="h-5 w-5" />} title={t('identity.ldap.connection')}>
       <div className="mb-4 flex items-center gap-3 text-sm">
         <Badge variant={config.is_active ? 'success' : 'secondary'}>
           {config.is_active ? 'Active' : 'Draft'}
@@ -200,7 +204,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
         {config.has_bind_password && (
           <span className="text-muted-foreground">
             <KeyRound className="me-1 inline h-3 w-3" />
-            Bind password: <code>•••••••• (set)</code>
+            {t('identity.ldap.bind_password')} <code>•••••••• (set)</code>
           </span>
         )}
         {config.last_sync_at && (
@@ -215,7 +219,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
         <div className="mb-4 flex items-start gap-2 rounded border border-red-300 bg-destructive/10 p-3 text-sm text-red-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <strong>Plain ldap:// without StartTLS is in use.</strong> All bind
+            <strong>{t('identity.ldap.plain_warning')}</strong> All bind
             traffic — including end-user passwords — is sent in cleartext.
             This setting is intended for closed-network integration tests
             only. Switch to ldaps:// or enable StartTLS for any non-throwaway
@@ -237,7 +241,7 @@ function ConnectionSection({ config }: { config: LDAPConfig }) {
               remove.mutate()
             }
           }}>
-            <Trash2 className="h-4 w-4" /> Delete
+            <Trash2 className="h-4 w-4" /> {t('identity.ldap.delete')}
           </Button>
         }
       />
@@ -259,6 +263,7 @@ interface ConfigFormProps {
 }
 
 function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitting, onSubmit, secondaryAction }: ConfigFormProps) {
+  const { t } = useTranslation('common')
   const [testResult, setTestResult] = useState<LDAPTestBindResult | null>(null)
   const [sampleUser, setSampleUser] = useState('')
   const [samplePass, setSamplePass] = useState('')
@@ -271,7 +276,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
     ),
     onSuccess: (res) => {
       setTestResult(res)
-      if (res.ok) toast.success('Test bind succeeded')
+      if (res.ok) toast.success(t('identity.ldap.test_ok'))
       else toast.error(res.error || 'Test bind failed')
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'LDAP test failed'),
@@ -279,10 +284,10 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <Field label="LDAP URL" hint="ldap:// or ldaps://. ldaps:// recommended.">
+      <Field label={t('identity.ldap.url')} hint="ldap:// or ldaps://. ldaps:// recommended.">
         <Input value={body.url} onChange={(e) => setBody({ ...body, url: e.target.value })} />
       </Field>
-      <Field label="Bind DN" hint="Service account DN used for searches.">
+      <Field label={t('identity.ldap.bind_dn')} hint="Service account DN used for searches.">
         <Input value={body.bind_dn} onChange={(e) => setBody({ ...body, bind_dn: e.target.value })} />
       </Field>
 
@@ -297,66 +302,66 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
         />
       </Field>
 
-      <Field label="Transport">
+      <Field label={t('identity.ldap.transport')}>
         <div className="flex flex-col gap-2 text-sm">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={!!body.use_starttls}
               onChange={(e) => setBody({ ...body, use_starttls: e.target.checked })} />
-            Use StartTLS for ldap://
+            {t('identity.ldap.use_starttls')}
           </label>
           <label className="flex items-center gap-2 text-destructive">
             <input type="checkbox" checked={!!body.allow_insecure}
               onChange={(e) => setBody({ ...body, allow_insecure: e.target.checked })} />
-            Allow plain ldap:// (cleartext) — testing only
+            {t('identity.ldap.allow_plain')}
           </label>
         </div>
       </Field>
 
-      <Field label="User search base">
+      <Field label={t('identity.ldap.user_base')}>
         <Input value={body.user_search_base} onChange={(e) => setBody({ ...body, user_search_base: e.target.value })} />
       </Field>
-      <Field label="User search filter" hint="Use {username} as a placeholder.">
+      <Field label={t('identity.ldap.user_filter')} hint="Use {username} as a placeholder.">
         <Input value={body.user_search_filter} onChange={(e) => setBody({ ...body, user_search_filter: e.target.value })} />
       </Field>
 
-      <Field label="Email attribute">
+      <Field label={t('identity.ldap.email_attr')}>
         <Input value={body.email_attribute ?? 'mail'} onChange={(e) => setBody({ ...body, email_attribute: e.target.value })} />
       </Field>
-      <Field label="Display-name attribute">
+      <Field label={t('identity.ldap.name_attr')}>
         <Input value={body.display_name_attribute ?? 'displayName'} onChange={(e) => setBody({ ...body, display_name_attribute: e.target.value })} />
       </Field>
 
-      <Field label="Group search base">
+      <Field label={t('identity.ldap.group_base')}>
         <Input value={body.group_search_base} onChange={(e) => setBody({ ...body, group_search_base: e.target.value })} />
       </Field>
-      <Field label="Group search filter" hint="Use {user_dn} as a placeholder.">
+      <Field label={t('identity.ldap.group_filter')} hint="Use {user_dn} as a placeholder.">
         <Input value={body.group_search_filter} onChange={(e) => setBody({ ...body, group_search_filter: e.target.value })} />
       </Field>
 
-      <Field label="Behaviour">
+      <Field label={t('identity.ldap.behaviour')}>
         <div className="flex flex-col gap-2 text-sm">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={!!body.nested_groups}
               onChange={(e) => setBody({ ...body, nested_groups: e.target.checked })} />
-            Resolve nested groups (AD: matching-rule-in-chain)
+            {t('identity.ldap.nested_groups')}
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={!!body.fallback_to_local}
               onChange={(e) => setBody({ ...body, fallback_to_local: e.target.checked })} />
-            Fall back to local password on LDAP rejection
+            {t('identity.ldap.fallback_local')}
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={!!body.is_active}
               onChange={(e) => setBody({ ...body, is_active: e.target.checked })} />
-            Active (route logins through LDAP)
+            {t('identity.ldap.active')}
           </label>
         </div>
       </Field>
 
-      <Field label="Test bind (optional)" hint="Verify by binding as a real directory user. Leave blank to skip.">
+      <Field label={t('identity.ldap.test_bind')} hint="Verify by binding as a real directory user. Leave blank to skip.">
         <div className="flex flex-col gap-2">
-          <Input placeholder="sample username" value={sampleUser} onChange={(e) => setSampleUser(e.target.value)} />
-          <PasswordInput placeholder="sample password" value={samplePass} onChange={(e) => setSamplePass(e.target.value)} />
+          <Input placeholder={t('identity.ldap.sample_user')} value={sampleUser} onChange={(e) => setSampleUser(e.target.value)} />
+          <PasswordInput placeholder={t('identity.ldap.sample_pass')} value={samplePass} onChange={(e) => setSamplePass(e.target.value)} />
         </div>
       </Field>
 
@@ -385,6 +390,7 @@ function ConfigForm({ body, setBody, existingId, draftMode, submitLabel, submitt
 // ---- Mappings ------------------------------------------------------------
 
 function MappingsSection({ config }: { config: LDAPConfig }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: mappings } = useQuery({
     queryKey: ['admin', 'ldap', 'mappings', config.id],
@@ -403,7 +409,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
     mutationFn: () => addLDAPMapping(config.id, ldapDN, dmsId, dmsRole || undefined),
     onSuccess: () => {
       setLdapDN(''); setDmsId(''); setDmsRole('')
-      toast.success('Mapping added')
+      toast.success(t('identity.ldap.mapping_added'))
       qc.invalidateQueries({ queryKey: ['admin', 'ldap', 'mappings', config.id] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not add mapping'),
@@ -426,16 +432,16 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
   const dmsOptions = (dmsGroups ?? []).map((g) => ({ value: g.id, label: g.name }))
 
   return (
-    <Section icon={<Network className="h-5 w-5" />} title="Group mappings"
+    <Section icon={<Network className="h-5 w-5" />} title={t('identity.ldap.mappings')}
       hint="Map AD/LDAP group DNs to DMS groups, and optionally a SeDoc role. On login, the highest-precedence mapped role (owner > admin > member > guest) is assigned; unmapped LDAP groups are ignored.">
       <div className="overflow-hidden rounded border border-border">
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
-              <th className="px-3 py-2 text-start">LDAP group DN</th>
+              <th className="px-3 py-2 text-start">{t('identity.ldap.group_dn')}</th>
               <th className="px-3 py-2 text-start">DMS group</th>
-              <th className="px-3 py-2 text-start">Role</th>
+              <th className="px-3 py-2 text-start">{t('identity.ldap.role')}</th>
               <th className="w-12" />
             </tr>
           </thead>
@@ -451,7 +457,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
                     <button
                       onClick={() => del.mutate(m)}
                       aria-label={`Remove mapping for ${m.ldap_group_dn}`}
-                      title="Remove mapping"
+                      title={t('identity.ldap.remove_mapping')}
                       className="text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -461,7 +467,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
               )
             })}
             {!mappings?.length && (
-              <tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">No mappings yet.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">{t('identity.ldap.no_mappings')}</td></tr>
             )}
           </tbody>
         </table>
@@ -469,25 +475,25 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Input placeholder="cn=engineers,ou=groups,dc=example,dc=com"
+        <Input placeholder={t('identity.ldap.dn_placeholder')}
           className="min-w-[20rem] flex-1" value={ldapDN}
           onChange={(e) => setLdapDN(e.target.value)} />
         <Select
           value={dmsId}
           onValueChange={setDmsId}
           options={dmsOptions}
-          placeholder="DMS group"
+          placeholder={t('identity.ldap.dms_group')}
           className="min-w-[12rem]"
         />
         <Select
           value={dmsRole}
           onValueChange={setDmsRole}
           options={roleOptions}
-          placeholder="Role (optional)"
+          placeholder={t('identity.ldap.role_placeholder')}
           className="min-w-[10rem]"
         />
         <Button onClick={() => add.mutate()} disabled={!ldapDN || !dmsId || add.isPending}>
-          <Plus className="h-4 w-4" /> Add mapping
+          <Plus className="h-4 w-4" /> {t('identity.ldap.add_mapping')}
         </Button>
       </div>
     </Section>
@@ -497,6 +503,7 @@ function MappingsSection({ config }: { config: LDAPConfig }) {
 // ---- History -------------------------------------------------------------
 
 function HistorySection({ config }: { config: LDAPConfig }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, refetch } = useQuery({
     queryKey: ['admin', 'ldap', 'history', config.id],
@@ -506,7 +513,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
   const sync = useAppMutation({
     mutationFn: () => syncLDAPNow(config.id),
     onSuccess: () => {
-      toast.success('Sync run complete')
+      toast.success(t('identity.ldap.sync_done'))
       qc.invalidateQueries({ queryKey: ['admin', 'ldap'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'LDAP sync failed'),
@@ -519,7 +526,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
   }, [refetch])
 
   return (
-    <Section icon={<RefreshCw className="h-5 w-5" />} title="Sync history"
+    <Section icon={<RefreshCw className="h-5 w-5" />} title={t('identity.ldap.sync_history')}
       hint="The scheduler runs every 15 minutes by default. Use 'Sync now' for an on-demand pull.">
       <div className="mb-4">
         <Button onClick={() => sync.mutate()} disabled={sync.isPending}>
@@ -532,12 +539,12 @@ function HistorySection({ config }: { config: LDAPConfig }) {
         <table className="w-full text-sm">
           <thead className="bg-muted">
             <tr>
-              <th className="px-3 py-2 text-start">Started</th>
-              <th className="px-3 py-2 text-start">Trigger</th>
-              <th className="px-3 py-2 text-start">Status</th>
-              <th className="px-3 py-2 text-end">Users</th>
-              <th className="px-3 py-2 text-end">Groups</th>
-              <th className="px-3 py-2 text-end">Errors</th>
+              <th className="px-3 py-2 text-start">{t('identity.ldap.col_started')}</th>
+              <th className="px-3 py-2 text-start">{t('identity.ldap.col_trigger')}</th>
+              <th className="px-3 py-2 text-start">{t('identity.ldap.col_status')}</th>
+              <th className="px-3 py-2 text-end">{t('identity.ldap.col_users')}</th>
+              <th className="px-3 py-2 text-end">{t('identity.ldap.col_groups')}</th>
+              <th className="px-3 py-2 text-end">{t('identity.ldap.col_errors')}</th>
             </tr>
           </thead>
           <tbody>
@@ -552,7 +559,7 @@ function HistorySection({ config }: { config: LDAPConfig }) {
               </tr>
             ))}
             {!data?.length && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No sync runs yet.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">{t('identity.ldap.no_syncs')}</td></tr>
             )}
           </tbody>
         </table>
