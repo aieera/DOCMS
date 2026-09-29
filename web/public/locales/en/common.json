@@ -703,7 +703,17 @@
       "passkey_not_configured": "Passkeys not configured for this deploy. Contact your admin.",
       "name_required": "Give this passkey a name (e.g. Work laptop)",
       "session_revoked": "Session revoked",
-      "all_revoked": "All other sessions revoked"
+      "all_revoked": "All other sessions revoked",
+      "insecure_body": "This site is currently served over an unencrypted connection, and browsers only allow passkeys on secure (https) addresses. Ask your administrator to turn on HTTPS for this site, then add your passkey.",
+      "none_yet_body": "Passkeys let you sign in without a password — they’re also phishing-resistant. Use your laptop’s fingerprint reader, your phone, or a Yubikey.",
+      "added": "added {{when}}",
+      "last_used": "last used {{when}}",
+      "never_used": "never used",
+      "last_active": "last active {{when}}",
+      "device_on": "{{browser}} on {{os}}",
+      "unknown_device": "Unknown device",
+      "generic_browser": "Browser",
+      "generic_os": "device"
     },
     "mfa": {
       "title": "Multi-factor authentication",

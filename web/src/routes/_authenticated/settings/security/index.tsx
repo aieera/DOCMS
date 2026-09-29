@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { formatRelativeTime } from '@/lib/formatters'
+import type { TFunction } from 'i18next'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -91,7 +93,7 @@ function ProfileSection() {
       <dl className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
         <Field label={t('settings.sec.display_name')} icon={<UserIcon  className="h-3 w-3" />} value={user?.display_name} />
         <Field label={t('settings.sec.email')}        icon={<Mail      className="h-3 w-3" />} value={user?.email} />
-        <Field label={t('settings.sec.role')}         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
+        <Field label={t('settings.sec.role')}         icon={<Building2 className="h-3 w-3" />} value={user?.role ? t(`settings.role_${user.role}`) : undefined} />
         <Field label={t('settings.sec.tenant_id')}    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
       </dl>
       <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
@@ -221,11 +223,7 @@ function SecuritySection() {
             {blocker === 'insecure-context' ? (
               <div data-testid="passkey-insecure-context">
                 <p className="font-medium">{t('settings.sec.needs_secure')}</p>
-                <p className="mt-0.5">
-                  This site is currently served over an unencrypted connection, and browsers only
-                  allow passkeys on secure (https) addresses. Ask your administrator to turn on
-                  HTTPS for this site, then add your passkey.
-                </p>
+                <p className="mt-0.5">{t('settings.sec.insecure_body')}</p>
               </div>
             ) : (
               <div data-testid="passkey-unsupported-browser">
@@ -245,8 +243,7 @@ function SecuritySection() {
           <Fingerprint className="mx-auto mb-2 h-8 w-8 text-primary opacity-70" />
           <p dir="auto" className="font-medium">{t('settings.sec.none_yet')}</p>
           <p dir="auto" className="mx-auto mb-4 mt-1 max-w-sm text-sm text-muted-foreground">
-            Passkeys let you sign in without a password — they&apos;re also phishing-resistant.
-            Use your laptop&apos;s fingerprint reader, your phone, or a Yubikey.
+            {t('settings.sec.none_yet_body')}
           </p>
           <Button onClick={() => setAdding(true)} disabled={!supported} data-testid="add-first-passkey">
             <Plus className="h-4 w-4" /> {t('settings.sec.add_first')}
@@ -328,8 +325,10 @@ function PasskeyRow({ p, onRemove, removing }: {
         </div>
         <p dir="auto" className="mt-1 text-xs text-muted-foreground">
           {p.transports.length > 0 ? p.transports.join(' · ') : 'unknown transport'}
-          {' · added '}{relativeTime(p.created_at)}
-          {p.last_used_at ? ` · last used ${relativeTime(p.last_used_at)}` : ' · never used'}
+          {' · '}{t('settings.sec.added', { when: formatRelativeTime(p.created_at) })}
+          {' · '}{p.last_used_at
+            ? t('settings.sec.last_used', { when: formatRelativeTime(p.last_used_at) })
+            : t('settings.sec.never_used')}
         </p>
       </div>
       <Button
@@ -449,7 +448,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
   revoking: boolean
 }) {
   const { t } = useTranslation('common')
-  const ua = parseUA(s.user_agent ?? '')
+  const ua = parseUA(s.user_agent ?? '', t)
   return (
     <li
       className="flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/40"
@@ -467,7 +466,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
         </div>
         <p dir="auto" className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
           {s.ip_address && <span className="flex items-center gap-1"><Globe className="h-3 w-3" />{s.ip_address}</span>}
-          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />last active {relativeTime(s.last_activity_at)}</span>
+          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{t('settings.sec.last_active', { when: formatRelativeTime(s.last_activity_at) })}</span>
         </p>
       </div>
       {!s.current && (
@@ -506,33 +505,27 @@ function Section({ title, icon, action, children }: {
   )
 }
 
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime()
-  if (ms < 60_000) return 'just now'
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} min ago`
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hr ago`
-  return `${Math.floor(ms / 86_400_000)} d ago`
-}
-
 // parseUA produces a friendly"Chrome on Windows" /"Safari on iPhone"
 // label from a User-Agent string. Best-effort; falls back to the raw
 // UA when the heuristics don't match.
-function parseUA(ua: string): string {
-  if (!ua) return 'Unknown device'
-  let browser = 'Browser'
+function parseUA(ua: string, t: TFunction<'common'>): string {
+  if (!ua) return t('settings.sec.unknown_device')
+  let browser = t('settings.sec.generic_browser')
   if (/Edg\//.test(ua)) browser = 'Edge'
   else if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) browser = 'Chrome'
   else if (/Firefox\//.test(ua)) browser = 'Firefox'
   else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = 'Safari'
 
-  let os = 'device'
+  let os = t('settings.sec.generic_os')
   if (/Windows/.test(ua)) os = 'Windows'
   else if (/Mac OS X/.test(ua)) os = 'macOS'
   else if (/iPhone/.test(ua)) os = 'iPhone'
   else if (/iPad/.test(ua)) os = 'iPad'
   else if (/Android/.test(ua)) os = 'Android'
   else if (/Linux/.test(ua)) os = 'Linux'
-  return `${browser} on ${os}`
+  // "on" is a preposition, and Arabic puts it differently — the join
+  // belongs in the catalogue, not a template literal.
+  return t('settings.sec.device_on', { browser, os })
 }
 
 export const Route = createFileRoute('/_authenticated/settings/security/')({
