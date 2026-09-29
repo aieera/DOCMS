@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Activity, AlertTriangle, Brain, CreditCard, Database, FileJson, FileSearch, FolderSync, FolderTree, KeyRound, LayoutTemplate, Link2, Lock, MapPinned, Plug, Scale, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Tags as TagsIcon, Upload, UserCog, Users, Workflow, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -10,18 +11,18 @@ import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 interface Section {
   to: string
   icon: LucideIcon
-  label: string
-  desc: string
+  labelKey: string
+  descKey: string
 }
 
 interface SubGroup {
-  label: string
+  labelKey: string
   sections: Section[]
 }
 
 interface SectionGroup {
-  label: string
-  description: string
+  labelKey: string
+  descKey: string
   sections?: Section[]
   subgroups?: SubGroup[]
 }
@@ -38,49 +39,49 @@ interface SectionGroup {
 // Information protection(classification+watermark+IRM) · Records&retention ·
 // Legal holds&e-discovery · Audit&SIEM.
 const TENANT_GROUP: SectionGroup = {
-  label: 'Tenant administration',
-  description: 'People, policy, and tenant-wide configuration.',
+  labelKey: 'admin.group.tenant',
+  descKey: 'admin.group.tenant_desc',
   subgroups: [
     {
-      label: 'People & access',
+      labelKey: 'admin.group.people',
       sections: [
-        { to: '/admin/identity', icon: Users, label: 'Identity & Access', desc: 'Users, groups, roles, SSO, LDAP/AD, SCIM provisioning' },
-        { to: '/admin/api-keys', icon: KeyRound, label: 'API keys', desc: 'Programmatic access' },
-        { to: '/admin/share-links', icon: Link2, label: 'Share links', desc: 'Active tenant-wide links' },
+        { to: '/admin/identity', icon: Users, labelKey: 'admin.card.admin_identity.label', descKey: 'admin.card.admin_identity.desc' },
+        { to: '/admin/api-keys', icon: KeyRound, labelKey: 'admin.card.admin_api_keys.label', descKey: 'admin.card.admin_api_keys.desc' },
+        { to: '/admin/share-links', icon: Link2, labelKey: 'admin.card.admin_share_links.label', descKey: 'admin.card.admin_share_links.desc' },
       ],
     },
     {
-      label: 'Security & protection',
+      labelKey: 'admin.group.security',
       sections: [
-        { to: '/admin/protection', icon: ShieldCheck, label: 'Information protection', desc: 'Classification & access · watermark · protected exports (IRM)' },
-        { to: '/admin/tenant/encryption', icon: Lock, label: 'Encryption & keys', desc: 'External KMS (Vault/AWS/Azure) · rotation · break-glass revoke' },
-        { to: '/admin/tenant/sync', icon: FolderSync, label: 'Devices & Sync', desc: 'Selective-sync devices, folders, status, revoke' },
+        { to: '/admin/protection', icon: ShieldCheck, labelKey: 'admin.card.admin_protection.label', descKey: 'admin.card.admin_protection.desc' },
+        { to: '/admin/tenant/encryption', icon: Lock, labelKey: 'admin.card.admin_tenant_encryption.label', descKey: 'admin.card.admin_tenant_encryption.desc' },
+        { to: '/admin/tenant/sync', icon: FolderSync, labelKey: 'admin.card.admin_tenant_sync.label', descKey: 'admin.card.admin_tenant_sync.desc' },
       ],
     },
     {
-      label: 'Compliance & records',
+      labelKey: 'admin.group.compliance',
       sections: [
-        { to: '/admin/records-retention', icon: FolderTree, label: 'Records & retention', desc: 'File plan · retention policies & schedules · disposition' },
-        { to: '/admin/legal', icon: Scale, label: 'Legal holds & e-discovery', desc: 'Active holds + hold-scoped export (docs + metadata + audit)' },
-        { to: '/admin/privacy', icon: UserCog, label: 'Privacy requests', desc: 'GDPR export / erase / anonymize' },
-        { to: '/admin/audit', icon: ScrollText, label: 'Audit & SIEM', desc: 'Activity history + forwarding to syslog / Splunk / Sentinel' },
-        { to: '/admin/data-governance', icon: ShieldAlert, label: 'Data governance', desc: 'Compliance overview + residency migrations' },
+        { to: '/admin/records-retention', icon: FolderTree, labelKey: 'admin.card.admin_records_retention.label', descKey: 'admin.card.admin_records_retention.desc' },
+        { to: '/admin/legal', icon: Scale, labelKey: 'admin.card.admin_legal.label', descKey: 'admin.card.admin_legal.desc' },
+        { to: '/admin/privacy', icon: UserCog, labelKey: 'admin.card.admin_privacy.label', descKey: 'admin.card.admin_privacy.desc' },
+        { to: '/admin/audit', icon: ScrollText, labelKey: 'admin.card.admin_audit.label', descKey: 'admin.card.admin_audit.desc' },
+        { to: '/admin/data-governance', icon: ShieldAlert, labelKey: 'admin.card.admin_data_governance.label', descKey: 'admin.card.admin_data_governance.desc' },
       ],
     },
     {
-      label: 'Configuration & operations',
+      labelKey: 'admin.group.config',
       sections: [
-        { to: '/admin/subscription', icon: CreditCard, label: 'Subscription & licensing', desc: 'Plan & usage · license (JWT claims, seats, entitlements, expiry)' },
-        { to: '/admin/tenant-settings', icon: Settings, label: 'Tenant settings', desc: 'Feature flags + upload policy' },
-        { to: '/admin/metadata-schema', icon: FileJson, label: 'Metadata schema', desc: 'Visual field builder + raw JSON Schema' },
-        { to: '/admin/workflows', icon: Workflow, label: 'Workflows', desc: 'Approval workflows' },
+        { to: '/admin/subscription', icon: CreditCard, labelKey: 'admin.card.admin_subscription.label', descKey: 'admin.card.admin_subscription.desc' },
+        { to: '/admin/tenant-settings', icon: Settings, labelKey: 'admin.card.admin_tenant_settings.label', descKey: 'admin.card.admin_tenant_settings.desc' },
+        { to: '/admin/metadata-schema', icon: FileJson, labelKey: 'admin.card.admin_metadata_schema.label', descKey: 'admin.card.admin_metadata_schema.desc' },
+        { to: '/admin/workflows', icon: Workflow, labelKey: 'admin.card.admin_workflows.label', descKey: 'admin.card.admin_workflows.desc' },
         // /templates has no sidebar entry (removed 2026-07-28 by request)
         // and nothing else linked to it, so the page was reachable only
         // by typing the URL. Provisioning a workspace from a template is
         // a setup task, so the admin hub is where it belongs.
-        { to: '/templates', icon: LayoutTemplate, label: 'Workspace templates', desc: 'Reusable folder structures — create a workspace from a template' },
-        { to: '/admin/bulk', icon: Upload, label: 'Bulk import / export', desc: 'NDJSON migration of workspaces, folders, documents' },
-        { to: '/admin/permission-lag', icon: Activity, label: 'Permission propagation', desc: 'Search-index lag p50/p95/p99 vs. 5s SLI' },
+        { to: '/templates', icon: LayoutTemplate, labelKey: 'admin.card.templates.label', descKey: 'admin.card.templates.desc' },
+        { to: '/admin/bulk', icon: Upload, labelKey: 'admin.card.admin_bulk.label', descKey: 'admin.card.admin_bulk.desc' },
+        { to: '/admin/permission-lag', icon: Activity, labelKey: 'admin.card.admin_permission_lag.label', descKey: 'admin.card.admin_permission_lag.desc' },
       ],
     },
   ],
@@ -92,10 +93,10 @@ const TENANT_GROUP: SectionGroup = {
 // resolve so external links keep working — they redirect into the
 // matching tab on the canonical page.
 const INTEGRATIONS_GROUP: SectionGroup = {
-  label: 'Integrations',
-  description: 'Connect SeDoc to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.',
+  labelKey: 'admin.group.integrations',
+  descKey: 'admin.group.integrations_desc',
   sections: [
-    { to: '/admin/integrations', icon: Plug, label: 'Integrations', desc: 'eSignature · Connectors · Webhooks · Email · Event streaming · MCP' },
+    { to: '/admin/integrations', icon: Plug, labelKey: 'admin.card.admin_integrations.label', descKey: 'admin.card.admin_integrations.desc' },
   ],
 }
 
@@ -103,33 +104,34 @@ const INTEGRATIONS_GROUP: SectionGroup = {
 // (Routing rules, Filing analytics, Anomaly reports). The merged
 // /admin/intelligence/* URLs still resolve for back-compat.
 const INTEL_GROUP: SectionGroup = {
-  label: 'Intelligence',
-  description: 'AI provider config, tagging, OCR, PII/PHI scanning, smart routing, and analytics.',
+  labelKey: 'admin.group.intel',
+  descKey: 'admin.group.intel_desc',
   sections: [
-    { to: '/admin/ai', icon: Brain, label: 'AI & Models', desc: 'Provider keys · NER tier · model registry · usage & cost' },
-    { to: '/admin/tagging', icon: TagsIcon, label: 'Tagging', desc: 'Catalog · auto-tag thresholds · review queue' },
-    { to: '/admin/ocr', icon: FileSearch, label: 'OCR', desc: 'Quality config + review queue' },
-    { to: '/admin/ingestion', icon: Upload, label: 'Ingestion', desc: 'Pre-commit pipeline — review queue + staged items' },
-    { to: '/admin/pii-scanning', icon: Shield, label: 'PII / PHI scanning', desc: 'Findings + detection rules' },
-    { to: '/admin/intelligence/routing-rules', icon: MapPinned, label: 'Routing rules', desc: 'Smart-routing rules + config' },
-    { to: '/admin/intelligence/filing-analytics', icon: FileSearch, label: 'Filing analytics', desc: 'Suggestion acceptance + filing patterns' },
-    { to: '/admin/intelligence/anomalies', icon: AlertTriangle, label: 'Anomaly reports', desc: 'Workspace outlier scans' },
+    { to: '/admin/ai', icon: Brain, labelKey: 'admin.card.admin_ai.label', descKey: 'admin.card.admin_ai.desc' },
+    { to: '/admin/tagging', icon: TagsIcon, labelKey: 'admin.card.admin_tagging.label', descKey: 'admin.card.admin_tagging.desc' },
+    { to: '/admin/ocr', icon: FileSearch, labelKey: 'admin.card.admin_ocr.label', descKey: 'admin.card.admin_ocr.desc' },
+    { to: '/admin/ingestion', icon: Upload, labelKey: 'admin.card.admin_ingestion.label', descKey: 'admin.card.admin_ingestion.desc' },
+    { to: '/admin/pii-scanning', icon: Shield, labelKey: 'admin.card.admin_pii_scanning.label', descKey: 'admin.card.admin_pii_scanning.desc' },
+    { to: '/admin/intelligence/routing-rules', icon: MapPinned, labelKey: 'admin.card.admin_intelligence_routing_rules.label', descKey: 'admin.card.admin_intelligence_routing_rules.desc' },
+    { to: '/admin/intelligence/filing-analytics', icon: FileSearch, labelKey: 'admin.card.admin_intelligence_filing_analytics.label', descKey: 'admin.card.admin_intelligence_filing_analytics.desc' },
+    { to: '/admin/intelligence/anomalies', icon: AlertTriangle, labelKey: 'admin.card.admin_intelligence_anomalies.label', descKey: 'admin.card.admin_intelligence_anomalies.desc' },
   ],
 }
 
 // ADR 0069 — platform-admin-only sections. Membership is in the
 // `platform_admins` table, separate from a user's tenant role.
 const PLATFORM_GROUP: SectionGroup = {
-  label: 'Platform administration',
-  description: 'Cross-tenant tools — every action is audited.',
+  labelKey: 'admin.group.platform',
+  descKey: 'admin.group.platform_desc',
   sections: [
-    { to: '/admin/platform/support-search', icon: ShieldAlert, label: 'Support search', desc: 'Cross-tenant document search — every query audited' },
-    { to: '/admin/platform/db-info', icon: Database, label: 'Database driver info', desc: 'Active driver + version + capability matrix' },
-    { to: '/admin/platform/load-tests', icon: Activity, label: 'Load test history', desc: 'Sign-off runs — index built from docs/load-tests at build time' },
+    { to: '/admin/platform/support-search', icon: ShieldAlert, labelKey: 'admin.card.admin_platform_support_search.label', descKey: 'admin.card.admin_platform_support_search.desc' },
+    { to: '/admin/platform/db-info', icon: Database, labelKey: 'admin.card.admin_platform_db_info.label', descKey: 'admin.card.admin_platform_db_info.desc' },
+    { to: '/admin/platform/load-tests', icon: Activity, labelKey: 'admin.card.admin_platform_load_tests.label', descKey: 'admin.card.admin_platform_load_tests.desc' },
   ],
 }
 
 function AdminPage() {
+  const { t } = useTranslation('common')
   const user = useAuthStore((s) => s.user)
   const isPlatformAdmin = user?.is_platform_admin === true
   const isComplianceOfficer = user?.role === 'compliance_officer' && !isPlatformAdmin
@@ -154,37 +156,38 @@ function AdminPage() {
   return (
     <div className="space-y-10">
       <PageHeader
-        title="Administration"
+        title={t('admin.title')}
         description={
           isComplianceOfficer
-            ? 'Intelligence oversight — read-only access to scanning, tagging, and anomaly surfaces.'
-            : 'Manage tenant-wide policy, people, and intelligence settings.'
+            ? t('admin.description_co')
+            : t('admin.description')
         }
       />
       {groups.map((g) => (
-        <SectionGroupBlock key={g.label} group={g} />
+        <SectionGroupBlock key={g.labelKey} group={g} />
       ))}
     </div>
   )
 }
 
 function SectionGroupBlock({ group }: { group: SectionGroup }) {
+  const { t } = useTranslation('common')
   return (
-    <section aria-labelledby={`group-${slugify(group.label)}`}>
+    <section aria-labelledby={`group-${slugify(group.labelKey)}`}>
       <div className="mb-4 border-b border-border pb-2">
         <h2
-          id={`group-${slugify(group.label)}`}
+          id={`group-${slugify(group.labelKey)}`}
           className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
         >
-          {group.label}
+          {t(group.labelKey)}
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">{group.description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t(group.descKey)}</p>
       </div>
       {group.subgroups ? (
         <div className="space-y-6">
           {group.subgroups.map((sg) => (
-            <div key={sg.label}>
-              <h3 className="mb-3 text-sm font-medium text-foreground">{sg.label}</h3>
+            <div key={sg.labelKey}>
+              <h3 className="mb-3 text-sm font-medium text-foreground">{t(sg.labelKey)}</h3>
               <SectionGrid sections={sg.sections} />
             </div>
           ))}
@@ -206,7 +209,8 @@ function SectionGrid({ sections }: { sections: Section[] }) {
   )
 }
 
-function SectionCard({ section: { to, icon: Icon, label, desc } }: { section: Section }) {
+function SectionCard({ section: { to, icon: Icon, labelKey, descKey } }: { section: Section }) {
+  const { t } = useTranslation('common')
   return (
     <Link
       to={to}
@@ -224,10 +228,10 @@ function SectionCard({ section: { to, icon: Icon, label, desc } }: { section: Se
         </span>
         <div className="min-w-0 flex-1">
           <p className="flex items-center justify-between gap-1 truncate text-sm font-medium">
-            <span className="truncate">{label}</span>
+            <span className="truncate">{t(labelKey)}</span>
             <DirectionalIcon name="ChevronRight" className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
           </p>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{desc}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t(descKey)}</p>
         </div>
       </Card>
     </Link>

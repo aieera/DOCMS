@@ -792,5 +792,146 @@
       "digest_hint": "When multiple notifications of the same type occur in quick succession, they are bundled into a single digest notification, delivered within 5 minutes of the first event. Look for the digest icon next to bundled notifications.",
       "snooze_hint": "on any notification to mute its event type for 1 hour."
     }
+  },
+  "admin": {
+    "title": "Administration",
+    "description": "Manage tenant-wide policy, people, and intelligence settings.",
+    "description_co": "Intelligence oversight — read-only access to scanning, tagging, and anomaly surfaces.",
+    "group": {
+      "tenant": "Tenant administration",
+      "tenant_desc": "People, policy, and tenant-wide configuration.",
+      "people": "People & access",
+      "security": "Security & protection",
+      "compliance": "Compliance & records",
+      "config": "Configuration & operations",
+      "integrations": "Integrations",
+      "integrations_desc": "Connect SeDoc to third-party systems — e-signature, M365/Google, email, webhooks, and LLM tool access.",
+      "intel": "Intelligence",
+      "intel_desc": "AI provider config, tagging, OCR, PII/PHI scanning, smart routing, and analytics.",
+      "platform": "Platform administration",
+      "platform_desc": "Cross-tenant tools — every action is audited."
+    },
+    "card": {
+      "admin_identity": {
+        "label": "Identity & Access",
+        "desc": "Users, groups, roles, SSO, LDAP/AD, SCIM provisioning"
+      },
+      "admin_api_keys": {
+        "label": "API keys",
+        "desc": "Programmatic access"
+      },
+      "admin_share_links": {
+        "label": "Share links",
+        "desc": "Active tenant-wide links"
+      },
+      "admin_protection": {
+        "label": "Information protection",
+        "desc": "Classification & access · watermark · protected exports (IRM)"
+      },
+      "admin_tenant_encryption": {
+        "label": "Encryption & keys",
+        "desc": "External KMS (Vault/AWS/Azure) · rotation · break-glass revoke"
+      },
+      "admin_tenant_sync": {
+        "label": "Devices & Sync",
+        "desc": "Selective-sync devices, folders, status, revoke"
+      },
+      "admin_records_retention": {
+        "label": "Records & retention",
+        "desc": "File plan · retention policies & schedules · disposition"
+      },
+      "admin_legal": {
+        "label": "Legal holds & e-discovery",
+        "desc": "Active holds + hold-scoped export (docs + metadata + audit)"
+      },
+      "admin_privacy": {
+        "label": "Privacy requests",
+        "desc": "GDPR export / erase / anonymize"
+      },
+      "admin_audit": {
+        "label": "Audit & SIEM",
+        "desc": "Activity history + forwarding to syslog / Splunk / Sentinel"
+      },
+      "admin_data_governance": {
+        "label": "Data governance",
+        "desc": "Compliance overview + residency migrations"
+      },
+      "admin_subscription": {
+        "label": "Subscription & licensing",
+        "desc": "Plan & usage · license (JWT claims, seats, entitlements, expiry)"
+      },
+      "admin_tenant_settings": {
+        "label": "Tenant settings",
+        "desc": "Feature flags + upload policy"
+      },
+      "admin_metadata_schema": {
+        "label": "Metadata schema",
+        "desc": "Visual field builder + raw JSON Schema"
+      },
+      "admin_workflows": {
+        "label": "Workflows",
+        "desc": "Approval workflows"
+      },
+      "templates": {
+        "label": "Workspace templates",
+        "desc": "Reusable folder structures — create a workspace from a template"
+      },
+      "admin_bulk": {
+        "label": "Bulk import / export",
+        "desc": "NDJSON migration of workspaces, folders, documents"
+      },
+      "admin_permission_lag": {
+        "label": "Permission propagation",
+        "desc": "Search-index lag p50/p95/p99 vs. 5s SLI"
+      },
+      "admin_integrations": {
+        "label": "Integrations",
+        "desc": "eSignature · Connectors · Webhooks · Email · Event streaming · MCP"
+      },
+      "admin_ai": {
+        "label": "AI & Models",
+        "desc": "Provider keys · NER tier · model registry · usage & cost"
+      },
+      "admin_tagging": {
+        "label": "Tagging",
+        "desc": "Catalog · auto-tag thresholds · review queue"
+      },
+      "admin_ocr": {
+        "label": "OCR",
+        "desc": "Quality config + review queue"
+      },
+      "admin_ingestion": {
+        "label": "Ingestion",
+        "desc": "Pre-commit pipeline — review queue + staged items"
+      },
+      "admin_pii_scanning": {
+        "label": "PII / PHI scanning",
+        "desc": "Findings + detection rules"
+      },
+      "admin_intelligence_routing_rules": {
+        "label": "Routing rules",
+        "desc": "Smart-routing rules + config"
+      },
+      "admin_intelligence_filing_analytics": {
+        "label": "Filing analytics",
+        "desc": "Suggestion acceptance + filing patterns"
+      },
+      "admin_intelligence_anomalies": {
+        "label": "Anomaly reports",
+        "desc": "Workspace outlier scans"
+      },
+      "admin_platform_support_search": {
+        "label": "Support search",
+        "desc": "Cross-tenant document search — every query audited"
+      },
+      "admin_platform_db_info": {
+        "label": "Database driver info",
+        "desc": "Active driver + version + capability matrix"
+      },
+      "admin_platform_load_tests": {
+        "label": "Load test history",
+        "desc": "Sign-off runs — index built from docs/load-tests at build time"
+      }
+    }
   }
 }
