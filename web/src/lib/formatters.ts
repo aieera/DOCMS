@@ -1,5 +1,6 @@
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import i18n from '@/i18n'
 dayjs.extend(relativeTime)
 
 // Human-readable file size. Edge cases (C-2):
@@ -36,19 +37,75 @@ function isUsefulDate(date: string | Date | null | undefined): boolean {
   return d.isValid() && d.year() > 1900
 }
 
+// Dates follow the UI language. These are plain functions, not hooks —
+// they are called from ~100 places including non-component code — so
+// they read the active language off the i18next singleton rather than
+// taking it as an argument. i18n does not import this module, so there
+// is no cycle; before init (and in unit tests) `language` is undefined
+// and everything falls back to English.
+//
+// `-u-nu-latn` pins the numbering system to Latin digits. Without it the
+// `ar` locale renders ٢٠٢٦, and the requirement is Arabic month names
+// with ordinary numerals.
+function intlLocale(): string {
+  const lng = (i18n?.language || 'en').split('-')[0]
+  return `${lng}-u-nu-latn`
+}
+
+// Intl formatter construction is genuinely expensive and these run in
+// table-row loops, so keep one per locale+shape.
+const dateFmts = new Map<string, Intl.DateTimeFormat>()
+function dateFmt(opts: Intl.DateTimeFormatOptions, tag: string): Intl.DateTimeFormat {
+  const locale = intlLocale()
+  const key = `${locale}|${tag}`
+  let f = dateFmts.get(key)
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, opts)
+    dateFmts.set(key, f)
+  }
+  return f
+}
+
 export function formatDate(date: string | Date | null | undefined): string {
   if (!isUsefulDate(date)) return '—'
-  return dayjs(date as string | Date).format('MMM D, YYYY')
+  return dateFmt({ day: 'numeric', month: 'short', year: 'numeric' }, 'date')
+    .format(new Date(date as string | Date))
 }
 
 export function formatDateTime(date: string | Date | null | undefined): string {
   if (!isUsefulDate(date)) return '—'
-  return dayjs(date as string | Date).format('MMM D, YYYY h:mm A')
+  return dateFmt(
+    { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' },
+    'datetime',
+  ).format(new Date(date as string | Date))
 }
+
+// Thresholds match dayjs's fromNow() closely enough that the English
+// copy barely moves, but Intl supplies the Arabic wording, which dayjs
+// cannot without shipping its own locale bundle (and that bundle would
+// also force Arabic-Indic digits).
+const REL_UNITS: [limitSeconds: number, perUnit: number, unit: Intl.RelativeTimeFormatUnit][] = [
+  [45, 1, 'second'],
+  [45 * 60, 60, 'minute'],
+  [22 * 3600, 3600, 'hour'],
+  [26 * 86400, 86400, 'day'],
+  [11 * 2592000, 2592000, 'month'],
+  [Number.POSITIVE_INFINITY, 31536000, 'year'],
+]
+const relFmts = new Map<string, Intl.RelativeTimeFormat>()
 
 export function formatRelativeTime(date: string | Date | null | undefined): string {
   if (!isUsefulDate(date)) return '—'
-  return dayjs(date as string | Date).fromNow()
+  const locale = intlLocale()
+  let f = relFmts.get(locale)
+  if (!f) {
+    f = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+    relFmts.set(locale, f)
+  }
+  const deltaSec = (new Date(date as string | Date).getTime() - Date.now()) / 1000
+  const abs = Math.abs(deltaSec)
+  const [, perUnit, unit] = REL_UNITS.find(([limit]) => abs < limit) ?? REL_UNITS[REL_UNITS.length - 1]
+  return f.format(Math.round(deltaSec / perUnit), unit)
 }
 
 // Map proto-style lifecycle state enums (LIFECYCLE_STATE_DRAFT) to
