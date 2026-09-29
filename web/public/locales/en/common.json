@@ -473,5 +473,41 @@
     "query_failed": "Query failed",
     "delete_error": "Could not delete report",
     "save_error": "Could not save report"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "description": "Connected systems that file documents into SeDoc. Each integration keeps its own customer-scoped surface, separate from your workspaces.",
+    "open": "Open",
+    "status_active": "Active",
+    "status_coming_soon": "Coming soon",
+    "erp_name": "ERP (RAABYT One)",
+    "erp_desc": "Customer documents synced one-way from the ERP — quotes, POs, SOs, DOs, invoices and attachments, filed automatically into each customer’s folder tree.",
+    "erp": {
+      "title": "ERP Documents",
+      "description": "Customer files synced from the ERP. Pick a customer to browse their folder tree — quotes, POs, SOs, DOs, invoices and attachments.",
+      "select_customer": "Select customer",
+      "loading_customers": "Loading customers…",
+      "select_customer_placeholder": "Select a customer…",
+      "folders": "Folders",
+      "pick_folder": "Pick a folder",
+      "no_documents": "No documents in this folder",
+      "none_selected": "No document selected",
+      "none_selected_desc": "Select a document to see its details and versions.",
+      "download": "Download",
+      "versions": "Versions ({{count}})",
+      "col_name": "Name",
+      "col_type": "Type",
+      "col_status": "Status",
+      "col_external_id": "External ID",
+      "col_size": "Size",
+      "col_updated": "Updated",
+      "err_folders": "Couldn’t load this customer’s folders.",
+      "err_documents": "Couldn’t load documents.",
+      "err_document": "Couldn’t load this document.",
+      "no_customers": "No customers provisioned yet",
+      "no_customers_desc": "A customer’s folder tree is created automatically the first time that customer is created or synced in the ERP.",
+      "choose_customer": "Select a customer",
+      "choose_customer_desc": "Choose a customer above to browse their ERP-synced documents."
+    }
   }
 }

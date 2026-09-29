@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { FolderTree, FileText, Download, Inbox, Layers } from 'lucide-react'
@@ -48,6 +49,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 function DocumentDetail({ data }: { data: ErpDocumentDetail }) {
+  const { t } = useTranslation('common')
   const d = data.document
   return (
     <div className="space-y-4">
@@ -61,22 +63,22 @@ function DocumentDetail({ data }: { data: ErpDocumentDetail }) {
         </div>
       </div>
       <dl className="space-y-1.5 text-sm">
-        <DetailRow label="External ID" value={d.externalId || '—'} />
-        <DetailRow label="Type" value={d.mimeType || '—'} />
-        <DetailRow label="Size" value={bytesHuman(d.totalSizeBytes)} />
+        <DetailRow label={t('integrations.erp.col_external_id')} value={d.externalId || '—'} />
+        <DetailRow label={t('integrations.erp.col_type')} value={d.mimeType || '—'} />
+        <DetailRow label={t('integrations.erp.col_size')} value={bytesHuman(d.totalSizeBytes)} />
         <DetailRow
-          label="Updated"
+          label={t('integrations.erp.col_updated')}
           value={d.updatedAt ? new Date(d.updatedAt).toLocaleString() : '—'}
         />
       </dl>
       <a href={erpDocumentDownloadURL(d.id)} download className="block">
         <Button className="w-full gap-2">
-          <Download className="h-4 w-4" /> Download
+          <Download className="h-4 w-4" /> {t('integrations.erp.download')}
         </Button>
       </a>
       <div>
         <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Versions ({data.versions.length})
+          {t('integrations.erp.versions', { count: data.versions.length })}
         </div>
         <ul className="space-y-1">
           {data.versions.map((v) => (
@@ -98,6 +100,7 @@ function DocumentDetail({ data }: { data: ErpDocumentDetail }) {
 }
 
 function ErpExplorerPage() {
+  const { t } = useTranslation('common')
   const [ref, setRef] = useState('')
   const [folderId, setFolderId] = useState('')
   const [docId, setDocId] = useState('')
@@ -147,17 +150,17 @@ function ErpExplorerPage() {
   return (
     <div>
       <PageHeader
-        title="ERP Documents"
-        description="Customer files synced from the ERP. Pick a customer to browse their folder tree — quotes, POs, SOs, DOs, invoices and attachments."
+        title={t('integrations.erp.title')}
+        description={t('integrations.erp.description')}
         actions={
           <select
             value={ref}
             onChange={(e) => setRef(e.target.value)}
             className="h-9 min-w-[15rem] rounded-lg border border-input bg-muted px-3 text-sm shadow-neu-inset"
-            aria-label="Select customer"
+            aria-label={t('integrations.erp.select_customer')}
           >
             <option value="">
-              {customersQ.isLoading ? 'Loading customers…' : 'Select a customer…'}
+              {customersQ.isLoading ? t('integrations.erp.loading_customers') : t('integrations.erp.select_customer_placeholder')}
             </option>
             {customers.map((c) => (
               <option key={c.customer_ref} value={c.customer_ref}>
@@ -172,11 +175,13 @@ function ErpExplorerPage() {
         <Card>
           <EmptyState
             icon={<Inbox className="h-6 w-6" />}
-            title={customers.length ? 'Select a customer' : 'No customers provisioned yet'}
+            title={customers.length
+              ? t('integrations.erp.choose_customer')
+              : t('integrations.erp.no_customers')}
             description={
               customers.length
-                ? 'Choose a customer above to browse their ERP-synced documents.'
-                : 'A customer’s folder tree is created automatically the first time that customer is created or synced in the ERP.'
+                ? t('integrations.erp.choose_customer_desc')
+                : t('integrations.erp.no_customers_desc')
             }
           />
         </Card>
@@ -185,7 +190,7 @@ function ErpExplorerPage() {
           {/* Folder tree */}
           <Card className="p-2 lg:col-span-3">
             <div className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Folders
+              {t('integrations.erp.folders')}
             </div>
             {treeQ.isLoading ? (
               <div className="flex justify-center py-8">
@@ -193,7 +198,7 @@ function ErpExplorerPage() {
               </div>
             ) : treeQ.isError ? (
               <p className="px-3 py-6 text-sm text-destructive">
-                Couldn’t load this customer’s folders.
+                {t('integrations.erp.err_folders')}
               </p>
             ) : (
               <ul className="space-y-0.5">
@@ -219,25 +224,25 @@ function ErpExplorerPage() {
           {/* Document list */}
           <Card className="overflow-hidden lg:col-span-5">
             {!folderId ? (
-              <EmptyState icon={<Layers className="h-6 w-6" />} title="Pick a folder" />
+              <EmptyState icon={<Layers className="h-6 w-6" />} title={t('integrations.erp.pick_folder')} />
             ) : docsQ.isLoading ? (
               <div className="flex justify-center py-12">
                 <Spinner />
               </div>
             ) : docsQ.isError ? (
               <p className="px-4 py-12 text-center text-sm text-destructive">
-                Couldn’t load documents.
+                {t('integrations.erp.err_documents')}
               </p>
             ) : (docsQ.data?.length ?? 0) === 0 ? (
-              <EmptyState icon={<FileText className="h-6 w-6" />} title="No documents in this folder" />
+              <EmptyState icon={<FileText className="h-6 w-6" />} title={t('integrations.erp.no_documents')} />
             ) : (
               <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-start text-xs text-muted-foreground">
-                    <th className="px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">Type</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
+                    <th className="px-4 py-2 font-medium">{t('integrations.erp.col_name')}</th>
+                    <th className="px-4 py-2 font-medium">{t('integrations.erp.col_type')}</th>
+                    <th className="px-4 py-2 font-medium">{t('integrations.erp.col_status')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -275,15 +280,15 @@ function ErpExplorerPage() {
             {!docId ? (
               <EmptyState
                 icon={<FileText className="h-6 w-6" />}
-                title="No document selected"
-                description="Select a document to see its details and versions."
+                title={t('integrations.erp.none_selected')}
+                description={t('integrations.erp.none_selected_desc')}
               />
             ) : detailQ.isLoading ? (
               <div className="flex justify-center py-12">
                 <Spinner />
               </div>
             ) : detailQ.isError || !detailQ.data ? (
-              <p className="text-sm text-destructive">Couldn’t load this document.</p>
+              <p className="text-sm text-destructive">{t('integrations.erp.err_document')}</p>
             ) : (
               <DocumentDetail data={detailQ.data} />
             )}

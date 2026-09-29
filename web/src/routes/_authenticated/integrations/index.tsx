@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Boxes, ArrowRight } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -9,8 +10,11 @@ import { cn } from '@/lib/cn'
 // Built as a list so further integrations slot in beside ERP without a redesign.
 interface IntegrationDef {
   key: string
-  name: string
-  description: string
+  // Catalogue keys, not copy: this list is a module constant evaluated
+  // once at import, so a translated literal would freeze whichever
+  // locale happened to load first.
+  nameKey: string
+  descKey: string
   to?: string
   status: 'active' | 'coming_soon'
 }
@@ -18,15 +22,15 @@ interface IntegrationDef {
 const INTEGRATIONS: IntegrationDef[] = [
   {
     key: 'erp',
-    name: 'ERP (RAABYT One)',
-    description:
-      'Customer documents synced one-way from the ERP — quotes, POs, SOs, DOs, invoices and attachments, filed automatically into each customer’s folder tree.',
+    nameKey: 'integrations.erp_name',
+    descKey: 'integrations.erp_desc',
     to: '/integrations/erp',
     status: 'active',
   },
 ]
 
 function StatusPill({ status }: { status: IntegrationDef['status'] }) {
+  const { t } = useTranslation('common')
   const active = status === 'active'
   return (
     <span
@@ -35,12 +39,13 @@ function StatusPill({ status }: { status: IntegrationDef['status'] }) {
         active ? 'bg-success/15 text-foreground' : 'bg-muted text-muted-foreground',
       )}
     >
-      {active ? 'Active' : 'Coming soon'}
+      {active ? t('integrations.status_active') : t('integrations.status_coming_soon')}
     </span>
   )
 }
 
 function IntegrationCard({ it }: { it: IntegrationDef }) {
+  const { t } = useTranslation('common')
   return (
     <Card className="flex h-full flex-col gap-3 p-5 transition-colors hover:border-primary/40">
       <div className="flex items-start gap-3">
@@ -48,14 +53,14 @@ function IntegrationCard({ it }: { it: IntegrationDef }) {
           <Boxes className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <div className="truncate font-semibold text-foreground">{it.name}</div>
+          <div className="truncate font-semibold text-foreground">{t(it.nameKey)}</div>
           <StatusPill status={it.status} />
         </div>
       </div>
-      <p className="text-sm text-muted-foreground">{it.description}</p>
+      <p className="text-sm text-muted-foreground">{t(it.descKey)}</p>
       {it.to && (
         <div className="mt-auto flex items-center gap-1 text-sm font-medium text-primary">
-          Open <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+          {t('integrations.open')} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
         </div>
       )}
     </Card>
@@ -63,11 +68,12 @@ function IntegrationCard({ it }: { it: IntegrationDef }) {
 }
 
 function IntegrationsPage() {
+  const { t } = useTranslation('common')
   return (
     <div>
       <PageHeader
-        title="Integrations"
-        description="Connected systems that file documents into SeDoc. Each integration keeps its own customer-scoped surface, separate from your workspaces."
+        title={t('integrations.title')}
+        description={t('integrations.description')}
       />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {INTEGRATIONS.map((it) =>
