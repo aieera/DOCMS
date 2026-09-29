@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Bell, LifeBuoy, ShieldCheck, Smartphone } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -25,74 +26,78 @@ interface SectionRow {
   to: string
   icon: LucideIcon
   tint: string
-  title: string
-  description: string
+  titleKey: string
+  descKey: string
   testId: string
   // Only two-factor has live state in the store. The rest would need
   // their own requests (recovery-code count, per-channel prefs) and a
   // hub is not worth a fetch, so they carry no badge rather than a
   // guessed one.
-  status?: (u: User | null) => { label: string; variant: 'active' | 'in_review' } | undefined
+  status?: (u: User | null) => { labelKey: string; variant: 'active' | 'in_review' } | undefined
 }
 
-const GROUPS: { heading: string; rows: SectionRow[] }[] = [
+// headingKey/titleKey/descKey, not copy: GROUPS is a module constant
+// evaluated once at import, so a translated literal would freeze the
+// first locale loaded.
+const GROUPS: { headingKey: string; rows: SectionRow[] }[] = [
   {
-    heading: 'Security',
+    headingKey: 'settings.group_security',
     rows: [
       {
         to: '/settings/security',
         icon: ShieldCheck,
         tint: 'text-blue-600 dark:text-blue-400',
-        title: 'Account & security',
-        description: 'Your profile, passkeys, and active sessions.',
+        titleKey: 'settings.card_security',
+        descKey: 'settings.card_security_desc',
         testId: 'settings-card-security',
       },
       {
         to: '/settings/security/mfa',
         icon: Smartphone,
         tint: 'text-emerald-600 dark:text-emerald-400',
-        title: 'Two-factor authentication',
-        description: 'An authenticator app for sign-in codes.',
+        titleKey: 'settings.card_mfa',
+        descKey: 'settings.card_mfa_desc',
         testId: 'settings-card-mfa',
         status: (u) =>
           u?.mfa_enabled
-            ? { label: 'On', variant: 'active' }
-            : { label: 'Off', variant: 'in_review' },
+            ? { labelKey: 'settings.on', variant: 'active' }
+            : { labelKey: 'settings.off', variant: 'in_review' },
       },
       {
         to: '/settings/security/mfa/recovery',
         icon: LifeBuoy,
         tint: 'text-amber-600 dark:text-amber-400',
-        title: 'Recovery codes',
-        description: 'One-time backup codes for when you lose your authenticator.',
+        titleKey: 'settings.card_recovery',
+        descKey: 'settings.card_recovery_desc',
         testId: 'settings-card-recovery',
       },
     ],
   },
   {
-    heading: 'Preferences',
+    headingKey: 'settings.group_preferences',
     rows: [
       {
         to: '/settings/notifications',
         icon: Bell,
         tint: 'text-violet-600 dark:text-violet-400',
-        title: 'Notification preferences',
-        description: 'Which events reach you, per channel, with digests, snoozes, and quiet hours.',
+        titleKey: 'settings.card_notifications',
+        descKey: 'settings.card_notifications_desc',
         testId: 'settings-card-notifications',
       },
     ],
   },
 ]
 
-const ROLE_LABELS: Record<User['role'], string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  member: 'Member',
-  guest: 'Guest',
-  compliance_officer: 'Compliance officer',
+const ROLE_KEYS: Record<User['role'], string> = {
+  owner: 'settings.role_owner',
+  admin: 'settings.role_admin',
+  member: 'settings.role_member',
+  guest: 'settings.role_guest',
+  compliance_officer: 'settings.role_compliance_officer',
 }
 
 function SettingsIndexPage() {
+  const { t } = useTranslation('common')
   const user = useCurrentUser()
 
   return (
@@ -102,21 +107,21 @@ function SettingsIndexPage() {
     // 1660px column.
     <div>
       <PageHeader
-        title="Settings"
-        description="Manage your account, security, and notification preferences."
+        title={t('settings.title')}
+        description={t('settings.description')}
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
         <IdentityCard user={user} />
 
         <div className="min-w-0 space-y-6">
-          {GROUPS.map(({ heading, rows }) => (
-            <section key={heading} aria-label={heading}>
+          {GROUPS.map(({ headingKey, rows }) => (
+            <section key={headingKey} aria-label={t(headingKey)}>
               <h2
                 dir="auto"
                 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
               >
-                {heading}
+                {t(headingKey)}
               </h2>
               <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
                 {rows.map((row) => (
@@ -132,10 +137,11 @@ function SettingsIndexPage() {
 }
 
 function IdentityCard({ user }: { user: User | null }) {
-  const name = user?.display_name || user?.email || 'Your account'
+  const { t } = useTranslation('common')
+  const name = user?.display_name || user?.email || t('settings.account_fallback')
   return (
     <aside
-      aria-label="Your account"
+      aria-label={t('settings.your_account')}
       className="h-fit rounded-lg border border-border bg-card p-5 lg:sticky lg:top-6"
       data-testid="settings-identity"
     >
@@ -163,11 +169,11 @@ function IdentityCard({ user }: { user: User | null }) {
             badge on its own row to the right, next to the control that
             changes it, and saying it twice on one screen is the kind of
             duplication this redesign exists to remove. */}
-        <Fact label="Role">{user ? ROLE_LABELS[user.role] : '—'}</Fact>
-        <Fact label="Language">{user?.locale === 'ar' ? 'العربية' : 'English'}</Fact>
-        {user?.created_at && <Fact label="Member since">{formatDate(user.created_at)}</Fact>}
+        <Fact label={t('settings.role')}>{user ? t(ROLE_KEYS[user.role]) : '—'}</Fact>
+        <Fact label={t('settings.language')}>{user?.locale === 'ar' ? 'العربية' : 'English'}</Fact>
+        {user?.created_at && <Fact label={t('settings.member_since')}>{formatDate(user.created_at)}</Fact>}
         {user?.last_login_at && (
-          <Fact label="Last sign-in">{formatRelativeTime(user.last_login_at)}</Fact>
+          <Fact label={t('settings.last_sign_in')}>{formatRelativeTime(user.last_login_at)}</Fact>
         )}
       </dl>
     </aside>
@@ -188,7 +194,8 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function SectionLink({ row, user }: { row: SectionRow; user: User | null }) {
-  const { to, icon: Icon, tint, title, description, testId } = row
+  const { t } = useTranslation('common')
+  const { to, icon: Icon, tint, titleKey, descKey, testId } = row
   const status = row.status?.(user)
   return (
     <li>
@@ -212,17 +219,17 @@ function SectionLink({ row, user }: { row: SectionRow; user: User | null }) {
             catches neither: nothing moves, the characters reorder. */}
         <span dir="auto" className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{title}</span>
+            <span className="text-sm font-semibold text-foreground">{t(titleKey)}</span>
             {status && (
               <Badge variant={status.variant} // Not `${testId}-status`: that nests inside the settings-card-*
                 // prefix, so a [data-testid^="settings-card-"] query returns the
                 // badge alongside the links it is meant to count.
                 data-testid={`settings-status-${testId.replace('settings-card-', '')}`}>
-                {status.label}
+                {t(status.labelKey)}
               </Badge>
             )}
           </span>
-          <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">{t(descKey)}</span>
         </span>
         <DirectionalIcon
           name="ChevronRight"

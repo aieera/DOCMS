@@ -1,4 +1,5 @@
 // ADR 0063 — MFA settings page. Lets the user enroll, verify, and
+import { useTranslation } from 'react-i18next'
 // disable each non-passkey method (passkeys land on /settings/security
 // which already exists). Sections shown:
 //   - Enrolled methods, strongest-first
@@ -56,6 +57,7 @@ const ICONS: Record<MFAMethod, React.ReactNode> = {
 }
 
 function MFAPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: methods, isLoading } = useQuery({
     queryKey: ['mfa', 'methods'],
@@ -65,7 +67,7 @@ function MFAPage() {
   const remove = useAppMutation({
     mutationFn: (m: MFAMethod) => disableMFAMethod(m),
     onSuccess: () => {
-      toast.success('Method disabled')
+      toast.success(t('settings.mfa.disabled'))
       qc.invalidateQueries({ queryKey: ['mfa', 'methods'] })
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not disable MFA'),
@@ -74,15 +76,15 @@ function MFAPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
-        title="Multi-factor authentication"
-        description="Add a second factor to your sign-in. Stronger methods are listed first."
+        title={t('settings.mfa.title')}
+        description={t('settings.mfa.description')}
       />
 
-      <Section icon={<ShieldCheck className="h-5 w-5" />} title="Enrolled methods">
+      <Section icon={<ShieldCheck className="h-5 w-5" />} title={t('settings.mfa.enrolled')}>
         {isLoading && <Spinner />}
         {!isLoading && (methods?.length ?? 0) === 0 && (
           <p className="text-sm text-muted-foreground">
-            No methods enrolled yet. Add one below.
+            {t('settings.mfa.none_enrolled')}
           </p>
         )}
         <div className="space-y-2">
@@ -92,11 +94,11 @@ function MFAPage() {
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          Need a passkey? <Link to="/settings/security" className="underline">Manage passkeys here</Link>.
+          {t('settings.mfa.need_passkey')} <Link to="/settings/security" className="underline">{t('settings.mfa.manage_passkeys')}</Link>.
         </p>
         <p className="mt-2 text-xs text-muted-foreground">
-          <Link to="/settings/security/mfa/recovery" className="underline">Generate / view recovery codes</Link>{' '}
-          — keep them somewhere safe in case you lose your device.
+          <Link to="/settings/security/mfa/recovery" className="underline">{t('settings.mfa.recovery_link')}</Link>{' '}
+          {t('settings.mfa.recovery_hint')}
         </p>
       </Section>
 
@@ -108,6 +110,7 @@ function MFAPage() {
 }
 
 function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <div className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
       <div className="text-muted-foreground">{ICONS[m.method]}</div>
@@ -130,7 +133,7 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
           size="sm"
           onClick={onRemove}
           aria-label={`Disable ${m.method} as an MFA method`}
-          title="Disable this method"
+          title={t('settings.mfa.disable')}
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
         </Button>
@@ -140,31 +143,32 @@ function Row({ m, onRemove }: { m: EnrolledMethod; onRemove: () => void }) {
 }
 
 function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
+  const { t } = useTranslation('common')
   const me = useAuthStore((s) => s.user)
   const [email, setEmail] = useState(me?.email ?? '')
   const enroll = useAppMutation({
     mutationFn: (v: string) => enrollEmailMFA(v),
     onSuccess: () => {
-      toast.success('Email enrolled — verify by signing out and signing in.')
+      toast.success(t('settings.mfa.email_enrolled'))
       onChanged()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll email factor'),
   })
   return (
-    <Section icon={<Mail className="h-5 w-5" />} title="Email one-time codes"
-      hint="Receive a 6-digit code by email at sign-in. Useful as a backup factor.">
+    <Section icon={<Mail className="h-5 w-5" />} title={t('settings.mfa.email_codes')}
+      hint={t('settings.mfa.email_hint')}>
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-[16rem] flex-1">
           <Input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            placeholder={t('settings.mfa.email_placeholder')}
             type="email"
           />
         </div>
         <Button onClick={() => enroll.mutate(email)} disabled={!email || enroll.isPending}>
           {enroll.isPending ? <Spinner /> : <Plus className="h-4 w-4" />}
-          Enroll email
+          {t('settings.mfa.enroll_email')}
         </Button>
       </div>
     </Section>
@@ -172,22 +176,23 @@ function EmailEnrollSection({ onChanged }: { onChanged: () => void }) {
 }
 
 function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
+  const { t } = useTranslation('common')
   const [phone, setPhone] = useState('+')
   const enroll = useAppMutation({
     mutationFn: (v: string) => enrollSMSMFA(v),
     onSuccess: () => {
-      toast.success('SMS enrolled — verify by signing out and signing in.')
+      toast.success(t('settings.mfa.sms_enrolled'))
       onChanged()
     },
     onError: (e: unknown) => toast.error(readErrorMessage(e) ?? 'Could not enroll SMS factor'),
   })
   return (
-    <Section icon={<MessageSquare className="h-5 w-5" />} title="SMS one-time codes"
-      hint="Discouraged — SMS is the weakest factor. Provided for compatibility with enterprise policies that require it.">
+    <Section icon={<MessageSquare className="h-5 w-5" />} title={t('settings.mfa.sms_codes')}
+      hint={t('settings.mfa.sms_hint')}>
       <div className="mb-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning-strong">
         <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
         <span>
-          SMS is vulnerable to SIM-swap and SS7 attacks. Prefer a passkey, TOTP app, or push instead.
+          {t('settings.mfa.sms_warning')}
         </span>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -195,12 +200,12 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
           <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="+14155552671"
+            placeholder={t('settings.mfa.sms_placeholder')}
           />
         </div>
         <Button onClick={() => enroll.mutate(phone)} disabled={!phone || phone.length < 8 || enroll.isPending}>
           {enroll.isPending ? <Spinner /> : <Plus className="h-4 w-4" />}
-          Enroll phone
+          {t('settings.mfa.enroll_phone')}
         </Button>
       </div>
     </Section>
@@ -208,12 +213,12 @@ function SMSEnrollSection({ onChanged }: { onChanged: () => void }) {
 }
 
 function PushSection() {
+  const { t } = useTranslation('common')
   return (
-    <Section icon={<Bell className="h-5 w-5" />} title="Push notifications"
-      hint="Approve sign-in from the SeDoc mobile app. Not available yet.">
+    <Section icon={<Bell className="h-5 w-5" />} title={t('settings.mfa.push')}
+      hint={t('settings.mfa.push_hint')}>
       <p className="text-sm text-muted-foreground">
-        Once the mobile app is installed and you've signed in there, the device
-        will register itself automatically and appear here.
+        {t('settings.mfa.push_body')}
       </p>
     </Section>
   )

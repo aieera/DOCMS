@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/_authenticated/settings/notifications')({
 const keyOf = (eventType: string, channel: Channel) => `${eventType}::${channel}`
 
 function NotificationsSettings() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const matrix = useQuery({ queryKey: ['notif-matrix'], queryFn: getMatrix })
   const snoozes = useQuery({ queryKey: ['notif-snoozes'], queryFn: listSnoozes })
@@ -76,23 +78,23 @@ function NotificationsSettings() {
       await putMatrix(cells)
     },
     onSuccess: () => {
-      toast.success('Notification preferences saved')
+      toast.success(t('settings.notif.saved'))
       qc.invalidateQueries({ queryKey: ['notif-matrix'] })
       setDirty(false)
     },
-    onError: () => toast.error('Failed to save preferences'),
+    onError: () => toast.error(t('settings.notif.save_failed')),
   })
 
   return (
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
-        title="Notifications"
-        description="Choose which events ping you and on which channels. Set quiet hours and active snoozes below."
+        title={t('settings.notif.title')}
+        description={t('settings.notif.description')}
       />
 
       <section className="mb-8 rounded-lg border border-border bg-card p-4" data-testid="prefs-matrix-section">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Event matrix</h2>
+          <h2 className="text-lg font-semibold">{t('settings.notif.matrix')}</h2>
           <Button
             size="sm"
             disabled={!dirty}
@@ -100,7 +102,7 @@ function NotificationsSettings() {
             onClick={() => saveMatrix.mutate()}
             data-testid="prefs-matrix-save"
           >
-            <Save className="me-1 h-4 w-4" /> Save
+            <Save className="me-1 h-4 w-4" /> {t('settings.notif.save')}
           </Button>
         </header>
         {matrix.isLoading ? (
@@ -110,10 +112,10 @@ function NotificationsSettings() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="py-2 text-start font-medium">Event</th>
+                  <th className="py-2 text-start font-medium">{t('settings.notif.event')}</th>
                   {CHANNELS.map((ch) => (
-                    <th key={ch} className="px-2 py-2 text-center font-medium capitalize">
-                      {ch.replace('_', '-')}
+                    <th key={ch} className="px-2 py-2 text-center font-medium">
+                      {t(`settings.notif.channel.${ch}`)}
                     </th>
                   ))}
                 </tr>
@@ -121,7 +123,7 @@ function NotificationsSettings() {
               <tbody>
                 {EVENT_TYPES.map((ev) => (
                   <tr key={ev.id} className="border-b border-border" data-testid={`prefs-row-${ev.id}`}>
-                    <td className="py-2 pe-4">{ev.label}</td>
+                    <td className="py-2 pe-4">{t(`settings.notif.event_label.${ev.id}`)}</td>
                     {CHANNELS.map((ch) => {
                       const cell = grid[keyOf(ev.id, ch)] ?? { is_enabled: false, digest_enabled: false }
                       return (
@@ -135,7 +137,7 @@ function NotificationsSettings() {
                                 setDirty(true)
                               }}
                               data-testid={`prefs-cell-${ev.id}-${ch}`}
-                              aria-label={`${ev.label} on ${ch}`}
+                              aria-label={t('settings.notif.toggle_aria', { event: t(`settings.notif.event_label.${ev.id}`), channel: t(`settings.notif.channel.${ch}`) })}
                             />
                             <button
                               type="button"
@@ -144,8 +146,8 @@ function NotificationsSettings() {
                                 setDirty(true)
                               }}
                               className={`rounded px-1 text-[10px] ${cell.digest_enabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-                              title="Bundle into 5-minute digest"
-                              aria-label={`Toggle digest for ${ev.label} on ${ch}`}
+                              title={t('settings.notif.digest')}
+                              aria-label={t('settings.notif.digest_aria', { event: t(`settings.notif.event_label.${ev.id}`), channel: t(`settings.notif.channel.${ch}`) })}
                               data-testid={`prefs-digest-${ev.id}-${ch}`}
                             >
                               D
@@ -159,7 +161,7 @@ function NotificationsSettings() {
               </tbody>
             </table>
             <p className="mt-2 text-xs text-muted-foreground">
-              When multiple notifications of the same type occur in quick succession, they are bundled into a single digest notification, delivered within 5 minutes of the first event. Look for the digest icon next to bundled notifications.
+              {t('settings.notif.digest_hint')}
             </p>
           </div>
         )}
@@ -175,6 +177,7 @@ function NotificationsSettings() {
 // ----- Do Not Disturb --------------------------------------------
 
 function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string; timezone: string } | null; loading: boolean }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const browserTZ = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', [])
   const [start, setStart] = useState('')
@@ -192,15 +195,15 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
   const save = useAppMutation({
     mutationFn: () => putDND({ start, end, timezone: tz }),
     onSuccess: () => {
-      toast.success('Do-not-disturb saved')
+      toast.success(t('settings.notif.dnd_saved'))
       qc.invalidateQueries({ queryKey: ['notif-dnd'] })
     },
-    onError: () => toast.error('Failed to save'),
+    onError: () => toast.error(t('settings.notif.dnd_failed')),
   })
   const clear = useAppMutation({
     mutationFn: () => deleteDND(),
     onSuccess: () => {
-      toast.success('Do-not-disturb cleared')
+      toast.success(t('settings.notif.dnd_cleared'))
       setStart(''); setEnd('')
       qc.invalidateQueries({ queryKey: ['notif-dnd'] })
     },
@@ -209,22 +212,22 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
   return (
     <section className="mb-8 rounded-lg border border-border bg-card p-4" data-testid="prefs-dnd-section">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Do not disturb</h2>
+        <h2 className="text-lg font-semibold">{t('settings.notif.dnd')}</h2>
       </header>
       {loading ? <Spinner /> : (
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-xs text-muted-foreground">Start</label>
+            <label className="block text-xs text-muted-foreground">{t('settings.notif.start')}</label>
             <input type="time" value={start} onChange={(e) => setStart(e.target.value)} data-testid="dnd-start"
               className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
           <div>
-            <label className="block text-xs text-muted-foreground">End</label>
+            <label className="block text-xs text-muted-foreground">{t('settings.notif.end')}</label>
             <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="dnd-end"
               className="mt-1 h-9 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
           <div>
-            <label className="block text-xs text-muted-foreground">Timezone</label>
+            <label className="block text-xs text-muted-foreground">{t('settings.notif.timezone')}</label>
             <input type="text" value={tz} onChange={(e) => setTz(e.target.value)} data-testid="dnd-tz"
               className="mt-1 h-9 w-56 rounded-md border border-input bg-muted px-2 text-sm shadow-neu-inset" />
           </div>
@@ -235,11 +238,11 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
             loading={save.isPending}
             data-testid="dnd-save"
           >
-            <Clock className="me-1 h-4 w-4" /> Save
+            <Clock className="me-1 h-4 w-4" /> {t('settings.notif.save')}
           </Button>
           {dnd && (
             <Button size="sm" variant="outline" onClick={() => clear.mutate()} loading={clear.isPending} data-testid="dnd-clear">
-              Clear
+              {t('settings.notif.clear')}
             </Button>
           )}
         </div>
@@ -251,22 +254,23 @@ function DNDBlock({ dnd, loading }: { dnd: { dnd_start: string; dnd_end: string;
 // ----- Active Snoozes --------------------------------------------
 
 function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type: string; until_at: string }[]; loading: boolean }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const cancel = useAppMutation({
     mutationFn: deleteSnooze,
     onSuccess: () => {
-      toast.success('Snooze cancelled')
+      toast.success(t('settings.notif.snooze_cancelled'))
       qc.invalidateQueries({ queryKey: ['notif-snoozes'] })
     },
   })
   return (
     <section className="rounded-lg border border-border bg-card p-4" data-testid="prefs-snoozes-section">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Active snoozes</h2>
+        <h2 className="text-lg font-semibold">{t('settings.notif.snoozes')}</h2>
       </header>
       {loading ? <Spinner /> : snoozes.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No active snoozes. Tap <BellOff className="inline h-3 w-3" /> on any notification to mute its event type for 1 hour.
+          {t('settings.notif.no_snoozes')} <BellOff className="inline h-3 w-3" /> {t('settings.notif.snooze_hint')}
         </p>
       ) : (
         <ul className="divide-y divide-border" data-testid="snooze-list">
@@ -285,7 +289,7 @@ function SnoozesBlock({ snoozes, loading }: { snoozes: { id: string; event_type:
                 loading={cancel.isPending}
                 data-testid={`snooze-cancel-${s.id}`}
                 aria-label={`Cancel snooze for ${s.event_type === '*' ? 'all events' : s.event_type}`}
-                title="Cancel snooze"
+                title={t('settings.notif.cancel_snooze')}
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
               </Button>

@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -45,6 +46,7 @@ import { Spinner } from '@/components/ui/Spinner'
 //                     existing GET /auth/sessions endpoint.
 
 function SettingsPage() {
+  const { t } = useTranslation('common')
   return (
     // No max-width cap and no padding of its own: app-layout already
     // wraps every page in `p-4 sm:p-6 lg:p-8`, and the old
@@ -56,8 +58,8 @@ function SettingsPage() {
         // Not "Settings": /settings carries that title, and having both
         // pages announce the same word made the breadcrumb the only way
         // to tell them apart. This matches the card that links here.
-        title="Account & security"
-        description="Your profile, your passkeys, and the devices signed in to your account."
+        title={t('settings.sec.title')}
+        description={t('settings.sec.description')}
       />
       {/* Two columns from xl, not lg: at 1024 the split gave each column
           338px, which is not enough for a session row carrying a device
@@ -82,14 +84,15 @@ function SettingsPage() {
 // ---- Profile ---------------------------------------------------------
 
 function ProfileSection() {
+  const { t } = useTranslation('common')
   const user = useAuthStore((s) => s.user)
   return (
-    <Section title="Profile" icon={<UserIcon className="h-4 w-4" />}>
+    <Section title={t('settings.sec.profile')} icon={<UserIcon className="h-4 w-4" />}>
       <dl className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-        <Field label="Display name" icon={<UserIcon  className="h-3 w-3" />} value={user?.display_name} />
-        <Field label="Email"        icon={<Mail      className="h-3 w-3" />} value={user?.email} />
-        <Field label="Role"         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
-        <Field label="Tenant ID"    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
+        <Field label={t('settings.sec.display_name')} icon={<UserIcon  className="h-3 w-3" />} value={user?.display_name} />
+        <Field label={t('settings.sec.email')}        icon={<Mail      className="h-3 w-3" />} value={user?.email} />
+        <Field label={t('settings.sec.role')}         icon={<Building2 className="h-3 w-3" />} value={user?.role} />
+        <Field label={t('settings.sec.tenant_id')}    icon={<Building2 className="h-3 w-3" />} value={formatShortId('tnt', user?.tenant_id)} mono title={user?.tenant_id} />
       </dl>
       <div className="mt-4 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
@@ -99,7 +102,7 @@ function ProfileSection() {
             are managed by your tenant administrator". The RTL geometry gate
             cannot see this; nothing moves, the characters reorder. */}
         <p dir="auto">
-          Display names are managed by your tenant administrator.
+          {t('settings.sec.name_managed')}
         </p>
       </div>
     </Section>
@@ -147,6 +150,7 @@ function passkeyBlocker(): 'insecure-context' | 'unsupported-browser' | null {
 }
 
 function SecuritySection() {
+  const { t } = useTranslation('common')
   const blocker = passkeyBlocker()
   const supported = blocker === null
   const qc = useQueryClient()
@@ -162,14 +166,14 @@ function SecuritySection() {
     mutationFn: () => registerPasskey(name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['passkeys'] })
-      toast.success('Passkey added')
+      toast.success(t('settings.sec.passkey_added'))
       setAdding(false)
       setName('')
     },
     onError: (err: { message?: string; response?: { status?: number; data?: { error?: string } } }) => {
       const detail = err.response?.data?.error ?? err.message ?? 'Could not add passkey'
       if (err.response?.status === 501) {
-        toast.error('Passkeys not configured for this deploy. Contact your admin.')
+        toast.error(t('settings.sec.passkey_not_configured'))
       } else {
         toast.error(detail)
       }
@@ -184,7 +188,7 @@ function SecuritySection() {
     mutationFn: (credentialID: string) => deletePasskey(credentialID),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['passkeys'] })
-      toast.success('Passkey removed')
+      toast.success(t('settings.sec.passkey_removed'))
     },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? "Couldn't remove passkey"),
@@ -200,12 +204,12 @@ function SecuritySection() {
 
   return (
     <Section
-      title="Security"
+      title={t('settings.sec.security')}
       icon={<ShieldCheck className="h-4 w-4" />}
       action={
         (passkeys ?? []).length > 0 ? (
           <Button onClick={() => setAdding(true)} disabled={!supported} data-testid="add-passkey">
-            <Plus className="h-4 w-4" /> Add passkey
+            <Plus className="h-4 w-4" /> {t('settings.sec.add_passkey')}
           </Button>
         ) : null
       }
@@ -216,7 +220,7 @@ function SecuritySection() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {blocker === 'insecure-context' ? (
               <div data-testid="passkey-insecure-context">
-                <p className="font-medium">Passkeys need a secure connection</p>
+                <p className="font-medium">{t('settings.sec.needs_secure')}</p>
                 <p className="mt-0.5">
                   This site is currently served over an unencrypted connection, and browsers only
                   allow passkeys on secure (https) addresses. Ask your administrator to turn on
@@ -225,7 +229,7 @@ function SecuritySection() {
               </div>
             ) : (
               <div data-testid="passkey-unsupported-browser">
-                Your browser doesn&apos;t support passkeys. Use a recent Chrome, Edge, Safari, or Firefox.
+                {t('settings.sec.unsupported')}
               </div>
             )}
           </div>
@@ -239,13 +243,13 @@ function SecuritySection() {
         // empty state was taller than the populated list it stands in for.
         <div className="rounded-lg border border-dashed border-border p-6 text-center">
           <Fingerprint className="mx-auto mb-2 h-8 w-8 text-primary opacity-70" />
-          <p dir="auto" className="font-medium">You don&apos;t have any passkeys yet</p>
+          <p dir="auto" className="font-medium">{t('settings.sec.none_yet')}</p>
           <p dir="auto" className="mx-auto mb-4 mt-1 max-w-sm text-sm text-muted-foreground">
             Passkeys let you sign in without a password — they&apos;re also phishing-resistant.
             Use your laptop&apos;s fingerprint reader, your phone, or a Yubikey.
           </p>
           <Button onClick={() => setAdding(true)} disabled={!supported} data-testid="add-first-passkey">
-            <Plus className="h-4 w-4" /> Add your first passkey
+            <Plus className="h-4 w-4" /> {t('settings.sec.add_first')}
           </Button>
         </div>
       ) : (
@@ -269,23 +273,23 @@ function SecuritySection() {
       <Dialog
         open={adding}
         onOpenChange={(o) => { if (!o) { setAdding(false); setName('') } }}
-        title="Add a passkey"
+        title={t('settings.sec.add_passkey_title')}
        
       >
         <div className="space-y-3" data-testid="add-passkey-dialog">
           <p dir="auto" className="text-sm text-muted-foreground">
-            Give this passkey a name so you recognize it in the list. The name is local to your account; the authenticator (Yubikey, Touch ID, etc.) doesn&apos;t see it.
+            {t('settings.sec.name_hint')}
           </p>
           <Input
-            label="Friendly name"
-            placeholder="e.g. Work laptop, Phone, Yubikey at desk"
+            label={t('settings.sec.friendly_name')}
+            placeholder={t('settings.sec.friendly_placeholder')}
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
             data-testid="passkey-name"
           />
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => { setAdding(false); setName('') }}>Cancel</Button>
+            <Button variant="ghost" onClick={() => { setAdding(false); setName('') }}>{t('settings.sec.cancel')}</Button>
             <Button
               onClick={handleAdd}
               disabled={addMut.isPending || !name.trim()}
@@ -306,6 +310,7 @@ function PasskeyRow({ p, onRemove, removing }: {
   onRemove: (id: string) => void
   removing: boolean
 }) {
+  const { t } = useTranslation('common')
   return (
     <li
       className="flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/40"
@@ -317,7 +322,7 @@ function PasskeyRow({ p, onRemove, removing }: {
           <span dir="auto" className="font-medium">{p.name}</span>
           {p.backup_state && (
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
-              Synced
+              {t('settings.sec.synced')}
             </span>
           )}
         </div>
@@ -346,6 +351,7 @@ function PasskeyRow({ p, onRemove, removing }: {
 // ---- Active sessions ------------------------------------------------
 
 function SessionsSection() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   // Wave 5 pattern 3: listSessions throws on unknown shapes. The
   // `(sessions ?? []).length === 0` pattern below would silently
@@ -365,7 +371,7 @@ function SessionsSection() {
     mutationFn: (id: string) => revokeSession(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] })
-      toast.success('Session revoked')
+      toast.success(t('settings.sec.session_revoked'))
     },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? "Couldn't revoke session"),
@@ -374,7 +380,7 @@ function SessionsSection() {
     mutationFn: revokeAllSessions,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sessions'] })
-      toast.success('All other sessions revoked')
+      toast.success(t('settings.sec.all_revoked'))
     },
     onError: (e: unknown) =>
       toast.error(readErrorMessage(e) ?? "Couldn't revoke all sessions"),
@@ -382,7 +388,7 @@ function SessionsSection() {
 
   return (
     <Section
-      title="Active sessions"
+      title={t('settings.sec.sessions')}
       icon={<Monitor className="h-4 w-4" />}
       action={
         (sessions ?? []).length > 1 ? (
@@ -394,7 +400,7 @@ function SessionsSection() {
             disabled={revokeAllMut.isPending}
             data-testid="revoke-all-sessions"
           >
-            <LogOut className="h-4 w-4" /> Sign out other devices
+            <LogOut className="h-4 w-4" /> {t('settings.sec.sign_out_others')}
           </Button>
         ) : null
       }
@@ -405,17 +411,17 @@ function SessionsSection() {
         <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
           <div className="flex-1">
-            <p dir="auto" className="font-medium text-destructive">Could not load active sessions.</p>
+            <p dir="auto" className="font-medium text-destructive">{t('settings.sec.sessions_error')}</p>
             <p dir="auto" className="mt-0.5 text-xs text-muted-foreground">
-              The server returned an unexpected response. Refresh or try again.
+              {t('settings.sec.unexpected')}
             </p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => void refetch()} data-testid="sessions-retry">
-              Retry
+              {t('settings.sec.retry')}
             </Button>
           </div>
         </div>
       ) : (sessions ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">No active sessions found.</p>
+        <p className="text-sm text-muted-foreground">{t('settings.sec.no_sessions')}</p>
       ) : (
         // Same as the passkey list -- one bordered container, rows
         // separated by a hairline.
@@ -442,6 +448,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
   onRevoke: () => void
   revoking: boolean
 }) {
+  const { t } = useTranslation('common')
   const ua = parseUA(s.user_agent ?? '')
   return (
     <li
@@ -454,7 +461,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
           <span dir="auto" className="font-medium">{ua}</span>
           {s.current && (
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
-              This device
+              {t('settings.sec.this_device')}
             </span>
           )}
         </div>
@@ -468,7 +475,7 @@ function SessionRowView({ s, onRevoke, revoking }: {
           variant="ghost"
           onClick={onRevoke}
           disabled={revoking}
-          aria-label="Revoke session"
+          aria-label={t('settings.sec.revoke_session')}
           title="Revoke session"
         >
           <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
