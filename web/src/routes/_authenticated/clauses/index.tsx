@@ -1,4 +1,5 @@
 // /clauses — clause library admin page (ADR 0104 §18 F11).
+import { useTranslation } from 'react-i18next'
 // Phase 1: list + free-text search + filter chips + create modal +
 // inline edit/delete. Variation tracking, detection, and OnlyOffice
 // side-panel are Phase 2-4 per the ADR.
@@ -35,6 +36,7 @@ export const Route = createFileRoute('/_authenticated/clauses/')({
 })
 
 function ClausesPage() {
+  const { t } = useTranslation('common')
   const [q, setQ] = useState('')
   const [jurisdictionFilter, setJurisdictionFilter] = useState('')
   const [tagFilter, setTagFilter] = useState('')
@@ -68,9 +70,9 @@ function ClausesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clauses'] })
       setSelected(null)
-      toast.success('Clause deleted')
+      toast.success(t('clauses.deleted'))
     },
-    onError: () => toast.error('Delete failed'),
+    onError: () => toast.error(t('clauses.delete_error')),
   })
 
   // ADR 0104 approval — dedicated approve/revoke endpoints (Task 4),
@@ -86,9 +88,9 @@ function ClausesPage() {
       // touches, but only its truthiness (approved vs not) drives the UI
       // here, so this optimistic patch is sufficient and stays correct.
       setSelected((s) => (s ? { ...s, approved_at: new Date().toISOString() } : s))
-      toast.success('Clause approved')
+      toast.success(t('clauses.approved_toast'))
     },
-    onError: () => toast.error('Approve failed'),
+    onError: () => toast.error(t('clauses.approve_error')),
   })
 
   const revokeMut = useAppMutation({
@@ -98,9 +100,9 @@ function ClausesPage() {
       // Mirror the approve path: clear approval locally so the badge
       // and the Approve⇄Revoke toggle flip without a re-select.
       setSelected((s) => (s ? { ...s, approved_at: null, approved_by: null } : s))
-      toast.success('Approval revoked')
+      toast.success(t('clauses.revoked'))
     },
-    onError: () => toast.error('Revoke failed'),
+    onError: () => toast.error(t('clauses.revoke_error')),
   })
 
   // Select the just-created clause once it lands in the refetched list.
@@ -127,14 +129,14 @@ function ClausesPage() {
   return (
     <div className="space-y-4 p-6">
       <PageHeader
-        title="Clause library"
-        description="Manage reusable contract clauses for your organization. Create, edit, and organize standard clauses for use across your documents."
+        title={t('clauses.title')}
+        description={t('clauses.description')}
         actions={
           <Button
             onClick={() => setCreateOpen(true)}
             className="gap-2 shadow-neu-sm transition-[box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-neu"
           >
-            <Plus className="h-4 w-4" /> New clause
+            <Plus className="h-4 w-4" /> {t('clauses.new')}
           </Button>
         }
       />
@@ -145,7 +147,7 @@ function ClausesPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search name, body, tags…"
+            placeholder={t('clauses.search_placeholder')}
             className="border-0 bg-transparent focus-visible:ring-0"
           />
         </div>
@@ -153,13 +155,13 @@ function ClausesPage() {
           value={jurisdictionFilter}
           onChange={setJurisdictionFilter}
           options={allJurisdictions}
-          placeholder="All jurisdictions"
+          placeholder={t('clauses.all_jurisdictions')}
         />
         <FilterSelect
           value={tagFilter}
           onChange={setTagFilter}
           options={allTags}
-          placeholder="All tags"
+          placeholder={t('clauses.all_tags')}
         />
       </section>
 
@@ -168,7 +170,7 @@ function ClausesPage() {
           {isLoading && <Spinner />}
           {!isLoading && data?.clauses.length === 0 && (
             <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              No clauses yet. Click "New clause" to seed your library.
+              {t('clauses.empty')}
             </p>
           )}
           {data?.clauses.map((c) => (
@@ -198,9 +200,9 @@ function ClausesPage() {
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <FileText className="h-6 w-6" />
             </span>
-            <p className="text-sm font-medium">No clause selected</p>
+            <p className="text-sm font-medium">{t('clauses.none_selected')}</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              Pick a clause on the left to preview its body, jurisdiction, tags, and version.
+              {t('clauses.none_selected_desc')}
             </p>
           </div>
         )}
@@ -264,6 +266,7 @@ function FilterSelect({
 }
 
 function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boolean; onClick: () => void }) {
+  const { t } = useTranslation('common')
   return (
     <button
       onClick={onClick}
@@ -291,7 +294,7 @@ function ClauseCard({ clause, active, onClick }: { clause: Clause; active: boole
         </span>
         {clause.approved_at && (
           <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
-            <CheckCircle2 className="h-3 w-3" /> Approved
+            <CheckCircle2 className="h-3 w-3" /> {t('clauses.approved')}
           </span>
         )}
       </div>
@@ -316,6 +319,7 @@ function ClauseDetail({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation('common')
   // ADR 0104 Phase 4 — variation tracking: how many documents use this
   // clause and how much each occurrence drifts from the canonical body.
   const { data: variations } = useQuery({
@@ -347,11 +351,11 @@ function ClauseDetail({
           <Button
             variant="ghost"
             size="sm"
-            aria-label="Copy clause"
+            aria-label={t('clauses.copy')}
             onClick={() =>
               copyText(clause.body_text)
-                .then(() => toast.success('Clause copied'))
-                .catch(() => toast.error('Copy failed'))
+                .then(() => toast.success(t('clauses.copied')))
+                .catch(() => toast.error(t('clauses.copy_error')))
             }
           >
             <Copy className="h-3.5 w-3.5" />
@@ -361,15 +365,15 @@ function ClauseDetail({
           {canManage && (
             clause.approved_at ? (
               <Button variant="outline" size="sm" onClick={onRevoke}>
-                Revoke
+                {t('clauses.revoke')}
               </Button>
             ) : (
               <Button variant="outline" size="sm" onClick={onApprove}>
-                <CheckCircle2 className="me-1 h-3.5 w-3.5" /> Approve
+                <CheckCircle2 className="me-1 h-3.5 w-3.5" /> {t('clauses.approve')}
               </Button>
             )
           )}
-          <button onClick={onClose} aria-label="close" className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} aria-label={t('clauses.close')} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -390,7 +394,7 @@ function ClauseDetail({
 
       {/* Usage — ADR 0104 Phase 4 variation tracking across documents. */}
       <div className="space-y-2 border-t border-border pt-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Usage</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('clauses.usage')}</h3>
         {variations && variations.variations.length > 0 ? (
           <>
             <p className="text-xs text-muted-foreground">
@@ -431,16 +435,16 @@ function ClauseDetail({
             </ul>
           </>
         ) : (
-          <p className="text-xs text-muted-foreground">No detected uses yet.</p>
+          <p className="text-xs text-muted-foreground">{t('clauses.no_uses')}</p>
         )}
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 text-xs">
         <Button variant="outline" size="sm" onClick={onEdit}>
-          <Edit3 className="me-1 h-3.5 w-3.5" /> Edit
+          <Edit3 className="me-1 h-3.5 w-3.5" /> {t('clauses.edit')}
         </Button>
         <Button variant="outline" size="sm" onClick={onDelete}>
-          <Trash2 className="me-1 h-3.5 w-3.5" /> Delete
+          <Trash2 className="me-1 h-3.5 w-3.5" /> {t('clauses.delete')}
         </Button>
         <span className="ms-auto text-muted-foreground">
           <FileText className="me-0.5 inline h-3 w-3" />
@@ -460,6 +464,7 @@ function CreateClauseDialog({
   onOpenChange: (o: boolean) => void
   onCreated: (id: string) => void
 }) {
+  const { t } = useTranslation('common')
   const [form, setForm] = useState<CreateClauseInput>({ name: '', body_text: '', jurisdiction: '', tags: [] })
   const [tagText, setTagText] = useState('')
   // QA SD-21: refusals were toast-only ("Name is required" bottom-right,
@@ -471,32 +476,32 @@ function CreateClauseDialog({
   const mut = useAppMutation({
     mutationFn: createClause,
     onSuccess: (created) => {
-      toast.success('Clause created')
+      toast.success(t('clauses.created'))
       onCreated(created.id)
       onOpenChange(false)
       setForm({ name: '', body_text: '', jurisdiction: '', tags: [] })
       setTagText('')
     },
-    onError: () => toast.error('Create failed'),
+    onError: () => toast.error(t('clauses.create_error')),
   })
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="New clause">
+    <Dialog open={open} onOpenChange={onOpenChange} title={t('clauses.new')}>
       <div className="space-y-3">
         <Input
-          label="Name"
+          label={t('clauses.name')}
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder="Indemnification — mutual"
+          placeholder={t('clauses.name_placeholder')}
           error={nameError}
         />
         <div className="space-y-1">
-          <label htmlFor="clause-body" className="text-xs font-semibold text-muted-foreground">Body</label>
+          <label htmlFor="clause-body" className="text-xs font-semibold text-muted-foreground">{t('clauses.body')}</label>
           <textarea
             id="clause-body"
             value={form.body_text}
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
-            placeholder="Each party shall indemnify and hold harmless…"
+            placeholder={t('clauses.body_placeholder')}
             rows={8}
             aria-invalid={bodyError ? true : undefined}
             aria-describedby={bodyError ? 'clause-body-error' : undefined}
@@ -505,19 +510,19 @@ function CreateClauseDialog({
           {bodyError && <p id="clause-body-error" className="text-xs font-medium text-destructive">{bodyError}</p>}
         </div>
         <Input
-          label="Jurisdiction (optional)"
+          label={t('clauses.jurisdiction_opt')}
           value={form.jurisdiction ?? ''}
           onChange={(e) => setForm((f) => ({ ...f, jurisdiction: e.target.value }))}
-          placeholder="US-CA, EU, …"
+          placeholder={t('clauses.jurisdiction_placeholder')}
         />
         <Input
-          label="Tags (comma-separated)"
+          label={t('clauses.tags')}
           value={tagText}
           onChange={(e) => {
             setTagText(e.target.value)
             setForm((f) => ({ ...f, tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }))
           }}
-          placeholder="indemnification, mutual, vendor"
+          placeholder={t('clauses.tags_placeholder')}
         />
         <Button
           onClick={() => {
@@ -529,7 +534,7 @@ function CreateClauseDialog({
           disabled={mut.isPending}
           className="w-full"
         >
-          {mut.isPending ? 'Creating…' : 'Create clause'}
+          {mut.isPending ? t('clauses.creating') : t('clauses.create')}
         </Button>
       </div>
     </Dialog>
@@ -549,6 +554,7 @@ function EditClauseDialog({
   onClose: () => void
   onSaved: (updated: Clause) => void
 }) {
+  const { t } = useTranslation('common')
   const [form, setForm] = useState({
     name:         clause.name,
     body_text:    clause.body_text,
@@ -572,7 +578,7 @@ function EditClauseDialog({
       toast.success(`Clause saved — now v${updated.version}`)
       onSaved(updated)
     },
-    onError: () => toast.error('Save failed'),
+    onError: () => toast.error(t('clauses.save_error')),
   })
 
   const dirty =
@@ -585,18 +591,18 @@ function EditClauseDialog({
     <Dialog
       open
       onOpenChange={(o) => { if (!o) onClose() }}
-      title={`Edit "${clause.name}"`}
+      title={t('clauses.edit_title', { name: clause.name })}
       description={`Saving bumps the clause to v${clause.version + 1}. Approval resets — approvers will need to re-approve.`}
       size="lg"
     >
       <div className="space-y-3">
         <Input
-          label="Name"
+          label={t('clauses.name')}
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
         />
         <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground">Body</label>
+          <label className="text-xs font-semibold text-muted-foreground">{t('clauses.body')}</label>
           <textarea
             value={form.body_text}
             onChange={(e) => setForm((f) => ({ ...f, body_text: e.target.value }))}
@@ -605,13 +611,13 @@ function EditClauseDialog({
           />
         </div>
         <Input
-          label="Jurisdiction"
+          label={t('clauses.jurisdiction')}
           value={form.jurisdiction}
           onChange={(e) => setForm((f) => ({ ...f, jurisdiction: e.target.value }))}
-          placeholder="US-CA, EU, …"
+          placeholder={t('clauses.jurisdiction_placeholder')}
         />
         <Input
-          label="Tags (comma-separated)"
+          label={t('clauses.tags')}
           value={tagText}
           onChange={(e) => {
             setTagText(e.target.value)
@@ -619,9 +625,9 @@ function EditClauseDialog({
           }}
         />
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose} disabled={mut.isPending}>{t('clauses.cancel')}</Button>
           <Button onClick={() => mut.mutate()} disabled={!dirty || !form.name || !form.body_text || mut.isPending}>
-            {mut.isPending ? 'Saving…' : 'Save'}
+            {mut.isPending ? t('clauses.saving') : t('clauses.save')}
           </Button>
         </div>
       </div>
