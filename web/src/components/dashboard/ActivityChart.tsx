@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
@@ -16,6 +17,7 @@ import { useDashboardMetrics } from './useDashboardMetrics'
  * axis says what the data actually is.
  */
 export function ActivityChart({ delayIndex = 0, className }: { delayIndex?: number; className?: string }) {
+  const { t } = useTranslation('common')
   const { activity, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
   const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
@@ -23,14 +25,14 @@ export function ActivityChart({ delayIndex = 0, className }: { delayIndex?: numb
 
   return (
     <WidgetCard
-      title="Documents added"
-      subtitle="Last 12 months, of indexed documents"
+      title={t('dashboard.widgets.activity_title')}
+      subtitle={t('dashboard.widgets.activity_subtitle')}
       isLoading={isLoading}
       isError={isError}
       isEmpty={isUnavailable || activity.length === 0}
       // I3: the window can be empty while older documents exist, so the
       // copy names the window — never "yet".
-      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : 'No documents added in the last 12 months'}
+      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : t('dashboard.widgets.activity_empty')}
       onRetry={refetch}
       delayIndex={delayIndex}
       className={className}

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Sparkles } from 'lucide-react'
 
 import { listPendingTagSuggestions } from '@/api/intelligence'
@@ -14,6 +15,7 @@ import { useAuthStore } from '@/store/authStore'
 // second line of defence). Renders nothing while loading, when the
 // count is zero, or on any error.
 export function PendingSuggestionsCard() {
+  const { t } = useTranslation('common')
   const role = useAuthStore((s) => s.user?.role)
   const mayReview = role === 'owner' || role === 'admin' || role === 'compliance_officer'
   const q = useQuery({
@@ -48,16 +50,19 @@ export function PendingSuggestionsCard() {
       </span>
       <p className="min-w-0 truncate text-sm">
         <span className="font-semibold">{q.data.total}</span>
-        {/* QA SD-14: "1 AI tag suggestions waiting" — pluralize. */}
+        {/* The count stays in the bold span above, so these plural forms
+            carry no {{count}} — i18next still selects the right one from
+            the `count` option. English resolves one/other; Arabic
+            resolves zero/one/two/few/many/other. */}
         <span className="text-muted-foreground">
-          {q.data.total === 1 ? ' AI tag suggestion waiting' : ' AI tag suggestions waiting'}
+          {' '}{t('dashboard.widgets.suggestions_waiting', { count: q.data.total })}
         </span>
       </p>
       <Link
         to="/admin/tagging"
         className="ms-auto shrink-0 rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        Review
+        {t('dashboard.widgets.suggestions_review')}
       </Link>
     </WarmCard>
   )

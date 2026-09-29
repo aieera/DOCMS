@@ -92,5 +92,69 @@
     "saved": "Search saved",
     "save_error": "Could not save search",
     "unsave_error": "Could not remove saved search"
+  },
+  "dashboard": {
+    "overview": "Workspace overview",
+    "upload": "Upload",
+    "greeting": {
+      "up_late": "Up late",
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "with_name": "{{greeting}}, {{name}}"
+    },
+    "quick_actions": "Quick actions",
+    "qa": {
+      "search_label": "Search documents",
+      "search_desc": "Search the words inside your documents, not just their names",
+      "ask_label": "Ask a question",
+      "ask_desc": "Get answers from the documents you can see",
+      "upload_label": "Upload",
+      "upload_desc": "Pick a workspace and drop files in"
+    },
+    "kpi": {
+      "documents": "Documents",
+      "open_tasks": "Open tasks",
+      "awaiting_approval": "Awaiting approval",
+      "unread": "Unread",
+      "unable_to_load": "unable to load",
+      "across_workspaces_one": "across {{count}} workspace",
+      "across_workspaces_other": "across {{count}} workspaces",
+      "overdue": "{{count}} overdue",
+      "assigned_to_you": "assigned to you",
+      "nothing_pending": "nothing pending",
+      "waiting_today": "waiting since today",
+      "oldest_waiting": "oldest waiting {{count}}d",
+      "notifications": "notifications",
+      "load_error": "Couldn't load the dashboard overview."
+    },
+    "widgets": {
+      "activity_title": "Documents added",
+      "activity_subtitle": "Last 12 months, of indexed documents",
+      "activity_empty": "No documents added in the last 12 months",
+      "lifecycle_title": "Lifecycle",
+      "lifecycle_subtitle_one": "{{count}} indexed document",
+      "lifecycle_subtitle_other": "{{count}} indexed documents",
+      "lifecycle_empty": "Nothing indexed yet",
+      "lifecycle_alt": "Documents by lifecycle state, {{count}} in total",
+      "lifecycle_caption": "Documents by lifecycle state",
+      "col_state": "State",
+      "col_documents": "Documents",
+      "file_types_title": "File types",
+      "file_types_empty": "No files indexed",
+      "contributors_title": "Top contributors",
+      "contributors_empty": "No contributors yet",
+      "of_indexed": "Of indexed documents",
+      "unit_documents": "documents",
+      "attention_title": "Needs your attention",
+      "attention_subtitle": "Overdue tasks, urgent work and unread mentions",
+      "attention_empty": "Nothing needs you right now",
+      "attention_view_all": "View all",
+      "attention_tasks_error": "Couldn't load your tasks.",
+      "attention_mentions_error": "Couldn't load mentions.",
+      "suggestions_waiting_one": "AI tag suggestion waiting",
+      "suggestions_waiting_other": "AI tag suggestions waiting",
+      "suggestions_review": "Review"
+    }
   }
 }

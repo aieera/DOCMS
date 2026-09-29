@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Bell, CheckSquare, FileText, Stamp } from 'lucide-react'
 
 import { getUnreadCount } from '@/api/notifications'
@@ -20,6 +21,7 @@ import { useDashboardMetrics } from './useDashboardMetrics'
  * /admin/compliance/overview), and a fabricated one is worse than none.
  */
 export function KpiStrip() {
+  const { t } = useTranslation('common')
   const workspaces = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 60_000 })
   const tasks = useQuery({ queryKey: taskKeys.mine(), queryFn: () => listMyTasks(false), staleTime: 30_000 })
   const unread = useQuery({
@@ -65,7 +67,7 @@ export function KpiStrip() {
   if (allFailed) {
     return (
       <div className="dash-rise rounded-lg bg-card p-5 shadow-neu" data-testid="kpi-strip-error">
-        <ErrorState size="sm" message="Couldn't load the dashboard overview." onRetry={retryAll} />
+        <ErrorState size="sm" message={t('dashboard.kpi.load_error')} onRetry={retryAll} />
       </div>
     )
   }
@@ -74,12 +76,17 @@ export function KpiStrip() {
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <KpiTile
         icon={FileText}
-        label="Documents"
+        label={t('dashboard.kpi.documents')}
         value={docsReady ? docTotal : undefined}
         isError={docsFailed}
+        // i18next picks the plural form from `count` via Intl.PluralRules:
+        // English resolves one/other, Arabic resolves its six categories
+        // (zero/one/two/few/many/other). Doing this in the catalogue
+        // rather than a JS ternary is the only way the Arabic forms can
+        // exist at all.
         hint={
-          docsFailed ? 'unable to load'
-            : docsReady ? `across ${wsCount.toLocaleString()} ${wsCount === 1 ? 'workspace' : 'workspaces'}`
+          docsFailed ? t('dashboard.kpi.unable_to_load')
+            : docsReady ? t('dashboard.kpi.across_workspaces', { count: wsCount })
             : undefined
         }
         href="/workspaces"
@@ -89,14 +96,14 @@ export function KpiStrip() {
       />
       <KpiTile
         icon={CheckSquare}
-        label="Open tasks"
+        label={t('dashboard.kpi.open_tasks')}
         value={tasksReady ? stats.open : undefined}
         isError={tasks.isError}
         hint={
-          tasks.isError ? 'unable to load'
+          tasks.isError ? t('dashboard.kpi.unable_to_load')
             : !tasksReady ? undefined
-            : stats.overdue > 0 ? `${stats.overdue.toLocaleString()} overdue`
-            : 'assigned to you'
+            : stats.overdue > 0 ? t('dashboard.kpi.overdue', { count: stats.overdue })
+            : t('dashboard.kpi.assigned_to_you')
         }
         hintTone={tasksReady && stats.overdue > 0 ? 'alert' : 'muted'}
         href="/tasks"
@@ -104,26 +111,26 @@ export function KpiStrip() {
       />
       <KpiTile
         icon={Stamp}
-        label="Awaiting approval"
+        label={t('dashboard.kpi.awaiting_approval')}
         value={tasksReady ? stats.awaitingApproval : undefined}
         isError={tasks.isError}
         hint={
-          tasks.isError ? 'unable to load'
+          tasks.isError ? t('dashboard.kpi.unable_to_load')
             : !tasksReady ? undefined
-            : stats.oldestWaitingDays === null ? 'nothing pending'
+            : stats.oldestWaitingDays === null ? t('dashboard.kpi.nothing_pending')
             // M2: "oldest waiting 0d" read as a glitch for a task created today.
-            : stats.oldestWaitingDays === 0 ? 'waiting since today'
-            : `oldest waiting ${stats.oldestWaitingDays.toLocaleString()}d`
+            : stats.oldestWaitingDays === 0 ? t('dashboard.kpi.waiting_today')
+            : t('dashboard.kpi.oldest_waiting', { count: stats.oldestWaitingDays })
         }
         href="/tasks"
         delayIndex={2}
       />
       <KpiTile
         icon={Bell}
-        label="Unread"
+        label={t('dashboard.kpi.unread')}
         value={unreadReady ? unread.data ?? 0 : undefined}
         isError={unread.isError}
-        hint={unread.isError ? 'unable to load' : unreadReady ? 'notifications' : undefined}
+        hint={unread.isError ? t('dashboard.kpi.unable_to_load') : unreadReady ? t('dashboard.kpi.notifications') : undefined}
         href="/notifications"
         delayIndex={3}
       />

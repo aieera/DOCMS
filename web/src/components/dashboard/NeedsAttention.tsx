@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, CheckSquare, Clock, Flame, MessageSquare, Stamp, type LucideIcon } from 'lucide-react'
 
 import { getNotifications } from '@/api/notifications'
@@ -49,6 +50,7 @@ function taskDetail(t: Task, overdue: boolean): string {
 }
 
 export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
+  const { t } = useTranslation('common')
   const tasksQ = useQuery({
     queryKey: taskKeys.mine(),
     queryFn: () => listMyTasks(false),
@@ -93,19 +95,19 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
 
   return (
     <WidgetCard
-      title="Needs your attention"
+      title={t('dashboard.widgets.attention_title')}
       // Static and true — never a count (R17), never a promise the list
       // doesn't keep (I6).
-      subtitle="Overdue tasks, urgent work and unread mentions"
+      subtitle={t('dashboard.widgets.attention_subtitle')}
       action={
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/tasks">View all</Link>
+          <Link to="/tasks">{t('dashboard.widgets.attention_view_all')}</Link>
         </Button>
       }
       isLoading={isLoading}
       isError={bothFailed}
       isEmpty={isEmpty}
-      emptyLabel="Nothing needs you right now"
+      emptyLabel={t('dashboard.widgets.attention_empty')}
       onRetry={() => {
         void tasksQ.refetch()
         void inboxQ.refetch()
@@ -124,7 +126,9 @@ export function NeedsAttention({ delayIndex = 0 }: { delayIndex?: number }) {
               <AlertTriangle className="h-4 w-4" />
             </span>
             <span className="min-w-0 flex-1 text-sm text-foreground">
-              {failedHalf === 'tasks' ? "Couldn't load your tasks." : "Couldn't load mentions."}
+              {failedHalf === 'tasks'
+                ? t('dashboard.widgets.attention_tasks_error')
+                : t('dashboard.widgets.attention_mentions_error')}
             </span>
             <Button
               variant="outline"

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Search, Sparkles, Upload, type LucideIcon } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { PendingSuggestionsCard } from '@/components/intelligence/PendingSuggestionsCard'
@@ -16,8 +18,9 @@ import { LifecycleDonut } from '@/components/dashboard/LifecycleDonut'
 import { NeedsAttention } from '@/components/dashboard/NeedsAttention'
 
 function DashboardPage() {
+  const { t } = useTranslation('common')
   const user = useAuthStore((s) => s.user)
-  const greeting = greet(user?.display_name?.split(' ')[0])
+  const greeting = greet(t, user?.display_name?.split(' ')[0])
   // Upload dialog state lives here so BOTH triggers share one dialog:
   // the header button (always visible, unmistakable) and the Quick-
   // actions card (click or drop files onto it).
@@ -28,10 +31,10 @@ function DashboardPage() {
     <div className="space-y-6">
       <PageHeader
         title={greeting}
-        description="Workspace overview"
+        description={t('dashboard.overview')}
         actions={
           <Button onClick={() => setUploadOpen(true)} data-testid="header-upload-button">
-            <Upload className="me-1.5 h-4 w-4" aria-hidden /> Upload
+            <Upload className="me-1.5 h-4 w-4" aria-hidden /> {t('dashboard.upload')}
           </Button>
         }
       />
@@ -71,23 +74,33 @@ function DashboardPage() {
   )
 }
 
-function greet(name: string | undefined): string {
+function greet(t: TFunction<'common'>, name: string | undefined): string {
   const hour = new Date().getHours()
-  const window = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  return name ? `${window}, ${name}` : window
+  const window =
+    hour < 5 ? t('dashboard.greeting.up_late')
+      : hour < 12 ? t('dashboard.greeting.morning')
+      : hour < 18 ? t('dashboard.greeting.afternoon')
+      : t('dashboard.greeting.evening')
+  // The comma is part of the phrase, not glue: Arabic uses "،" (U+060C),
+  // so joining with a Latin "," here would leave one wrong mark in an
+  // otherwise translated greeting.
+  return name ? t('dashboard.greeting.with_name', { greeting: window, name }) : window
 }
 
 // ---- Quick actions -------------------------------------------------------
 
 interface QuickAction {
   icon: LucideIcon
-  label: string
+  // Keys, not copy: this array is module-level, evaluated once at import
+  // time, so a literal here would be captured in whatever locale
+  // happened to be active first and never re-render on a switch.
+  labelKey: string
   // Either a navigation target or an in-place action. The Upload card
   // used to be a plain link to /workspaces — it "uploaded" nothing and
   // never asked for a destination. It now opens the smart upload dialog.
   href?: string
   action?: 'upload'
-  description: string
+  descKey: string
   // Bare shortcut key. The Cmd-vs-Ctrl modifier is resolved at render
   // time from the viewer's platform (lib/platform.ts) — hard-coding ⌘
   // here told every Windows user the wrong key while the topbar chip
@@ -96,9 +109,9 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: readonly QuickAction[] = [
-  { icon: Search, label: 'Search documents', href: '/search', description: 'Search the words inside your documents, not just their names', shortcutKey: 'K' },
-  { icon: Sparkles, label: 'Ask a question', href: '/ask', description: 'Get answers from the documents you can see' },
-  { icon: Upload, label: 'Upload', action: 'upload', description: 'Pick a workspace and drop files in' },
+  { icon: Search, labelKey: 'dashboard.qa.search_label', href: '/search', descKey: 'dashboard.qa.search_desc', shortcutKey: 'K' },
+  { icon: Sparkles, labelKey: 'dashboard.qa.ask_label', href: '/ask', descKey: 'dashboard.qa.ask_desc' },
+  { icon: Upload, labelKey: 'dashboard.qa.upload_label', action: 'upload', descKey: 'dashboard.qa.upload_desc' },
 ]
 
 function QuickActions({
@@ -108,7 +121,8 @@ function QuickActions({
   onUploadClick: () => void
   onUploadDrop: (files: File[]) => void
 }) {
-  const cardBody = ({ icon: Icon, label, description, shortcutKey, action }: QuickAction) => (
+  const { t } = useTranslation('common')
+  const cardBody = ({ icon: Icon, labelKey, descKey, shortcutKey, action }: QuickAction) => (
     <WarmCard
       padded="md"
       className={cn(
@@ -128,14 +142,14 @@ function QuickActions({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium">{label}</p>
+            <p className="text-sm font-medium">{t(labelKey)}</p>
             {shortcutKey && (
               <kbd className="pointer-events-none inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium text-foreground/70">
                 {shortcutLabel(shortcutKey)}
               </kbd>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t(descKey)}</p>
         </div>
       </div>
     </WarmCard>
@@ -147,13 +161,13 @@ function QuickActions({
   return (
     <section aria-labelledby="quick-actions-heading">
       <h2 id="quick-actions-heading" className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Quick actions
+        {t('dashboard.quick_actions')}
       </h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {QUICK_ACTIONS.map((qa) =>
           qa.action === 'upload' ? (
             <button
-              key={qa.label}
+              key={qa.labelKey}
               type="button"
               className={cardShell}
               onClick={onUploadClick}
@@ -168,7 +182,7 @@ function QuickActions({
               {cardBody(qa)}
             </button>
           ) : (
-            <Link key={qa.label} to={qa.href!} className={cardShell}>
+            <Link key={qa.labelKey} to={qa.href!} className={cardShell}>
               {cardBody(qa)}
             </Link>
           ),

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
@@ -13,6 +14,7 @@ import { useDashboardMetrics } from './useDashboardMetrics'
  * labels collide and the legend is the only thing anyone reads anyway.
  */
 export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
+  const { t } = useTranslation('common')
   const { lifecycle, isLoading, isError, isUnavailable, refetch } = useDashboardMetrics()
   const theme = useChartTheme()
   const reduced = usePrefersReducedMotion()
@@ -27,16 +29,18 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
   // lying "0 indexed documents" under the skeleton or the error card
   // (the exact hazard class fixed in KpiStrip's fix round 1). The same
   // goes for unavailable facets (I2): `total` is 0 there too, and false.
-  const subtitle = isLoading || isError || isUnavailable ? undefined : `${total.toLocaleString()} indexed documents`
+  const subtitle = isLoading || isError || isUnavailable
+    ? undefined
+    : t('dashboard.widgets.lifecycle_subtitle', { count: total })
 
   return (
     <WidgetCard
-      title="Lifecycle"
+      title={t('dashboard.widgets.lifecycle_title')}
       subtitle={subtitle}
       isLoading={isLoading}
       isError={isError}
       isEmpty={isUnavailable || lifecycle.length === 0}
-      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : 'Nothing indexed yet'}
+      emptyLabel={isUnavailable ? FACETS_UNAVAILABLE_LABEL : t('dashboard.widgets.lifecycle_empty')}
       onRetry={refetch}
       delayIndex={delayIndex}
       // I4: the loaded body with four states, measured live — sm+: 190px
@@ -44,7 +48,7 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       // replaces the donut. More states can still grow it.
       bodyClassName="min-h-[116px] sm:min-h-[294px]"
     >
-      <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={`Documents by lifecycle state, ${total.toLocaleString()} in total`}>
+      <div className="hidden h-[190px] w-full sm:block" role="img" aria-label={t('dashboard.widgets.lifecycle_alt', { count: total })}>
         {/*
           aria-hidden on the recharts subtree: Recharts' Pie renders each
           slice via `Sector`, which hardcodes `role="img"` on its `<path>`
@@ -112,8 +116,8 @@ export function LifecycleDonut({ delayIndex = 0 }: { delayIndex?: number }) {
       </ul>
 
       <ChartDataTable
-        caption="Documents by lifecycle state"
-        columns={['State', 'Documents']}
+        caption={t('dashboard.widgets.lifecycle_caption')}
+        columns={[t('dashboard.widgets.col_state'), t('dashboard.widgets.col_documents')]}
         rows={lifecycle.map((s) => ({ key: s.key, label: s.label, value: s.value }))}
       />
     </WidgetCard>
