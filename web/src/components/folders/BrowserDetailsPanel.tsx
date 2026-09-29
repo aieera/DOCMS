@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { FolderOpen, X } from 'lucide-react'
 
@@ -31,6 +32,7 @@ interface Props {
 // folder is selected; deselecting (background click, folder change, or
 // the ✕ here) removes it entirely.
 export function BrowserDetailsPanel({ selection, workspace, onOpenFolder, onOpenFile, onClose }: Props) {
+  const { t } = useTranslation('common')
   if (selection === null) return null
   return (
     // Flex column inside the page's bounded height: the ✕ header stays
@@ -41,7 +43,7 @@ export function BrowserDetailsPanel({ selection, workspace, onOpenFolder, onOpen
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close details"
+          aria-label={t('browse.close_details')}
           title="Close details"
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -60,6 +62,7 @@ export function BrowserDetailsPanel({ selection, workspace, onOpenFolder, onOpen
 }
 
 function FolderDetails({ folder, workspace, onOpen }: { folder: Folder; workspace?: Workspace; onOpen: () => void }) {
+  const { t } = useTranslation('common')
   const setVis = useSetFolderVisibility()
   const childCount = Number(folder.child_folder_count ?? folder.children_count ?? 0) || 0
   const items = (Number(folder.document_count) || 0) + childCount
@@ -79,20 +82,20 @@ function FolderDetails({ folder, workspace, onOpen }: { folder: Folder; workspac
       <Preview><FolderGlyph size={108} /></Preview>
       <Name>{folder.name}</Name>
 
-      <Head>Info</Head>
+      <Head>{t('browse.info')}</Head>
       <div className="space-y-3.5">
         <Row k="Type" v="Folder" />
-        <Row k="Contents" v={`${items} ${items === 1 ? 'item' : 'items'}`} />
+        <Row k={t('browse.contents')} v={t('browse.item', { count: items })} />
         <Row k="Location" v={workspace?.name ?? '—'} link />
         <Row k="Modified" v={formatDateTime(folder.updated_at ?? folder.created_at)} />
         <Row k="Created" v={formatDateTime(folder.created_at)} />
       </div>
 
       <Divider />
-      <Head>Settings</Head>
+      <Head>{t('browse.settings')}</Head>
       <div className="flex items-center justify-between py-1.5">
         <div>
-          <div className="text-sm font-semibold text-foreground">Shared with workspace</div>
+          <div className="text-sm font-semibold text-foreground">{t('browse.shared_with_workspace')}</div>
           <div className="text-xs text-muted-foreground">{isShared ? 'Everyone in the workspace can see it' : 'Only people with explicit access'}</div>
         </div>
         <Switch checked={isShared} disabled={setVis.isPending} onChange={toggle} />
@@ -101,7 +104,7 @@ function FolderDetails({ folder, workspace, onOpen }: { folder: Folder; workspac
       <FolderActivity folderId={folder.id} />
 
       <Button variant="outline" className="mt-5 w-full gap-2" onClick={onOpen}>
-        <FolderOpen className="h-4 w-4" /> Open folder
+        <FolderOpen className="h-4 w-4" /> {t('browse.open_folder')}
       </Button>
     </div>
   )
@@ -117,10 +120,11 @@ interface ActivityRow {
 }
 
 function ActivitySection({ rows, isLoading }: { rows: ActivityRow[]; isLoading: boolean }) {
+  const { t } = useTranslation('common')
   return (
     <>
       <Divider />
-      <Head>Recent activity</Head>
+      <Head>{t('browse.recent_activity')}</Head>
       {isLoading ? (
         <div className="space-y-2.5" aria-hidden>
           {[0, 1, 2].map((i) => (
@@ -128,7 +132,7 @@ function ActivitySection({ rows, isLoading }: { rows: ActivityRow[]; isLoading: 
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No recent activity</p>
+        <p className="text-xs text-muted-foreground">{t('browse.no_recent_activity')}</p>
       ) : (
         <ul className="space-y-2.5">
           {rows.map((r) => (
@@ -189,6 +193,7 @@ function FileActivity({ documentId }: { documentId: string }) {
 }
 
 function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Workspace; onOpen: () => void }) {
+  const { t } = useTranslation('common')
   const { label } = fileKind(doc.mime_type, doc.title)
   const typeLabel = doc.mime_type?.split('/').pop()?.toUpperCase() || label
   return (
@@ -200,7 +205,7 @@ function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Wo
       </Preview>
       <Name>{doc.title}</Name>
 
-      <Head>Info</Head>
+      <Head>{t('browse.info')}</Head>
       <div className="space-y-3.5">
         <Row k="Type" v={typeLabel} />
         <Row k="Size" v={formatFileSize(Number(doc.total_size_bytes) || 0)} />
@@ -214,7 +219,7 @@ function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Wo
       {doc.tags?.length > 0 && (
         <>
           <Divider />
-          <Head>Tags</Head>
+          <Head>{t('browse.tags')}</Head>
           <div className="flex flex-wrap gap-1.5">
             {doc.tags.map((t) => (
               <span key={t} className="rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">{t}</span>
@@ -225,7 +230,7 @@ function FileDetails({ doc, workspace, onOpen }: { doc: Document; workspace?: Wo
 
       <FileActivity documentId={doc.id} />
 
-      <Button className="mt-5 w-full" onClick={onOpen}>Open document</Button>
+      <Button className="mt-5 w-full" onClick={onOpen}>{t('browse.open_document')}</Button>
     </div>
   )
 }

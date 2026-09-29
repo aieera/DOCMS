@@ -46,10 +46,10 @@ export function WorkspaceAccessBadge({
       <Badge
         variant="outline"
         className={cn('gap-1 font-normal text-muted-foreground', className)}
-        title="Only you can open this workspace. Share it to give someone else access."
+        title={t('browse.private_title')}
       >
         <Lock className="h-3 w-3" aria-hidden />
-        Private
+        {t('browse.private')}
       </Badge>
     )
   }
