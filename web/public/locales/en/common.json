@@ -61,16 +61,20 @@
     "partial": "{{done}} of {{total}} uploaded"
   },
   "a11y": {
-    "skip_to_content": "Skip to content",
-    "primary_nav": "Primary",
-    "navigation": "Navigation",
-    "app_toolbar": "Application toolbar",
-    "open_navigation": "Open navigation",
-    "expand_sidebar": "Expand sidebar",
-    "collapse_sidebar": "Collapse sidebar",
     "account_menu": "Account menu",
+    "app_toolbar": "Application toolbar",
+    "breadcrumb": "Breadcrumb",
+    "collapse_sidebar": "Collapse sidebar",
+    "delete_saved_search": "Delete saved search: {{name}}",
+    "digest": "Digest",
+    "digest_aria": "Digest notification combining multiple events",
+    "digest_title": "This is a digest notification combining multiple events.",
+    "expand_sidebar": "Expand sidebar",
     "loading_account": "Loading account…",
-    "breadcrumb": "Breadcrumb"
+    "navigation": "Navigation",
+    "open_navigation": "Open navigation",
+    "primary_nav": "Primary",
+    "skip_to_content": "Skip to content"
   },
   "tasks_badge": {
     "none": "My tasks",
@@ -1341,6 +1345,33 @@
     }
   },
   "adm": {
+    "edisc": {
+      "description": "Hold-scoped search-and-export: pick a legal hold, refine, preview the scope, and export the in-scope documents + metadata + audit trail (EDRM load file).",
+      "docs_size_one": "{{count}} doc · {{size}}",
+      "docs_size_other": "{{count}} docs · {{size}}",
+      "download": "Download",
+      "empty": "No export jobs yet. Pick a hold and request an export.",
+      "err_download": "Download failed",
+      "err_preview": "Could not preview scope",
+      "err_request": "Could not request export",
+      "hold_label": "Legal hold",
+      "hold_option_one": "{{name}} ({{count}} doc)",
+      "hold_option_other": "{{name}} ({{count}} docs)",
+      "hold_ph": "Select an active hold…",
+      "jobs": "Export jobs",
+      "preview": "Preview scope",
+      "refine_label": "Refine (title / metadata)",
+      "refine_ph": "optional search to narrow scope",
+      "request": "Request export",
+      "requested": "Export requested — building in the background",
+      "scope_one": "<0>{{total}}</0> document · ~{{size}}",
+      "scope_other": "<0>{{total}}</0> documents · ~{{size}}",
+      "st_completed": "Completed",
+      "st_failed": "Failed",
+      "st_pending": "Pending",
+      "st_running": "Running",
+      "title": "E-discovery export"
+    },
     "enc": {
       "title": "Encryption & key management",
       "description": "Register an external KMS key as this tenant's KEK source, rotate it, and manage break-glass revocation.",
@@ -1381,6 +1412,40 @@
       "hint_aws_kms": "Key ARN or alias, e.g. arn:aws:kms:eu-west-1:123:key/…",
       "hint_azure_kv": "Key identifier URI, e.g. https://vault.vault.azure.net/keys/kek",
       "na": "n/a"
+    },
+    "hold": {
+      "applied": "Applied {{rel}} ({{date}})",
+      "approver_label": "Approver user UUID",
+      "approver_ph": "00000000-0000-0000-0000-…",
+      "badge_active": "Active",
+      "badge_released": "Released",
+      "cancel": "Cancel",
+      "description": "Holds block deletion, disposition, and redaction of attached documents until they're released. Releases are audited.",
+      "empty_active": "No active legal holds",
+      "empty_any": "No holds",
+      "empty_desc": "Holds applied from document detail pages or via the compliance API will land here.",
+      "err_approver": "Approver UUID is required",
+      "err_approver_uuid": "Approver UUID must be a valid UUID",
+      "err_reason": "Release reason is required",
+      "err_release": "Release failed",
+      "f_active": "Active",
+      "f_all": "All",
+      "f_released": "Released",
+      "matter": "Matter:",
+      "reason_label": "Release reason",
+      "reason_ph": "Why is the hold being released?",
+      "release": "Release",
+      "release_confirm": "Release hold",
+      "release_desc": "Releasing a hold lifts the deletion / disposition / redaction block on every attached document. The reason and approver are recorded in the audit log.",
+      "release_named": "Release \"{{name}}\"?",
+      "release_title": "Release hold",
+      "released_suffix": " · released {{rel}}",
+      "released_toast": "Hold released",
+      "title": "Legal holds"
+    },
+    "legal": {
+      "tab_ediscovery": "E-discovery export",
+      "tab_holds": "Legal holds"
     },
     "rec": {
       "act_destroy": "Destroy",
@@ -1556,5 +1621,14 @@
       "loading": "Loading…",
       "col_platform": "Platform"
     }
+  },
+  "unit": {
+    "b": "B",
+    "eb": "EB",
+    "gb": "GB",
+    "kb": "KB",
+    "mb": "MB",
+    "pb": "PB",
+    "tb": "TB"
   }
 }

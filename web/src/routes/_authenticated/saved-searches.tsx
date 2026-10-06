@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -44,6 +45,7 @@ import { formatDateTime } from '@/lib/formatters'
 const CHANNELS = ['in_app', 'email', 'digest'] as const
 
 function SavedSearchesPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate({ from: '/saved-searches' })
   const qc = useQueryClient()
   const role = useAuthStore((s) => s.user?.role)
@@ -222,12 +224,12 @@ function SavedSearchesPage() {
                 }}
                 disabled={deleteMut.isPending}
                 data-testid={`delete-${s.id}`}
-                aria-label={`Delete saved search: ${s.name}`}
-                title={`Delete saved search: ${s.name}`}
+                aria-label={t('a11y.delete_saved_search', { name: s.name })}
+                title={t('a11y.delete_saved_search', { name: s.name })}
                 className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
-                <span className="sr-only">Delete {s.name}</span>
+                <span className="sr-only">{t('a11y.delete_saved_search', { name: s.name })}</span>
               </Button>
             </div>
           </div>

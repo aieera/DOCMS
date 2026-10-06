@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -22,6 +23,7 @@ interface Props {
 // remains as a deep-linkable destination), presented as an end-side
 // Sheet so the user keeps their current page context.
 export function NotificationsPanel({ open, onOpenChange }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const navigate = useNavigate()
 
@@ -150,11 +152,11 @@ export function NotificationsPanel({ open, onOpenChange }: Props) {
                           {isDigest && (
                             <span
                               className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
-                              title="This is a digest notification combining multiple events."
-                              aria-label="Digest notification combining multiple events"
+                              title={t('a11y.digest_title')}
+                              aria-label={t('a11y.digest_aria')}
                             >
                               <span aria-hidden="true">D</span>
-                              <span className="sr-only">Digest</span>
+                              <span className="sr-only">{t('a11y.digest')}</span>
                             </span>
                           )}
                         </div>

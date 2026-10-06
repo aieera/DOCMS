@@ -61,16 +61,20 @@
     "partial": "تم رفع {{done}} من {{total}}"
   },
   "a11y": {
-    "skip_to_content": "تخطَّ إلى المحتوى",
-    "primary_nav": "التنقل الرئيسي",
-    "navigation": "التنقل",
-    "app_toolbar": "شريط أدوات التطبيق",
-    "open_navigation": "فتح قائمة التنقل",
-    "expand_sidebar": "توسيع الشريط الجانبي",
-    "collapse_sidebar": "طيّ الشريط الجانبي",
     "account_menu": "قائمة الحساب",
+    "app_toolbar": "شريط أدوات التطبيق",
+    "breadcrumb": "مسار التنقل",
+    "collapse_sidebar": "طيّ الشريط الجانبي",
+    "delete_saved_search": "حذف البحث المحفوظ: {{name}}",
+    "digest": "ملخّص",
+    "digest_aria": "إشعار ملخّص يجمع عدة أحداث",
+    "digest_title": "هذا إشعار ملخّص يجمع عدة أحداث.",
+    "expand_sidebar": "توسيع الشريط الجانبي",
     "loading_account": "جارٍ تحميل الحساب…",
-    "breadcrumb": "مسار التنقل"
+    "navigation": "التنقل",
+    "open_navigation": "فتح قائمة التنقل",
+    "primary_nav": "التنقل الرئيسي",
+    "skip_to_content": "تخطَّ إلى المحتوى"
   },
   "tasks_badge": {
     "none": "مهامي",
@@ -1389,6 +1393,45 @@
     }
   },
   "adm": {
+    "edisc": {
+      "description": "بحث وتصدير في نطاق حجز قانوني: اختر حجزاً، ثم ضيّق النطاق، وعايِن النطاق، وصدِّر المستندات المشمولة مع بياناتها الوصفية وسجل التدقيق (ملف تحميل EDRM).",
+      "docs_size_few": "{{count}} مستندات · {{size}}",
+      "docs_size_many": "{{count}} مستنداً · {{size}}",
+      "docs_size_one": "مستند واحد · {{size}}",
+      "docs_size_other": "{{count}} مستند · {{size}}",
+      "docs_size_two": "مستندان · {{size}}",
+      "docs_size_zero": "لا مستندات · {{size}}",
+      "download": "تنزيل",
+      "empty": "لا توجد مهام تصدير بعد. اختر حجزاً واطلب تصديراً.",
+      "err_download": "فشل التنزيل",
+      "err_preview": "تعذّرت معاينة النطاق",
+      "err_request": "تعذّر طلب التصدير",
+      "hold_label": "الحجز القانوني",
+      "hold_option_few": "{{name}} ({{count}} مستندات)",
+      "hold_option_many": "{{name}} ({{count}} مستنداً)",
+      "hold_option_one": "{{name}} (مستند واحد)",
+      "hold_option_other": "{{name}} ({{count}} مستند)",
+      "hold_option_two": "{{name}} (مستندان)",
+      "hold_option_zero": "{{name}} (لا مستندات)",
+      "hold_ph": "اختر حجزاً نشطاً…",
+      "jobs": "مهام التصدير",
+      "preview": "معاينة النطاق",
+      "refine_label": "تضييق النطاق (العنوان / البيانات الوصفية)",
+      "refine_ph": "بحث اختياري لتضييق النطاق",
+      "request": "طلب التصدير",
+      "requested": "تم طلب التصدير — يجري البناء في الخلفية",
+      "scope_few": "<0>{{total}}</0> مستندات · ~{{size}}",
+      "scope_many": "<0>{{total}}</0> مستنداً · ~{{size}}",
+      "scope_one": "<0>{{total}}</0> مستند · ~{{size}}",
+      "scope_other": "<0>{{total}}</0> مستند · ~{{size}}",
+      "scope_two": "<0>{{total}}</0> مستندان · ~{{size}}",
+      "scope_zero": "لا مستندات · ~{{size}}",
+      "st_completed": "مكتمل",
+      "st_failed": "فاشل",
+      "st_pending": "قيد الانتظار",
+      "st_running": "قيد التنفيذ",
+      "title": "تصدير الاستكشاف الإلكتروني"
+    },
     "enc": {
       "title": "التشفير وإدارة المفاتيح",
       "description": "سجّل مفتاح إدارة مفاتيح خارجيًا كمصدر لمفتاح تشفير المفاتيح لهذا المستأجر، ودوّره، وأدر السحب الطارئ.",
@@ -1429,6 +1472,40 @@
       "hint_aws_kms": "معرّف ARN أو اسم مستعار، مثل arn:aws:kms:eu-west-1:123:key/…",
       "hint_azure_kv": "معرّف المفتاح URI، مثل https://vault.vault.azure.net/keys/kek",
       "na": "لا ينطبق"
+    },
+    "hold": {
+      "applied": "طُبِّق {{rel}} ({{date}})",
+      "approver_label": "معرّف المستخدم المعتمِد (UUID)",
+      "approver_ph": "00000000-0000-0000-0000-…",
+      "badge_active": "نشط",
+      "badge_released": "مرفوع",
+      "cancel": "إلغاء",
+      "description": "يمنع الحجز حذف المستندات المرفقة أو إعدامها أو حجب أجزاء منها حتى يُرفع الحجز. وتُسجَّل عمليات رفع الحجز في سجل التدقيق.",
+      "empty_active": "لا توجد حجوزات قانونية نشطة",
+      "empty_any": "لا توجد حجوزات",
+      "empty_desc": "ستظهر هنا الحجوزات المطبَّقة من صفحات تفاصيل المستندات أو عبر واجهة الامتثال البرمجية.",
+      "err_approver": "معرّف المعتمِد مطلوب",
+      "err_approver_uuid": "يجب أن يكون معرّف المعتمِد UUID صالحاً",
+      "err_reason": "سبب رفع الحجز مطلوب",
+      "err_release": "فشل رفع الحجز",
+      "f_active": "نشط",
+      "f_all": "الكل",
+      "f_released": "مرفوع",
+      "matter": "القضية:",
+      "reason_label": "سبب رفع الحجز",
+      "reason_ph": "لماذا يتم رفع الحجز؟",
+      "release": "رفع الحجز",
+      "release_confirm": "رفع الحجز",
+      "release_desc": "يؤدي رفع الحجز إلى إزالة المنع من الحذف والإعدام وحجب الأجزاء عن كل مستند مرفق. ويُسجَّل السبب والمعتمِد في سجل التدقيق.",
+      "release_named": "رفع الحجز \"{{name}}\"؟",
+      "release_title": "رفع الحجز",
+      "released_suffix": " · رُفع {{rel}}",
+      "released_toast": "تم رفع الحجز",
+      "title": "الحجوزات القانونية"
+    },
+    "legal": {
+      "tab_ediscovery": "تصدير الاستكشاف الإلكتروني",
+      "tab_holds": "الحجوزات القانونية"
     },
     "rec": {
       "act_destroy": "إتلاف",
@@ -1608,5 +1685,14 @@
       "loading": "جارٍ التحميل…",
       "col_platform": "المنصة"
     }
+  },
+  "unit": {
+    "b": "بايت",
+    "eb": "إ.ب",
+    "gb": "ج.ب",
+    "kb": "ك.ب",
+    "mb": "م.ب",
+    "pb": "ب.ب",
+    "tb": "ت.ب"
   }
 }

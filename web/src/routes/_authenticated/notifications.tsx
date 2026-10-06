@@ -383,6 +383,7 @@ interface RowProps {
 }
 
 function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
+  const { t } = useTranslation('common')
   const { Icon, fg } = typeVisual(n.type)
   // Never render n.type directly -- it's a raw dms.{domain}.{action}
   // event code. Used for the snooze control's label; the row no longer
@@ -447,12 +448,12 @@ function NotificationRow({ n, onOpen, onRead, onSnooze, snoozing }: RowProps) {
         {isDigest && (
           <span
             className="inline-flex shrink-0 items-center rounded bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-foreground"
-            title="This is a digest notification combining multiple events."
-            aria-label="Digest notification combining multiple events"
+            title={t('a11y.digest_title')}
+            aria-label={t('a11y.digest_aria')}
             data-testid={`notif-digest-badge-${n.id}`}
           >
             <span aria-hidden="true">D</span>
-            <span className="sr-only">Digest</span>
+            <span className="sr-only">{t('a11y.digest')}</span>
           </span>
         )}
       </button>

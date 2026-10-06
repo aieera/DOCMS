@@ -4,6 +4,7 @@ import {
   type ElementRef,
   type HTMLAttributes,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/cn'
@@ -53,7 +54,9 @@ type DialogContentProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Conten
 }
 
 const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, hideCloseButton, ...props }, ref) => (
+  ({ className, children, hideCloseButton, ...props }, ref) => {
+    const { t } = useTranslation('common')
+    return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
@@ -87,12 +90,13 @@ const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Content>, Dia
             )}
           >
             <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t('actions.close')}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
-  ),
+    )
+  },
 )
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
