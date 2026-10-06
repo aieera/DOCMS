@@ -1,6 +1,7 @@
 import { copyText } from '@/lib/clipboard'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -33,13 +34,15 @@ export const Route = createFileRoute('/_authenticated/admin/integrations/mcp')({
   },
 })
 
+// The scope id IS its label — it's the literal string sent in the token.
 const MCP_SCOPES = [
-  { id: 'mcp:read',  label: 'mcp:read',  desc: 'Search documents, get document metadata, list workflows' },
-  { id: 'mcp:write', label: 'mcp:write', desc: 'Upload documents, start workflows' },
-  { id: 'mcp:*',     label: 'mcp:*',     desc: 'Both read and write' },
+  { id: 'mcp:read',  descKey: 'scope_read_desc' },
+  { id: 'mcp:write', descKey: 'scope_write_desc' },
+  { id: 'mcp:*',     descKey: 'scope_all_desc' },
 ]
 
 export function MCPPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const keysQ = useQuery({ queryKey: ['api-keys'], queryFn: listAPIKeys })
   const toolsQ = useQuery({ queryKey: ['mcp-tools'], queryFn: listMCPTools, refetchInterval: 60_000 })
@@ -49,7 +52,7 @@ export function MCPPage() {
   const revoke = useAppMutation({
     mutationFn: revokeAPIKey,
     onSuccess: () => {
-      toast.success('API key revoked — any LLM agent using it will fail next call')
+      toast.success(t('adm.mcp.revoked'))
       qc.invalidateQueries({ queryKey: ['api-keys'] })
     },
   })
@@ -64,41 +67,41 @@ export function MCPPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="MCP server (LLM agents)"
-        description="Let Claude Desktop, Cursor, GitHub Copilot, and other Model Context Protocol clients call SeDoc tools (search, get, upload, start workflow). Issue an API key with mcp scopes, then paste the matching snippet into your client's config."
+        title={t('adm.mcp.title')}
+        description={t('adm.mcp.description')}
       />
 
       {/* ---- Server status -------------------------------------------- */}
       <section className="mb-6">
-        <h2 className="mb-2 text-lg font-semibold">Server</h2>
+        <h2 className="mb-2 text-lg font-semibold">{t('adm.mcp.server')}</h2>
         <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-neu">
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4" />
               <span className="font-medium">vaultdms-mcp</span>
               {toolsQ.isLoading ? (
-                <span className="text-xs text-muted-foreground">checking…</span>
+                <span className="text-xs text-muted-foreground">{t('adm.mcp.checking')}</span>
               ) : (toolsQ.data?.length ?? 0) > 0 ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
-                  Reachable · {toolsQ.data?.length} tools
+                  {t('adm.mcp.reachable', { count: toolsQ.data?.length ?? 0 })}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
-                  Unreachable or unauthenticated
+                  {t('adm.mcp.unreachable')}
                 </span>
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Endpoint: <code className="rounded bg-muted px-1 font-mono">{mcpURL}</code>
+              {t('adm.mcp.endpoint')}<code dir="ltr" className="rounded bg-muted px-1 font-mono">{mcpURL}</code>
             </p>
           </div>
         </div>
         {(toolsQ.data?.length ?? 0) > 0 && (
           <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {toolsQ.data!.map((t) => (
-              <li key={t.name} className="rounded-lg bg-card/40 p-2 text-xs shadow-neu-sm">
-                <code className="font-mono font-semibold">{t.name}</code>
-                <p className="mt-0.5 text-muted-foreground">{t.description}</p>
+            {toolsQ.data!.map((tool) => (
+              <li key={tool.name} className="rounded-lg bg-card/40 p-2 text-xs shadow-neu-sm">
+                <code dir="ltr" className="font-mono font-semibold">{tool.name}</code>
+                <p className="mt-0.5 text-muted-foreground">{tool.description}</p>
               </li>
             ))}
           </ul>
@@ -108,15 +111,21 @@ export function MCPPage() {
       {/* ---- API keys ------------------------------------------------- */}
       <section className="mb-8" data-testid="mcp-api-keys-section">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">MCP API keys</h2>
+          <h2 className="text-lg font-semibold">{t('adm.mcp.keys')}</h2>
           <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="create-mcp-key">
-            <Plus className="me-1 h-4 w-4" /> New MCP key
+            <Plus className="me-1 h-4 w-4" /> {t('adm.mcp.new_key')}
           </Button>
         </div>
 
         {keysQ.isLoading ? <Spinner /> : mcpKeys.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
-            No MCP keys yet. Create one with <code className="rounded bg-muted px-1">mcp:read</code> to start; <code className="rounded bg-muted px-1">mcp:write</code> if you want the agent to upload or start workflows.
+            <Trans
+              i18nKey="adm.mcp.no_keys"
+              ns="common"
+              components={Array.from({ length: 2 }, (_, i) => (
+                <code key={i} dir="ltr" className="rounded bg-muted px-1" />
+              ))}
+            />
           </div>
         ) : (
           <ul className="space-y-2">
@@ -129,27 +138,27 @@ export function MCPPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{k.name}</span>
-                    <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{k.key_prefix}…</code>
+                    <code dir="ltr" className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{k.key_prefix}…</code>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1 text-xs">
                     {(k.scopes ?? []).map((s) => (
-                      <span key={s} className="rounded-full bg-muted px-2 py-0.5 font-mono">{s}</span>
+                      <span key={s} dir="ltr" className="rounded-full bg-muted px-2 py-0.5 font-mono">{s}</span>
                     ))}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Created {formatDateTime(k.created_at)}
-                    {k.last_used_at && ` · last used ${formatDateTime(k.last_used_at)}`}
+                    {t('adm.mcp.created_at', { date: formatDateTime(k.created_at) })}
+                    {k.last_used_at && t('adm.mcp.last_used', { date: formatDateTime(k.last_used_at) })}
                   </p>
                 </div>
                 <Button
                   size="sm" variant="outline"
                   onClick={() => {
-                    if (confirm(`Revoke "${k.name}"? Any LLM agent using it will fail next call.`)) {
+                    if (confirm(t('adm.mcp.revoke_confirm', { name: k.name }))) {
                       revoke.mutate(k.key_id)
                     }
                   }}
                 >
-                  <Trash2 className="me-1 h-4 w-4" /> Revoke
+                  <Trash2 className="me-1 h-4 w-4" /> {t('adm.mcp.revoke')}
                 </Button>
               </li>
             ))}
@@ -159,9 +168,16 @@ export function MCPPage() {
 
       {/* ---- Install snippets ----------------------------------------- */}
       <section className="mb-6">
-        <h2 className="mb-3 text-lg font-semibold">Install snippets</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.mcp.snippets')}</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Replace <code className="rounded bg-muted px-1">{`{{API_KEY}}`}</code> with your key value (shown once at creation). Restart the client after editing.
+          {/* {{API_KEY}} is literal snippet text, so it rides through on a
+              distinct {{placeholder}} slot rather than being interpolated. */}
+          <Trans
+            i18nKey="adm.mcp.snippets_hint"
+            ns="common"
+            values={{ placeholder: '{{API_KEY}}' }}
+            components={[<code key="k" dir="ltr" className="rounded bg-muted px-1" />]}
+          />
         </p>
         <Snippet
           title="Claude Desktop"
@@ -170,7 +186,7 @@ export function MCPPage() {
         />
         <Snippet
           title="Cursor"
-          file="Settings → MCP → Add server"
+          file={t('adm.mcp.cursor_file')}
           code={cursorSnippet(mcpURL)}
         />
         <Snippet
@@ -202,6 +218,7 @@ export function MCPPage() {
 // ---- Snippet card ---------------------------------------------------
 
 function Snippet({ title, file, code }: { title: string; file: string; code: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <div className="mb-3 rounded-lg bg-card p-3 shadow-neu">
@@ -212,10 +229,10 @@ function Snippet({ title, file, code }: { title: string; file: string; code: str
           onClick={() => copyText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          <span className="ms-1 text-xs">{copied ? 'Copied' : 'Copy'}</span>
+          <span className="ms-1 text-xs">{copied ? t('adm.mcp.copied') : t('adm.mcp.copy')}</span>
         </Button>
       </div>
-      <p className="mb-1 text-xs text-muted-foreground">Add to: <code className="font-mono">{file}</code></p>
+      <p className="mb-1 text-xs text-muted-foreground">{t('adm.mcp.add_to')}<code dir="ltr" className="font-mono">{file}</code></p>
       <pre className="overflow-x-auto rounded-lg bg-muted p-2 text-xs shadow-neu-inset">{code}</pre>
     </div>
   )
@@ -269,6 +286,7 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
   onOpenChange: (open: boolean) => void
   onCreated: (plaintext: string, id: string) => void
 }) {
+  const { t } = useTranslation('common')
   const [name, setName] = useState('')
   const [scopes, setScopes] = useState<string[]>(['mcp:read'])
 
@@ -280,7 +298,7 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
       setName('')
       setScopes(['mcp:read'])
     },
-    onError: (e: Error) => toast.error(e.message || 'Create failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.mcp.err_create')),
   })
 
   const toggle = (id: string) => setScopes((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
@@ -289,26 +307,26 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New MCP key</DialogTitle>
+          <DialogTitle>{t('adm.mcp.dlg_title')}</DialogTitle>
           <DialogDescription>
-            Shown once at creation. Paste into your Claude Desktop / Cursor / Copilot config.
+            {t('adm.mcp.dlg_desc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="mb-1 block text-sm font-medium">Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Claude Desktop on my laptop" />
+            <label className="mb-1 block text-sm font-medium">{t('adm.mcp.name')}</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('adm.mcp.name_ph')} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Scopes</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.mcp.scopes')}</label>
             <div className="space-y-1">
               {MCP_SCOPES.map((s) => (
                 <label key={s.id} className="flex cursor-pointer items-start gap-2 text-sm">
                   <input type="checkbox" checked={scopes.includes(s.id)} onChange={() => toggle(s.id)} className="mt-0.5" />
                   <div>
-                    <code className="font-mono text-xs">{s.label}</code>
-                    <div className="text-xs text-muted-foreground">{s.desc}</div>
+                    <code dir="ltr" className="font-mono text-xs">{s.id}</code>
+                    <div className="text-xs text-muted-foreground">{t(`adm.mcp.${s.descKey}`)}</div>
                   </div>
                 </label>
               ))}
@@ -317,9 +335,9 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.mcp.cancel')}</Button>
           <Button onClick={() => create.mutate()} disabled={name.trim() === '' || scopes.length === 0 || create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create'}
+            {create.isPending ? t('adm.mcp.creating') : t('adm.mcp.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -328,13 +346,14 @@ function CreateMCPKeyDialog({ open, onOpenChange, onCreated }: {
 }
 
 function RevealedKeyDialog({ plaintext, onClose }: { plaintext: string; onClose: () => void }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <Dialog open onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Copy your MCP key now</DialogTitle>
-          <DialogDescription>This is the only time we'll show this value.</DialogDescription>
+          <DialogTitle>{t('adm.mcp.reveal_title')}</DialogTitle>
+          <DialogDescription>{t('adm.mcp.reveal_desc')}</DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 py-2">
           <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
@@ -345,11 +364,11 @@ function RevealedKeyDialog({ plaintext, onClose }: { plaintext: string; onClose:
             onClick={() => copyText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
           >
             {copied ? <Check className="me-1 h-4 w-4" /> : <Copy className="me-1 h-4 w-4" />}
-            {copied ? 'Copied' : 'Copy'}
+            {copied ? t('adm.mcp.copied') : t('adm.mcp.copy')}
           </Button>
         </div>
         <DialogFooter>
-          <Button onClick={onClose}>I've saved it</Button>
+          <Button onClick={onClose}>{t('adm.mcp.saved')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,7 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -26,15 +27,12 @@ interface Props {
 
 // Setup walkthrough on the modal so the user doesn't have to leave the
 // app to look up the exact button names in Google Cloud Console.
-const STEPS = [
-  'Go to console.cloud.google.com → APIs & Services → Credentials.',
-  'Click "Create Credentials" → "OAuth client ID" → Application type: Web application.',
-  'Under "Authorized redirect URIs", add the value shown below.',
-  'Enable Gmail API + Google Drive API under "Enabled APIs & services".',
-  'Copy the Client ID and Client Secret here, then Save & Authorize.',
-]
+// Step text lives in the catalogue (adm.cred.g_step1…5); this is just
+// the order.
+const STEPS = ['g_step1', 'g_step2', 'g_step3', 'g_step4', 'g_step5'] as const
 
 export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
 
   // Reuses /connectors/google rather than a dedicated GET for the public
@@ -64,7 +62,7 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
       client_secret: clientSecret,
     }),
     onSuccess: async () => {
-      toast.success('Credentials saved — redirecting to Google…')
+      toast.success(t('adm.cred.google_redirecting'))
       qc.invalidateQueries({ queryKey: ['google-connector'] })
       qc.invalidateQueries({ queryKey: ['connectors-list'] })
       try {
@@ -72,11 +70,11 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
         window.location.href = url
       } catch (e) {
         const detail = (e as { response?: { data?: { error?: string } } }).response?.data?.error
-        toast.error(detail || 'Could not start OAuth')
+        toast.error(detail || t('adm.cred.err_oauth'))
       }
       await onSaved()
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_save')),
   })
 
   const canSubmit = clientID.trim() !== '' && clientSecret !== '' && !saveMut.isPending
@@ -85,21 +83,21 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Connect Google Workspace</DialogTitle>
+          <DialogTitle>{t('adm.cred.google_title')}</DialogTitle>
           <DialogDescription>
-            Create an OAuth client in Google Cloud Console, then paste the credentials below.
+            {t('adm.cred.google_desc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <ol className="list-decimal space-y-1 ps-5 text-xs text-muted-foreground">
-            {STEPS.map((s) => <li key={s}>{s}</li>)}
+            {STEPS.map((k) => <li key={k}>{t(`adm.cred.${k}`)}</li>)}
           </ol>
 
-          <CopyField label="Authorized redirect URI (paste into Google Cloud Console)" value={redirectURI} />
+          <CopyField label={t('adm.cred.google_redirect')} value={redirectURI} />
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Client ID</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.client_id')}</label>
             <Input
               value={clientID}
               onChange={(e) => setClientID(e.target.value)}
@@ -110,7 +108,7 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Client Secret</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.client_secret')}</label>
             <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
@@ -127,9 +125,9 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.cred.cancel')}</Button>
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit}>
-            {saveMut.isPending ? 'Saving…' : 'Save & Authorize'}
+            {saveMut.isPending ? t('adm.cred.saving') : t('adm.cred.save_authorize')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -138,6 +136,7 @@ export function GoogleWorkspaceModal({ open, onOpenChange, redirectURI, onSaved 
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <div>
@@ -154,7 +153,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
               setTimeout(() => setCopied(false), 1500)
             })
           }}
-          aria-label="Copy"
+          aria-label={t('adm.cred.copy')}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>

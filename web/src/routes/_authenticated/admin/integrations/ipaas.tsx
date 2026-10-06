@@ -1,6 +1,7 @@
 import { copyText } from '@/lib/clipboard'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -34,13 +35,16 @@ export const Route = createFileRoute('/_authenticated/admin/integrations/ipaas')
   },
 })
 
+// The scope id IS its label — it's the literal string sent in the token.
+// Only the human description comes from the catalogue.
 const AVAILABLE_SCOPES = [
-  { id: 'integrations:read', label: 'integrations:read', desc: 'Poll trigger endpoints (documents, signatures, workflows)' },
-  { id: 'integrations:write', label: 'integrations:write', desc: 'Future: perform actions (upload, start workflow) from iPaaS' },
-  { id: 'integrations:*', label: 'integrations:*', desc: 'Both of the above' },
+  { id: 'integrations:read', descKey: 'scope_read_desc' },
+  { id: 'integrations:write', descKey: 'scope_write_desc' },
+  { id: 'integrations:*', descKey: 'scope_all_desc' },
 ]
 
 export function IPaaSPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const keysQ = useQuery({ queryKey: ['api-keys'], queryFn: listAPIKeys })
   const [createOpen, setCreateOpen] = useState(false)
@@ -49,7 +53,7 @@ export function IPaaSPage() {
   const revoke = useAppMutation({
     mutationFn: revokeAPIKey,
     onSuccess: () => {
-      toast.success('API key revoked')
+      toast.success(t('adm.ipaas.revoked'))
       qc.invalidateQueries({ queryKey: ['api-keys'] })
     },
   })
@@ -59,22 +63,22 @@ export function IPaaSPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="iPaaS integrations"
-        description="Connect SeDoc to Zapier, Make, n8n and other automation platforms. Issue API keys with scoped access, then build your Zap / scenario / workflow in the vendor's developer portal."
+        title={t('adm.ipaas.title')}
+        description={t('adm.ipaas.description')}
       />
 
       {/* ---- API keys section ------------------------------------------------ */}
       <section className="mb-8" data-testid="api-keys-section">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">API keys</h2>
+          <h2 className="text-lg font-semibold">{t('adm.ipaas.keys')}</h2>
           <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="create-key">
-            <Plus className="me-1 h-4 w-4" /> New API key
+            <Plus className="me-1 h-4 w-4" /> {t('adm.ipaas.new_key')}
           </Button>
         </div>
 
         {keysQ.isLoading ? <Spinner /> : (keysQ.data ?? []).length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
-            No API keys yet. Create one to connect Zapier, Make, n8n, or any HTTP-capable automation tool.
+            {t('adm.ipaas.no_keys')}
           </div>
         ) : (
           <ul className="space-y-2">
@@ -87,29 +91,29 @@ export function IPaaSPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{k.name}</span>
-                    <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{k.key_prefix}…</code>
+                    <code dir="ltr" className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{k.key_prefix}…</code>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1 text-xs">
                     {(k.scopes ?? []).map((s) => (
-                      <span key={s} className="rounded-full bg-muted px-2 py-0.5 font-mono">{s}</span>
+                      <span key={s} dir="ltr" className="rounded-full bg-muted px-2 py-0.5 font-mono">{s}</span>
                     ))}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Created {formatDateTime(k.created_at)}
-                    {k.last_used_at && ` · last used ${formatDateTime(k.last_used_at)}`}
-                    {k.expires_at && ` · expires ${formatDateTime(k.expires_at)}`}
+                    {t('adm.ipaas.created_at', { date: formatDateTime(k.created_at) })}
+                    {k.last_used_at && t('adm.ipaas.last_used', { date: formatDateTime(k.last_used_at) })}
+                    {k.expires_at && t('adm.ipaas.expires', { date: formatDateTime(k.expires_at) })}
                   </p>
                 </div>
                 <Button
                   size="sm" variant="outline"
                   onClick={() => {
-                    if (confirm(`Revoke API key "${k.name}"? Any iPaaS Zap or Make scenario using it will stop working.`)) {
+                    if (confirm(t('adm.ipaas.revoke_confirm', { name: k.name }))) {
                       revoke.mutate(k.key_id)
                     }
                   }}
                   data-testid={`revoke-key-${k.key_id}`}
                 >
-                  <Trash2 className="me-1 h-4 w-4" /> Revoke
+                  <Trash2 className="me-1 h-4 w-4" /> {t('adm.ipaas.revoke')}
                 </Button>
               </li>
             ))}
@@ -119,12 +123,17 @@ export function IPaaSPage() {
 
       {/* ---- Trigger endpoints reference ------------------------------------ */}
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-semibold">Trigger endpoints</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.ipaas.endpoints')}</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Configure these as polling URLs in your Zap / Make scenario. Authenticate with{' '}
-          <code className="rounded bg-muted px-1 text-xs">Authorization: Bearer vdms_…</code>{' '}
-          and a key with the <code className="rounded bg-muted px-1 text-xs">integrations:read</code> scope.
-          Each endpoint accepts <code className="rounded bg-muted px-1 text-xs">?since=&lt;RFC3339&gt;&amp;limit=&lt;1-100&gt;</code>.
+          {/* Three literal identifiers mid-sentence, so the markup travels
+              with the key; each stays dir="ltr". */}
+          <Trans
+            i18nKey="adm.ipaas.endpoints_hint"
+            ns="common"
+            components={Array.from({ length: 3 }, (_, i) => (
+              <code key={i} dir="ltr" className="rounded bg-muted px-1 text-xs" />
+            ))}
+          />
         </p>
         <div className="space-y-2">
           {[
@@ -143,24 +152,24 @@ export function IPaaSPage() {
 
       {/* ---- Getting started cards ----------------------------------------- */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Getting started</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.ipaas.getting_started')}</h2>
         <p className="mb-3 text-sm text-muted-foreground">
-          Build your app on the vendor's developer portal — SeDoc provides the HTTP surface; the app definition lives on their side.
+          {t('adm.ipaas.getting_started_hint')}
         </p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <PortalCard
             name="Zapier"
-            description="Build a private or public Zapier app. Configure each trigger as a Polling URL pointing at the endpoints above."
+            description={t('adm.ipaas.portal_zapier')}
             url="https://zapier.com/developer/builder"
           />
           <PortalCard
             name="Make"
-            description="Make.com's Apps Developer panel. Define modules calling the same endpoints."
+            description={t('adm.ipaas.portal_make')}
             url="https://www.make.com/en/help/apps/about-the-app-development-platform"
           />
           <PortalCard
             name="n8n"
-            description="Build a community node and publish to npm as n8n-nodes-vaultdms. Lives in a separate repo."
+            description={t('adm.ipaas.portal_n8n')}
             url="https://docs.n8n.io/integrations/creating-nodes/build/declarative-style-node/"
           />
         </div>
@@ -189,20 +198,21 @@ export function IPaaSPage() {
 // ---- Subcomponents ---------------------------------------------------------
 
 function CopyableEndpoint({ trigger, url }: { trigger: string; url: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <div className="rounded-lg bg-card p-3 shadow-neu">
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Zap className="h-3.5 w-3.5 text-primary" /> {trigger}
+            <Zap className="h-3.5 w-3.5 text-primary" /> <span dir="ltr">{trigger}</span>
           </div>
-          <code className="mt-1 block truncate text-xs text-muted-foreground">{url}</code>
+          <code dir="ltr" className="mt-1 block truncate text-xs text-muted-foreground">{url}</code>
         </div>
         <Button
           size="sm" variant="ghost"
           onClick={() => copyText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-          aria-label="Copy URL"
+          aria-label={t('adm.ipaas.copy_url')}
         >
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         </Button>
@@ -233,6 +243,7 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
   onOpenChange: (open: boolean) => void
   onCreated: (plaintext: string, id: string) => void
 }) {
+  const { t } = useTranslation('common')
   const [name, setName] = useState('')
   const [scopes, setScopes] = useState<string[]>(['integrations:read'])
   const [expiresInDays, setExpiresInDays] = useState<number | ''>('')
@@ -250,7 +261,7 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
       setScopes(['integrations:read'])
       setExpiresInDays('')
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to create key'),
+    onError: (e: Error) => toast.error(e.message || t('adm.ipaas.err_create')),
   })
 
   const toggleScope = (id: string) => {
@@ -261,24 +272,24 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New API key</DialogTitle>
+          <DialogTitle>{t('adm.ipaas.dlg_title')}</DialogTitle>
           <DialogDescription>
-            The key value is shown ONCE after creation — copy it immediately. Re-creating is the only way to recover from a lost key.
+            {t('adm.ipaas.dlg_desc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="mb-1 block text-sm font-medium">Name</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.ipaas.name')}</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Zapier production"
+              placeholder={t('adm.ipaas.name_ph')}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Scopes</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.ipaas.scopes')}</label>
             <div className="space-y-1">
               {AVAILABLE_SCOPES.map((s) => (
                 <label key={s.id} className="flex cursor-pointer items-start gap-2 text-sm">
@@ -289,8 +300,8 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
                     className="mt-0.5"
                   />
                   <div>
-                    <code className="font-mono text-xs">{s.label}</code>
-                    <div className="text-xs text-muted-foreground">{s.desc}</div>
+                    <code dir="ltr" className="font-mono text-xs">{s.id}</code>
+                    <div className="text-xs text-muted-foreground">{t(`adm.ipaas.${s.descKey}`)}</div>
                   </div>
                 </label>
               ))}
@@ -299,25 +310,25 @@ function CreateKeyDialog({ open, onOpenChange, onCreated }: {
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Expires in <span className="text-xs text-muted-foreground">(days, blank = never)</span>
+              {t('adm.ipaas.expires_in')} <span className="text-xs text-muted-foreground">{t('adm.ipaas.expires_in_hint')}</span>
             </label>
             <Input
               type="number"
               value={expiresInDays}
               onChange={(e) => setExpiresInDays(e.target.value === '' ? '' : Number(e.target.value))}
-              placeholder="365"
+              placeholder={t('adm.ipaas.expires_ph')}
               min={1}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.ipaas.cancel')}</Button>
           <Button
             onClick={() => create.mutate()}
             disabled={name.trim() === '' || scopes.length === 0 || create.isPending}
           >
-            {create.isPending ? 'Creating…' : 'Create key'}
+            {create.isPending ? t('adm.ipaas.creating') : t('adm.ipaas.create')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -330,19 +341,20 @@ function RevealedKeyDialog({ open, plaintext, onClose }: {
   plaintext: string
   onClose: () => void
 }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Copy your API key now</DialogTitle>
+          <DialogTitle>{t('adm.ipaas.reveal_title')}</DialogTitle>
           <DialogDescription>
-            This is the only time we'll show this value. Paste it into your Zapier / Make / n8n app's authentication settings.
+            {t('adm.ipaas.reveal_desc')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
+            <code dir="ltr" className="flex-1 truncate rounded-lg bg-muted px-3 py-2 font-mono text-xs shadow-neu-inset">
               {plaintext}
             </code>
             <Button
@@ -350,15 +362,15 @@ function RevealedKeyDialog({ open, plaintext, onClose }: {
               onClick={() => copyText(plaintext).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
             >
               {copied ? <Check className="me-1 h-4 w-4" /> : <Copy className="me-1 h-4 w-4" />}
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('adm.ipaas.copied') : t('adm.ipaas.copy')}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Authorization header format: <code className="rounded bg-muted px-1 font-mono">Bearer {plaintext.slice(0, 20)}…</code>
+            {t('adm.ipaas.header_format')}<code dir="ltr" className="rounded bg-muted px-1 font-mono">Bearer {plaintext.slice(0, 20)}…</code>
           </p>
         </div>
         <DialogFooter>
-          <Button onClick={onClose}>I've saved the key</Button>
+          <Button onClick={onClose}>{t('adm.ipaas.saved')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

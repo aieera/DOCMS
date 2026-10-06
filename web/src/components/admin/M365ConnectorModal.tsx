@@ -19,6 +19,7 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -44,16 +45,12 @@ interface Props {
 // Step list mirrors the howto in docs/howto/connectors-m365.md so an
 // admin who follows the modal AND the runbook gets a consistent
 // experience. Update both when the Entra UI changes its labels.
-const STEPS = [
-  'In Azure Portal → Microsoft Entra ID → App registrations → New registration.',
-  'Application type: Web. Account types: "Accounts in any organizational directory (multitenant)" for SaaS, otherwise single tenant.',
-  'Under "Authentication", add the redirect URI shown below.',
-  'Under "API permissions", add the Graph delegated scopes: User.Read, Files.ReadWrite, Mail.ReadWrite, Mail.Send, Sites.ReadWrite.All, Group.Read.All, ChannelMessage.Send. Grant admin consent.',
-  'Under "Certificates & secrets", create a client secret and copy its VALUE (not the secret ID).',
-  'Copy the Application (client) ID and the secret value here. Optional: paste the Directory (tenant) ID for single-tenant apps.',
-]
+// Step text lives in the catalogue (adm.cred.m_step1…6); this is just
+// the order.
+const STEPS = ['m_step1', 'm_step2', 'm_step3', 'm_step4', 'm_step5', 'm_step6'] as const
 
 export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
 
   const existingQ = useQuery({
@@ -83,7 +80,7 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
       entra_tenant:  entraTenant.trim() || undefined,
     }),
     onSuccess: async () => {
-      toast.success('Credentials saved — redirecting to Microsoft…')
+      toast.success(t('adm.cred.m365_redirecting'))
       qc.invalidateQueries({ queryKey: ['m365-connector'] })
       qc.invalidateQueries({ queryKey: ['connectors-list'] })
       try {
@@ -91,11 +88,11 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
         window.location.href = url
       } catch (e) {
         const detail = (e as { response?: { data?: { error?: string } } }).response?.data?.error
-        toast.error(detail || 'Could not start OAuth')
+        toast.error(detail || t('adm.cred.err_oauth'))
       }
       await onSaved()
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_save')),
   })
 
   const canSubmit = clientID.trim() !== '' && clientSecret !== '' && !saveMut.isPending
@@ -104,22 +101,25 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Connect Microsoft 365</DialogTitle>
+          <DialogTitle>{t('adm.cred.m365_title')}</DialogTitle>
           <DialogDescription>
-            Register an Entra ID app, then paste the credentials below. Full instructions live in
-            <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs">docs/howto/connectors-m365.md</code>.
+            <Trans
+              i18nKey="adm.cred.m365_desc"
+              ns="common"
+              components={[<code key="p" dir="ltr" className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs" />]}
+            />
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <ol className="list-decimal space-y-1 ps-5 text-xs text-muted-foreground">
-            {STEPS.map((s) => <li key={s}>{s}</li>)}
+            {STEPS.map((k) => <li key={k}>{t(`adm.cred.${k}`)}</li>)}
           </ol>
 
-          <CopyField label="Authorized redirect URI (paste into Entra → Authentication)" value={redirectURI} />
+          <CopyField label={t('adm.cred.m365_redirect')} value={redirectURI} />
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Application (client) ID</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.m365_app_id')}</label>
             <Input
               value={clientID}
               onChange={(e) => setClientID(e.target.value)}
@@ -130,7 +130,7 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Client secret VALUE</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.m365_secret')}</label>
             <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
@@ -138,18 +138,18 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
               autoComplete="new-password"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Copy the <strong>value</strong>, not the secret ID. Entra only shows the value once at creation.
+              <Trans i18nKey="adm.cred.m365_secret_hint" ns="common" components={[<strong key="v" />]} />
             </p>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Directory (tenant) ID <span className="text-muted-foreground">— optional</span>
+              {t('adm.cred.m365_tenant')} <span className="text-muted-foreground">{t('adm.cred.optional')}</span>
             </label>
             <Input
               value={entraTenant}
               onChange={(e) => setEntraTenant(e.target.value)}
-              placeholder="leave blank to use the multi-tenant 'common' endpoint"
+              placeholder={t('adm.cred.m365_tenant_ph')}
               autoComplete="off"
               spellCheck={false}
             />
@@ -157,9 +157,9 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.cred.cancel')}</Button>
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit}>
-            {saveMut.isPending ? 'Saving…' : 'Save & Authorize'}
+            {saveMut.isPending ? t('adm.cred.saving') : t('adm.cred.save_authorize')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -168,6 +168,7 @@ export function M365ConnectorModal({ open, onOpenChange, redirectURI, onSaved }:
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <div>
@@ -184,7 +185,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
               setTimeout(() => setCopied(false), 1500)
             })
           }}
-          aria-label="Copy"
+          aria-label={t('adm.cred.copy')}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>

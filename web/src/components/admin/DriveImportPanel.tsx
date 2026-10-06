@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -17,6 +18,7 @@ import { Input } from '@/components/ui/shadcn/input'
 // skipped. The backend processes synchronously and returns per-file
 // counts, so this drives a single request with a spinner.
 export function DriveImportPanel() {
+  const { t } = useTranslation('common')
   const [driveFolderID, setDriveFolderID] = useState('')
   const [workspaceID, setWorkspaceID] = useState('')
   const [folderID, setFolderID] = useState('')
@@ -38,14 +40,17 @@ export function DriveImportPanel() {
     onSuccess: (res) => {
       setResult(res)
       if (res.failed > 0) {
-        toast.warning(`Imported ${res.imported}, skipped ${res.skipped}, ${res.failed} failed`)
+        toast.warning(t('adm.cred.drive_partial', { imported: res.imported, skipped: res.skipped, failed: res.failed }))
       } else {
-        toast.success(`Imported ${res.imported} file${res.imported === 1 ? '' : 's'}${res.skipped ? `, skipped ${res.skipped}` : ''}`)
+        toast.success(
+          t('adm.cred.drive_ok', { count: res.imported })
+          + (res.skipped ? t('adm.cred.drive_ok_skipped', { skipped: res.skipped }) : ''),
+        )
       }
     },
     onError: (e: unknown) => {
       const detail = (e as { response?: { data?: { error?: string } } }).response?.data?.error
-      toast.error(detail || 'Import failed')
+      toast.error(detail || t('adm.cred.drive_err'))
     },
   })
 
@@ -55,20 +60,19 @@ export function DriveImportPanel() {
     <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
       <div className="flex items-center gap-2">
         <FolderDown className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">Import from Drive</h3>
+        <h3 className="text-sm font-medium">{t('adm.cred.drive_title')}</h3>
       </div>
       <p className="text-xs text-muted-foreground">
-        Copy files from a Google Drive folder into a SeDoc folder. Leave the
-        Drive folder ID blank to import from My Drive’s root. Google Docs,
-        Sheets and Slides are saved as PDF.
+        {t('adm.cred.drive_desc')}
       </p>
 
       <div>
-        <label className="mb-1 block text-xs font-medium">Drive folder ID (optional)</label>
+        <label className="mb-1 block text-xs font-medium">{t('adm.cred.drive_folder')}</label>
         <Input
           value={driveFolderID}
           onChange={(e) => setDriveFolderID(e.target.value)}
-          placeholder="1AbCdEf… (blank = My Drive root)"
+          dir="ltr"
+          placeholder={t('adm.cred.drive_folder_ph')}
           autoComplete="off"
           spellCheck={false}
         />
@@ -76,27 +80,27 @@ export function DriveImportPanel() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium">Workspace</label>
+          <label className="mb-1 block text-xs font-medium">{t('adm.cred.workspace')}</label>
           <select
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             value={workspaceID}
             onChange={(e) => { setWorkspaceID(e.target.value); setFolderID('') }}
           >
-            <option value="">Select…</option>
+            <option value="">{t('adm.cred.select')}</option>
             {(workspacesQ.data ?? []).map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium">Folder</label>
+          <label className="mb-1 block text-xs font-medium">{t('adm.cred.folder')}</label>
           <select
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
             value={folderID}
             onChange={(e) => setFolderID(e.target.value)}
             disabled={workspaceID === '' || foldersQ.isLoading}
           >
-            <option value="">Select…</option>
+            <option value="">{t('adm.cred.select')}</option>
             {(foldersQ.data ?? []).map((f) => (
               <option key={f.id} value={f.id}>{f.name}</option>
             ))}
@@ -106,7 +110,7 @@ export function DriveImportPanel() {
 
       <div className="flex items-center justify-between">
         <Button size="sm" onClick={() => importMut.mutate()} disabled={!canImport}>
-          {importMut.isPending ? 'Importing…' : 'Import'}
+          {importMut.isPending ? t('adm.cred.drive_importing') : t('adm.cred.drive_import')}
         </Button>
         {result && (
           <span className="text-xs text-muted-foreground">

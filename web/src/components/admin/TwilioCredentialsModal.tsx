@@ -1,5 +1,6 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const existingQ = useQuery({
     queryKey: ['twilio-config'],
@@ -47,17 +49,17 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
       verify_service_sid: verifySID.trim(),
     }),
     onSuccess: async () => {
-      toast.success('Twilio credentials saved')
+      toast.success(t('adm.cred.twilio_saved'))
       qc.invalidateQueries({ queryKey: ['twilio-config'] })
       await onSaved()
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_save')),
   })
 
   const testMut = useAppMutation({
     mutationFn: () => testTwilio(testPhone),
-    onSuccess: () => toast.success(`Test SMS sent to ${testPhone}`),
-    onError: (e: Error) => toast.error(e.message || 'Test failed'),
+    onSuccess: () => toast.success(t('adm.cred.test_sms_sent', { to: testPhone })),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_test')),
   })
 
   const canSubmit = accountSID.trim() !== ''
@@ -69,16 +71,16 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Twilio (SMS MFA)</DialogTitle>
+          <DialogTitle>{t('adm.cred.twilio_title')}</DialogTitle>
           <DialogDescription>
-            Create a Verify Service in Twilio Console → Verify → Services, then paste the credentials here.
-            {hasExistingToken && ' Leave Auth Token blank to keep the existing one.'}
+            {t('adm.cred.twilio_desc')}
+            {hasExistingToken && t('adm.cred.twilio_keep_token')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <label className="mb-1 block text-sm font-medium">Account SID</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.account_sid')}</label>
             <Input
               value={accountSID}
               onChange={(e) => setAccountSID(e.target.value)}
@@ -89,18 +91,18 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium">
-              Auth Token
-              {hasExistingToken && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
+              {t('adm.cred.auth_token')}
+              {hasExistingToken && <span className="ms-2 text-xs text-muted-foreground">{t('adm.cred.stored_hint')}</span>}
             </label>
             <PasswordInput
               value={authToken}
               onChange={(e) => setAuthToken(e.target.value)}
-              placeholder={hasExistingToken ? '••••••••' : 'paste once — never re-shown'}
+              placeholder={hasExistingToken ? t('adm.cred.masked') : t('adm.cred.paste_once')}
               autoComplete="new-password"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Verify Service SID</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.verify_sid')}</label>
             <Input
               value={verifySID}
               onChange={(e) => setVerifySID(e.target.value)}
@@ -112,7 +114,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
 
           {hasExistingToken && (
             <div className="rounded-md border border-border bg-muted/30 p-3">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Send test SMS</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('adm.cred.send_test_sms')}</p>
               <div className="flex gap-2">
                 <Input
                   value={testPhone}
@@ -126,7 +128,7 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
                   onClick={() => testMut.mutate()}
                   disabled={!testPhone.startsWith('+') || testMut.isPending}
                 >
-                  {testMut.isPending ? 'Sending…' : 'Send test'}
+                  {testMut.isPending ? t('adm.cred.sending') : t('adm.cred.send_test')}
                 </Button>
               </div>
             </div>
@@ -134,9 +136,9 @@ export function TwilioCredentialsModal({ open, onOpenChange, onSaved }: Props) {
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.cred.cancel')}</Button>
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit}>
-            {saveMut.isPending ? 'Saving…' : 'Save'}
+            {saveMut.isPending ? t('adm.cred.saving') : t('adm.cred.saved')}
           </Button>
         </DialogFooter>
       </DialogContent>

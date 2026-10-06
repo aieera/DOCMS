@@ -8,6 +8,7 @@
 //      consumer forever.
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -32,20 +33,15 @@ import { ConfirmDialog } from '@/components/ui/shadcn/confirm-dialog'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
 import { cn } from '@/lib/cn'
 
+// Subject prefixes are the NATS taxonomy and stay Latin; the prose comes
+// from the catalogue as adm.evs.ref_<domain>.
 const EVENT_TYPE_REFERENCE = [
-  { prefix: 'dms.document.*',  desc: 'Document lifecycle: created / updated / moved / deleted.' },
-  { prefix: 'dms.version.*',   desc: 'New version uploaded / promoted.' },
-  { prefix: 'dms.workspace.*', desc: 'Workspace and folder structural changes.' },
-  { prefix: 'dms.signature.*', desc: 'Signature requests sent / completed / declined.' },
-  { prefix: 'dms.hold.*',      desc: 'Legal holds applied / released.' },
-  { prefix: 'dms.audit.*',     desc: 'Tenant audit events (read-only mirror).' },
-  { prefix: 'dms.user.*',      desc: 'User invites, suspensions, MFA resets, role changes.' },
-  { prefix: 'dms.sharelink.*', desc: 'Share-link create / revoke / access events.' },
-  { prefix: 'dms.workflow.*',  desc: 'Workflow steps queued / completed / failed.' },
-  { prefix: 'dms.billing.*',   desc: 'Subscription + usage signals.' },
-]
+  'document', 'version', 'workspace', 'signature', 'hold',
+  'audit', 'user', 'sharelink', 'workflow', 'billing',
+] as const
 
 export function EventStreamPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: tokens, isLoading } = useQuery({
     queryKey: ['event-stream-tokens'],
@@ -59,26 +55,26 @@ export function EventStreamPage() {
 
   const issue = useAppMutation({
     mutationFn: () => issueEventStreamToken(label.trim()),
-    onSuccess: (t) => {
-      toast.success('Token issued — copy it now, it won\'t be shown again')
-      setIssued(t)
+    onSuccess: (tok) => {
+      toast.success(t('adm.evs.issued'))
+      setIssued(tok)
       setLabel('')
       qc.invalidateQueries({ queryKey: ['event-stream-tokens'] })
     },
-    onError: () => toast.error('Issue failed'),
+    onError: () => toast.error(t('adm.evs.err_issue')),
   })
 
   const revoke = useAppMutation({
     mutationFn: (id: string) => revokeEventStreamToken(id),
     onSuccess: () => {
-      toast.success('Token revoked')
+      toast.success(t('adm.evs.revoked_toast'))
       setPendingRevoke(null)
       qc.invalidateQueries({ queryKey: ['event-stream-tokens'] })
     },
   })
 
   const copy = (txt: string) =>
-    copyText(txt).then(() => toast.success('Copied'))
+    copyText(txt).then(() => toast.success(t('adm.evs.copied')))
   const downloadCreds = (filename: string, content: string) => {
     const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -92,8 +88,8 @@ export function EventStreamPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Event streaming"
-        description="Subscribe to your tenant's domain events through NATS (preferred) or the HTTP polling fallback. Retention is 7 days; tokens default to 30-day expiry."
+        title={t('adm.evs.title')}
+        description={t('adm.evs.description')}
       />
 
       {/* One-shot reveal of bearer + creds. */}
@@ -103,27 +99,27 @@ export function EventStreamPage() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1 space-y-3">
               <p className="text-sm font-medium text-foreground">
-                New token "{issued.label}" — copy or download now; the bearer + creds will not be shown again.
+                {t('adm.evs.issued_banner', { label: issued.label })}
               </p>
               <div>
-                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Polling bearer</p>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.evs.polling_bearer')}</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 truncate rounded bg-background px-2 py-1.5 font-mono text-xs">
                     {issued.bearer_token}
                   </code>
                   <Button variant="outline" size="sm" onClick={() => copy(issued.bearer_token || '')}>
-                    <Copy className="h-4 w-4" /> Copy
+                    <Copy className="h-4 w-4" /> {t('adm.evs.copy')}
                   </Button>
                 </div>
               </div>
               <div>
-                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">NATS user creds file</p>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.evs.nats_creds')}</p>
                 <pre className="max-h-32 overflow-auto rounded bg-background p-2 font-mono text-[10px] leading-tight">
 {issued.nats_creds_file}
                 </pre>
                 <div className="mt-1 flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => copy(issued.nats_creds_file || '')}>
-                    <Copy className="h-4 w-4" /> Copy
+                    <Copy className="h-4 w-4" /> {t('adm.evs.copy')}
                   </Button>
                   <Button
                     variant="outline"
@@ -131,9 +127,9 @@ export function EventStreamPage() {
                     onClick={() => downloadCreds(`vaultdms-${issued.label}.creds`, issued.nats_creds_file || '')}
                     data-testid="creds-download"
                   >
-                    <Download className="h-4 w-4" /> Download
+                    <Download className="h-4 w-4" /> {t('adm.evs.download')}
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setIssued(null)}>Dismiss</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setIssued(null)}>{t('adm.evs.dismiss')}</Button>
                 </div>
               </div>
             </div>
@@ -144,50 +140,50 @@ export function EventStreamPage() {
       {/* Issue + list pane. */}
       <Card className="space-y-3 p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Key className="h-4 w-4" /> Tokens
+          <Key className="h-4 w-4" /> {t('adm.evs.tokens')}
         </h3>
         <div className="flex gap-2">
           <Input
-            placeholder="Label (e.g. 'prod-receiver', 'dev-notebook')"
+            placeholder={t('adm.evs.label_ph')}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             data-testid="token-label"
           />
           <Button
             onClick={() => {
-              if (!label.trim()) { toast.error('Label is required'); return }
+              if (!label.trim()) { toast.error(t('adm.evs.err_label')); return }
               issue.mutate()
             }}
             disabled={issue.isPending}
             loading={issue.isPending}
             data-testid="token-issue"
           >
-            Issue token
+            {t('adm.evs.issue')}
           </Button>
         </div>
         {isLoading ? (
           <Skeleton className="h-20" />
         ) : !tokens || tokens.length === 0 ? (
           <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
-            No tokens issued yet.
+            {t('adm.evs.no_tokens')}
           </p>
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border">
-            {tokens.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 p-3">
+            {tokens.map((tok) => (
+              <li key={tok.id} className="flex items-center justify-between gap-3 p-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{t.label}</span>
-                    <Badge variant={t.revoked ? 'archived' : 'active'}>{t.revoked ? 'Revoked' : 'Active'}</Badge>
+                    <span className="truncate text-sm font-medium">{tok.label}</span>
+                    <Badge variant={tok.revoked ? 'archived' : 'active'}>{tok.revoked ? t('adm.evs.st_revoked') : t('adm.evs.st_active')}</Badge>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Created {formatRelativeTime(t.created_at)} ({formatDate(t.created_at)})
-                    {t.expires_at && <> · expires {formatRelativeTime(t.expires_at)}</>}
-                    {t.last_used_at && <> · last used {formatRelativeTime(t.last_used_at)}</>}
+                    {t('adm.evs.created_at', { rel: formatRelativeTime(tok.created_at), date: formatDate(tok.created_at) })}
+                    {tok.expires_at && t('adm.evs.expires', { rel: formatRelativeTime(tok.expires_at) })}
+                    {tok.last_used_at && t('adm.evs.last_used', { rel: formatRelativeTime(tok.last_used_at) })}
                   </div>
                 </div>
-                {!t.revoked && (
-                  <Button variant="ghost" size="sm" onClick={() => setPendingRevoke(t)} aria-label="Revoke">
+                {!tok.revoked && (
+                  <Button variant="ghost" size="sm" onClick={() => setPendingRevoke(tok)} aria-label={t('adm.evs.revoke')}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 )}
@@ -200,7 +196,7 @@ export function EventStreamPage() {
       {/* Connection samples. */}
       <Card className="p-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Zap className="h-4 w-4" /> Connection samples
+          <Zap className="h-4 w-4" /> {t('adm.evs.samples')}
         </h3>
         <div className="mb-2 flex gap-1">
           {(Object.keys(SAMPLES) as Array<keyof typeof SAMPLES>).map((k) => (
@@ -230,7 +226,7 @@ export function EventStreamPage() {
             onClick={() => copy(SAMPLES[tab])}
             className="absolute end-2 top-2"
           >
-            <Copy className="h-3 w-3" /> Copy
+            <Copy className="h-3 w-3" /> {t('adm.evs.copy')}
           </Button>
         </div>
       </Card>
@@ -241,13 +237,13 @@ export function EventStreamPage() {
       {/* Event-type reference. */}
       <Card className="p-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Antenna className="h-4 w-4" /> Event-type reference
+          <Antenna className="h-4 w-4" /> {t('adm.evs.reference')}
         </h3>
         <ul className="space-y-1.5">
-          {EVENT_TYPE_REFERENCE.map((e) => (
-            <li key={e.prefix} className="grid grid-cols-[200px_1fr] gap-3 text-sm">
-              <code className="font-mono text-xs text-foreground">{e.prefix}</code>
-              <span className="text-muted-foreground">{e.desc}</span>
+          {EVENT_TYPE_REFERENCE.map((domain) => (
+            <li key={domain} className="grid grid-cols-[200px_1fr] gap-3 text-sm">
+              <code dir="ltr" className="font-mono text-xs text-foreground">{`dms.${domain}.*`}</code>
+              <span className="text-muted-foreground">{t(`adm.evs.ref_${domain}`)}</span>
             </li>
           ))}
         </ul>
@@ -256,13 +252,13 @@ export function EventStreamPage() {
       <ConfirmDialog
         open={!!pendingRevoke}
         onOpenChange={(o) => !o && setPendingRevoke(null)}
-        title="Revoke token?"
+        title={t('adm.evs.revoke_title')}
         description={
           pendingRevoke
-            ? `"${pendingRevoke.label}" will stop authenticating immediately. Active subscribers will be disconnected on the next message.`
+            ? t('adm.evs.revoke_desc', { label: pendingRevoke.label })
             : ''
         }
-        confirmLabel="Revoke"
+        confirmLabel={t('adm.evs.revoke')}
         destructive
         loading={revoke.isPending}
         onConfirm={() => pendingRevoke && revoke.mutate(pendingRevoke.id)}
@@ -276,6 +272,7 @@ export function EventStreamPage() {
 // backend caps each window at 60 s; the UI auto-reconnects unless the
 // operator explicitly clicked Stop.
 function LiveTail() {
+  const { t } = useTranslation('common')
   const [running, setRunning] = useState(false)
   const [events, setEvents] = useState<Array<{ ts: string; subject: string; data: string }>>([])
   const esRef = useRef<EventSource | null>(null)
@@ -322,21 +319,21 @@ function LiveTail() {
     <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Antenna className="h-4 w-4" /> Live tail
+          <Antenna className="h-4 w-4" /> {t('adm.evs.live_tail')}
         </h3>
         {running ? (
           <Button variant="outline" size="sm" onClick={stop} data-testid="tail-stop">
-            <Square className="h-4 w-4" /> Stop
+            <Square className="h-4 w-4" /> {t('adm.evs.stop')}
           </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={start} data-testid="tail-start">
-            <Play className="h-4 w-4" /> Start tail
+            <Play className="h-4 w-4" /> {t('adm.evs.start')}
           </Button>
         )}
       </div>
       {events.length === 0 ? (
         <p className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
-          {running ? 'Listening for events…' : 'Click "Start tail" to listen for events on this tenant.'}
+          {running ? t('adm.evs.listening') : t('adm.evs.tail_hint')}
         </p>
       ) : (
         <ul className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border bg-background p-2 font-mono text-[11px]">

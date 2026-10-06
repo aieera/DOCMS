@@ -1,6 +1,7 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { copyText } from '@/lib/clipboard'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
 import { toast } from 'sonner'
@@ -37,15 +38,14 @@ interface Props {
   webhookURL: string
 }
 
-const REGION_OPTIONS: { value: string; label: string }[] = [
-  { value: 'na1', label: 'NA (North America)' },
-  { value: 'eu1', label: 'EU (Europe)' },
-  { value: 'jp1', label: 'JP (Japan)' },
-]
+// Canonical region list; the display name comes from the catalogue as
+// adm.cred.region_<value>.
+const REGION_OPTIONS = ['na1', 'eu1', 'jp1'] as const
 
 export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, redirectURI, webhookURL }: Props) {
   const qc = useQueryClient()
   const isAdobe = provider === 'adobe_sign'
+  const { t } = useTranslation('common')
   const label = provider === 'docusign' ? 'DocuSign' : 'Adobe Sign'
 
   // Pre-fill from any previously saved config — except the secret,
@@ -77,12 +77,12 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
       region: isAdobe ? region : undefined,
     }),
     onSuccess: async () => {
-      toast.success('Credentials saved — redirecting to ' + label + '…')
+      toast.success(t('adm.cred.esign_redirecting', { provider: label }))
       qc.invalidateQueries({ queryKey: ['esign-provider-config', provider] })
       qc.invalidateQueries({ queryKey: ['esign-connections'] })
       await onSaved()
     },
-    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+    onError: (e: Error) => toast.error(e.message || t('adm.cred.err_save')),
   })
 
   const hasExistingSecret = !!existingQ.data?.has_secret
@@ -92,20 +92,20 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Connect {label}</DialogTitle>
+          <DialogTitle>{t('adm.cred.esign_title', { provider: label })}</DialogTitle>
           <DialogDescription>
-            Create an integration app in your {label} {environment} account, then paste the credentials here.
-            {hasExistingSecret && ' Leave Secret Key blank to keep the existing one.'}
+            {t('adm.cred.esign_desc', { provider: label, environment })}
+            {hasExistingSecret && t('adm.cred.esign_keep_secret')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <CopyField label="Redirect URI (paste into the vendor portal)" value={redirectURI} />
-          <CopyField label="Webhook URL (Connect/Webhooks setting)" value={webhookURL} />
+          <CopyField label={t('adm.cred.redirect_uri')} value={redirectURI} />
+          <CopyField label={t('adm.cred.webhook_url')} value={webhookURL} />
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              {provider === 'docusign' ? 'Integration Key' : 'Client ID'}
+              {provider === 'docusign' ? t('adm.cred.integration_key') : t('adm.cred.client_id')}
             </label>
             <Input
               value={clientId}
@@ -118,19 +118,19 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
 
           <div>
             <label className="mb-1 block text-sm font-medium">
-              {provider === 'docusign' ? 'Secret Key' : 'Client Secret'}
+              {provider === 'docusign' ? t('adm.cred.secret_key') : t('adm.cred.client_secret')}
               {hasExistingSecret && <span className="ms-2 text-xs text-muted-foreground">(stored — paste a new one to replace)</span>}
             </label>
             <PasswordInput
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
-              placeholder={hasExistingSecret ? '••••••••' : 'paste once — never re-shown'}
+              placeholder={hasExistingSecret ? t('adm.cred.masked') : t('adm.cred.paste_once')}
               autoComplete="new-password"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Environment</label>
+            <label className="mb-1 block text-sm font-medium">{t('adm.cred.environment')}</label>
             <div className="flex gap-4 text-sm">
               <label className="flex cursor-pointer items-center gap-2">
                 <input
@@ -140,7 +140,7 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
                   checked={environment === 'sandbox'}
                   onChange={() => setEnvironment('sandbox')}
                 />
-                Sandbox / Demo
+                {t('adm.cred.env_sandbox')}
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <input
@@ -150,21 +150,21 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
                   checked={environment === 'production'}
                   onChange={() => setEnvironment('production')}
                 />
-                Production
+                {t('adm.cred.env_production')}
               </label>
             </div>
           </div>
 
           {isAdobe && (
             <div>
-              <label className="mb-1 block text-sm font-medium">Adobe Region</label>
+              <label className="mb-1 block text-sm font-medium">{t('adm.cred.adobe_region')}</label>
               <select
                 value={region}
                 onChange={(e) => setRegion(e.target.value)}
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
               >
                 {REGION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt} value={opt}>{t(`adm.cred.region_${opt}`)}</option>
                 ))}
               </select>
             </div>
@@ -172,9 +172,9 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.cred.cancel')}</Button>
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit}>
-            {saveMut.isPending ? 'Saving…' : 'Save & Authorize'}
+            {saveMut.isPending ? t('adm.cred.saving') : t('adm.cred.save_authorize')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -183,12 +183,13 @@ export function ESignCredentialsModal({ open, onOpenChange, provider, onSaved, r
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   return (
     <div>
       <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">{label}</label>
       <div className="flex items-center gap-2">
-        <code className="flex-1 truncate rounded border border-border bg-muted/40 px-2 py-1 text-xs">{value}</code>
+        <code dir="ltr" className="flex-1 truncate rounded border border-border bg-muted/40 px-2 py-1 text-xs">{value}</code>
         <Button
           type="button"
           variant="ghost"
@@ -199,7 +200,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
               setTimeout(() => setCopied(false), 1500)
             })
           }}
-          aria-label="Copy"
+          aria-label={t('adm.cred.copy')}
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         </Button>
