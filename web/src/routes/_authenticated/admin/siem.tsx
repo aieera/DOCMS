@@ -1,5 +1,6 @@
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -20,6 +21,7 @@ const TYPES: { value: SinkType; label: string; endpointHint: string }[] = [
 ]
 
 export function SIEMPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data: sinks = [] } = useQuery({ queryKey: ['siem-sinks'], queryFn: listSinks })
   const [draft, setDraft] = useState<SinkInput>({ name: '', type: 'splunk_hec', endpoint: '', token: '', enabled: true })
@@ -27,30 +29,30 @@ export function SIEMPage() {
   const create = useAppMutation({
     mutationFn: () => createSink(draft),
     onSuccess: () => {
-      toast.success('Sink created')
+      toast.success(t('adm.siem.created'))
       setDraft({ name: '', type: 'splunk_hec', endpoint: '', token: '', enabled: true })
       qc.invalidateQueries({ queryKey: ['siem-sinks'] })
     },
-    defaultErrorMessage: 'Could not create sink',
+    defaultErrorMessage: t('adm.siem.err_create'),
   })
   const toggle = useAppMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => updateSink(id, { enabled }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['siem-sinks'] }),
-    defaultErrorMessage: 'Could not update sink',
+    defaultErrorMessage: t('adm.siem.err_update'),
   })
   const remove = useAppMutation({
     mutationFn: (id: string) => deleteSink(id),
-    onSuccess: () => { toast.success('Sink deleted'); qc.invalidateQueries({ queryKey: ['siem-sinks'] }) },
-    defaultErrorMessage: 'Could not delete sink',
+    onSuccess: () => { toast.success(t('adm.siem.deleted')); qc.invalidateQueries({ queryKey: ['siem-sinks'] }) },
+    defaultErrorMessage: t('adm.siem.err_delete'),
   })
   const test = useAppMutation({
     mutationFn: (id: string) => testSink(id),
     onSuccess: (res) => {
-      if (res.ok) toast.success('Test event delivered')
-      else toast.error(`Test failed: ${res.error ?? 'unknown error'}`)
+      if (res.ok) toast.success(t('adm.siem.test_ok'))
+      else toast.error(t('adm.siem.test_failed_with', { error: res.error ?? t('adm.siem.unknown_error') }))
       qc.invalidateQueries({ queryKey: ['siem-sinks'] })
     },
-    defaultErrorMessage: 'Test failed',
+    defaultErrorMessage: t('adm.siem.test_failed'),
   })
 
   const hint = TYPES.find((t) => t.value === draft.type)?.endpointHint
@@ -58,8 +60,8 @@ export function SIEMPage() {
   return (
     <div>
       <PageHeader
-        title="SIEM forwarding"
-        description="Forward normalised audit + domain events to your SIEM (syslog, Splunk HEC, Microsoft Sentinel). Delivery retries then routes to a DLQ on persistent failure."
+        title={t('adm.siem.title')}
+        description={t('adm.siem.description')}
       />
 
       {/* [&>*]:min-w-0 — stacked in one column on a phone, each control
@@ -68,7 +70,7 @@ export function SIEMPage() {
           out of the card in Arabic. */}
       <div className="mt-6 grid gap-2 rounded-lg border border-border bg-card p-4 [&>*]:min-w-0 sm:grid-cols-6" data-testid="sink-form">
         <input className="rounded border border-border bg-background px-2 py-1.5 text-sm sm:col-span-2"
-          placeholder="Sink name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          placeholder={t('adm.siem.name_ph')} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         <select className="rounded border border-border bg-background px-2 py-1.5 text-sm"
           value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as SinkType })}>
           {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -76,10 +78,10 @@ export function SIEMPage() {
         <input className="rounded border border-border bg-background px-2 py-1.5 text-sm sm:col-span-2"
           placeholder={hint} value={draft.endpoint} onChange={(e) => setDraft({ ...draft, endpoint: e.target.value })} />
         <PasswordInput className="h-auto rounded border-border px-2 py-1.5 text-sm"
-          placeholder="token" value={draft.token} onChange={(e) => setDraft({ ...draft, token: e.target.value })} />
+          placeholder={t('adm.siem.token_ph')} value={draft.token} onChange={(e) => setDraft({ ...draft, token: e.target.value })} />
         <Button size="sm" className="sm:col-span-6 sm:w-40" disabled={!draft.name || !draft.endpoint || create.isPending}
           onClick={() => create.mutate(undefined)} data-testid="sink-create">
-          <Plus className="h-3.5 w-3.5" /> Add sink
+          <Plus className="h-3.5 w-3.5" /> {t('adm.siem.add')}
         </Button>
       </div>
 
@@ -90,7 +92,7 @@ export function SIEMPage() {
           testing={test.isPending} />)}
         {sinks.length === 0 && (
           <p className="rounded border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-            No SIEM sinks configured. Add one above and click “Send test”.
+            {t('adm.siem.empty')}
           </p>
         )}
       </div>
@@ -101,6 +103,7 @@ export function SIEMPage() {
 function SinkRow({ sink, onToggle, onTest, onDelete, testing }: {
   sink: Sink; onToggle: () => void; onTest: () => void; onDelete: () => void; testing: boolean
 }) {
+  const { t } = useTranslation('common')
   const total = sink.delivered_count + sink.failed_count
   const rate = total > 0 ? Math.round((sink.delivered_count / total) * 100) : 100
   return (
@@ -108,25 +111,25 @@ function SinkRow({ sink, onToggle, onTest, onDelete, testing }: {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Radio className={`h-4 w-4 ${sink.enabled ? 'text-success' : 'text-muted-foreground'}`} />
         <span className="font-medium">{sink.name}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{sink.type}</span>
-        <span className="text-xs text-muted-foreground">{sink.endpoint}</span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{TYPES.find((ty) => ty.value === sink.type)?.label ?? sink.type}</span>
+        <span dir="ltr" className="text-xs text-muted-foreground">{sink.endpoint}</span>
         <span className="ms-auto flex items-center gap-3">
           <span className="inline-flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" />{sink.delivered_count}</span>
           <span className="inline-flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3.5 w-3.5" />{sink.failed_count}</span>
-          <span className="text-xs text-muted-foreground">{rate}% ok</span>
+          <span className="text-xs text-muted-foreground">{t('adm.siem.rate_ok', { rate })}</span>
         </span>
       </div>
       {sink.last_error && (
-        <p className="mt-1 text-xs text-destructive" title={sink.last_error}>last error: {sink.last_error.slice(0, 80)}</p>
+        <p className="mt-1 text-xs text-destructive" title={sink.last_error}>{t('adm.siem.last_error', { error: sink.last_error.slice(0, 80) })}</p>
       )}
       <div className="mt-2 flex items-center gap-2">
         <Button size="sm" variant="outline" className="h-7" onClick={onTest} disabled={testing} data-testid={`test-${sink.id}`}>
-          <Send className="h-3.5 w-3.5" /> Send test
+          <Send className="h-3.5 w-3.5" /> {t('adm.siem.send_test')}
         </Button>
         <Button size="sm" variant="ghost" className="h-7" onClick={onToggle}>
-          {sink.enabled ? 'Disable' : 'Enable'}
+          {sink.enabled ? t('adm.siem.disable') : t('adm.siem.enable')}
         </Button>
-        <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={onDelete} data-testid={`delete-${sink.id}`}>
+        <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={onDelete} aria-label={t('adm.siem.delete')} data-testid={`delete-${sink.id}`}>
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>

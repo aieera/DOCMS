@@ -149,6 +149,16 @@ export function formatUsd(value: number | null | undefined): string {
 // Irregular codes get an explicit catalogue entry; everything else is
 // derived (translated domain noun + humanised action) so a newly-emitted
 // event type still reads sensibly instead of leaking the raw code.
+// Audit `resource_type` is an open set the backend keeps adding to
+// (document, folder, siem_sink, privacy_dsr_request, …), so an unknown
+// value de-slugs rather than falling through as a raw token.
+export function resourceTypeLabel(type: string | null | undefined): string {
+  if (!type) return ''
+  const words = type.replace(/_/g, ' ')
+  const titled = words.charAt(0).toUpperCase() + words.slice(1)
+  return i18n.t(`resource.${type}`, { ns: 'common', defaultValue: titled })
+}
+
 export function notificationTypeLabel(type: string | null | undefined): string {
   const T = (k: string, dflt: string) => i18n.t(k, { ns: 'common', defaultValue: dflt })
   if (!type) return T('notif_type.fallback', 'Notification')

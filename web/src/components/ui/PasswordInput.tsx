@@ -1,4 +1,5 @@
 import { forwardRef, useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff } from 'lucide-react'
 import { Input, type InputProps } from '@/components/ui/shadcn/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +13,7 @@ export type PasswordInputProps = Omit<InputProps, 'type'>
 
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
   ({ className, disabled, label, error, id, ...props }, ref) => {
+    const { t } = useTranslation('common')
     const [visible, setVisible] = useState(false)
     const generated = useId()
     const inputId = id ?? generated
@@ -30,7 +32,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           type="button"
           onClick={() => setVisible((v) => !v)}
           disabled={disabled}
-          aria-label={visible ? 'Hide password' : 'Show password'}
+          aria-label={visible ? t('a11y.hide_password') : t('a11y.show_password')}
           className="absolute inset-y-0 end-1.5 my-auto flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-shadow hover:text-foreground hover:shadow-neu-sm active:shadow-neu-pressed focus-visible:outline-none focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
