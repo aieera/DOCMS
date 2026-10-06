@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { ClassificationPage } from './tenant/classification'
 import { WatermarkPage } from './tenant/watermark'
@@ -14,6 +15,7 @@ type Tab = 'classification' | 'watermark' | 'exports'
 const TABS: readonly Tab[] = ['classification', 'watermark', 'exports']
 
 function ProtectionPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'classification'
@@ -21,9 +23,9 @@ function ProtectionPage() {
     <div className="space-y-4">
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/protection', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="classification">Classification &amp; access</TabsTrigger>
-          <TabsTrigger value="watermark">Watermark</TabsTrigger>
-          <TabsTrigger value="exports">Protected exports</TabsTrigger>
+          <TabsTrigger value="classification">{t('protection.tab_classification')}</TabsTrigger>
+          <TabsTrigger value="watermark">{t('protection.tab_watermark')}</TabsTrigger>
+          <TabsTrigger value="exports">{t('protection.tab_exports')}</TabsTrigger>
         </TabsList>
         <TabsContent value="classification" className="mt-4"><ClassificationPage /></TabsContent>
         <TabsContent value="watermark" className="mt-4"><WatermarkPage /></TabsContent>

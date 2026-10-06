@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Stamp, Trash2, Plus, Droplet } from 'lucide-react'
@@ -62,6 +63,7 @@ function renderTemplate(template: string): string {
 }
 
 export function WatermarkPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const cfgQ = useQuery({ queryKey: ['admin', 'watermark', 'config'], queryFn: getWatermarkConfig })
   const overridesQ = useQuery({
@@ -78,8 +80,8 @@ export function WatermarkPage() {
     <div className="space-y-6">
       <PageHeader
         noMargin
-        title="Dynamic viewer watermark"
-        description="Burn a per-viewer watermark (email, timestamp, IP, …) into document previews, print, and download so leaks are traceable."
+        title={t('protection.wm.title')}
+        description={t('protection.wm.description')}
       />
 
       {/* The tenant default on the left, per-classification overrides and
@@ -108,6 +110,7 @@ export function WatermarkPage() {
 }
 
 function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [enabled, setEnabled] = useState(cfg.enabled)
   const [template, setTemplate] = useState(cfg.template)
   const [opacity, setOpacity] = useState(cfg.opacity)
@@ -128,7 +131,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
         color,
       }),
     onSuccess: () => {
-      toast.success('Watermark settings saved')
+      toast.success(t('protection.wm.saved'))
       onDone()
     },
     onError: (e: unknown) => toast.error(`Save failed: ${(e as Error).message}`),
@@ -137,7 +140,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Stamp className="h-4 w-4" /> Watermark configuration
+        <Stamp className="h-4 w-4" /> {t('protection.wm.config')}
       </div>
 
       {/* items-start + one span: see classification.tsx. Bare text beside
@@ -150,22 +153,22 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
         />
-        <span>Enable the dynamic viewer watermark for this tenant</span>
+        <span>{t('protection.wm.enable')}</span>
       </label>
 
       <div className="mt-4">
         <Input
-          label="Template"
+          label={t('protection.wm.template')}
           value={template}
           onChange={(e) => setTemplate(e.target.value)}
-          placeholder="{email} · {timestamp} · {ip}"
+          placeholder={t('protection.wm.template_placeholder')}
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Tokens:{' '}
-          {WATERMARK_TOKENS.map((t, i) => (
-            <span key={t}>
+          {t('protection.wm.tokens')}{' '}
+          {WATERMARK_TOKENS.map((tok, i) => (
+            <span key={tok}>
               {i > 0 && ' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">{t}</code>
+              <code className="rounded bg-muted px-1 py-0.5 font-mono" dir="ltr">{tok}</code>
             </span>
           ))}
         </p>
@@ -173,7 +176,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
 
       <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Live preview
+          {t('protection.wm.preview')}
         </p>
         <p className="mt-1 break-words font-mono text-sm" data-testid="watermark-preview">
           {renderTemplate(template) || '—'}
@@ -182,7 +185,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Input
-          label="Opacity (0–100)"
+          label={t('protection.wm.opacity')}
           type="number"
           min={0}
           max={100}
@@ -190,7 +193,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
           onChange={(e) => setOpacity(clampNumber(e.target.value, 0, 100, opacity))}
         />
         <Input
-          label="Rotation (degrees)"
+          label={t('protection.wm.rotation')}
           type="number"
           min={-360}
           max={360}
@@ -198,7 +201,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
           onChange={(e) => setRotation(numberOr(e.target.value, rotation))}
         />
         <Input
-          label="Font size"
+          label={t('protection.wm.font_size')}
           type="number"
           min={1}
           value={String(fontSize)}
@@ -206,7 +209,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
         />
         <div className="space-y-1.5">
           <label className="block text-sm font-medium" htmlFor="watermark-color">
-            Color
+            {t('protection.wm.color')}
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -215,12 +218,12 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
               value={normalizeHex(color)}
               onChange={(e) => setColor(e.target.value)}
               className="h-9 w-12 cursor-pointer rounded-md border border-input bg-background"
-              aria-label="Watermark color"
+              aria-label={t('protection.wm.color_aria')}
             />
             <Input
               value={color}
               onChange={(e) => setColor(e.target.value)}
-              placeholder="#888888"
+              placeholder={t('protection.wm.color_placeholder')}
               className="font-mono"
             />
           </div>
@@ -234,12 +237,12 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
           checked={tile}
           onChange={(e) => setTile(e.target.checked)}
         />
-        <span>Tile — repeat the watermark across the whole page (vs. a single centered mark)</span>
+        <span>{t('protection.wm.tile_note')}</span>
       </label>
 
       <div className="mt-4">
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending ? 'Saving…' : 'Save watermark settings'}
+          {save.isPending ? t('protection.wm.saving') : t('protection.wm.save_settings')}
         </Button>
       </div>
     </Card>
@@ -247,6 +250,7 @@ function ConfigCard({ cfg, onDone }: { cfg: WatermarkConfig; onDone: () => void 
 }
 
 function OverrideBuilderCard({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [classification, setClassification] = useState<WatermarkClassification>('confidential')
   const [enabled, setEnabled] = useState(true)
   const [opacityStr, setOpacityStr] = useState('')
@@ -268,7 +272,7 @@ function OverrideBuilderCard({ onDone }: { onDone: () => void }) {
       })
     },
     onSuccess: () => {
-      toast.success('Override added')
+      toast.success(t('protection.wm.override_added'))
       setDescription('')
       setOpacityStr('')
       onDone()
@@ -279,50 +283,55 @@ function OverrideBuilderCard({ onDone }: { onDone: () => void }) {
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Plus className="h-4 w-4" /> Add per-classification override
+        <Plus className="h-4 w-4" /> {t('protection.wm.add_override')}
       </div>
       <p className="mb-3 text-sm text-muted-foreground">
-        Override the tenant default for documents of a given classification — e.g. force a stronger,
-        non-dismissible watermark on <code className="rounded bg-muted px-1">restricted</code> or{' '}
-        <code className="rounded bg-muted px-1">phi</code> documents.
+        <Trans
+          i18nKey="protection.wm.override_hint"
+          ns="common"
+          components={{
+            1: <code className="rounded bg-muted px-1" dir="ltr" />,
+            2: <code className="rounded bg-muted px-1" dir="ltr" />,
+          }}
+        />
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <LabeledSelect
-          label="Classification"
+          label={t('protection.wm.classification')}
           value={classification}
           onValueChange={(v) => setClassification(v as WatermarkClassification)}
           options={CLASSIFICATION_OPTS}
         />
         <LabeledSelect
-          label="Tile"
+          label={t('protection.wm.tile')}
           value={tileMode}
           onValueChange={(v) => setTileMode(v as 'inherit' | 'on' | 'off')}
           options={[
-            { value: 'inherit', label: 'inherit default' },
-            { value: 'on', label: 'tiled' },
-            { value: 'off', label: 'single mark' },
+            { value: 'inherit', label: t('protection.wm.inherit_default') },
+            { value: 'on', label: t('protection.wm.tiled') },
+            { value: 'off', label: t('protection.wm.single_mark') },
           ]}
         />
         <Input
-          label="Opacity (blank = inherit)"
+          label={t('protection.wm.opacity_inherit')}
           type="number"
           min={0}
           max={100}
           value={opacityStr}
           onChange={(e) => setOpacityStr(e.target.value)}
-          placeholder="inherit"
+          placeholder={t('protection.wm.inherit')}
         />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Enabled
+          {t('protection.wm.enabled')}
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-          Force — viewers can&rsquo;t suppress this watermark
+          {t('protection.wm.force_note')}
         </label>
       </div>
 
@@ -330,13 +339,13 @@ function OverrideBuilderCard({ onDone }: { onDone: () => void }) {
         <Input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder={t('protection.wm.desc_placeholder')}
         />
       </div>
 
       <div className="mt-4">
         <Button onClick={() => create.mutate()} disabled={create.isPending}>
-          {create.isPending ? 'Adding…' : 'Add override'}
+          {create.isPending ? t('protection.wm.adding') : t('protection.wm.add_override')}
         </Button>
       </div>
     </Card>
@@ -350,10 +359,11 @@ function OverridesTable({
   overrides: WatermarkOverride[]
   onDone: () => void
 }) {
+  const { t } = useTranslation('common')
   const del = useAppMutation({
     mutationFn: (id: string) => deleteWatermarkOverride(id),
     onSuccess: () => {
-      toast.success('Override removed')
+      toast.success(t('protection.wm.override_removed'))
       onDone()
     },
     onError: (e: unknown) => toast.error(`Remove failed: ${(e as Error).message}`),
@@ -362,11 +372,11 @@ function OverridesTable({
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Droplet className="h-4 w-4" /> Overrides
+        <Droplet className="h-4 w-4" /> {t('protection.wm.overrides')}
       </div>
       {overrides.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No overrides. Every document uses the tenant default above.
+          {t('protection.wm.no_overrides')}
         </p>
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
@@ -375,11 +385,11 @@ function OverridesTable({
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Classification</th>
-                <th className="px-3 py-2">Enabled</th>
-                <th className="px-3 py-2">Opacity</th>
+                <th className="px-3 py-2">{t('protection.wm.enabled')}</th>
+                <th className="px-3 py-2">{t('protection.wm.col_opacity')}</th>
                 <th className="px-3 py-2">Tile</th>
-                <th className="px-3 py-2">Force</th>
-                <th className="px-3 py-2">Description</th>
+                <th className="px-3 py-2">{t('protection.wm.force')}</th>
+                <th className="px-3 py-2">{t('protection.wm.col_description')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -400,7 +410,7 @@ function OverridesTable({
                       onClick={() => del.mutate(o.id)}
                       disabled={del.isPending}
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> Remove
+                      <Trash2 className="h-3.5 w-3.5" /> {t('protection.wm.remove')}
                     </Button>
                   </td>
                 </tr>

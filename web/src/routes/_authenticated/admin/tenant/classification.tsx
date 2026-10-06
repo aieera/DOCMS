@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldCheck, Trash2, Plus, AlertTriangle } from 'lucide-react'
@@ -38,11 +39,13 @@ export const Route = createFileRoute('/_authenticated/admin/tenant/classificatio
   },
 })
 
-const LEVEL_OPTS = CLASSIFICATION_LEVELS.map((l) => ({ value: l, label: l }))
-const CLEARANCE_OPTS = [{ value: '', label: 'none' }, ...LEVEL_OPTS]
-const ACTION_OPTS = RULE_ACTIONS.map((a) => ({ value: a, label: a === '*' ? 'any action' : a }))
+// Built inside the component, not at module scope: the labels come
+// from the catalogue and must follow a locale switch.
+const LEVEL_VALUES = CLASSIFICATION_LEVELS
+const ACTION_VALUES = RULE_ACTIONS
 
 export function ClassificationPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const cfgQ = useQuery({ queryKey: ['admin', 'classification', 'config'], queryFn: getClassificationConfig })
   const rulesQ = useQuery({ queryKey: ['admin', 'classification', 'rules'], queryFn: listClassificationRules })
@@ -58,8 +61,8 @@ export function ClassificationPage() {
     <div className="space-y-6">
       <PageHeader
         noMargin
-        title="Classification & access"
-        description="Gate document view, download, and share by sensitivity level and per-user clearance."
+        title={t('protection.cls.title')}
+        description={t('protection.cls.description')}
       />
 
       <ExplainerBanner />
@@ -91,6 +94,7 @@ export function ClassificationPage() {
 }
 
 function ExplainerBanner() {
+  const { t } = useTranslation('common')
   return (
     <section className="rounded-lg border border-blue-500/40 bg-blue-50/60 p-4 text-sm dark:bg-blue-950/20">
       <div className="flex items-start gap-3">
@@ -99,14 +103,15 @@ function ExplainerBanner() {
             not. At 1596px this ran ~200 characters to the line, which is
             about three times a readable measure. */}
         <div className="max-w-[85ch] text-muted-foreground">
-          <p className="font-semibold text-foreground">How it works</p>
+          <p className="font-semibold text-foreground">{t('protection.how_it_works')}</p>
+          {/* Trans: the emphasised term and the <code> level sit inside
+              the sentence, and Arabic reorders the clauses around them. */}
           <p className="mt-1">
-            Each document carries a sensitivity level (unclassified → internal → confidential →
-            restricted), derived from the PII/PHI scan or set manually. A rule requires a minimum{' '}
-            <em>clearance</em> to act on documents at or above a level. The PHI backstop blocks any
-            PHI-flagged document for callers without <code>restricted</code> clearance, even with no
-            explicit rule. The organization owner is always exempt (break-glass), and every block is
-            written to the audit log.
+            <Trans
+              i18nKey="protection.cls.explainer"
+              ns="common"
+              components={{ 1: <em />, 2: <code dir="ltr" /> }}
+            />
           </p>
         </div>
       </div>
@@ -121,13 +126,14 @@ function ConfigCard({
   cfg: { enabled: boolean; phi_requires_restricted: boolean }
   onDone: () => void
 }) {
+  const { t } = useTranslation('common')
   const [enabled, setEnabled] = useState(cfg.enabled)
   const [phiBackstop, setPhiBackstop] = useState(cfg.phi_requires_restricted)
 
   const save = useAppMutation({
     mutationFn: () => setClassificationConfig({ enabled, phi_requires_restricted: phiBackstop }),
     onSuccess: () => {
-      toast.success('Enforcement settings saved')
+      toast.success(t('protection.cls.saved'))
       onDone()
     },
     onError: (e: unknown) => toast.error(`Save failed: ${(e as Error).message}`),
@@ -135,7 +141,7 @@ function ConfigCard({
 
   return (
     <Card className="p-4">
-      <div className="mb-3 text-sm font-semibold">Enforcement</div>
+      <div className="mb-3 text-sm font-semibold">{t('protection.cls.enforcement')}</div>
       {/* items-start + the label text in ONE span. As bare children of a
           flex row each text run and the <code> were separate flex items,
           so in a narrow column they wrapped as boxes with gap-2 between
@@ -148,7 +154,7 @@ function ConfigCard({
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
         />
-        <span>Enable classification-based access gating for this tenant</span>
+        <span>{t('protection.cls.enable')}</span>
       </label>
       <label className="mt-2 flex items-start gap-2 text-sm">
         <input
@@ -158,18 +164,24 @@ function ConfigCard({
           onChange={(e) => setPhiBackstop(e.target.checked)}
         />
         <span>
-          PHI backstop — any PHI document requires <code className="mx-1">restricted</code> clearance
+          {/* The level identifier sits mid-sentence and the word order
+              around it differs in Arabic, so it travels with the string. */}
+          <Trans
+            i18nKey="protection.cls.phi_backstop_full"
+            ns="common"
+            components={{ 1: <code className="mx-1" dir="ltr" /> }}
+          />
         </span>
       </label>
       {enabled && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-600">
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-warning-strong">
           <AlertTriangle className="h-3.5 w-3.5" />
-          When enabled, callers without sufficient clearance lose access to classified documents.
+          {t('protection.cls.enforce_note')}
         </p>
       )}
       <div className="mt-4">
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending ? 'Saving…' : 'Save enforcement'}
+          {save.isPending ? t('protection.cls.saving') : t('protection.cls.save_enforcement')}
         </Button>
       </div>
     </Card>
@@ -177,6 +189,9 @@ function ConfigCard({
 }
 
 function RuleBuilderCard({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation('common')
+  const levelOpts = LEVEL_VALUES.map((l) => ({ value: l, label: t(`protection.level.${l}`) }))
+  const actionOpts = ACTION_VALUES.map((a) => ({ value: a, label: t(`protection.action.${a}`) }))
   const [minClass, setMinClass] = useState<ClassificationLevel>('confidential')
   const [action, setAction] = useState<RuleAction>('*')
   const [required, setRequired] = useState<ClassificationLevel>('confidential')
@@ -193,7 +208,7 @@ function RuleBuilderCard({ onDone }: { onDone: () => void }) {
         description,
       }),
     onSuccess: () => {
-      toast.success('Rule added')
+      toast.success(t('protection.cls.rule_added'))
       setDescription('')
       onDone()
     },
@@ -203,26 +218,26 @@ function RuleBuilderCard({ onDone }: { onDone: () => void }) {
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Plus className="h-4 w-4" /> Add rule
+        <Plus className="h-4 w-4" /> {t('protection.cls.add_rule')}
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <LabeledSelect
-          label="Documents at/above"
+          label={t('protection.cls.at_above')}
           value={minClass}
           onValueChange={(v) => setMinClass(v as ClassificationLevel)}
-          options={LEVEL_OPTS}
+          options={levelOpts}
         />
         <LabeledSelect
-          label="On action"
+          label={t('protection.cls.on_action')}
           value={action}
           onValueChange={(v) => setAction(v as RuleAction)}
-          options={ACTION_OPTS}
+          options={actionOpts}
         />
         <LabeledSelect
-          label="Require clearance"
+          label={t('protection.cls.require_clearance')}
           value={required}
           onValueChange={(v) => setRequired(v as ClassificationLevel)}
-          options={LEVEL_OPTS}
+          options={levelOpts}
         />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm">
@@ -231,18 +246,18 @@ function RuleBuilderCard({ onDone }: { onDone: () => void }) {
           checked={appliesToPhi}
           onChange={(e) => setAppliesToPhi(e.target.checked)}
         />
-        Also apply to any PHI-flagged document (regardless of its level)
+        {t('protection.cls.also_phi')}
       </label>
       <div className="mt-3">
         <Input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder={t('protection.cls.desc_placeholder')}
         />
       </div>
       <div className="mt-4">
         <Button onClick={() => create.mutate()} disabled={create.isPending}>
-          {create.isPending ? 'Adding…' : 'Add rule'}
+          {create.isPending ? t('protection.cls.adding') : t('protection.cls.add_rule')}
         </Button>
       </div>
     </Card>
@@ -256,10 +271,11 @@ function RulesTable({
   rules: import('@/api/classification').ClassificationRule[]
   onDone: () => void
 }) {
+  const { t } = useTranslation('common')
   const del = useAppMutation({
     mutationFn: (id: string) => deleteClassificationRule(id),
     onSuccess: () => {
-      toast.success('Rule removed')
+      toast.success(t('protection.cls.rule_removed'))
       onDone()
     },
     onError: (e: unknown) => toast.error(`Remove failed: ${(e as Error).message}`),
@@ -267,10 +283,10 @@ function RulesTable({
 
   return (
     <Card className="p-4">
-      <div className="mb-3 text-sm font-semibold">Rules</div>
+      <div className="mb-3 text-sm font-semibold">{t('protection.cls.rules')}</div>
       {rules.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No rules. The identity default applies: a level-X document requires level-X clearance.
+          {t('protection.cls.no_rules')}
         </p>
       ) : (
         <div className="overflow-hidden rounded-md border border-border">
@@ -278,11 +294,11 @@ function RulesTable({
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="px-3 py-2">At/above</th>
-                <th className="px-3 py-2">Action</th>
-                <th className="px-3 py-2">Requires</th>
-                <th className="px-3 py-2">PHI</th>
-                <th className="px-3 py-2">Description</th>
+                <th className="px-3 py-2">{t('protection.cls.col_at_above')}</th>
+                <th className="px-3 py-2">{t('protection.cls.col_action')}</th>
+                <th className="px-3 py-2">{t('protection.cls.col_requires')}</th>
+                <th className="px-3 py-2">{t('protection.cls.col_phi')}</th>
+                <th className="px-3 py-2">{t('protection.cls.col_description')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -302,7 +318,7 @@ function RulesTable({
                       onClick={() => del.mutate(r.id)}
                       disabled={del.isPending}
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> Remove
+                      <Trash2 className="h-3.5 w-3.5" /> {t('protection.cls.remove')}
                     </Button>
                   </td>
                 </tr>
@@ -317,43 +333,46 @@ function RulesTable({
 }
 
 function ClearanceCard() {
+  const { t } = useTranslation('common')
+  const clearanceOpts = [{ value: '', label: t('protection.cls.clearance_none') },
+    ...CLASSIFICATION_LEVELS.map((l) => ({ value: l, label: t(`protection.level.${l}`) }))]
   const [userID, setUserID] = useState('')
   const [clearance, setClearance] = useState<ClearanceLevel>('confidential')
 
   const save = useAppMutation({
     mutationFn: () => setUserClearance(userID.trim(), clearance),
-    onSuccess: () => toast.success('Clearance updated'),
+    onSuccess: () => toast.success(t('protection.cls.clearance_updated')),
     onError: (e: unknown) => toast.error(`Update failed: ${(e as Error).message}`),
   })
 
   return (
     <Card className="p-4">
-      <div className="mb-3 text-sm font-semibold">Assign clearance</div>
+      <div className="mb-3 text-sm font-semibold">{t('protection.cls.assign')}</div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Grant a user a maximum clearance level. Paste the user ID (from Identity &amp; Access).
+        {t('protection.cls.assign_desc')}
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-sm font-medium" htmlFor="clearance-user">
-            User ID
+            {t('protection.cls.user_id')}
           </label>
           <Input
             id="clearance-user"
             value={userID}
             onChange={(e) => setUserID(e.target.value)}
-            placeholder="00000000-0000-0000-0000-000000000000"
+            placeholder={t('protection.cls.uuid_placeholder')}
           />
         </div>
         <LabeledSelect
-          label="Clearance"
+          label={t('protection.cls.clearance')}
           value={clearance}
           onValueChange={(v) => setClearance(v as ClearanceLevel)}
-          options={CLEARANCE_OPTS}
+          options={clearanceOpts}
         />
       </div>
       <div className="mt-4">
         <Button onClick={() => save.mutate()} disabled={save.isPending || userID.trim() === ''}>
-          {save.isPending ? 'Saving…' : 'Set clearance'}
+          {save.isPending ? t('protection.cls.saving') : t('protection.cls.set_clearance')}
         </Button>
       </div>
     </Card>

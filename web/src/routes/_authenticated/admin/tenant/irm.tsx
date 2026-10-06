@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Lock, ShieldCheck } from 'lucide-react'
@@ -38,6 +39,7 @@ function fmt(ts: string | null | undefined): string {
 }
 
 export function IrmPage() {
+  const { t } = useTranslation('common')
   const containersQ = useQuery({
     queryKey: ['admin', 'irm', 'containers'],
     queryFn: listIrmContainers,
@@ -52,8 +54,8 @@ export function IrmPage() {
     <div className="space-y-6">
       <PageHeader
         noMargin
-        title="Protected exports"
-        description="IRM licenses issued by Protect & share — recipients, expiry, opens, and revocation."
+        title={t('protection.irm.title')}
+        description={t('protection.irm.description')}
       />
 
       <ExplainerBanner />
@@ -62,8 +64,7 @@ export function IrmPage() {
         <Spinner />
       ) : (containersQ.data ?? []).length === 0 ? (
         <Card className="p-6 text-sm text-muted-foreground">
-          No protected containers yet. Use “Protect &amp; share” on a document to seal it and
-          issue per-recipient licenses.
+          {t('protection.irm.empty')}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -82,6 +83,7 @@ export function IrmPage() {
 }
 
 function ExplainerBanner() {
+  const { t } = useTranslation('common')
   return (
     <section className="rounded-lg border border-primary/40 bg-primary/5 p-4 text-sm">
       <div className="flex items-start gap-3">
@@ -89,13 +91,8 @@ function ExplainerBanner() {
         {/* See classification.tsx -- the banner is full width, its prose
             is capped to a readable measure. */}
         <div className="max-w-[85ch] text-muted-foreground">
-          <p className="font-semibold text-foreground">How it works</p>
-          <p className="mt-1">
-            Each protected container holds an encrypted copy of a document and a set of
-            per-recipient licenses. Opening a link makes an online license check that logs the
-            open and enforces expiry. Revoking a license blocks that recipient's next open.
-            This is access control and audit — not screenshot prevention.
-          </p>
+          <p className="font-semibold text-foreground">{t('protection.how_it_works')}</p>
+          <p className="mt-1">{t('protection.irm.explainer')}</p>
         </div>
       </div>
     </section>
@@ -111,6 +108,7 @@ function ContainerRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const { t } = useTranslation('common')
   return (
     <Card className="overflow-hidden">
       <button
@@ -128,14 +126,16 @@ function ContainerRow({
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{container.document_title}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            Created {fmt(container.created_at)} · Expires {fmt(container.expires_at)} ·{' '}
-            {container.recipient_count}{' '}
-            {container.recipient_count === 1 ? 'recipient' : 'recipients'}
+            {t('protection.irm.meta', {
+              created: fmt(container.created_at),
+              expires: fmt(container.expires_at),
+            })}{' · '}
+            {t('protection.irm.recipient_count', { count: container.recipient_count })}
           </div>
         </div>
         {container.revoked && (
           <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
-            Revoked
+            {t('protection.irm.revoked')}
           </span>
         )}
       </button>
@@ -146,6 +146,7 @@ function ContainerRow({
 }
 
 function LicenseList({ containerId }: { containerId: string }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const licensesQ = useQuery({
     queryKey: ['admin', 'irm', 'containers', containerId, 'licenses'],
@@ -156,14 +157,14 @@ function LicenseList({ containerId }: { containerId: string }) {
   const revoke = useAppMutation({
     mutationFn: (licenseId: string) => revokeLicense(licenseId),
     onSuccess: () => {
-      toast.success('License revoked')
+      toast.success(t('protection.irm.revoked_toast'))
       setConfirm(null)
       qc.invalidateQueries({
         queryKey: ['admin', 'irm', 'containers', containerId, 'licenses'],
       })
       qc.invalidateQueries({ queryKey: ['admin', 'irm', 'containers'] })
     },
-    defaultErrorMessage: 'Could not revoke the license',
+    defaultErrorMessage: t('protection.irm.revoke_failed'),
   })
 
   if (licensesQ.isLoading) {
@@ -179,17 +180,17 @@ function LicenseList({ containerId }: { containerId: string }) {
   return (
     <div className="border-t border-border">
       {licenses.length === 0 ? (
-        <p className="p-4 text-sm text-muted-foreground">No licenses on this container.</p>
+        <p className="p-4 text-sm text-muted-foreground">{t('protection.irm.no_licenses')}</p>
       ) : (
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-3 py-2">Recipient</th>
-              <th className="px-3 py-2">Expires</th>
-              <th className="px-3 py-2">Opens</th>
-              <th className="px-3 py-2">Last opened</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">{t('protection.irm.col_recipient')}</th>
+              <th className="px-3 py-2">{t('protection.irm.col_expires')}</th>
+              <th className="px-3 py-2">{t('protection.irm.col_opens')}</th>
+              <th className="px-3 py-2">{t('protection.irm.col_last_opened')}</th>
+              <th className="px-3 py-2">{t('protection.irm.col_status')}</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -208,11 +209,11 @@ function LicenseList({ containerId }: { containerId: string }) {
                 <td className="px-3 py-2">
                   {lic.revoked_at ? (
                     <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-foreground">
-                      Revoked
+                      {t('protection.irm.revoked')}
                     </span>
                   ) : (
                     <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-foreground">
-                      Active
+                      {t('protection.irm.active')}
                     </span>
                   )}
                 </td>
@@ -225,7 +226,7 @@ function LicenseList({ containerId }: { containerId: string }) {
                       onClick={() => setConfirm(lic)}
                       disabled={revoke.isPending}
                     >
-                      Revoke
+                      {t('protection.irm.revoke')}
                     </Button>
                   )}
                 </td>
@@ -239,13 +240,13 @@ function LicenseList({ containerId }: { containerId: string }) {
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(o) => !o && setConfirm(null)}
-        title="Revoke this license?"
+        title={t('protection.irm.revoke_title')}
         description={
           confirm
-            ? `${confirm.recipient_ref} will be blocked from opening this document on their next attempt. This cannot be undone.`
+            ? t('protection.irm.revoke_desc', { recipient: confirm.recipient_ref })
             : ''
         }
-        confirmLabel="Revoke"
+        confirmLabel={t('protection.irm.revoke')}
         destructive
         loading={revoke.isPending}
         onConfirm={() => confirm && revoke.mutate(confirm.license_id)}
