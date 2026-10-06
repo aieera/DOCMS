@@ -149,7 +149,7 @@ function RegisterDeviceCard({ onDone }: { onDone: () => void }) {
           label={t('adm.sync.platform')}
           value={platform}
           onValueChange={(v) => setPlatform(v as SyncPlatform)}
-          options={SYNC_PLATFORMS.map((p) => ({ value: p, label: p }))}
+          options={SYNC_PLATFORMS.map((p) => ({ value: p, label: t(`adm.sync.p_${p}`) }))}
         />
         <LabeledSelect
           label={t('adm.sync.workspace')}
@@ -235,7 +235,7 @@ function DevicesTable({ devices, onDone }: { devices: SyncDevice[]; onDone: () =
                         </button>
                       </td>
                       <td className="px-3 py-2 font-medium">{d.name}</td>
-                      <td className="px-3 py-2">{d.platform || '—'}</td>
+                      <td className="px-3 py-2">{d.platform ? t(`adm.sync.p_${d.platform}`, { defaultValue: d.platform }) : '—'}</td>
                       <td dir="auto" className="px-3 py-2 text-muted-foreground">
                         {d.last_seen_at ? formatDateTime(d.last_seen_at) : t('adm.sync.never')}
                       </td>
