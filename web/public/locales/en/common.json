@@ -1504,6 +1504,34 @@
       "hint_azure_kv": "Key identifier URI, e.g. https://vault.vault.azure.net/keys/kek",
       "na": "n/a"
     },
+    "flag": {
+      "advanced_workflow": "Advanced workflows",
+      "advanced_workflow_help": "Approval chains, parallel routing, conditional branches.",
+      "ai_enabled": "AI features",
+      "ai_enabled_help": "Doc Q&A, semantic search, classification, NER.",
+      "api_access": "Public API",
+      "api_access_help": "External API keys + scoped REST access.",
+      "auto_detect_document_type": "Auto-detect document type on upload",
+      "auto_detect_document_type_help": "If enabled, the system will automatically classify document type on upload and skip the manual prompt.",
+      "custom_branding": "Custom branding",
+      "custom_branding_help": "Tenant logo + accent color on signing + share-link pages.",
+      "data_rooms": "Data rooms",
+      "data_rooms_help": "Time-limited M&A / due-diligence collaboration spaces.",
+      "description": "Feature flags for this tenant. Owner-only; changes apply immediately to every workspace.",
+      "disabled": "Disabled",
+      "e_signatures": "E-signatures",
+      "e_signatures_help": "In-app signing + DocuSign / Adobe Sign / QES connectors.",
+      "enabled": "Enabled",
+      "err_load": "Could not load tenant settings",
+      "err_save": "Save failed",
+      "err_server": "Server error — please retry.",
+      "retry": "Retry",
+      "save": "Save",
+      "saved": "Settings saved",
+      "sso_enabled": "SSO (SAML / OIDC)",
+      "sso_enabled_help": "External identity providers for tenant sign-in.",
+      "title": "Tenant settings"
+    },
     "hold": {
       "applied": "Applied {{rel}} ({{date}})",
       "approver_label": "Approver user UUID",
@@ -1809,6 +1837,32 @@
       "expand": "Expand folder picker",
       "loading": "Loading…",
       "col_platform": "Platform"
+    },
+    "tset": {
+      "tab_flags": "Feature flags",
+      "tab_upload": "Upload policy"
+    },
+    "up": {
+      "add": "Add",
+      "clear_all": "Clear all",
+      "description": "Restrict which file formats users can upload across the entire organization. Leave both lists empty to allow any non-executable file.",
+      "err_save": "Save failed: {{error}}",
+      "exts": "Allowed file extensions",
+      "exts_hint": "With or without leading dot — normalised to lowercase .ext. e.g. .pdf or pdf",
+      "mimes": "Allowed MIME types",
+      "mimes_hint": "Exact match (case-insensitive). e.g. application/pdf",
+      "no_entries": "No entries.",
+      "none_body": "Any file type is allowed (except the built-in executable blocklist: .exe, .bat, .sh, .ps1, etc.). Pick a preset below or add MIME types / extensions manually.",
+      "none_title": "No allowlist set",
+      "preset_documents": "Documents (PDF + Office)",
+      "preset_images": "Images",
+      "preset_web": "Web (HTML + text)",
+      "presets": "Quick presets",
+      "presets_hint": "Append a preset to the current lists. You can prune individual entries afterwards.",
+      "remove": "Remove {{value}}",
+      "save": "Save policy",
+      "saved": "Upload policy saved",
+      "title": "Upload policy"
     }
   },
   "unit": {
