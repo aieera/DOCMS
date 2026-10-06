@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
 import { invalidateTagSuggestions } from '@/hooks/queryInvalidation'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
@@ -21,6 +22,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 const PAGE_SIZE = 50
 
 export function TagReviewQueuePage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [minConf, setMinConf] = useState(0)
   const [page, setPage] = useState(0)
@@ -68,9 +70,9 @@ export function TagReviewQueuePage() {
     }) => reviewTagSuggestions(documentId, actions),
     onSuccess: () => {
       void invalidateTagSuggestions(qc)
-      toast.success('Reviewed')
+      toast.success(t('adm.tr.reviewed'))
     },
-    onError: () => toast.error('Review failed'),
+    onError: () => toast.error(t('adm.tr.err_review')),
   })
 
   const total = data?.total ?? 0
@@ -80,12 +82,12 @@ export function TagReviewQueuePage() {
   return (
     <div>
       <PageHeader variant="section"
-        title="Tag review queue"
-        description={`${tenantTotal} pending suggestion${tenantTotal === 1 ? '' : 's'} across the tenant`}
+        title={t('adm.tr.title')}
+        description={t('adm.tr.subtitle', { count: tenantTotal })}
       />
 
       <div className="mt-4 flex items-center gap-3 text-sm">
-        <label className="text-muted-foreground">Min confidence</label>
+        <label className="text-muted-foreground">{t('adm.tr.min_confidence')}</label>
         <input
           type="range"
           min={0}
@@ -103,9 +105,9 @@ export function TagReviewQueuePage() {
 
       <div className="mt-6 space-y-4">
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading…</div>
+          <div className="text-sm text-muted-foreground">{t('adm.tr.loading')}</div>
         ) : grouped.length === 0 ? (
-          <EmptyState title="Inbox zero" description="No pending tag suggestions in this range." />
+          <EmptyState title={t('adm.tr.empty')} description={t('adm.tr.empty_desc')} />
         ) : (
           grouped.map(([docId, items]) => (
             <DocumentGroup
@@ -122,7 +124,7 @@ export function TagReviewQueuePage() {
       {(page > 0 || hasMore) && (
         <div className="mt-4 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            Showing {showing} of {total}
+            {t('adm.tr.showing', { showing, total })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -131,10 +133,10 @@ export function TagReviewQueuePage() {
               disabled={page === 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
             >
-              Previous
+              {t('adm.tr.previous')}
             </Button>
             <Button size="sm" variant="outline" disabled={!hasMore} onClick={() => setPage((p) => p + 1)}>
-              Next
+              {t('adm.tr.next')}
             </Button>
           </div>
         </div>
@@ -155,6 +157,7 @@ function DocumentGroup({
   onReview: (actions: { suggestion_id: string; action: 'accept' | 'reject' }[]) => void
 }) {
   const navigate = useNavigate()
+  const { t } = useTranslation('common')
   // Deep link needs the real workspace id; the suggestion row only
   // carries the document id, so resolve it on click.
   const openDocument = async (id: string) => {
@@ -165,7 +168,7 @@ function DocumentGroup({
         params: { workspaceId: doc.workspace_id, documentId: id },
       })
     } catch (e) {
-      toast.error(readErrorMessage(e) ?? 'Could not open the document')
+      toast.error(readErrorMessage(e) ?? t('adm.tr.err_open'))
     }
   }
   const acceptAll = () => onReview(items.map((s) => ({ suggestion_id: s.id, action: 'accept' })))
@@ -175,7 +178,7 @@ function DocumentGroup({
     <div className="rounded border border-border">
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="text-sm">
-          <span className="font-medium">Document </span>
+          <span className="font-medium">{t('adm.tr.document')}</span>
           {/* The old raw <a href="/workspaces/_/..."> passed a literal
               underscore as the workspaceId (guaranteed 404) and forced a
               full page reload. Resolve the real workspace on click. */}
@@ -184,16 +187,16 @@ function DocumentGroup({
             onClick={() => void openDocument(documentId)}
             className="text-primary hover:underline"
           >
-            {documentId.slice(0, 8)}…
+            <span dir="ltr">{documentId.slice(0, 8)}…</span>
           </button>
-          <span className="ms-2 text-muted-foreground">{items.length} pending</span>
+          <span className="ms-2 text-muted-foreground">{t('adm.tr.pending', { count: items.length })}</span>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={acceptAll}>
-            Accept all
+            {t('adm.tr.accept_all')}
           </Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={rejectAll}>
-            Reject all
+            {t('adm.tr.reject_all')}
           </Button>
         </div>
       </div>
@@ -205,16 +208,16 @@ function DocumentGroup({
               <span className="flex-1 truncate" title={s.tag_name}>
                 {s.tag_name}
               </span>
-              <Badge variant="outline" className="text-[10px] uppercase">
-                {s.source}
+              <Badge variant="outline" className="text-[10px]">
+                {t(`adm.at.src_${s.source}`, { defaultValue: s.source })}
               </Badge>
-              <span className="w-12 text-end tabular-nums text-muted-foreground">{pct}%</span>
+              <span className="w-12 text-end tabular-nums text-muted-foreground">{t('adm.tr.pct', { value: pct })}</span>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={busy}
                 onClick={() => onReview([{ suggestion_id: s.id, action: 'accept' }])}
-                aria-label={`Accept ${s.tag_name}`}
+                aria-label={t('adm.tr.accept', { tag: s.tag_name })}
               >
                 <Check className="h-4 w-4 text-success" />
               </Button>
@@ -223,7 +226,7 @@ function DocumentGroup({
                 variant="ghost"
                 disabled={busy}
                 onClick={() => onReview([{ suggestion_id: s.id, action: 'reject' }])}
-                aria-label={`Reject ${s.tag_name}`}
+                aria-label={t('adm.tr.reject', { tag: s.tag_name })}
               >
                 <X className="h-4 w-4 text-muted-foreground" />
               </Button>

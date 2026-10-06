@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -18,6 +19,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 const SOURCE_KEYS = ['ner', 'classification', 'llm', 'pattern'] as const
 
 export function AutoTagAdminPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['auto-tag-config'],
@@ -38,16 +40,16 @@ export function AutoTagAdminPage() {
     onSuccess: (next) => {
       qc.setQueryData(['auto-tag-config'], next)
       setDraft(next)
-      toast.success('Auto-tag config saved')
+      toast.success(t('adm.at.saved'))
     },
-    onError: () => toast.error('Save failed'),
+    onError: () => toast.error(t('adm.at.err_save')),
   })
 
   if (isError) {
-    return <ErrorState message="Could not load the auto-tag configuration." onRetry={() => void refetch()} />
+    return <ErrorState message={t('adm.at.err_load')} onRetry={() => void refetch()} />
   }
   if (isLoading || !draft) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+    return <div className="p-6 text-sm text-muted-foreground">{t('adm.at.loading')}</div>
   }
 
   // Save enables only when something actually changed — the always-on
@@ -60,7 +62,7 @@ export function AutoTagAdminPage() {
 
   const onSubmit = () => {
     if (draft.auto_apply_threshold < draft.suggest_threshold) {
-      toast.error('auto_apply_threshold must be ≥ suggest_threshold')
+      toast.error(t('adm.at.err_thresholds'))
       return
     }
     save.mutate({ ...draft, blocked_tags: blockedDraft })
@@ -69,33 +71,33 @@ export function AutoTagAdminPage() {
   return (
     <div>
       <PageHeader variant="section"
-        title="Auto-tagging"
-        description="Per-tenant thresholds for the intelligence-driven tag suggestions pipeline."
+        title={t('adm.at.title')}
+        description={t('adm.at.description')}
       />
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
       <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <Toggle
-          label="Enable auto-tagging"
+          label={t('adm.at.enable')}
           checked={draft.enabled}
           onChange={(v) => setDraft({ ...draft, enabled: v })}
         />
 
         <ThresholdRow
-          label="Auto-apply threshold"
-          help="Tags at or above this confidence are added to documents.tags automatically."
+          label={t('adm.at.auto_apply')}
+          help={t('adm.at.auto_apply_help')}
           value={draft.auto_apply_threshold}
           onChange={(v) => setDraft({ ...draft, auto_apply_threshold: v })}
         />
         <ThresholdRow
-          label="Suggest threshold"
-          help="Below this confidence, candidates are dropped entirely. Between this and auto-apply, they appear as pending suggestions."
+          label={t('adm.at.suggest')}
+          help={t('adm.at.suggest_help')}
           value={draft.suggest_threshold}
           onChange={(v) => setDraft({ ...draft, suggest_threshold: v })}
         />
 
         <NumberRow
-          label="Max tags per document"
+          label={t('adm.at.max_tags')}
           min={1}
           max={100}
           value={draft.max_tags_per_document}
@@ -103,14 +105,14 @@ export function AutoTagAdminPage() {
         />
 
         <div>
-          <label className="block text-sm font-medium">Blocked tags</label>
+          <label className="block text-sm font-medium">{t('adm.at.blocked')}</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            Comma-separated. Tags listed here are filtered out before persistence.
+            {t('adm.at.blocked_help')}
           </p>
           <Input
             value={blockedTagsInput}
             onChange={(e) => setBlockedTagsInput(e.target.value)}
-            placeholder="draft, internal-use-only"
+            placeholder={t('adm.at.blocked_ph')}
             className="mt-2"
           />
         </div>
@@ -119,9 +121,9 @@ export function AutoTagAdminPage() {
 
       <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <div>
-          <div className="text-sm font-medium">Source weights</div>
+          <div className="text-sm font-medium">{t('adm.at.weights')}</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Multipliers applied to the model's raw confidence before threshold comparison.
+            {t('adm.at.weights_help')}
           </p>
           <div className="mt-3 grid grid-cols-1 gap-3">
             {SOURCE_KEYS.map((src) => {
@@ -129,7 +131,7 @@ export function AutoTagAdminPage() {
               return (
                 <ThresholdRow
                   key={src}
-                  label={src}
+                  label={t(`adm.at.src_${src}`)}
                   value={Number(w)}
                   onChange={(v) =>
                     setDraft({
@@ -146,7 +148,7 @@ export function AutoTagAdminPage() {
         <div className="flex justify-end pt-2">
           <Button onClick={onSubmit} disabled={save.isPending || !dirty}>
             <Save className="me-2 h-4 w-4" />
-            Save
+            {t('adm.at.save')}
           </Button>
         </div>
       </div>

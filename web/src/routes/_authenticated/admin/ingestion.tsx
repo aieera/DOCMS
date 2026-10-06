@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -24,19 +25,20 @@ interface S {
 }
 
 function IngestionPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'review'
   return (
     <div>
       <PageHeader
-        title="Ingestion"
-        description="Pre-commit pipeline: staged blobs are OCR'd and auto-routed, or land here for human triage when the read is low-confidence."
+        title={t('adm.ing.title')}
+        description={t('adm.ing.description')}
       />
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/ingestion', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="review">Review queue</TabsTrigger>
-          <TabsTrigger value="items">Staged items</TabsTrigger>
+          <TabsTrigger value="review">{t('adm.ing.tab_review')}</TabsTrigger>
+          <TabsTrigger value="items">{t('adm.ing.tab_items')}</TabsTrigger>
         </TabsList>
         <TabsContent value="review" className="mt-4">
           <ReviewQueueTab />
@@ -49,14 +51,8 @@ function IngestionPage() {
   )
 }
 
-const REASON_LABEL: Record<string, string> = {
-  below_threshold: 'Below threshold',
-  ambiguous_match: 'Ambiguous match',
-  no_external_key: 'No key extracted',
-  low_ocr_confidence: 'Low OCR quality',
-}
-
 function ReviewQueueTab() {
+  const { t } = useTranslation('common')
   const q = useInfiniteQuery({
     queryKey: ['review-queue', 'pending'],
     queryFn: ({ pageParam }) => listReviewQueue({ status: 'pending', cursor: pageParam, limit: 50 }),
@@ -66,12 +62,12 @@ function ReviewQueueTab() {
   })
   const items = q.data?.pages.flatMap((p) => p.items) ?? []
 
-  if (q.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (q.error) return <p className="text-sm text-destructive">Failed to load the review queue.</p>
+  if (q.isLoading) return <p className="text-sm text-muted-foreground">{t('adm.ing.loading')}</p>
+  if (q.error) return <p className="text-sm text-destructive">{t('adm.ing.err_queue')}</p>
   if (items.length === 0) {
     return (
       <div className="rounded border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        Nothing awaiting review.
+        {t('adm.ing.empty_queue')}
       </div>
     )
   }
@@ -84,7 +80,7 @@ function ReviewQueueTab() {
       {q.hasNextPage && (
         <div className="text-center">
           <Button variant="ghost" size="sm" disabled={q.isFetchingNextPage} onClick={() => q.fetchNextPage()}>
-            {q.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            {q.isFetchingNextPage ? t('adm.ing.loading') : t('adm.ing.load_more')}
           </Button>
         </div>
       )}
@@ -93,6 +89,7 @@ function ReviewQueueTab() {
 }
 
 function ReviewCard({ item }: { item: ReviewItem }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [target, setTarget] = useState('')
   const [key, setKey] = useState(item.extracted_external_key)
@@ -100,10 +97,10 @@ function ReviewCard({ item }: { item: ReviewItem }) {
   const resolve = useMutation({
     mutationFn: (body: ResolveBody) => resolveReviewItem(item.id, body),
     onSuccess: (res) => {
-      toast.success(`Resolved as ${res.status}`)
+      toast.success(t('adm.ing.resolved', { status: t(`adm.ing.s_${res.status}`, { defaultValue: res.status }) }))
       qc.invalidateQueries({ queryKey: ['review-queue'] })
     },
-    onError: () => toast.error('Resolve failed'),
+    onError: () => toast.error(t('adm.ing.err_resolve')),
   })
 
   return (
@@ -112,17 +109,20 @@ function ReviewCard({ item }: { item: ReviewItem }) {
         <div className="min-w-0">
           <span className="font-medium">{item.target_customer_ref || '—'}</span>
           <span className="ms-2 text-xs text-muted-foreground">
-            {REASON_LABEL[item.reason] ?? item.reason} · {(item.confidence * 100).toFixed(0)}% confidence
+            {t('adm.ing.reason_line', {
+              reason: t(`adm.ing.r_${item.reason}`, { defaultValue: item.reason.replace(/_/g, ' ') }),
+              pct: (item.confidence * 100).toFixed(0),
+            })}
           </span>
         </div>
-        <Badge variant="secondary">{item.document_class || 'unclassified'}</Badge>
+        <Badge variant="secondary">{item.document_class || t('adm.ing.unclassified')}</Badge>
       </div>
       {item.extracted_external_key && (
         <p className="mb-1 text-xs">
-          extracted key: <span className="font-mono">{item.extracted_external_key}</span>
+          {t('adm.ing.extracted_key')}<span dir="ltr" className="font-mono">{item.extracted_external_key}</span>
           {item.suggested_match_document_id && (
             <span className="ms-2 text-muted-foreground">
-              suggested match {item.suggested_match_document_id.slice(0, 8)}…
+              {t('adm.ing.suggested_match', { id: item.suggested_match_document_id.slice(0, 8) })}
             </span>
           )}
         </p>
@@ -134,8 +134,9 @@ function ReviewCard({ item }: { item: ReviewItem }) {
       )}
       <div className="flex flex-wrap items-center gap-2">
         <input
-          aria-label="Target document id for a new version"
-          placeholder="target document id"
+          dir="ltr"
+          aria-label={t('adm.ing.target_aria')}
+          placeholder={t('adm.ing.target_ph')}
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           className="w-56 rounded border border-input bg-background px-2 py-1 text-xs"
@@ -145,11 +146,12 @@ function ReviewCard({ item }: { item: ReviewItem }) {
           disabled={!target || resolve.isPending}
           onClick={() => resolve.mutate({ decision: 'new_version', target_document_id: target })}
         >
-          New version of…
+          {t('adm.ing.new_version')}
         </Button>
         <input
-          aria-label="External key for a new document"
-          placeholder="external key"
+          dir="ltr"
+          aria-label={t('adm.ing.key_aria')}
+          placeholder={t('adm.ing.key_ph')}
           value={key}
           onChange={(e) => setKey(e.target.value)}
           className="w-44 rounded border border-input bg-background px-2 py-1 text-xs"
@@ -160,7 +162,7 @@ function ReviewCard({ item }: { item: ReviewItem }) {
           disabled={resolve.isPending}
           onClick={() => resolve.mutate({ decision: 'new_document', external_key: key })}
         >
-          New document
+          {t('adm.ing.new_document')}
         </Button>
         <Button
           size="sm"
@@ -169,7 +171,7 @@ function ReviewCard({ item }: { item: ReviewItem }) {
           disabled={resolve.isPending}
           onClick={() => resolve.mutate({ decision: 'reject', notes: 'rejected in review' })}
         >
-          Reject
+          {t('adm.ing.reject')}
         </Button>
       </div>
     </div>
@@ -187,18 +189,19 @@ const STATUS_VARIANT: Record<string, string> = {
 }
 
 function StagedItemsTab() {
+  const { t } = useTranslation('common')
   const { data, isLoading, error } = useQuery({
     queryKey: ['ingestion-items'],
     queryFn: () => listIngestionItems({ limit: 100 }),
     refetchInterval: 30_000,
   })
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>
-  if (error) return <p className="text-sm text-destructive">Failed to load staged items.</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">{t('adm.ing.loading')}</p>
+  if (error) return <p className="text-sm text-destructive">{t('adm.ing.err_items')}</p>
   const items = data?.items ?? []
   if (items.length === 0) {
     return (
       <div className="rounded border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-        No staged ingestion items.
+        {t('adm.ing.empty_items')}
       </div>
     )
   }
@@ -207,11 +210,11 @@ function StagedItemsTab() {
       <table className="w-full text-sm">
         <thead className="text-xs uppercase text-muted-foreground">
           <tr>
-            <th className="px-4 py-2 text-start">Customer</th>
-            <th className="px-4 py-2 text-start">Class</th>
-            <th className="px-4 py-2 text-start">Extracted key</th>
-            <th className="px-4 py-2 text-end">Confidence</th>
-            <th className="px-4 py-2 text-start">Status</th>
+            <th className="px-4 py-2 text-start">{t('adm.ing.col_customer')}</th>
+            <th className="px-4 py-2 text-start">{t('adm.ing.col_class')}</th>
+            <th className="px-4 py-2 text-start">{t('adm.ing.col_key')}</th>
+            <th className="px-4 py-2 text-end">{t('adm.ing.col_confidence')}</th>
+            <th className="px-4 py-2 text-start">{t('adm.ing.col_status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -219,12 +222,12 @@ function StagedItemsTab() {
             <tr key={it.id} className="border-t border-border">
               <td className="px-4 py-2">{it.target_customer_ref || '—'}</td>
               <td className="px-4 py-2">{it.document_class || '—'}</td>
-              <td className="px-4 py-2 font-mono text-xs">{it.extracted_external_key || '—'}</td>
+              <td dir="ltr" className="px-4 py-2 font-mono text-xs">{it.extracted_external_key || '—'}</td>
               <td className="px-4 py-2 text-end tabular-nums">
-                {it.confidence ? `${(it.confidence * 100).toFixed(0)}%` : '—'}
+                {it.confidence ? t('adm.ing.pct', { value: (it.confidence * 100).toFixed(0) }) : '—'}
               </td>
               <td className="px-4 py-2">
-                <Badge variant={STATUS_VARIANT[it.status] ?? 'secondary'}>{it.status.replace(/_/g, ' ')}</Badge>
+                <Badge variant={STATUS_VARIANT[it.status] ?? 'secondary'}>{t(`adm.ing.s_${it.status}`, { defaultValue: it.status.replace(/_/g, ' ') })}</Badge>
               </td>
             </tr>
           ))}
