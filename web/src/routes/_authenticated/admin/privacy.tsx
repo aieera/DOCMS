@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -14,6 +15,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { formatDate, formatRelativeTime } from '@/lib/formatters'
 
 function PrivacyPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [email, setEmail] = useState('')
   const [type, setType] = useState<'export' | 'erase' | 'anonymize'>('export')
@@ -27,16 +29,14 @@ function PrivacyPage() {
   const requestToken = useAppMutation({
     mutationFn: () => requestDSRToken(email),
     onSuccess: () =>
-      toast.success(
-        'Verification token sent — the subject will find it in their notifications',
-      ),
-    onError: () => toast.error('Token request failed'),
+      toast.success(t('adm.dsr.token_sent')),
+    onError: () => toast.error(t('adm.dsr.err_token_req')),
   })
 
   const submit = useAppMutation({
     mutationFn: () => submitDSR(type, { subject_email: email, verification_token: token || undefined }),
     onSuccess: () => {
-      toast.success('Request queued')
+      toast.success(t('adm.dsr.queued'))
       setEmail('')
       setToken('')
       qc.invalidateQueries({ queryKey: ['dsr-requests'] })
@@ -45,7 +45,7 @@ function PrivacyPage() {
       const m =
         typeof err === 'object' && err && 'message' in err
           ? String((err as { message?: string }).message)
-          : 'Submit failed'
+          : t('adm.dsr.err_submit')
       toast.error(m)
     },
   })
@@ -53,14 +53,14 @@ function PrivacyPage() {
   return (
     <div>
       <PageHeader
-        title="Privacy Requests"
-        description="GDPR export / erase / anonymize — tracked per subject"
+        title={t('adm.dsr.title')}
+        description={t('adm.dsr.description')}
       />
 
       <div className="mb-6 rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
           <Shield className="h-4 w-4" />
-          <h3 className="font-medium">New request</h3>
+          <h3 className="font-medium">{t('adm.dsr.new')}</h3>
         </div>
         {/* minmax(0,…) + min-w-0 on the items: a 1fr track floors at
             min-content and a grid item's min-width defaults to auto, so
@@ -74,32 +74,33 @@ function PrivacyPage() {
             value={type}
             onChange={(e) => setType(e.target.value as 'export' | 'erase' | 'anonymize')}
           >
-            <option value="export">Export</option>
-            <option value="erase">Erase</option>
-            <option value="anonymize">Anonymize</option>
+            <option value="export">{t('adm.dsr.type_export')}</option>
+            <option value="erase">{t('adm.dsr.type_erase')}</option>
+            <option value="anonymize">{t('adm.dsr.type_anonymize')}</option>
           </select>
           <input
             className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-            placeholder="subject@example.com"
+            dir="ltr"
+            placeholder={t('adm.dsr.email_ph')}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <input
             className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-            placeholder={type === 'erase' ? 'verification token (required)' : 'verification token (optional)'}
+            placeholder={type === 'erase' ? t('adm.dsr.token_required') : t('adm.dsr.token_optional')}
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
           <Button
             onClick={() => {
-              if (!email.trim()) { toast.error('Subject email is required'); return }
-              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.error('Enter a valid email address'); return }
-              if (type === 'erase' && !token.trim()) { toast.error('Verification token is required for erase requests'); return }
+              if (!email.trim()) { toast.error(t('adm.dsr.err_email')); return }
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast.error(t('adm.dsr.err_email_invalid')); return }
+              if (type === 'erase' && !token.trim()) { toast.error(t('adm.dsr.err_token')); return }
               submit.mutate()
             }}
             disabled={submit.isPending}
           >
-            Submit
+            {t('adm.dsr.submit')}
           </Button>
         </div>
         {type === 'erase' && (
@@ -108,16 +109,15 @@ function PrivacyPage() {
               onClick={() => requestToken.mutate()}
               disabled={!email || requestToken.isPending}
             >
-              Request verification token
+              {t('adm.dsr.request_token')}
             </Button>
             <span className="text-xs text-muted-foreground">
-              The subject receives a token in their notifications, valid for 24 hours. Paste the
-              token they give you into the field above.
+              {t('adm.dsr.token_hint')}
             </span>
           </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
-          Erase and anonymize short-circuit on any document under an active legal hold. 30-day SLA.
+          {t('adm.dsr.sla')}
         </p>
       </div>
 
@@ -128,8 +128,8 @@ function PrivacyPage() {
       ) : !data || data.length === 0 ? (
         <EmptyState
           icon={<Shield className="h-12 w-12" />}
-          title="No privacy requests"
-          description="Subject-access requests submitted via API or this page will appear here."
+          title={t('adm.dsr.empty')}
+          description={t('adm.dsr.empty_desc')}
         />
       ) : (
         <ul className="space-y-2">
@@ -141,14 +141,14 @@ function PrivacyPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{r.subject_email}</span>
-                  <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
+                  <Badge variant={statusVariant(r.status)}>{t(`adm.dsr.st_${r.status}`)}</Badge>
                   <span className="text-xs text-muted-foreground">
-                    {r.request_type}
+                    {t(`adm.dsr.type_${r.request_type}`)}
                   </span>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Submitted {formatRelativeTime(r.created_at)} on {formatDate(r.created_at)}
-                  {r.completed_at && <> · finished {formatRelativeTime(r.completed_at)}</>}
+                <div dir="auto" className="mt-1 text-xs text-muted-foreground">
+                  {t('adm.dsr.submitted', { rel: formatRelativeTime(r.created_at), date: formatDate(r.created_at) })}
+                  {r.completed_at && t('adm.dsr.finished', { rel: formatRelativeTime(r.completed_at) })}
                 </div>
                 {r.blocked_reason && (
                   <p className="mt-1 text-xs text-destructive">{r.blocked_reason}</p>
@@ -162,7 +162,7 @@ function PrivacyPage() {
                   className="shrink-0 text-sm text-primary"
                 >
                   <Download className="me-1 inline h-4 w-4" />
-                  Download
+                  {t('adm.dsr.download')}
                 </a>
               )}
             </li>
