@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useEffect, useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -66,6 +67,7 @@ function validatePatterns(text: string): string | null {
 }
 
 export function ComplianceConfigPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['compliance-config'],
@@ -90,13 +92,13 @@ export function ComplianceConfigPage() {
     onSuccess: (next) => {
       qc.setQueryData(['compliance-config'], next)
       setDraft(next)
-      toast.success('Compliance config saved')
+      toast.success(t('adm.compc.saved'))
     },
-    onError: () => toast.error('Save failed'),
+    onError: () => toast.error(t('adm.compc.err_save')),
   })
 
   if (isError) {
-    return <ErrorState message="Could not load the detection rules." onRetry={() => void refetch()} />
+    return <ErrorState message={t('adm.compc.err_load')} onRetry={() => void refetch()} />
   }
   if (isLoading || !draft) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
@@ -106,16 +108,16 @@ export function ComplianceConfigPage() {
 
   const onSave = () => {
     if (overridesError) {
-      toast.error(`Risk overrides: ${overridesError}`)
+      toast.error(t('adm.compc.err_overrides', { error: overridesError }))
       return
     }
     if (patternsError) {
-      toast.error(`Custom patterns: ${patternsError}`)
+      toast.error(t('adm.compc.err_patterns', { error: patternsError }))
       return
     }
     const roles = rolesInput.split(',').map((s) => s.trim()).filter(Boolean)
     if (roles.length === 0) {
-      toast.error('At least one notify role required')
+      toast.error(t('adm.compc.err_roles'))
       return
     }
     save.mutate({
@@ -129,44 +131,45 @@ export function ComplianceConfigPage() {
   return (
     <div>
       <PageHeader variant="section"
-        title="Compliance config"
-        description="Per-tenant scanning thresholds, notification routing, PHI opt-in, and custom regex patterns."
+        title={t('adm.compc.title')}
+        description={t('adm.compc.description')}
       />
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(380px,1fr)_minmax(0,1fr)]">
       <div className="min-w-0 space-y-6 self-start rounded border border-border p-5">
         <Toggle
-          label="Enable compliance scanning"
+          label={t('adm.compc.enable')}
           checked={draft.enabled}
           onChange={(v) => setDraft({ ...draft, enabled: v })}
         />
         <Toggle
-          label="Auto-flag for legal hold on critical findings"
-          help="Marks the document for hold review only — actual hold is placed manually via the legal-hold UI."
+          label={t('adm.compc.auto_flag')}
+          help={t('adm.compc.auto_flag_help')}
           checked={draft.auto_hold_on_critical}
           onChange={(v) => setDraft({ ...draft, auto_hold_on_critical: v })}
         />
         <Toggle
-          label="Notify on high+ findings"
+          label={t('adm.compc.notify_high')}
           checked={draft.notify_on_high}
           onChange={(v) => setDraft({ ...draft, notify_on_high: v })}
         />
         <Toggle
-          label="Enable PHI scanning (HIPAA opt-in)"
-          help="Off by default. Detects medical record numbers, diagnoses, lab results, etc."
+          label={t('adm.compc.enable_phi')}
+          help={t('adm.compc.enable_phi_help')}
           checked={draft.phi_enabled}
           onChange={(v) => setDraft({ ...draft, phi_enabled: v })}
         />
 
         <div>
-          <label className="block text-sm font-medium">Notification roles</label>
+          <label className="block text-sm font-medium">{t('adm.compc.notify_roles')}</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            Comma-separated. Receivers of `dms.notification.send.v1` events.
+            {t('adm.compc.notify_roles_help')}
           </p>
           <Input
             value={rolesInput}
             onChange={(e) => setRolesInput(e.target.value)}
-            placeholder="compliance_officer, admin"
+            dir="ltr"
+            placeholder={t('adm.compc.notify_roles_ph')}
             className="mt-2"
           />
         </div>
@@ -175,10 +178,9 @@ export function ComplianceConfigPage() {
 
       <div className="min-w-0 space-y-6 rounded border border-border p-5">
         <div>
-          <label className="block text-sm font-medium">Risk-level overrides</label>
+          <label className="block text-sm font-medium">{t('adm.compc.overrides')}</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            JSON object: {`{"EMAIL":"high","SSN":"critical" }`}.
-            Each value must be critical/high/medium/low.
+            {t('adm.compc.overrides_help', { sample: '{"EMAIL":"high","SSN":"critical"}' })}
           </p>
           <textarea
             value={overridesText}
@@ -191,9 +193,9 @@ export function ComplianceConfigPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Custom regex patterns</label>
+          <label className="block text-sm font-medium">{t('adm.compc.patterns')}</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            JSON array, max 32. Each entry: {`{"type":"TICKET_ID","regex":"TICK-\\d+" }`}.
+            {t('adm.compc.patterns_help', { sample: '{"type":"TICKET_ID","regex":"TICK-\\\\d+"}' })}
           </p>
           <textarea
             value={patternsText}
@@ -208,7 +210,7 @@ export function ComplianceConfigPage() {
         <div className="flex justify-end">
           <Button onClick={onSave} disabled={save.isPending || !!overridesError || !!patternsError}>
             <Save className="me-2 h-4 w-4" />
-            Save
+            {t('adm.compc.save')}
           </Button>
         </div>
       </div>

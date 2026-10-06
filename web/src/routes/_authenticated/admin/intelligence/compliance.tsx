@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -28,6 +29,7 @@ const RISK_COLOR: Record<string, string> = {
 }
 
 export function ComplianceAdminDashboard() {
+  const { t } = useTranslation('common')
   const [riskFilter, setRiskFilter] = useState<string>('')
 
   const { data: dash, isLoading: dashLoading, isError: dashError, refetch: refetchDash } = useQuery({
@@ -53,7 +55,7 @@ export function ComplianceAdminDashboard() {
   // A failed dashboard fetch used to render "Loading…" forever — an
   // expired session or 403 looked like a hang.
   if (dashError || !dash) {
-    return <ErrorState message="Could not load the compliance dashboard." onRetry={() => void refetchDash()} />
+    return <ErrorState message={t('adm.comp2.err_load')} onRetry={() => void refetchDash()} />
   }
 
   const totalRisk = Object.values(dash.risk_distribution).reduce((a, b) => a + b, 0) || 1
@@ -61,25 +63,25 @@ export function ComplianceAdminDashboard() {
   return (
     <div>
       <PageHeader variant="section"
-        title="Compliance scanning"
-        description="Tenant-wide PII/PHI findings produced by the intelligence pipeline."
+        title={t('adm.comp2.title')}
+        description={t('adm.comp2.description')}
       />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Documents scanned" value={dash.total_documents_scanned} />
-        <Metric label="With findings" value={dash.documents_with_findings} />
-        <Metric label="Open findings" value={dash.open_findings} />
-        <Metric label="Auto-hold recommended" value={dash.auto_held_documents} />
+        <Metric label={t('adm.comp2.m_scanned')} value={dash.total_documents_scanned} />
+        <Metric label={t('adm.comp2.m_with')} value={dash.documents_with_findings} />
+        <Metric label={t('adm.comp2.m_open')} value={dash.open_findings} />
+        <Metric label={t('adm.comp2.m_held')} value={dash.auto_held_documents} />
       </div>
 
-      <Section title="Risk distribution">
+      <Section title={t('adm.comp2.risk_dist')}>
         <div className="space-y-2">
           {Object.entries(dash.risk_distribution)
             .sort(([a], [b]) => RISK_ORDER.indexOf(a) - RISK_ORDER.indexOf(b))
             .map(([risk, count]) => (
             <div key={risk} className="flex items-center gap-3 text-sm">
               <span className={`h-2 w-2 rounded-full ${RISK_COLOR[risk] ?? 'bg-muted-foreground/40'}`} />
-              <span className="w-24 capitalize">{risk}</span>
+              <span className="w-24">{t(`adm.comp2.r_${risk}`, { defaultValue: risk })}</span>
               <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
                 <div
                   className={RISK_COLOR[risk] ?? 'bg-muted-foreground/40'}
@@ -92,14 +94,14 @@ export function ComplianceAdminDashboard() {
         </div>
       </Section>
 
-      <Section title="Top entity types">
+      <Section title={t('adm.comp2.top_entities')}>
         {(dash.top_entity_types ?? []).length === 0 ? (
-          <div className="text-sm text-muted-foreground">No findings yet.</div>
+          <div className="text-sm text-muted-foreground">{t('adm.comp2.no_findings')}</div>
         ) : (
           <ul className="space-y-2">
             {dash.top_entity_types.map((e) => (
               <li key={e.entity_type} className="flex items-center gap-3 text-sm">
-                <span className="w-32 truncate font-mono">{e.entity_type}</span>
+                <span dir="ltr" className="w-32 truncate font-mono">{e.entity_type}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
                   <div
                     className="h-full bg-primary"
@@ -117,50 +119,50 @@ export function ComplianceAdminDashboard() {
         )}
       </Section>
 
-      <Section title="Open findings">
+      <Section title={t('adm.comp2.open_findings')}>
         <div className="mb-3 flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Filter:</span>
+          <span className="text-muted-foreground">{t('adm.comp2.filter')}</span>
           <FilterPill active={riskFilter === ''} onClick={() => setRiskFilter('')}>
-            All
+            {t('adm.comp2.all')}
           </FilterPill>
           {RISK_LEVELS.map((r) => (
             <FilterPill key={r} active={riskFilter === r} onClick={() => { setRiskFilter(r); setPage(0) }}>
-              {r}
+              {t(`adm.comp2.r_${r}`, { defaultValue: r })}
             </FilterPill>
           ))}
         </div>
         {findingsLoading ? (
-          <div className="text-sm text-muted-foreground">Loading…</div>
+          <div className="text-sm text-muted-foreground">{t('adm.comp2.loading')}</div>
         ) : (findings?.findings ?? []).length === 0 ? (
-          <div className="text-sm text-muted-foreground">No matching findings.</div>
+          <div className="text-sm text-muted-foreground">{t('adm.comp2.no_matching')}</div>
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="py-2 text-start">Type</th>
-                <th className="py-2 text-start">Risk</th>
-                <th className="py-2 text-start">Source</th>
-                <th className="py-2 text-start">Document</th>
-                <th className="py-2 text-end">Count</th>
-                <th className="py-2 text-start">Created</th>
+                <th className="py-2 text-start">{t('adm.comp2.col_type')}</th>
+                <th className="py-2 text-start">{t('adm.comp2.col_risk')}</th>
+                <th className="py-2 text-start">{t('adm.comp2.col_source')}</th>
+                <th className="py-2 text-start">{t('adm.comp2.col_document')}</th>
+                <th className="py-2 text-end">{t('adm.comp2.col_count')}</th>
+                <th className="py-2 text-start">{t('adm.comp2.col_created')}</th>
               </tr>
             </thead>
             <tbody>
               {(findings?.findings ?? []).map((f) => (
                 <tr key={f.id} className="border-t border-border">
-                  <td className="py-2 font-mono">{f.entity_type}</td>
+                  <td dir="ltr" className="py-2 font-mono">{f.entity_type}</td>
                   <td className="py-2">
                     <Badge variant={f.risk_level === 'critical' ? 'disposed' : 'in_review'}>
-                      {f.risk_level}
+                      {t(`adm.comp2.r_${f.risk_level}`, { defaultValue: f.risk_level })}
                     </Badge>
                   </td>
                   <td className="py-2">
-                    <Badge variant="outline" className="text-[10px] uppercase">
-                      {f.detection_source}
+                    <Badge variant="outline" className="text-[10px]">
+                      {t(`adm.comp2.src_${f.detection_source}`, { defaultValue: f.detection_source })}
                     </Badge>
                   </td>
-                  <td className="py-2 font-mono text-xs text-muted-foreground">{f.document_id.slice(0, 8)}…</td>
+                  <td dir="ltr" className="py-2 font-mono text-xs text-muted-foreground">{f.document_id.slice(0, 8)}…</td>
                   <td className="py-2 text-end tabular-nums">{f.occurrence_count}</td>
                   <td className="py-2 text-muted-foreground">{formatDateTime(f.created_at)}</td>
                 </tr>
@@ -172,8 +174,11 @@ export function ComplianceAdminDashboard() {
         {(findings?.total ?? 0) > PAGE && (
           <div className="mt-3 flex items-center justify-between text-xs">
             <span className="text-muted-foreground">
-              {page * PAGE + 1}–{Math.min((page + 1) * PAGE, findings?.total ?? 0)} of{' '}
-              {findings?.total ?? 0}
+              {t('adm.comp2.range', {
+                from: page * PAGE + 1,
+                to: Math.min((page + 1) * PAGE, findings?.total ?? 0),
+                total: findings?.total ?? 0,
+              })}
             </span>
             <div className="flex gap-2">
               <Button
@@ -182,7 +187,7 @@ export function ComplianceAdminDashboard() {
                 disabled={page === 0}
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
               >
-                Previous
+                {t('adm.comp2.previous')}
               </Button>
               <Button
                 size="sm"
@@ -190,7 +195,7 @@ export function ComplianceAdminDashboard() {
                 disabled={(page + 1) * PAGE >= (findings?.total ?? 0)}
                 onClick={() => setPage((p) => p + 1)}
               >
-                Next
+                {t('adm.comp2.next')}
               </Button>
             </div>
           </div>
