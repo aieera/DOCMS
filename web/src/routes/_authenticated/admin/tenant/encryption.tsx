@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
+import i18n from '@/i18n'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, KeyRound, Lock, RotateCw, ShieldOff, CheckCircle2 } from 'lucide-react'
@@ -32,21 +34,12 @@ export const Route = createFileRoute('/_authenticated/admin/tenant/encryption')(
   component: EncryptionPage,
 })
 
-const PROVIDER_OPTIONS: { value: KMSProvider; label: string }[] = [
-  { value: 'local', label: 'Local (dev — SEDOC_LOCAL_KEK)' },
-  { value: 'vault', label: 'HashiCorp Vault (transit)' },
-  { value: 'aws_kms', label: 'AWS KMS' },
-  { value: 'azure_kv', label: 'Azure Key Vault' },
-]
-
-const REF_HINT: Record<KMSProvider, string> = {
-  local: 'Not required for the local provider.',
-  vault: 'Transit key path, e.g. transit/keys/tenant-<id>',
-  aws_kms: 'Key ARN or alias, e.g. arn:aws:kms:eu-west-1:123:key/…',
-  azure_kv: 'Key identifier URI, e.g. https://vault.vault.azure.net/keys/kek',
-}
+// Values only; the labels and hints are catalogue keys resolved at
+// render, because a module constant is evaluated once at import.
+const PROVIDER_VALUES: KMSProvider[] = ['local', 'vault', 'aws_kms', 'azure_kv']
 
 function EncryptionPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin', 'encryption', 'status'],
@@ -68,8 +61,8 @@ function EncryptionPage() {
     <div className="space-y-6">
       <PageHeader
         noMargin
-        title="Encryption & key management"
-        description="Register an external KMS key as this tenant's KEK source, rotate it, and manage break-glass revocation."
+        title={t('adm.enc.title')}
+        description={t('adm.enc.description')}
       />
 
       <CustodyWarning />
@@ -103,6 +96,7 @@ function EncryptionPage() {
 }
 
 function CustodyWarning() {
+  const { t } = useTranslation('common')
   return (
     <section className="rounded-lg border border-warning/40 bg-warning/10 p-4">
       <div className="flex items-start gap-3">
@@ -111,15 +105,8 @@ function CustodyWarning() {
             measure -- at 1600px an uncapped paragraph runs ~200 chars
             to the line and the eye loses its place on the return. */}
         <div className="max-w-[85ch] text-sm">
-          <p className="font-semibold">You hold custody of the external key.</p>
-          <p className="mt-1 text-muted-foreground">
-            SeDoc wraps each tenant data-encryption key under your KEK; it never stores the KEK
-            material itself. If the external key is deleted, disabled, or made unreachable, all data
-            encrypted under it becomes permanently unrecoverable — this is the crypto-shredding
-            deletion model, and it is irreversible. Rotation mints a new version and re-wraps DEKs;
-            it never re-encrypts blobs. Revoking a version is a break-glass action that renders data
-            wrapped under it inaccessible.
-          </p>
+          <p className="font-semibold">{t('adm.enc.custody')}</p>
+          <p className="mt-1 text-muted-foreground">{t('adm.enc.custody_body')}</p>
         </div>
       </div>
     </section>
@@ -127,10 +114,11 @@ function CustodyWarning() {
 }
 
 function ActiveKeyCard({ active }: { active?: KEKVersion }) {
+  const { t } = useTranslation('common')
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Lock className="h-4 w-4" /> Active key
+        <Lock className="h-4 w-4" /> {t('adm.enc.active_key')}
       </div>
       {active ? (
         // Label-above-value, not label/value on one justified line: the
@@ -139,21 +127,20 @@ function ActiveKeyCard({ active }: { active?: KEKVersion }) {
         // first. The four short facts band across the width; the
         // reference takes a row of its own.
         <dl className="grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-          <Fact label="Version" value={`v${active.version}`} />
-          <Fact label="Provider" value={providerLabel(active.provider)} />
-          <Fact label="Alias (wrap handle)" value={active.alias} mono />
-          <Fact label="Created" value={fmt(active.created_at)} />
+          <Fact label={t('adm.enc.version')} value={`v${active.version}`} />
+          <Fact label={t('adm.enc.provider')} value={providerLabel(active.provider)} />
+          <Fact label={t('adm.enc.alias')} value={active.alias} mono />
+          <Fact label={t('adm.enc.created')} value={fmt(active.created_at)} />
           <Fact
             className="sm:col-span-2 lg:col-span-4"
-            label="External key reference"
+            label={t('adm.enc.external_ref')}
             value={active.external_key_ref || '—'}
             mono
           />
         </dl>
       ) : (
         <p className="text-sm text-muted-foreground">
-          No active KEK version. Provision one with <code>dms-admin kms create</code>, then register
-          its provider below.
+          <Trans i18nKey="adm.enc.no_active" ns="common" components={{ 1: <code dir="ltr" /> }} />
         </p>
       )}
     </Card>
@@ -161,13 +148,15 @@ function ActiveKeyCard({ active }: { active?: KEKVersion }) {
 }
 
 function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => void }) {
+  const { t } = useTranslation('common')
+  const providerOpts = PROVIDER_VALUES.map((v) => ({ value: v, label: t(`adm.enc.provider_${v}`) }))
   const [provider, setProvider] = useState<KMSProvider>(active?.provider ?? 'local')
   const [ref, setRef] = useState('')
 
   const register = useAppMutation({
     mutationFn: () => registerKMS({ provider, external_key_ref: ref }),
     onSuccess: () => {
-      toast.success('External KMS registered on the active key')
+      toast.success(t('adm.enc.registered'))
       setRef('')
       onDone()
     },
@@ -180,42 +169,41 @@ function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => v
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <KeyRound className="h-4 w-4" /> Register external KMS
+        <KeyRound className="h-4 w-4" /> {t('adm.enc.register')}
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Declare which external key backs the active KEK version. The alias stays the wrap handle;
-        the envelope layer resolves the provider + reference recorded here.
+        {t('adm.enc.register_body')}
       </p>
       {/* 2-up while the page is a single wide column; stacked again from
           xl, where this card sits in a ~420px column and a key ARN in a
           190px input would be unreadable. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <LabeledSelect
-          label="Provider"
+          label={t('adm.enc.provider')}
           value={provider}
           onValueChange={(v) => setProvider(v as KMSProvider)}
-          options={PROVIDER_OPTIONS}
+          options={providerOpts}
         />
         <div>
           <label className="mb-1 block text-sm font-medium" htmlFor="kms-ref">
-            External key reference
+            {t('adm.enc.external_ref')}
           </label>
           <Input
             id="kms-ref"
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            placeholder={needsRef ? '' : 'n/a'}
+            placeholder={needsRef ? '' : t('adm.enc.na')}
             disabled={!needsRef}
             aria-describedby="kms-ref-hint"
           />
           <p id="kms-ref-hint" className="mt-1 text-xs text-muted-foreground">
-            {REF_HINT[provider]}
+            {t(`adm.enc.hint_${provider}`)}
           </p>
         </div>
       </div>
       <div className="mt-4">
         <Button onClick={() => register.mutate()} disabled={disabled}>
-          {register.isPending ? 'Registering…' : 'Register & make active'}
+          {register.isPending ? t('adm.enc.registering') : t('adm.enc.register_btn')}
         </Button>
       </div>
     </Card>
@@ -223,6 +211,7 @@ function RegisterCard({ active, onDone }: { active?: KEKVersion; onDone: () => v
 }
 
 function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => void }) {
+  const { t } = useTranslation('common')
   const [note, setNote] = useState<string | null>(null)
 
   const rotate = useAppMutation({
@@ -238,23 +227,22 @@ function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => voi
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <RotateCw className="h-4 w-4" /> Rotate key
+        <RotateCw className="h-4 w-4" /> {t('adm.enc.rotate')}
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Retire the live version and mint the next one (carrying the current provider + reference).
-        Existing ciphertext still decrypts under the prior version until DEKs are re-wrapped.
+        {t('adm.enc.rotate_body')}
       </p>
 
       {rotate.isPending && (
         <div className="mb-4 flex items-center gap-2 rounded-md bg-muted p-3 text-sm shadow-neu-inset">
           <Spinner />
-          <span>Rotating &amp; re-wrapping key metadata…</span>
+          <span>{t('adm.enc.rotating_msg')}</span>
         </div>
       )}
 
       {note && !rotate.isPending && (
         <div className="mb-4 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
-          <p className="font-medium">Next step — re-wrap DEKs</p>
+          <p className="font-medium">{t('adm.enc.next_step')}</p>
           <p className="mt-1 text-muted-foreground">{note}</p>
         </div>
       )}
@@ -264,17 +252,18 @@ function RotateCard({ active, onDone }: { active?: KEKVersion; onDone: () => voi
         onClick={() => rotate.mutate()}
         disabled={rotate.isPending || !active}
       >
-        {rotate.isPending ? 'Rotating…' : 'Rotate to next version'}
+        {rotate.isPending ? t('adm.enc.rotating') : t('adm.enc.rotate_btn')}
       </Button>
     </Card>
   )
 }
 
 function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () => void }) {
+  const { t } = useTranslation('common')
   const revoke = useAppMutation({
     mutationFn: (version: number) => revokeKEK(version),
     onSuccess: () => {
-      toast.success('Version revoked (break-glass)')
+      toast.success(t('adm.enc.version_revoked'))
       onDone()
     },
     onError: (e: unknown) => toast.error(`Revoke failed: ${(e as Error).message}`),
@@ -292,9 +281,9 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
 
   return (
     <Card className="p-4">
-      <div className="mb-3 text-sm font-semibold">Rotation history</div>
+      <div className="mb-3 text-sm font-semibold">{t('adm.enc.history')}</div>
       {versions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No key versions yet.</p>
+        <p className="text-sm text-muted-foreground">{t('adm.enc.no_versions')}</p>
       ) : (
         <div className="overflow-hidden rounded-lg bg-muted shadow-neu-inset">
           <div className="overflow-x-auto">
@@ -305,10 +294,10 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
                 centred over start-aligned cells. */}
             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 text-start">Version</th>
-                <th className="px-3 py-2 text-start">Provider</th>
-                <th className="px-3 py-2 text-start">Status</th>
-                <th className="px-3 py-2 text-start">Created</th>
+                <th className="px-3 py-2 text-start">{t('adm.enc.version')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.enc.provider')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.enc.col_status')}</th>
+                <th className="px-3 py-2 text-start">{t('adm.enc.created')}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -330,7 +319,7 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
                         onClick={() => onRevoke(v)}
                         disabled={revoke.isPending}
                       >
-                        <ShieldOff className="h-3.5 w-3.5" /> Revoke
+                        <ShieldOff className="h-3.5 w-3.5" /> {t('adm.enc.revoke')}
                       </Button>
                     )}
                   </td>
@@ -346,21 +335,22 @@ function HistoryCard({ versions, onDone }: { versions: KEKVersion[]; onDone: () 
 }
 
 function StatusBadge({ v }: { v: KEKVersion }) {
+  const { t } = useTranslation('common')
   if (v.revoked_at)
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-foreground">
-        <ShieldOff className="h-3 w-3" /> Revoked
+        <ShieldOff className="h-3 w-3" /> {t('adm.enc.status_revoked')}
       </span>
     )
   if (v.active)
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs text-foreground">
-        <CheckCircle2 className="h-3 w-3" /> Active
+        <CheckCircle2 className="h-3 w-3" /> {t('adm.enc.status_active')}
       </span>
     )
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-      Retired
+      {t('adm.enc.status_retired')}
     </span>
   )
 }
@@ -385,7 +375,7 @@ function Fact({
 }
 
 function providerLabel(p: KMSProvider): string {
-  return PROVIDER_OPTIONS.find((o) => o.value === p)?.label ?? p
+  return i18n.t(`adm.enc.provider_${p}`, { ns: 'common', defaultValue: p })
 }
 
 function fmt(iso?: string): string {
