@@ -1,3 +1,5 @@
+import { Trans, useTranslation } from 'react-i18next'
+import { formatDateTime } from '@/lib/formatters'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { useEffect, useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
@@ -38,6 +40,7 @@ const MODEL_PRESETS = [
 ]
 
 export function NERConfigPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['ner-config'],
@@ -56,23 +59,23 @@ export function NERConfigPage() {
     onSuccess: (saved) => {
       qc.setQueryData(['ner-config'], saved)
       setDraft(saved)
-      toast.success('NER config saved')
+      toast.success(t('adm.ner.saved'))
     },
     onError: (err: unknown) => {
       const m = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(m ?? 'Save failed')
+      toast.error(m ?? t('adm.ner.err_save'))
     },
   })
 
   if (isError) {
     // Includes the license-gated 403 ("intel_llm feature is not
     // included") — surface it in-page instead of an eternal spinner.
-    return <ErrorState message="Could not load the NER configuration. Your plan may not include the LLM NER tier." onRetry={() => void refetch()} />
+    return <ErrorState message={t('adm.ner.err_load')} onRetry={() => void refetch()} />
   }
   if (isLoading || !draft) {
     return (
       <div>
-        <PageHeader variant="section" title="NER configuration" description="Loading…" />
+        <PageHeader variant="section" title={t('adm.ner.title')} description={t('adm.ner.loading')} />
       </div>
     )
   }
@@ -90,15 +93,15 @@ export function NERConfigPage() {
   return (
     <div>
       <PageHeader variant="section"
-        title="NER configuration"
-        description="Per-tenant LLM tier for the entity types regex + SpaCy can't reach. Off by default; enable only if your tenant has the right data-handling agreement with the chosen model provider."
+        title={t('adm.ner.title')}
+        description={t('adm.ner.description')}
         actions={
           <Button
             size="sm"
             disabled={!dirty || save.isPending}
             onClick={() => save.mutate(draft)}
           >
-            {save.isPending ? 'Saving…' : 'Save'}
+            {save.isPending ? t('adm.ner.saving') : t('adm.ner.save')}
           </Button>
         }
       />
@@ -106,12 +109,12 @@ export function NERConfigPage() {
       <section className="mt-6 rounded border border-border">
         <header className="flex items-center gap-2 border-b border-border bg-card px-4 py-2 text-sm font-medium">
           <Brain className="h-4 w-4 text-success" />
-          LLM tier
+          {t('adm.ner.llm_tier')}
         </header>
         <div className="grid grid-cols-1 gap-4 p-4 text-sm md:grid-cols-2">
           <Toggle
-            label="Enable LLM NER"
-            help="When off, the pipeline runs regex + SpaCy only."
+            label={t('adm.ner.enable')}
+            help={t('adm.ner.enable_help')}
             checked={draft.llm_enabled}
             onChange={(v) => setDraft({ ...draft, llm_enabled: v })}
           />
@@ -120,8 +123,8 @@ export function NERConfigPage() {
             onChange={(v) => setDraft({ ...draft, llm_model: v })}
           />
           <NumField
-            label="Batch size"
-            help="Max documents packed into one LLM request (1–20)."
+            label={t('adm.ner.batch')}
+            help={t('adm.ner.batch_help')}
             value={draft.llm_batch_size}
             min={1}
             max={20}
@@ -129,8 +132,8 @@ export function NERConfigPage() {
             onChange={(v) => setDraft({ ...draft, llm_batch_size: v })}
           />
           <NumField
-            label="Min confidence"
-            help="LLM-emitted entities below this score are dropped."
+            label={t('adm.ner.min_conf')}
+            help={t('adm.ner.min_conf_help')}
             value={draft.llm_min_confidence}
             min={0}
             max={1}
@@ -142,22 +145,22 @@ export function NERConfigPage() {
 
       <section className="mt-6 rounded border border-border">
         <header className="border-b border-border bg-card px-4 py-2 text-sm font-medium">
-          Entity types sent to the LLM
+          {t('adm.ner.entity_types')}
         </header>
         <div className="grid grid-cols-2 gap-3 p-4 text-sm md:grid-cols-3">
-          {LLM_TYPE_OPTIONS.map((t) => (
-            <label key={t} className="flex items-center gap-2">
+          {LLM_TYPE_OPTIONS.map((ty) => (
+            <label key={ty} className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={draft.llm_entity_types.includes(t)}
-                onChange={() => toggleType(t)}
+                checked={draft.llm_entity_types.includes(ty)}
+                onChange={() => toggleType(ty)}
               />
-              <span className="font-mono text-xs">{t}</span>
+              <span dir="ltr" className="font-mono text-xs">{ty}</span>
             </label>
           ))}
         </div>
         <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          Types not listed (email, phone, SSN, DOB, credit_card, ICD-10, CPT) are handled deterministically by regex/SpaCy and never sent to the LLM.
+          {t('adm.ner.entity_note')}
         </p>
       </section>
 
@@ -179,29 +182,30 @@ function APIKeySection({
   setAt?: string
   modelHint: string
 }) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
 
   const save = useAppMutation({
     mutationFn: (k: string) => setNERAPIKey(k),
     onSuccess: () => {
-      toast.success('API key saved')
+      toast.success(t('adm.ner.key_saved'))
       setDraft('')
       qc.invalidateQueries({ queryKey: ['ner-config'] })
     },
     onError: (err: unknown) => {
       const m = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      toast.error(m ?? 'Failed to save key')
+      toast.error(m ?? t('adm.ner.err_key_save'))
     },
   })
 
   const clear = useAppMutation({
     mutationFn: clearNERAPIKey,
     onSuccess: () => {
-      toast.success('API key cleared')
+      toast.success(t('adm.ner.key_cleared'))
       qc.invalidateQueries({ queryKey: ['ner-config'] })
     },
-    onError: () => toast.error('Failed to clear key'),
+    onError: () => toast.error(t('adm.ner.err_key_clear')),
   })
 
   const ollama = modelHint.startsWith('ollama/')
@@ -210,7 +214,7 @@ function APIKeySection({
     <section className="mt-6 rounded border border-border">
       <header className="flex items-center gap-2 border-b border-border bg-card px-4 py-2 text-sm font-medium">
         <KeyRound className="h-4 w-4 text-warning" />
-        Provider API key
+        {t('adm.ner.provider_key')}
       </header>
 
       <div className="space-y-4 p-4 text-sm">
@@ -218,33 +222,35 @@ function APIKeySection({
           <div className="flex items-center justify-between gap-3 rounded border border-success/40 bg-success/10 px-3 py-2 text-xs">
             <span className="flex items-center gap-2 text-success">
               <CheckCircle2 className="h-4 w-4" />
-              Configured{setAt ? ` · set ${new Date(setAt).toLocaleString()}` : ''}
+              {setAt ? t('adm.ner.configured_at', { when: formatDateTime(setAt) }) : t('adm.ner.configured')}
             </span>
             <Button
               size="sm"
               variant="ghost"
               disabled={clear.isPending}
               onClick={() => {
-                if (window.confirm('Clear the saved API key? The LLM tier will silently no-op until a new key is set.')) {
+                if (window.confirm(t('adm.ner.clear_confirm'))) {
                   clear.mutate()
                 }
               }}
-              aria-label="Clear API key"
+              aria-label={t('adm.ner.clear_aria')}
             >
-              <Trash2 className="me-1 h-3 w-3" /> Clear
+              <Trash2 className="me-1 h-3 w-3" /> {t('adm.ner.clear')}
             </Button>
           </div>
         ) : (
           <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-strong">
-            No key configured. The LLM tier silently skips when enabled without a key — only regex + SpaCy results land in the database.
+            {t('adm.ner.no_key')}
           </div>
         )}
 
         {ollama ? (
           <p className="text-xs text-muted-foreground">
-            Ollama runs against your own server — no API key needed. Make sure
-            <code> OLLAMA_BASE_URL </code> is reachable from the intelligence
-            worker container.
+            <Trans
+              i18nKey="adm.ner.ollama_note"
+              ns="common"
+              components={[<code key="e" dir="ltr" />]}
+            />
           </p>
         ) : (
           <form
@@ -256,9 +262,10 @@ function APIKeySection({
           >
             <label className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                {hasKey ? 'Replace key' : 'Paste new key'}
+                {hasKey ? t('adm.ner.replace_key') : t('adm.ner.paste_key')}
               </span>
               <PasswordInput
+                dir="ltr"
                 placeholder={modelHint.startsWith('claude-') ? 'sk-ant-…' : 'sk-…'}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -271,16 +278,14 @@ function APIKeySection({
                 size="sm"
                 disabled={save.isPending || draft.trim().length < 16}
               >
-                {save.isPending ? 'Saving…' : 'Save key'}
+                {save.isPending ? t('adm.ner.saving') : t('adm.ner.save_key')}
               </Button>
             </div>
           </form>
         )}
 
         <p className="text-xs text-muted-foreground">
-          Stored encrypted (AES-256-GCM) under the deployment KEK. Never returned
-          to the UI in plaintext after save. The intelligence worker decrypts
-          per-request when calling the LLM provider.
+          {t('adm.ner.key_note')}
         </p>
       </div>
     </section>
@@ -321,18 +326,20 @@ function ModelField({
   value: string
   onChange: (v: string) => void
 }) {
+  const { t } = useTranslation('common')
   const isPreset = MODEL_PRESETS.some((p) => p.value === value)
   const [custom, setCustom] = useState(!isPreset)
   return (
     <div className="flex flex-col gap-1">
       <span className="text-xs uppercase tracking-wide text-muted-foreground">
-        Model (provider/model)
+        {t('adm.ner.model')}
       </span>
       {custom ? (
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. ollama/llama3.1:8b"
+          dir="ltr"
+          placeholder={t('adm.ner.custom_ph')}
         />
       ) : (
         <Select
@@ -346,7 +353,7 @@ function ModelField({
         className="self-start text-xs text-primary hover:underline"
         onClick={() => setCustom((c) => !c)}
       >
-        {custom ? 'Use preset' : 'Custom model id'}
+        {custom ? t('adm.ner.use_preset') : t('adm.ner.custom_model')}
       </button>
     </div>
   )
