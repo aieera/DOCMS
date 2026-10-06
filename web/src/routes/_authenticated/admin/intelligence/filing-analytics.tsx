@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueries, useQuery } from '@tanstack/react-query'
 
@@ -10,6 +11,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { ErrorState } from '@/components/ui/ErrorState'
 
 function FilingAnalyticsPage() {
+  const { t } = useTranslation('common')
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['filing-analytics'],
     queryFn: getFilingAnalytics,
@@ -44,7 +46,7 @@ function FilingAnalyticsPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Filing analytics" description="Loading…" />
+        <PageHeader title={t('adm.fa.title')} description={t('adm.fa.loading')} />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
         </div>
@@ -57,8 +59,8 @@ function FilingAnalyticsPage() {
   if (isError || !data) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Filing analytics" description="Suggestion acceptance + filing patterns." />
-        <ErrorState message="Could not load filing analytics." onRetry={() => void refetch()} />
+        <PageHeader title={t('adm.fa.title')} description={t('adm.fa.desc_short')} />
+        <ErrorState message={t('adm.fa.err_load')} onRetry={() => void refetch()} />
       </div>
     )
   }
@@ -70,25 +72,25 @@ function FilingAnalyticsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Filing analytics"
-        description="Where documents land per category, and how well the smart-routing suggestions track real user behavior."
+        title={t('adm.fa.title')}
+        description={t('adm.fa.description')}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Total filings" value={data.total_filings.toLocaleString()} />
-        <Metric label="Suggested" value={acc.total_suggested.toLocaleString()} />
-        <Metric label="Accepted" value={acc.total_accepted.toLocaleString()} />
-        <Metric label="Acceptance rate" value={`${acceptancePct}%`} />
+        <Metric label={t('adm.fa.total')} value={data.total_filings.toLocaleString()} />
+        <Metric label={t('adm.fa.suggested')} value={acc.total_suggested.toLocaleString()} />
+        <Metric label={t('adm.fa.accepted')} value={acc.total_accepted.toLocaleString()} />
+        <Metric label={t('adm.fa.rate')} value={t('adm.fa.pct', { value: acceptancePct })} />
       </div>
 
-      <Section title="Top categories (by filings)">
+      <Section title={t('adm.fa.top_categories')}>
         {(data.top_categories ?? []).length === 0 ? (
-          <Empty msg="No filings recorded yet." />
+          <Empty msg={t('adm.fa.empty')} />
         ) : (
           <ul className="space-y-2.5">
             {data.top_categories.map((c) => (
               <li key={c.category_key} className="flex items-center gap-3">
-                <span className="w-32 truncate text-sm">{c.category_key}</span>
+                <span dir="ltr" className="w-32 truncate text-sm">{c.category_key}</span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full bg-info"
@@ -102,23 +104,23 @@ function FilingAnalyticsPage() {
         )}
       </Section>
 
-      <Section title="Top (category → folder) pairs">
+      <Section title={t('adm.fa.top_pairs')}>
         {(data.top_folder_by_category ?? []).length === 0 ? (
-          <Empty msg="No filings recorded yet." />
+          <Empty msg={t('adm.fa.empty')} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-start">
                 <tr>
-                  <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Category</th>
-                  <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Folder</th>
-                  <th className="pb-2 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">Filings</th>
+                  <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.fa.col_category')}</th>
+                  <th className="pb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.fa.col_folder')}</th>
+                  <th className="pb-2 text-end text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('adm.fa.col_filings')}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.top_folder_by_category.map((row, i) => (
                   <tr key={`${row.category_key}-${row.folder_id}-${i}`} className="border-t border-border">
-                    <td className="py-2.5">{row.category_key}</td>
+                    <td dir="ltr" className="py-2.5">{row.category_key}</td>
                     <td className="py-2.5 text-xs">
                       {folderNameById.get(row.folder_id) ?? (
                         <span className="font-mono text-muted-foreground" title={row.folder_id}>
