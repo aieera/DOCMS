@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle2, XCircle, ShieldQuestion, Download, FileBadge } from 'lucide-react'
@@ -16,9 +17,12 @@ import { Spinner } from '@/components/ui/Spinner'
 // proof + accession manifest) in one click.
 
 function StatusIcon({ status }: { status: ReqStatus }) {
-  if (status === 'pass') return <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-  if (status === 'fail') return <XCircle className="h-4 w-4 text-red-500" />
-  return <ShieldQuestion className="h-4 w-4 text-blue-500" />
+  const { t } = useTranslation('common')
+  // The icon was the ONLY signal for pass/fail/attested — no text at all,
+  // so a screen reader announced nothing. Label it from the catalogue.
+  if (status === 'pass') return <CheckCircle2 className="h-4 w-4 text-emerald-500" role="img" aria-label={t('adm.cert.st_pass')} />
+  if (status === 'fail') return <XCircle className="h-4 w-4 text-red-500" role="img" aria-label={t('adm.cert.st_fail')} />
+  return <ShieldQuestion className="h-4 w-4 text-blue-500" role="img" aria-label={t('adm.cert.st_attested')} />
 }
 
 function downloadJSON(filename: string, obj: unknown) {
@@ -32,6 +36,7 @@ function downloadJSON(filename: string, obj: unknown) {
 }
 
 export function CertificationDashboard() {
+  const { t } = useTranslation('common')
   const { data: standards = [] } = useQuery({ queryKey: ['record-standards'], queryFn: listStandards })
   const [standardId, setStandardId] = useState('dod5015.2')
   const [exporting, setExporting] = useState(false)
@@ -48,7 +53,7 @@ export function CertificationDashboard() {
       // manifest. Each piece is fetched live so the pack reflects "now".
       const [cov, audit, manifest] = await Promise.all([
         getCoverage(standardId),
-        verifyAuditIntegrity().catch(() => ({ error: 'audit verify-integrity unavailable' })),
+        verifyAuditIntegrity().catch(() => ({ error: t('adm.cert.audit_unavailable') })),
         accessionExport(false).catch(() => null),
       ])
       const pack = {
@@ -60,9 +65,9 @@ export function CertificationDashboard() {
         accession_manifest: manifest,
       }
       downloadJSON(`records-certification-${standardId}-${Date.now()}.json`, pack)
-      toast.success('Certification evidence pack exported')
+      toast.success(t('adm.cert.exported'))
     } catch (e) {
-      toast.error(`Export failed: ${String(e)}`)
+      toast.error(t('adm.cert.err_export', { error: String(e) }))
     } finally {
       setExporting(false)
     }
@@ -71,7 +76,7 @@ export function CertificationDashboard() {
   return (
     <div className="space-y-4" data-testid="certification-dashboard">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium">Standard</label>
+        <label className="text-sm font-medium">{t('adm.cert.standard')}</label>
         <select
           className="rounded border border-border bg-background px-2 py-1 text-sm"
           value={standardId}
@@ -79,17 +84,17 @@ export function CertificationDashboard() {
           data-testid="standard-selector"
         >
           {standards.map((s) => (
-            <option key={s.id} value={s.id}>{s.name} ({s.requirements})</option>
+            <option key={s.id} value={s.id}>{t('adm.cert.standard_option', { name: s.name, count: s.requirements })}</option>
           ))}
         </select>
         <Button size="sm" onClick={exportEvidence} disabled={exporting} className="ms-auto" data-testid="export-evidence">
           {exporting ? <Spinner className="h-3 w-3" /> : <Download className="h-3 w-3" />}
-          Export evidence pack
+          {t('adm.cert.export')}
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Evaluating coverage…</div>
+        <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> {t('adm.cert.evaluating')}</div>
       ) : coverage ? (
         <>
           <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border p-4">
@@ -97,16 +102,16 @@ export function CertificationDashboard() {
               <FileBadge className="h-8 w-8 text-violet-500" />
               <div>
                 <div className="text-2xl font-bold tabular-nums">{coverage.coverage_pct}%</div>
-                <div className="text-xs text-muted-foreground">coverage</div>
+                <div className="text-xs text-muted-foreground">{t('adm.cert.coverage')}</div>
               </div>
             </div>
             <div className="flex gap-4 text-sm">
-              <span className="text-emerald-600">{coverage.passed} pass</span>
-              <span className="text-blue-600">{coverage.attested} attested</span>
-              <span className={coverage.gaps > 0 ? 'text-red-600' : 'text-muted-foreground'}>{coverage.gaps} gaps</span>
+              <span className="text-emerald-600">{t('adm.cert.passed', { count: coverage.passed })}</span>
+              <span className="text-blue-600">{t('adm.cert.attested', { count: coverage.attested })}</span>
+              <span className={coverage.gaps > 0 ? 'text-red-600' : 'text-muted-foreground'}>{t('adm.cert.gaps', { count: coverage.gaps })}</span>
             </div>
-            <div className="ms-auto text-xs text-muted-foreground">
-              {coverage.stats.records_total} records · {coverage.stats.vital} vital · {coverage.stats.frozen} frozen
+            <div dir="auto" className="ms-auto text-xs text-muted-foreground">
+              {t('adm.cert.stats', { records: coverage.stats.records_total, vital: coverage.stats.vital, frozen: coverage.stats.frozen })}
             </div>
           </div>
 
@@ -114,7 +119,7 @@ export function CertificationDashboard() {
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-start text-xs text-muted-foreground">
-                <tr><th className="p-2 w-8" /><th className="p-2">Requirement</th><th className="p-2">SeDoc mechanism</th><th className="p-2">Detail</th></tr>
+                <tr><th className="p-2 w-8" /><th className="p-2">{t('adm.cert.col_requirement')}</th><th className="p-2">{t('adm.cert.col_mechanism')}</th><th className="p-2">{t('adm.cert.col_detail')}</th></tr>
               </thead>
               <tbody>
                 {coverage.requirements.map((req) => (
@@ -133,9 +138,17 @@ export function CertificationDashboard() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Coverage = (pass + attested) / total. <span className="text-blue-600">Attested</span> = SeDoc provides the
-            mechanism; <span className="text-emerald-600">pass</span> = live data confirms it; <span className="text-red-600">gap</span> = action needed.
-            The evidence pack bundles this checklist with the audit hash-chain proof and the accession manifest.
+            {/* Three colour-coded terms sit mid-sentence; Arabic reorders the
+                clauses around them, so the markup travels with the key. */}
+            <Trans
+              i18nKey="adm.cert.legend"
+              ns="common"
+              components={[
+                <span key="a" className="text-blue-600" />,
+                <span key="p" className="text-emerald-600" />,
+                <span key="g" className="text-red-600" />,
+              ]}
+            />
           </p>
         </>
       ) : null}

@@ -14,17 +14,23 @@ dayjs.extend(relativeTime)
 // Accepts strings too: the API serialises int64 byte counts as JSON
 // strings ("15907"), and callers kept forgetting the Number() wrapper —
 // which silently rendered "—" for perfectly good sizes.
+// Byte-unit symbols come from the catalogue: Arabic uses بايت / ك.ب / م.ب
+// rather than the Latin abbreviations. EN values match the old literals,
+// so English output is unchanged.
+const sizeUnit = (key: string) =>
+  i18n.t(`unit.${key}`, { ns: 'common', defaultValue: key.toUpperCase() })
+
 export function formatFileSize(bytes: number | string | null | undefined): string {
   const n = typeof bytes === 'string' ? (bytes.trim() === '' ? NaN : Number(bytes)) : bytes
   if (n == null || !Number.isFinite(n) || n < 0) return '—'
-  if (n === 0) return '0\u00A0B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
+  if (n === 0) return `0\u00A0${sizeUnit('b')}`
+  const units = ['b', 'kb', 'mb', 'gb', 'tb', 'pb', 'eb']
   const raw = Math.floor(Math.log(n) / Math.log(1024))
   const i = Math.min(raw, units.length - 1) // clamp for ZB+ inputs
   // LRI…PDI (U+2066/U+2069) bidi-isolate the "<number> <unit>" pair, and
   // NBSP glues it: under RTL the neutral pair re-ordered as "KB 7.9"
   // (QA SD-07). Isolation keeps internal LTR order in any context.
-  return `\u2066${(n / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)}\u00A0${units[i]}\u2069`
+  return `\u2066${(n / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)}\u00A0${sizeUnit(units[i])}\u2069`
 }
 
 // Reject obviously-bogus input (null/undefined/empty, invalid, or the

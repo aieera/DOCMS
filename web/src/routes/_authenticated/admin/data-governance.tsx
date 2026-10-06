@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { CompliancePage } from './compliance'
 import { ResidencyPage } from './residency'
@@ -22,6 +23,7 @@ interface DGSearch {
 }
 
 function DataGovernancePage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'compliance'
@@ -35,9 +37,9 @@ function DataGovernancePage() {
         }
       >
         <TabsList>
-          <TabsTrigger value="compliance">Compliance</TabsTrigger>
-          <TabsTrigger value="residency">Residency</TabsTrigger>
-          <TabsTrigger value="certification">Records certification</TabsTrigger>
+          <TabsTrigger value="compliance">{t('adm.dg.tab_compliance')}</TabsTrigger>
+          <TabsTrigger value="residency">{t('adm.dg.tab_residency')}</TabsTrigger>
+          <TabsTrigger value="certification">{t('adm.dg.tab_certification')}</TabsTrigger>
         </TabsList>
         <TabsContent value="compliance" className="mt-4">
           <CompliancePage />

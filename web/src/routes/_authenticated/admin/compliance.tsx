@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ComplianceDashboard } from '@/components/admin/ComplianceDashboard'
@@ -6,6 +7,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { getComplianceOverview } from '@/api/compliance'
 
 export function CompliancePage() {
+  const { t } = useTranslation('common')
   // Previously this page hard-coded encryptionCoverage=94 and a
   // storageByRegion list that included a fictional 67 GB in
   // me-south-1. Both numbers contradicted the real DB (56.8%
@@ -20,12 +22,12 @@ export function CompliancePage() {
 
   return (
     <div>
-      <PageHeader title="Compliance" description="Data residency, encryption, and retention overview" />
+      <PageHeader title={t('adm.comp.title')} description={t('adm.comp.description')} />
       {isLoading ? (
         <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>
       ) : isError ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          Could not load compliance overview — check the document service is reachable.
+          {t('adm.comp.err_load')}
         </div>
       ) : (
         <ComplianceDashboard

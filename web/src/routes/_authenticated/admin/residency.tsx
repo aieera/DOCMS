@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -35,6 +36,7 @@ async function fetchClusterRegion(): Promise<string> {
 }
 
 export function ResidencyPage() {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
   const stats = useQuery({ queryKey: ['residency-stats'], queryFn: getResidencyStats })
   const migrations = useQuery({ queryKey: ['residency-migrations'], queryFn: listResidencyMigrations })
@@ -50,45 +52,45 @@ export function ResidencyPage() {
   const submit = useAppMutation({
     mutationFn: () => createResidencyMigration({ source_region: src, target_region: tgt }),
     onSuccess: () => {
-      toast.success('Migration queued')
+      toast.success(t('adm.res.queued'))
       setSrc('')
       setTgt('')
       qc.invalidateQueries({ queryKey: ['residency-migrations'] })
     },
-    onError: () => toast.error('Failed to queue migration'),
+    onError: () => toast.error(t('adm.res.err_queue')),
   })
 
   return (
     <div>
       <PageHeader
-        title="Data Residency"
-        description="Where your documents live, and how to move them."
+        title={t('adm.res.title')}
+        description={t('adm.res.description')}
       />
 
       <ResidencyBanner clusterRegion={cluster.data} statRegions={(stats.data ?? []).map((r) => r.region)} />
 
       <h3 className="mb-2 mt-2 flex items-center gap-2 font-medium">
-        <Globe className="h-4 w-4" /> Distribution
+        <Globe className="h-4 w-4" /> {t('adm.res.distribution')}
       </h3>
       {stats.isLoading ? (
         <Skeleton className="h-16" />
       ) : !stats.data || stats.data.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No documents yet.</p>
+        <p className="text-sm text-muted-foreground">{t('adm.res.no_docs')}</p>
       ) : (
         <div className="mb-6 overflow-hidden rounded-2xl bg-card shadow-neu">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr className="text-start">
-                <th className="px-4 py-2">Region</th>
-                <th className="px-4 py-2">Documents</th>
-                <th className="px-4 py-2">Storage used</th>
+                <th className="px-4 py-2">{t('adm.res.col_region')}</th>
+                <th className="px-4 py-2">{t('adm.res.col_documents')}</th>
+                <th className="px-4 py-2">{t('adm.res.col_storage')}</th>
               </tr>
             </thead>
             <tbody>
               {stats.data.map((row) => (
                 <tr key={row.region} className="border-t border-border">
-                  <td className="px-4 py-2 font-medium">{row.region}</td>
+                  <td dir="ltr" className="px-4 py-2 font-medium">{row.region}</td>
                   <td className="px-4 py-2">{row.doc_count.toLocaleString()}</td>
                   <td className="px-4 py-2">{formatFileSize(row.blob_bytes)}</td>
                 </tr>
@@ -101,7 +103,7 @@ export function ResidencyPage() {
 
       <div className="mb-6 rounded-lg bg-card p-4 shadow-neu">
         <h3 className="mb-3 flex items-center gap-2 font-medium">
-          <DirectionalIcon name="ArrowRight" className="h-4 w-4" /> Migrate documents
+          <DirectionalIcon name="ArrowRight" className="h-4 w-4" /> {t('adm.res.migrate_docs')}
         </h3>
         {/* See admin/privacy: 1fr floors at min-content and grid items
             default to min-width:auto, so the region fields shoved the
@@ -109,43 +111,44 @@ export function ResidencyPage() {
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-3 [&>*]:min-w-0">
           <input
             className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
-            placeholder="source region (e.g. us-east-1)"
+            dir="ltr"
+            placeholder={t('adm.res.src_ph')}
             value={src}
             onChange={(e) => setSrc(e.target.value)}
           />
           <DirectionalIcon name="ArrowRight" className="h-4 w-4 text-muted-foreground" />
           <input
             className="rounded-md border border-input bg-muted px-2 py-1 text-sm shadow-neu-inset"
-            placeholder="target region (e.g. eu-west-1)"
+            dir="ltr"
+            placeholder={t('adm.res.tgt_ph')}
             value={tgt}
             onChange={(e) => setTgt(e.target.value)}
           />
           <Button
             onClick={() => {
-              if (!src.trim()) { toast.error('Source region is required'); return }
-              if (!tgt.trim()) { toast.error('Target region is required'); return }
-              if (src.trim() === tgt.trim()) { toast.error('Source and target regions must differ'); return }
+              if (!src.trim()) { toast.error(t('adm.res.err_src')); return }
+              if (!tgt.trim()) { toast.error(t('adm.res.err_tgt')); return }
+              if (src.trim() === tgt.trim()) { toast.error(t('adm.res.err_same')); return }
               submit.mutate()
             }}
             disabled={submit.isPending}
           >
-            Migrate
+            {t('adm.res.migrate')}
           </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Queues a resumable background migration. Each document is re-pinned to the target region
-          and re-encrypted with that region's key. You can safely leave this page while it runs.
+          {t('adm.res.migrate_hint')}
         </p>
       </div>
 
-      <h3 className="mb-2 font-medium">Recent migrations</h3>
+      <h3 className="mb-2 font-medium">{t('adm.res.recent')}</h3>
       {migrations.isLoading ? (
         <Skeleton className="h-20" />
       ) : !migrations.data || migrations.data.length === 0 ? (
         <EmptyState
           icon={<Globe className="h-12 w-12" />}
-          title="No migrations yet"
-          description="Submit one above to move documents between regions."
+          title={t('adm.res.empty')}
+          description={t('adm.res.empty_desc')}
         />
       ) : (
         <ul className="space-y-2">
@@ -155,16 +158,16 @@ export function ResidencyPage() {
               className="rounded-lg bg-card p-3 shadow-neu"
             >
               <div className="flex items-center gap-2">
-                <span className="font-medium">
+                <span dir="ltr" className="font-medium">
                   {m.source_region} → {m.target_region}
                 </span>
-                <Badge variant={migStatus(m.status)}>{m.status}</Badge>
+                <Badge variant={migStatus(m.status)}>{t(`adm.res.st_${m.status}`)}</Badge>
                 <span className="ms-auto text-xs text-muted-foreground">
                   {formatRelativeTime(m.created_at)}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {m.moved_docs} / {m.total_docs} moved · {m.failed_docs} failed
+              <div dir="auto" className="mt-1 text-xs text-muted-foreground">
+                {t('adm.res.progress', { moved: m.moved_docs, total: m.total_docs, failed: m.failed_docs })}
               </div>
               {m.error_summary && <p className="mt-1 text-xs text-destructive">{m.error_summary}</p>}
             </li>
@@ -195,14 +198,21 @@ function ResidencyBanner({
   clusterRegion: string | undefined
   statRegions: string[]
 }) {
+  const { t } = useTranslation('common')
   if (!clusterRegion || clusterRegion === 'unknown') {
     return (
       <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         <div>
-          <p className="font-medium text-warning-strong">Cluster region unknown</p>
+          <p className="font-medium text-warning-strong">{t('adm.res.unknown_title')}</p>
           <p className="text-xs text-warning-strong/80">
-            <code>/healthz</code> did not return a region. Confirm the service was started with <code>SEDOC_REGION_ID</code>.
+            {/* <Trans>: two literal identifiers sit mid-sentence and Arabic
+                reorders the clauses around them. Both stay dir="ltr". */}
+            <Trans
+              i18nKey="adm.res.unknown_body"
+              ns="common"
+              components={[<code key="p" dir="ltr" />, <code key="e" dir="ltr" />]}
+            />
           </p>
         </div>
       </div>
@@ -215,11 +225,14 @@ function ResidencyBanner({
         <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
         <div>
           <p className="font-medium text-success">
-            Residency OK — cluster region <code>{clusterRegion}</code>
+            <Trans
+              i18nKey="adm.res.ok_title"
+              ns="common"
+              values={{ region: clusterRegion }}
+              components={[<code key="r" dir="ltr" />]}
+            />
           </p>
-          <p className="text-xs text-success/80">
-            Every document lives in this region. New uploads will be pinned here.
-          </p>
+          <p className="text-xs text-success/80">{t('adm.res.ok_body')}</p>
         </div>
       </div>
     )
@@ -229,11 +242,20 @@ function ResidencyBanner({
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
       <div>
         <p className="font-medium text-destructive">
-          Residency drift — cluster runs in <code>{clusterRegion}</code> but documents exist in {drift.join(', ')}
+          <Trans
+            i18nKey="adm.res.drift_title"
+            ns="common"
+            values={{ region: clusterRegion, others: drift.join(', ') }}
+            components={[<code key="r" dir="ltr" />]}
+          />
         </p>
         <p className="text-xs text-destructive/80">
-          Move them with the migration tool below. New uploads to this cluster will pin to{' '}
-          <code>{clusterRegion}</code>; the existing rows must be migrated explicitly.
+          <Trans
+            i18nKey="adm.res.drift_body"
+            ns="common"
+            values={{ region: clusterRegion }}
+            components={[<code key="r" dir="ltr" />]}
+          />
         </p>
       </div>
     </div>
