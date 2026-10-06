@@ -1363,6 +1363,12 @@
       "tab_log": "Activity history",
       "title": "Audit log"
     },
+    "bill": {
+      "description": "Plan, usage, and invoices for this tenant.",
+      "empty": "Billing not yet configured",
+      "empty_desc": "Hook up a billing provider in tenant settings to surface usage metrics, invoices, and plan changes here.",
+      "title": "Billing"
+    },
     "cert": {
       "attested": "{{count}} attested",
       "audit_unavailable": "audit verify-integrity unavailable",
@@ -1531,6 +1537,43 @@
     "legal": {
       "tab_ediscovery": "E-discovery export",
       "tab_holds": "Legal holds"
+    },
+    "lic": {
+      "claims": "Claims",
+      "days_remaining": "Days remaining",
+      "description": "Signed JWT claims, seat usage, feature flags, and expiry.",
+      "disabled": "Disabled",
+      "enabled": "Enabled",
+      "err_load": "Failed to load license: {{error}}",
+      "expiry": "Expiry",
+      "f_connectors": "Allowed connectors",
+      "f_esign": "eSignature",
+      "f_intel": "Intelligence LLM",
+      "f_ipaas": "iPaaS triggers",
+      "f_mcp": "MCP server",
+      "f_regions": "Allowed regions",
+      "flags": "Feature flags",
+      "flags_future": "Feature flags (future)",
+      "future_body": "When enforcement ships, this section will show per-feature toggles (eSign, MCP, iPaaS, Intel LLM, allowed connectors, allowed regions) derived from the JWT.",
+      "future_note": "Today every feature is implicitly enabled because no validator runs.",
+      "grace": "Grace period",
+      "grace_days_future_one": "{{count}} day (future)",
+      "grace_days_future_other": "{{count}} days (future)",
+      "grace_days_one": "{{count}} day",
+      "grace_days_other": "{{count}} days",
+      "issued_by": "Issued by",
+      "issued_to": "Issued to",
+      "seat_limit": "Seat limit",
+      "seat_usage": "Seat usage",
+      "seat_usage_value": "{{used}} / {{limit}}",
+      "seats_used": "Seats used",
+      "st_active": "License active",
+      "st_expired": "License expired (read-only mode)",
+      "st_grace_one": "License in grace period — {{count}} day into grace",
+      "st_grace_other": "License in grace period — {{count}} days into grace",
+      "st_unlicensed": "Unlicensed (dev mode)",
+      "tenant_name": "Tenant name",
+      "title": "Tenant license"
     },
     "rec": {
       "act_destroy": "Destroy",
@@ -1722,6 +1765,10 @@
       "title": "SIEM forwarding",
       "token_ph": "token",
       "unknown_error": "unknown error"
+    },
+    "sub": {
+      "tab_license": "License",
+      "tab_plan": "Plan & usage"
     },
     "sync": {
       "title": "Devices & Sync",

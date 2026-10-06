@@ -1,4 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Shield, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 
@@ -20,6 +22,7 @@ export const Route = createFileRoute('/_authenticated/admin/tenant/license')({
 })
 
 export function LicensePage() {
+  const { t } = useTranslation('common')
   const { data, isLoading, error } = useQuery({
     queryKey: ['tenant-license'],
     queryFn: getLicense,
@@ -36,14 +39,14 @@ export function LicensePage() {
   return (
     <div className="mx-auto max-w-5xl p-6">
       <PageHeader
-        title="Tenant license"
-        description="Signed JWT claims, seat usage, feature flags, and expiry."
+        title={t('adm.lic.title')}
+        description={t('adm.lic.description')}
       />
 
       {isLoading && <Spinner />}
       {error && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          Failed to load license: {(error as Error).message}
+          {t('adm.lic.err_load', { error: (error as Error).message })}
         </div>
       )}
 
@@ -62,7 +65,8 @@ export function LicensePage() {
 }
 
 function StatusBanner({ data }: { data: LicenseResponse }) {
-  const config = bannerConfig(data.status, data.days_remaining)
+  const { t } = useTranslation('common')
+  const config = bannerConfig(data.status, data.days_remaining, t)
   return (
     <section className={`mb-6 rounded-lg border p-4 ${config.cls}`}>
       <div className="flex items-start gap-3">
@@ -81,53 +85,54 @@ function StatusBanner({ data }: { data: LicenseResponse }) {
   )
 }
 
-function bannerConfig(status: LicenseStatus, daysRemaining?: number) {
+function bannerConfig(status: LicenseStatus, daysRemaining: number | undefined, t: TFunction<'common'>) {
   switch (status) {
     case 'unlicensed_dev_mode':
       return {
         Icon: AlertTriangle,
         cls: 'border-warning/40 bg-warning/10',
-        title: 'Unlicensed (dev mode)',
+        title: t('adm.lic.st_unlicensed'),
       }
     case 'expired':
       return {
         Icon: AlertTriangle,
         cls: 'border-destructive/40 bg-destructive/5',
-        title: 'License expired (read-only mode)',
+        title: t('adm.lic.st_expired'),
       }
     case 'grace':
       return {
         Icon: Clock,
         cls: 'border-warning/40 bg-warning/10',
-        title: `License in grace period — ${Math.abs(daysRemaining ?? 0)} days into grace`,
+        title: t('adm.lic.st_grace', { count: Math.abs(daysRemaining ?? 0) }),
       }
     case 'active':
     default:
       return {
         Icon: CheckCircle2,
         cls: 'border-success/40 bg-success/10',
-        title: 'License active',
+        title: t('adm.lic.st_active'),
       }
   }
 }
 
 function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; seatsUsed?: number }) {
+  const { t } = useTranslation('common')
   // Today's response carries no real claims. Render the future shape
   // with `—` placeholders so the page structure is visible. Seats used
   // is real even without a license — it comes from the auth service.
   const placeholders = [
-    { label: 'Tenant name', value: '—' },
-    { label: 'Seat limit', value: '—' },
-    { label: 'Seats used', value: seatsUsed != null ? String(seatsUsed) : '—' },
-    { label: 'Expiry', value: '—' },
-    { label: 'Issued to', value: '—' },
-    { label: 'Issued by', value: '—' },
-    { label: 'Grace period', value: `${data.grace_days} days (future)` },
+    { label: t('adm.lic.tenant_name'), value: '—' },
+    { label: t('adm.lic.seat_limit'), value: '—' },
+    { label: t('adm.lic.seats_used'), value: seatsUsed != null ? String(seatsUsed) : '—' },
+    { label: t('adm.lic.expiry'), value: '—' },
+    { label: t('adm.lic.issued_to'), value: '—' },
+    { label: t('adm.lic.issued_by'), value: '—' },
+    { label: t('adm.lic.grace'), value: t('adm.lic.grace_days_future', { count: data.grace_days }) },
   ]
   return (
     <>
       <section className="mb-6">
-        <h2 className="mb-3 text-lg font-semibold">Claims</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.claims')}</h2>
         <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
             {placeholders.map((p) => (
@@ -141,15 +146,10 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Feature flags (future)</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.flags_future')}</h2>
         <div className="rounded-lg bg-card p-4 text-sm text-muted-foreground shadow-neu">
-          <p>
-            When enforcement ships, this section will show per-feature toggles (eSign, MCP, iPaaS,
-            Intel LLM, allowed connectors, allowed regions) derived from the JWT.
-          </p>
-          <p className="mt-2">
-            Today every feature is implicitly enabled because no validator runs.
-          </p>
+          <p>{t('adm.lic.future_body')}</p>
+          <p className="mt-2">{t('adm.lic.future_note')}</p>
         </div>
       </section>
     </>
@@ -157,6 +157,7 @@ function UnlicensedDevPlaceholder({ data, seatsUsed }: { data: LicenseResponse; 
 }
 
 function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed?: number }) {
+  const { t } = useTranslation('common')
   // Renders when status is active / grace / expired. seats_used comes
   // from the auth service's live count (falling back to the license
   // payload, then an em dash while the count is still loading).
@@ -164,37 +165,40 @@ function LicensedSummary({ data, seatsUsed }: { data: LicenseResponse; seatsUsed
   return (
     <>
       <section className="mb-6">
-        <h2 className="mb-3 text-lg font-semibold">Claims</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.claims')}</h2>
         <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
-            <Row label="Tenant name" value={data.tenant_name ?? '—'} />
-            <Row label="Seat usage" value={`${used ?? '—'} / ${data.seat_limit ?? 0}`} />
-            <Row label="Expiry" value={data.expiry ?? '—'} />
+            <Row label={t('adm.lic.tenant_name')} value={data.tenant_name ?? '—'} />
             <Row
-              label="Days remaining"
+              label={t('adm.lic.seat_usage')}
+              value={t('adm.lic.seat_usage_value', { used: used ?? '—', limit: data.seat_limit ?? 0 })}
+            />
+            <Row label={t('adm.lic.expiry')} value={data.expiry ?? '—'} />
+            <Row
+              label={t('adm.lic.days_remaining')}
               value={data.days_remaining != null ? String(data.days_remaining) : '—'}
             />
-            <Row label="Issued to" value={data.issued_to ?? '—'} />
-            <Row label="Issued by" value={data.issued_by ?? '—'} />
-            <Row label="Grace period" value={`${data.grace_days} days`} />
+            <Row label={t('adm.lic.issued_to')} value={data.issued_to ?? '—'} />
+            <Row label={t('adm.lic.issued_by')} value={data.issued_by ?? '—'} />
+            <Row label={t('adm.lic.grace')} value={t('adm.lic.grace_days', { count: data.grace_days })} />
           </dl>
         </div>
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Feature flags</h2>
+        <h2 className="mb-3 text-lg font-semibold">{t('adm.lic.flags')}</h2>
         <div className="rounded-lg bg-card shadow-neu">
           <dl className="divide-y divide-border">
-            <Flag label="eSignature" enabled={data.feature_flags?.esign} />
-            <Flag label="MCP server" enabled={data.feature_flags?.mcp} />
-            <Flag label="iPaaS triggers" enabled={data.feature_flags?.ipaas} />
-            <Flag label="Intelligence LLM" enabled={data.feature_flags?.intel_llm} />
+            <Flag label={t('adm.lic.f_esign')} enabled={data.feature_flags?.esign} />
+            <Flag label={t('adm.lic.f_mcp')} enabled={data.feature_flags?.mcp} />
+            <Flag label={t('adm.lic.f_ipaas')} enabled={data.feature_flags?.ipaas} />
+            <Flag label={t('adm.lic.f_intel')} enabled={data.feature_flags?.intel_llm} />
             <Row
-              label="Allowed connectors"
+              label={t('adm.lic.f_connectors')}
               value={(data.feature_flags?.connectors ?? []).join(', ') || '—'}
             />
             <Row
-              label="Allowed regions"
+              label={t('adm.lic.f_regions')}
               value={(data.feature_flags?.regions ?? []).join(', ') || '—'}
             />
           </dl>
@@ -214,6 +218,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function Flag({ label, enabled }: { label: string; enabled?: boolean }) {
+  const { t } = useTranslation('common')
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">
       <dt className="text-muted-foreground">{label}</dt>
@@ -225,7 +230,7 @@ function Flag({ label, enabled }: { label: string; enabled?: boolean }) {
         }`}
       >
         <Shield className="h-3 w-3" />
-        {enabled ? 'Enabled' : 'Disabled'}
+        {enabled ? t('adm.lic.enabled') : t('adm.lic.disabled')}
       </dd>
     </div>
   )

@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/shadcn/tabs'
 import { BillingPage } from './billing'
 import { LicensePage } from './tenant/license'
@@ -11,6 +12,7 @@ import { LicensePage } from './tenant/license'
 type Tab = 'plan' | 'license'
 
 function SubscriptionPage() {
+  const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { tab } = Route.useSearch()
   const active: Tab = tab ?? 'plan'
@@ -18,8 +20,8 @@ function SubscriptionPage() {
     <div className="space-y-4">
       <Tabs value={active} onValueChange={(v) => navigate({ to: '/admin/subscription', search: { tab: v as Tab } })}>
         <TabsList>
-          <TabsTrigger value="plan">Plan &amp; usage</TabsTrigger>
-          <TabsTrigger value="license">License</TabsTrigger>
+          <TabsTrigger value="plan">{t('adm.sub.tab_plan')}</TabsTrigger>
+          <TabsTrigger value="license">{t('adm.sub.tab_license')}</TabsTrigger>
         </TabsList>
         <TabsContent value="plan" className="mt-4"><BillingPage /></TabsContent>
         <TabsContent value="license" className="mt-4"><LicensePage /></TabsContent>
