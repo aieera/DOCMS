@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Download, Upload, AlertCircle, CheckCircle2 } from 'lucide-react'
 
@@ -30,35 +31,37 @@ import { Input } from '@/components/ui/shadcn/input'
 // (a few hundred rows) straightforward without a CLI.
 
 type BulkTab = 'upload' | 'advanced-import' | 'export'
-const TAB_LABEL: Record<BulkTab, string> = {
-  upload: 'Upload files & folders',
-  'advanced-import': 'Advanced / migration',
-  export: 'Export',
+// Keys, not text: a module-level t() freezes whichever locale loaded first.
+const TAB_KEY: Record<BulkTab, string> = {
+  upload: 'tab_upload',
+  'advanced-import': 'tab_advanced',
+  export: 'tab_export',
 }
 
 export function BulkPage() {
+  const { t } = useTranslation('common')
   const [tab, setTab] = useState<BulkTab>('upload')
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Bulk import / export"
-        description="Bulk-upload files & folders, or migrate resources via NDJSON (advanced)."
+        title={t('adm.bulk.title')}
+        description={t('adm.bulk.description')}
       />
 
       <div className="inline-flex gap-1 rounded-md bg-muted/60 p-1 text-xs" role="tablist">
-        {(['upload', 'advanced-import', 'export'] as const).map((t) => (
+        {(['upload', 'advanced-import', 'export'] as const).map((tabKey) => (
           <button
-            key={t}
+            key={tabKey}
             type="button"
             role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
+            aria-selected={tab === tabKey}
+            onClick={() => setTab(tabKey)}
             className={`rounded-sm px-3 py-1.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              tab === t ? 'bg-background font-medium text-foreground shadow-neu-sm' : 'text-muted-foreground hover:text-foreground'
+              tab === tabKey ? 'bg-background font-medium text-foreground shadow-neu-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
-            data-testid={`bulk-tab-${t}`}
+            data-testid={`bulk-tab-${tabKey}`}
           >
-            {TAB_LABEL[t]}
+            {t(`adm.bulk.${TAB_KEY[tabKey]}`)}
           </button>
         ))}
       </div>
@@ -71,6 +74,7 @@ export function BulkPage() {
 }
 
 function ImportPanel() {
+  const { t } = useTranslation('common')
   const [body, setBody] = useState('')
   const [running, setRunning] = useState(false)
   const [summary, setSummary] = useState<BulkImportSummary | null>(null)
@@ -83,7 +87,7 @@ function ImportPanel() {
   }
   const onSubmit = async () => {
     if (!body.trim()) {
-      toast.error('Paste or drop NDJSON before importing')
+      toast.error(t('adm.bulk.err_paste'))
       return
     }
     setRunning(true)
@@ -101,9 +105,9 @@ function ImportPanel() {
         })
       }, controller.signal)
       setSummary(sum)
-      toast.success(`Imported ${sum.successCount} of ${sum.totalLines}; ${sum.failureCount} failed`)
+      toast.success(t('adm.bulk.imported', { success: sum.successCount, total: sum.totalLines, failed: sum.failureCount }))
     } catch (e: unknown) {
-      toast.error((e as Error).message || 'Import failed')
+      toast.error((e as Error).message || t('adm.bulk.err_import'))
     } finally {
       setRunning(false)
       abortRef.current = null
@@ -113,7 +117,7 @@ function ImportPanel() {
   return (
     <Card className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">Import NDJSON</h2>
+        <h2 className="text-base font-semibold">{t('adm.bulk.import_title')}</h2>
         <div className="flex items-center gap-2">
           <input
             type="file"
@@ -127,7 +131,7 @@ function ImportPanel() {
             loading={running}
             data-testid="bulk-import-run"
           >
-            <Upload className="me-1 h-4 w-4" /> Run import
+            <Upload className="me-1 h-4 w-4" /> {t('adm.bulk.run_import')}
           </Button>
         </div>
       </div>
@@ -144,16 +148,16 @@ function ImportPanel() {
 
       {summary && (
         <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3" data-testid="bulk-import-summary">
-          <Card className="p-3"><span className="text-muted-foreground">Processed</span><p className="text-lg font-semibold">{summary.totalLines}</p></Card>
-          <Card className="p-3"><span className="text-success">Succeeded</span><p className="text-lg font-semibold">{summary.successCount}</p></Card>
-          <Card className="p-3"><span className="text-destructive">Failed</span><p className="text-lg font-semibold">{summary.failureCount}</p></Card>
+          <Card className="p-3"><span className="text-muted-foreground">{t('adm.bulk.processed')}</span><p className="text-lg font-semibold">{summary.totalLines}</p></Card>
+          <Card className="p-3"><span className="text-success">{t('adm.bulk.succeeded')}</span><p className="text-lg font-semibold">{summary.successCount}</p></Card>
+          <Card className="p-3"><span className="text-destructive">{t('adm.bulk.failed')}</span><p className="text-lg font-semibold">{summary.failureCount}</p></Card>
         </div>
       )}
 
       {(latest.length > 0 || summary?.globalErrors.length) && (
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase text-muted-foreground">
-            {summary ? 'Last 50 results' : 'Live results'}
+            {summary ? t('adm.bulk.last_50') : t('adm.bulk.live')}
           </p>
           <ul className="max-h-64 space-y-0.5 overflow-y-auto rounded-xl bg-muted p-2 font-mono text-[11px] shadow-neu-inset" data-testid="bulk-import-results">
             {summary?.globalErrors.map((e, i) => (
@@ -164,8 +168,8 @@ function ImportPanel() {
             {latest.map((r, i) => (
               <li key={i} className={r.success ? 'text-success' : 'text-destructive'}>
                 {r.success
-                  ? <><CheckCircle2 className="me-1 inline h-3 w-3" />{r.skipped ? 'skip' : 'ok  '} {r.external_id ?? '?'} → {r.internal_id?.slice(0, 8) ?? ''}</>
-                  : <><AlertCircle className="me-1 inline h-3 w-3" />fail {r.external_id ?? '?'} — {r.error}</>}
+                  ? <><CheckCircle2 className="me-1 inline h-3 w-3" />{r.skipped ? t('adm.bulk.skip') : t('adm.bulk.ok')} {r.external_id ?? '?'} → {r.internal_id?.slice(0, 8) ?? ''}</>
+                  : <><AlertCircle className="me-1 inline h-3 w-3" />{t('adm.bulk.fail')} {r.external_id ?? '?'} — {r.error}</>}
               </li>
             ))}
           </ul>
@@ -176,6 +180,7 @@ function ImportPanel() {
 }
 
 function ExportPanel() {
+  const { t } = useTranslation('common')
   const [resource, setResource] = useState<BulkResource>('document')
   const [workspaceId, setWorkspaceId] = useState('')
   const [running, setRunning] = useState(false)
@@ -197,9 +202,9 @@ function ExportPanel() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      toast.success(`Exported ${items.length} ${resource}${items.length === 1 ? '' : 's'}`)
+      toast.success(t(`adm.bulk.exported_${resource}`, { count: items.length }))
     } catch (e: unknown) {
-      toast.error((e as Error).message || 'Export failed')
+      toast.error((e as Error).message || t('adm.bulk.err_export'))
     } finally {
       setRunning(false)
     }
@@ -207,21 +212,22 @@ function ExportPanel() {
 
   return (
     <Card className="space-y-3 p-4">
-      <h2 className="text-base font-semibold">Export NDJSON</h2>
+      <h2 className="text-base font-semibold">{t('adm.bulk.export_title')}</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Select
-          label="Resource"
+          label={t('adm.bulk.resource')}
           value={resource}
           onValueChange={(v) => setResource(v as BulkResource)}
           options={[
-            { value: 'workspace', label: 'Workspaces' },
-            { value: 'folder',    label: 'Folders' },
-            { value: 'document',  label: 'Documents' },
+            { value: 'workspace', label: t('adm.bulk.r_workspace') },
+            { value: 'folder',    label: t('adm.bulk.r_folder') },
+            { value: 'document',  label: t('adm.bulk.r_document') },
           ]}
         />
         {(resource === 'document' || resource === 'folder') && (
           <Input
-            label="Workspace id (optional filter)"
+            label={t('adm.bulk.ws_filter')}
+            dir="ltr"
             value={workspaceId}
             onChange={(e) => setWorkspaceId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
@@ -229,10 +235,10 @@ function ExportPanel() {
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        User and group exports aren't implemented yet — those rows live in the auth service. Use the auth admin surface for now.
+        {t('adm.bulk.export_note')}
       </p>
       <Button onClick={() => void onRun()} disabled={running} loading={running} data-testid="bulk-export-run">
-        <Download className="me-1 h-4 w-4" /> Export to file
+        <Download className="me-1 h-4 w-4" /> {t('adm.bulk.export_btn')}
       </Button>
     </Card>
   )
