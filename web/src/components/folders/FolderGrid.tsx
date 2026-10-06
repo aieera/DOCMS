@@ -242,10 +242,7 @@ function FolderCard({
         <p className="mt-0.5 text-xs text-muted-foreground">
           {total === 0
             ? t('empty_folder')
-            : t('item_count', {
-                count: total,
-                defaultValue: total === 1 ? '1 item' : `${total} items`,
-              })}
+            : t('item_count', { count: total })}
         </p>
       </div>
       {(onRename || onDelete || onFlipVisibility || onManageAccess) && (

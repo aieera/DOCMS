@@ -117,11 +117,7 @@ function WorkflowsAdminPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{d.name}</p>
                       <p className="mt-0.5 text-[10px] text-muted-foreground">
-                        {t('templates.card.steps_count', {
-                          count: d.steps?.length ?? 0,
-                          defaultValue:
-                            (d.steps?.length ?? 0) === 1 ? '1 step' : `${d.steps?.length ?? 0} steps`,
-                        })}
+                        {t('templates.card.steps_count', { count: d.steps?.length ?? 0 })}
                       </p>
                     </div>
                   </Card>

@@ -1,91 +1,31 @@
 {
-  "templates": {
-    "title": "قوالب سير العمل",
-    "description": "سلاسل اعتماد وتوقيع وإشعارات قابلة لإعادة الاستخدام. أرفق قالباً بمستند لبدء مراجعته.",
-    "new_button": "قالب جديد",
-    "search_placeholder": "ابحث عن القوالب…",
-    "empty_title": "لا توجد قوالب بعد",
-    "empty_description": "أنشئ سلسلة سير عمل قابلة لإعادة الاستخدام لبدء توجيه المستندات.",
-    "card": {
-      "steps_count_one": "خطوة واحدة",
-      "steps_count_other": "{{count}} خطوات",
-      "version": "النسخة {{version}}",
-      "active": "نشط",
-      "inactive": "غير نشط",
-      "edit": "تعديل",
-      "duplicate": "تكرار",
-      "delete": "حذف",
-      "make_private": "اجعله خاصاً",
-      "make_shared": "اجعله مشتركاً",
-      "manage_access": "إدارة الوصول"
+  "admin": {
+    "title": "سير العمل",
+    "description": "قوالب على مستوى المستأجر وحالات سير العمل النشطة.",
+    "templates_section": "القوالب",
+    "instances_section": "الحالات النشطة",
+    "instances_empty": "لا توجد حالات سير عمل نشطة",
+    "columns": {
+      "document": "المستند",
+      "template": "القالب",
+      "status": "الحالة",
+      "started_by": "بدأها",
+      "started_at": "تاريخ البدء",
+      "current_step": "الخطوة الحالية",
+      "actions": "إجراءات"
     },
-    "actions_aria_label": "إجراءات القالب",
-    "private_label": "خاص",
-    "private_tooltip": "ظاهر لك فقط وللأشخاص الذين منحتهم الوصول",
-    "delete_confirm": {
-      "title": "حذف القالب؟",
-      "description": "ستظل أي حالات نشطة قيد التشغيل. لن تتمكن المستندات الجديدة من بدء هذا القالب.",
-      "confirm": "حذف القالب"
-    }
-  },
-  "visibility": {
-    "flip_to_private_confirm": {
-      "title": "هل تجعل سير العمل هذا خاصاً؟",
-      "description": "سيفقد بقية أعضاء مساحة العمل الوصول. أنت ومن تمنحهم الصلاحية فقط ستظهر لكم.",
-      "confirm": "اجعله خاصاً"
-    },
-    "flip_to_shared_confirm": {
-      "title": "هل تجعل سير العمل هذا مشتركاً؟",
-      "description": "سيتمكّن جميع أعضاء مساحة العمل من رؤيته وبدء تشغيله.",
-      "confirm": "اجعله مشتركاً"
-    }
-  },
-  "manage_access_dialog": {
-    "title": "إدارة الوصول لسير العمل",
-    "description": "يمكن لهؤلاء المستخدمين والمجموعات رؤية سير العمل وبدء تشغيله. المالك له الوصول دائماً.",
-    "owner_label": "المالك",
-    "current_label": "الأشخاص والمجموعات التي لديها وصول",
-    "no_grants": "لم يُمنح أحد آخر الوصول بعد.",
-    "add_label": "أضف شخصاً أو مجموعة",
-    "add_user": "أضف مستخدماً",
-    "add_group": "أضف مجموعة",
-    "revoke": "إلغاء الوصول",
-    "type_user": "مستخدم",
-    "type_group": "مجموعة"
-  },
-  "toasts": {
-    "visibility_changed": "تم تحديث ظهور سير العمل",
-    "grant_added": "تم منح الوصول",
-    "grant_removed": "تم إلغاء الوصول",
-    "error": "تعذّر إكمال عملية سير العمل"
+    "view": "عرض",
+    "cancel": "إلغاء"
   },
   "editor": {
-    "new_title": "قالب سير عمل جديد",
-    "edit_title": "تعديل القالب",
-    "name_label": "اسم القالب",
-    "name_placeholder": "مثال: اعتماد العقود",
+    "add_step": "إضافة خطوة",
+    "chain_empty": "لا توجد خطوات بعد. اختر نوع خطوة من الأعلى للبدء.",
+    "chain_title": "الخطوات",
+    "config_empty": "اختر خطوة من اليسار لتعديلها.",
+    "config_title": "إعدادات الخطوة",
     "description_label": "الوصف",
     "description_placeholder": "اختياري — الغرض من هذا السير",
-    "chain_title": "الخطوات",
-    "chain_empty": "لا توجد خطوات بعد. اختر نوع خطوة من الأعلى للبدء.",
-    "config_title": "إعدادات الخطوة",
-    "config_empty": "اختر خطوة من اليسار لتعديلها.",
-    "add_step": "إضافة خطوة",
-    "save": "حفظ القالب",
-    "saving": "جارٍ الحفظ…",
-    "save_success": "تم حفظ القالب",
-    "save_error": "تعذّر حفظ القالب",
-    "validation_title": "التحقق",
-    "validation_ok": "التعريف صالح",
-    "validation_issue_one": "مشكلة واحدة",
-    "validation_issue_other": "{{count}} مشكلات",
-    "step": {
-      "approval": "اعتماد",
-      "signature": "توقيع",
-      "notification": "إشعار",
-      "conditional": "شرطي",
-      "parallel": "متوازٍ"
-    },
+    "edit_title": "تعديل القالب",
     "fields": {
       "name": "اسم الخطوة",
       "assignee_type": "نوع المُكلَّف",
@@ -107,7 +47,49 @@
       "on_true": "إذا تحقق → خطوة",
       "on_false": "إذا لم يتحقق → خطوة",
       "allow_delegate": "السماح بالتفويض"
-    }
+    },
+    "name_label": "اسم القالب",
+    "name_placeholder": "مثال: اعتماد العقود",
+    "new_title": "قالب سير عمل جديد",
+    "save": "حفظ القالب",
+    "save_error": "تعذّر حفظ القالب",
+    "save_success": "تم حفظ القالب",
+    "saving": "جارٍ الحفظ…",
+    "step": {
+      "approval": "اعتماد",
+      "signature": "توقيع",
+      "notification": "إشعار",
+      "conditional": "شرطي",
+      "parallel": "متوازٍ"
+    },
+    "validation_issue_few": "{{count}} مشكلات",
+    "validation_issue_many": "{{count}} مشكلة",
+    "validation_issue_one": "مشكلة واحدة",
+    "validation_issue_other": "{{count}} مشكلة",
+    "validation_issue_two": "مشكلتان",
+    "validation_issue_zero": "لا مشكلات",
+    "validation_ok": "التعريف صالح",
+    "validation_title": "التحقق"
+  },
+  "manage_access_dialog": {
+    "title": "إدارة الوصول لسير العمل",
+    "description": "يمكن لهؤلاء المستخدمين والمجموعات رؤية سير العمل وبدء تشغيله. المالك له الوصول دائماً.",
+    "owner_label": "المالك",
+    "current_label": "الأشخاص والمجموعات التي لديها وصول",
+    "no_grants": "لم يُمنح أحد آخر الوصول بعد.",
+    "add_label": "أضف شخصاً أو مجموعة",
+    "add_user": "أضف مستخدماً",
+    "add_group": "أضف مجموعة",
+    "revoke": "إلغاء الوصول",
+    "type_user": "مستخدم",
+    "type_group": "مجموعة"
+  },
+  "status": {
+    "pending": "معلّق",
+    "running": "قيد التنفيذ",
+    "completed": "مكتمل",
+    "failed": "فاشل",
+    "cancelled": "ملغى"
   },
   "tab": {
     "title": "سير العمل",
@@ -163,29 +145,67 @@
     "acted_by": "بواسطة {{user}}",
     "acted_at": "في {{time}}"
   },
-  "status": {
-    "pending": "معلّق",
-    "running": "قيد التنفيذ",
-    "completed": "مكتمل",
-    "failed": "فاشل",
-    "cancelled": "ملغى"
-  },
-  "admin": {
-    "title": "سير العمل",
-    "description": "قوالب على مستوى المستأجر وحالات سير العمل النشطة.",
-    "templates_section": "القوالب",
-    "instances_section": "الحالات النشطة",
-    "instances_empty": "لا توجد حالات سير عمل نشطة",
-    "columns": {
-      "document": "المستند",
-      "template": "القالب",
-      "status": "الحالة",
-      "started_by": "بدأها",
-      "started_at": "تاريخ البدء",
-      "current_step": "الخطوة الحالية",
-      "actions": "إجراءات"
+  "templates": {
+    "actions_aria_label": "إجراءات القالب",
+    "card": {
+      "active": "نشط",
+      "delete": "حذف",
+      "duplicate": "تكرار",
+      "edit": "تعديل",
+      "inactive": "غير نشط",
+      "make_private": "اجعله خاصاً",
+      "make_shared": "اجعله مشتركاً",
+      "manage_access": "إدارة الوصول",
+      "steps_count_few": "{{count}} خطوات",
+      "steps_count_many": "{{count}} خطوة",
+      "steps_count_one": "خطوة واحدة",
+      "steps_count_other": "{{count}} خطوة",
+      "steps_count_two": "خطوتان",
+      "steps_count_zero": "لا خطوات",
+      "version": "النسخة {{version}}"
     },
-    "view": "عرض",
-    "cancel": "إلغاء"
+    "delete_confirm": {
+      "title": "حذف القالب؟",
+      "description": "ستظل أي حالات نشطة قيد التشغيل. لن تتمكن المستندات الجديدة من بدء هذا القالب.",
+      "confirm": "حذف القالب"
+    },
+    "description": "سلاسل اعتماد وتوقيع وإشعارات قابلة لإعادة الاستخدام. أرفق قالباً بمستند لبدء مراجعته.",
+    "empty_description": "أنشئ سلسلة سير عمل قابلة لإعادة الاستخدام لبدء توجيه المستندات.",
+    "empty_title": "لا توجد قوالب بعد",
+    "new_button": "قالب جديد",
+    "private_label": "خاص",
+    "private_tooltip": "ظاهر لك فقط وللأشخاص الذين منحتهم الوصول",
+    "search_placeholder": "ابحث عن القوالب…",
+    "steps_count_few": "{{count}} خطوات",
+    "steps_count_many": "{{count}} خطوة",
+    "steps_count_one": "خطوة واحدة",
+    "steps_count_other": "{{count}} خطوة",
+    "steps_count_two": "خطوتان",
+    "steps_count_zero": "لا خطوات",
+    "title": "قوالب سير العمل"
+  },
+  "toasts": {
+    "visibility_changed": "تم تحديث ظهور سير العمل",
+    "grant_added": "تم منح الوصول",
+    "grant_removed": "تم إلغاء الوصول",
+    "error": "تعذّر إكمال عملية سير العمل"
+  },
+  "validation_issue_few": "{{count}} مشكلات",
+  "validation_issue_many": "{{count}} مشكلة",
+  "validation_issue_one": "مشكلة واحدة",
+  "validation_issue_other": "{{count}} مشكلة",
+  "validation_issue_two": "مشكلتان",
+  "validation_issue_zero": "لا مشكلات",
+  "visibility": {
+    "flip_to_private_confirm": {
+      "title": "هل تجعل سير العمل هذا خاصاً؟",
+      "description": "سيفقد بقية أعضاء مساحة العمل الوصول. أنت ومن تمنحهم الصلاحية فقط ستظهر لكم.",
+      "confirm": "اجعله خاصاً"
+    },
+    "flip_to_shared_confirm": {
+      "title": "هل تجعل سير العمل هذا مشتركاً؟",
+      "description": "سيتمكّن جميع أعضاء مساحة العمل من رؤيته وبدء تشغيله.",
+      "confirm": "اجعله مشتركاً"
+    }
   }
 }
