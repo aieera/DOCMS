@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppMutation } from '@/hooks/useAppMutation'
@@ -43,14 +44,6 @@ const GRADE_DOT: Record<QualityGrade, string> = {
   poor:      'bg-destructive',
 }
 
-const ISSUE_LABEL: Record<string, string> = {
-  low_confidence: 'low confidence',
-  sparse_text:    'sparse text',
-  skewed:         'skewed',
-  noisy:          'noisy',
-  garbled:        'garbled',
-}
-
 interface ReviewVars {
   pageNumber: number
   versionId: string
@@ -76,6 +69,7 @@ interface ReviewCtx {
  * surfaces the backend message via readErrorMessage.
  */
 export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Props) {
+  const { t } = useTranslation('common')
   const qc = useQueryClient()
 
   const { data, isLoading, isError, error } = useQuery({
@@ -104,10 +98,10 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
       if (ctx?.previous) {
         qc.setQueryData(['ocr-quality', documentId], ctx.previous)
       }
-      toast.error(readErrorMessage(err) ?? 'Could not mark page as reviewed')
+      toast.error(readErrorMessage(err) ?? t('adm.ocrr.err_mark'))
     },
     onSuccess: () => {
-      toast.success('Page marked reviewed')
+      toast.success(t('adm.ocrr.marked'))
     },
     onSettled: () => {
       // Re-fetch the source-of-truth for the per-doc view AND the
@@ -140,13 +134,13 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <FileSearch className="h-4 w-4 text-violet-500" />
-            Page-level OCR review
+            {t('adm.ocrr.drawer_title')}
           </SheetTitle>
           <SheetDescription>
             {documentId ? (
-              <span className="font-mono text-xs">{documentId}</span>
+              <span dir="ltr" className="font-mono text-xs">{documentId}</span>
             ) : (
-              <span>No document selected.</span>
+              <span>{t('adm.ocrr.no_document')}</span>
             )}
           </SheetDescription>
         </SheetHeader>
@@ -154,15 +148,15 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
         {documentId && (
           <div className="mt-4 flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
             <span aria-hidden className={`inline-block h-2 w-2 rounded-full ${GRADE_DOT[(summary?.quality_grade ?? hint?.grade ?? 'fair') as QualityGrade]}`} />
-            <span className="uppercase tracking-wide">{summary?.quality_grade ?? hint?.grade ?? '—'}</span>
+            <span className="tracking-wide">{t(`adm.ocrr.g_${summary?.quality_grade ?? hint?.grade ?? ''}`, { defaultValue: summary?.quality_grade ?? hint?.grade ?? '—' })}</span>
             {summary && (
               <span className="text-muted-foreground tabular-nums">({summary.avg_score.toFixed(2)})</span>
             )}
             <span className="ms-auto text-xs text-muted-foreground">
               {summary
-                ? `${summary.pages_needing_review}/${summary.total_pages} need review`
+                ? t('adm.ocrr.need_review', { flagged: summary.pages_needing_review, total: summary.total_pages })
                 : hint
-                ? `${hint.flagged ?? '—'}/${hint.total ?? '—'} need review`
+                ? t('adm.ocrr.need_review', { flagged: hint.flagged ?? '—', total: hint.total ?? '—' })
                 : ''}
             </span>
           </div>
@@ -179,16 +173,16 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
             <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
               <div>
-                <p className="font-medium text-destructive">Could not load OCR detail</p>
-                <p className="text-muted-foreground">{(error as Error)?.message ?? 'Unknown error.'}</p>
+                <p className="font-medium text-destructive">{t('adm.ocrr.err_detail')}</p>
+                <p className="text-muted-foreground">{(error as Error)?.message ?? t('adm.ocrr.err_unknown')}</p>
               </div>
             </div>
           )}
 
           {!isLoading && !isError && (data?.pages?.length ?? 0) === 0 && (
             <EmptyState
-              title="No page-level scores"
-              description="OCR quality scoring hasn't produced page-level rows for this document yet."
+              title={t('adm.ocrr.no_scores')}
+              description={t('adm.ocrr.no_scores_desc')}
             />
           )}
 
@@ -215,7 +209,7 @@ export function OcrPageReviewDrawer({ open, onOpenChange, documentId, hint }: Pr
         {summary && flaggedRemaining === 0 && (data?.pages?.length ?? 0) > 0 && (
           <div className="mt-4 flex items-center gap-2 rounded-md border border-success/40 bg-success/5 px-3 py-2 text-sm text-success">
             <CheckCircle2 className="h-4 w-4" />
-            All flagged pages reviewed.
+            {t('adm.ocrr.all_reviewed')}
           </div>
         )}
       </SheetContent>
@@ -230,6 +224,7 @@ interface ReviewRowProps {
 }
 
 function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
+  const { t } = useTranslation('common')
   const [noteOpen, setNoteOpen] = useState(false)
   const [note, setNote] = useState('')
 
@@ -243,17 +238,17 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
   return (
     <li className="px-3 py-3 text-sm" data-testid={`ocr-page-row-${page.page_number}`}>
       <div className="flex items-center gap-3">
-        <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">p. {page.page_number}</span>
+        <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">{t('adm.ocrr.page_n', { n: page.page_number })}</span>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <div className="h-1.5 w-24 overflow-hidden rounded bg-muted">
             <div className={`h-full ${scoreColor}`} style={{ width: `${pct}%` }} />
           </div>
-          <span className="w-10 text-end text-xs tabular-nums text-muted-foreground">{pct}%</span>
+          <span className="w-10 text-end text-xs tabular-nums text-muted-foreground">{t('adm.ocrr.pct', { value: pct })}</span>
           {page.issues.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {page.issues.map((i) => (
                 <Badge key={i} variant="in_review" className="text-[10px]">
-                  {ISSUE_LABEL[i] ?? i}
+                  {t(`adm.ocrr.i_${i}`, { defaultValue: i.replace(/_/g, ' ') })}
                 </Badge>
               ))}
             </div>
@@ -262,7 +257,7 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
         <div className="flex shrink-0 items-center gap-2">
           {page.reviewed ? (
             <span className="inline-flex items-center gap-1 text-xs text-success">
-              <CheckCircle2 className="h-3 w-3" /> Reviewed
+              <CheckCircle2 className="h-3 w-3" /> {t('adm.ocrr.reviewed')}
             </span>
           ) : page.needs_review ? (
             <>
@@ -273,10 +268,10 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
                   className="h-7 px-2 text-xs"
                   disabled={disabled}
                   onClick={() => setNoteOpen(true)}
-                  aria-label="Add note before marking reviewed"
+                  aria-label={t('adm.ocrr.add_note')}
                   data-testid={`ocr-page-add-note-${page.page_number}`}
                 >
-                  <MessageSquarePlus className="me-1 h-3 w-3" /> Note
+                  <MessageSquarePlus className="me-1 h-3 w-3" /> {t('adm.ocrr.note')}
                 </Button>
               )}
               <Button
@@ -287,11 +282,11 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
                 onClick={() => onSubmit(note.trim())}
                 data-testid={`ocr-page-mark-reviewed-${page.page_number}`}
               >
-                Mark reviewed
+                {t('adm.ocrr.mark_reviewed')}
               </Button>
             </>
           ) : (
-            <span className="text-xs text-muted-foreground">OK</span>
+            <span className="text-xs text-muted-foreground">{t('adm.ocrr.ok')}</span>
           )}
         </div>
       </div>
@@ -301,7 +296,7 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Optional reviewer note (saved with the review event)"
+            placeholder={t('adm.ocrr.note_ph')}
             maxLength={500}
             className="flex-1 rounded border border-border bg-background p-2 text-xs"
             data-testid={`ocr-page-note-${page.page_number}`}
@@ -313,7 +308,7 @@ function ReviewRow({ page, disabled, onSubmit }: ReviewRowProps) {
             onClick={() => { setNoteOpen(false); setNote('') }}
             disabled={disabled}
           >
-            Cancel
+            {t('adm.ocrr.cancel')}
           </Button>
         </div>
       )}
