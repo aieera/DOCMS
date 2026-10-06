@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, X } from 'lucide-react'
 
 import {
@@ -31,6 +32,7 @@ interface Props {
 const EMPTY: SchemaField = { name: '', type: 'string', required: false }
 
 export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSubmit }: Props) {
+  const { t } = useTranslation('common')
   const [draft, setDraft] = useState<SchemaField>(EMPTY)
   const [choices, setChoices] = useState<string[]>([''])
   const [touched, setTouched] = useState(false)
@@ -47,7 +49,7 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
   const nameError = validateFieldName(draft.name, takenNames, field?.name)
   const enumError =
     draft.type === 'enum' && choices.map((c) => c.trim()).filter(Boolean).length === 0
-      ? 'Add at least one choice'
+      ? t('adm.meta.err_enum')
       : null
 
   const submit = () => {
@@ -70,15 +72,14 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{field ? `Edit “${field.name}”` : 'Add field'}</DialogTitle>
-          <DialogDescription>
-            Fields appear on every document's custom-metadata form and are validated on save.
-          </DialogDescription>
+          <DialogTitle>{field ? t('adm.meta.dlg_edit', { name: field.name }) : t('adm.meta.dlg_add')}</DialogTitle>
+          <DialogDescription>{t('adm.meta.dlg_desc')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <Input
-            label="Field name"
+            label={t('adm.meta.f_name')}
+            dir="ltr"
             value={draft.name}
             onChange={(e) => set('name', e.target.value)}
             onBlur={() => setTouched(true)}
@@ -89,50 +90,56 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
           />
 
           <Input
-            label="Label (optional)"
+            label={t('adm.meta.f_label')}
             value={draft.label ?? ''}
             onChange={(e) => set('label', e.target.value)}
-            placeholder="Amount (USD) — defaults to a tidied field name"
+            placeholder={t('adm.meta.f_label_ph')}
             data-testid="field-label"
           />
 
           <Select
-            label="Type"
+            label={t('adm.meta.f_type')}
             value={draft.type}
             onValueChange={(v) => set('type', v as FieldType)}
-            options={FIELD_TYPES.map((t) => ({ value: t.value, label: `${t.label} — ${t.hint}` }))}
+            options={FIELD_TYPES.map((ft) => ({
+              value: ft.value,
+              label: t('adm.meta.type_option', {
+                label: t(`adm.meta.t_${ft.value}`, { defaultValue: ft.label }),
+                hint: t(`adm.meta.t_${ft.value}_hint`, { defaultValue: ft.hint }),
+              }),
+            }))}
           />
 
           <Input
-            label="Description (optional)"
+            label={t('adm.meta.f_desc')}
             value={draft.description ?? ''}
             onChange={(e) => set('description', e.target.value)}
-            placeholder="Shown as helper text on the document form"
+            placeholder={t('adm.meta.f_desc_ph')}
             data-testid="field-description"
           />
 
           {draft.type === 'enum' && (
             <div className="space-y-1.5">
-              <span className="text-sm font-medium">Choices</span>
+              <span className="text-sm font-medium">{t('adm.meta.choices')}</span>
               {choices.map((c, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Input
                     value={c}
                     onChange={(e) => setChoices((cs) => cs.map((x, j) => (j === i ? e.target.value : x)))}
-                    placeholder={`Choice ${i + 1}`}
+                    placeholder={t('adm.meta.choice_n', { n: i + 1 })}
                     data-testid={`field-choice-${i}`}
                   />
                   <Button
                     type="button" variant="ghost" size="icon"
                     onClick={() => setChoices((cs) => (cs.length === 1 ? [''] : cs.filter((_, j) => j !== i)))}
-                    aria-label={`Remove choice ${i + 1}`}
+                    aria-label={t('adm.meta.remove_choice', { n: i + 1 })}
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
               <Button type="button" variant="outline" size="sm" onClick={() => setChoices((cs) => [...cs, ''])} data-testid="field-add-choice">
-                <Plus className="me-1 h-4 w-4" /> Add choice
+                <Plus className="me-1 h-4 w-4" /> {t('adm.meta.add_choice')}
               </Button>
               {touched && enumError && <p className="text-xs font-medium text-destructive">{enumError}</p>}
             </div>
@@ -140,27 +147,27 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
 
           {draft.type === 'array' && (
             <Select
-              label="List item type"
+              label={t('adm.meta.item_type')}
               value={draft.itemType ?? 'string'}
               onValueChange={(v) => set('itemType', v as SchemaField['itemType'])}
               options={[
-                { value: 'string', label: 'Text' },
-                { value: 'number', label: 'Number' },
-                { value: 'integer', label: 'Whole number' },
-                { value: 'boolean', label: 'Yes / No' },
+                { value: 'string', label: t('adm.meta.t_string') },
+                { value: 'number', label: t('adm.meta.t_number') },
+                { value: 'integer', label: t('adm.meta.t_integer') },
+                { value: 'boolean', label: t('adm.meta.t_boolean') },
               ]}
             />
           )}
 
           {draft.type === 'string' && (
             <div className="grid gap-3 sm:grid-cols-3">
-              <Input label="Min length" type="number" min={0}
+              <Input label={t('adm.meta.min_length')} type="number" min={0}
                 value={draft.minLength ?? ''}
                 onChange={(e) => set('minLength', e.target.value === '' ? undefined : Number(e.target.value))} />
-              <Input label="Max length" type="number" min={0}
+              <Input label={t('adm.meta.max_length')} type="number" min={0}
                 value={draft.maxLength ?? ''}
                 onChange={(e) => set('maxLength', e.target.value === '' ? undefined : Number(e.target.value))} />
-              <Input label="Pattern (regex)"
+              <Input label={t('adm.meta.pattern')} dir="ltr"
                 value={draft.pattern ?? ''}
                 onChange={(e) => set('pattern', e.target.value)}
                 placeholder="^INV-" />
@@ -169,10 +176,10 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
 
           {numeric && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Input label="Minimum" type="number"
+              <Input label={t('adm.meta.minimum')} type="number"
                 value={draft.minimum ?? ''}
                 onChange={(e) => set('minimum', e.target.value === '' ? undefined : Number(e.target.value))} />
-              <Input label="Maximum" type="number"
+              <Input label={t('adm.meta.maximum')} type="number"
                 value={draft.maximum ?? ''}
                 onChange={(e) => set('maximum', e.target.value === '' ? undefined : Number(e.target.value))} />
             </div>
@@ -186,13 +193,13 @@ export function SchemaFieldDialog({ open, onOpenChange, field, takenNames, onSub
               className="h-4 w-4 rounded border-border accent-primary"
               data-testid="field-required"
             />
-            Required — documents can't be saved without a value
+            {t('adm.meta.required_note')}
           </label>
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} data-testid="field-save">{field ? 'Save field' : 'Add field'}</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('adm.meta.cancel')}</Button>
+          <Button onClick={submit} data-testid="field-save">{field ? t('adm.meta.save_field') : t('adm.meta.dlg_add')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

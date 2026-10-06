@@ -3,6 +3,8 @@
 // the builder parses it, applies one of these, and re-serialises. No
 // React here, so the editing rules are unit-testable on their own.
 
+import i18n from '@/i18n'
+
 /** UI-level field types. `date`/`datetime` are string+format sugar, and
  *  `enum` is string+enum sugar — JSON Schema has no such types. */
 export type FieldType =
@@ -31,6 +33,9 @@ export interface SchemaField {
   itemType?: 'string' | 'number' | 'integer' | 'boolean'
 }
 
+// Canonical type list + English fallbacks. Display text resolves from the
+// catalogue (adm.meta.t_<value> / _hint) at render, so a module-level t()
+// cannot freeze the first-loaded locale.
 export const FIELD_TYPES: { value: FieldType; label: string; hint: string }[] = [
   { value: 'string',   label: 'Text',           hint: 'Free text' },
   { value: 'number',   label: 'Number',         hint: 'Decimals allowed' },
@@ -185,20 +190,28 @@ export function toggleRequired(schema: Schema | null, name: string): Schema {
 /** null when valid, otherwise a human-readable reason. */
 export function validateFieldName(name: string, taken: string[], originalName?: string): string | null {
   const n = name.trim()
-  if (!n) return 'Field name is required'
+  const T = (k: string, dflt: string) => i18n.t(`adm.meta.${k}`, { ns: 'common', defaultValue: dflt })
+  if (!n) return T('err_name_req', 'Field name is required')
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) {
-    return 'Use letters, numbers, and underscores; must not start with a number'
+    return T('err_name_chars', 'Use letters, numbers, and underscores; must not start with a number')
   }
-  if (n !== originalName && taken.includes(n)) return 'A field with that name already exists'
+  if (n !== originalName && taken.includes(n)) return T('err_name_taken', 'A field with that name already exists')
   return null
 }
 
 /** Short type badge for the field list ("enum(4)", "string/date"). */
 export function describeSpec(spec: Spec): string {
-  const t = typeof spec.type === 'string' ? spec.type : 'any'
-  if (Array.isArray(spec.enum)) return `enum(${spec.enum.length})`
-  if (spec.format) return `${t}/${String(spec.format)}`
-  return t
+  const raw = typeof spec.type === 'string' ? spec.type : null
+  const label = raw
+    ? i18n.t(`adm.meta.spec_t_${raw}`, { ns: 'common', defaultValue: raw })
+    : i18n.t('adm.meta.spec_any', { ns: 'common', defaultValue: 'any' })
+  if (Array.isArray(spec.enum)) {
+    return i18n.t('adm.meta.spec_enum', { ns: 'common', count: spec.enum.length })
+  }
+  if (spec.format) {
+    return i18n.t('adm.meta.spec_format', { ns: 'common', type: label, format: String(spec.format) })
+  }
+  return label
 }
 
 function isNum(v: unknown): v is number { return typeof v === 'number' && Number.isFinite(v) }
