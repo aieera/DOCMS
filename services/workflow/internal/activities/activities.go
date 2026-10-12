@@ -137,17 +137,51 @@ func (a *Activities) NotifyAssignee(ctx context.Context, tenantID, assigneeID, d
 	}
 	aggID := parseUUIDOrNew(documentID)
 
-	payload, _ := json.Marshal(map[string]string{
-		"tenant_id":   tenantID,
-		"user_id":     assigneeID,
-		"document_id": documentID,
-		"task_name":   taskName,
-		"type":        "workflow.step_assigned",
-	})
+	payload, err := assigneeNotification(tenantID, assigneeID, documentID, taskName)
+	if err != nil {
+		return err
+	}
 	evt := database.NewOutboxEvent(tenantUUID, "dms.notify.workflow_assigned.v1", "workflow_task", aggID, payload)
 	return database.WithTenantTx(ctx, a.Pool, tenantUUID, func(tx pgx.Tx) error {
 		return a.Outbox.Insert(ctx, tx, evt)
 	})
+}
+
+// deliveryPayload is the notification consumer's model.DeliveryPayload
+// (services/notification/internal/model/model.go), mirrored because that
+// type is internal to another module. The consumer reads the outbox
+// envelope's `data` as this shape and Terms (silently drops) any message
+// without tenant_id and at least one user_ids entry. The mirror is pinned
+// to the real declaration by TestDeliveryPayloadMirror_MatchesNotificationModel.
+type deliveryPayload struct {
+	TenantID     string   `json:"tenant_id"`
+	UserIDs      []string `json:"user_ids"`
+	Type         string   `json:"type"`
+	Title        string   `json:"title"`
+	Body         string   `json:"body"`
+	ResourceType string   `json:"resource_type,omitempty"`
+	ResourceID   string   `json:"resource_id,omitempty"`
+}
+
+// assigneeNotification builds the dms.notify.workflow_assigned.v1 payload.
+// It used to carry {"user_id": …}; the consumer requires user_ids, so every
+// approval, review, escalation and signature assignment notification was
+// dropped (H-11). The type id is the one the web notification-preferences
+// matrix offers ("workflow.step_assigned"); the in-app row deep-links to
+// the document.
+func assigneeNotification(tenantID, assigneeID, documentID, taskName string) ([]byte, error) {
+	p := deliveryPayload{
+		TenantID: tenantID,
+		UserIDs:  []string{assigneeID},
+		Type:     "workflow.step_assigned",
+		Title:    "Workflow task assigned",
+		Body:     fmt.Sprintf("You have a new workflow task: %s", taskName),
+	}
+	if documentID != "" {
+		p.ResourceType = "document"
+		p.ResourceID = documentID
+	}
+	return json.Marshal(p)
 }
 
 // SetDocumentLifecycle changes the document's lifecycle state.
