@@ -116,9 +116,10 @@ plugins:
           # listed — a new grpc-gateway surface must fix it at the mux.
           - "grpc-metadata-content-type"
   # DEC-19 / H-22 — request body cap at the edge. 1 MB for every route
-  # (JSON APIs); routes that carry document bytes override it with a
-  # route-scoped 64 MB instance below (the same split the services enforce
-  # with middleware.MaxBody). Defence in depth: the services' own caps are
+  # (JSON APIs); the routes whose backends accept document bytes (m365
+  # filing, bulk import, signatures, connector capture, intelligence, mcp
+  # upload) override it with a route-scoped 64 MB instance below — the same
+  # split the services enforce with middleware.MaxBody. Defence in depth: the services' own caps are
   # authoritative; the gateway refuses obvious abuse before it is buffered
   # upstream.
   - name: request-size-limiting
@@ -274,12 +275,7 @@ services:
   - name: document
     url: http://document:8080
     routes:
-      - name: documents
-        paths: [/api/v1/documents]
-        strip_path: false
-        plugins:
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: documents, paths: [/api/v1/documents], strip_path: false }
       # Workspace + nested folder CRUD (grpc-gateway). One prefix covers
       # /workspaces, /workspaces/{id}, and /workspaces/{id}/folders. Needed
       # by the ERP provisioning flow (find-or-create workspace + verify key).
@@ -291,34 +287,15 @@ services:
       # API-key (ERP worker POST /ingest; explorer BFF review passthrough) or
       # session (admin review UI) — backend SessionOrAPIKey enforces. Added
       # 2026-06-15 for the ERP↔SeDoc explorer cutover.
-      - name: ingest
-        paths: [/api/v1/ingest]
-        strip_path: false
-        plugins:
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
-      # ADR 0112/0116 — add-in email filing (Outlook + Gmail cards both
-      # POST here). Bodies carry base64 attachments; upload rate class.
-      - name: integrations-m365-ingest
-        paths: [/api/v1/integrations/m365]
-        strip_path: false
-        plugins:
-          - name: rate-limiting
-            config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: ingest, paths: [/api/v1/ingest], strip_path: false }
+      # /api/v1/integrations/m365 lives on the document-long service below.
       - { name: review-queue,       paths: [/api/v1/review-queue],             strip_path: false }
       # Notes/wiki + records management + classification/e-discovery admin —
       # declared in routes.yaml; Kong entries added 2026-07-02 (route-mirror
       # archtest now enforces the pairing).
       - { name: notes,              paths: [/api/v1/notes],                    strip_path: false }
       - { name: records,            paths: [/api/v1/records],                  strip_path: false }
-      - name: templates
-        paths: [/api/v1/templates]
-        strip_path: false
-        plugins:
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: templates, paths: [/api/v1/templates], strip_path: false }
       - { name: analytics,          paths: [/api/v1/analytics],                strip_path: false }
       - { name: admin-classification, paths: [/api/v1/admin/classification],   strip_path: false }
       - { name: admin-ediscovery,   paths: [/api/v1/admin/ediscovery],         strip_path: false }
@@ -345,12 +322,7 @@ services:
       - { name: folders,                 paths: [/api/v1/folders],                 strip_path: false }
       - { name: uploads-predict,         paths: [/api/v1/uploads/predict],         strip_path: false }
       - { name: zt,                      paths: [/api/v1/zt],                      strip_path: false }
-      - name: sync
-        paths: [/api/v1/sync]
-        strip_path: false
-        plugins:
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      - { name: sync, paths: [/api/v1/sync], strip_path: false }
       - { name: irm-export,              paths: [/api/v1/irm/export],              strip_path: false }
       - name: irm-licenses
         paths: [/api/v1/irm/licenses]
@@ -367,12 +339,7 @@ services:
       - { name: admin-trash,             paths: [/api/v1/admin/trash],             strip_path: false }
       - { name: user-trash,              paths: [/api/v1/trash],                   strip_path: false }
       - { name: admin-folders,           paths: [/api/v1/admin/folders],           strip_path: false }
-      - name: admin-bulk
-        paths: [/api/v1/admin/bulk]
-        strip_path: false
-        plugins:
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # /api/v1/admin/bulk lives on the document-long service below.
       - { name: admin-models,            paths: [/api/v1/admin/models],            strip_path: false }
       - { name: admin-training-examples, paths: [/api/v1/admin/training-examples], strip_path: false }
       - { name: admin-active-learning,   paths: [/api/v1/admin/active-learning],   strip_path: false }
@@ -397,6 +364,35 @@ services:
           - name: rate-limiting
             config: { minute: 60, hour: 2000, policy: local, fault_tolerant: true, hide_client_headers: false, limit_by: ip }
 
+  # Document-service routes that carry document bytes and may run long
+  # (DEC-19, DOC2): 64 MB bodies and 12-minute upstream timeouts. Every
+  # other document route keeps the global 1 MB cap and Kong's default 60 s.
+  # Kong timeouts are per service, hence the second service on the same
+  # upstream.
+  - name: document-long
+    url: http://document:8080
+    connect_timeout: 60000
+    read_timeout: 720000
+    write_timeout: 720000
+    routes:
+      # ADR 0112/0116 — add-in email filing (Outlook + Gmail cards both
+      # POST here). Bodies carry base64 attachments; upload rate class.
+      - name: integrations-m365-ingest
+        paths: [/api/v1/integrations/m365]
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config: { minute: 60, hour: 1000, policy: local, fault_tolerant: true, hide_client_headers: false }
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+      # Bulk import (POST /api/v1/admin/bulk/import).
+      - name: admin-bulk
+        paths: [/api/v1/admin/bulk]
+        strip_path: false
+        plugins:
+          - name: request-size-limiting
+            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
+
   # No preview route (DEC-4 / H-22): the preview REST API is internal-only
   # (internal key required). The web client reaches previews through the
   # document service, which calls the preview API in-cluster.
@@ -418,8 +414,6 @@ services:
           # quotas live at the Storage Service itself.
           - name: rate-limiting
             config: { minute: 30, hour: 1500, policy: local, fault_tolerant: true, hide_client_headers: false }
-          - name: request-size-limiting
-            config: { allowed_payload_size: 64, size_unit: megabytes, require_content_length: false }
 
   - name: search
     url: http://search:8080
