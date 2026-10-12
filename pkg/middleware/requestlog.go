@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -51,6 +52,12 @@ func RequestLogInterceptor(log *logger.Logger) grpc.UnaryServerInterceptor {
 			Int64("latency_ms", time.Since(start).Milliseconds())
 		if err != nil {
 			evt = evt.Err(err)
+			// vdmserr.ToGRPCError scrubs internal errors to a generic
+			// status (M-17) but keeps the real cause behind Unwrap —
+			// log it here so operators still see what failed.
+			if cause := errors.Unwrap(err); cause != nil {
+				evt = evt.AnErr("cause", cause)
+			}
 		}
 		evt.Msg("grpc call")
 		return resp, err

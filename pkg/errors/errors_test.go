@@ -2,7 +2,9 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -213,5 +215,60 @@ func TestErrorString(t *testing.T) {
 	w := Wrap(NotFound("gone"), errors.New("db gone"))
 	if got := w.Error(); got != "NOT_FOUND: gone: db gone" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// TestToGRPCError_ScrubsInternal pins M-17: grpc-gateway has no custom
+// error handler, so whatever message ToGRPCError puts on the status
+// reaches the HTTP client verbatim. Non-domain errors (raw pgx / driver /
+// io errors) and KindInternal domain errors must surface as the generic
+// "internal error"; validation errors carry only their own message, not
+// the wrapped cause (a check_violation's constraint name / pg detail).
+func TestToGRPCError_ScrubsInternal(t *testing.T) {
+	leak := "dial tcp 10.0.0.5:5432: password authentication failed for user \"vaultdms\""
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+		wantMsg  string
+	}{
+		{"plain error", errors.New(leak), codes.Internal, "internal error"},
+		{"wrapped plain error", fmt.Errorf("repo: %w", errors.New(leak)), codes.Internal, "internal error"},
+		{"typed internal", Internal(leak), codes.Internal, "internal error"},
+		{"wrapped internal", Wrap(ErrInternal, errors.New(leak)), codes.Internal, "internal error"},
+		{"unknown kind", &Error{Code: "X", Message: leak}, codes.Internal, "internal error"},
+		{"validation with cause", Wrap(Validation("", "value out of range"), errors.New("check constraint \"documents_size_check\" "+leak)), codes.InvalidArgument, "INVALID_ARGUMENT: value out of range"},
+		{"not found keeps message", NotFound("document not found"), codes.NotFound, "document not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st, ok := status.FromError(ToGRPCError(tt.err))
+			if !ok {
+				t.Fatalf("not a status error")
+			}
+			if st.Code() != tt.wantCode {
+				t.Errorf("code: got %v, want %v", st.Code(), tt.wantCode)
+			}
+			if st.Message() != tt.wantMsg {
+				t.Errorf("message: got %q, want %q", st.Message(), tt.wantMsg)
+			}
+			if strings.Contains(st.Message(), "10.0.0.5") || strings.Contains(st.Message(), "vaultdms") {
+				t.Errorf("status message leaks internal detail: %q", st.Message())
+			}
+		})
+	}
+}
+
+// TestToGRPCError_KeepsCauseForLogs: the scrubbed status still unwraps to
+// the original error so server-side logging (RequestLogInterceptor) can
+// record the real cause without it ever reaching the wire.
+func TestToGRPCError_KeepsCauseForLogs(t *testing.T) {
+	cause := errors.New("pool exhausted")
+	got := ToGRPCError(cause)
+	if !errors.Is(got, cause) {
+		t.Fatalf("scrubbed status must unwrap to its cause for server-side logging")
+	}
+	if strings.Contains(got.Error(), "pool exhausted") {
+		t.Fatalf("Error() must not carry the cause (callers may echo it): %q", got.Error())
 	}
 }
