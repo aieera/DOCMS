@@ -22,7 +22,9 @@ from datetime import datetime, timezone
 import redis
 from celery.exceptions import SoftTimeLimitExceeded
 
+from app.blob_store import fetch_source_blob
 from app.config import settings
+from app.envelope import EnvelopeError, decrypt_file_in_place
 from app.processors import ProcessResult
 from app.processors import email as email_proc
 from app.processors import image as image_proc
@@ -215,6 +217,16 @@ def generate_preview(
     }
 
     try:
+        # --- Source blob (M-24) ---------------------------------------------
+        # content_blobs is authoritative for the location and carries the
+        # envelope metadata storage wrote when it encrypted the bytes.
+        blob = fetch_source_blob(tenant_id, content_blob_id)
+        if blob and blob.get("storage_bucket") and blob.get("storage_key"):
+            storage_bucket = blob["storage_bucket"]
+            storage_key = blob["storage_key"]
+            manifest["source_bucket"] = storage_bucket
+            manifest["source_key"] = storage_key
+
         # --- Size gate ------------------------------------------------------
         try:
             head = s3.head(storage_bucket, storage_key)
@@ -235,6 +247,20 @@ def generate_preview(
 
         # --- Download -------------------------------------------------------
         s3.download_to(storage_bucket, storage_key, src_path)
+
+        # --- Decrypt (M-24) -------------------------------------------------
+        if blob and blob.get("encrypted_dek"):
+            try:
+                decrypt_file_in_place(src_path, blob["dek_nonce"],
+                                      blob["encrypted_dek"], blob["kek_id"])
+            except EnvelopeError as e:
+                # Terminal: the bytes and key won't change on retry.
+                log.error("decrypt failed tenant=%s version=%s err=%s",
+                          tenant_id, version_id, e)
+                manifest["status"] = "failed"
+                manifest["error"] = "source decrypt failed"
+                _cache_manifest(settings.redis_cache_url, tenant_id, version_id, manifest)
+                return manifest
 
         # --- Dispatch -------------------------------------------------------
         proc, kwargs = _select_processor(mime_type)

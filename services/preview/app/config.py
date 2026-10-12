@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     nats_subject_uploaded: str = "dms.version.uploaded.v1"
     nats_subject_preview_ready: str = "dms.version.preview_ready.v1"
 
+    # --- Database (M-24) ---------------------------------------------------
+    # Read-only lookup of content_blobs envelope metadata (encrypted_dek,
+    # dek_nonce, kek_id) so encrypted sources can be decrypted before
+    # rendering. Decryption also needs SEDOC_LOCAL_KEK (read from the env by
+    # app/envelope.py). Empty => no lookup; encrypted blobs fail to render.
+    database_url: str = ""
+
     # --- Object storage ----------------------------------------------------
     s3_endpoint: str = "http://minio:9000"
     s3_access_key: str = ""
