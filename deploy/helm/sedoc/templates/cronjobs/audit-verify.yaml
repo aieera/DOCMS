@@ -81,4 +81,12 @@ spec:
                     cat /tmp/body
                   done
                   echo "$(date -Iseconds) audit-verify complete"
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
 {{- end }}

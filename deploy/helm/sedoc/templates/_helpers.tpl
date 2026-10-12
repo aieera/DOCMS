@@ -213,3 +213,21 @@ chart's Service names (url: http://<svc>:<port> -> http://sedoc-<svc>:<port>).
 {{- $src := required "files/kong.yaml is missing from the chart" (.Files.Get "files/kong.yaml") -}}
 {{- regexReplaceAll "url: http://([a-z0-9-]+):" $src "url: http://sedoc-${1}:" -}}
 {{- end }}
+
+{{/*
+R-15 — container securityContext satisfying the `restricted` Pod Security
+Standard (non-root, no privilege escalation, no capabilities, RuntimeDefault
+seccomp) with a read-only root filesystem. Every workload the chart owns
+uses it (or the equivalent inline block); writable paths are emptyDirs.
+*/}}
+{{- define "sedoc.restrictedSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: 1000
+runAsGroup: 1000
+readOnlyRootFilesystem: true
+allowPrivilegeEscalation: false
+capabilities:
+  drop: ["ALL"]
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}

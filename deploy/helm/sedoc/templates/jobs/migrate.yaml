@@ -95,4 +95,12 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.migrations.resources | nindent 12 }}
+          securityContext:
+            {{- include "sedoc.restrictedSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
 {{- end }}

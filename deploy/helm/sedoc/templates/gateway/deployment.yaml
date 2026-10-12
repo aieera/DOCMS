@@ -41,6 +41,9 @@ spec:
           command: ["/bin/sh", "/kong/declarative/entrypoint.sh"]
           env:
             - { name: KONG_DATABASE,           value: "off" }
+            # Read-only root filesystem: Kong's runtime prefix and the
+            # entrypoint's resolved config live on emptyDirs.
+            - { name: KONG_PREFIX,             value: "/kong_prefix" }
             - { name: KONG_DECLARATIVE_CONFIG, value: "/kong/declarative/kong.yaml" }
             - { name: KONG_PROXY_ACCESS_LOG,   value: "/dev/stdout" }
             - { name: KONG_ADMIN_ACCESS_LOG,   value: "/dev/stdout" }
@@ -81,10 +84,21 @@ spec:
             - name: config
               mountPath: /kong/declarative
               readOnly: true
+            - name: prefix
+              mountPath: /kong_prefix
+            - name: tmp
+              mountPath: /tmp
           resources:
-            {{- toYaml (.Values.gateway.resources | default dict) | nindent 12 }}
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          # R-15 — restricted profile; the kong image's user is uid 1000.
+          securityContext:
+            {{- include "sedoc.restrictedSecurityContext" . | nindent 12 }}
       volumes:
         - name: config
           configMap:
             name: {{ include "sedoc.fullname" . }}-gateway
+        - name: prefix
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
 {{- end }}

@@ -8,7 +8,10 @@
 # Used by: backup, backup-verify, soc2-evidence. psql/pg_dump/initdb come
 # from the base image (PostgreSQL 16, matching the server).
 FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
-RUN apk add --no-cache aws-cli curl openssl
+# A passwd entry for uid 1000 (initdb refuses an unknown uid; the chart runs
+# every job as 1000).
+RUN apk add --no-cache aws-cli curl openssl && \
+    addgroup -g 1000 sedoc && adduser -D -u 1000 -G sedoc sedoc
 USER 1000:1000
 WORKDIR /tmp
 ENTRYPOINT []

@@ -12,6 +12,10 @@ Checks:
                     a pod reads is produced by an ExternalSecret, and every
                     ExternalSecret key is read by some pod (R-18). Skipped
                     when no ExternalSecret is rendered.
+  restricted        every workload this chart (not a subchart) renders meets
+                    the `restricted` Pod Security Standard and has a
+                    read-only root filesystem, and no image uses :latest
+                    (R-15).
   migration-secret  no Job/CronJob other than the migrate Job references the
                     migration/owner credential (Secret + key from --values).
 """
@@ -22,7 +26,34 @@ import yaml
 
 
 def load(stream):
-    return [d for d in yaml.safe_load_all(stream) if isinstance(d, dict) and d.get("kind")]
+    """Documents with their `# Source:` path (helm template prints it) in
+    doc["__source__"], so subchart objects (…/charts/…) can be told apart."""
+    docs, chunk = [], []
+
+    def flush():
+        text = "".join(chunk)
+        src = ""
+        for line in chunk:
+            if line.startswith("# Source: "):
+                src = line[len("# Source: "):].strip()
+                break
+        for d in yaml.safe_load_all(text):
+            if isinstance(d, dict) and d.get("kind"):
+                d["__source__"] = src
+                docs.append(d)
+
+    for line in stream:
+        if line.startswith("---"):
+            flush()
+            chunk = []
+        else:
+            chunk.append(line)
+    flush()
+    return docs
+
+
+def ours(doc):
+    return "/charts/" not in doc.get("__source__", "")
 
 
 def pod_spec(doc):
@@ -122,7 +153,50 @@ def check_secret_alignment(docs, args):
     return errs
 
 
+# Writable root by design (PSS `restricted` does not require read-only root):
+# Python/HF/pip caches, LibreOffice/Ghostscript scratch, the Node runtime.
+RW_ROOT_OK = {
+    "sedoc-collaboration",
+    "sedoc-intelligence-api", "sedoc-intelligence-worker",
+    "sedoc-preview-api", "sedoc-preview-worker",
+}
+
+
+def check_restricted(docs, args):
+    errs = []
+    for d in docs:
+        ps = pod_spec(d)
+        if not ps or not ours(d):
+            continue
+        name = f"{d['kind']}/{d['metadata']['name']}"
+        pod_sc = ps.get("securityContext") or {}
+        if ps.get("hostNetwork") or ps.get("hostPID") or ps.get("hostIPC"):
+            errs.append(f"{name}: host namespaces")
+        for c in containers(ps):
+            sc = c.get("securityContext") or {}
+            cname = f"{name} container {c.get('name')}"
+            if not (sc.get("runAsNonRoot") or pod_sc.get("runAsNonRoot")):
+                errs.append(f"{cname}: runAsNonRoot not set")
+            if sc.get("allowPrivilegeEscalation") is not False:
+                errs.append(f"{cname}: allowPrivilegeEscalation must be false")
+            if "ALL" not in ((sc.get("capabilities") or {}).get("drop") or []):
+                errs.append(f"{cname}: capabilities.drop must include ALL")
+            seccomp = (sc.get("seccompProfile") or pod_sc.get("seccompProfile") or {}).get("type")
+            if seccomp not in ("RuntimeDefault", "Localhost"):
+                errs.append(f"{cname}: seccompProfile RuntimeDefault/Localhost required")
+            if sc.get("privileged"):
+                errs.append(f"{cname}: privileged")
+            if args.read_only_root and not sc.get("readOnlyRootFilesystem") \
+                    and d["metadata"]["name"] not in RW_ROOT_OK:
+                errs.append(f"{cname}: readOnlyRootFilesystem not set")
+            image = str(c.get("image", ""))
+            if image.endswith(":latest") or (":" not in image.rsplit("/", 1)[-1] and "@" not in image):
+                errs.append(f"{cname}: image {image!r} is unpinned")
+    return errs
+
+
 CHECKS = {
+    "restricted": check_restricted,
     "secret-alignment": check_secret_alignment,
     "ingress-backends": check_ingress_backends,
     "migration-secret": check_migration_secret,
@@ -132,6 +206,8 @@ CHECKS = {
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("checks", nargs="*", default=sorted(CHECKS))
+    ap.add_argument("--read-only-root", action=argparse.BooleanOptionalAction, default=True,
+                    help="also require readOnlyRootFilesystem (default on)")
     ap.add_argument("--migration-secret", default="sedoc-db-credentials")
     ap.add_argument("--migration-key", default="postgres-password")
     args = ap.parse_args()

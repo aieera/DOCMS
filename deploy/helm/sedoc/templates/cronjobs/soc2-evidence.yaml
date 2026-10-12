@@ -58,12 +58,18 @@ spec:
                   value: {{ .Values.global.s3.endpoint | quote }}
               workingDir: /tmp
               command: ["/bin/bash", "/opt/soc2/soc2-evidence.sh"]
+              securityContext:
+                {{- include "sedoc.restrictedSecurityContext" . | nindent 16 }}
               volumeMounts:
                 - name: script
                   mountPath: /opt/soc2
                   readOnly: true
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: script
               configMap:
                 name: sedoc-soc2-evidence-script
+            - name: tmp
+              emptyDir: {}
 {{- end }}
