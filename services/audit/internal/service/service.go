@@ -20,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/audit/internal/dlq"
 	"github.com/aieera/sedoc/services/audit/internal/jsconsumer"
 	"github.com/aieera/sedoc/services/audit/internal/model"
 	"github.com/aieera/sedoc/services/audit/internal/repository"
@@ -570,57 +571,18 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 	return nil
 }
 
-// auditDLQPrefix is where events the consumer gave up on are parked. It is
-// bound to the AUDIT_EVENTS_DLQ stream (pkg/events creates it beside
-// AUDIT_EVENTS with 30-day retention); the original subject is appended.
-const auditDLQPrefix = "dms.dlq.audit_events.ingest."
-
-// toDLQ publishes a permanently failed event to the audit DLQ stream and
-// waits for the stream to store it. The original bytes travel base64 so a
-// non-JSON poison message survives intact for replay.
-func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, meta *nats.MsgMetadata, cause error) error {
-	payload, err := json.Marshal(map[string]any{
-		"original_subject": msg.Subject,
-		"error":            cause.Error(),
-		"delivered":        meta.NumDelivered,
-		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
-		"raw_b64":          msg.Data,
-	})
-	if err != nil {
-		return err
-	}
-	out := nats.NewMsg(auditDLQPrefix + msg.Subject)
-	out.Data = payload
-	// Nats-Msg-Id from the source stream position: a publish that timed
-	// out after the DLQ stored it is retried by parkOnDLQ, and the DLQ
-	// stream's duplicate window drops the second copy.
-	out.Header.Set(nats.MsgIdHdr, fmt.Sprintf("audit-dlq:%s:%d:%s", meta.Stream, meta.Sequence.Stream, msg.Subject))
-	_, err = js.PublishMsg(out)
-	return err
-}
-
-// parkOnDLQ publishes a final-delivery failure to the DLQ, retrying a
-// failed publish (DLQ stream briefly unavailable, NATS blip) while
-// msg.InProgress() keeps the message pending: this is the last delivery,
-// so once it is NAK'd or its AckWait lapses JetStream drops it for good.
+// parkOnDLQ parks a final-delivery failure on the audit DLQ (internal/dlq:
+// a DB-free JetStream→JetStream republish), retrying per the service's
+// DLQ policy while the message is kept pending.
 func (s *Service) parkOnDLQ(parent context.Context, js nats.JetStreamContext, msg *nats.Msg, meta *nats.MsgMetadata, cause error) error {
-	var err error
-	for attempt := 0; attempt < s.dlqRetryAttempts; attempt++ {
-		if err = s.toDLQ(js, msg, meta, cause); err == nil {
-			return nil
-		}
-		s.log.Error().Err(err).Str("subject", msg.Subject).Int("attempt", attempt+1).
-			Msg("audit DLQ publish failed; keeping the event pending and retrying")
-		_ = msg.InProgress()
-		delay := s.dlqRetryDelays[min(attempt, len(s.dlqRetryDelays)-1)]
-		select {
-		case <-parent.Done():
-			return fmt.Errorf("shutting down: %w", err)
-		case <-time.After(delay):
-		}
-		_ = msg.InProgress()
-	}
-	return err
+	return dlq.Park(parent, js, msg, meta, cause, dlq.Retry{
+		Attempts: s.dlqRetryAttempts,
+		Delays:   s.dlqRetryDelays,
+		OnFailure: func(attempt int, err error) {
+			s.log.Error().Err(err).Str("subject", msg.Subject).Int("attempt", attempt).
+				Msg("audit DLQ publish failed; keeping the event pending and retrying")
+		},
+	})
 }
 
 // defaultMaxDeliver is how many times JetStream delivers one event to the
