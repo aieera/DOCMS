@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 // limit is refused with 413 before the handler runs; a body that only
 // turns out too large while streaming (chunked, no Content-Length) makes
 // the handler's read fail with *http.MaxBytesError, which BodyTooLarge
-// recognises so the handler can answer 413 too; bodies within the limit
+// recognizes so the handler can answer 413 too; bodies within the limit
 // pass through intact.
 func TestMaxBody_413OverLimit(t *testing.T) {
 	const limit = 16
@@ -34,7 +35,7 @@ func TestMaxBody_413OverLimit(t *testing.T) {
 	t.Run("declared length over limit", func(t *testing.T) {
 		handlerRan = false
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(strings.Repeat("a", limit+1))))
+		h.ServeHTTP(rr, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/x", strings.NewReader(strings.Repeat("a", limit+1))))
 		if rr.Code != http.StatusRequestEntityTooLarge {
 			t.Fatalf("status: got %d, want 413", rr.Code)
 		}
@@ -45,7 +46,7 @@ func TestMaxBody_413OverLimit(t *testing.T) {
 
 	t.Run("streamed body over limit", func(t *testing.T) {
 		handlerRan = false
-		req := httptest.NewRequest(http.MethodPost, "/x", io.NopCloser(strings.NewReader(strings.Repeat("a", limit*4))))
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/x", io.NopCloser(strings.NewReader(strings.Repeat("a", limit*4))))
 		req.ContentLength = -1 // chunked: size unknown up front
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
@@ -63,7 +64,7 @@ func TestMaxBody_413OverLimit(t *testing.T) {
 
 	t.Run("within limit", func(t *testing.T) {
 		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("hello")))
+		h.ServeHTTP(rr, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/x", strings.NewReader("hello")))
 		if rr.Code != http.StatusOK || readBody != "hello" || readErr != nil {
 			t.Fatalf("got status %d body %q err %v", rr.Code, readBody, readErr)
 		}

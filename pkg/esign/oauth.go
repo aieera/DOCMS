@@ -97,7 +97,7 @@ func ParseNonceState(state string) (tenantID string, provider Provider, nonce st
 
 // AuthorizeURLWithState returns the vendor authorize URL carrying the given
 // state (normally a NonceState).
-func (c OAuthConfig) AuthorizeURLWithState(state string) string {
+func (c OAuthConfig) AuthorizeURLWithState(state string) string { //nolint:gocritic // hugeParam: value receiver kept consistent with every other OAuthConfig method; a pointer receiver would change the method set
 	q := url.Values{
 		"response_type": {"code"},
 		"client_id":     {c.ClientID},

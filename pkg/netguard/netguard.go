@@ -188,17 +188,17 @@ func blockedV4(addr netip.Addr) bool {
 }
 
 // LimitedBody reads r to the end and returns its bytes, or ErrBodyTooLarge
-// (wrapped) as soon as more than max bytes arrive. max must be positive.
-func LimitedBody(r io.Reader, max int64) ([]byte, error) {
-	if max <= 0 {
-		return nil, fmt.Errorf("netguard: body limit must be positive, got %d", max)
+// (wrapped) as soon as more than limit bytes arrive. limit must be positive.
+func LimitedBody(r io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("netguard: body limit must be positive, got %d", limit)
 	}
-	body, err := io.ReadAll(io.LimitReader(r, max+1))
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(body)) > max {
-		return nil, fmt.Errorf("%w: more than %d bytes", ErrBodyTooLarge, max)
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%w: more than %d bytes", ErrBodyTooLarge, limit)
 	}
 	return body, nil
 }

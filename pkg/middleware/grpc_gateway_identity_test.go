@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +40,7 @@ func TestGatewayInject_SessionBeatsHeaders(t *testing.T) {
 	}
 
 	t.Run("session identity wins", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil)
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/workspaces", nil)
 		forge(r)
 		ctx := auth.WithUser(r.Context(), auth.UserInfo{ID: sessUser, TenantID: sessTenant, Role: "member", Email: "m@example.com"})
 		ctx = auth.SetTenantID(ctx, sessTenant)
@@ -60,7 +61,7 @@ func TestGatewayInject_SessionBeatsHeaders(t *testing.T) {
 	})
 
 	t.Run("no identity: nothing forwarded", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil)
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/workspaces", nil)
 		forge(r)
 		fwd := runGatewayIdentity(r)
 		for _, k := range []string{"Grpc-Metadata-X-Tenant-Id", "Grpc-Metadata-X-User-Id", "Grpc-Metadata-X-User-Role", "Grpc-Metadata-X-Client-Ip"} {
@@ -75,7 +76,7 @@ func TestGatewayInject_SessionBeatsHeaders(t *testing.T) {
 // the identity injector (the anonymous share-link route) must still drop
 // client-sent Grpc-Metadata-* headers.
 func TestStripGRPCMetadata(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/shared/tok", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/shared/tok", nil)
 	r.Header.Set("Grpc-Metadata-X-Tenant-Id", uuid.NewString())
 	r.Header.Set("grpc-metadata-x-user-role", "admin")
 	r.Header.Set("Content-Type", "application/json")

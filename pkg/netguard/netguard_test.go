@@ -24,7 +24,7 @@ func TestNewClient_RefusesLoopbackAtDialTime(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(Options{})
-	resp, err := c.Get(srv.URL)
+	resp, err := ctxGet(c, srv.URL)
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("expected the loopback destination to be refused")
@@ -43,7 +43,7 @@ func TestNewClient_AllowPrivateReachesLoopback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := NewClient(Options{AllowPrivate: true}).Get(srv.URL)
+	resp, err := ctxGet(NewClient(Options{AllowPrivate: true}), srv.URL)
 	if err != nil {
 		t.Fatalf("AllowPrivate client: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestNewClient_RedirectCap(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := NewClient(Options{AllowPrivate: true}).Get(srv.URL)
+	resp, err := ctxGet(NewClient(Options{AllowPrivate: true}), srv.URL)
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("expected the redirect chain to be cut")
@@ -151,7 +151,7 @@ func TestLimitedBody(t *testing.T) {
 	}
 }
 
-// A redirect is dialled through the same guard: the first hop is allowed
+// A redirect is dialed through the same guard: the first hop is allowed
 // (exempted here, standing in for a public host), the loopback target of
 // its redirect is not.
 func TestNewClient_RedirectToLoopbackRefused(t *testing.T) {
@@ -170,7 +170,7 @@ func TestNewClient_RedirectToLoopbackRefused(t *testing.T) {
 	first := netip.MustParseAddrPort(redirector.Listener.Addr().String())
 	setTestHooks(t, func(ap netip.AddrPort) bool { return ap == first }, nil)
 
-	resp, err := NewClient(Options{}).Get(redirector.URL)
+	resp, err := ctxGet(NewClient(Options{}), redirector.URL)
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("the redirect to a loopback target must be refused")
@@ -192,7 +192,7 @@ func TestNewClient_LocalhostNameRefused(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
 	defer srv.Close()
 	port := netip.MustParseAddrPort(srv.Listener.Addr().String()).Port()
-	resp, err := NewClient(Options{}).Get(fmt.Sprintf("http://localhost:%d/", port))
+	resp, err := ctxGet(NewClient(Options{}), fmt.Sprintf("http://localhost:%d/", port))
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("localhost must be refused")
@@ -205,7 +205,7 @@ func TestNewClient_LocalhostNameRefused(t *testing.T) {
 // A public-looking hostname whose DNS answer is an RFC 1918 address (DNS
 // rebinding) is refused on the resolved address, before any connection.
 func TestNewClient_HostnameResolvingToPrivateRefused(t *testing.T) {
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := (&net.ListenConfig{}).ListenPacket(context.Background(), "udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestNewClient_HostnameResolvingToPrivateRefused(t *testing.T) {
 	}})
 
 	start := time.Now()
-	resp, err := NewClient(Options{Timeout: 5 * time.Second}).Get("http://intranet.example.com/")
+	resp, err := ctxGet(NewClient(Options{Timeout: 5 * time.Second}), "http://intranet.example.com/")
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("a name resolving to 10.0.0.1 must be refused")
@@ -281,4 +281,13 @@ func setTestHooks(t *testing.T, exempt func(netip.AddrPort) bool, resolver *net.
 	}
 	dialExempt, testResolver = exempt, resolver
 	t.Cleanup(func() { dialExempt, testResolver = nil, nil })
+}
+
+// ctxGet is (*http.Client).Get with an explicit context (noctx).
+func ctxGet(c *http.Client, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
 }

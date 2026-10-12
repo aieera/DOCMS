@@ -65,7 +65,7 @@ func APIKeyAuth(cfg APIKeyAuthConfig) func(http.Handler) http.Handler {
 				revokedAt *time.Time
 			)
 			// The definer function only returns non-revoked keys; the
-			// revoked_at check below stays as defence in depth.
+			// revoked_at check below stays as defense in depth.
 			err := pool.QueryRow(r.Context(), `
 				SELECT id, tenant_id, user_id, scopes, expires_at, revoked_at
 				FROM auth_lookup_api_key_by_hash($1)`,
@@ -146,10 +146,10 @@ func touchAPIKey(reqCtx context.Context, pool *pgxpool.Pool, tenantID, keyID uui
 	}
 	ctx := context.WithoutCancel(reqCtx)
 	go func() {
-		ctx, cancel := context.WithTimeout(ctx, apiKeyTouchTimeout)
+		tctx, cancel := context.WithTimeout(ctx, apiKeyTouchTimeout)
 		defer cancel()
-		err := database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
-			_, e := tx.Exec(ctx,
+		err := database.WithTenantTx(tctx, pool, tenantID, func(tx pgx.Tx) error {
+			_, e := tx.Exec(tctx,
 				`UPDATE api_keys SET last_used_at = now() WHERE tenant_id = $1 AND id = $2`,
 				tenantID, keyID)
 			return e
