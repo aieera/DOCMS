@@ -130,8 +130,18 @@ func (s *Service) CreateCheckpoint(ctx context.Context, tenantID string) (*model
 	if count == 0 || head == "" {
 		return nil, fmt.Errorf("no audit events to checkpoint")
 	}
+	cp := s.signCheckpoint(tenantID, head, count)
+	if err := s.repo.InsertCheckpoint(ctx, cp); err != nil {
+		return nil, fmt.Errorf("insert checkpoint: %w", err)
+	}
+	return cp, nil
+}
+
+// signCheckpoint signs (tenant, head, count) with the configured key. The
+// caller ensures s.signer is set.
+func (s *Service) signCheckpoint(tenantID, head string, count int64) *model.AuditCheckpoint {
 	sig := ed25519.Sign(s.signer, CanonicalCheckpointMessage(tenantID, head, count))
-	cp := &model.AuditCheckpoint{
+	return &model.AuditCheckpoint{
 		TenantID:   tenantID,
 		HeadHash:   head,
 		EventCount: count,
@@ -139,10 +149,6 @@ func (s *Service) CreateCheckpoint(ctx context.Context, tenantID string) (*model
 		KeyID:      s.keyID,
 		Signature:  base64.StdEncoding.EncodeToString(sig),
 	}
-	if err := s.repo.InsertCheckpoint(ctx, cp); err != nil {
-		return nil, fmt.Errorf("insert checkpoint: %w", err)
-	}
-	return cp, nil
 }
 
 // ListCheckpoints returns the tenant's checkpoints (newest first).

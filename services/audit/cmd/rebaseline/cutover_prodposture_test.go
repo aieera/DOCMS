@@ -151,10 +151,10 @@ func TestRebaseline_TwoTenantsOneRefused(t *testing.T) {
 	require.Equal(t, 1, markers(tenantB), "the other tenant is re-baselined")
 }
 
-// H-12 round 6: a chain the latest signed checkpoint no longer covers,
-// with no re-baseline marker to explain it (here: its newest events were
-// deleted, which leaves a consistent but truncated chain), is refused
-// with exit 5 and nothing is signed.
+// H-12 round 6: a chain that no longer carries the latest signed
+// checkpoint's prefix (here: its newest events were deleted, which leaves
+// a consistent but truncated chain) is refused with exit 5 and nothing is
+// signed.
 func TestRebaseline_UncertifiedHeadExit5(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -182,4 +182,41 @@ func TestRebaseline_UncertifiedHeadExit5(t *testing.T) {
 	var cpsAfter int
 	require.NoError(t, db.Super.QueryRow(ctx, `SELECT count(*) FROM audit_checkpoints WHERE tenant_id = $1`, tenant).Scan(&cpsAfter))
 	require.Equal(t, cpsBefore, cpsAfter, "nothing may be signed")
+}
+
+// H-12 round 7: a tenant with no checkpoint at all (here: a re-baselined
+// tenant whose checkpoints were deleted) is not silently signed. --apply
+// refuses it with exit 5 and a no_checkpoint=true line; only
+// --allow-first-checkpoint signs it.
+func TestRebaseline_NoCheckpointRequiresOptIn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	t.Setenv("SEDOC_AUDIT_SIGNING_KEY", testSigningKey)
+	base := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	db, tenant, _ := newCutoverDB(ctx, t, base, base.Add(time.Hour))
+	late := base.Add(72 * time.Hour).Format(time.RFC3339)
+	args := []string{"--dsn", db.SuperDSN, "--apply", "--operator", "ops", "--cutover", late}
+	var out, errOut bytes.Buffer
+	require.Zero(t, run(ctx, args, &out, &errOut), errOut.String())
+	_, err := db.Super.Exec(ctx, `DELETE FROM audit_checkpoints WHERE tenant_id = $1`, tenant)
+	require.NoError(t, err)
+	checkpoints := func() int {
+		var n int
+		require.NoError(t, db.Super.QueryRow(ctx, `SELECT count(*) FROM audit_checkpoints WHERE tenant_id = $1`, tenant).Scan(&n))
+		return n
+	}
+
+	out.Reset()
+	errOut.Reset()
+	require.Equal(t, 5, run(ctx, args, &out, &errOut), errOut.String())
+	require.Contains(t, out.String(), "tenant="+tenant.String())
+	require.Contains(t, out.String(), "no_checkpoint=true")
+	require.Contains(t, errOut.String(), "--allow-first-checkpoint")
+	require.Zero(t, checkpoints(), "nothing may be signed without the opt-in")
+
+	out.Reset()
+	errOut.Reset()
+	require.Zero(t, run(ctx, append(args, "--allow-first-checkpoint"), &out, &errOut), errOut.String())
+	require.Contains(t, out.String(), "checkpointed=true")
+	require.Equal(t, 1, checkpoints())
 }

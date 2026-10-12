@@ -55,29 +55,41 @@ Events written after the cutover were hashed canonically and must already verify
 | 2 | usage error, e.g. `--apply` without `--operator` or `--cutover` |
 | 3 | not a BYPASSRLS/owner role |
 | 4 | `--apply` without a valid signing key |
-| 5 | a tenant was refused: differing events at or after the cutover, or (on a re-run) a chain head the latest signed checkpoint does not vouch for. Investigate; do not re-baseline. |
+| 5 | a tenant was refused. Nothing was written or signed for it. Investigate; do not re-baseline. The causes are: differing events at or after the cutover; a chain whose latest checkpoint signature does not verify with this key; a chain that no longer carries its latest checkpoint's signed prefix; or a tenant with no checkpoint at all when `--allow-first-checkpoint` was not given (its output line says `no_checkpoint=true`). |
 
-Each tenant is processed in one transaction under its audit-chain advisory lock, so live ingest simply waits for it. Every tenant is logged, with event count, number of differing events, old and new head hash, and whether a checkpoint was written. The exit code is non-zero if any tenant failed.
+Each tenant is processed in one transaction under its audit-chain advisory lock, so live ingest simply waits for it. The rewrite, the marker and the checkpoint commit together or not at all. Every tenant is logged, with event count, number of differing events, old and new head hash, and whether a checkpoint was written. The exit code is non-zero if any tenant failed.
 
 ## What gets written (with `--apply`)
 
-The tool writes three things:
+The tool writes three things, in **one transaction**. If any part fails, including the checkpoint insert, none of it is written and the chain is left as it was:
 
 - **Rewritten links.** Every event whose stored `previous_hash`/`event_hash` differs from the verifier's own computation is rewritten to the canonical form. Event content is never changed.
-- **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count, the operator and the cutover. Anyone reading the trail can tell this authorised cutover apart from tampering.
-- **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY`. The key is mandatory for `--apply`: without a valid key the tool exits with code 4 before touching any tenant, because a re-baselined chain with no signed checkpoint would be a tail nobody certified. Older checkpoints sign heads that no longer exist; only the latest is checked.
+- **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count, the operator and the cutover. It is informational: it tells a reader of the trail that this was an authorised cutover. The tool never trusts it, because anyone with database write access could insert such a row.
+- **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY` before the transaction commits. The key is mandatory for `--apply`: without a valid key the tool exits with code 4 before touching any tenant, because a re-baselined chain with no signed checkpoint would be a tail nobody certified. Older checkpoints sign heads that no longer exist; only the latest is checked.
 
 ### Re-running
 
-A re-run with `--apply` rewrites nothing for a tenant whose chain already verifies. However, if the latest signed checkpoint does not cover the current head, the tool may sign a new checkpoint. A chain that verifies internally is not enough on its own, because someone with database access but no signing key can rewrite every hash consistently. So the tool signs only when one of these holds:
+A re-run with `--apply` rewrites nothing for a tenant whose chain already verifies. If the latest checkpoint already covers the head, nothing is written. Otherwise the tool may sign a new checkpoint, but a chain that verifies internally is not enough on its own: someone with database access but no signing key can rewrite every hash consistently. So it signs only when both of these hold:
 
-- **Extension.** The latest checkpoint's signature verifies with the configured key, and the chain still contains its signed prefix: the event at position `event_count` carries the signed head hash. Only events were appended after it.
-- **Repair.** The latest checkpoint's signature verifies, its prefix no longer matches, but an `audit.chain_rebaselined` marker sits after the events it covered. This is a re-baseline whose own checkpoint failed after the rewrite committed.
-- **First checkpoint.** The tenant has no checkpoint at all and its chain fully verifies.
+- the latest checkpoint's signature verifies with the configured key, and
+- the chain still contains that checkpoint's signed prefix (the event at position `event_count` carries the signed head hash), so events were only appended after it.
 
-In every other case (a signature that does not verify with this key, or a changed or truncated prefix with no re-baseline marker after it) the tenant is refused with exit code 5 and nothing is signed. **Investigate; do not re-baseline.**
+Anything else, such as a signature that does not verify with this key or a changed or truncated prefix, refuses the tenant with exit code 5 and nothing is signed. **Investigate; do not re-baseline.**
 
-The first-checkpoint case cannot be cross-checked against anything signed. If checkpoints were expected for a tenant and none exist, treat that as an incident before you run `--apply`.
+### A tenant with no checkpoint (`--allow-first-checkpoint`)
+
+A tenant with no checkpoint at all cannot be cross-checked against anything signed. Its chain looks exactly like one whose checkpoints were deleted. By default such a tenant is refused (exit code 5), and its output line says `no_checkpoint=true` so the case is visible rather than silently signed. This applies when the chain needs no rewrite. A tenant whose chain is re-baselined gets its checkpoint with the rewrite.
+
+`--allow-first-checkpoint` signs the first checkpoint for such tenants. Treat it as an **incident-level decision**. First confirm that the tenant never had checkpoints, for example because signing was only enabled recently, and that none were deleted. Record that decision in the change ticket. Then run it for that tenant alone:
+
+```sh
+go run ./cmd/rebaseline --apply --operator "jane.doe@example.com (INC-5678)" \
+    --cutover 2026-10-14T09:30:00Z --tenant <uuid> --allow-first-checkpoint
+```
+
+### After a signing-key rotation
+
+The audit service checks checkpoints against one key only; it has no previous-key (`_PREV`) support. After rotating `SEDOC_AUDIT_SIGNING_KEY`, every existing checkpoint fails verification with the new key, so a re-run would refuse each tenant with exit code 5. **Wait for a fresh checkpoint signed by the service with the new key** (`POST /api/v1/audit/checkpoint` for the tenant) before re-baselining. Make sure the tool runs with the same new key.
 
 ## Rollback
 

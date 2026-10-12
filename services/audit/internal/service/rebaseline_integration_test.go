@@ -72,7 +72,7 @@ func TestRebaseline_DryRunWritesNothing(t *testing.T) {
 	seedPreFixChain(ctx, t, pool, tenant, 4)
 	before := snapshotHashes(ctx, t, pool, tenant)
 
-	res, err := svc.Rebaseline(ctx, tenant.String(), false, "ops@example.com", nil)
+	res, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: false, Operator: "ops@example.com", Cutover: nil})
 	require.NoError(t, err)
 	require.Equal(t, 4, res.Events)
 	require.Equal(t, 4, res.Rewritten, "every pre-fix event hashes differently in canonical form")
@@ -99,7 +99,7 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, res.Valid, "precondition: a pre-fix chain does not verify")
 
-	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com", &farFuture)
+	rb, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops@example.com", Cutover: &farFuture})
 	require.NoError(t, err)
 	require.True(t, rb.Applied)
 	require.Equal(t, 4, rb.Rewritten)
@@ -122,7 +122,7 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 
 	// Idempotent: a second run reports nothing and writes nothing.
 	before := snapshotHashes(ctx, t, pool, tenant)
-	rb2, err := svc.Rebaseline(ctx, tenant.String(), true, "ops@example.com", &farFuture)
+	rb2, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops@example.com", Cutover: &farFuture})
 	require.NoError(t, err)
 	require.Zero(t, rb2.Rewritten)
 	require.False(t, rb2.Checkpointed)
@@ -132,48 +132,96 @@ func TestRebaseline_ApplyMakesChainVerifiable(t *testing.T) {
 	require.Len(t, cps, 1)
 }
 
-// H-12 round 5: if the checkpoint failed after the re-baseline committed,
-// a re-run used to see 0 differences and never checkpoint, leaving the
-// re-baselined tail uncertified for good. A re-run with --apply now signs
-// a checkpoint whenever the latest one does not cover the current head.
-func TestRebaseline_RerunRepairsMissingCheckpoint(t *testing.T) {
+// H-12 round 7: a tenant with no checkpoint at all cannot be cross-checked
+// against anything signed (a deleted-checkpoints incident looks exactly
+// like this). An --apply run that rewrites nothing refuses it, flagging
+// NoCheckpoint, unless the first checkpoint is explicitly opted into.
+func TestRebaseline_NoCheckpointResignNeedsOptIn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	pool := newAuditPool(ctx, t)
 	svc := New(Config{Repo: repository.New(pool), Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
 	tenant := uuid.New()
 	seedPreFixChain(ctx, t, pool, tenant, 3)
-
-	_, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	_, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
 	require.NoError(t, err)
-	// The checkpoint write "failed" after the rewrite committed.
 	_, err = pool.Exec(ctx, `DELETE FROM audit_checkpoints WHERE tenant_id = $1`, tenant)
 	require.NoError(t, err)
 
-	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	rb, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
+	require.ErrorIs(t, err, ErrUncertifiedHead)
+	require.True(t, rb.NoCheckpoint)
+	require.False(t, rb.Checkpointed)
+	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
 	require.NoError(t, err)
-	require.Zero(t, rb.Rewritten)
-	require.True(t, rb.Checkpointed, "the re-run must re-anchor the uncertified head")
+	require.Empty(t, cps, "nothing may be signed without the opt-in")
+
+	rb, err = svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture,
+		AllowFirstCheckpoint: true})
+	require.NoError(t, err)
+	require.True(t, rb.Checkpointed)
 	res, err := svc.VerifyIntegrity(ctx, tenant.String())
 	require.NoError(t, err)
 	require.True(t, res.Valid)
 	require.True(t, res.CheckpointValid, res.CheckpointMessage)
 
-	// A further re-run with the head covered writes nothing.
-	rb, err = svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	// With the head covered, a further run writes nothing.
+	rb, err = svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
 	require.NoError(t, err)
 	require.False(t, rb.Checkpointed)
-	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
+	cps, err = svc.ListCheckpoints(ctx, tenant.String(), 10)
 	require.NoError(t, err)
 	require.Len(t, cps, 1)
+}
+
+// H-12 round 7: the re-baseline's checkpoint is signed and inserted in the
+// same transaction as the rewrite and the marker. If the checkpoint insert
+// fails, the rewrite and the marker roll back with it: the chain is left
+// exactly as it was, so no "rewritten but unsigned" state exists to repair.
+func TestRebaseline_CheckpointIsAtomicWithRewrite(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	pool := newAuditPool(ctx, t)
+	svc := New(Config{Repo: repository.New(pool), Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
+	tenant := uuid.New()
+	seedPreFixChain(ctx, t, pool, tenant, 3)
+	before := snapshotHashes(ctx, t, pool, tenant)
+
+	// Inject a checkpoint-insert failure.
+	_, err := pool.Exec(ctx, `
+		CREATE FUNCTION test_fail_checkpoint() RETURNS trigger LANGUAGE plpgsql AS
+		$$ BEGIN RAISE EXCEPTION 'injected checkpoint failure'; END $$;
+		CREATE TRIGGER test_fail_checkpoint BEFORE INSERT ON audit_checkpoints
+		FOR EACH ROW EXECUTE FUNCTION test_fail_checkpoint();`)
+	require.NoError(t, err)
+
+	rb, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
+	require.ErrorContains(t, err, "injected checkpoint failure")
+	require.False(t, rb.Checkpointed)
+	require.Equal(t, before, snapshotHashes(ctx, t, pool, tenant), "the rewrite and the marker must roll back")
+	var markers int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_events
+		WHERE tenant_id = $1 AND action = 'audit.chain_rebaselined'`, tenant).Scan(&markers))
+	require.Zero(t, markers)
+
+	// With the failure gone, the same run completes and is anchored.
+	_, err = pool.Exec(ctx, `DROP TRIGGER test_fail_checkpoint ON audit_checkpoints`)
+	require.NoError(t, err)
+	rb, err = svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
+	require.NoError(t, err)
+	require.True(t, rb.Applied)
+	require.True(t, rb.Checkpointed)
+	res, err := svc.VerifyIntegrity(ctx, tenant.String())
+	require.NoError(t, err)
+	require.True(t, res.Valid, "broken at %s", res.BrokenAt)
+	require.True(t, res.CheckpointValid, res.CheckpointMessage)
 }
 
 // H-12 round 6: someone with DB write access but no signing key can
 // rewrite a whole chain consistently (it then verifies, so Rewritten ==
 // 0) — and the re-sign path used to sign that forged head on a routine
-// --apply. The latest signed checkpoint's prefix no longer matches and
-// no re-baseline marker explains it, so the tenant must be refused with
-// nothing written.
+// --apply. The latest signed checkpoint's prefix no longer matches, so
+// the tenant must be refused with nothing written.
 func TestRebaseline_RefusesToSignRewrittenChain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -201,7 +249,7 @@ func TestRebaseline_RefusesToSignRewrittenChain(t *testing.T) {
 		prev = h
 	}
 
-	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	rb, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
 	require.ErrorIs(t, err, ErrUncertifiedHead)
 	require.Zero(t, rb.Rewritten, "the forged chain is internally consistent")
 	require.False(t, rb.Checkpointed)
@@ -210,32 +258,50 @@ func TestRebaseline_RefusesToSignRewrittenChain(t *testing.T) {
 	require.Len(t, cps, 1, "the forged head must not be signed")
 }
 
-// H-12 round 6: the legitimate repair still works — a real re-baseline
-// whose checkpoint failed after commit leaves an older checkpoint whose
-// prefix no longer matches, but a chain_rebaselined marker after it
-// explains the change, so the re-run signs.
-func TestRebaseline_RepairAfterMarkerStillAllowed(t *testing.T) {
+// H-12 round 7: the round-6 repair exception accepted any row whose action
+// was audit.chain_rebaselined, and anyone with DB write access can insert
+// one. A consistent rewrite plus a forged marker after the signed prefix
+// must still be refused, with nothing signed.
+func TestRebaseline_ForgedMarkerDoesNotAllowResign(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	pool := newAuditPool(ctx, t)
-	svc := New(Config{Repo: repository.New(pool), Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
+	repo := repository.New(pool)
+	svc := New(Config{Repo: repo, Logger: zerolog.Nop(), SigningKeySeedB64: newSeedB64()})
 	tenant := uuid.New()
-	seedPreFixChain(ctx, t, pool, tenant, 3)
-	before, err := svc.CreateCheckpoint(ctx, tenant.String()) // signed over the pre-fix head
+	for i := 0; i < 3; i++ {
+		require.NoError(t, svc.RecordAccessDenied(ctx, tenant.String(), "", "", "read", "/x", "member"))
+	}
+	_, err := svc.CreateCheckpoint(ctx, tenant.String())
 	require.NoError(t, err)
 
-	rb, err := svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	// The forgery: change history, append a fake re-baseline marker after
+	// the signed prefix, and recompute every hash consistently.
+	_, err = pool.Exec(ctx, `UPDATE audit_events SET action = 'audit.forged' WHERE tenant_id = $1`, tenant)
 	require.NoError(t, err)
-	require.True(t, rb.Checkpointed)
-	// The post-rebaseline checkpoint "failed": only the old one remains.
-	_, err = pool.Exec(ctx, `DELETE FROM audit_checkpoints WHERE tenant_id = $1 AND id <> $2`, tenant, before.ID)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO audit_events (id, tenant_id, event_hash, previous_hash, actor, actor_type, actor_name,
+		                          action, details, created_at)
+		VALUES ($1, $2, 'x', '', '', 'system', 'ops', 'audit.chain_rebaselined', '{}', now() + interval '1 second')`,
+		uuid.Must(uuid.NewV7()), tenant)
 	require.NoError(t, err)
+	events, err := repo.ListAll(ctx, tenant.String())
+	require.NoError(t, err)
+	require.Len(t, events, 4)
+	prev := ""
+	for _, e := range events {
+		h := computeEventHash(prev, e)
+		_, err = pool.Exec(ctx, `UPDATE audit_events SET previous_hash = $3, event_hash = $4 WHERE tenant_id = $1 AND id = $2`,
+			tenant, e.ID, prev, h)
+		require.NoError(t, err)
+		prev = h
+	}
 
-	rb, err = svc.Rebaseline(ctx, tenant.String(), true, "ops", &farFuture)
+	rb, err := svc.Rebaseline(ctx, tenant.String(), RebaselineOptions{Apply: true, Operator: "ops", Cutover: &farFuture})
+	require.ErrorIs(t, err, ErrUncertifiedHead)
+	require.Zero(t, rb.Rewritten, "the forged chain is internally consistent")
+	require.False(t, rb.Checkpointed)
+	cps, err := svc.ListCheckpoints(ctx, tenant.String(), 10)
 	require.NoError(t, err)
-	require.True(t, rb.Checkpointed, "the marker after the old checkpoint justifies the repair")
-	res, err := svc.VerifyIntegrity(ctx, tenant.String())
-	require.NoError(t, err)
-	require.True(t, res.Valid)
-	require.True(t, res.CheckpointValid, res.CheckpointMessage)
+	require.Len(t, cps, 1, "the forged head must not be signed")
 }

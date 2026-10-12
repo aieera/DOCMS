@@ -10,7 +10,12 @@
 // rows are rewritten, an audit.chain_rebaselined event (old head, new head,
 // count, operator) is appended, and a signed checkpoint
 // (SEDOC_AUDIT_SIGNING_KEY, mandatory with --apply: exit 4 without it)
-// anchors the new head. A second run reports 0.
+// anchors the new head, all in one transaction. A second run reports 0.
+//
+// A tenant whose chain already verifies is only re-signed when its latest
+// checkpoint verifies and the chain still carries that signed prefix; a
+// tenant with no checkpoint needs --allow-first-checkpoint. Anything else
+// is refused (exit 5).
 //
 // It rewrites WORM rows, so it must run as the table owner / a BYPASSRLS
 // operator role (the migration DSN). It refuses any other role.
@@ -52,6 +57,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	operator := fs.String("operator", "", "who runs this (recorded on the marker event; required with --apply)")
 	cutoverFlag := fs.String("cutover", "", "RFC3339 deploy time of the canonical-hash fix (required with --apply); "+
 		"a differing event at or after it refuses the tenant (exit 5)")
+	allowFirst := fs.Bool("allow-first-checkpoint", false, "with --apply, sign a tenant that has no checkpoint at all "+
+		"(incident-level decision: without it such a tenant is refused, exit 5, no_checkpoint=true)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -135,7 +142,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	failed, refused := 0, 0
 	for _, tid := range tenants {
-		res, err := svc.Rebaseline(ctx, tid.String(), *apply, *operator, cutover)
+		res, err := svc.Rebaseline(ctx, tid.String(), service.RebaselineOptions{
+			Apply: *apply, Operator: *operator, Cutover: cutover, AllowFirstCheckpoint: *allowFirst,
+		})
 		fmt.Fprintf(stdout, "%s %s\n", mode, describe(tid.String(), res))
 		switch {
 		case errors.Is(err, repository.ErrDifferingAfterCutover), errors.Is(err, service.ErrUncertifiedHead):
@@ -155,7 +164,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Str("old_head", res.OldHead).Str("new_head", res.NewHead).Msg("tenant processed")
 	}
 	if refused > 0 {
-		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused (differing events at or after the cutover, or a head the signed history does not vouch for) — investigate, do not re-baseline\n", refused)
+		fmt.Fprintf(stderr, "rebaseline: %d tenant(s) refused (differing events at or after the cutover, a head the signed history does not vouch for, "+
+			"or no checkpoint without --allow-first-checkpoint) — investigate, do not re-baseline\n", refused)
 		return 5
 	}
 	if failed > 0 {
@@ -180,5 +190,9 @@ func describe(tenant string, r service.RebaselineResult) string {
 	if r.CutoverConsidered {
 		line += fmt.Sprintf(" at_or_after_cutover=%d", r.AtOrAfterCutover)
 	}
-	return line + fmt.Sprintf(" applied=%t checkpointed=%t", r.Applied, r.Checkpointed)
+	line += fmt.Sprintf(" applied=%t checkpointed=%t", r.Applied, r.Checkpointed)
+	if r.NoCheckpoint {
+		line += " no_checkpoint=true"
+	}
+	return line
 }

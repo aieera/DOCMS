@@ -30,7 +30,7 @@ type RebaselineResult struct {
 	First, Last       *DifferingEvent // first and last differing event, chain order
 	AtOrAfterCutover  int             // differing events with created_at >= cutover (cutover given)
 	OldHead, NewHead  string          // stored head before the run; canonical head (before any marker)
-	Applied           bool            // rows were rewritten and the marker appended
+	Applied           bool            // rows were rewritten, the marker appended and the checkpoint inserted
 	CutoverConsidered bool
 }
 
@@ -45,9 +45,12 @@ type RebaselineResult struct {
 // differing event created at or after it cannot be pre-fix hashing.
 // apply requires a cutover; if any differing event is at or after it the
 // tenant is refused with ErrDifferingAfterCutover and nothing is written.
-// Otherwise every differing row is rewritten in place and
-// marker(old, new, n) is appended through the normal chained append, all
-// in one transaction. With apply=false nothing is written.
+// Otherwise every differing row is rewritten in place, marker(old, new, n)
+// is appended through the normal chained append, and sign(head, count)
+// returns the signed checkpoint over the resulting head, which is inserted
+// too, all in one transaction: if any step fails (the checkpoint insert
+// included) nothing is written, so a rewritten chain is never left without
+// its checkpoint. With apply=false nothing is written.
 //
 // This is the ONLY writer of non-canonical→canonical hashes. It UPDATEs
 // audit_events directly, which only the table owner / a BYPASSRLS
@@ -56,10 +59,14 @@ func (r *Repository) RebaselineChain(ctx context.Context, tenantID string, apply
 	expected func(prev string, e *model.AuditEvent) string,
 	hash func(prev string, e *model.AuditEvent) string,
 	marker func(oldHead, newHead string, rewritten int) *model.AuditEvent,
+	sign func(head string, count int64) *model.AuditCheckpoint,
 ) (RebaselineResult, error) {
 	var res RebaselineResult
 	if apply && cutover == nil {
 		return res, errors.New("rebaseline: apply requires a cutover")
+	}
+	if apply && sign == nil {
+		return res, errors.New("rebaseline: apply requires a checkpoint signer")
 	}
 	res.CutoverConsidered = cutover != nil
 	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
@@ -108,8 +115,14 @@ func (r *Repository) RebaselineChain(ctx context.Context, tenantID string, apply
 				return fmt.Errorf("rebaseline event %s: %w", w.id, err)
 			}
 		}
-		if err := appendInTx(ctx, tx, marker(res.OldHead, res.NewHead, res.Rewritten), hash); err != nil {
+		m := marker(res.OldHead, res.NewHead, res.Rewritten)
+		if err := appendInTx(ctx, tx, m, hash); err != nil {
 			return fmt.Errorf("append rebaseline marker: %w", err)
+		}
+		// Signed before commit and committed with the rewrite: the marker
+		// is the head and the chain now holds every loaded event plus it.
+		if err := insertCheckpointTx(ctx, tx, sign(m.EventHash, int64(len(events))+1)); err != nil {
+			return fmt.Errorf("rebaseline checkpoint: %w", err)
 		}
 		res.Applied = true
 		return nil

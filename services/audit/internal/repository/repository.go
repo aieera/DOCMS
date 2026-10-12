@@ -498,13 +498,17 @@ func (r *Repository) InsertCheckpoint(ctx context.Context, cp *model.AuditCheckp
 		return fmt.Errorf("insert checkpoint: tenant_id not a uuid: %w", err)
 	}
 	return database.WithTenantTx(ctx, r.pool, tenantUUID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			INSERT INTO audit_checkpoints (tenant_id, head_hash, event_count, algo, key_id, signature)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id, created_at
-		`, cp.TenantID, cp.HeadHash, cp.EventCount, cp.Algo, cp.KeyID, cp.Signature).
-			Scan(&cp.ID, &cp.CreatedAt)
+		return insertCheckpointTx(ctx, tx, cp)
 	})
+}
+
+func insertCheckpointTx(ctx context.Context, tx pgx.Tx, cp *model.AuditCheckpoint) error {
+	return tx.QueryRow(ctx, `
+		INSERT INTO audit_checkpoints (tenant_id, head_hash, event_count, algo, key_id, signature)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at
+	`, cp.TenantID, cp.HeadHash, cp.EventCount, cp.Algo, cp.KeyID, cp.Signature).
+		Scan(&cp.ID, &cp.CreatedAt)
 }
 
 // LatestCheckpoint returns the most recent checkpoint for the tenant, or
