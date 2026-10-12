@@ -104,8 +104,9 @@ func NewOnlyOfficeHandler(log zerolog.Logger) *OnlyOfficeHandler {
 
 // Register mounts both routes on a ServeMux.
 func (h *OnlyOfficeHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config", h.config)
-	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback", h.callback)
+	// DEC-19: JSON only — the edited bytes are downloaded by URL.
+	mux.Handle("GET /api/v1/documents/{id}/versions/{vid}/onlyoffice/config", limitJSON(h.config))
+	mux.Handle("POST /api/v1/documents/{id}/versions/{vid}/onlyoffice/callback", limitJSON(h.callback))
 }
 
 // ---- config endpoint ----------------------------------------------

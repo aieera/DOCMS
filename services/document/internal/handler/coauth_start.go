@@ -44,7 +44,7 @@ func NewCoauthStartHandler(svc *service.DocumentService, log zerolog.Logger) *Co
 
 // Register attaches the route.
 func (h *CoauthStartHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/documents/{id}/versions/{vid}/coauth/start", h.start)
+	mux.Handle("POST /api/v1/documents/{id}/versions/{vid}/coauth/start", limitJSON(h.start))
 }
 
 type coauthStartReq struct {

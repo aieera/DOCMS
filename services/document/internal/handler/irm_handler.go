@@ -38,9 +38,9 @@ func NewIRMHandler(svc *service.IRMService, log zerolog.Logger) *IRMHandler {
 }
 
 func (h *IRMHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/irm/export", h.export)
-	mux.HandleFunc("POST /api/v1/irm/licenses/check", h.check)
-	mux.HandleFunc("GET /api/v1/irm/licenses/content", h.content)
+	mux.Handle("POST /api/v1/irm/export", limitJSON(h.export))
+	mux.Handle("POST /api/v1/irm/licenses/check", limitJSON(h.check))
+	mux.Handle("GET /api/v1/irm/licenses/content", limitJSON(h.content))
 }
 
 // ---- export -------------------------------------------------------------

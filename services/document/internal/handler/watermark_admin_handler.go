@@ -31,11 +31,11 @@ func NewWatermarkAdminHandler(svc *service.DocumentService, log zerolog.Logger) 
 }
 
 func (h *WatermarkAdminHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/admin/watermark/config", h.getConfig)
-	mux.HandleFunc("PUT /api/v1/admin/watermark/config", h.putConfig)
-	mux.HandleFunc("GET /api/v1/admin/watermark/overrides", h.listOverrides)
-	mux.HandleFunc("POST /api/v1/admin/watermark/overrides", h.createOverride)
-	mux.HandleFunc("DELETE /api/v1/admin/watermark/overrides/{id}", h.deleteOverride)
+	mux.Handle("GET /api/v1/admin/watermark/config", limitJSON(h.getConfig))
+	mux.Handle("PUT /api/v1/admin/watermark/config", limitJSON(h.putConfig))
+	mux.Handle("GET /api/v1/admin/watermark/overrides", limitJSON(h.listOverrides))
+	mux.Handle("POST /api/v1/admin/watermark/overrides", limitJSON(h.createOverride))
+	mux.Handle("DELETE /api/v1/admin/watermark/overrides/{id}", limitJSON(h.deleteOverride))
 }
 
 type wmConfigDTO struct {

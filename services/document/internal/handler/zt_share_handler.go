@@ -98,18 +98,18 @@ func NewZTShareHandler(pool *pgxpool.Pool, docs ZTDocumentAuthorizer, s3 *storag
 
 // RegisterAdmin mounts the admin/sender routes (require SessionAuth at the caller).
 func (h *ZTShareHandler) RegisterAdmin(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/admin/share-links/zt", h.requirePepper(h.create))
-	mux.HandleFunc("POST /api/v1/admin/share-links/zt/{token_id}/revoke", h.revoke)
-	mux.HandleFunc("GET /api/v1/admin/share-links/zt/{token_id}/telemetry", h.telemetryRead)
+	mux.Handle("POST /api/v1/admin/share-links/zt", limitJSON(h.requirePepper(h.create)))
+	mux.Handle("POST /api/v1/admin/share-links/zt/{token_id}/revoke", limitJSON(h.revoke))
+	mux.Handle("GET /api/v1/admin/share-links/zt/{token_id}/telemetry", limitJSON(h.telemetryRead))
 }
 
 // RegisterPublic mounts the recipient routes — no auth, the token IS the auth.
 func (h *ZTShareHandler) RegisterPublic(mux *http.ServeMux) {
 	// The path wildcard keeps its historical name; its value is the URL
 	// token (pre-image), not the stored token_id.
-	mux.HandleFunc("GET /api/v1/zt/{token_id}/manifest", h.requirePepper(h.manifest))
-	mux.HandleFunc("GET /api/v1/zt/{token_id}/stream", h.requirePepper(h.stream))
-	mux.HandleFunc("POST /api/v1/zt/{token_id}/telemetry", h.requirePepper(h.telemetryWrite))
+	mux.Handle("GET /api/v1/zt/{token_id}/manifest", limitJSON(h.requirePepper(h.manifest)))
+	mux.Handle("GET /api/v1/zt/{token_id}/stream", limitJSON(h.requirePepper(h.stream)))
+	mux.Handle("POST /api/v1/zt/{token_id}/telemetry", limitJSON(h.requirePepper(h.telemetryWrite)))
 }
 
 // requirePepper fails the token-minting and token-resolving routes closed

@@ -53,10 +53,10 @@ func NewWatermarkHandler(svc *service.DocumentService, preview *watermark.Previe
 }
 
 func (h *WatermarkHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/status", h.status)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/pages/{page_number}", h.page)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/thumbnail", h.thumbnail)
-	mux.HandleFunc("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/download", h.download)
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/status", limitJSON(h.status))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/pages/{page_number}", limitJSON(h.page))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/thumbnail", limitJSON(h.thumbnail))
+	mux.Handle("GET /api/v1/documents/{document_id}/versions/{version_id}/wm/download", limitJSON(h.download))
 }
 
 // ---- shared preamble ----------------------------------------------------
