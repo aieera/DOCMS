@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -364,46 +365,54 @@ func (s *Service) persistEnvelopes(ctx context.Context, cfg *Config, envelopes [
 // materialiseEmail ingests one envelope's body + attachments as real
 // documents (each gets a version → OCR + embed + index) and stamps the
 // email_messages row with the outcome.
+//
+// N-8: materialisation is per part and resumable. Part 0 is the body
+// (email_messages.document_id), part i is attachment i
+// (attachment_document_ids[i]). Each part's document id is stamped as soon
+// as it is filed, and parts already stamped are skipped, so a retry after
+// a failure — or after a crash / failed final stamp — resumes instead of
+// re-filing the body and earlier attachments. Any part failing fails the
+// whole message (it is retried on a later poll); it is 'materialised' only
+// when every part is filed.
 func (s *Service) materialiseEmail(ctx context.Context, cfg *Config, msgID string, env *Envelope) {
-	tenantUUID, err := uuid.Parse(cfg.TenantID)
-	if err != nil {
-		s.log.Error().Err(err).Str("config_id", cfg.ID).Msg("email: bad tenant id")
-		return
-	}
-	bodyDocID, attachIDs, ierr := s.ingestEmail(ctx, cfg, env)
-	// Log the stamping error rather than dropping it. Swallowing it left
-	// the row on 'pending' with no trace anywhere, which is indistinguishable
-	// from "never attempted" — the state that hid this whole class of bug.
-	serr := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		if ierr != nil {
-			s.log.Warn().Err(ierr).Str("config_id", cfg.ID).Msg("email: ingest failed")
+	if err := s.materialiseParts(ctx, cfg, msgID, env); err != nil {
+		s.log.Warn().Err(err).Str("config_id", cfg.ID).Str("message_id", msgID).Msg("email: materialise failed; will retry")
+		if serr := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 			_, e := tx.Exec(ctx,
 				`UPDATE email_messages SET ingest_status = 'failed', ingest_error = $3
 				  WHERE tenant_id = $1 AND id = $2`,
-				cfg.TenantID, msgID, ierr.Error())
+				cfg.TenantID, msgID, err.Error())
 			return e
+		}); serr != nil {
+			// Row stays 'pending' and is re-claimed after messageLease.
+			s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
+				Msg("email: stamping failure outcome failed; message re-claimed after its lease")
 		}
+		return
+	}
+	if serr := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
 		_, e := tx.Exec(ctx,
-			`UPDATE email_messages
-			    SET ingest_status = 'materialised', document_id = $3,
-			        attachment_document_ids = $4
+			`UPDATE email_messages SET ingest_status = 'materialised', ingest_error = NULL
 			  WHERE tenant_id = $1 AND id = $2`,
-			cfg.TenantID, msgID, bodyDocID, attachIDs)
+			cfg.TenantID, msgID)
 		return e
-	})
-	if serr != nil {
+	}); serr != nil {
+		// Every part is stamped already, so the retry after the lease files
+		// nothing again — it only flips the status.
 		s.log.Error().Err(serr).Str("config_id", cfg.ID).Str("message_id", msgID).
-			Msg("email: stamping ingest outcome failed; message stays pending")
+			Msg("email: stamping materialised failed; message re-claimed after its lease")
 	}
 }
 
-// ingestEmail materialises the body (rendered Markdown) + each attachment as
-// real documents-with-versions via the shared ingest pipeline, running as
-// the config owner (cfg.CreatedBy) over internal-service auth. Returns the
-// body doc id + the attachment doc ids.
-func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (string, []string, error) {
+// materialiseParts files every not-yet-filed part, stamping each document
+// id immediately. Returns the first failure.
+func (s *Service) materialiseParts(ctx context.Context, cfg *Config, msgID string, env *Envelope) error {
 	if cfg.TargetWorkspaceID == "" || cfg.TargetFolderID == "" {
-		return "", nil, fmt.Errorf("config %s: target workspace + folder required", cfg.ID)
+		return fmt.Errorf("config %s: target workspace + folder required", cfg.ID)
+	}
+	bodyDocID, attachDone, err := s.loadParts(ctx, cfg, msgID)
+	if err != nil {
+		return fmt.Errorf("load progress: %w", err)
 	}
 	baseMeta := map[string]any{
 		"email.from":        env.From,
@@ -412,37 +421,91 @@ func (s *Service) ingestEmail(ctx context.Context, cfg *Config, env *Envelope) (
 		"email.thread_id":   env.ThreadID,
 		"email.source":      string(cfg.Source),
 	}
-	bodyName := firstNonEmpty(env.Subject, "(no subject)") + ".md"
-	bodyDocID, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
-		cfg.TargetWorkspaceID, cfg.TargetFolderID, bodyName, "text/markdown",
-		[]byte(formatBody(env)), baseMeta)
-	if err != nil {
-		return "", nil, fmt.Errorf("body: %w", err)
+	if bodyDocID == "" {
+		bodyName := firstNonEmpty(env.Subject, "(no subject)") + ".md"
+		id, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+			cfg.TargetWorkspaceID, cfg.TargetFolderID, bodyName, "text/markdown",
+			[]byte(formatBody(env)), baseMeta)
+		if err != nil {
+			return fmt.Errorf("body: %w", err)
+		}
+		if err := s.stampPart(ctx, cfg, msgID, 0, id); err != nil {
+			return fmt.Errorf("stamp body: %w", err)
+		}
+		bodyDocID = id
 	}
-	// Non-nil: email_messages.attachment_document_ids is NOT NULL, and a nil
-	// slice marshals to NULL. Mail with no attachments therefore failed the
-	// stamping UPDATE with a 23502 and stayed 'pending' forever — which was
-	// most mail, and the reason the queue never drained.
-	attachIDs := []string{}
-	for _, att := range env.Attachments {
+	for i, att := range env.Attachments {
+		n := i + 1
+		if attachDone[n] {
+			continue
+		}
 		ct := att.ContentType
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
+		name := att.Filename
+		if strings.TrimSpace(name) == "" {
+			name = fmt.Sprintf("attachment-%d", n)
+		}
 		childMeta := map[string]any{
 			"email.parent_doc_id": bodyDocID,
 			"email.from":          env.From,
-			"email.filename":      att.Filename,
+			"email.filename":      name,
+			"email.part_index":    n,
 		}
-		id, aerr := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
-			cfg.TargetWorkspaceID, cfg.TargetFolderID, att.Filename, ct, att.Bytes, childMeta)
-		if aerr != nil {
-			s.log.Warn().Err(aerr).Str("filename", att.Filename).Msg("email: attachment ingest failed")
-			continue
+		id, err := s.ingest.IngestFile(ctx, cfg.TenantID, cfg.CreatedBy, "",
+			cfg.TargetWorkspaceID, cfg.TargetFolderID, name, ct, att.Bytes, childMeta)
+		if err != nil {
+			return fmt.Errorf("attachment %d (%s): %w", n, name, err)
 		}
-		attachIDs = append(attachIDs, id)
+		if err := s.stampPart(ctx, cfg, msgID, n, id); err != nil {
+			return fmt.Errorf("stamp attachment %d: %w", n, err)
+		}
 	}
-	return bodyDocID, attachIDs, nil
+	return nil
+}
+
+// loadParts reads which parts of a message are already filed.
+func (s *Service) loadParts(ctx context.Context, cfg *Config, msgID string) (string, map[int]bool, error) {
+	var bodyDocID string
+	var attachJSON []byte
+	err := s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT COALESCE(document_id::text, ''),
+			       COALESCE(array_to_json(attachment_document_ids)::text, '[]')
+			  FROM email_messages WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, msgID).Scan(&bodyDocID, &attachJSON)
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	var ids []*string
+	if err := json.Unmarshal(attachJSON, &ids); err != nil {
+		return "", nil, err
+	}
+	done := map[int]bool{}
+	for i, id := range ids {
+		if id != nil && *id != "" {
+			done[i+1] = true
+		}
+	}
+	return bodyDocID, done, nil
+}
+
+// stampPart records one filed part: part 0 → document_id, part n →
+// attachment_document_ids[n] (Postgres arrays are 1-based; earlier holes
+// stay NULL until their part is filed).
+func (s *Service) stampPart(ctx context.Context, cfg *Config, msgID string, part int, docID string) error {
+	return s.withTenant(ctx, cfg.TenantID, func(tx pgx.Tx) error {
+		if part == 0 {
+			_, err := tx.Exec(ctx, `UPDATE email_messages SET document_id = $3::uuid WHERE tenant_id = $1 AND id = $2`,
+				cfg.TenantID, msgID, docID)
+			return err
+		}
+		_, err := tx.Exec(ctx, `UPDATE email_messages SET attachment_document_ids[$3] = $4::uuid WHERE tenant_id = $1 AND id = $2`,
+			cfg.TenantID, msgID, part, docID)
+		return err
+	})
 }
 
 func (s *Service) recordError(ctx context.Context, cfg *Config, msg string) {
