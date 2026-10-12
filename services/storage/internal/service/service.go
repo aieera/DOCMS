@@ -583,6 +583,11 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	// 6. Persist scan, content_blob, upload_session + emit event.
 	var blobID uuid.UUID
 	crossRegionDupe := false
+	// The duplicate object a dedup match makes redundant. It is deleted
+	// only AFTER the transaction commits: deleting it inside the
+	// transaction lost the caller's upload whenever the transaction then
+	// rolled back.
+	var dupBucket, dupKey string
 	err = database.WithTenantTx(ctx, s.pool, in.TenantID, func(tx pgx.Tx) error {
 		if err := s.repos.Scans.Record(ctx, tx, rec); err != nil {
 			return err
@@ -676,10 +681,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 				if incErr := s.repos.ContentBlobs.IncrementRefCount(ctx, tx, session.TenantID, existing.ID); incErr != nil {
 					return incErr
 				}
-				// Best-effort cleanup of the just-uploaded duplicate
-				// object so we don't leak storage. Failure here is
-				// non-fatal; an orphan-blob sweeper handles drift.
-				_ = s.s3.DeleteObject(ctx, bucket, key)
+				// The just-uploaded duplicate object becomes redundant
+				// once this commits; it is removed after the commit.
+				dupBucket, dupKey = bucket, key
 				blob = existing
 				blobID = existing.ID
 				// Report where the bytes actually live (the reused
@@ -718,6 +722,15 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 			_ = s.s3.DeleteObject(ctx, bucket, key)
 		}
 		return nil, err
+	}
+	if dupKey != "" {
+		// Committed onto the existing blob: the duplicate is unreferenced.
+		// Best effort — a failure only leaks bytes.
+		if derr := s.s3.DeleteObject(ctx, dupBucket, dupKey); derr != nil {
+			s.log.Warn().Err(derr).Str("upload_id", session.ID.String()).
+				Str("bucket", dupBucket).Str("key", dupKey).
+				Msg("dedup: duplicate object cleanup failed; object orphaned")
+		}
 	}
 
 	return &CompleteUploadResult{

@@ -12,13 +12,18 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/aieera/sedoc/services/storage/internal/repository"
 )
 
 func TestInitiateUpload_KnownHashNeverReturnsExistingBlob(t *testing.T) {
@@ -66,4 +71,54 @@ func TestInitiateUpload_KnownHashNeverReturnsExistingBlob(t *testing.T) {
 	require.Equal(t, 2, refcount)
 	_, err = h.s3.GetObjectInfo(h.ctx, res.StorageBucket, res.StorageKey)
 	require.Error(t, err, "the duplicate upload's own object is cleaned up")
+}
+
+// failingCompleteUploads makes the final transaction fail after the
+// dedup branch has already matched the existing blob.
+type failingCompleteUploads struct {
+	repository.UploadRepo
+}
+
+func (failingCompleteUploads) Complete(context.Context, pgx.Tx, uuid.UUID, uuid.UUID, uuid.UUID, time.Time) error {
+	return errors.New("injected: commit-path failure after dedup match")
+}
+
+// The dedup branch deleted the caller's duplicate object INSIDE the final
+// transaction. When that transaction then rolled back, the session was
+// failed and its bytes were gone — a retry had nothing to complete. The
+// delete now runs only after the commit.
+func TestComplete_DedupRollbackKeepsUploadedObject(t *testing.T) {
+	h := newHarness(t, harnessConfig{})
+	payload := []byte("identical bytes, already stored once")
+	sum := sha256.Sum256(payload)
+	hash := hex.EncodeToString(sum[:])
+	firstID := uuid.Must(uuid.NewV7())
+	firstKey := objectKeyAt(h.tenant, firstID, "a.txt", previousMonth())
+	putObject(t, h, bucketName("us-east-1", "hot"), firstKey, payload)
+	existing := insertPlainBlob(t, h, bucketName("us-east-1", "hot"), firstKey, payload)
+
+	res, err := h.svc.InitiateUpload(h.ctx, InitiateUploadInput{
+		TenantID: h.tenant, UserID: uuid.Must(uuid.NewV7()),
+		Filename: "b.txt", MimeType: "text/plain", SizeBytes: int64(len(payload)),
+	})
+	require.NoError(t, err)
+	putObject(t, h, res.StorageBucket, res.StorageKey, payload)
+
+	repos := repository.New(h.pool)
+	repos.Uploads = failingCompleteUploads{repos.Uploads}
+	_, err = h.newService(repos).CompleteUpload(h.ctx, CompleteUploadInput{TenantID: h.tenant, UploadID: res.UploadID, SHA256Hash: hash})
+	require.Error(t, err, "the injected failure surfaces")
+
+	_, err = h.s3.GetObjectInfo(h.ctx, res.StorageBucket, res.StorageKey)
+	require.NoError(t, err, "a rolled-back dedup must not have deleted the caller's upload")
+	var refcount int
+	require.NoError(t, h.pool.QueryRow(h.ctx, `SELECT reference_count FROM content_blobs WHERE id=$1`, existing).Scan(&refcount))
+	require.Equal(t, 1, refcount, "the rolled-back reference is not kept")
+
+	// The client's retry now completes (and only then is the duplicate dropped).
+	done, err := h.svc.CompleteUpload(h.ctx, CompleteUploadInput{TenantID: h.tenant, UploadID: res.UploadID, SHA256Hash: hash})
+	require.NoError(t, err)
+	require.Equal(t, firstKey, done.StorageKey)
+	_, err = h.s3.GetObjectInfo(h.ctx, res.StorageBucket, res.StorageKey)
+	require.Error(t, err, "after a committed dedup the duplicate object is removed")
 }
