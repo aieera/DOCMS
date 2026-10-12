@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.identity import Identity, require_admin, require_identity, require_user
+from app.identity import (
+    Identity, require_admin, require_identity, require_internal_key, require_user,
+)
 from app.qa_persist import (
     append_message,
     ensure_conversation,
@@ -41,8 +43,12 @@ admin_router = APIRouter(
 # §7.1 / D6 part 2 — internal embed-query endpoint.
 # Not publicly routable through the gateway (path `/internal/` is not
 # in deploy/gateway/routes.yaml); the search service calls it
-# service-to-service.
-internal_router = APIRouter(prefix="/internal/v1", tags=["internal"])
+# service-to-service. C-8 / DEC-4: the published port is reachable, so
+# every /internal/v1 route also requires the internal service key.
+internal_router = APIRouter(
+    prefix="/internal/v1", tags=["internal"],
+    dependencies=[Depends(require_internal_key)],
+)
 
 
 class EmbedQueryRequest(BaseModel):

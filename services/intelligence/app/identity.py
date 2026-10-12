@@ -187,6 +187,17 @@ def require_identity(request: Request) -> Identity:
     raise HTTPException(401, "authentication required")
 
 
+def require_internal_key(request: Request) -> None:
+    """Gate for the service-to-service /internal/v1 routes (search
+    embed-query, connector capture): X-Internal-Service-Key must equal
+    SEDOC_INTERNAL_API_KEY in constant time. An unset server-side key is a
+    deployment error and fails closed with 503."""
+    if not settings.internal_api_key:
+        raise HTTPException(503, "internal service key not configured")
+    if not internal_key_ok(request.headers.get(INTERNAL_KEY_HEADER)):
+        raise HTTPException(401, "internal service key required")
+
+
 def require_user(ident: Identity) -> str:
     if not ident.user_id:
         raise HTTPException(400, "X-User-ID required")
