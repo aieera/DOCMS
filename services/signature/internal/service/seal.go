@@ -485,6 +485,9 @@ func (sl *Sealer) fetchVersionPDF(ctx context.Context, tenantID, documentID, ver
 	}
 	req.Header.Set(internalServiceKeyHeader, sl.internalKey)
 	req.Header.Set("X-Auth-Tenant-ID", tenantID)
+	// The internal-service path requires an explicit known role (DEC-3); the
+	// seal reads as the system, the admin role it previously defaulted to.
+	req.Header.Set("X-User-Role", "admin")
 	if sl.gatewaySecret != "" {
 		// The decrypt-stream endpoint sits behind RequireGatewaySignature; on a
 		// direct service-to-service call we present the shared secret ourselves.

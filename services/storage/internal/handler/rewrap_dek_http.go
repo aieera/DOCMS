@@ -62,7 +62,7 @@ func (h *RewrapDEKHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		BlobID:   blobID,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), internalErrStatus(err))
+		writeInternalErr(w, r, "rewrap-dek", err)
 		return
 	}
 
