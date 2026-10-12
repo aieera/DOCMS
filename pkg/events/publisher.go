@@ -1,6 +1,7 @@
 // Package events wraps NATS JetStream with the CloudEvents v1.0 envelope and
-// the SeDoc stream topology. Services publish via Publisher and consume
-// via Subscriber.
+// the SeDoc stream topology. Services publish via Publisher (or the
+// transactional outbox); each consumer owns its own JetStream
+// subscription, DLQ and recovery logic.
 package events
 
 import (
