@@ -15,7 +15,7 @@ surface stays narrow (one RPC method: `Sign`).
 
 ```
 services/signature-signer/
-├── build.gradle.kts            # Gradle build with DSS 5.12.x + grpc-java
+├── build.gradle.kts            # Gradle build with DSS 6.x + grpc-java
 ├── settings.gradle.kts
 ├── Dockerfile                  # distroless JRE 17 image (~180 MB)
 ├── src/main/java/io/sedoc/signer/

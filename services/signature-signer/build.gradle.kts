@@ -1,16 +1,18 @@
 // SeDoc signature-signer — Java sidecar, Wave 12.9.
 //
-// Pinned versions:
-//   - DSS 5.12.1 (LGPL-2.1; EU Commission eIDAS reference impl)
-//   - grpc-java 1.63.0 (netty transport; Apache-2.0)
-//   - protobuf-java 3.25.3
-//   - Java 17 LTS (matches distroless runtime in Dockerfile)
+// Pinned versions (S-6 — floors enforced by DependencyVersionsTest):
+//   - DSS 6.3 (LGPL-2.1; EU Commission eIDAS reference impl;
+//     pulls BouncyCastle >= 1.78 and PDFBox 3)
+//   - grpc-java 1.76.3 (netty transport; Apache-2.0)
+//   - protobuf-java 3.25.8 (>= 3.25.5)
+//   - logback 1.5.18 (>= 1.5.13)
+//   - Java 17 LTS (matches the JRE runtime in Dockerfile)
 //
 // Output:
 //   - build/libs/signer-all.jar (fat jar with dependencies shaded)
 //
-// Bundle size check: ./gradlew build && du -h build/libs/signer-all.jar
-// expect ~35 MB (DSS pulls in BouncyCastle + XMLSec).
+// Bundle size check: gradle build && du -h build/libs/signer-all.jar
+// (DSS pulls in BouncyCastle + PDFBox).
 
 plugins {
     java
@@ -28,6 +30,9 @@ java {
     }
 }
 
+val protobufVersion = "3.25.8"
+val grpcVersion = "1.76.3"
+
 repositories {
     mavenCentral()
     // DSS releases land on EU Commission's nexus; mavenCentral mirrors them.
@@ -36,28 +41,35 @@ repositories {
 
 dependencies {
     // ---- DSS ----------------------------------------------------------------
-    val dssVersion = "5.12.1"
+    val dssVersion = "6.3"
     implementation("eu.europa.ec.joinup.sd-dss:dss-pades:$dssVersion")
     implementation("eu.europa.ec.joinup.sd-dss:dss-pades-pdfbox:$dssVersion")
+    // DSS 6 loads these through ServiceLoader and fails at runtime without
+    // one: the CMS builder (object model) and the CRL parser used when
+    // collecting revocation data for B-LT.
+    implementation("eu.europa.ec.joinup.sd-dss:dss-cms-object:$dssVersion")
+    implementation("eu.europa.ec.joinup.sd-dss:dss-crl-parser-stream:$dssVersion")
     implementation("eu.europa.ec.joinup.sd-dss:dss-utils-apache-commons:$dssVersion")
     implementation("eu.europa.ec.joinup.sd-dss:dss-service:$dssVersion")
     // Timestamp + OCSP
     implementation("eu.europa.ec.joinup.sd-dss:dss-token:$dssVersion")
     implementation("eu.europa.ec.joinup.sd-dss:dss-tsl-validation:$dssVersion")
 
-    // ---- gRPC ---------------------------------------------------------------
-    val grpcVersion = "1.63.0"
+    // ---- gRPC / protobuf ----------------------------------------------------
     implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
     implementation("io.grpc:grpc-protobuf:$grpcVersion")
     implementation("io.grpc:grpc-stub:$grpcVersion")
+    implementation("com.google.protobuf:protobuf-java:$protobufVersion")
     // javax.annotation.Generated is used by the generated stubs.
     compileOnly("org.apache.tomcat:annotations-api:6.0.53")
 
     // ---- Logging ------------------------------------------------------------
-    implementation("ch.qos.logback:logback-classic:1.5.6")
+    implementation("ch.qos.logback:logback-classic:1.5.18")
 
     // ---- Testing ------------------------------------------------------------
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("io.grpc:grpc-testing:$grpcVersion")
 }
 
@@ -69,11 +81,11 @@ application {
 // SignerService extends.
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:3.25.3"
+        artifact = "com.google.protobuf:protoc:$protobufVersion"
     }
     plugins {
         create("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.63.0"
+            artifact = "io.grpc:protoc-gen-grpc-java:$grpcVersion"
         }
     }
     generateProtoTasks {

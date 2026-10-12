@@ -14,7 +14,8 @@ import eu.europa.esig.dss.spi.x509.CommonTrustedCertificateSource;
 import eu.europa.esig.dss.token.DSSPrivateKeyEntry;
 import eu.europa.esig.dss.token.KSPrivateKeyEntry;
 import eu.europa.esig.dss.token.Pkcs12SignatureToken;
-import eu.europa.esig.dss.validation.CommonCertificateVerifier;
+import eu.europa.esig.dss.utils.Utils;
+import eu.europa.esig.dss.spi.validation.CommonCertificateVerifier;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import io.sedoc.signer.grpc.Level;
@@ -24,7 +25,6 @@ import io.sedoc.signer.grpc.SignerServiceGrpc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.security.KeyStore.PasswordProtection;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -33,7 +33,7 @@ import java.util.List;
  * DSS-backed SignerService — Wave 12.9b.
  *
  * Implements the PAdES signing pipeline against the EU Commission DSS
- * 5.12.1 reference implementation. (Verification is not served here;
+ * 6.x reference implementation. (Verification is not served here;
  * see signer.proto.) Server-key mode
  * (MODE_SERVER_HSM): the signing key lives in a PKCS#12 keystore the
  * sidecar loads at startup ({@code SIGNER_KEYSTORE_PATH}). The dev
@@ -143,18 +143,14 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
             SignatureValue signatureValue = token.sign(dataToSign, params.getDigestAlgorithm(), privateKey);
             DSSDocument signed = service.signDocument(toSign, params, signatureValue);
 
-            byte[] out;
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                signed.writeTo(baos);
-                out = baos.toByteArray();
-            }
+            byte[] out = DSSUtils.toByteArray(signed);
 
             SignResponse.Builder b = SignResponse.newBuilder()
                     .setPdfBytes(com.google.protobuf.ByteString.copyFrom(out))
                     .setLevel(toProtoLevel(level))
                     .setSignedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)
                             .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-                    .setFingerprint(DSSUtils.toHex(DSSUtils.digest(DigestAlgorithm.SHA256, out)));
+                    .setFingerprint(Utils.toHex(DSSUtils.digest(DigestAlgorithm.SHA256, out)));
             resp.onNext(b.build());
             resp.onCompleted();
         } catch (Exception e) {
