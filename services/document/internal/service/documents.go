@@ -1332,9 +1332,10 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		// (set by storage CompleteUpload; the proto request carries only
 		// the blob id). Read it inside this tenant tx: content_blobs is
 		// FORCE-RLS, so a bare pool read finds nothing under the
-		// production NOBYPASSRLS role (H-26). Caller-supplied values
-		// still win when set (editor save-back computes its own).
-		blob, err := repository.GetContentBlob(ctx, tx, tenantID, in.ContentBlobID)
+		// production NOBYPASSRLS role (H-26). The caller must hold a
+		// claim on it (DEC-12). Caller-supplied values still win when
+		// set (editor save-back computes its own).
+		blob, err := s.claimBlobTx(ctx, tx, tenantID, userID, in.ContentBlobID)
 		if err != nil {
 			return err
 		}
@@ -1362,6 +1363,50 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		return nil
 	})
 	return out, err
+}
+
+// blobClaimMaxDocs bounds how many referencing documents a blob claim check
+// asks the policy service about.
+const blobClaimMaxDocs = 25
+
+// claimBlobTx enforces DEC-12 for a caller-supplied blob id (M-1): the
+// blob may be linked only if the caller completed the upload session that
+// produced it, or can view a live document that already has a version on
+// it. Anything else — including a blob that does not exist — is
+// ErrNotFound, so a blob id or sha256 learned elsewhere is neither
+// linkable (and then downloadable) nor confirmable.
+func (s *DocumentService) claimBlobTx(ctx context.Context, tx pgx.Tx, tenantID, userID, blobID uuid.UUID) (*repository.ContentBlob, error) {
+	blob, err := repository.GetContentBlob(ctx, tx, tenantID, blobID)
+	if err != nil {
+		return nil, err
+	}
+	if userID == uuid.Nil {
+		return nil, vdmserr.ErrNotFound
+	}
+	uploaded, err := repository.BlobUploadedBy(ctx, tx, tenantID, blobID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if uploaded {
+		return blob, nil
+	}
+	docs, err := repository.DocumentsReferencingBlob(ctx, tx, tenantID, blobID, blobClaimMaxDocs)
+	if err != nil {
+		return nil, err
+	}
+	for _, docID := range docs {
+		verr := s.EnsureCanViewDocument(ctx, docID)
+		if verr == nil {
+			return blob, nil
+		}
+		// A typed refusal (not found / forbidden / clearance) means "not
+		// this one"; anything else is a policy or DB failure — fail closed.
+		var typed *vdmserr.Error
+		if !errors.As(verr, &typed) {
+			return nil, verr
+		}
+	}
+	return nil, vdmserr.ErrNotFound
 }
 
 // appendVersionLocked reserves the next version number for doc, inserts the

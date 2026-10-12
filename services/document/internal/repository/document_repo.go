@@ -597,6 +597,62 @@ func GetContentBlob(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (*Co
 	return &b, nil
 }
 
+// GetContentBlobBySHA reads the newest live blob carrying sha256 inside the
+// caller's tenant tx. ErrNotFound when none.
+func GetContentBlobBySHA(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, sha string) (*ContentBlob, error) {
+	var id uuid.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT id FROM content_blobs
+		 WHERE tenant_id = $1 AND sha256_hash = $2 AND shredded_at IS NULL
+		 ORDER BY created_at DESC
+		 LIMIT 1
+	`, tenantID, sha).Scan(&id); err != nil {
+		return nil, mapPgError(err)
+	}
+	return GetContentBlob(ctx, tx, tenantID, id)
+}
+
+// BlobUploadedBy reports whether userID completed an upload session that
+// produced blobID (storage writes upload_sessions.content_blob_id at
+// completion — on a late-dedup hit it names the pre-existing blob, so a
+// user who re-uploads identical bytes holds a claim on it too).
+func BlobUploadedBy(ctx context.Context, tx pgx.Tx, tenantID, blobID, userID uuid.UUID) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM upload_sessions
+		     WHERE tenant_id = $1 AND content_blob_id = $2
+		       AND created_by = $3 AND status = 'completed'
+		)`, tenantID, blobID, userID).Scan(&ok)
+	return ok, mapPgError(err)
+}
+
+// DocumentsReferencingBlob returns up to limit live (not soft-deleted)
+// documents that have at least one version on blobID, in id order.
+func DocumentsReferencingBlob(ctx context.Context, tx pgx.Tx, tenantID, blobID uuid.UUID, limit int) ([]uuid.UUID, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT DISTINCT v.document_id
+		  FROM document_versions v
+		  JOIN documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id
+		 WHERE v.tenant_id = $1 AND v.content_blob_id = $2 AND d.deleted_at IS NULL
+		 ORDER BY v.document_id
+		 LIMIT $3
+	`, tenantID, blobID, limit)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, id)
+	}
+	return out, mapPgError(rows.Err())
+}
+
 // UpdateLifecycleState only touches the state column; callers that need
 // finer updates use Update.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
