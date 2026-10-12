@@ -69,10 +69,31 @@ def _parse_msg(path: str) -> dict:
         m.close()
 
 
+def _safe_url_fetcher(url: str, timeout: int = 10, ssl_context=None) -> dict:
+    """WeasyPrint url_fetcher that never touches the network or disk (M-21).
+
+    Email HTML is attacker-supplied: with the default fetcher every
+    <img src>, stylesheet and @import became a GET from the preview worker
+    (blind SSRF, 10 s per fetch) and file:// read local files. Only inline
+    `data:` URIs are resolved; `cid:` references (inline MIME parts) resolve
+    to nothing; everything else is refused, which WeasyPrint logs and skips.
+    """
+    scheme = (url or "").split(":", 1)[0].strip().lower()
+    if scheme == "data":
+        from weasyprint import default_url_fetcher
+        return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+    if scheme == "cid":
+        return {"string": b"", "mime_type": "application/octet-stream"}
+    raise ValueError(f"blocked external resource in email HTML: {scheme or '?'}:")
+
+
 def _render_html_pdf(html: str, subject: str, dest: str) -> bool:
     try:
         from weasyprint import HTML  # lazy — large dep
-        HTML(string=html or f"<html><body><h1>{subject}</h1></body></html>").write_pdf(dest)
+        HTML(
+            string=html or f"<html><body><h1>{subject}</h1></body></html>",
+            url_fetcher=_safe_url_fetcher,
+        ).write_pdf(dest)
         return True
     except Exception as e:
         log.warning("weasyprint failed: %s", e)
