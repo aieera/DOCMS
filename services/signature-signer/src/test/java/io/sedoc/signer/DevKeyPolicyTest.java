@@ -67,4 +67,25 @@ class DevKeyPolicyTest {
                 "SIGNER_KEYSTORE_PATH", "/k.p12", "SIGNER_KEYSTORE_PASS", "pw",
                 "SIGNER_ALLOW_DEV_KEY", "1")).allowDevKey());
     }
+
+    /**
+     * The image no longer bakes SIGNER_KEYSTORE_PASS. The dev keystore's
+     * password is supplied only when the operator opted in to the dev key
+     * and the keystore is the baked one.
+     */
+    @Test
+    void devPasswordOnlyComesWithTheDevKeyOptIn() {
+        SignerServer.Config dev = SignerServer.Config.fromEnv(Map.of(
+                "SIGNER_KEYSTORE_PATH", "/app/dev-signer.p12", "SIGNER_ALLOW_DEV_KEY", "1"));
+        assertEquals("changeit", dev.keystorePass());
+        assertTrue(dev.allowDevKey());
+        assertThrows(IllegalArgumentException.class, () -> SignerServer.Config.fromEnv(Map.of(
+                "SIGNER_KEYSTORE_PATH", "/app/dev-signer.p12")));
+        assertThrows(IllegalArgumentException.class, () -> SignerServer.Config.fromEnv(Map.of(
+                "SIGNER_KEYSTORE_PATH", "/mnt/keys/seal.p12", "SIGNER_ALLOW_DEV_KEY", "1")));
+        // An explicit password still wins.
+        assertEquals("pw", SignerServer.Config.fromEnv(Map.of(
+                "SIGNER_KEYSTORE_PATH", "/app/dev-signer.p12", "SIGNER_KEYSTORE_PASS", "pw",
+                "SIGNER_ALLOW_DEV_KEY", "1")).keystorePass());
+    }
 }

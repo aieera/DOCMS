@@ -22,11 +22,18 @@ final class DevKeyPolicy {
     static final String BAKED_KEYSTORE_PATH = "/app/dev-signer.p12";
     static final String BAKED_SUBJECT_CN = "SeDoc Dev Signer";
     static final String OPT_IN_ENV = "SIGNER_ALLOW_DEV_KEY";
+    /** The baked dev keystore's password; never set in the image env. */
+    static final String BAKED_KEYSTORE_PASS = "changeit";
+
+    /** Reports whether keystorePath is the keystore baked into the image. */
+    static boolean isBakedKeystore(String keystorePath) {
+        return keystorePath != null && !keystorePath.isBlank()
+                && Paths.get(keystorePath).toAbsolutePath().normalize().toString().equals(BAKED_KEYSTORE_PATH);
+    }
 
     /** Reports whether the keystore at {@code keystorePath} holding {@code subjectDn} is the baked dev key. */
     static boolean isDevKey(String keystorePath, String subjectDn) {
-        if (keystorePath != null && !keystorePath.isBlank()
-                && Paths.get(keystorePath).toAbsolutePath().normalize().toString().equals(BAKED_KEYSTORE_PATH)) {
+        if (isBakedKeystore(keystorePath)) {
             return true;
         }
         try {

@@ -28,15 +28,22 @@ public final class SignerServer {
 
         /**
          * @throws IllegalArgumentException when SIGNER_KEYSTORE_PATH or
-         *                                  SIGNER_KEYSTORE_PASS is missing (there is no
-         *                                  default password any more — R-17)
+         *                                  SIGNER_KEYSTORE_PASS is missing. The only
+         *                                  implied password is the baked dev keystore's,
+         *                                  and only with SIGNER_ALLOW_DEV_KEY=1 (R-17)
          */
         static Config fromEnv(Map<String, String> env) {
             String ksPath = env.getOrDefault("SIGNER_KEYSTORE_PATH", "");
             if (ksPath.isBlank()) {
                 throw new IllegalArgumentException("SIGNER_KEYSTORE_PATH is required (PKCS#12 signing keystore)");
             }
+            boolean allowDevKey = "1".equals(env.get(DevKeyPolicy.OPT_IN_ENV));
             String ksPass = env.getOrDefault("SIGNER_KEYSTORE_PASS", "");
+            if (ksPass.isEmpty() && allowDevKey && DevKeyPolicy.isBakedKeystore(ksPath)) {
+                // The image bakes no password; the dev keystore's is known
+                // only on this opted-in path.
+                ksPass = DevKeyPolicy.BAKED_KEYSTORE_PASS;
+            }
             if (ksPass.isEmpty()) {
                 throw new IllegalArgumentException("SIGNER_KEYSTORE_PASS is required");
             }
@@ -45,7 +52,7 @@ public final class SignerServer {
                     ksPath, ksPass,
                     env.getOrDefault("SIGNER_KEY_ALIAS", ""),
                     env.getOrDefault("SIGNER_TSA_URL", ""),
-                    "1".equals(env.get(DevKeyPolicy.OPT_IN_ENV)));
+                    allowDevKey);
         }
     }
 

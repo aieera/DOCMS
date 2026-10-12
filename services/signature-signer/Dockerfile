@@ -39,10 +39,11 @@ RUN keytool -genkeypair -alias signer -keyalg RSA -keysize 2048 -validity 3650 \
 FROM eclipse-temurin:17-jre
 COPY --from=build /src/build/libs/signer-all.jar /app/signer-all.jar
 COPY --from=keygen /dev-signer.p12 /app/dev-signer.p12
-# Defaults point at the dev keystore for local convenience only; without
-# SIGNER_ALLOW_DEV_KEY=1 the process exits instead of signing with it.
+# The path defaults to the dev keystore for local convenience only. No
+# password is baked: the signer supplies the dev keystore's password only
+# with SIGNER_ALLOW_DEV_KEY=1, and otherwise exits instead of signing with
+# it. Production sets SIGNER_KEYSTORE_PATH + SIGNER_KEYSTORE_PASS.
 ENV SIGNER_KEYSTORE_PATH=/app/dev-signer.p12 \
-    SIGNER_KEYSTORE_PASS=changeit \
     SIGNER_KEY_ALIAS=signer
 EXPOSE 6060
 ENTRYPOINT ["java", "-jar", "/app/signer-all.jar"]
