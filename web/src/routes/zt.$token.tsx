@@ -15,7 +15,9 @@
 //      is security theater.
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
+// W-1: bundled same-origin pdf.js worker (side-effect import).
+import '@/lib/pdfWorker'
 import { ShieldAlert, AlertTriangle, Clock } from 'lucide-react'
 
 import {
@@ -24,11 +26,6 @@ import {
   type ZTManifest,
 } from '@/api/ztShare'
 
-// react-pdf needs the worker URL; bundled via the existing pdfjs-dist dep.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
 
 export const Route = createFileRoute('/zt/$token')({
   component: ZTViewerPage,

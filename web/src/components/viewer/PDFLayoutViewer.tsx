@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, Page } from 'react-pdf'
+// W-1: bundled same-origin pdf.js worker (side-effect import).
+import '@/lib/pdfWorker'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/shadcn/button'
 import type { OCRPage } from '@/api/ocr'
@@ -7,7 +9,6 @@ import type { Entity } from '@/api/ner'
 import { ENTITY_COLOR } from '@/components/intelligence/EntitiesPanel'
 import { DirectionalIcon } from '@/components/shared/DirectionalIcon'
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 // Surya emits boxes in pixel coordinates of the rasterized page (150 DPI).
 // We don't persist the raster's width/height yet, so we infer them from
