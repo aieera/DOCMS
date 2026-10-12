@@ -21,7 +21,9 @@ and then checks, for every PromQL expression in
 deploy/monitoring/alerts/*.yml and deploy/monitoring/dashboards/*.json:
   1. every metric referenced is emitted;
   2. every label matcher on a metric uses a label that metric carries (or
-     a target label Prometheus attaches at scrape time);
+     a target label Prometheus attaches at scrape time), and — where every
+     Go call site passes string literals (WithLabelValues / With) — a value
+     (or regex) the code can actually produce;
 and, for every alerting rule:
   3. labels.severity is one of the tiers alertmanager.yml routes
      (p0..p3), labels.service is set and annotations.summary exists;
@@ -113,8 +115,66 @@ MATCHER = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*(=~|!~|!=|=)\s*"((?:[^"\\]|\\.
 
 
 class Metric:
-    def __init__(self, name: str, kind: str, labels: set[str] | None, source: str):
+    def __init__(self, name: str, kind: str, labels: set[str] | None, source: str,
+                 values: dict[str, set[str] | None] | None = None):
         self.name, self.kind, self.labels, self.source = name, kind, labels, source
+        # label -> the complete set of values the code can produce, or None
+        # when any call site passes a non-literal (value set unknown).
+        self.values = values or {}
+
+
+def call_args(src: str, open_idx: int) -> tuple[list[str], int]:
+    """Top-level comma-separated arguments of the call whose '(' is at open_idx."""
+    depth, start, args, i = 0, open_idx + 1, [], open_idx
+    in_str = False
+    while i < len(src):
+        c = src[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                args.append(src[start:i])
+                return [a.strip() for a in args if a.strip()], i
+        elif c == "," and depth == 1:
+            args.append(src[start:i])
+            start = i + 1
+        i += 1
+    return [], len(src)
+
+
+GO_STRING = re.compile(r'^"((?:[^"\\]|\\.)*)"$')
+
+
+def go_label_values(pkg_src: str, var: str, labels: list[str]) -> dict[str, set[str] | None]:
+    """Value sets per label from var.WithLabelValues(...) / var.With(prometheus.Labels{...})."""
+    seen: dict[str, set[str] | None] = {}
+
+    def add(label: str, arg: str) -> None:
+        lit = GO_STRING.match(arg)
+        if lit is None:
+            seen[label] = None
+        elif seen.get(label, set()) is not None:
+            seen.setdefault(label, set()).add(lit.group(1))
+
+    for m in re.finditer(r"\b" + re.escape(var) + r"\.(WithLabelValues|With)\(", pkg_src):
+        args, _ = call_args(pkg_src, m.end() - 1)
+        if m.group(1) == "WithLabelValues":
+            for label, arg in zip(labels, args):
+                add(label, arg)
+        else:
+            body = args[0] if args else ""
+            for k, v in re.findall(r'"([^"]+)"\s*:\s*([^,}]+)', body):
+                add(k, v.strip())
+    return {k: v for k, v in seen.items() if k in labels}
 
 
 def balanced_close(src: str, open_idx: int) -> int:
@@ -128,6 +188,9 @@ def balanced_close(src: str, open_idx: int) -> int:
             if depth == 0:
                 return i
     raise ValueError("unbalanced braces")
+
+
+UNRESOLVED: list[str] = []
 
 
 def go_import_paths(repo: str) -> set[str]:
@@ -155,18 +218,36 @@ def collect_go(repo: str) -> dict[str, Metric]:
             is_main = re.search(r"^package main\b", src, re.M) is not None
             if not is_main and not any(p.endswith("/" + pkg_dir) for p in imported):
                 continue  # nobody imports it: its promauto vars never register
+            pkg_src = "".join(
+                open(g, encoding="utf-8", errors="replace").read()
+                for g in glob.glob(os.path.join(os.path.dirname(f), "*.go"))
+                if not g.endswith("_test.go")
+            )
             for m in GO_DECL.finditer(src):
                 close = balanced_close(src, m.end() - 1)
                 opts = src[m.end() : close]
                 name = re.search(r'Name:\s*"([^"]+)"', opts)
                 if not name:
                     continue
-                labels: set[str] = set()
+                # Namespace + Subsystem + Name, joined with "_" like
+                # prometheus.BuildFQName.
+                parts = []
+                for field in ("Namespace", "Subsystem"):
+                    if re.search(field + r":", opts):
+                        lit = re.search(field + r':\s*"([^"]*)"', opts)
+                        if lit is None:
+                            UNRESOLVED.append(f"{pkg_dir}: {name.group(1)} has a non-literal {field}; cannot compose its name")
+                        elif lit.group(1):
+                            parts.append(lit.group(1))
+                full = "_".join(parts + [name.group(1)])
+                labels: list[str] = []
                 if m.group(2):  # ...Vec(opts, []string{...})
                     lab = re.match(r"\s*,\s*\[\]string\{([^}]*)\}", src[close + 1 :])
                     if lab:
-                        labels = set(re.findall(r'"([^"]+)"', lab.group(1)))
-                out[name.group(1)] = Metric(name.group(1), m.group(1).lower(), labels, pkg_dir)
+                        labels = re.findall(r'"([^"]+)"', lab.group(1))
+                var = re.search(r"(\w+)\s*=\s*(?:\w+\.)?$", src[: m.start()])
+                values = go_label_values(pkg_src, var.group(1), labels) if var and labels else {}
+                out[full] = Metric(full, m.group(1).lower(), set(labels), pkg_dir, values)
     return out
 
 
@@ -324,7 +405,7 @@ def main() -> int:
         kind = "histogram" if name.endswith("_ms") else "external"
         emitted.setdefault(name, Metric(name, kind, labels, source))
 
-    errors: list[str] = []
+    errors: list[str] = list(UNRESOLVED)
     checked: list[tuple[str, str]] = []  # (where, expr)
 
     for f in rule_files(repo):
@@ -373,9 +454,25 @@ def main() -> int:
                                 f"{where}: {metric} carries its own {clash!r} label, which Kubernetes "
                                 f"scrapes as exported_{clash}; aggregate by ({clash}, exported_{clash})")
             allowed = m.labels | TARGET_LABELS | {f"exported_{x}" for x in COLLIDING_LABELS}
-            for label, _op, _val in matchers:
+            for label, op, val in matchers:
                 if label not in allowed:
                     errors.append(f"{where}: {metric} has no label {label!r} (has: {sorted(m.labels)})")
+                    continue
+                known = m.values.get(label)
+                if not known or val == "":
+                    continue
+                if op in ("=", "!="):
+                    if val not in known:
+                        errors.append(f"{where}: {metric}{{{label}{op}{val!r}}}: the code only produces {label} in {sorted(known)}")
+                else:
+                    pattern = val.replace("\\\\", "\\")
+                    try:
+                        hit = any(re.fullmatch(pattern, k) for k in known)
+                    except re.error as exc:
+                        errors.append(f"{where}: {metric}: bad regex {val!r}: {exc}")
+                        continue
+                    if not hit:
+                        errors.append(f"{where}: {metric}{{{label}{op}{val!r}}} matches none of {sorted(known)}")
 
     am_path = os.path.join(repo, "deploy", "monitoring", "alertmanager.yml")
     am_text = open(am_path).read()
