@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -47,4 +48,22 @@ func TestReencrypt_IdempotenceShape_DetectsSameRegionAndAlias(t *testing.T) {
 	// migration call re-wraps a blob that's already at rest.
 	require.Equal(t, targetRegion, blobRegion)
 	require.Equal(t, want, blobKEK)
+}
+
+// D-15: a re-encrypt never writes over the live object. The fresh key
+// keeps segment 4 (the upload id the document proxy parses) and the
+// filename, and replaces rather than nests a previous generation.
+func TestReencryptedKey_FreshGenerationKeepsUploadPrefix(t *testing.T) {
+	g1, g2 := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	orig := "tenant/2026/10/upload/report.pdf"
+
+	k1 := reencryptedKey(orig, g1)
+	require.Equal(t, "tenant/2026/10/upload/re-"+g1.String()+"/report.pdf", k1)
+	require.NotEqual(t, orig, k1)
+	require.Equal(t, "upload", strings.Split(k1, "/")[3])
+
+	k2 := reencryptedKey(k1, g2)
+	require.Equal(t, "tenant/2026/10/upload/re-"+g2.String()+"/report.pdf", k2, "generations replace, not nest")
+
+	require.Equal(t, "re-"+g1.String()+"/flat.bin", reencryptedKey("flat.bin", g1))
 }
