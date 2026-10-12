@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,13 +42,11 @@ type IRMService struct {
 	log        zerolog.Logger
 }
 
-// NewIRMService wires the service. The environment comes from doc
-// (DocumentService.SetEnvironment, set from pkg/config before this runs).
+// NewIRMService wires the service. The dev-key fallback keys on the raw
+// SEDOC_ENVIRONMENT (RawEnvironment), not pkg/config's Environment, which
+// defaults to "dev" when the variable is unset.
 func NewIRMService(pool *pgxpool.Pool, repos *repository.Repositories, s3 *storage.S3Client, kms pkgcrypto.KeyManager, doc *DocumentService, log zerolog.Logger) *IRMService {
-	env := ""
-	if doc != nil {
-		env = doc.env
-	}
+	env := RawEnvironment()
 	key, err := irmSigningKey(env)
 	if err != nil {
 		log.Error().Str("environment", env).
@@ -60,6 +59,15 @@ func NewIRMService(pool *pgxpool.Pool, repos *repository.Repositories, s3 *stora
 // published dev default) outside the dev environment. Callers fail closed
 // (HTTP 503).
 var ErrSecretNotConfigured = errors.New("deployment secret not configured")
+
+// RawEnvironment is the SEDOC_ENVIRONMENT variable exactly as deployed
+// (trimmed). Unlike pkg/config's Environment it does NOT default to "dev"
+// when unset, so a missing variable can never unlock a dev-only secret
+// fallback (same rule as pkg/license). Use it — not cfg.Environment — as
+// the env argument of ResolveSecret.
+func RawEnvironment() string {
+	return strings.TrimSpace(os.Getenv("SEDOC_ENVIRONMENT"))
+}
 
 // ResolveSecret applies the D-13 rule for deployment secrets that have a
 // dev convenience default: in env "dev" an unset secret falls back to

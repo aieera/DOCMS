@@ -278,13 +278,18 @@ func main() {
 				Msg("temporal unreachable; DSR requests will queue as pending")
 		}
 	}
-	dsrSalt := os.Getenv("SEDOC_DSR_ANONYMIZE_SALT")
-	if dsrSalt == "" {
-		// Deterministic per-tenant-deployment fallback so anonymize still
-		// works in dev. Prod must set the env var.
-		dsrSalt = "vaultdms-dev-salt"
+	// D-13: the dev salt is accepted only in the dev environment. Outside
+	// dev an unset (or dev-default) SEDOC_DSR_ANONYMIZE_SALT leaves the salt
+	// empty and POST /api/v1/privacy/dsr/anonymize answers 503 — identical
+	// salts across installs would make GDPR pseudonyms predictable.
+	// The dev fallback keys on the RAW SEDOC_ENVIRONMENT (unset ≠ dev), not
+	// cfg.Environment, which defaults to dev.
+	dsrSalt, dsrSaltErr := handler.ResolveDSRSalt()
+	if dsrSaltErr != nil {
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
+			Msg("SEDOC_DSR_ANONYMIZE_SALT is not set (or is the dev default) outside dev; DSR anonymisation will return 503")
 	}
-	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, dsrSalt, *log.Z())
+	privacyHandler := handler.NewPrivacyHandler(pool, tcDSR, string(dsrSalt), *log.Z())
 	dsrVerifyHandler := handler.NewDSRVerifyHandler(pool, rdb, *log.Z())
 	redactionHandler := handler.NewRedactionHandler(pool, holdsService, *log.Z())
 	residencyHandler := handler.NewResidencyHandler(pool, tcDSR, *log.Z())
@@ -853,9 +858,9 @@ func main() {
 	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER). D-13: the dev
 	// pepper is accepted only in the dev environment; elsewhere a missing
 	// pepper leaves it nil and the zt routes answer 503.
-	ztPepper, ztPepperErr := service.ResolveSecret(cfg.Environment, os.Getenv("SEDOC_ZT_TOKEN_PEPPER"), handler.DevZTTokenPepper)
+	ztPepper, ztPepperErr := handler.ResolveZTPepper() // raw SEDOC_ENVIRONMENT; unset ≠ dev
 	if ztPepperErr != nil {
-		log.Error(ctx).Str("environment", cfg.Environment).
+		log.Error(ctx).Str("sedoc_environment", service.RawEnvironment()).
 			Msg("SEDOC_ZT_TOKEN_PEPPER is not set (or is the dev default) outside dev; zero-trust share routes will return 503")
 	}
 	ztHandler := handler.NewZTShareHandler(pool, svc, s3c, docKMS, ztPepper)
@@ -990,9 +995,9 @@ func main() {
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	onlyOfficeH := handler.NewOnlyOfficeHandler(*log.Z())
-	// D-13: outside dev SEDOC_ONLYOFFICE_JWT must be set and must not be
-	// the compose dev default; otherwise config/callback answer 503.
-	onlyOfficeH.Environment = cfg.Environment
+	// D-13: unless SEDOC_ENVIRONMENT is explicitly dev, SEDOC_ONLYOFFICE_JWT
+	// must be set and must not be the compose dev default; otherwise
+	// config/callback answer 503 (the handler reads the raw variable).
 	// Status 2/6 (ready-to-save / force-save) download-and-commit. Redis
 	// carries the WOPI locks so a version locked by another editor
 	// session rejects the save-back.

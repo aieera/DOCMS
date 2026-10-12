@@ -58,15 +58,13 @@ type CoauthAuthorizer interface {
 }
 
 // DevOnlyOfficeJWT is the published dev value docker-compose injects for
-// SEDOC_ONLYOFFICE_JWT; accepted only when Environment is "dev" (D-13).
+// SEDOC_ONLYOFFICE_JWT; accepted only when SEDOC_ENVIRONMENT is explicitly
+// "dev" (D-13; see service.RawEnvironment).
 const DevOnlyOfficeJWT = "dev-only-onlyoffice-jwt-rotate-in-prod"
 
 // OnlyOfficeHandler mounts the E6 endpoints.
 type OnlyOfficeHandler struct {
 	log zerolog.Logger
-	// Environment is pkg/config Environment (dev | staging | prod). Outside
-	// dev the JWT secret must be set and must not be DevOnlyOfficeJWT.
-	Environment string
 	// Authz gates the config endpoint (D-6): an edit config — and the
 	// write-capable callback token inside it — is only minted for a caller
 	// who holds edit on the version's document. Wired by main; nil fails
@@ -80,12 +78,13 @@ type OnlyOfficeHandler struct {
 	Redis *redis.Client
 }
 
-// jwtSecret returns the Document Server shared secret per D-13: in dev an
+// jwtSecret returns the Document Server shared secret per D-13: with an
+// explicit SEDOC_ENVIRONMENT=dev an
 // unset SEDOC_ONLYOFFICE_JWT falls back to DevOnlyOfficeJWT (what compose
 // injects); elsewhere it must be set and must not be that published value.
 // Read per request so tests can t.Setenv.
 func (h *OnlyOfficeHandler) jwtSecret() (string, bool) {
-	b, err := service.ResolveSecret(h.Environment, os.Getenv("SEDOC_ONLYOFFICE_JWT"), DevOnlyOfficeJWT)
+	b, err := service.ResolveSecret(service.RawEnvironment(), os.Getenv("SEDOC_ONLYOFFICE_JWT"), DevOnlyOfficeJWT)
 	if err != nil {
 		return "", false
 	}
