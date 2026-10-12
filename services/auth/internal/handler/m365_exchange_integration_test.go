@@ -65,3 +65,29 @@ func TestM365ExchangeHTTP_SuspendedUser403(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.NotContains(t, rec.Body.String(), "vdms_session_token")
 }
+
+// fixedGoogle "verifies" every token as one Google identity.
+type fixedGoogle struct{ id service.VerifiedGoogleIdentity }
+
+func (f fixedGoogle) Verify(context.Context, string) (*service.VerifiedGoogleIdentity, error) {
+	cp := f.id
+	return &cp, nil
+}
+
+// M-8: the Google add-on exchange answers 403 for a suspended user.
+func TestGoogleExchangeHTTP_Suspended403(t *testing.T) {
+	env := integrationEnv(t)
+	ctx := context.Background()
+	email := "gaddon-" + uuid.NewString()[:8] + "@acme.example"
+	tenant := testenv.SeedTenant(ctx, t, env.Pool, testenv.UniqueSlug("ghttp"))
+	testenv.SeedUser(ctx, t, env.Pool, tenant, testenv.UserSpec{Email: email, Status: "suspended"})
+	h, _ := newIntegrationHandlerWith(t, env, func(c *service.Config) {
+		c.GoogleVerifier = fixedGoogle{id: service.VerifiedGoogleIdentity{Sub: "s", Email: email, HD: "acme.example"}}
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/google/exchange",
+		strings.NewReader(`{"google_id_token":"g.id.token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.Router(nil, nil, nil, nil, nil, nil, nil, nil, nil).ServeHTTP(rec, req)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+}

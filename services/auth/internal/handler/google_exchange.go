@@ -77,6 +77,10 @@ func (h *Handler) ExchangeGoogle(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if errors.Is(err, service.ErrAccountNotActive) {
+			h.writeError(w, r, err) // 403: suspended/deactivated user (M-8)
+			return
+		}
 		var multi *service.ErrGoogleMultipleTenants
 		if errors.As(err, &multi) {
 			h.writeJSON(w, http.StatusConflict, googleMultiTenantResp{

@@ -115,7 +115,7 @@ func TestGoogleVerifier_CheckClaims(t *testing.T) {
 // network call to Google's discovery endpoint.
 func TestGoogleVerifier_UnconfiguredRefuses(t *testing.T) {
 	v := &googleVerifier{allowedHDs: map[string]struct{}{}}
-	if _, err := v.verify(t.Context(), "any.token.here"); err == nil {
+	if _, err := v.Verify(t.Context(), "any.token.here"); err == nil {
 		t.Fatal("expected error from an unconfigured verifier")
 	}
 }

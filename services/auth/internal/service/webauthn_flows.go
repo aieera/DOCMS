@@ -295,6 +295,11 @@ func (s *Service) PasskeyLoginStart(ctx context.Context, tenantSlug, email strin
 		// shape as password login (ErrInvalidCredentials).
 		return nil, "", ErrInvalidCredentials
 	}
+	if user.Status != model.StatusActive {
+		// M-8: no ceremony for a suspended/deactivated account. Opaque,
+		// like password login — possession has not been proven yet.
+		return nil, "", ErrInvalidCredentials
+	}
 	if len(creds) == 0 {
 		// Typed sentinel so the handler returns 404 with a
 		// "register one in Settings → Security" hint, NOT a
@@ -376,6 +381,11 @@ func (s *Service) PasskeyLoginFinish(
 		libCred, err := wa.ValidateLogin(wu, sessionData, parsed)
 		if err != nil {
 			return fmt.Errorf("verify assertion: %w", err)
+		}
+		// M-8: the passkey proves who the caller is; a suspended or
+		// deactivated account still gets no session (403).
+		if user.Status != model.StatusActive {
+			return ErrAccountNotActive
 		}
 		// Backward-rolling sign_count = cloned authenticator.
 		// (The lib already raises CredentialClonedError; this is

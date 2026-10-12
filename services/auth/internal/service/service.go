@@ -105,7 +105,7 @@ type Service struct {
 	// exchange (ADR 0116). Configured via env (SEDOC_GOOGLE_AUDIENCE +
 	// SEDOC_GOOGLE_ALLOWED_HDS). When unset, ExchangeGoogleToken
 	// refuses to run rather than accepting unvalidated tokens.
-	google *googleVerifier
+	google GoogleTokenVerifier
 }
 
 // Config bundles all service dependencies; allows tests to swap them.
@@ -123,12 +123,18 @@ type Config struct {
 	// M365Verifier overrides the env-configured Entra token verifier
 	// (SEDOC_M365_AUDIENCE / SEDOC_M365_ALLOWED_TIDS). Optional.
 	M365Verifier M365TokenVerifier
+	// GoogleVerifier overrides the env-configured Google ID-token
+	// verifier (SEDOC_GOOGLE_AUDIENCE / SEDOC_GOOGLE_ALLOWED_HDS).
+	GoogleVerifier GoogleTokenVerifier
 }
 
 // New constructs a Service.
 func New(cfg Config) *Service {
 	if cfg.M365Verifier == nil {
 		cfg.M365Verifier = newM365Verifier()
+	}
+	if cfg.GoogleVerifier == nil {
+		cfg.GoogleVerifier = newGoogleVerifier()
 	}
 	return &Service{
 		pool:     cfg.Pool,
@@ -143,7 +149,7 @@ func New(cfg Config) *Service {
 		log:      cfg.Logger,
 		now:      time.Now,
 		m365:     cfg.M365Verifier,
-		google:   newGoogleVerifier(),
+		google:   cfg.GoogleVerifier,
 	}
 }
 
