@@ -405,19 +405,35 @@ func readStreamBody(raw []byte, i int, v *pdfValue) {
 
 // revCtx names the objects the revision before `from` references from
 // the places where a later update may legitimately change them.
+//
+// That revision may be attacker-authored (the shadow-attack model: the
+// attacker prepares the document the victim signs), so nothing recorded
+// here may by itself permit rewriting a stream or an arbitrary dict. The
+// rules that use it also check the object's own shape (see
+// redefinitionAllowed).
 type revCtx struct {
 	root     int
 	acroForm int
-	metadata int
 	dssDict  map[int]bool
-	vri      map[int]bool
-	dssData  map[int]bool // /Certs /OCSPs /CRLs (and VRI /Cert /OCSP /CRL /TS) streams
+	vriMap   map[int]bool // the /DSS /VRI dict (keyed by signature hash)
+	vriEntry map[int]bool // its per-signature entries
+	dssData  map[int]bool // /Certs /OCSPs /CRLs (and VRI /Cert /OCSP /CRL /TS); never rewritable
 	info     map[int]bool
 }
 
+func newRevCtx(root int) *revCtx {
+	return &revCtx{root: root, acroForm: -1, dssDict: map[int]bool{}, vriMap: map[int]bool{},
+		vriEntry: map[int]bool{}, dssData: map[int]bool{}, info: map[int]bool{}}
+}
+
+// isDSSMaterial reports whether the revision before the update already
+// referenced r from its /DSS.
+func (rc *revCtx) isDSSMaterial(r int) bool {
+	return rc.dssDict[r] || rc.vriMap[r] || rc.vriEntry[r] || rc.dssData[r]
+}
+
 func (ix *revIndex) buildRevCtx(raw []byte, root, from int) *revCtx {
-	rc := &revCtx{root: root, acroForm: -1, metadata: -1,
-		dssDict: map[int]bool{}, vri: map[int]bool{}, dssData: map[int]bool{}, info: map[int]bool{}}
+	rc := newRevCtx(root)
 	for _, r := range ix.infos {
 		if r.at < from {
 			rc.info[r.val] = true
@@ -427,9 +443,6 @@ func (ix *revIndex) buildRevCtx(raw []byte, root, from int) *revCtx {
 	if prior != nil {
 		if v := prior.dict["/AcroForm"]; v.kind == 'r' {
 			rc.acroForm = v.ref
-		}
-		if v := prior.dict["/Metadata"]; v.kind == 'r' {
-			rc.metadata = v.ref
 		}
 		// Only the catalog in force before the update says what is DSS
 		// material. The latest catalog is the update's own: letting it
@@ -468,7 +481,7 @@ func (ix *revIndex) collectDSS(raw []byte, cat *pdfValue, limit int, rc *revCtx)
 	addRefs(dss, "/Certs", "/OCSPs", "/CRLs")
 	vv := dss.dict["/VRI"]
 	if vv.kind == 'r' {
-		rc.vri[vv.ref] = true
+		rc.vriMap[vv.ref] = true
 	}
 	vri := ix.resolveDict(raw, vv, limit)
 	if vri == nil {
@@ -476,7 +489,7 @@ func (ix *revIndex) collectDSS(raw []byte, cat *pdfValue, limit int, rc *revCtx)
 	}
 	for _, e := range vri.dict {
 		if e.kind == 'r' {
-			rc.vri[e.ref] = true
+			rc.vriEntry[e.ref] = true
 		}
 		if d := ix.resolveDict(raw, e, limit); d != nil {
 			addRefs(d, "/Cert", "/OCSP", "/CRL", "/TS")
@@ -503,12 +516,12 @@ func (ix *revIndex) dssRefsAllowed(raw []byte, rc *revCtx, root, from int) error
 		cats = append(cats, d)
 	}
 	for _, cat := range cats {
-		reach := &revCtx{dssDict: map[int]bool{}, vri: map[int]bool{}, dssData: map[int]bool{}}
+		reach := newRevCtx(root)
 		ix.collectDSS(raw, cat, len(raw)+1, reach)
 		var bad []int
-		for _, set := range []map[int]bool{reach.dssDict, reach.vri, reach.dssData} {
+		for _, set := range []map[int]bool{reach.dssDict, reach.vriMap, reach.vriEntry, reach.dssData} {
 			for r := range set {
-				if rc.dssDict[r] || rc.vri[r] || rc.dssData[r] {
+				if rc.isDSSMaterial(r) {
 					continue
 				}
 				if _, existed := ix.lastDefBefore(r, from); existed {
@@ -634,15 +647,16 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, cu
 	}
 	pt, ct := prev.nameOf("/Type"), cur.nameOf("/Type")
 	if prev.stream || cur.stream {
-		switch {
-		case prev.stream && cur.stream && num == rc.metadata && pt == "/Metadata" && ct == "/Metadata":
-			return nil // the catalog's XMP metadata
-		case prev.stream && cur.stream && rc.dssData[num]:
-			return nil // certificate / OCSP / CRL material of the /DSS
+		// No allowance covers a stream, whatever references it: DSS
+		// material is append-only and XMP updates are new objects (the
+		// catalog's /Metadata may be re-pointed). A stream may only be
+		// re-emitted unchanged: the same body and the same dict, /Length
+		// aside (a /Filter or /DecodeParms change re-reads the same bytes).
+		if prev.stream && cur.stream && prev.bodyOK && cur.bodyOK &&
+			bytes.Equal(prev.body, cur.body) && equalExcept(prev, cur, "/Length") {
+			return nil
 		}
-		if prev.stream != cur.stream || !prev.bodyOK || !cur.bodyOK || !bytes.Equal(prev.body, cur.body) {
-			return fmt.Errorf("later revision rewrites stream object %d", num)
-		}
+		return fmt.Errorf("later revision rewrites stream object %d", num)
 	}
 	switch {
 	case num == rc.root:
@@ -670,12 +684,120 @@ func (ix *revIndex) redefinitionAllowed(raw []byte, rc *revCtx, num, prevOff, cu
 			return fmt.Errorf("later revision changes page object %d beyond /Annots", num)
 		}
 		return ix.listGrowsWithSigFields(raw, prev.dict["/Annots"], cur.dict["/Annots"], "/Annots")
-	case rc.dssDict[num] && (pt == "" || pt == "/DSS") && (ct == "" || ct == "/DSS"),
-		rc.vri[num] && isVRI(prev) && isVRI(cur),
-		rc.info[num] && isInfo(prev) && isInfo(cur):
+	case rc.dssDict[num]:
+		if err := ix.appendOnly(prev, cur, isDSSKey, dssArrayKeys, "/DSS", from); err != nil {
+			return fmt.Errorf("later revision changes /DSS object %d: %w", num, err)
+		}
+		return nil
+	case rc.vriMap[num]:
+		if err := ix.appendOnly(prev, cur, isVRIMapKey, nil, "/VRI", from); err != nil {
+			return fmt.Errorf("later revision changes /VRI object %d: %w", num, err)
+		}
+		return nil
+	case rc.vriEntry[num]:
+		if err := ix.appendOnly(prev, cur, isVRIEntryKey, vriArrayKeys, "/VRI", from); err != nil {
+			return fmt.Errorf("later revision changes VRI entry %d: %w", num, err)
+		}
+		return nil
+	case rc.info[num] && isInfo(prev) && isInfo(cur):
 		return nil
 	}
 	return fmt.Errorf("later revision rewrites object %d", num)
+}
+
+var (
+	dssArrayKeys = map[string]bool{"/Certs": true, "/OCSPs": true, "/CRLs": true}
+	vriArrayKeys = map[string]bool{"/Cert": true, "/OCSP": true, "/CRL": true}
+)
+
+func isDSSKey(k string) bool      { return k == "/Type" || k == "/VRI" || dssArrayKeys[k] }
+func isVRIMapKey(k string) bool   { return k == "/Type" || vriKeyRE.MatchString(k) }
+func isVRIEntryKey(k string) bool { return k == "/Type" || k == "/TS" || k == "/TU" || vriArrayKeys[k] }
+
+// appendOnly allows a redefined DSS-shaped dict (the /DSS, its /VRI map,
+// or a VRI entry) to change only by growing. Both definitions must carry
+// only keys keyOK accepts and a /Type of typ (or none). Nothing may be
+// removed or changed; an array in arrays may gain references, and a new
+// key may be added, only when every object it references is new in the
+// update. Because the previous definition's own shape is checked, a
+// catalog that names some other dict as its /DSS gains nothing.
+func (ix *revIndex) appendOnly(prev, cur *pdfValue, keyOK func(string) bool, arrays map[string]bool, typ string, from int) error {
+	for _, d := range []*pdfValue{prev, cur} {
+		for k := range d.dict {
+			if !keyOK(k) {
+				return fmt.Errorf("key %s is not allowed", k)
+			}
+		}
+		if t := d.nameOf("/Type"); t != "" && t != typ {
+			return fmt.Errorf("/Type %s, want %s", t, typ)
+		}
+	}
+	for k := range prev.dict {
+		if _, ok := cur.dict[k]; !ok {
+			return fmt.Errorf("removes %s", k)
+		}
+	}
+	for k, cv := range cur.dict {
+		pv, had := prev.dict[k]
+		switch {
+		case k == "/Type" || (had && pv.canon == cv.canon):
+			continue
+		case arrays[k] && cv.kind == 'a' && (!had || pv.kind == 'a'):
+			pr, ok1 := refsOf(pv)
+			cr, ok2 := refsOf(cv)
+			if !ok1 || !ok2 {
+				return fmt.Errorf("%s is not an array of references", k)
+			}
+			kept := map[int]bool{}
+			for _, r := range cr {
+				kept[r] = true
+			}
+			for _, r := range pr {
+				if !kept[r] {
+					return fmt.Errorf("%s drops object %d", k, r)
+				}
+				delete(kept, r)
+			}
+			for r := range kept {
+				if !ix.isNew(r, from) {
+					return fmt.Errorf("%s gains signed object %d", k, r)
+				}
+			}
+		case !had && ix.refsAllNew(cv, from):
+			continue
+		default:
+			return fmt.Errorf("changes %s", k)
+		}
+	}
+	return nil
+}
+
+// isNew reports whether object r has no definition before from.
+func (ix *revIndex) isNew(r, from int) bool {
+	_, existed := ix.lastDefBefore(r, from)
+	return !existed
+}
+
+// refsAllNew reports whether every reference inside v names an object
+// that is new in the update.
+func (ix *revIndex) refsAllNew(v pdfValue, from int) bool {
+	switch v.kind {
+	case 'r':
+		return ix.isNew(v.ref, from)
+	case 'a':
+		for _, it := range v.items {
+			if !ix.refsAllNew(it, from) {
+				return false
+			}
+		}
+	case 'd':
+		for _, it := range v.dict {
+			if !ix.refsAllNew(it, from) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (ix *revIndex) acroFormValueAllowed(raw []byte, pv, cv pdfValue, from int) error {
@@ -792,18 +914,6 @@ func refsOf(v pdfValue) ([]int, bool) {
 func isSigField(d *pdfValue) bool { return d != nil && d.nameOf("/FT") == "/Sig" }
 
 var vriKeyRE = regexp.MustCompile(`^/[0-9A-Fa-f]{40}$`)
-
-func isVRI(d *pdfValue) bool {
-	if len(d.dict) == 0 {
-		return false
-	}
-	for k := range d.dict {
-		if k != "/Type" && !vriKeyRE.MatchString(k) {
-			return false
-		}
-	}
-	return d.nameOf("/Type") == "" || d.nameOf("/Type") == "/VRI"
-}
 
 var infoKeys = map[string]bool{
 	"/Title": true, "/Author": true, "/Subject": true, "/Keywords": true, "/Creator": true,

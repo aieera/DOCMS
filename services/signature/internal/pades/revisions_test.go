@@ -494,3 +494,140 @@ func TestVerify_NewDSSMayNotReferencePriorObjects(t *testing.T) {
 		}
 	})
 }
+
+// testVRIKey2 is a second syntactically valid VRI key.
+const testVRIKey2 = "/89ABCDEF89ABCDEF89ABCDEF89ABCDEF89ABCDEF"
+
+// Review round 3 (shadow-attack threat model): the attacker may author the
+// document the victim signs, so whatever the signed revision's catalog
+// names as DSS material or XMP metadata is attacker-chosen. No allowance
+// derived from it may permit rewriting a stream or an arbitrary dict:
+// every redefined stream must be re-emitted unchanged, a signed /Metadata
+// stream is never redefined, and DSS/VRI dicts may only grow by references
+// to new objects.
+func TestVerify_PreSigningPoisonedAllowancesRejected(t *testing.T) {
+	ceremony := readFixture(t, "ceremony-3sig.pdf")
+	dict, body := obj4(t, ceremony)
+	rewritten := strings.Replace(body, "100", "900", 1)
+	open := strings.TrimSuffix(strings.TrimSpace(dict), ">>")
+	stream := func(d, b string) string { return d + "\nstream\n" + b + "\nendstream" }
+	metaDict := open + " /Type /Metadata /Subtype /XML >>"
+	overlay := "<< /Type /XObject /Subtype /Form /BBox [0 0 300 200] /Length 5 >>\nstream\nHELLO\nendstream"
+	cert := func(s string) string { return fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(s), s) }
+	xmp := func(s string) string {
+		return fmt.Sprintf("<< /Type /Metadata /Subtype /XML /Length %d >>\nstream\n%s\nendstream", len(s), s)
+	}
+	// A signed revision with a well-formed DSS: certificate 19, VRI map 20
+	// with one entry 21.
+	dssBase := map[int]string{
+		1:  ceremonyCatalog + " /DSS 18 0 R >>",
+		18: "<< /Type /DSS /Certs [19 0 R] /VRI 20 0 R >>",
+		19: cert("CERT"),
+		20: "<< " + testVRIKey + " 21 0 R >>",
+		21: "<< /Cert [19 0 R] >>",
+	}
+	metaBase := map[int]string{1: ceremonyCatalog + " /Metadata 18 0 R >>", 18: xmp("<x>A</x>")}
+
+	// check runs the revision checker as if a signature covered exactly
+	// `signed` (ceremony plus one attacker-authored update) and `after`
+	// was appended later.
+	check := func(t *testing.T, signed, after map[int]string) error {
+		t.Helper()
+		stage1 := appendIncrement(ceremony, signed, "", "1 0 R")
+		doc, err := parsePDF(appendIncrement(stage1, after, "", "1 0 R"))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return laterRevisionsAllowed(context.Background(), doc, len(stage1))
+	}
+
+	for name, c := range map[string]struct{ signed, after map[int]string }{
+		"R3a signed /DSS lists the content stream, then it is rewritten": {
+			map[int]string{1: ceremonyCatalog + " /DSS 18 0 R >>", 18: "<< /Type /DSS /Certs [4 0 R] >>"},
+			map[int]string{4: stream(dict, rewritten)},
+		},
+		"R3b signed /Metadata is the content stream, then it is rewritten": {
+			map[int]string{1: ceremonyCatalog + " /Metadata 4 0 R >>", 4: stream(metaDict, body)},
+			map[int]string{4: stream(metaDict, rewritten)},
+		},
+		"R3c signed /DSS is an appearance dict, then it is swapped": {
+			map[int]string{1: ceremonyCatalog + " /DSS 8 0 R >>"},
+			map[int]string{8: "<< /N 18 0 R >>", 18: overlay},
+		},
+		"signed /DSS is the content stream, re-emitted with a /Filter": {
+			map[int]string{1: ceremonyCatalog + " /DSS 4 0 R >>"},
+			map[int]string{4: stream(open+" /Filter /ASCIIHexDecode >>", body)},
+		},
+		"signed /DSS is the content stream, re-emitted with /DecodeParms": {
+			map[int]string{1: ceremonyCatalog + " /DSS 4 0 R >>"},
+			map[int]string{4: stream(open+" /DecodeParms << /Predictor 2 >> >>", body)},
+		},
+		"signed XMP metadata redefined in place": {
+			metaBase, map[int]string{18: xmp("<x>B</x>")},
+		},
+		"signed DSS certificate stream rewritten": {
+			dssBase, map[int]string{19: cert("CERX")},
+		},
+		"signed /DSS drops a certificate": {
+			dssBase, map[int]string{18: "<< /Type /DSS /Certs [] /VRI 20 0 R >>"},
+		},
+		"signed /DSS gains a non-DSS key": {
+			dssBase, map[int]string{18: "<< /Type /DSS /Certs [19 0 R] /VRI 20 0 R /N 9 0 R >>"},
+		},
+		"signed /DSS gains a signed object": {
+			dssBase, map[int]string{18: "<< /Type /DSS /Certs [19 0 R 4 0 R] /VRI 20 0 R >>"},
+		},
+		"signed /DSS re-points its /VRI": {
+			dssBase, map[int]string{18: "<< /Type /DSS /Certs [19 0 R] /VRI 22 0 R >>", 22: "<< >>"},
+		},
+		"signed VRI map re-points an entry": {
+			dssBase, map[int]string{20: "<< " + testVRIKey + " 22 0 R >>", 22: "<< /Cert [19 0 R] >>"},
+		},
+		"signed VRI entry gains a signed object": {
+			dssBase, map[int]string{21: "<< /Cert [19 0 R 4 0 R] >>"},
+		},
+		"signed VRI entry gains a non-VRI key": {
+			dssBase, map[int]string{21: "<< /Cert [19 0 R] /N 9 0 R >>"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := check(t, c.signed, c.after); err == nil {
+				t.Fatal("laterRevisionsAllowed = nil, want the update refused")
+			}
+		})
+	}
+
+	for name, c := range map[string]struct{ signed, after map[int]string }{
+		"content stream re-emitted unchanged": {
+			map[int]string{1: ceremonyCatalog + " /DSS 4 0 R >>"},
+			map[int]string{4: stream(dict, body)},
+		},
+		"XMP replaced by a new object, catalog re-pointed": {
+			metaBase, map[int]string{1: ceremonyCatalog + " /Metadata 22 0 R >>", 22: xmp("<x>B</x>")},
+		},
+		"signed /DSS extended with new objects": {
+			dssBase, map[int]string{
+				18: "<< /Type /DSS /Certs [19 0 R 22 0 R] /OCSPs [23 0 R] /VRI 20 0 R >>",
+				22: cert("CERT2"), 23: cert("OCSP"),
+			},
+		},
+		"signed VRI map gains an entry for a new signature": {
+			dssBase, map[int]string{
+				20: "<< " + testVRIKey + " 21 0 R " + testVRIKey2 + " 22 0 R >>",
+				22: "<< /Cert [19 0 R] >>",
+			},
+		},
+		"signed VRI entry extended with new objects": {
+			dssBase, map[int]string{
+				21: "<< /Cert [19 0 R] /OCSP [22 0 R] /TS 23 0 R /TU (D:20261012000000Z) >>",
+				22: cert("OCSP"), 23: cert("TS"),
+			},
+		},
+	} {
+		t.Run("allowed: "+name, func(t *testing.T) {
+			if err := check(t, c.signed, c.after); err != nil {
+				t.Fatalf("laterRevisionsAllowed = %v, want nil", err)
+			}
+		})
+	}
+}
