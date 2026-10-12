@@ -25,8 +25,9 @@ Quick verification:
   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
   kubectl logs -l app.kubernetes.io/name=auth --tail=20
 
-Health checks:
-  curl https://{{ .Values.global.domain }}/api/v1/auth/healthz
+Health check (anonymous; auth's dependency-checked /readyz through Kong,
+dependency errors scrubbed):
+  curl https://{{ .Values.global.domain }}/api/v1/health
 
 Useful commands:
   # Scale a service
@@ -43,11 +44,52 @@ Useful commands:
   kubectl create job --from=cronjob/sedoc-backup sedoc-backup-manual
 
 Infrastructure:
-  PostgreSQL:  {{ .Values.global.database.host }}:{{ .Values.global.database.port }}
+  PostgreSQL:  {{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }} (services as {{ .Values.global.database.username }}, sslmode={{ .Values.global.database.sslMode }})
   Redis:       {{ include "sedoc.redisHost" . }}:{{ .Values.global.redis.port }} (password auth)
   NATS:        {{ .Values.global.nats.host | default (printf "%s-nats" .Release.Name) }}:{{ .Values.global.nats.port }} (user {{ .Values.global.nats.user }})
-  OpenSearch:  {{ .Values.global.opensearch.url }}
+  OpenSearch:  {{ .Values.global.openSearchURL | default .Values.global.opensearch.url }}
   S3:          {{ .Values.global.s3.endpoint }}
+
+Secrets this release reads (create them, or enable externalSecrets):
+{{- range $name, $keys := include "sedoc.secretInventory" . | fromYaml }}
+  {{ $name }}: {{ join ", " $keys }}
+{{- end }}
+  URL-embedded values (dms-app-password, redis-password, nats-password)
+  must be URL-safe (openssl rand -hex 24).
+{{- if and .Values.signature.enabled (ne .Values.signature.sealLevel "B-B") (not .Values.signature.tsaURL) }}
+
+WARNING: signature.sealLevel={{ .Values.signature.sealLevel }} needs a timestamp
+authority — the signature service will not start until signature.tsaURL is
+set (or sealLevel=B-B is chosen explicitly).
+{{- end }}
+
+Upgrading an existing deployment (read before `helm upgrade`):
+  1. Migrations run as a pre-upgrade hook, BEFORE new binaries roll out
+     (document 000104-000113, auth 000003/000004, audit 000006,
+     notification 000004, connector 000002, billing 000012 ...). Never run
+     a subset: golang-migrate does not go back for lower numbers once a
+     higher one is recorded.
+  2. Services now connect as dms_app (NOBYPASSRLS). The hook creates it and
+     sets the default privileges; a database whose tables were created
+     before those defaults existed needs a one-time GRANT matching
+     scripts/init-db.sql (SELECT/INSERT/UPDATE/DELETE on the tables,
+     USAGE/SELECT on sequences) — keep the organizations / audit_events
+     REVOKEs from document 000001.
+  3. Audit chains written before the canonical-hash fix need a one-time
+     re-baseline, or GDPR erasure answers 409 audit_chain_unverifiable:
+     docs/runbooks/audit-chain-rebaseline.md (owner DSN + audit signing key,
+     dry run first, no rollback — back up first).
+  4. JetStream durables for audit / search / notification / policy are
+     recreated with a deliver group on first start of the new build. Roll
+     ONE replica of each first (two upgrading the same legacy durable can
+     strand one). To roll BACK, delete those durables before starting the
+     old build (it cannot bind to grouped durables); see
+     docs/runbooks/05-nats-topology.md.
+  5. New required configuration: the KEK Secret (no longer optional), the
+     NATS and Redis passwords, the platform secrets (IRM key, zt pepper —
+     setting/rotating it invalidates live zero-trust links — OnlyOffice
+     JWT), the signer keystore, collaboration.allowedOrigins if browsers
+     use another origin than https://{{ .Values.global.domain }}.
 
 For documentation: https://docs.vaultdms.io
 ============================================================
