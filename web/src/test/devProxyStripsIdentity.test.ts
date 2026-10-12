@@ -34,6 +34,9 @@ class FakeOutgoing {
   removeHeader(name: string) {
     this.headers.delete(name.toLowerCase())
   }
+  getHeaderNames() {
+    return [...this.headers.keys()]
+  }
 }
 
 const FORGED = {
@@ -46,8 +49,16 @@ const FORGED = {
   'X-Group-IDs': 'g-1',
   'X-Internal-Service-Key': 'guess',
   'X-Gateway-Signature': 'forged',
+  // Not on the fixed list — caught by the x-auth-* / x-user-* /
+  // x-tenant-* prefix rule (review round 1).
+  'X-Auth-Session-Scope': 'admin',
+  'X-User-Department': 'finance',
+  'X-Tenant-Slug': 'victim',
+  'X-Request-ID': 'keep-me',
   Cookie: 'dms_session=abc',
 }
+
+const PREFIXED = ['x-auth-session-scope', 'x-user-department', 'x-tenant-slug']
 
 type ProxyEntry = { target?: string; ws?: boolean; configure?: (p: EventEmitter, o: unknown) => void }
 
@@ -92,6 +103,8 @@ describe('host-mode dev proxy strips client identity headers (DEC-3)', () => {
         if (h === 'x-gateway-signature') continue
         expect(out.headers.has(h), `${prefix} forwarded ${h}`).toBe(false)
       }
+      for (const h of PREFIXED) expect(out.headers.has(h), `${prefix} forwarded ${h}`).toBe(false)
+      expect(out.headers.get('x-request-id'), prefix).toBe('keep-me')
       // Signature is the proxy's own, never the client's forged value.
       expect(out.headers.get('x-gateway-signature'), prefix).not.toBe('forged')
       expect(out.headers.has('x-gateway-signature'), prefix).toBe(true)
@@ -110,6 +123,7 @@ describe('host-mode dev proxy strips client identity headers (DEC-3)', () => {
         if (h === 'x-gateway-signature') continue
         expect(out.headers.has(h), `${prefix} forwarded ${h} on upgrade`).toBe(false)
       }
+      for (const h of PREFIXED) expect(out.headers.has(h), `${prefix} forwarded ${h} on upgrade`).toBe(false)
       expect(out.headers.has('x-gateway-signature'), `${prefix} upgrade unsigned`).toBe(true)
       expect(out.headers.get('x-gateway-signature')).not.toBe('forged')
       expect(out.headers.get('cookie')).toBe('dms_session=abc')

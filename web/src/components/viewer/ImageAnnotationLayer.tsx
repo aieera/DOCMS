@@ -46,8 +46,7 @@ export function ImageAnnotationLayer({ documentId, versionId, imageUrl, canCreat
   // for note font sizing recomputes on reflow without reading the ref
   // during render.
   const [renderedW, setRenderedW] = useState(0)
-  // <img> can't send X-Tenant-ID — fetch via axios into a blob URL so
-  // the bytes load even before the backend's cookie-only fallback ships.
+  // Fetched via the axios client into a blob URL (see useAuthBlob).
   const blobUrl = useAuthBlob(imageUrl)
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)

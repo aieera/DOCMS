@@ -87,3 +87,21 @@ describe('DEC-3 — web client sends no identity headers', () => {
     for (const h of IDENTITY_HEADERS) expect(names).not.toContain(h)
   })
 })
+
+// Review (round 1): comments that still claimed blob/video fetches must
+// go through axios "to attach X-Tenant-ID" invite re-adding the header.
+describe('no stale identity-header guidance in source (DEC-3)', () => {
+  it('the blob/video/annotation loaders do not mention X-Tenant-ID', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const f of [
+      'lib/useAuthBlob.ts',
+      'components/viewer/VideoPlayer.tsx',
+      'components/viewer/VideoAnnotationLayer.tsx',
+      'components/viewer/ImageAnnotationLayer.tsx',
+    ]) {
+      const src = readFileSync(resolve(__dirname, '../..', f), 'utf8')
+      expect(src, f).not.toMatch(/X-Tenant-ID|X-Auth-Tenant|X-User-/i)
+    }
+  })
+})

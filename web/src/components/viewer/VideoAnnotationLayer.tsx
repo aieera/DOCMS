@@ -28,7 +28,7 @@ export function VideoAnnotationLayer({ documentId, versionId, videoUrl, canCreat
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [visible, setVisible] = useState(true)
   const [duration, setDuration] = useState(0)
-  // <video> can't attach X-Tenant-ID — fetch via axios into a blob URL.
+  // Fetched via the axios client into a blob URL (see useAuthBlob).
   const blobUrl = useAuthBlob(videoUrl)
 
   // Load on mount + on doc/version change. useEffect (not useMemo)

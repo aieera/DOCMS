@@ -32,9 +32,15 @@ export const IDENTITY_HEADERS = [
   'x-gateway-signature',
 ] as const
 
+// Anything in these families is identity the gateway owns; strip by
+// prefix too, so a header added to a backend later cannot be forged from
+// the browser before someone remembers to list it above.
+export const IDENTITY_HEADER_PREFIXES = ['x-auth-', 'x-user-', 'x-tenant-'] as const
+
 interface OutgoingRequest {
   setHeader(name: string, value: string): void
   removeHeader(name: string): void
+  getHeaderNames?(): string[]
 }
 
 interface ProxyEmitter {
@@ -46,6 +52,10 @@ interface ProxyEmitter {
 // and stamps the gateway signature.
 export function signOutgoing(proxyReq: OutgoingRequest, secret: string): void {
   for (const h of IDENTITY_HEADERS) proxyReq.removeHeader(h)
+  for (const name of proxyReq.getHeaderNames?.() ?? []) {
+    const lower = name.toLowerCase()
+    if (IDENTITY_HEADER_PREFIXES.some((p) => lower.startsWith(p))) proxyReq.removeHeader(name)
+  }
   proxyReq.setHeader('X-Gateway-Signature', secret)
 }
 
