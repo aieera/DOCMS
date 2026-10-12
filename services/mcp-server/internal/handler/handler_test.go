@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,4 +145,32 @@ func TestSSE_CloseDuringSendNoPanic(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/sse?session_id="+sess.id, strings.NewReader(body)).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	require.NotPanics(t, func() { h.sseInbound(rec, req) })
+
+	// And under real concurrency (run with -race): POSTs racing the GET
+	// leg's close, and a reader draining the outbox, over many sessions.
+	frame := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+	for i := 0; i < 50; i++ {
+		s := h.sessions.create(ctx)
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() { // the SSE pusher
+			defer wg.Done()
+			for range s.outbox {
+			}
+		}()
+		for j := 0; j < 8; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r := httptest.NewRequest(http.MethodPost, "/api/v1/mcp/sse?session_id="+s.id, strings.NewReader(frame)).WithContext(ctx)
+				h.sseInbound(httptest.NewRecorder(), r)
+			}()
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.sessions.close(s.id)
+		}()
+		wg.Wait()
+	}
 }
