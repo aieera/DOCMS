@@ -558,7 +558,23 @@ jobs:
             helm template sedoc . -f "$v" > /dev/null || rc=1
             echo "::endgroup::"
           done
+          # ExternalSecrets path (off by default, so the loop above never
+          # renders templates/external-secrets*).
+          echo "::group::values.yaml + externalSecrets.enabled=true"
+          helm lint --strict . -f values.yaml --set externalSecrets.enabled=true || rc=1
+          helm template sedoc . -f values.yaml --set externalSecrets.enabled=true > /dev/null || rc=1
+          echo "::endgroup::"
           exit "$rc"
+      # DEPLOY is adding this assertion (every Ingress backend names a
+      # Service the chart renders). Until it lands the step warns loudly;
+      # once the path is confirmed, replace the warning with `exit 1`.
+      - name: Ingress backends resolve to rendered Services
+        run: |
+          if [ -x tests/assert-ingress-backends.sh ]; then
+            tests/assert-ingress-backends.sh
+          else
+            echo '::warning::assert-ingress-backends.sh missing'
+          fi
 
   # R-13 — suites that never ran in CI.
 
