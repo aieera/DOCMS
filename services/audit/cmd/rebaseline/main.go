@@ -9,7 +9,8 @@
 // Nothing is written unless --apply is given. With --apply the differing
 // rows are rewritten, an audit.chain_rebaselined event (old head, new head,
 // count, operator) is appended, and a signed checkpoint
-// (SEDOC_AUDIT_SIGNING_KEY) anchors the new head. A second run reports 0.
+// (SEDOC_AUDIT_SIGNING_KEY, mandatory with --apply: exit 4 without it)
+// anchors the new head. A second run reports 0.
 //
 // It rewrites WORM rows, so it must run as the table owner / a BYPASSRLS
 // operator role (the migration DSN). It refuses any other role.
@@ -82,6 +83,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
+	// A re-baselined chain must be anchored by a signed checkpoint, or its
+	// whole tail is uncertified: --apply refuses to start without a valid
+	// signing key, before any tenant is touched.
+	log := zerolog.New(stderr).With().Timestamp().Str("tool", "audit-rebaseline").Logger()
+	svc := service.New(service.Config{
+		Repo:              repository.New(pool),
+		Logger:            log,
+		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
+	})
+	if !svc.SigningKey().Enabled {
+		if *apply {
+			fmt.Fprintln(stderr, "rebaseline: --apply requires a valid SEDOC_AUDIT_SIGNING_KEY (the audit service's base64 Ed25519 seed); refusing before touching any tenant")
+			return 4
+		}
+		fmt.Fprintln(stderr, "rebaseline: note: SEDOC_AUDIT_SIGNING_KEY is unset or invalid; this dry run writes nothing, but --apply will require SEDOC_AUDIT_SIGNING_KEY")
+	}
+
 	var tenants []uuid.UUID
 	if *tenant != "" {
 		id, err := uuid.Parse(*tenant)
@@ -95,12 +113,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	log := zerolog.New(stderr).With().Timestamp().Str("tool", "audit-rebaseline").Logger()
-	svc := service.New(service.Config{
-		Repo:              repository.New(pool),
-		Logger:            log,
-		SigningKeySeedB64: os.Getenv("SEDOC_AUDIT_SIGNING_KEY"),
-	})
 	mode := "dry-run"
 	if *apply {
 		mode = "apply"

@@ -15,11 +15,14 @@ If a tenant's chain is unverifiable but was written after the fix, investigate t
 
 ## How
 
-The tool rewrites append-only (WORM) rows. Run it with the **migration/owner DSN**: a superuser or a `BYPASSRLS` role. It refuses any other role, including `dms_app`, and exits with code 3.
+The tool rewrites append-only (WORM) rows. Run it with the **migration/owner DSN**: a superuser or a `BYPASSRLS` role. It refuses any other role, including `dms_app`, and exits with code 3. With `--apply` it also requires `SEDOC_AUDIT_SIGNING_KEY` (exit code 4 without it).
 
 ```sh
 cd services/audit
 export SEDOC_MIGRATE_DATABASE_URL='postgres://<owner>:<pw>@<host>:5432/<db>?sslmode=require'
+# Required for --apply (the run refuses with exit code 4 before touching
+# any tenant if it is unset or invalid). A dry run works without it but
+# prints a note that apply will need it.
 export SEDOC_AUDIT_SIGNING_KEY='<same base64 seed the audit service uses>'
 
 # 1. Dry run (the default): reports per tenant, writes nothing.
@@ -42,7 +45,7 @@ The tool writes three things:
 
 - **Rewritten links.** Every event whose stored `previous_hash`/`event_hash` differs from the verifier's own computation is rewritten to the canonical form. Event content is never changed.
 - **An `audit.chain_rebaselined` marker event.** It is appended to the chain with `actor_name` set to `--operator`, and its details record the old head hash, the new head hash, the rewritten count and the operator. Anyone reading the trail can tell this authorised cutover apart from tampering.
-- **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY`. If the key is not set, no checkpoint is written and a warning is logged. Older checkpoints sign heads that no longer exist; only the latest is checked.
+- **A signed checkpoint** over the new head, made with `SEDOC_AUDIT_SIGNING_KEY`. The key is mandatory for `--apply`: without a valid key the tool exits with code 4 before touching any tenant, because a re-baselined chain with no signed checkpoint would be a tail nobody certified. Older checkpoints sign heads that no longer exist; only the latest is checked.
 
 ## Rollback
 

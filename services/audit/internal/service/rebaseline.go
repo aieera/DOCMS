@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -22,11 +21,17 @@ type RebaselineResult struct {
 // repository.RebaselineChain). apply=false is a dry run. With apply=true
 // and at least one differing event, the rows are rewritten, an
 // audit.chain_rebaselined marker naming the operator and both head hashes
-// is appended, and a fresh signed checkpoint anchors the new head (when a
-// signing key is configured). A chain that already verifies is left
-// untouched, so a second run writes nothing.
+// is appended, and a fresh signed checkpoint anchors the new head. apply
+// without a signing key returns ErrSigningDisabled before anything is
+// written. A chain that already verifies is left untouched, so a second
+// run writes nothing.
 func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, operator string) (RebaselineResult, error) {
 	out := RebaselineResult{TenantID: tenantID}
+	if apply && s.signer == nil {
+		// Never rewrite a chain that cannot be re-anchored by a signed
+		// checkpoint (an uncertified tail is what H-12 exists to prevent).
+		return out, ErrSigningDisabled
+	}
 	marker := func(oldHead, newHead string, rewritten int) *model.AuditEvent {
 		details, _ := json.Marshal(map[string]any{
 			"old_head_hash":   oldHead,
@@ -55,10 +60,6 @@ func (s *Service) Rebaseline(ctx context.Context, tenantID string, apply bool, o
 		return out, nil
 	}
 	if _, err := s.CreateCheckpoint(ctx, tenantID); err != nil {
-		if errors.Is(err, ErrSigningDisabled) {
-			s.log.Warn().Str("tenant", tenantID).Msg("audit rebaseline: signing disabled, no checkpoint created")
-			return out, nil
-		}
 		return out, fmt.Errorf("rebaseline %s: checkpoint: %w", tenantID, err)
 	}
 	out.Checkpointed = true
