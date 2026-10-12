@@ -193,6 +193,11 @@ global:
     ztTokenPepperKey: zt-token-pepper
     onlyofficeJWTKey: onlyoffice-jwt
     dsrAnonymizeSaltKey: dsr-anonymize-salt
+    # document: e-discovery export signing key (required; the service would
+    # otherwise fall back to the gateway secret).
+    ediscoverySigningKeyKey: ediscovery-signing-key
+    # document: WOPI access-token secret (only read when coauth.enabled).
+    wopiSecretKey: wopi-secret
 
   # Stripe webhook signing secret — billing refuses to boot in prod without
   # it (any value works if Stripe is unused).
@@ -219,6 +224,22 @@ global:
   #     valueFrom: { secretKeyRef: { name: my-twilio, key: token } }
   # Secrets referenced here are yours to create (not in the ESO inventory).
   extraEnv: []
+
+# ============================================================================
+# Co-authoring (ADR 0065, WOPI)
+# ============================================================================
+# Off by default: /api/v1/documents/{id}/coauth and the WOPI host answer 503
+# without SEDOC_COAUTH_URL and SEDOC_WOPI_SECRET. Enabling it needs the
+# editor's browser-facing base URL here and wopi-secret in
+# global.platformSecrets.
+coauth:
+  enabled: false
+  provider: collabora      # collabora | onlyoffice
+  url: ""                  # e.g. https://office.example.com
+
+# Optional stable SAML SP identity for auth (Secret with tls.crt / tls.key).
+saml:
+  spSecret: sedoc-saml-sp
 
 # ============================================================================
 # License (O-10, ADR 0095)
@@ -307,6 +328,9 @@ gateway:
   secret:
     name: sedoc-gateway
     sharedSecretKey: shared-secret
+    # Optional rotation window: put the OLD secret here while rolling a new
+    # shared-secret; backends accept both (SEDOC_GATEWAY_SECRET_PREV).
+    previousSecretKey: previous-shared-secret
   # DEC-5 — peers Kong trusts for X-Forwarded-For (KONG_TRUSTED_IPS): the
   # ingress controller pods' CIDR, or your load balancer's range when the
   # Service is a LoadBalancer. REQUIRED, no default (same reasoning as

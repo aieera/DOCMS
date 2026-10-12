@@ -106,6 +106,14 @@ the list, so the password entries come first.
     secretKeyRef:
       name: {{ .Values.gateway.secret.name }}
       key:  {{ .Values.gateway.secret.sharedSecretKey }}
+# Rotation window: the previous signature is still accepted while set.
+# Optional — absent key = no window.
+- name: SEDOC_GATEWAY_SECRET_PREV
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.gateway.secret.name }}
+      key:  {{ .Values.gateway.secret.previousSecretKey }}
+      optional: true
 {{- end }}
 
 {{/*
@@ -241,6 +249,10 @@ Optional references (e.g. the audit signing key) are deliberately absent.
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ztTokenPepperKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.onlyofficeJWTKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.dsrAnonymizeSaltKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ediscoverySigningKeyKey) }}
+{{- if $v.coauth.enabled }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.wopiSecretKey) }}
+{{- end }}
 {{- end }}
 {{- if $v.billing.enabled }}
 {{- $refs = append $refs (list $v.global.billing.existingSecret $v.global.billing.stripeWebhookSecretKey) }}

@@ -90,6 +90,9 @@ x-go-env: &go-env
   SEDOC_DSR_ANONYMIZE_SALT: "${SEDOC_DSR_ANONYMIZE_SALT:-vaultdms-dev-salt}"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
+  # WORM lock: storage serves /internal/v1/worm-lock on its health port
+  # (8081); the code default http://storage:8080 has no listener.
+  SEDOC_STORAGE_INTERNAL_URL: "http://storage:8081"
   # graphql-gateway upstream gRPC clients. Without these set, the gateway's
   # config defaults weren't taking effect, so the Audit/Document/Workflow
   # clients were nil and resolvers (e.g. the per-document Activity feed) silently
