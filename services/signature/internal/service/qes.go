@@ -17,10 +17,12 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/database"
 	tsplib "github.com/aieera/sedoc/pkg/signing/tsp"
+	"github.com/aieera/sedoc/services/signature/internal/model"
 	"github.com/aieera/sedoc/services/signature/internal/repository"
 )
 
@@ -56,14 +59,13 @@ func (s *Service) AddQES(cfg QESConfig) {
 	s.qes = &cfg
 }
 
-// StartQESInput is what the handler unwraps from the request body.
+// StartQESInput is what the handler unwraps from the request body. It
+// deliberately carries no document bytes, hash or signer identity (DEC-17):
+// the signer is the caller and the bytes are the request's stored version.
 type StartQESInput struct {
-	RequestID  string
-	SignerID   string
-	Provider   tsplib.Provider
-	DocumentBytes []byte // hashed inside; never persisted
-	SignerEmail string
-	SignerName  string
+	RequestID   string
+	SignerID    string
+	Provider    tsplib.Provider
 	CountryCode string
 	Reason      string
 	Location    string
@@ -71,36 +73,79 @@ type StartQESInput struct {
 
 // StartQESResult is returned to the frontend.
 type StartQESResult struct {
-	SessionID    string    `json:"session_id"`
-	RedirectURL  string    `json:"redirect_url"`
-	Provider     string    `json:"provider"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	SessionID   string    `json:"session_id"`
+	RedirectURL string    `json:"redirect_url"`
+	Provider    string    `json:"provider"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
-// StartQES kicks off a QES ceremony. Steps:
-//   1. Resolve the TSP adapter; reject unknown providers.
-//   2. Hash the document bytes once (SHA-256) — adapters always
-//      take the hex digest.
-//   3. tsp.Register (no-op for some QTSPs, but we always call it
-//      so adapters can lazily provision).
-//   4. Mint a session row with state secret + return URL.
-//   5. tsp.Authorize → redirect URL.
-//   6. Persist row + audit outbox event in one tx.
-func (s *Service) StartQES(ctx context.Context, tenantID, userID string, in StartQESInput) (*StartQESResult, error) {
+// StartQES kicks off a QES ceremony for the calling signer. Steps:
+//  1. Resolve the TSP adapter; reject unknown providers.
+//  2. Load the request in the caller's tenant: it must be open, the
+//     signer must belong to it, still be unsigned, and BE the caller
+//     (session e-mail = signer e-mail) — review finding S-3.
+//  3. Read the request's own (document, version) bytes as the caller and
+//     hash them (DEC-17) — never client-supplied bytes.
+//  4. tsp.Register with the signer row's identity.
+//  5. Mint a session row with state secret + return URL.
+//  6. tsp.Authorize → redirect URL.
+//  7. Persist row + audit outbox event in one tx.
+func (s *Service) StartQES(ctx context.Context, actor Actor, in StartQESInput) (*StartQESResult, error) {
 	if s.qes == nil || len(s.qes.Clients) == 0 {
 		return nil, errors.New("qes not configured")
 	}
 	tsp, ok := s.qes.Clients[in.Provider]
 	if !ok {
-		return nil, fmt.Errorf("qes: unsupported provider %q", in.Provider)
+		return nil, fmt.Errorf("%w: unsupported qes provider %q", ErrInvalidRequest, in.Provider)
+	}
+	tenantID := actor.TenantID
+
+	req, err := s.repo.GetByID(ctx, tenantID, in.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, ErrRequestNotFound
+	}
+	if err := checkSignable(req, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	switch {
+	case req.Provider == "internal":
+	case strings.HasPrefix(req.Provider, "qes_"):
+		if req.Provider != "qes_"+string(in.Provider) {
+			return nil, fmt.Errorf("%w: request was created for %s", ErrInvalidRequest, req.Provider)
+		}
+	default:
+		return nil, fmt.Errorf("%w: request provider %q is signed at the vendor, not by QES", ErrInvalidRequest, req.Provider)
+	}
+	var signer *model.Signer
+	for i := range req.Signers {
+		if req.Signers[i].ID == in.SignerID {
+			signer = &req.Signers[i]
+			break
+		}
+	}
+	if signer == nil {
+		return nil, ErrSignerNotFound
+	}
+	if signer.Status == "signed" || signer.Status == "declined" {
+		return nil, fmt.Errorf("%w (status %s)", ErrAlreadySigned, signer.Status)
+	}
+	if actor.Email == "" || !strings.EqualFold(strings.TrimSpace(actor.Email), strings.TrimSpace(signer.Email)) {
+		return nil, fmt.Errorf("%w: only the signer may start their QES ceremony", ErrForbidden)
 	}
 
-	hash := sha256.Sum256(in.DocumentBytes)
+	docBytes, err := s.versionBytes(ctx, actor, req.DocumentID, req.VersionID)
+	if err != nil {
+		return nil, err
+	}
+	hash := sha256.Sum256(docBytes)
 	docHash := hex.EncodeToString(hash[:])
 
 	reg, err := tsp.Register(ctx, tsplib.RegisterReq{
-		TenantID: tenantID, SignerEmail: in.SignerEmail,
-		SignerName: in.SignerName, CountryCode: in.CountryCode,
+		TenantID: tenantID, SignerEmail: signer.Email,
+		SignerName: signer.Name, CountryCode: in.CountryCode,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("qes register: %w", err)
@@ -120,7 +165,7 @@ func (s *Service) StartQES(ctx context.Context, tenantID, userID string, in Star
 	auth, err := tsp.Authorize(ctx, tsplib.AuthorizeReq{
 		TenantID: tenantID, SubjectID: reg.SubjectID,
 		DocumentHash: docHash, HashAlgo: "SHA-256",
-		ReturnURL: returnURL, SignerEmail: in.SignerEmail,
+		ReturnURL: returnURL, SignerEmail: signer.Email,
 		Reason: in.Reason, Location: in.Location,
 	})
 	if err != nil {
@@ -138,7 +183,7 @@ func (s *Service) StartQES(ctx context.Context, tenantID, userID string, in Star
 
 	row := &repository.TSPSession{
 		ID: sessionID, TenantID: tenantID,
-		RequestID: in.RequestID, SignerID: in.SignerID,
+		RequestID: req.ID, SignerID: signer.ID,
 		Provider: string(in.Provider), Status: "pending",
 		DocumentHash: docHash, ExternalID: auth.ExternalID,
 		RedirectURL: auth.RedirectURL, ReturnURL: returnURL,
@@ -155,9 +200,9 @@ func (s *Service) StartQES(ctx context.Context, tenantID, userID string, in Star
 			"specversion": "1.0", "type": "dms.audit.qes.started.v1",
 			"source": "/vaultdms/signature",
 			"data": map[string]string{
-				"tenant_id": tenantID, "request_id": in.RequestID,
-				"signer_id": in.SignerID, "session_id": sessionID,
-				"provider": string(in.Provider), "actor": userID,
+				"tenant_id": tenantID, "request_id": req.ID,
+				"signer_id": signer.ID, "session_id": sessionID,
+				"provider": string(in.Provider), "actor": actor.UserID,
 			},
 		})
 		evt := database.NewOutboxEvent(tenantUUID, "dms.audit.qes.started.v1",
@@ -215,10 +260,13 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 	if !ok || verified != row.ID {
 		return nil, errors.New("qes: state hmac mismatch")
 	}
-	if row.Status == "completed" {
+	switch row.Status {
+	case "completed":
 		// Idempotent: re-issuing the redirect should not double-bill
 		// the QTSP. Just report the existing state.
 		return &HandleReturnResult{RequestID: row.RequestID, Status: "completed"}, nil
+	case "failed":
+		return &HandleReturnResult{RequestID: row.RequestID, Status: "failed", FailureReason: row.FailureReason}, nil
 	}
 	if row.Status == "expired" || time.Now().After(row.ExpiresAt) {
 		_ = s.repo.MarkTSPSessionFailed(ctx, tenantID, row.ID, "session expired before return")
@@ -239,13 +287,30 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 		return nil, err
 	}
 
-	// Flip pending → authorized in its own tx. If Sign() crashes
-	// later, the session row stays 'authorized' (not 'pending'),
-	// so the reaper won't blindly re-publish a redirect.
+	// Claim the session: flip pending → authorized in its own tx. Only the
+	// return that wins the flip calls Sign() and records the outcome; a
+	// duplicate or concurrent return reports the session's current state
+	// instead, so it can neither double-bill the QTSP nor overwrite the
+	// winner's completion with its own "consumed" failure (S-10). If Sign()
+	// crashes later, the row stays 'authorized' (not 'pending'), so the
+	// reaper won't blindly re-publish a redirect.
+	var claimed bool
 	if err := database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		return s.repo.MarkTSPSessionAuthorized(ctx, tx, tenantID, row.ID)
+		var err error
+		claimed, err = s.repo.MarkTSPSessionAuthorized(ctx, tx, tenantID, row.ID)
+		return err
 	}); err != nil {
 		return nil, fmt.Errorf("qes mark authorized: %w", err)
+	}
+	if !claimed {
+		cur, err := s.repo.GetTSPSession(ctx, tenantID, row.ID)
+		if err != nil {
+			return nil, fmt.Errorf("qes lookup: %w", err)
+		}
+		if cur == nil {
+			return nil, errors.New("qes: session not found")
+		}
+		return &HandleReturnResult{RequestID: cur.RequestID, Status: cur.Status, FailureReason: cur.FailureReason}, nil
 	}
 
 	signed, err := tsp.Sign(ctx, tsplib.SignReq{
@@ -282,6 +347,20 @@ func (s *Service) HandleReturn(ctx context.Context, tenantID string, in HandleRe
 			return err
 		}
 		if err := s.repo.MarkTSPSessionCompletedTx(ctx, tx, tenantID, row.ID); err != nil {
+			return err
+		}
+		// Keep the QTSP's signed hash (S-3): it is the signature value the
+		// embedder needs and the evidence of what the QTSP signed. Stored on
+		// the signer row next to the certificate it was made with.
+		evidence, _ := json.Marshal(map[string]string{
+			"type":            "qes",
+			"provider":        row.Provider,
+			"session_id":      row.ID,
+			"document_hash":   row.DocumentHash,
+			"hash_algo":       "SHA-256",
+			"signed_hash_b64": base64.StdEncoding.EncodeToString(signed.SignedHash),
+		})
+		if err := s.repo.SetSignerQESEvidenceTx(ctx, tx, tenantID, row.RequestID, row.SignerID, cert.ID, evidence); err != nil {
 			return err
 		}
 		audit, _ := json.Marshal(map[string]any{

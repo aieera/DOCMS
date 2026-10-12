@@ -103,39 +103,50 @@ func (r *Repository) GetTSPSessionTx(ctx context.Context, q RowQuerier, tenantID
 	return s, nil
 }
 
-// MarkTSPSessionAuthorized records that the user has returned from the
-// QTSP and we are about to call Sign(). Defensive against the user
-// hitting the return URL twice (browser back, double-submit) — we
-// only flip pending → authorized.
-func (r *Repository) MarkTSPSessionAuthorized(ctx context.Context, q Querier, tenantID, id string) error {
-	_, err := q.Exec(ctx, `
+// MarkTSPSessionAuthorized claims the session for this return: it flips
+// pending → authorized and reports whether THIS caller made the flip. Only
+// the claimer may call Sign(); a second return of the same redirect (browser
+// back, double-submit, a concurrent request) gets false and must not sign
+// or record an outcome (S-10).
+func (r *Repository) MarkTSPSessionAuthorized(ctx context.Context, q Querier, tenantID, id string) (bool, error) {
+	ct, err := q.Exec(ctx, `
 		UPDATE tsp_signing_sessions
 		   SET status = 'authorized', authorized_at = now()
 		 WHERE tenant_id = $1 AND id = $2 AND status = 'pending'`,
 		tenantID, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
 }
 
-// MarkTSPSessionCompletedTx flips authorized → completed once the
-// signed hash has been embedded.
+// MarkTSPSessionCompletedTx flips authorized → completed.
+// ErrStateConflict when the session was not authorized (another return
+// finished it, or it expired/failed meanwhile).
 func (r *Repository) MarkTSPSessionCompletedTx(ctx context.Context, q Querier, tenantID, id string) error {
-	_, err := q.Exec(ctx, `
+	ct, err := q.Exec(ctx, `
 		UPDATE tsp_signing_sessions
 		   SET status = 'completed', completed_at = now()
-		 WHERE tenant_id = $1 AND id = $2`,
+		 WHERE tenant_id = $1 AND id = $2 AND status = 'authorized'`,
 		tenantID, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrStateConflict
+	}
+	return nil
 }
 
-// MarkTSPSessionFailed records a failure reason. Always succeeds —
-// even if the row isn't in pending/authorized any more — so the
-// caller can use it as a final cleanup step.
+// MarkTSPSessionFailed records a failure reason on a session that has not
+// completed. A completed session is never flipped to failed — a late or
+// concurrent failure must not erase a signature the QTSP produced (S-10).
 func (r *Repository) MarkTSPSessionFailed(ctx context.Context, tenantID, id, reason string) error {
 	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			UPDATE tsp_signing_sessions
 			   SET status = 'failed', failure_reason = $3
-			 WHERE tenant_id = $1 AND id = $2`,
+			 WHERE tenant_id = $1 AND id = $2 AND status <> 'completed'`,
 			tenantID, id, reason)
 		return err
 	})
@@ -178,6 +189,24 @@ func (r *Repository) CreateQESCertificateTx(ctx context.Context, q Querier, c *Q
 		c.SubjectDN, c.IssuerDN, c.SerialHex, c.NotBefore, c.NotAfter,
 		c.CertPEM, c.ChainPEM, c.LTVRevocation, c.CreatedAt)
 	return err
+}
+
+// SetSignerQESEvidenceTx stores the QES evidence (the QTSP's signed hash,
+// session, document hash) in signature_signers.signature_data and links the
+// certificate the signature was made with.
+func (r *Repository) SetSignerQESEvidenceTx(ctx context.Context, q Querier, tenantID, requestID, signerID, certificateID string, evidence []byte) error {
+	ct, err := q.Exec(ctx, `
+		UPDATE signature_signers
+		   SET signature_data = $4::jsonb, certificate_id = $5
+		 WHERE tenant_id = $1 AND request_id = $2 AND id = $3`,
+		tenantID, requestID, signerID, string(evidence), certificateID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // GetQESCertificateByRequest returns the cert(s) for a signature request
