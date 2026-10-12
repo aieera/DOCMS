@@ -16,11 +16,13 @@
 package middleware
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/pkg/database"
 )
 
 // APIKeyAuthConfig bundles the middleware's deps.
@@ -99,14 +102,64 @@ func APIKeyAuth(cfg APIKeyAuthConfig) func(http.Handler) http.Handler {
 			// API key's scope list on ctx. Session-cookie callers
 			// don't get this — they use role-based gating instead.
 			ctx = auth.WithScopes(ctx, scopes)
-			// Best-effort last-used touch. Fire-and-forget so a slow
-			// UPDATE never blocks the actual request response.
-			go func() {
-				_, _ = pool.Exec(r.Context(), `UPDATE api_keys SET last_used_at = now() WHERE id = $1`, keyID)
-			}()
+			touchAPIKey(r.Context(), pool, tenantID, keyID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+const (
+	// apiKeyTouchInterval bounds last_used_at writes to one per key per
+	// minute — the column is an "is this key still in use" signal, not
+	// an access log, and a busy integration would otherwise UPDATE the
+	// same row on every request.
+	apiKeyTouchInterval = time.Minute
+	apiKeyTouchTimeout  = 2 * time.Second
+)
+
+var apiKeyTouches = struct {
+	sync.Mutex
+	last map[uuid.UUID]time.Time
+}{last: map[uuid.UUID]time.Time{}}
+
+// apiKeyTouchDue reports whether keyID's last_used_at should be written
+// now, reserving the slot when it is.
+func apiKeyTouchDue(keyID uuid.UUID, now time.Time) bool {
+	apiKeyTouches.Lock()
+	defer apiKeyTouches.Unlock()
+	if last, ok := apiKeyTouches.last[keyID]; ok && now.Sub(last) < apiKeyTouchInterval {
+		return false
+	}
+	apiKeyTouches.last[keyID] = now
+	return true
+}
+
+// touchAPIKey records last_used_at off the request path (R-4). The write
+// is detached from the request (context.WithoutCancel — net/http cancels
+// r.Context() as soon as the response is written, which used to drop
+// most touches) with its own short timeout, and runs inside the key's
+// tenant transaction because api_keys is FORCE RLS. A failed touch frees
+// the slot so the next request retries.
+func touchAPIKey(reqCtx context.Context, pool *pgxpool.Pool, tenantID, keyID uuid.UUID) {
+	if !apiKeyTouchDue(keyID, time.Now()) {
+		return
+	}
+	ctx := context.WithoutCancel(reqCtx)
+	go func() {
+		ctx, cancel := context.WithTimeout(ctx, apiKeyTouchTimeout)
+		defer cancel()
+		err := database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx,
+				`UPDATE api_keys SET last_used_at = now() WHERE tenant_id = $1 AND id = $2`,
+				tenantID, keyID)
+			return e
+		})
+		if err != nil {
+			apiKeyTouches.Lock()
+			delete(apiKeyTouches.last, keyID)
+			apiKeyTouches.Unlock()
+		}
+	}()
 }
 
 func extractBearer(r *http.Request) string {

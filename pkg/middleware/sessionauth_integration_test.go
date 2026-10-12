@@ -198,3 +198,44 @@ func mustSeedGroup(t *testing.T, f *identityFixture, user uuid.UUID) uuid.UUID {
 	require.NoError(t, err)
 	return g
 }
+
+// TestAPIKeyAuth_TouchSurvivesRequestEnd pins R-4: the last_used_at touch
+// used to run in a goroutine on r.Context(), which is cancelled the
+// moment the response is written — so it was usually lost (and under
+// NOBYPASSRLS it updated zero rows anyway, outside a tenant tx). It must
+// land even when the request context is cancelled right after the
+// handler returns, and it is throttled to once per minute per key.
+func TestAPIKeyAuth_TouchSurvivesRequestEnd(t *testing.T) {
+	f := newIdentityFixture(t)
+	user := f.seedUser(t, "touch@example.com", "member", "active")
+	token, keyID := f.seedAPIKey(t, user, []string{"documents:read"}, false, false)
+	mw := APIKeyAuth(APIKeyAuthConfig{Pool: f.db.App, RequiredScope: "documents:read"})
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	serve := func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		r := httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(ctx)
+		r.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, r)
+		cancel() // the request is over: net/http cancels its context here
+		require.Equal(t, http.StatusOK, rr.Code)
+	}
+	lastUsed := func() *time.Time {
+		var ts *time.Time
+		require.NoError(t, f.db.Super.QueryRow(f.ctx,
+			`SELECT last_used_at FROM api_keys WHERE tenant_id = $1 AND id = $2`, f.tenant, keyID).Scan(&ts))
+		return ts
+	}
+
+	serve()
+	var first *time.Time
+	require.Eventually(t, func() bool { first = lastUsed(); return first != nil },
+		5*time.Second, 50*time.Millisecond, "last_used_at must be written after the request context is cancelled")
+
+	serve()
+	time.Sleep(500 * time.Millisecond)
+	second := lastUsed()
+	require.NotNil(t, second)
+	require.True(t, second.Equal(*first), "touch is throttled to once per minute per key (got %v then %v)", first, second)
+}
