@@ -3,6 +3,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/aieera/sedoc/pkg/database"
 	"github.com/aieera/sedoc/services/signature/internal/model"
 )
 
@@ -30,12 +33,39 @@ type RowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// ErrNotFound is returned by writes that matched no row for the tenant.
+var ErrNotFound = errors.New("signature: not found")
+
 type Repository struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
+// withTenant runs fn inside database.WithTenantTx so app.current_tenant is
+// set. Every signature table is FORCE ROW LEVEL SECURITY: under the
+// production NOBYPASSRLS role a raw-pool read returns zero rows and a
+// raw-pool write is rejected by the WITH CHECK policy (review finding M-15).
+// The non-Tx methods below all go through here; the *Tx variants run inside
+// a transaction the caller already opened with WithTenantTx.
+func (r *Repository) withTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx) error) error {
+	tid, err := uuid.Parse(tenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	return database.WithTenantTx(ctx, r.pool, tid, fn)
+}
+
+// forEachTenant runs fn once per tenant inside that tenant's transaction.
+// Used by the background sweeps (token refresh, envelope reconcile, QES
+// reaper), which are legitimately cross-tenant but cannot scan a FORCE-RLS
+// table without a tenant context.
+func (r *Repository) forEachTenant(ctx context.Context, fn func(tenantID uuid.UUID, tx pgx.Tx) error) error {
+	return database.ForEachTenant(ctx, r.pool, fn)
+}
+
 func (r *Repository) Create(ctx context.Context, req *model.SignatureRequest) error {
-	return r.CreateTx(ctx, r.pool, req)
+	return r.withTenant(ctx, req.TenantID, func(tx pgx.Tx) error {
+		return r.CreateTx(ctx, tx, req)
+	})
 }
 
 // CreateTx inserts the request + every non-empty signer in the
@@ -85,7 +115,16 @@ func (r *Repository) CreateTx(ctx context.Context, q Querier, req *model.Signatu
 }
 
 func (r *Repository) GetByID(ctx context.Context, tenantID, id string) (*model.SignatureRequest, error) {
-	return r.GetByIDTx(ctx, r.pool, tenantID, id)
+	var out *model.SignatureRequest
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		req, err := r.GetByIDTx(ctx, tx, tenantID, id)
+		out = req
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // SignerSigningToken returns the stored per-signer signing_url_token (the
@@ -93,12 +132,14 @@ func (r *Repository) GetByID(ctx context.Context, tenantID, id string) (*model.S
 // Empty string (nil error) when the signer is absent for this tenant/request.
 func (r *Repository) SignerSigningToken(ctx context.Context, tenantID, requestID, signerID string) (string, error) {
 	var tok string
-	err := r.pool.QueryRow(ctx,
-		`SELECT COALESCE(signing_url_token,'') FROM signature_signers
-		  WHERE tenant_id = $1 AND request_id = $2 AND id = $3`,
-		tenantID, requestID, signerID).Scan(&tok)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT COALESCE(signing_url_token,'') FROM signature_signers
+			  WHERE tenant_id = $1 AND request_id = $2 AND id = $3`,
+			tenantID, requestID, signerID).Scan(&tok)
+	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
 		}
 		return "", err
@@ -143,7 +184,20 @@ func (r *Repository) GetByIDTx(ctx context.Context, q RowQuerier, tenantID, id s
 }
 
 func (r *Repository) ListByDocument(ctx context.Context, tenantID, documentID string) ([]*model.SignatureRequest, error) {
-	rows, err := r.pool.Query(ctx, `
+	var out []*model.SignatureRequest
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		reqs, err := r.listByDocumentTx(ctx, tx, tenantID, documentID)
+		out = reqs
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repository) listByDocumentTx(ctx context.Context, q RowQuerier, tenantID, documentID string) ([]*model.SignatureRequest, error) {
+	rows, err := q.Query(ctx, `
 		SELECT id, tenant_id, document_id, version_id, COALESCE(requested_by::text,''),
 		       status, provider, provider_envelope_id,
 		       created_at, completed_at, expires_at,
@@ -177,7 +231,7 @@ func (r *Repository) ListByDocument(ctx context.Context, tenantID, documentID st
 	// Hydrate signers in a second pass to keep the main query
 	// JOIN-free; usually 0–3 signature requests per doc.
 	for _, req := range out {
-		signers, err := r.signersFor(ctx, tenantID, req.ID)
+		signers, err := r.signersForTx(ctx, q, tenantID, req.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -207,12 +261,8 @@ func (r *Repository) ReleaseSealTx(ctx context.Context, q Querier, tenantID, id 
 	return err
 }
 
-// signersFor returns the signature_signers rows attached to one
+// signersForTx returns the signature_signers rows attached to one
 // request, ordered by signing position.
-func (r *Repository) signersFor(ctx context.Context, tenantID, requestID string) ([]model.Signer, error) {
-	return r.signersForTx(ctx, r.pool, tenantID, requestID)
-}
-
 func (r *Repository) signersForTx(ctx context.Context, q RowQuerier, tenantID, requestID string) ([]model.Signer, error) {
 	rows, err := q.Query(ctx, `
 		SELECT id, COALESCE(signer_email,''), COALESCE(signer_name,''),
@@ -270,14 +320,27 @@ func defaultOrder(n, fallback int) int {
 	return n
 }
 
+// UpdateStatus sets the request status. ErrNotFound when no row matched —
+// an unknown id, another tenant's id, or a row RLS hides — so a caller never
+// reports a transition that did not happen.
 func (r *Repository) UpdateStatus(ctx context.Context, tenantID, id, status string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE signature_requests SET status = $1 WHERE tenant_id = $2 AND id = $3`, status, tenantID, id)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		ct, err := tx.Exec(ctx,
+			`UPDATE signature_requests SET status = $1 WHERE tenant_id = $2 AND id = $3`, status, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 func (r *Repository) Complete(ctx context.Context, tenantID, id string) error {
-	return r.CompleteTx(ctx, r.pool, tenantID, id)
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return r.CompleteTx(ctx, tx, tenantID, id)
+	})
 }
 
 func (r *Repository) CompleteTx(ctx context.Context, q Querier, tenantID, id string) error {
@@ -289,7 +352,9 @@ func (r *Repository) CompleteTx(ctx context.Context, q Querier, tenantID, id str
 }
 
 func (r *Repository) UpdateSigners(ctx context.Context, tenantID, id string, signers []model.Signer) error {
-	return r.UpdateSignersTx(ctx, r.pool, tenantID, id, signers)
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return r.UpdateSignersTx(ctx, tx, tenantID, id, signers)
+	})
 }
 
 // UpdateSignersTx updates the per-signer rows in signature_signers.

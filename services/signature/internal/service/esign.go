@@ -828,15 +828,12 @@ func (s *Service) HandleWebhook(ctx context.Context, tenantID string, provider e
 // ListInProgressESign returns active vendor envelopes for the
 // /admin status tab.
 func (s *Service) ListInProgressESign(ctx context.Context, tenantID string) ([]map[string]any, error) {
-	stale, err := s.repo.FindStaleInProgressRequests(ctx, 0)
+	stale, err := s.repo.FindInProgressESignRequests(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]map[string]any, 0, len(stale))
 	for _, r := range stale {
-		if r.TenantID != tenantID {
-			continue
-		}
 		out = append(out, map[string]any{
 			"request_id":  r.ID,
 			"envelope_id": r.EnvelopeID,

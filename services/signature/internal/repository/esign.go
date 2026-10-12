@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -30,7 +31,13 @@ type ESignToken struct {
 // Idempotent: re-connecting with a new account overwrites the
 // previous row.
 func (r *Repository) UpsertESignToken(ctx context.Context, t *ESignToken) error {
-	_, err := r.pool.Exec(ctx, `
+	return r.withTenant(ctx, t.TenantID, func(tx pgx.Tx) error {
+		return r.upsertESignTokenTx(ctx, tx, t)
+	})
+}
+
+func (r *Repository) upsertESignTokenTx(ctx context.Context, q Querier, t *ESignToken) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO esign_oauth_tokens (
 			tenant_id, provider, access_token, refresh_token,
 			expires_at, account_id, base_uri, scope, connected_by, connected_at, updated_at)
@@ -54,13 +61,15 @@ func (r *Repository) GetESignToken(ctx context.Context, tenantID, provider strin
 	t := &ESignToken{}
 	var account, base, scope, connectedBy *string
 	var refresh *string
-	err := r.pool.QueryRow(ctx, `
-		SELECT tenant_id, provider, access_token, refresh_token,
-			expires_at, account_id, base_uri, scope, connected_by, connected_at, updated_at
-		FROM esign_oauth_tokens
-		WHERE tenant_id = $1 AND provider = $2`, tenantID, provider).
-		Scan(&t.TenantID, &t.Provider, &t.AccessToken, &refresh,
-			&t.ExpiresAt, &account, &base, &scope, &connectedBy, &t.ConnectedAt, &t.UpdatedAt)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT tenant_id, provider, access_token, refresh_token,
+				expires_at, account_id, base_uri, scope, connected_by, connected_at, updated_at
+			FROM esign_oauth_tokens
+			WHERE tenant_id = $1 AND provider = $2`, tenantID, provider).
+			Scan(&t.TenantID, &t.Provider, &t.AccessToken, &refresh,
+				&t.ExpiresAt, &account, &base, &scope, &connectedBy, &t.ConnectedAt, &t.UpdatedAt)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -88,15 +97,28 @@ func (r *Repository) GetESignToken(ctx context.Context, tenantID, provider strin
 // ListESignTokens returns every connected provider for a tenant.
 // Used by the /admin/integrations status block.
 func (r *Repository) ListESignTokens(ctx context.Context, tenantID string) ([]*ESignToken, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT tenant_id, provider, '' AS access_token, '' AS refresh_token,
-			expires_at, COALESCE(account_id,''), COALESCE(base_uri,''), COALESCE(scope,''),
-			COALESCE(connected_by::text,''), connected_at, updated_at
-		FROM esign_oauth_tokens
-		WHERE tenant_id = $1`, tenantID)
+	out := make([]*ESignToken, 0)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT tenant_id, provider, '' AS access_token, '' AS refresh_token,
+				expires_at, COALESCE(account_id,''), COALESCE(base_uri,''), COALESCE(scope,''),
+				COALESCE(connected_by::text,''), connected_at, updated_at
+			FROM esign_oauth_tokens
+			WHERE tenant_id = $1`, tenantID)
+		if err != nil {
+			return err
+		}
+		toks, err := scanESignTokens(rows)
+		out = append(out, toks...)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
+	return out, nil
+}
+
+func scanESignTokens(rows pgx.Rows) ([]*ESignToken, error) {
 	defer rows.Close()
 	out := make([]*ESignToken, 0)
 	for rows.Next() {
@@ -112,43 +134,45 @@ func (r *Repository) ListESignTokens(ctx context.Context, tenantID string) ([]*E
 }
 
 // ListESignTokensExpiringWithin returns every tenant's tokens that
-// will expire within `window` (including already-expired ones).
-// Tenant-id-aware — the caller is the refresh worker which runs
-// outside any tenant scope, so we don't gate the read on RLS.
+// will expire within `window` (including already-expired ones). The
+// caller is the refresh worker, which runs outside any tenant scope, so
+// the sweep enumerates tenants and reads each one inside its own tenant
+// transaction (esign_oauth_tokens is FORCE RLS).
 // access_token / refresh_token come back sealed so the caller can
 // hand them straight to the seal-unseal cycle without re-reading.
 func (r *Repository) ListESignTokensExpiringWithin(ctx context.Context, window time.Duration) ([]*ESignToken, error) {
 	cutoff := time.Now().Add(window)
-	rows, err := r.pool.Query(ctx, `
-		SELECT tenant_id, provider, access_token, COALESCE(refresh_token,''),
-			expires_at, COALESCE(account_id,''), COALESCE(base_uri,''), COALESCE(scope,''),
-			COALESCE(connected_by::text,''), connected_at, updated_at
-		FROM esign_oauth_tokens
-		WHERE expires_at <= $1
-		  AND refresh_token IS NOT NULL`, cutoff)
+	out := make([]*ESignToken, 0)
+	err := r.forEachTenant(ctx, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT tenant_id, provider, access_token, COALESCE(refresh_token,''),
+				expires_at, COALESCE(account_id,''), COALESCE(base_uri,''), COALESCE(scope,''),
+				COALESCE(connected_by::text,''), connected_at, updated_at
+			FROM esign_oauth_tokens
+			WHERE tenant_id = $1
+			  AND expires_at <= $2
+			  AND refresh_token IS NOT NULL`, tenantID, cutoff)
+		if err != nil {
+			return err
+		}
+		toks, err := scanESignTokens(rows)
+		out = append(out, toks...)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make([]*ESignToken, 0)
-	for rows.Next() {
-		t := &ESignToken{}
-		if err := rows.Scan(&t.TenantID, &t.Provider, &t.AccessToken, &t.RefreshToken,
-			&t.ExpiresAt, &t.AccountID, &t.BaseURI, &t.Scope,
-			&t.ConnectedBy, &t.ConnectedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // DeleteESignToken disconnects a tenant's link to a provider.
 func (r *Repository) DeleteESignToken(ctx context.Context, tenantID, provider string) error {
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM esign_oauth_tokens WHERE tenant_id = $1 AND provider = $2`,
-		tenantID, provider)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`DELETE FROM esign_oauth_tokens WHERE tenant_id = $1 AND provider = $2`,
+			tenantID, provider)
+		return err
+	})
 }
 
 // ESignEvent mirrors one webhook event row.
@@ -179,35 +203,75 @@ func (r *Repository) InsertESignEventTx(ctx context.Context, q Querier, e *ESign
 	return err
 }
 
+// StaleRequest is one in-progress vendor envelope the reconciler polls.
+type StaleRequest struct{ TenantID, ID, EnvelopeID, Provider string }
+
 // FindStaleInProgressRequests returns request ids the reconciler
 // should poll. Anything 'in_progress' whose updated state hasn't
 // flipped in `since` minutes — covers the case where the vendor
-// ate the webhook.
-func (r *Repository) FindStaleInProgressRequests(ctx context.Context, since time.Duration) ([]struct {
-	TenantID, ID, EnvelopeID, Provider string
-}, error) {
+// ate the webhook. Cross-tenant by nature, so it enumerates tenants and
+// reads each inside its own tenant transaction (signature_requests is
+// FORCE RLS).
+func (r *Repository) FindStaleInProgressRequests(ctx context.Context, since time.Duration) ([]StaleRequest, error) {
 	cutoff := time.Now().Add(-since)
-	rows, err := r.pool.Query(ctx, `
-		SELECT tenant_id, id, COALESCE(provider_envelope_id,''), provider
-		FROM signature_requests
-		WHERE status = 'in_progress'
-		  AND provider IN ('docusign','adobe_sign')
-		  AND COALESCE(provider_envelope_id,'') <> ''
-		  AND created_at < $1`, cutoff)
+	out := make([]StaleRequest, 0)
+	err := r.forEachTenant(ctx, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT tenant_id, id, COALESCE(provider_envelope_id,''), provider
+			FROM signature_requests
+			WHERE tenant_id = $1
+			  AND status = 'in_progress'
+			  AND provider IN ('docusign','adobe_sign')
+			  AND COALESCE(provider_envelope_id,'') <> ''
+			  AND created_at < $2`, tenantID, cutoff)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var sr StaleRequest
+			if err := rows.Scan(&sr.TenantID, &sr.ID, &sr.EnvelopeID, &sr.Provider); err != nil {
+				return err
+			}
+			out = append(out, sr)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	type row struct{ TenantID, ID, EnvelopeID, Provider string }
-	out := make([]struct{ TenantID, ID, EnvelopeID, Provider string }, 0)
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.TenantID, &r.ID, &r.EnvelopeID, &r.Provider); err != nil {
-			return nil, err
+	return out, nil
+}
+
+// FindInProgressESignRequests returns one tenant's in-progress vendor
+// envelopes for the admin status tab.
+func (r *Repository) FindInProgressESignRequests(ctx context.Context, tenantID string) ([]StaleRequest, error) {
+	out := make([]StaleRequest, 0)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT tenant_id, id, COALESCE(provider_envelope_id,''), provider
+			FROM signature_requests
+			WHERE tenant_id = $1
+			  AND status = 'in_progress'
+			  AND provider IN ('docusign','adobe_sign')
+			  AND COALESCE(provider_envelope_id,'') <> ''`, tenantID)
+		if err != nil {
+			return err
 		}
-		out = append(out, r)
+		defer rows.Close()
+		for rows.Next() {
+			var sr StaleRequest
+			if err := rows.Scan(&sr.TenantID, &sr.ID, &sr.EnvelopeID, &sr.Provider); err != nil {
+				return err
+			}
+			out = append(out, sr)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // SetEnvelopeID stamps the vendor envelope id onto the request.
@@ -225,10 +289,12 @@ func (r *Repository) SetEnvelopeIDTx(ctx context.Context, q Querier, tenantID, r
 // callback with our row when our customField didn't survive.
 func (r *Repository) FindRequestByEnvelope(ctx context.Context, tenantID, envelopeID string) (string, error) {
 	var id string
-	err := r.pool.QueryRow(ctx,
-		`SELECT id FROM signature_requests
-		 WHERE tenant_id = $1 AND provider_envelope_id = $2 LIMIT 1`,
-		tenantID, envelopeID).Scan(&id)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT id FROM signature_requests
+			 WHERE tenant_id = $1 AND provider_envelope_id = $2 LIMIT 1`,
+			tenantID, envelopeID).Scan(&id)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}

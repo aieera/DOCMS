@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -66,8 +67,23 @@ func (r *Repository) CreateTSPSessionTx(ctx context.Context, q Querier, s *TSPSe
 // GetTSPSession returns a session row. Returns (nil, nil) when not found
 // so callers can branch without errors.Is(pgx.ErrNoRows).
 func (r *Repository) GetTSPSession(ctx context.Context, tenantID, id string) (*TSPSession, error) {
+	var s *TSPSession
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		row, err := r.GetTSPSessionTx(ctx, tx, tenantID, id)
+		s = row
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// GetTSPSessionTx reads a session inside the caller's tenant tx. Returns
+// (nil, nil) when not found.
+func (r *Repository) GetTSPSessionTx(ctx context.Context, q RowQuerier, tenantID, id string) (*TSPSession, error) {
 	s := &TSPSession{}
-	err := r.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT id, tenant_id, request_id, signer_id, provider, status,
 			document_hash, COALESCE(external_id,''), redirect_url, return_url,
 			state_secret, COALESCE(failure_reason,''), created_at,
@@ -81,7 +97,10 @@ func (r *Repository) GetTSPSession(ctx context.Context, tenantID, id string) (*T
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	return s, err
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // MarkTSPSessionAuthorized records that the user has returned from the
@@ -112,26 +131,39 @@ func (r *Repository) MarkTSPSessionCompletedTx(ctx context.Context, q Querier, t
 // even if the row isn't in pending/authorized any more — so the
 // caller can use it as a final cleanup step.
 func (r *Repository) MarkTSPSessionFailed(ctx context.Context, tenantID, id, reason string) error {
-	_, err := r.pool.Exec(ctx, `
-		UPDATE tsp_signing_sessions
-		   SET status = 'failed', failure_reason = $3
-		 WHERE tenant_id = $1 AND id = $2`,
-		tenantID, id, reason)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE tsp_signing_sessions
+			   SET status = 'failed', failure_reason = $3
+			 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id, reason)
+		return err
+	})
 }
 
 // ReapExpiredTSPSessions flips pending/authorized rows past expires_at
 // to 'expired'. Called by the 5-min reaper loop.
+// Enumerates tenants: tsp_signing_sessions is FORCE RLS, so a raw-pool
+// UPDATE under the production role would match nothing.
 func (r *Repository) ReapExpiredTSPSessions(ctx context.Context) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE tsp_signing_sessions
-		   SET status = 'expired'
-		 WHERE status IN ('pending','authorized')
-		   AND expires_at < now()`)
+	var total int64
+	err := r.forEachTenant(ctx, func(tenantID uuid.UUID, tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE tsp_signing_sessions
+			   SET status = 'expired'
+			 WHERE tenant_id = $1
+			   AND status IN ('pending','authorized')
+			   AND expires_at < now()`, tenantID)
+		if err != nil {
+			return err
+		}
+		total += tag.RowsAffected()
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	return tag.RowsAffected(), nil
+	return total, nil
 }
 
 // CreateQESCertificateTx persists the cert + chain + LTV material.
@@ -151,26 +183,32 @@ func (r *Repository) CreateQESCertificateTx(ctx context.Context, q Querier, c *Q
 // GetQESCertificateByRequest returns the cert(s) for a signature request
 // (one per signer). Used by /qes/cert UI.
 func (r *Repository) GetQESCertificateByRequest(ctx context.Context, tenantID, requestID string) ([]*QESCertificate, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, tenant_id, signer_id, request_id, session_id, provider,
-			subject_dn, issuer_dn, serial_hex, not_before, not_after,
-			cert_pem, COALESCE(chain_pem,''), ltv_revocation, created_at
-		FROM qes_certificates
-		WHERE tenant_id = $1 AND request_id = $2
-		ORDER BY created_at ASC`, tenantID, requestID)
+	out := make([]*QESCertificate, 0)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, tenant_id, signer_id, request_id, session_id, provider,
+				subject_dn, issuer_dn, serial_hex, not_before, not_after,
+				cert_pem, COALESCE(chain_pem,''), ltv_revocation, created_at
+			FROM qes_certificates
+			WHERE tenant_id = $1 AND request_id = $2
+			ORDER BY created_at ASC`, tenantID, requestID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			c := &QESCertificate{}
+			if err := rows.Scan(&c.ID, &c.TenantID, &c.SignerID, &c.RequestID, &c.SessionID, &c.Provider,
+				&c.SubjectDN, &c.IssuerDN, &c.SerialHex, &c.NotBefore, &c.NotAfter,
+				&c.CertPEM, &c.ChainPEM, &c.LTVRevocation, &c.CreatedAt); err != nil {
+				return err
+			}
+			out = append(out, c)
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make([]*QESCertificate, 0)
-	for rows.Next() {
-		c := &QESCertificate{}
-		if err := rows.Scan(&c.ID, &c.TenantID, &c.SignerID, &c.RequestID, &c.SessionID, &c.Provider,
-			&c.SubjectDN, &c.IssuerDN, &c.SerialHex, &c.NotBefore, &c.NotAfter,
-			&c.CertPEM, &c.ChainPEM, &c.LTVRevocation, &c.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return out, nil
 }

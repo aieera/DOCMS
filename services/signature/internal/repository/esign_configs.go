@@ -29,7 +29,13 @@ type ESignProviderConfig struct {
 }
 
 func (r *Repository) UpsertESignProviderConfig(ctx context.Context, c *ESignProviderConfig) error {
-	_, err := r.pool.Exec(ctx, `
+	return r.withTenant(ctx, c.TenantID, func(tx pgx.Tx) error {
+		return r.upsertESignProviderConfigTx(ctx, tx, c)
+	})
+}
+
+func (r *Repository) upsertESignProviderConfigTx(ctx context.Context, q Querier, c *ESignProviderConfig) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO esign_provider_configs (
 			tenant_id, provider, client_id, client_secret_sealed,
 			environment, authorize_url_override, token_url_override,
@@ -55,16 +61,18 @@ func (r *Repository) UpsertESignProviderConfig(ctx context.Context, c *ESignProv
 func (r *Repository) GetESignProviderConfig(ctx context.Context, tenantID, provider string) (*ESignProviderConfig, error) {
 	c := &ESignProviderConfig{}
 	var authzOverride, tokenOverride, region, configuredBy *string
-	err := r.pool.QueryRow(ctx, `
-		SELECT tenant_id, provider, client_id, client_secret_sealed,
-			environment, authorize_url_override, token_url_override,
-			region, configured_by, created_at, updated_at
-		FROM esign_provider_configs
-		WHERE tenant_id = $1 AND provider = $2`,
-		tenantID, provider,
-	).Scan(&c.TenantID, &c.Provider, &c.ClientID, &c.ClientSecretSealed,
-		&c.Environment, &authzOverride, &tokenOverride, &region,
-		&configuredBy, &c.CreatedAt, &c.UpdatedAt)
+	err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT tenant_id, provider, client_id, client_secret_sealed,
+				environment, authorize_url_override, token_url_override,
+				region, configured_by, created_at, updated_at
+			FROM esign_provider_configs
+			WHERE tenant_id = $1 AND provider = $2`,
+			tenantID, provider,
+		).Scan(&c.TenantID, &c.Provider, &c.ClientID, &c.ClientSecretSealed,
+			&c.Environment, &authzOverride, &tokenOverride, &region,
+			&configuredBy, &c.CreatedAt, &c.UpdatedAt)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -87,8 +95,10 @@ func (r *Repository) GetESignProviderConfig(ctx context.Context, tenantID, provi
 }
 
 func (r *Repository) DeleteESignProviderConfig(ctx context.Context, tenantID, provider string) error {
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM esign_provider_configs WHERE tenant_id = $1 AND provider = $2`,
-		tenantID, provider)
-	return err
+	return r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx,
+			`DELETE FROM esign_provider_configs WHERE tenant_id = $1 AND provider = $2`,
+			tenantID, provider)
+		return err
+	})
 }
