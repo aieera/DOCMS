@@ -143,3 +143,44 @@ func TestDispose_UnresolvedCutoffRefused(t *testing.T) {
 	decl := f.declareUnder(t, f.doc(t, 1), "declaration", 0)
 	require.NoError(t, f.dispose(decl.ID))
 }
+
+// D-7 (review round 1): ProposeDispositionsAtCutoff only considered rows
+// with a cutoff_date, so a record declared before creation / fixed_date
+// cutoffs were computed (cutoff left NULL) was never proposed for
+// disposition. The sweep now computes a NULL cutoff with the same rule as
+// Declare/Dispose, persists it, and proposes the record once it has passed.
+func TestSweep_RecomputesLegacyNullCutoff(t *testing.T) {
+	f := newRecFixture(t)
+	nullCutoff := func(id uuid.UUID) {
+		_, err := f.pool.Exec(f.ctx, `UPDATE records SET cutoff_date = NULL WHERE tenant_id = $1 AND id = $2`, f.tenant, id)
+		require.NoError(t, err)
+	}
+	expired := f.declareUnder(t, f.doc(t, 400), "creation", 365)
+	pending := f.declareUnder(t, f.doc(t, 10), "creation", 365)
+	event := f.declareUnder(t, f.doc(t, 3650), "event", 0)
+	for _, r := range []*records.Record{expired, pending, event} {
+		nullCutoff(r.ID)
+	}
+
+	moved, err := f.svc.ProposeDispositionsAtCutoff(f.ctx, f.tenant)
+	require.NoError(t, err)
+	require.Equal(t, 1, moved)
+
+	row := func(id uuid.UUID) (string, *time.Time) {
+		var state string
+		var cutoff *time.Time
+		require.NoError(t, f.pool.QueryRow(f.ctx,
+			`SELECT disposition_state, cutoff_date FROM records WHERE tenant_id = $1 AND id = $2`, f.tenant, id).Scan(&state, &cutoff))
+		return state, cutoff
+	}
+	state, cutoff := row(expired.ID)
+	require.Equal(t, "cutoff_pending", state)
+	require.NotNil(t, cutoff, "the recomputed cutoff is persisted")
+	state, cutoff = row(pending.ID)
+	require.Equal(t, "declared", state)
+	require.NotNil(t, cutoff)
+	require.True(t, cutoff.After(time.Now()))
+	state, cutoff = row(event.ID)
+	require.Equal(t, "declared", state, "an event trigger stays unresolved")
+	require.Nil(t, cutoff)
+}

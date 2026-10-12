@@ -608,6 +608,9 @@ func (s *Service) IsDeclaredRecord(ctx context.Context, tenantID, documentID uui
 func (s *Service) ProposeDispositionsAtCutoff(ctx context.Context, tenantID uuid.UUID) (int, error) {
 	var moved int
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
+		if err := backfillNullCutoffs(ctx, tx, tenantID); err != nil {
+			return err
+		}
 		ct, err := tx.Exec(ctx, `
 			UPDATE records SET disposition_state='cutoff_pending', updated_at=now()
 			 WHERE tenant_id=$1 AND disposition_state='declared'
@@ -619,6 +622,60 @@ func (s *Service) ProposeDispositionsAtCutoff(ctx context.Context, tenantID uuid
 		return nil
 	})
 	return moved, err
+}
+
+// backfillNullCutoffs computes and persists the cutoff of scheduled, still
+// declared records whose cutoff_date is NULL — records declared before
+// creation / fixed_date cutoffs were computed (D-7) — with the same
+// computeCutoff rule Declare and Dispose use, so the sweep can propose
+// them. Triggers nothing resolves (event, superseded) stay NULL.
+func backfillNullCutoffs(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
+	rows, err := tx.Query(ctx, `
+		SELECT r.id, rs.trigger_event, rs.retention_period_days, r.declared_at, d.created_at
+		  FROM records r
+		  JOIN retention_schedules rs
+		    ON rs.tenant_id = r.tenant_id AND rs.id = r.retention_schedule_id
+		  JOIN documents d
+		    ON d.tenant_id = r.tenant_id AND d.id = r.document_id
+		 WHERE r.tenant_id = $1 AND r.disposition_state = 'declared'
+		   AND r.cutoff_date IS NULL
+		   AND rs.trigger_event IN ('creation', 'fixed_date')
+		 FOR UPDATE OF r`, tenantID)
+	if err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	type fix struct {
+		id     uuid.UUID
+		cutoff time.Time
+	}
+	var fixes []fix
+	for rows.Next() {
+		var (
+			id                    uuid.UUID
+			trigger               string
+			periodD               int
+			declaredAt, docCreate time.Time
+		)
+		if err := rows.Scan(&id, &trigger, &periodD, &declaredAt, &docCreate); err != nil {
+			rows.Close()
+			return vdmserr.FromPgError(err)
+		}
+		if c := computeCutoff(trigger, periodD, declaredAt, docCreate); c != nil {
+			fixes = append(fixes, fix{id: id, cutoff: *c})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return vdmserr.FromPgError(err)
+	}
+	for _, f := range fixes {
+		if _, err := tx.Exec(ctx,
+			`UPDATE records SET cutoff_date = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+			tenantID, f.id, f.cutoff); err != nil {
+			return vdmserr.FromPgError(err)
+		}
+	}
+	return nil
 }
 
 // ============================ helpers ========================================
