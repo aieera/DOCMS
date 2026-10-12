@@ -271,14 +271,20 @@ func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, g
 		})
 	}
 
-	// ---- SCIM 2.0 /scim/v2/{tenant_slug}/* ---------------------------------
+	// ---- SCIM 2.0 /api/v1/scim/v2/{tenant_slug}/* ---------------------------
 	// Per-tenant bearer token auth; the resolver looks up the tenant by slug
 	// and validates the token hash stored in sso_configs.config.
+	//
+	// M-9: Kong forwards /api/v1/scim/v2/... unstripped and the admin UI
+	// advertises that base URL, so that is the canonical mount. The bare
+	// /scim/v2 mount stays for IdPs configured against it directly.
 	if sc != nil && sc.Handler != nil && sc.Resolver != nil {
-		r.Route("/scim/v2/{tenant_slug}", func(r chi.Router) {
-			r.Use(scimAuthMiddleware(sc.Resolver))
-			sc.Handler.Mount(r)
-		})
+		for _, base := range []string{"/api/v1/scim/v2/{tenant_slug}", "/scim/v2/{tenant_slug}"} {
+			r.Route(base, func(r chi.Router) {
+				r.Use(scimAuthMiddleware(sc.Resolver))
+				sc.Handler.Mount(r)
+			})
+		}
 	}
 
 	return r
