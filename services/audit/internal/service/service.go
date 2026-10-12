@@ -29,6 +29,10 @@ import (
 // Ed25519 signing key is configured (SEDOC_AUDIT_SIGNING_KEY unset).
 var ErrSigningDisabled = errors.New("audit checkpoint signing disabled: set SEDOC_AUDIT_SIGNING_KEY")
 
+// ErrActorRequired rejects an erasure without an identifiable caller: the
+// audit.subject_erased marker must name who performed it.
+var ErrActorRequired = errors.New("anonymize: actor must be the caller's user id")
+
 // Service is the audit service facade.
 type Service struct {
 	repo  *repository.Repository
@@ -419,6 +423,9 @@ func (s *Service) ExportSubject(ctx context.Context, tenantID, subjectID string)
 // audit migration 000006 (dms_app itself cannot UPDATE the WORM table,
 // H-12). The head moves, so a fresh signed checkpoint re-anchors it.
 func (s *Service) AnonymizeSubject(ctx context.Context, tenantID, subjectID, actorID, actorName string) (int64, error) {
+	if id, err := uuid.Parse(actorID); err != nil || id == uuid.Nil {
+		return 0, ErrActorRequired
+	}
 	unlock := s.lockTenant(tenantID)
 	defer unlock()
 

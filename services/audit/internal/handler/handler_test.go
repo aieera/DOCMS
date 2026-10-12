@@ -7,6 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+
+	"github.com/aieera/sedoc/pkg/auth"
+	"github.com/aieera/sedoc/services/audit/internal/service"
 )
 
 // Every handler here is tested at the validation layer only — we rely on the
@@ -119,5 +125,21 @@ func TestAuditHandler_WriteError_ShapeIsConsistent(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &got)
 	if got["error"] != "no access" {
 		t.Errorf("want 'no access', got %q", got["error"])
+	}
+}
+
+// H-12 follow-up 2: an admin session with no user id (e.g. an API-key
+// principal without a user) cannot file an erasure: 400, not 500.
+func TestAuditHandler_AnonymizeWithoutActor400(t *testing.T) {
+	h := &Handler{svc: service.New(service.Config{Logger: zerolog.Nop()})}
+	mux := http.NewServeMux()
+	h.Register(mux)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/audit/data-subject/anonymize",
+		bytes.NewBufferString(`{"subject_id":"`+uuid.NewString()+`"}`))
+	req = req.WithContext(auth.WithUser(req.Context(), auth.UserInfo{TenantID: uuid.New(), Role: "admin"}))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
 	}
 }

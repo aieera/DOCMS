@@ -4,6 +4,7 @@ package handler
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -414,6 +415,10 @@ func (h *Handler) dataSubjectAnonymize(w http.ResponseWriter, r *http.Request) {
 	}
 	count, err := h.svc.AnonymizeSubject(r.Context(), tenantID, body.SubjectID,
 		auth.UserIDString(r), auth.GetUserName(r.Context()))
+	if errors.Is(err, service.ErrActorRequired) {
+		writeError(w, http.StatusBadRequest, "anonymize requires an identified user")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "anonymize failed")
 		return
