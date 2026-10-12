@@ -14,12 +14,16 @@
 
 function makeChrome() {
   const areas = { local: new Map(), session: new Map() }
+  // chrome.storage is IPC: every call yields to the event loop, which is
+  // what lets two unguarded read-modify-write cycles interleave.
+  const tick = () => new Promise((r) => setTimeout(r, 0))
   const area = (m) => ({
     async get(key) {
+      await tick()
       if (typeof key === 'string') return m.has(key) ? { [key]: structuredClone(m.get(key)) } : {}
       return Object.fromEntries([...m].map(([k, v]) => [k, structuredClone(v)]))
     },
-    async set(obj) { for (const [k, v] of Object.entries(obj)) m.set(k, structuredClone(v)) },
+    async set(obj) { await tick(); for (const [k, v] of Object.entries(obj)) m.set(k, structuredClone(v)) },
     async remove(key) { m.delete(key) },
   })
   const listeners = []
@@ -91,6 +95,35 @@ describe('OAuth state survives a service-worker restart (M-30)', () => {
     expect(body.get('code_verifier')).toBeTruthy()
     // One-time use.
     expect(chromeObj._areas.session.get('oauth_states')?.[state]).toBeUndefined()
+  })
+
+  // Review (round 1): saveOAuthState / takeOAuthState were unguarded
+  // read-modify-write cycles on one storage key; two logins in flight
+  // (popup double-click, two windows) lost one state.
+  it('concurrent logins keep every state', async () => {
+    await loadWorker()
+    const [a, b, c] = await Promise.all([
+      send(chromeObj, { type: 'login' }),
+      send(chromeObj, { type: 'login' }),
+      send(chromeObj, { type: 'login' }),
+    ])
+    const saved = chromeObj._areas.session.get('oauth_states')
+    for (const r of [a, b, c]) {
+      expect(saved[new URL(r.url).searchParams.get('state')]).toBeTruthy()
+    }
+  })
+
+  it('a state can be taken only once, even by concurrent callbacks', async () => {
+    await loadWorker()
+    const { url } = await send(chromeObj, { type: 'login' })
+    const state = new URL(url).searchParams.get('state')
+    fetch.mockResolvedValue(json({ access_token: 'at', expires_in: 3600 }))
+    const results = await Promise.all([
+      send(chromeObj, { type: 'oauth-callback', state, code: 'c1' }),
+      send(chromeObj, { type: 'oauth-callback', state, code: 'c2' }),
+    ])
+    expect(results.filter((r) => r.ok)).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('rejects an unknown state', async () => {

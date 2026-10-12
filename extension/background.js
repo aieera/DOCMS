@@ -57,19 +57,35 @@ async function readOAuthStates() {
   return all
 }
 
+// Every read-modify-write of the state map runs through this chain, one
+// at a time: chrome.storage calls yield, so two unguarded cycles (two
+// logins in flight, or two callbacks for one state) would lose a state
+// or let one state be consumed twice. A worker restart drops the chain,
+// which is fine — it only orders operations within one worker instance.
+let oauthStateChain = Promise.resolve()
+
+function withOAuthStates(mutate) {
+  const run = oauthStateChain.then(async () => {
+    const all = await readOAuthStates()
+    const result = mutate(all)
+    await chrome.storage.session.set({ [OAUTH_STATE_KEY]: all })
+    return result
+  })
+  oauthStateChain = run.catch(() => {})
+  return run
+}
+
 async function saveOAuthState(state, entry) {
-  const all = await readOAuthStates()
-  all[state] = entry
-  await chrome.storage.session.set({ [OAUTH_STATE_KEY]: all })
+  await withOAuthStates((all) => { all[state] = entry })
 }
 
 // takeOAuthState returns and deletes (one-time use) the saved entry.
 async function takeOAuthState(state) {
-  const all = await readOAuthStates()
-  const entry = typeof state === 'string' ? all[state] : undefined
-  if (entry) delete all[state]
-  await chrome.storage.session.set({ [OAUTH_STATE_KEY]: all })
-  return entry || null
+  return withOAuthStates((all) => {
+    const entry = typeof state === 'string' ? all[state] : undefined
+    if (entry) delete all[state]
+    return entry || null
+  })
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
