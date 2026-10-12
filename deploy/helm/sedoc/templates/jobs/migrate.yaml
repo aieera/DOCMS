@@ -71,7 +71,7 @@ spec:
                   name: {{ .Values.global.database.migration.existingSecret }}
                   key: {{ .Values.global.database.migration.passwordKey }}
             - name: DATABASE_URL
-              value: "postgres://{{ .Values.global.database.migration.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+              value: "postgres://{{ .Values.global.database.migration.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
             - name: SEDOC_DB_BOOTSTRAP_ROLES
               value: "1"
             - name: DMS_APP_PASSWORD

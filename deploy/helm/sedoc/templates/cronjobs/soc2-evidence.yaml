@@ -44,7 +44,7 @@ spec:
                       name: {{ .Values.global.database.evidence.existingSecret }}
                       key: {{ .Values.global.database.evidence.passwordKey }}
                 - name: DATABASE_URL
-                  value: "postgres://{{ .Values.global.database.evidence.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+                  value: "postgres://{{ .Values.global.database.evidence.username }}@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
                 - name: SEDOC_EVIDENCE_SIGNING_KEY
                   valueFrom:
                     secretKeyRef:

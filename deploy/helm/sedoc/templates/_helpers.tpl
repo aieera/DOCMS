@@ -82,7 +82,7 @@ Common environment variables injected into every Go service
       name: {{ .Values.global.database.existingSecret }}
       key: {{ .Values.global.database.passwordKey }}
 - name: SEDOC_DATABASE_URL
-  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode=require"
+  value: "postgresql://{{ .Values.global.database.username }}:$(DB_PASSWORD)@{{ include "sedoc.dbHost" . }}:{{ .Values.global.database.port }}/{{ .Values.global.database.name }}?sslmode={{ .Values.global.database.sslMode }}"
 - name: SEDOC_REDIS_URL
   value: "{{ .Values.global.redis.host }}:{{ .Values.global.redis.port }}"
 - name: SEDOC_NATS_URL
