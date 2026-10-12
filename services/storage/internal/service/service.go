@@ -543,12 +543,17 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		// ADR 0022: per-tenant KEK alias. liveKEKAlias resolves the
 		// currently-live alias from tenant_keks (so a `kms rotate` takes
 		// effect on new encrypts), falling back to the base
-		// aliasForTenant form when the tenant has no tenant_keks row —
-		// a no-op for every tenant that never ran `kms create`. The
+		// aliasForTenant form only when the tenant has no tenant_keks row
+		// — a no-op for every tenant that never ran `kms create`. A read
+		// error fails the upload rather than guessing a KEK (D-22). The
 		// LocalKeyManager HKDF-derives a unique 32-byte KEK per alias;
 		// Vault / AWS KMS managers look the alias up in their native
 		// stores.
-		kekAlias := s.liveKEKAlias(ctx, session.TenantID)
+		kekAlias, kerr := s.liveKEKAlias(ctx, session.TenantID)
+		if kerr != nil {
+			s.failUpload(ctx, session, "resolve live KEK: "+kerr.Error())
+			return nil, kerr
+		}
 		envResult, err = s.encryptAll(ctx, bytes.NewReader(plainBytes), kekAlias)
 		if err != nil {
 			s.failUpload(ctx, session, "envelope encrypt: "+err.Error())
