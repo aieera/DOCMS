@@ -222,10 +222,10 @@ func main() {
 	go svc.RunExpirySweeper(ctx, service.ExpirySweepInterval)
 
 	// ---- Blob reaper -------------------------------------------------------
-	// Sweeps zero-reference content_blobs older than 24h, deletes the S3
-	// object, then removes the row. Runs hourly. Requires the DB role to
-	// have BYPASSRLS (or RLS policies configured to permit row_security=off)
-	// since the reaper scans across tenants.
+	// Sweeps zero-reference content_blobs older than 24h: removes the row,
+	// then the S3 object. Runs hourly, tenant by tenant under each tenant's
+	// own context (works under the NOBYPASSRLS app role); a failing tenant
+	// is logged and skipped (D-21).
 	reaper := service.NewBlobReaper(pool, repos, s3c, *log.Z())
 	go reaper.Start(ctx)
 
