@@ -11,7 +11,7 @@ import { MAX_PAYLOAD_BYTES } from './config.js'
 import { ConnectionManager } from './connections.js'
 import { verifyGatewaySignature } from './gateway-sig.js'
 import { handleMessage } from './handler.js'
-import { attachYjs } from './yjs-server.js'
+import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from './yjs-server.js'
 
 const HEARTBEAT_INTERVAL = 30_000
 
@@ -67,8 +67,9 @@ export function handleRedisDocMessage(connections, channel, message) {
  * @param {import('ioredis').Redis} opts.redisPub   publisher
  * @param {import('ioredis').Redis} opts.redisSub   subscriber for dms:* doc rooms
  * @param {import('ioredis').Redis} opts.redisStore online-user SETs
+ * @param {object} [opts.yjsOptions] passed to createYjsService
  */
-export function createCollabServer({ port, host, redisPub, redisSub, redisStore }) {
+export function createCollabServer({ port, host, redisPub, redisSub, redisStore, yjsOptions = {} }) {
   const connections = new ConnectionManager(redisStore)
   const wss = new WebSocketServer({
     port,
@@ -89,7 +90,8 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore 
 
   // Yjs path. Must be attached BEFORE the /ws handler so it sees the
   // connection first and marks it routed.
-  attachYjs(wss)
+  const yjs = createYjsService(yjsOptions)
+  yjs.attach(wss)
 
   wss.on('connection', (ws, req) => {
     if (ws.__routed === 'yjs') return
@@ -169,13 +171,39 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore 
     wss.once('error', reject)
   })
 
+  let shuttingDown = null
+
   const server = {
     wss,
+    yjs,
     connections,
     listening,
     get port() {
       const a = wss.address()
       return a && typeof a === 'object' ? a.port : undefined
+    },
+    /**
+     * Graceful stop (SIGTERM, CB-5): stop accepting upgrades, flush every
+     * dirty Yjs room (bounded at SHUTDOWN_FLUSH_TIMEOUT_MS), then close the
+     * remaining sockets with 1012 (service restart) so clients reconnect
+     * to another instance. Idempotent.
+     */
+    shutdown({ timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS } = {}) {
+      if (shuttingDown) return shuttingDown
+      shuttingDown = (async () => {
+        clearInterval(heartbeat)
+        const closed = new Promise((resolve) => wss.close(() => resolve()))
+        const result = await yjs.flushAll({ timeoutMs })
+        for (const c of wss.clients) {
+          try { c.close(1012, 'server restarting') } catch { /* already closing */ }
+        }
+        // Give close frames a moment, then drop whatever is left.
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        for (const c of wss.clients) c.terminate()
+        await closed
+        return result
+      })()
+      return shuttingDown
     },
     close() {
       clearInterval(heartbeat)

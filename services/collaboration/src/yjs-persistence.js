@@ -76,6 +76,9 @@ export async function loadSnapshot(tenantId, docId) {
 /**
  * Encode `ydoc` and append a snapshot row. Also GC older rows so we
  * keep only KEEP_SNAPSHOTS per (tenant, doc).
+ *
+ * Never throws. Resolves true once the snapshot is committed and false on
+ * any failure, so the caller can keep the room dirty and retry (CB-5).
  */
 export async function saveSnapshot(tenantId, docId, ydoc) {
   const state = Buffer.from(Y.encodeStateAsUpdate(ydoc))
@@ -84,7 +87,7 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
     client = await pool().connect()
   } catch (err) {
     console.error(`yjs-persistence: save failed tenant=${tenantId} doc=${docId}`, err.message)
-    return
+    return false
   }
   try {
     await client.query('BEGIN')
@@ -138,9 +141,11 @@ export async function saveSnapshot(tenantId, docId, ydoc) {
       ],
     )
     await client.query('COMMIT')
+    return true
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
     console.error(`yjs-persistence: save failed tenant=${tenantId} doc=${docId}`, err.message)
+    return false
   } finally {
     client.release()
   }

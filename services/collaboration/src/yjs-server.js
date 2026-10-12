@@ -44,7 +44,6 @@ const HYDRATE_ORIGIN = Symbol('yjs-hydrate')
 // Bounds the final-flush awaits in the close handler so a hung DB (e.g. an
 // exhausted pg pool) can't leave rooms.delete unreachable and leak the room.
 const FINAL_FLUSH_TIMEOUT_MS = 10_000
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // A legitimate client controls exactly one awareness clientID (its own Yjs
 // client). Cap per-connection growth so a malicious socket can't register
@@ -52,6 +51,23 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // broadcasts (and, as a side effect, bounds how many identities one socket
 // can masquerade as).
 const MAX_AWARENESS_IDS_PER_CONN = 8
+
+// CB-5: SIGTERM flushes every dirty room but never waits longer than this.
+export const SHUTDOWN_FLUSH_TIMEOUT_MS = 10_000
+// CB-5: a room whose final flush failed stays in memory (still dirty) and
+// is retried this often, up to FLUSH_RETRY_MAX times, before it is given up.
+const FLUSH_RETRY_MS = 5_000
+const FLUSH_RETRY_MAX = 12
+
+/** Resolve `promise`, or `fallback` after `ms`; the timer never pins the process. */
+function withTimeout(promise, ms, fallback) {
+  let timer
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms)
+    timer.unref?.()
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
 
 // CB-3: how often a live connection's document permissions are re-read.
 // Revoking view closes the socket (4403); revoking edit makes it read-only.
@@ -147,10 +163,14 @@ async function authorize(req, urlTenantId, docId) {
  * @param {object} [opts]
  * @param {{loadSnapshot: Function, saveSnapshot: Function, FLUSH_EVERY: number}} [opts.persistence]
  * @param {number} [opts.recheckIntervalMs]
+ * @param {number} [opts.flushRetryMs]
+ * @param {number} [opts.flushRetryMax]
  */
 export function createYjsService({
   persistence = persistenceModule,
   recheckIntervalMs = AUTHZ_RECHECK_MS,
+  flushRetryMs = FLUSH_RETRY_MS,
+  flushRetryMax = FLUSH_RETRY_MAX,
 } = {}) {
   const { loadSnapshot, saveSnapshot } = persistence
   const FLUSH_EVERY = persistence.FLUSH_EVERY ?? persistenceModule.FLUSH_EVERY
@@ -236,17 +256,103 @@ export function createYjsService({
       // write never persists a doc missing already-stored content. Any
       // edits counted pre-hydration are flushed by the last-client path
       // (or the next threshold crossing after hydration completes).
-      if (room.hydrated && room.canPersist && room.pendingUpdates >= FLUSH_EVERY) {
-        room.pendingUpdates = 0
-        // Fire-and-forget; saveSnapshot logs its own errors and never
-        // throws. Don't await — the update broadcast must not block on
-        // Postgres latency.
-        saveSnapshot(room.tenantId, room.docId, ydoc)
+      if (room.hydrated && room.canPersist && !room.saving && room.pendingUpdates >= FLUSH_EVERY) {
+        // Fire-and-forget; flushRoom never rejects. Don't await — the
+        // update broadcast must not block on Postgres latency.
+        flushRoom(room)
       }
     })
 
     rooms.set(roomId, room)
     return room
+  }
+
+  /**
+   * CB-5: persist the room if it has unsaved edits. Resolves true when the
+   * room is clean afterwards. The pending count is only cleared by a save
+   * that succeeded: a failed save adds the edits it covered back, so the
+   * room stays dirty and the next threshold, retry or shutdown writes them.
+   * Saves for one room never overlap.
+   */
+  async function flushRoom(room) {
+    while (room.saving) await room.saving
+    // Nothing to write, or persistence is disabled for this room (its
+    // snapshot failed to load; writing would clobber the unread state).
+    if (!room.canPersist || room.pendingUpdates === 0) return true
+    const covered = room.pendingUpdates
+    room.pendingUpdates = 0
+    let ok = false
+    const attempt = (async () => {
+      try {
+        // saveSnapshot resolves false on failure; anything but an explicit
+        // false (e.g. a test double resolving undefined) is success.
+        ok = (await saveSnapshot(room.tenantId, room.docId, room.ydoc)) !== false
+      } catch (err) {
+        console.error(`yjs: save threw tenant=${room.tenantId} doc=${room.docId}: ${err && err.message}`)
+        ok = false
+      }
+      if (!ok) room.pendingUpdates += covered
+    })()
+    room.saving = attempt
+    try {
+      await attempt
+    } finally {
+      room.saving = null
+    }
+    return ok && room.pendingUpdates === 0
+  }
+
+  /**
+   * Last client left (or a retry fired): wait for hydration, flush, and
+   * evict only once the room is clean. A failed flush keeps the room in
+   * memory and schedules a retry; after flushRetryMax failed retries the
+   * room is dropped with an error log rather than held forever.
+   */
+  async function finalizeRoom(roomId, room) {
+    room.retryTimer = null
+    if (room.clients.size !== 0 || room.destroyed) return
+    // Bound every await so a hung DB (e.g. an exhausted pg pool that never
+    // hands out a connection) can't leave the room pinned forever.
+    if (!room.hydrated && room.hydrationPromise) {
+      await withTimeout(room.hydrationPromise, FINAL_FLUSH_TIMEOUT_MS)
+    }
+    const clean = await withTimeout(flushRoom(room), FINAL_FLUSH_TIMEOUT_MS, false)
+    // A client may have rejoined during the await — the reconnecting peer
+    // keeps the live in-memory doc.
+    if (room.clients.size !== 0 || room.destroyed) return
+    if (clean || !room.canPersist) {
+      evictRoom(roomId, room)
+      return
+    }
+    room.flushFailures = (room.flushFailures || 0) + 1
+    if (room.flushFailures > flushRetryMax) {
+      console.error(`yjs: giving up on room=${roomId} after ${room.flushFailures} failed flushes; ${room.pendingUpdates} edits unsaved`)
+      evictRoom(roomId, room)
+      return
+    }
+    room.retryTimer = setTimeout(() => { finalizeRoom(roomId, room) }, flushRetryMs)
+    room.retryTimer.unref?.()
+  }
+
+  /**
+   * CB-5: flush every room with unsaved edits (SIGTERM path). Bounded by
+   * timeoutMs overall; resolves with a summary, never rejects.
+   */
+  async function flushAll({ timeoutMs = SHUTDOWN_FLUSH_TIMEOUT_MS } = {}) {
+    const dirty = [...rooms.values()].filter((r) => !r.destroyed)
+    const results = { flushed: 0, failed: 0, timedOut: false }
+    const work = Promise.all(dirty.map(async (room) => {
+      if (!room.hydrated && room.hydrationPromise) await room.hydrationPromise
+      if (!room.canPersist || room.pendingUpdates === 0) return
+      if (await flushRoom(room)) results.flushed++
+      else results.failed++
+    })).then(() => true)
+    const done = await withTimeout(work, timeoutMs, false)
+    if (!done) {
+      results.timedOut = true
+      console.error(`yjs: shutdown flush timed out after ${timeoutMs} ms`)
+    }
+    return results
   }
 
   /**
@@ -261,6 +367,7 @@ export function createYjsService({
     if (rooms.get(roomId) === room) rooms.delete(roomId)
     if (room.destroyed) return true
     room.destroyed = true
+    if (room.retryTimer) clearTimeout(room.retryTimer)
     try {
       room.awareness.destroy()
     } catch (err) {
@@ -391,34 +498,18 @@ export function createYjsService({
       if (room.clients.size !== 0) return
       // Last user left. Ensure the prior snapshot has hydrated, flush any
       // pending edits, and only THEN drop the room. Deleting before the
-      // write commits (the previous fire-and-forget + immediate delete)
-      // let a fast reconnect recreate the room and loadSnapshot the
-      // pre-flush state — silently rolling back the just-departed user's
-      // edits. Awaiting keeps the in-memory room authoritative until the
-      // snapshot is durable.
-      // Bound every await so a hung DB (e.g. an exhausted pg pool that never
-      // hands out a connection) can't leave rooms.delete unreachable and leak
-      // the room forever. On timeout we skip the flush and drop the room —
-      // losing at most the last <FLUSH_EVERY updates, which is preferable to
-      // an unbounded memory leak.
+      // write commits let a fast reconnect recreate the room and
+      // loadSnapshot the pre-flush state — silently rolling back the
+      // just-departed user's edits. A failed flush keeps the room (CB-5).
+      if (room.retryTimer) {
+        clearTimeout(room.retryTimer)
+        room.retryTimer = null
+      }
       try {
-        if (!room.hydrated && room.hydrationPromise) {
-          await Promise.race([room.hydrationPromise, delay(FINAL_FLUSH_TIMEOUT_MS)])
-        }
-        if (room.canPersist && room.pendingUpdates > 0) {
-          room.pendingUpdates = 0
-          await Promise.race([
-            saveSnapshot(room.tenantId, room.docId, room.ydoc),
-            delay(FINAL_FLUSH_TIMEOUT_MS),
-          ])
-        }
+        await finalizeRoom(roomId, room)
       } catch (err) {
         console.error(`yjs: final flush failed room=${roomId}: ${err && err.message}`)
       }
-      // A client may have rejoined during the await — only drop the room
-      // if it's still empty, otherwise the reconnecting peer keeps the
-      // live in-memory doc.
-      evictRoom(roomId, room)
     })
 
     console.log(`yjs: client joined tenant=${tenantId} doc=${docId} peers=${room.clients.size}`)
@@ -474,7 +565,7 @@ export function createYjsService({
     })
   }
 
-  return { attach, rooms }
+  return { attach, rooms, flushAll }
 }
 
 // The process-wide service used by server.js.

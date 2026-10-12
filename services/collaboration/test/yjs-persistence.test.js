@@ -87,7 +87,7 @@ describe('saveSnapshot', () => {
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'hello')
 
-    await saveSnapshot('tenant-9', 'doc-9', doc)
+    await expect(saveSnapshot('tenant-9', 'doc-9', doc)).resolves.toBe(true)
 
     const sqls = calls.map((c) => c.sql)
     expect(sqls.some((s) => s.includes('BEGIN'))).toBe(true)
@@ -107,14 +107,14 @@ describe('saveSnapshot', () => {
     expect(payload).toMatchObject({ document_id: 'doc-9', source: 'collaboration' })
   })
 
-  test('rolls back and does not throw when a write fails', async () => {
+  test('rolls back, does not throw, and reports false when a write fails', async () => {
     const calls = scriptQueries({
       'INSERT INTO yjs_snapshots': () => { throw new Error('insert failed') },
     })
     const doc = new Y.Doc()
     doc.getText('content').insert(0, 'x')
 
-    await expect(saveSnapshot('tenant-1', 'doc-1', doc)).resolves.toBeUndefined()
+    await expect(saveSnapshot('tenant-1', 'doc-1', doc)).resolves.toBe(false)
 
     const sqls = calls.map((c) => c.sql)
     expect(sqls.some((s) => s.includes('ROLLBACK'))).toBe(true)
