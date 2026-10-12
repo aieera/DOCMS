@@ -155,6 +155,12 @@ without extras render nothing.
     secretKeyRef:
       name: {{ .Values.global.platformSecrets.existingSecret }}
       key: {{ .Values.global.platformSecrets.onlyofficeJWTKey }}
+# GDPR DSR anonymisation salt; the dev fallback must never be used outside dev.
+- name: SEDOC_DSR_ANONYMIZE_SALT
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.global.platformSecrets.existingSecret }}
+      key: {{ .Values.global.platformSecrets.dsrAnonymizeSaltKey }}
 {{- end }}
 {{- if eq .svcName "workflow" }}
 # Base URLs (no /api/v1): DSR search/connector purges, saved-search alerts,

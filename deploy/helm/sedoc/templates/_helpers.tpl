@@ -240,6 +240,7 @@ Optional references (e.g. the audit signing key) are deliberately absent.
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.irmSigningKeyKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.ztTokenPepperKey) }}
 {{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.onlyofficeJWTKey) }}
+{{- $refs = append $refs (list $v.global.platformSecrets.existingSecret $v.global.platformSecrets.dsrAnonymizeSaltKey) }}
 {{- end }}
 {{- if $v.billing.enabled }}
 {{- $refs = append $refs (list $v.global.billing.existingSecret $v.global.billing.stripeWebhookSecretKey) }}

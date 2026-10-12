@@ -181,6 +181,9 @@ global:
   #   irm-signing-key   document: IRM export signing  ┐ required outside dev
   #   zt-token-pepper   document: zero-trust tokens   │ (503 otherwise).
   #   onlyoffice-jwt    document: OnlyOffice JWT      ┘
+  #   dsr-anonymize-salt  document: GDPR DSR anonymisation salt (required
+  #                     outside dev; changing it changes every pseudonym
+  #                     produced afterwards, so set it once)
   # Setting or ROTATING zt-token-pepper invalidates every zero-trust link
   # minted under the previous value (links live 72 h).
   platformSecrets:
@@ -189,6 +192,7 @@ global:
     irmSigningKeyKey: irm-signing-key
     ztTokenPepperKey: zt-token-pepper
     onlyofficeJWTKey: onlyoffice-jwt
+    dsrAnonymizeSaltKey: dsr-anonymize-salt
 
   # Stripe webhook signing secret — billing refuses to boot in prod without
   # it (any value works if Stripe is unused).

@@ -67,6 +67,9 @@ x-prod-go-env: &prod-go-env
   # Setting or rotating the pepper invalidates every zero-trust link minted
   # under the previous value.
   SEDOC_ZT_TOKEN_PEPPER: "${SEDOC_ZT_TOKEN_PEPPER:?SEDOC_ZT_TOKEN_PEPPER is REQUIRED}"
+  # GDPR DSR anonymisation salt — set once; changing it changes every
+  # pseudonym produced afterwards.
+  SEDOC_DSR_ANONYMIZE_SALT: "${SEDOC_DSR_ANONYMIZE_SALT:?SEDOC_DSR_ANONYMIZE_SALT is REQUIRED}"
   STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is REQUIRED (billing refuses to boot in prod without it)}"
   SEDOC_LLM_ALLOW_DEPLOY_CREDENTIALS: "false"
   SEDOC_STORAGE_ENCRYPT_AT_REST: "true"

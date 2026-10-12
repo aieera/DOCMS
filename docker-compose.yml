@@ -85,6 +85,9 @@ x-go-env: &go-env
   SEDOC_ONLYOFFICE_URL: "http://onlyoffice"  # in-cluster DNS
   SEDOC_ONLYOFFICE_PUBLIC_URL: "http://localhost:8195"  # what the browser sees
   SEDOC_ONLYOFFICE_JWT: "${SEDOC_ONLYOFFICE_JWT:-dev-only-onlyoffice-jwt-rotate-in-prod}"
+  # GDPR DSR anonymisation salt (document). Dev default = the service's old
+  # built-in dev salt, so dev pseudonyms do not change.
+  SEDOC_DSR_ANONYMIZE_SALT: "${SEDOC_DSR_ANONYMIZE_SALT:-vaultdms-dev-salt}"
   POLICY_SERVICE_ADDR:   "policy:9090"
   STORAGE_SERVICE_ADDR:  "storage:9090"
   # graphql-gateway upstream gRPC clients. Without these set, the gateway's
