@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # the public gateway. Empty => internal endpoints reject every request
     # (fail-closed).
     service_api_key: str = ""
+    # H-17 / DEC-4: the /api/v1/previews/* REST API is internal-only. A
+    # caller must present X-Internal-Service-Key == SEDOC_INTERNAL_API_KEY
+    # (or the preview X-Service-Key above). Empty => only X-Service-Key
+    # can authenticate; both empty => every request is rejected.
+    internal_api_key: str = ""
 
     # --- Broker / cache -----------------------------------------------------
     celery_broker_url: str = "redis://redis:6379/1"

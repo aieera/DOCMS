@@ -180,6 +180,9 @@ def generate_preview(
         "content_blob_id": content_blob_id,
         "mime_type": mime_type,
         "region": region_pin,
+        # H-17: persisted so /regenerate can re-run from the real source.
+        "source_bucket": storage_bucket,
+        "source_key": storage_key,
         "status": "processing",
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
