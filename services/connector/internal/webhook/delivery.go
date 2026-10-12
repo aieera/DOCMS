@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -22,22 +21,12 @@ import (
 	"github.com/aieera/sedoc/services/connector/internal/eventpolicy"
 	"github.com/aieera/sedoc/services/connector/internal/model"
 	"github.com/aieera/sedoc/services/connector/internal/repository"
+	"github.com/aieera/sedoc/services/connector/internal/ssrf"
 )
 
-// isInternalIP reports whether ip is in a range a webhook must never reach:
-// loopback, RFC1918 private, link-local (unicast+multicast), unspecified
-// (0.0.0.0 / ::), any multicast, and CGNAT 100.64.0.0/10 (RFC 6598, which
-// net.IP.IsPrivate does NOT cover).
-func isInternalIP(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return true
-	}
-	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
-		return true
-	}
-	return false
-}
+// isInternalIP reports whether ip is in a range a webhook must never reach
+// (see ssrf.IsInternalIP).
+func isInternalIP(ip net.IP) bool { return ssrf.IsInternalIP(ip) }
 
 // newSSRFSafeClient builds an http.Client whose transport rejects any
 // connection to an internal IP AT DIAL TIME — the actual address dialed after
@@ -49,17 +38,7 @@ func isInternalIP(ip net.IP) bool {
 func newSSRFSafeClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	if !allowPrivate {
-		dialer.Control = func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || isInternalIP(ip) {
-				return fmt.Errorf("blocked connection to internal address %q (SSRF guard)", address)
-			}
-			return nil
-		}
+		dialer.Control = ssrf.DialControl
 	}
 	return &http.Client{
 		Timeout:   timeout,

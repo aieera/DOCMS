@@ -140,7 +140,14 @@ type Service struct {
 	log     zerolog.Logger
 	pollers map[Source]Poller
 	mu      sync.Mutex
+	// allowPrivateIMAP mirrors IMAPBackend.AllowPrivate for config-time
+	// validation (SEDOC_IMAP_ALLOW_PRIVATE).
+	allowPrivateIMAP bool
 }
+
+// SetAllowPrivateIMAP enables the on-prem opt-in that permits IMAP servers
+// on internal addresses / non-standard ports.
+func (s *Service) SetAllowPrivateIMAP(v bool) { s.allowPrivateIMAP = v }
 
 // New constructs a Service. Pollers map keyed by Source so adding a
 // new modality (Exchange on-prem, ProtonMail Bridge) is a no-touch
@@ -509,6 +516,11 @@ func (s *Service) CreateConfig(ctx context.Context, tenantID, actorID string, in
 	}
 	if in.Source == SourceIMAP && in.IMAPPort == 0 {
 		in.IMAPPort = 993
+	}
+	if in.Source == SourceIMAP {
+		if err := validateIMAPEndpoint(in.IMAPHost, in.IMAPPort, s.allowPrivateIMAP); err != nil {
+			return nil, err
+		}
 	}
 
 	var encryptedPwd []byte

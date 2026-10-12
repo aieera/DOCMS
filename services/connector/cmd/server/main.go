@@ -145,11 +145,15 @@ func main() {
 	// are materialised into real documents-with-versions via the shared
 	// ingest pipeline (so they OCR + embed + become searchable). Pollers run
 	// with nil backends until real Graph/Gmail/IMAP credentials are wired.
+	// SEDOC_IMAP_ALLOW_PRIVATE=true (on-prem) lets tenants point IMAP at
+	// internal mail servers / non-standard ports; off, the SSRF guard applies.
+	allowPrivateIMAP := strings.EqualFold(os.Getenv("SEDOC_IMAP_ALLOW_PRIVATE"), "true")
 	emailSvc := email.New(pool, nc, ingestClient, []email.Poller{
 		&email.MicrosoftPoller{},
 		&email.GmailPoller{},
-		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z()}},
+		&email.IMAPPoller{Backend: &email.IMAPBackend{Pool: pool, Log: *log.Z(), AllowPrivate: allowPrivateIMAP}},
 	}, *log.Z())
+	emailSvc.SetAllowPrivateIMAP(allowPrivateIMAP)
 	go emailSvc.Start(ctx)
 	emailHandler := handler.NewEmailHandler(emailSvc)
 

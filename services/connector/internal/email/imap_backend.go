@@ -2,12 +2,14 @@ package email
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -18,6 +20,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/aieera/sedoc/pkg/database"
+	"github.com/aieera/sedoc/services/connector/internal/ssrf"
 )
 
 // IMAPBackend is the real Poller backend for the IMAP modality. The
@@ -42,37 +45,109 @@ import (
 type IMAPBackend struct {
 	Pool *pgxpool.Pool
 	Log  zerolog.Logger
+	// AllowPrivate (SEDOC_IMAP_ALLOW_PRIVATE, on-prem) permits mail servers
+	// on internal addresses and non-standard ports. Off by default: the
+	// dial-time guard refuses loopback/private/link-local/CGNAT targets.
+	AllowPrivate bool
+}
+
+// Generic, caller-facing IMAP errors (N-5). Details (address, dial/TLS
+// cause, server text) go to the service log only, so the poll result and
+// last_error are not a port-scan / reachability oracle.
+var (
+	errIMAPCredentials = errors.New("imap: stored credentials unavailable")
+	errIMAPConnect     = errors.New("imap: could not establish a TLS connection to the mail server")
+	errIMAPLogin       = errors.New("imap: login rejected")
+	errIMAPMailbox     = errors.New("imap: reading the mailbox failed")
+)
+
+// imapPorts are the only ports a tenant may target without the on-prem
+// opt-in: implicit TLS (993) and STARTTLS (143).
+var imapPorts = map[int]bool{993: true, 143: true}
+
+// validateIMAPEndpoint applies the webhook-style SSRF rules to a
+// tenant-supplied IMAP host:port at config time. The dial-time guard
+// re-checks the resolved address on every connection.
+func validateIMAPEndpoint(host string, port int, allowPrivate bool) error {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.ContainsAny(host, "/@ ") {
+		return errors.New("imap_host must be a bare host name or IP address")
+	}
+	if port < 1 || port > 65535 {
+		return errors.New("imap_port out of range")
+	}
+	if !allowPrivate && !imapPorts[port] {
+		return errors.New("imap_port must be 993 (TLS) or 143 (STARTTLS)")
+	}
+	ips, err := net.LookupIP(strings.Trim(host, "[]"))
+	if err != nil || len(ips) == 0 {
+		return errors.New("imap_host does not resolve")
+	}
+	if !allowPrivate {
+		for _, ip := range ips {
+			if ssrf.IsInternalIP(ip) {
+				return errors.New("imap_host resolves to an internal address")
+			}
+		}
+	}
+	return nil
 }
 
 // Fetch implements pollerBackend.
 func (b *IMAPBackend) Fetch(ctx context.Context, cfg *Config) ([]*Envelope, error) {
 	pwd, err := b.loadPassword(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt imap password: %w", err)
+		b.Log.Warn().Err(err).Str("config_id", cfg.ID).Msg("imap: load/decrypt password")
+		return nil, errIMAPCredentials
 	}
 	if pwd == "" {
 		return nil, errors.New("imap password not set for config")
 	}
+	return b.fetchWithPassword(ctx, cfg, pwd)
+}
 
+// fetchWithPassword runs one IMAP session: dial, login, select, search,
+// fetch.
+func (b *IMAPBackend) fetchWithPassword(ctx context.Context, cfg *Config, pwd string) ([]*Envelope, error) {
 	addr := net.JoinHostPort(cfg.IMAPHost, strconv.Itoa(cfg.IMAPPort))
-	var client *imapclient.Client
+	logEv := func(err error, what string) {
+		b.Log.Warn().Err(err).Str("config_id", cfg.ID).Str("addr", addr).Msg("imap: " + what)
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if !b.AllowPrivate {
+		dialer.Control = ssrf.DialControl
+	}
+	opts := &imapclient.Options{
+		Dialer:    dialer,
+		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.IMAPHost},
+	}
+	// Credentials only ever travel inside TLS: implicit TLS when
+	// imap_use_tls, otherwise a mandatory STARTTLS upgrade — a server
+	// without STARTTLS is refused, never logged into in cleartext.
+	var (
+		client *imapclient.Client
+		err    error
+	)
 	if cfg.IMAPUseTLS {
-		client, err = imapclient.DialTLS(addr, nil)
+		client, err = imapclient.DialTLS(addr, opts)
 	} else {
-		client, err = imapclient.DialInsecure(addr, nil)
+		client, err = imapclient.DialStartTLS(addr, opts)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("imap dial %s: %w", addr, err)
+		logEv(err, "connect")
+		return nil, errIMAPConnect
 	}
 	defer func() { _ = client.Close() }()
 
 	if err := client.Login(cfg.IMAPUsername, pwd).Wait(); err != nil {
-		return nil, fmt.Errorf("imap login: %w", err)
+		logEv(err, "login")
+		return nil, errIMAPLogin
 	}
 	defer func() { _ = client.Logout().Wait() }()
 
 	if _, err := client.Select("INBOX", nil).Wait(); err != nil {
-		return nil, fmt.Errorf("imap select INBOX: %w", err)
+		logEv(err, "select INBOX")
+		return nil, errIMAPMailbox
 	}
 
 	// SEARCH SINCE <30d ago> UNSEEN. We don't restrict the search by
@@ -87,7 +162,8 @@ func (b *IMAPBackend) Fetch(ctx context.Context, cfg *Config) ([]*Envelope, erro
 	}
 	searchData, err := client.Search(searchCriteria, nil).Wait()
 	if err != nil {
-		return nil, fmt.Errorf("imap search: %w", err)
+		logEv(err, "search")
+		return nil, errIMAPMailbox
 	}
 	uids := searchData.AllSeqNums()
 	if len(uids) == 0 {
@@ -131,7 +207,8 @@ func (b *IMAPBackend) Fetch(ctx context.Context, cfg *Config) ([]*Envelope, erro
 		envelopes = append(envelopes, env)
 	}
 	if err := fetchData.Close(); err != nil {
-		return envelopes, fmt.Errorf("imap fetch close: %w", err)
+		logEv(err, "fetch")
+		return envelopes, errIMAPMailbox
 	}
 	return envelopes, nil
 }
