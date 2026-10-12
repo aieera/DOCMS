@@ -26,7 +26,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "seed":
-		fmt.Fprintln(stdout, "seed: not yet implemented")
+		_, _ = fmt.Fprintln(stdout, "seed: not yet implemented")
 	case "nats":
 		natsMain(args[1:])
 	case "kms":
@@ -34,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "outbox":
 		return outboxMain(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		usage(stderr)
 		return 1
 	}
@@ -42,9 +42,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dms-admin <command>")
-	fmt.Fprintln(w, "Commands: seed, nats, kms, outbox")
-	fmt.Fprintln(w, "To rotate a tenant KEK: dms-admin kms rotate --tenant <uuid>")
+	_, _ = fmt.Fprintln(w, "Usage: dms-admin <command>")
+	_, _ = fmt.Fprintln(w, "Commands: seed, nats, kms, outbox")
+	_, _ = fmt.Fprintln(w, "To rotate a tenant KEK: dms-admin kms rotate --tenant <uuid>")
 }
 
 func envOrDefault(key, def string) string {

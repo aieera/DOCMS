@@ -115,18 +115,18 @@ type rewrapBlob struct{ id, curKEK, sha string }
 // FORCE ROW LEVEL SECURITY, so both reads run in the tenant's context.
 func rewrapPlan(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, limit int) (target string, pending []rewrapBlob, err error) {
 	err = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `
+		if qErr := tx.QueryRow(ctx, `
 			SELECT alias FROM tenant_keks
 			 WHERE tenant_id = $1 AND retired_at IS NULL
 			 ORDER BY version DESC LIMIT 1
-		`, tenantID).Scan(&target); err != nil {
-			return fmt.Errorf("no live KEK (run `dms-admin kms create`/`rotate` first): %w", err)
+		`, tenantID).Scan(&target); qErr != nil {
+			return fmt.Errorf("no live KEK (run `dms-admin kms create`/`rotate` first): %w", qErr)
 		}
 
 		// Enumerate non-regional blobs not already on the live alias. The
 		// region filter (no slash after the uuid) keeps this orthogonal to
 		// rewrap-regional; the kek_id <> target filter skips already-live rows.
-		rows, err := tx.Query(ctx, `
+		rows, qErr := tx.Query(ctx, `
 			SELECT id::text, COALESCE(kek_id, ''), sha256_hash
 			  FROM content_blobs
 			 WHERE tenant_id = $1
@@ -136,15 +136,16 @@ func rewrapPlan(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, lim
 			 ORDER BY created_at
 			 LIMIT $3
 		`, tenantID, target, limit)
-		if err != nil {
-			return fmt.Errorf("enumerate blobs: %w", err)
+		if qErr != nil {
+			return fmt.Errorf("enumerate blobs: %w", qErr)
 		}
-		pending, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (rewrapBlob, error) {
+		var collectErr error
+		pending, collectErr = pgx.CollectRows(rows, func(r pgx.CollectableRow) (rewrapBlob, error) {
 			var b rewrapBlob
-			err := r.Scan(&b.id, &b.curKEK, &b.sha)
-			return b, err
+			scanErr := r.Scan(&b.id, &b.curKEK, &b.sha)
+			return b, scanErr
 		})
-		return err
+		return collectErr
 	})
 	if err != nil {
 		return "", nil, err

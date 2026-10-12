@@ -166,8 +166,8 @@ func listKEKs(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) ([]ke
 			}
 			keks, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (kekRow, error) {
 				var k kekRow
-				err := r.Scan(&k.TenantID, &k.Version, &k.Alias, &k.Created, &k.Retired)
-				return k, err
+				scanErr := r.Scan(&k.TenantID, &k.Version, &k.Alias, &k.Created, &k.Retired)
+				return k, scanErr
 			})
 			out = append(out, keks...)
 			return err
@@ -197,28 +197,28 @@ func createKEK(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (str
 func rotateKEK(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID) (liveVer, newVer int, newAlias string, err error) {
 	err = database.WithTenantTx(ctx, pool, tenantID, func(tx pgx.Tx) error {
 		// Read the currently-live version.
-		if err := tx.QueryRow(ctx, `
+		if qErr := tx.QueryRow(ctx, `
 			SELECT version FROM tenant_keks
 			 WHERE tenant_id = $1 AND retired_at IS NULL
 			 ORDER BY version DESC LIMIT 1
-		`, tenantID).Scan(&liveVer); err != nil {
-			return fmt.Errorf("no live KEK (run `dms-admin kms create` first): %w", err)
+		`, tenantID).Scan(&liveVer); qErr != nil {
+			return fmt.Errorf("no live KEK (run `dms-admin kms create` first): %w", qErr)
 		}
 		// Retire the current live row.
-		if _, err := tx.Exec(ctx, `
+		if _, execErr := tx.Exec(ctx, `
 			UPDATE tenant_keks SET retired_at = now()
 			 WHERE tenant_id = $1 AND version = $2
-		`, tenantID, liveVer); err != nil {
-			return fmt.Errorf("retire live kek: %w", err)
+		`, tenantID, liveVer); execErr != nil {
+			return fmt.Errorf("retire live kek: %w", execErr)
 		}
 		// Insert a new live row.
 		newVer = liveVer + 1
 		newAlias = fmt.Sprintf("vaultdms/tenant/%s@v%d", tenantID, newVer)
-		if _, err := tx.Exec(ctx, `
+		if _, execErr := tx.Exec(ctx, `
 			INSERT INTO tenant_keks (tenant_id, version, alias, created_at)
 			VALUES ($1, $2, $3, now())
-		`, tenantID, newVer, newAlias); err != nil {
-			return fmt.Errorf("insert new kek: %w", err)
+		`, tenantID, newVer, newAlias); execErr != nil {
+			return fmt.Errorf("insert new kek: %w", execErr)
 		}
 		return nil
 	})
