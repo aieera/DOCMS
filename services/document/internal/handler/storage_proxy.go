@@ -312,13 +312,17 @@ func (p *StorageProxy) download(w http.ResponseWriter, r *http.Request) {
 		storageKey   string
 		encryptedDEK []byte
 	)
+	// The version must belong to the document the view check ran on (M-2):
+	// keyed on version id alone, /downloads/{A}/{versionOfB} handed B's
+	// bytes to anyone who can view A. Same binding as decrypt-stream.
 	err = database.WithTenantTx(r.Context(), p.pool, tenantID, func(tx pgx.Tx) error {
 		return tx.QueryRow(r.Context(), `
 			SELECT b.storage_key, b.encrypted_dek
 			FROM document_versions v
 			JOIN content_blobs b ON b.tenant_id = v.tenant_id AND b.id = v.content_blob_id
-			WHERE v.tenant_id = $1 AND v.id = $2
-		`, tenantID, versionID).Scan(&storageKey, &encryptedDEK)
+			WHERE v.tenant_id = $1 AND v.document_id = $2 AND v.id = $3
+			  AND b.shredded_at IS NULL
+		`, tenantID, docID, versionID).Scan(&storageKey, &encryptedDEK)
 	})
 	if err != nil {
 		writeProxyJSON(w, http.StatusNotFound, map[string]any{"error": "version or blob not found"})
