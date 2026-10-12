@@ -11,8 +11,10 @@
  * The service under test uses a 60 ms re-check interval instead of 60 s.
  */
 
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test, vi, onTestFinished } from 'vitest'
 
+import { startFixtureAPI, TestClient } from './harness.js'
+import { createFakeRedisBus } from './fake-redis.js'
 import { startYjsServer, YjsTestClient, installFetchMock, TENANT_ID, roomKey, toId } from './yjs-harness.js'
 
 vi.mock('../src/yjs-persistence.js', () => ({
@@ -22,6 +24,8 @@ vi.mock('../src/yjs-persistence.js', () => ({
 }))
 
 const { createYjsService, AUTHZ_RECHECK_MS } = await import('../src/yjs-server.js')
+const { createCollabServer } = await import('../src/server.js')
+const { WS_RECHECK_MS } = await import('../src/handler.js')
 
 const TENANT = TENANT_ID
 const DOC = '7c1d0c56-6d3e-4b0f-9a59-1d2b3c4d5e6f'
@@ -119,5 +123,72 @@ describe('periodic re-check', () => {
 
     writer.close()
     watcher.close()
+  })
+})
+
+describe('/ws subscription re-check', () => {
+  async function startWs() {
+    const api = await startFixtureAPI()
+    const saved = { a: process.env.AUTH_SERVICE_URL, d: process.env.DOCUMENT_SERVICE_URL }
+    process.env.AUTH_SERVICE_URL = api.url
+    process.env.DOCUMENT_SERVICE_URL = api.url
+    const bus = createFakeRedisBus()
+    const server = createCollabServer({
+      port: 0,
+      host: '127.0.0.1',
+      redisPub: bus.client(),
+      redisSub: bus.client(),
+      redisStore: bus.client(),
+      wsRecheckIntervalMs: 60,
+    })
+    await server.listening
+    onTestFinished(async () => {
+      await server.close()
+      await api.close()
+      process.env.AUTH_SERVICE_URL = saved.a
+      process.env.DOCUMENT_SERVICE_URL = saved.d
+    })
+    const connect = async (token) => {
+      const c = await new TestClient(`ws://127.0.0.1:${server.port}/ws`, {
+        headers: { 'X-Gateway-Signature': 'test-gateway-secret' },
+      }).open()
+      onTestFinished(() => c.close())
+      await c.auth(token)
+      return c
+    }
+    return { api, connect }
+  }
+
+  test('the production /ws re-check interval is 60 s', () => {
+    expect(WS_RECHECK_MS).toBe(60_000)
+  })
+
+  test('losing view unsubscribes the socket and tells it', async () => {
+    const { api, connect } = await startWs()
+    api.addUser('tok-alice', { name: 'Alice' })
+    api.addUser('tok-bob', { name: 'Bob' })
+    const alice = await connect('tok-alice')
+    const bob = await connect('tok-bob')
+    await alice.subscribe('doc-rw')
+    await bob.subscribe('doc-rw')
+
+    api.denyView('tok-alice', 'doc-rw')
+    const revoked = await alice.waitFor('subscription_revoked')
+    expect(revoked.doc_id).toBe('doc-rw')
+
+    bob.send({ type: 'comment_create', doc_id: 'doc-rw', body: 'after revocation' })
+    await bob.waitFor('comment_added')
+    await new Promise((r) => setTimeout(r, 150))
+    expect(alice.inbox.filter((m) => m.type === 'comment_added')).toHaveLength(0)
+    expect(alice.closed).toBeNull()
+  })
+
+  test('an expired session closes the socket with 4001', async () => {
+    const { api, connect } = await startWs()
+    api.addUser('tok-carol', { name: 'Carol' })
+    const carol = await connect('tok-carol')
+    await carol.subscribe('doc-exp')
+    api.users.delete('tok-carol')
+    expect((await carol.waitForClose()).code).toBe(4001)
   })
 })

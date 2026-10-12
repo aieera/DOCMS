@@ -66,6 +66,59 @@ async function checkDocView(token, docId) {
   }
 }
 
+// CB-3: how often a /ws socket's document subscriptions are re-authorized.
+export const WS_RECHECK_MS = 60_000;
+
+/**
+ * CB-3: re-read `view` for every document this socket subscribed to.
+ * Lost view (or an unavailable permission source — fail closed) removes
+ * the subscription and sends `subscription_revoked`; an invalid session
+ * closes the socket with 4001.
+ */
+export async function recheckSubscriptions(ws, connections) {
+  if (!ws.authenticated || ws.readyState !== 1 || !(ws.subscribedDocs instanceof Set)) return;
+  for (const docId of [...ws.subscribedDocs]) {
+    let perms;
+    try {
+      perms = await fetchDocPermissions({ Authorization: `Bearer ${ws.token}` }, docId);
+    } catch {
+      perms = { code: 4503 };
+    }
+    if (ws.readyState !== 1) return;
+    if (perms.code === 4401) {
+      ws.close(4001, 'session expired');
+      return;
+    }
+    if (perms.code || !perms.view) {
+      connections.unsubscribeFromDoc(ws, docId);
+      ws.send(JSON.stringify({
+        type: 'subscription_revoked',
+        doc_id: docId,
+        error: perms.code ? 'permission check unavailable' : 'no access to document',
+      }));
+    }
+  }
+}
+
+/** Run recheckSubscriptions every `intervalMs` until the socket closes. */
+export function startSubscriptionRecheck(ws, connections, intervalMs = WS_RECHECK_MS) {
+  let inFlight = false;
+  const timer = setInterval(async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await recheckSubscriptions(ws, connections);
+    } catch (err) {
+      console.error('ws: subscription re-check failed', err);
+    } finally {
+      inFlight = false;
+    }
+  }, intervalMs);
+  timer.unref?.();
+  ws.once('close', () => clearInterval(timer));
+  return () => clearInterval(timer);
+}
+
 /**
  * Publish to the doc room: the caller gets `data` directly (their
  * confirmation carries the persisted ids), every other subscriber —

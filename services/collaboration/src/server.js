@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws'
 import { MAX_PAYLOAD_BYTES } from './config.js'
 import { ConnectionManager } from './connections.js'
 import { verifyGatewaySignature } from './gateway-sig.js'
-import { handleMessage } from './handler.js'
+import { handleMessage, startSubscriptionRecheck, WS_RECHECK_MS } from './handler.js'
 import { createYjsService, SHUTDOWN_FLUSH_TIMEOUT_MS } from './yjs-server.js'
 import { createRedisRelay } from './yjs-relay.js'
 
@@ -71,8 +71,12 @@ export function handleRedisDocMessage(connections, channel, message) {
  * @param {import('ioredis').Redis} [opts.redisYjsSub] subscriber dedicated to the
  *   Yjs cross-instance relay (CB-1); without it rooms are process-local
  * @param {object} [opts.yjsOptions] passed to createYjsService
+ * @param {number} [opts.wsRecheckIntervalMs] /ws subscription re-check period (CB-3)
  */
-export function createCollabServer({ port, host, redisPub, redisSub, redisStore, redisYjsSub, yjsOptions = {} }) {
+export function createCollabServer({
+  port, host, redisPub, redisSub, redisStore, redisYjsSub, yjsOptions = {},
+  wsRecheckIntervalMs = WS_RECHECK_MS,
+}) {
   const connections = new ConnectionManager(redisStore)
   const wss = new WebSocketServer({
     port,
@@ -115,6 +119,7 @@ export function createCollabServer({ port, host, redisPub, redisSub, redisStore,
     }, 10_000)
 
     ws.on('pong', () => { ws.isAlive = true })
+    startSubscriptionRecheck(ws, connections, wsRecheckIntervalMs)
 
     ws.on('message', async (raw, isBinary) => {
       if (isBinary) {

@@ -202,8 +202,8 @@ export function startWSServer() {
 // ---- ws client fixture -------------------------------------------------------
 
 export class TestClient {
-  constructor(url) {
-    this.ws = new WebSocket(url);
+  constructor(url, opts = {}) {
+    this.ws = new WebSocket(url, opts);
     this.inbox = [];
     this.closed = null;
     this.ws.on('message', (raw) => this.inbox.push(JSON.parse(raw.toString())));
