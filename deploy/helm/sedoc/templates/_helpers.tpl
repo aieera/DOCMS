@@ -120,7 +120,7 @@ Common environment variables injected into every Go service
 - name: SEDOC_REGION_ID
   value: {{ .Values.global.region | default .Values.global.s3.region | quote }}
 - name: SEDOC_TRUSTED_PROXIES
-  value: {{ .Values.global.trustedProxies | quote }}
+  value: {{ required "global.trustedProxies is required: the Kong/ingress pod CIDR (DEC-5), never a whole RFC1918 block" .Values.global.trustedProxies | quote }}
 # R-19 — REDIS_PASSWORD before every URL that embeds it.
 - name: REDIS_PASSWORD
   valueFrom:

@@ -39,9 +39,13 @@ global:
 
   # DEC-5 — SEDOC_TRUSTED_PROXIES on every service: CIDRs whose
   # X-Forwarded-For is trusted when resolving the client IP (audit rows,
-  # rate limits). Must cover the Kong pods and nothing a client controls;
-  # narrow to your pod CIDR.
-  trustedProxies: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  # per-IP rate limits, IP allow-lists). REQUIRED, no default: set it to the
+  # Kong gateway pods' CIDR (your cluster's pod CIDR, e.g. 10.244.0.0/16) —
+  # never a whole RFC1918 block, or on a private network any client can
+  # prepend X-Forwarded-For and choose its own IP. The chart refuses to
+  # render until it is set (tests/check_rendered.py trusted-proxies rejects
+  # 10/8, 172.16/12, 192.168/16, 0/0).
+  trustedProxies: ""
 
   # O-9 — optional egress lockdown for every pod of the release
   # (app.kubernetes.io/part-of: sedoc). When enabled, pods may reach only
@@ -275,11 +279,11 @@ gateway:
     name: sedoc-gateway
     sharedSecretKey: shared-secret
   # DEC-5 — peers Kong trusts for X-Forwarded-For (KONG_TRUSTED_IPS): the
-  # ingress controller / load balancer. The default covers in-cluster
-  # private ranges, right while the Service is ClusterIP behind the Ingress;
-  # narrow it to the ingress controller's pod CIDR, and set it to your LB's
-  # range if you expose the Service as a LoadBalancer.
-  trustedIPs: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  # ingress controller pods' CIDR, or your load balancer's range when the
+  # Service is a LoadBalancer. REQUIRED, no default (same reasoning as
+  # global.trustedProxies: a whole RFC1918 block lets any internal client
+  # forge its address).
+  trustedIPs: ""
 
 auth:
   enabled: true

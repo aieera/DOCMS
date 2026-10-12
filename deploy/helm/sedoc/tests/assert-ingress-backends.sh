@@ -23,4 +23,5 @@ command -v helm >/dev/null || { echo "helm not on PATH (or pipe a rendered chart
 if [ ! -d "$chart/charts" ] || [ -z "$(ls -A "$chart/charts" 2>/dev/null)" ]; then
   helm dependency build "$chart" >/dev/null
 fi
-helm template sedoc "$chart" "$@" | python3 "$here/check_rendered.py" ingress-backends
+# values-ci.yaml supplies the two required DEC-5 CIDRs; later args win.
+helm template sedoc "$chart" -f "$here/values-ci.yaml" "$@" | python3 "$here/check_rendered.py" ingress-backends

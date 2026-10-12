@@ -50,6 +50,13 @@ Infrastructure:
   OpenSearch:  {{ .Values.global.openSearchURL | default .Values.global.opensearch.url }}
   S3:          {{ .Values.global.s3.endpoint }}
 
+Client IP trust (DEC-5): services trust X-Forwarded-For only from
+global.trustedProxies ({{ .Values.global.trustedProxies }}) and Kong only
+from gateway.trustedIPs ({{ .Values.gateway.trustedIPs }}). Both must be the
+Kong / ingress-controller pod CIDRs — never a whole RFC1918 block, or any
+client on the private network can choose its own IP for rate limits, audit
+rows and allow-lists.
+
 Secrets this release reads (create them, or enable externalSecrets):
 {{- range $name, $keys := include "sedoc.secretInventory" . | fromYaml }}
   {{ $name }}: {{ join ", " $keys }}

@@ -20,6 +20,10 @@ Checks:
                     app.kubernetes.io/instance and app.kubernetes.io/part-of
                     (the selectors of the service and data-store
                     NetworkPolicies; R-19 / M-32).
+  trusted-proxies   SEDOC_TRUSTED_PROXIES / KONG_TRUSTED_IPS never trust a
+                    whole RFC1918 block or the internet (DEC-5): with such a
+                    default any client inside the network could prepend
+                    X-Forwarded-For and pick its own IP.
   migration-secret  no Job/CronJob other than the migrate Job references the
                     migration/owner credential (Secret + key from --values).
 """
@@ -214,7 +218,38 @@ def check_labels(docs, args):
     return errs
 
 
+TOO_BROAD = {
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+    "0.0.0.0/0", "::/0", "fc00::/7",
+}
+
+
+def check_trusted_proxies(docs, args):
+    import ipaddress
+    errs = []
+    for d in docs:
+        ps = pod_spec(d)
+        if not ps or not ours(d):
+            continue
+        for c in containers(ps):
+            for e in c.get("env") or []:
+                if e.get("name") not in ("SEDOC_TRUSTED_PROXIES", "KONG_TRUSTED_IPS"):
+                    continue
+                for cidr in [x.strip() for x in str(e.get("value") or "").split(",") if x.strip()]:
+                    try:
+                        net = ipaddress.ip_network(cidr, strict=False)
+                    except ValueError:
+                        errs.append(f"{d['kind']}/{d['metadata']['name']}: {e['name']} has invalid CIDR {cidr!r}")
+                        continue
+                    broad = str(net) in TOO_BROAD or net.prefixlen < (8 if net.version == 4 else 7)
+                    if broad:
+                        errs.append(f"{d['kind']}/{d['metadata']['name']}: {e['name']} trusts {cidr} "
+                                    "(a whole private block / the internet)")
+    return errs
+
+
 CHECKS = {
+    "trusted-proxies": check_trusted_proxies,
     "labels": check_labels,
     "restricted": check_restricted,
     "secret-alignment": check_secret_alignment,

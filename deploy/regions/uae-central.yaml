@@ -48,6 +48,11 @@ global:
   # allowed origin).
   domain: vaultdms.ae
 
+  # DEC-5 — required, no default: the Kong / ingress-controller pod CIDR
+  # of this cluster (never a whole RFC1918 block). Set them here or with
+  # --set; gateway.trustedIPs likewise.
+  # trustedProxies: "<pod CIDR>"
+
   # S3 — me-central-1. s3.region is also SEDOC_REGION / SEDOC_S3_REGION.
   s3:
     endpoint: "https://s3.me-central-1.amazonaws.com"

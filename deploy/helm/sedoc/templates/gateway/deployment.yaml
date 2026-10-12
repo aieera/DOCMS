@@ -59,7 +59,7 @@ spec:
             # controller / load balancer; Kong appends its peer when it
             # forwards, and the backends resolve the client against
             # SEDOC_TRUSTED_PROXIES.
-            - { name: KONG_TRUSTED_IPS,       value: {{ .Values.gateway.trustedIPs | quote }} }
+            - { name: KONG_TRUSTED_IPS,       value: {{ required "gateway.trustedIPs is required: the ingress controller / load balancer CIDR (DEC-5), never a whole RFC1918 block" .Values.gateway.trustedIPs | quote }} }
             - { name: KONG_REAL_IP_HEADER,    value: "X-Forwarded-For" }
             - { name: KONG_REAL_IP_RECURSIVE, value: "on" }
             # §3.1 / B2.2 — gateway-signature shared secret. Sourced

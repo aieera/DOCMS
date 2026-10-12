@@ -23,7 +23,8 @@ all_jobs=(--set soc2Evidence.enabled=true --set auditVerify.enabled=true
 run() {
   local label="$1"; shift
   echo "== $label"
-  helm template sedoc "$chart" "$@" | python3 "$here/check_rendered.py"
+  # values-ci.yaml supplies the two required DEC-5 CIDRs (no defaults).
+  helm template sedoc "$chart" -f "$here/values-ci.yaml" "$@" | python3 "$here/check_rendered.py"
 }
 
 run "defaults"
