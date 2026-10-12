@@ -51,11 +51,11 @@ import (
 // existing object is changed to reference them, and those changes are
 // exactly what the rules above restrict.
 
-// gapIsContents reports whether the unsigned gap between the two signed
-// ranges is exactly this signature's /Contents hex string. A wider gap
-// leaves other bytes of the file unsigned.
+// gapIsContents reports whether the signed ranges start at byte 0 and the
+// unsigned gap between them is exactly this signature's /Contents hex
+// string. Anything else leaves other bytes of the file unsigned.
 func gapIsContents(raw []byte, s signatureBlock) bool {
-	if s.ContentsEnd <= s.ContentsStart || !byteRangeSane(s.ByteRange, int64(len(raw))) {
+	if s.ByteRange[0] != 0 || s.ContentsEnd <= s.ContentsStart || !byteRangeSane(s.ByteRange, int64(len(raw))) {
 		return false
 	}
 	return s.ByteRange[0]+s.ByteRange[1] == int64(s.ContentsStart) && s.ByteRange[2] == int64(s.ContentsEnd)

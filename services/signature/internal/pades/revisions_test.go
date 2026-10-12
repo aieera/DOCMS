@@ -340,3 +340,27 @@ func TestVerify_SignedFieldAppearanceOverlayRejected(t *testing.T) {
 			"/Rect [0.0 0.0 0.0 0.0] /AP 8 0 R >>",
 	}, "", "1 0 R")))
 }
+
+// The first signed range must start at byte 0; otherwise the bytes before
+// it (the PDF header, the first objects) are unsigned even when the gap is
+// exactly /Contents.
+func TestVerify_ByteRangeMustStartAtZero(t *testing.T) {
+	head := "%PDF-1.7\n1 0 obj <</Type /Sig /ByteRange [0000 0000 00000 0000] /Contents <abcdef>>> endobj\n"
+	pdf := []byte(head + "%%EOF\n")
+	lt := bytes.Index(pdf, []byte("/Contents <")) + len("/Contents ")
+	gt := bytes.Index(pdf[lt:], []byte(">")) + lt + 1
+	br := fmt.Sprintf("[%04d %04d %05d %04d]", 9, lt-9, gt, len(pdf)-gt)
+	pdf = bytes.Replace(pdf, []byte("[0000 0000 00000 0000]"), []byte(br), 1)
+
+	doc, err := parsePDF(pdf)
+	if err != nil || len(doc.Signatures) != 1 {
+		t.Fatalf("parse: %v (%d sigs)", err, len(doc.Signatures))
+	}
+	if gapIsContents(pdf, doc.Signatures[0]) {
+		t.Fatalf("ByteRange %v leaves the first 9 bytes unsigned", doc.Signatures[0].ByteRange)
+	}
+	rep, _ := NewVerifier(VerifierOptions{SkipNetworkLookups: true}).Validate(context.Background(), pdf)
+	if rep.Signatures[0].TamperEvident || !contains(rep.Signatures[0].Errors, "byte_range_gap_mismatch") {
+		t.Fatalf("want byte_range_gap_mismatch: %+v", rep.Signatures[0])
+	}
+}
