@@ -62,8 +62,12 @@ type UploadSession struct {
 	// pre-existing blob, whose storage key differs from the session's,
 	// so this cannot be derived. Nil on legacy/pre-completion rows.
 	ContentBlobID *uuid.UUID
-	StorageBucket string // derived from region + tier; not persisted on every row
-	StorageKey    string // content-addressable path in the bucket
+	// StorageBucket / StorageKey are the object location the initiate
+	// signed the PUT URL for, persisted since migration 000107 (H-9).
+	// Empty on sessions created before that migration; callers then fall
+	// back to the key derived from CreatedAt (see service.sessionObject).
+	StorageBucket string
+	StorageKey    string
 }
 
 // ScanRecord is one row in scan_results.

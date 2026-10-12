@@ -23,16 +23,19 @@ func (r *uploadRepo) Create(ctx context.Context, tx pgx.Tx, u *model.UploadSessi
 		INSERT INTO upload_sessions (
 			tenant_id, id, document_id, filename, total_size, mime_type,
 			upload_type, storage_region, s3_upload_id, status,
-			parts_completed, parts_total, created_by, created_at, expires_at
+			parts_completed, parts_total, created_by, created_at, expires_at,
+			storage_bucket, storage_key
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10,
-			$11, $12, $13, $14, $15
+			$11, $12, $13, $14, $15,
+			NULLIF($16, ''), NULLIF($17, '')
 		)
 	`,
 		u.TenantID, u.ID, docID, u.Filename, u.TotalSize, u.MimeType,
 		string(u.UploadType), u.StorageRegion, u.S3UploadID, string(u.Status),
 		u.PartsCompleted, u.PartsTotal, u.CreatedBy, u.CreatedAt, u.ExpiresAt,
+		u.StorageBucket, u.StorageKey,
 	)
 	return mapPgError(err)
 }
@@ -42,7 +45,8 @@ const uploadSessionSelect = `
 		       COALESCE(mime_type, ''), upload_type, storage_region,
 		       COALESCE(s3_upload_id, ''), status,
 		       parts_completed, COALESCE(parts_total, 0), created_by,
-		       created_at, completed_at, expires_at, content_blob_id
+		       created_at, completed_at, expires_at, content_blob_id,
+		       COALESCE(storage_bucket, ''), COALESCE(storage_key, '')
 		FROM upload_sessions
 		WHERE tenant_id = $1 AND id = $2`
 
@@ -73,6 +77,7 @@ func scanUploadSession(row pgx.Row) (*model.UploadSession, error) {
 		&u.S3UploadID, &status,
 		&u.PartsCompleted, &u.PartsTotal, &u.CreatedBy,
 		&u.CreatedAt, &completed, &u.ExpiresAt, &blobID,
+		&u.StorageBucket, &u.StorageKey,
 	); err != nil {
 		return nil, mapPgError(err)
 	}

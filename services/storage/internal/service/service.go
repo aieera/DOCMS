@@ -275,8 +275,13 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 	if err != nil {
 		return nil, err
 	}
+	// One clock read for the whole initiate: the key's year/month, the
+	// session's created_at and its expiry all derive from it. The bucket
+	// and key are persisted on the session (H-9) — complete, abort and
+	// download read them back instead of re-deriving from a later clock.
+	now := s.now().UTC()
 	bucket := bucketName(region, "hot")
-	key := contentAddressableKey(in.TenantID, id, in.Filename)
+	key := contentAddressableKey(in.TenantID, id, in.Filename, now)
 
 	// pkg/storage already signs against the public endpoint when one
 	// is configured (see NewS3ClientWithPublicEndpoint in main.go). No
@@ -295,7 +300,6 @@ func (s *Service) InitiateUpload(ctx context.Context, in InitiateUploadInput) (*
 		return nil, fmt.Errorf("presign put: %w", err)
 	}
 
-	now := s.now().UTC()
 	expires := now.Add(s.cfg.UploadTTL)
 
 	session := &model.UploadSession{
@@ -433,9 +437,9 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 		return nil, vdmserr.ErrNotFound
 	}
 
-	// Recompute bucket/key — Create doesn't persist them (they're derived).
-	bucket := bucketName(session.StorageRegion, "hot")
-	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
+	// The object lives where initiate signed the PUT URL for (persisted on
+	// the session) — never re-derived from today's date (H-9).
+	bucket, key := sessionObject(session)
 
 	// 1. Sanity-check the object landed at the expected location + size.
 	//    TotalSize is the client's declared PLAINTEXT size, and this
@@ -736,8 +740,7 @@ func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID)
 		if u.Status == model.UploadCompleted || u.Status == model.UploadQuarantine {
 			return vdmserr.Conflict("upload already finalized")
 		}
-		bucket := bucketName(u.StorageRegion, "hot")
-		key := contentAddressableKey(u.TenantID, u.ID, u.Filename)
+		bucket, key := sessionObject(u)
 		_ = s.s3.DeleteObject(ctx, bucket, key) // best effort
 		return s.repos.Uploads.UpdateStatus(ctx, tx, tenantID, uploadID, model.UploadFailed)
 	})
@@ -753,11 +756,34 @@ func (s *Service) AbortUpload(ctx context.Context, tenantID, uploadID uuid.UUID)
 // still transitional; see the document_id/upload_id note below). Same gap on
 // AbortUpload/GetScanStatus (#11). See docs/security/epic6-storage-followups.md.
 func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UUID, ttlSeconds int) (string, time.Time, error) {
-	var session *model.UploadSession
+	var (
+		session     *model.UploadSession
+		bucket, key string
+	)
 	err := database.WithTenantTx(ctx, s.pool, tenantID, func(tx pgx.Tx) error {
 		u, err := s.repos.Uploads.GetByID(ctx, tx, tenantID, uploadID)
+		if err != nil {
+			return err
+		}
 		session = u
-		return err
+		if u.Status != model.UploadCompleted {
+			return nil
+		}
+		// DEC-9 resolution order: the blob the session completed into
+		// (its key is authoritative — a late-dedup session points at an
+		// earlier upload's object, and WORM/re-encrypt move blobs), then
+		// the key persisted at initiate, then — legacy rows only — the
+		// key derived from created_at.
+		if u.ContentBlobID != nil {
+			blob, berr := s.repos.ContentBlobs.GetByID(ctx, tx, tenantID, *u.ContentBlobID)
+			if berr != nil {
+				return fmt.Errorf("resolve blob for upload %s: %w", u.ID, berr)
+			}
+			bucket, key = blob.StorageBucket, blob.StorageKey
+			return nil
+		}
+		bucket, key = sessionObject(u)
+		return nil
 	})
 	if err != nil {
 		return "", time.Time{}, err
@@ -769,8 +795,6 @@ func (s *Service) GetDownloadURL(ctx context.Context, tenantID, uploadID uuid.UU
 	if ttl <= 0 || ttl > s.cfg.PresignTTL {
 		ttl = s.cfg.PresignTTL
 	}
-	bucket := bucketName(session.StorageRegion, "hot")
-	key := contentAddressableKey(session.TenantID, session.ID, session.Filename)
 	// Force inline + the actual mime-type from the upload session so
 	// Chrome doesn't fall back to its "what is this?" heuristic and
 	// auto-download. The session row already carries the validated
@@ -1018,11 +1042,26 @@ func bucketName(region, tier string) string {
 //	{tenant}/{yyyy}/{mm}/{upload_id}/{sanitized_filename}
 //
 // tenant first so a partial bucket listing by a compromised tenant key is
-// bounded to that tenant's data.
-func contentAddressableKey(tenantID, uploadID uuid.UUID, filename string) string {
-	now := time.Now().UTC()
+// bounded to that tenant's data. yyyy/mm come from `at` — the initiation
+// instant — never from the clock of whichever later call needs the key
+// (H-9: recomputing from time.Now() broke every operation that crossed a
+// month boundary).
+func contentAddressableKey(tenantID, uploadID uuid.UUID, filename string, at time.Time) string {
+	at = at.UTC()
 	return fmt.Sprintf("%s/%04d/%02d/%s/%s",
-		tenantID, now.Year(), int(now.Month()), uploadID, sanitizeFilename(filename))
+		tenantID, at.Year(), int(at.Month()), uploadID, sanitizeFilename(filename))
+}
+
+// sessionObject returns where an upload session's object lives: the
+// bucket/key persisted at initiate (migration 000107), or — for sessions
+// created before that migration — the location the legacy initiate
+// derived, i.e. the hot bucket of the session's region and the key for
+// the month of created_at.
+func sessionObject(u *model.UploadSession) (bucket, key string) {
+	if u.StorageBucket != "" && u.StorageKey != "" {
+		return u.StorageBucket, u.StorageKey
+	}
+	return bucketName(u.StorageRegion, "hot"), contentAddressableKey(u.TenantID, u.ID, u.Filename, u.CreatedAt)
 }
 
 // sanitizeFilename strips path traversal and control characters.
