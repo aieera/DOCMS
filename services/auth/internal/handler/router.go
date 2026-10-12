@@ -24,7 +24,11 @@ type SCIMWiring struct {
 // Router wires all auth HTTP routes. Each optional subsystem may be nil.
 func (h *Handler) Router(saml *SAMLHandler, oidc *OIDCHandler, sc *SCIMWiring, groups *GroupsHandler, ssoAdmin *SSOAdminHandler, scimAdmin *SCIMAdminHandler, encAdmin *EncryptionAdminHandler, tenantAdmin *TenantAdminHandler, ldapAdmin *LDAPAdminHandler) http.Handler {
 	r := chi.NewRouter()
-	r.Use(chimw.RealIP)
+	// L-5: no chimw.RealIP. It rewrote RemoteAddr from client-supplied
+	// True-Client-IP / X-Real-IP / X-Forwarded-For (Kong does not strip
+	// True-Client-IP), letting a caller pick a fresh in-process rate-limit
+	// bucket per request. RemoteAddr stays the peer; audit IPs come from
+	// clientIP.
 	r.Use(chimw.Recoverer)
 
 	r.Route("/api/v1/auth", func(r chi.Router) {
