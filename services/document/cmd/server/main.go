@@ -893,10 +893,13 @@ func main() {
 	// ADR 0098 — zero-trust view-only share. Admin routes require
 	// SessionAuth; recipient routes (/api/v1/zt/{token}/*) are public
 	// — the token IS the auth. Pepper is part of cfg so it can rotate
-	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER).
-	ztPepper := []byte(os.Getenv("SEDOC_ZT_TOKEN_PEPPER"))
-	if len(ztPepper) == 0 {
-		ztPepper = []byte("dev-only-zt-pepper-rotate-in-prod")
+	// without rebuilding (env: SEDOC_ZT_TOKEN_PEPPER). D-13: the dev
+	// pepper is accepted only in the dev environment; elsewhere a missing
+	// pepper leaves it nil and the zt routes answer 503.
+	ztPepper, ztPepperErr := service.ResolveSecret(cfg.Environment, os.Getenv("SEDOC_ZT_TOKEN_PEPPER"), handler.DevZTTokenPepper)
+	if ztPepperErr != nil {
+		log.Error(ctx).Str("environment", cfg.Environment).
+			Msg("SEDOC_ZT_TOKEN_PEPPER is not set (or is the dev default) outside dev; zero-trust share routes will return 503")
 	}
 	ztHandler := handler.NewZTShareHandler(pool, svc, s3c, docKMS, ztPepper)
 
@@ -1030,6 +1033,9 @@ func main() {
 	// §10.3 / E6 — OnlyOffice editor config + save callback.
 	onlyOfficeMux := http.NewServeMux()
 	onlyOfficeH := handler.NewOnlyOfficeHandler(*log.Z())
+	// D-13: outside dev SEDOC_ONLYOFFICE_JWT must be set and must not be
+	// the compose dev default; otherwise config/callback answer 503.
+	onlyOfficeH.Environment = cfg.Environment
 	// Status 2/6 (ready-to-save / force-save) download-and-commit. Redis
 	// carries the WOPI locks so a version locked by another editor
 	// session rejects the save-back.

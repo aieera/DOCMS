@@ -38,6 +38,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // OnlyOfficeSaver commits an edited file (fetched from the Document
@@ -56,9 +57,16 @@ type CoauthAuthorizer interface {
 	AuthorizeCoauth(ctx context.Context, versionID uuid.UUID) (docID uuid.UUID, canWrite bool, err error)
 }
 
+// DevOnlyOfficeJWT is the published dev value docker-compose injects for
+// SEDOC_ONLYOFFICE_JWT; accepted only when Environment is "dev" (D-13).
+const DevOnlyOfficeJWT = "dev-only-onlyoffice-jwt-rotate-in-prod"
+
 // OnlyOfficeHandler mounts the E6 endpoints.
 type OnlyOfficeHandler struct {
 	log zerolog.Logger
+	// Environment is pkg/config Environment (dev | staging | prod). Outside
+	// dev the JWT secret must be set and must not be DevOnlyOfficeJWT.
+	Environment string
 	// Authz gates the config endpoint (D-6): an edit config — and the
 	// write-capable callback token inside it — is only minted for a caller
 	// who holds edit on the version's document. Wired by main; nil fails
@@ -70,6 +78,18 @@ type OnlyOfficeHandler struct {
 	// while another editor session holds the version's lock. Optional —
 	// nil skips the check (unit tests without Redis).
 	Redis *redis.Client
+}
+
+// jwtSecret returns the Document Server shared secret per D-13: in dev an
+// unset SEDOC_ONLYOFFICE_JWT falls back to DevOnlyOfficeJWT (what compose
+// injects); elsewhere it must be set and must not be that published value.
+// Read per request so tests can t.Setenv.
+func (h *OnlyOfficeHandler) jwtSecret() (string, bool) {
+	b, err := service.ResolveSecret(h.Environment, os.Getenv("SEDOC_ONLYOFFICE_JWT"), DevOnlyOfficeJWT)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
 }
 
 // onlyOfficeCallbackTokenTTL bounds the write-capable save-back token the
@@ -91,25 +111,25 @@ func (h *OnlyOfficeHandler) Register(mux *http.ServeMux) {
 // ---- config endpoint ----------------------------------------------
 
 type onlyOfficeConfig struct {
-	Document   oneOfficeDoc   `json:"document"`
+	Document     oneOfficeDoc `json:"document"`
 	DocumentType string       `json:"documentType"`
 	EditorConfig oneOfficeEd  `json:"editorConfig"`
-	Token      string         `json:"token,omitempty"` // JWT of the rest of the config
+	Token        string       `json:"token,omitempty"` // JWT of the rest of the config
 }
 
 type oneOfficeDoc struct {
-	FileType string          `json:"fileType"`
-	Key      string          `json:"key"`
-	Title    string          `json:"title"`
-	URL      string          `json:"url"`
+	FileType    string         `json:"fileType"`
+	Key         string         `json:"key"`
+	Title       string         `json:"title"`
+	URL         string         `json:"url"`
 	Permissions map[string]any `json:"permissions,omitempty"`
 }
 
 type oneOfficeEd struct {
-	Mode     string        `json:"mode"`
-	Lang     string        `json:"lang"`
-	CallbackURL string     `json:"callbackUrl"`
-	User     oneOfficeUser `json:"user"`
+	Mode        string        `json:"mode"`
+	Lang        string        `json:"lang"`
+	CallbackURL string        `json:"callbackUrl"`
+	User        oneOfficeUser `json:"user"`
 }
 
 type oneOfficeUser struct {
@@ -133,9 +153,9 @@ func (h *OnlyOfficeHandler) config(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
-	if secret == "" {
-		writeErr(w, r, vdmserr.Internal("onlyoffice not configured"))
+	secret, ok := h.jwtSecret()
+	if !ok {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "onlyoffice not configured"})
 		return
 	}
 	publicBase := os.Getenv("SEDOC_PUBLIC_URL")
@@ -263,50 +283,54 @@ func (h *OnlyOfficeHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// "save" event pointing at a malicious file. The token rides in the
 	// Authorization header (token.inbox.header) or the body `token` field;
 	// the signed payload is the authoritative status/url/key.
-	token := ""
-	if secret := os.Getenv("SEDOC_ONLYOFFICE_JWT"); secret != "" {
-		token = strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-		if token == "" {
-			token = body.Token
-		}
-		payload, ok := verifyHS256(token, secret)
-		if !ok {
-			h.log.Warn().Str("key", body.Key).Msg("onlyoffice callback rejected: missing/invalid JWT")
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
-			return
-		}
-		// Header-form tokens wrap the event under "payload"; body-form tokens
-		// are the event directly. Trust whichever decodes. iat/exp are the
-		// JWT's own claims (top level in both forms).
-		var signed struct {
-			Status  int    `json:"status"`
-			URL     string `json:"url"`
-			Key     string `json:"key"`
-			Iat     *int64 `json:"iat"`
-			Exp     *int64 `json:"exp"`
-			Payload *struct {
-				Status int    `json:"status"`
-				URL    string `json:"url"`
-				Key    string `json:"key"`
-			} `json:"payload"`
-		}
-		if err := json.Unmarshal(payload, &signed); err != nil {
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
-			return
-		}
-		// D-11: a signature alone is a bearer credential forever. The DS
-		// signs every callback with iat + exp; both are required and the
-		// token must be fresh (small skew allowance).
-		if reason := onlyOfficeTokenStale(signed.Iat, signed.Exp, time.Now()); reason != "" {
-			h.log.Warn().Str("key", body.Key).Str("reason", reason).Msg("onlyoffice callback rejected: stale JWT")
-			writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
-			return
-		}
-		if signed.Payload != nil {
-			body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
-		} else {
-			body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
-		}
+	// D-13: without a usable secret nothing here can be authenticated —
+	// refuse rather than act on an unsigned event.
+	secret, configured := h.jwtSecret()
+	if !configured {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{"error": 1})
+		return
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	if token == "" {
+		token = body.Token
+	}
+	payload, ok := verifyHS256(token, secret)
+	if !ok {
+		h.log.Warn().Str("key", body.Key).Msg("onlyoffice callback rejected: missing/invalid JWT")
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	// Header-form tokens wrap the event under "payload"; body-form tokens
+	// are the event directly. Trust whichever decodes. iat/exp are the
+	// JWT's own claims (top level in both forms).
+	var signed struct {
+		Status  int    `json:"status"`
+		URL     string `json:"url"`
+		Key     string `json:"key"`
+		Iat     *int64 `json:"iat"`
+		Exp     *int64 `json:"exp"`
+		Payload *struct {
+			Status int    `json:"status"`
+			URL    string `json:"url"`
+			Key    string `json:"key"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(payload, &signed); err != nil {
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	// D-11: a signature alone is a bearer credential forever. The DS
+	// signs every callback with iat + exp; both are required and the
+	// token must be fresh (small skew allowance).
+	if reason := onlyOfficeTokenStale(signed.Iat, signed.Exp, time.Now()); reason != "" {
+		h.log.Warn().Str("key", body.Key).Str("reason", reason).Msg("onlyoffice callback rejected: stale JWT")
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": 1})
+		return
+	}
+	if signed.Payload != nil {
+		body.Status, body.URL, body.Key = signed.Payload.Status, signed.Payload.URL, signed.Payload.Key
+	} else {
+		body.Status, body.URL, body.Key = signed.Status, signed.URL, signed.Key
 	}
 
 	switch body.Status {
@@ -362,9 +386,9 @@ func (h *OnlyOfficeHandler) commitSave(r *http.Request, status int, fileURL stri
 	if fileURL == "" {
 		return vdmserr.Validation("url", "save event carried no download url")
 	}
-	secret := os.Getenv("SEDOC_ONLYOFFICE_JWT")
-	if secret == "" {
-		return vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not set")
+	secret, ok := h.jwtSecret()
+	if !ok {
+		return vdmserr.Internal("SEDOC_ONLYOFFICE_JWT not configured")
 	}
 
 	// The access_token minted by the config endpoint carries the caller

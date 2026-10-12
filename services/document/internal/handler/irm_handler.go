@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -87,6 +88,10 @@ func (h *IRMHandler) export(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ExportProtected(r.Context(), in)
 	if err != nil {
+		if errors.Is(err, service.ErrSecretNotConfigured) {
+			writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "irm signing key not configured"})
+			return
+		}
 		writeErr(w, r, err)
 		return
 	}

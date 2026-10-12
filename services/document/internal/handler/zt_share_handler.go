@@ -81,6 +81,10 @@ type ZTShareHandler struct {
 	pepper []byte
 }
 
+// DevZTTokenPepper is the published dev convenience pepper; main accepts it
+// only when the environment is "dev" (D-13).
+const DevZTTokenPepper = "dev-only-zt-pepper-rotate-in-prod"
+
 // ZTDocumentAuthorizer is the slice of DocumentService create needs:
 // GetDocument enforces view (+ classification) and reports the caller's
 // capabilities on the document.
@@ -94,7 +98,7 @@ func NewZTShareHandler(pool *pgxpool.Pool, docs ZTDocumentAuthorizer, s3 *storag
 
 // RegisterAdmin mounts the admin/sender routes (require SessionAuth at the caller).
 func (h *ZTShareHandler) RegisterAdmin(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/admin/share-links/zt", h.create)
+	mux.HandleFunc("POST /api/v1/admin/share-links/zt", h.requirePepper(h.create))
 	mux.HandleFunc("POST /api/v1/admin/share-links/zt/{token_id}/revoke", h.revoke)
 	mux.HandleFunc("GET /api/v1/admin/share-links/zt/{token_id}/telemetry", h.telemetryRead)
 }
@@ -103,9 +107,22 @@ func (h *ZTShareHandler) RegisterAdmin(mux *http.ServeMux) {
 func (h *ZTShareHandler) RegisterPublic(mux *http.ServeMux) {
 	// The path wildcard keeps its historical name; its value is the URL
 	// token (pre-image), not the stored token_id.
-	mux.HandleFunc("GET /api/v1/zt/{token_id}/manifest", h.manifest)
-	mux.HandleFunc("GET /api/v1/zt/{token_id}/stream", h.stream)
-	mux.HandleFunc("POST /api/v1/zt/{token_id}/telemetry", h.telemetryWrite)
+	mux.HandleFunc("GET /api/v1/zt/{token_id}/manifest", h.requirePepper(h.manifest))
+	mux.HandleFunc("GET /api/v1/zt/{token_id}/stream", h.requirePepper(h.stream))
+	mux.HandleFunc("POST /api/v1/zt/{token_id}/telemetry", h.requirePepper(h.telemetryWrite))
+}
+
+// requirePepper fails the token-minting and token-resolving routes closed
+// (503) when no pepper is configured — main passes nil outside dev when
+// SEDOC_ZT_TOKEN_PEPPER is unset or still the published dev value (D-13).
+func (h *ZTShareHandler) requirePepper(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if len(h.pepper) == 0 {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "zt share not configured"})
+			return
+		}
+		next(w, r)
+	}
 }
 
 // ---- create -------------------------------------------------------
