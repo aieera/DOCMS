@@ -37,8 +37,9 @@ import java.util.List;
  * see signer.proto.) Server-key mode
  * (MODE_SERVER_HSM): the signing key lives in a PKCS#12 keystore the
  * sidecar loads at startup ({@code SIGNER_KEYSTORE_PATH}). The dev
- * image bakes in a self-signed keystore; prod mounts a real one (or,
- * later, swaps the {@link KeyStoreSignatureToken} for a KMS-backed
+ * image bakes in a self-signed keystore, which is refused unless
+ * SIGNER_ALLOW_DEV_KEY=1 ({@link DevKeyPolicy}); prod mounts a real one
+ * (or, later, swaps the {@link KeyStoreSignatureToken} for a KMS-backed
  * token — the only line that changes).
  *
  * Level handling: B-B always works offline. B-T / B-LT / B-LTA need a
@@ -58,7 +59,14 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
     private final DSSPrivateKeyEntry privateKey;
     private final String defaultTsaUrl;
 
-    public SignerService(String keystorePath, String keystorePass, String keyAlias, String defaultTsaUrl) {
+    /**
+     * @param allowDevKey accept the development key baked into the image
+     *                    ({@code SIGNER_ALLOW_DEV_KEY=1}); see {@link DevKeyPolicy}.
+     * @throws IllegalStateException when the keystore cannot be used, or holds
+     *                               the dev key and {@code allowDevKey} is false
+     */
+    public SignerService(String keystorePath, String keystorePass, String keyAlias, String defaultTsaUrl,
+                         boolean allowDevKey) {
         this.defaultTsaUrl = defaultTsaUrl == null ? "" : defaultTsaUrl.trim();
         try {
             this.token = new Pkcs12SignatureToken(keystorePath,
@@ -79,6 +87,12 @@ public final class SignerService extends SignerServiceGrpc.SignerServiceImplBase
                     break;
                 }
             }
+        }
+        String subject = selected.getCertificate().getCertificate().getSubjectX500Principal().getName();
+        DevKeyPolicy.enforce(keystorePath, subject, allowDevKey);
+        if (DevKeyPolicy.isDevKey(keystorePath, subject)) {
+            LOG.warn("signing with the baked DEVELOPMENT key ({}=1); never use this outside a local stack",
+                    DevKeyPolicy.OPT_IN_ENV);
         }
         this.privateKey = selected;
         LOG.info("signer key loaded: subject={} tsa={}",

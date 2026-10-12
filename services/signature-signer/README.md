@@ -38,9 +38,15 @@ docker build -t sedoc-signer .
 
 ```bash
 docker run --rm -p 6060:6060 \
+  -e SIGNER_ALLOW_DEV_KEY=1 \
   -e SIGNER_TSA_URL=https://freetsa.org/tsr \
   sedoc-signer
 ```
+
+The image bakes a self-signed development keystore. The signer refuses
+to start with it unless `SIGNER_ALLOW_DEV_KEY=1`; production mounts a
+real PKCS#12 keystore and sets `SIGNER_KEYSTORE_PATH` and
+`SIGNER_KEYSTORE_PASS` (no default password).
 
 Go signature service dials `localhost:6060` (configurable via
 `SEDOC_SIGNER_SIDECAR_ADDR`). The Go side's

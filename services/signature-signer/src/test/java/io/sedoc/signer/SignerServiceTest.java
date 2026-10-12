@@ -46,7 +46,7 @@ class SignerServiceTest {
     @Test
     void signsAPdfAtBaselineB() throws Exception {
         Path ks = TestKeystores.selfSigned(tmp, "CN=Unit Test Signer,O=SeDoc Test");
-        SignerService svc = new SignerService(ks.toString(), TestKeystores.PASSWORD, TestKeystores.ALIAS, "");
+        SignerService svc = new SignerService(ks.toString(), TestKeystores.PASSWORD, TestKeystores.ALIAS, "", false);
         byte[] pdf = TestKeystores.minimalPdf();
 
         Capture c = sign(svc, pdf, "Alice");
