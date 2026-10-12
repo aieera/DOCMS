@@ -602,7 +602,19 @@ func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) 
 		ua = ua[:256]
 	}
 
-	_ = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+	// Same gate as manifest/stream: a revoked, expired or deleted-document
+	// share accepts no more telemetry (410). Insert failures stay
+	// best-effort for the viewer.
+	denied := ""
+	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		reason, e := h.tokenDeniedReason(r, tx, tid, tokenID)
+		if e != nil {
+			return e
+		}
+		if reason != "" {
+			denied = reason
+			return nil
+		}
 		_, _ = tx.Exec(r.Context(), `
 			INSERT INTO zt_share_telemetry
 				(tenant_id, token_id, event_type, page_number, dwell_ms, user_agent, ip_hash)
@@ -610,6 +622,14 @@ func (h *ZTShareHandler) telemetryWrite(w http.ResponseWriter, r *http.Request) 
 			tid, tokenID, in.EventType, in.PageNumber, in.DwellMS, ua, ipHash)
 		return nil
 	})
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not_found"})
+		return
+	}
+	if denied != "" {
+		writeJSON(w, 410, map[string]string{"error": denied})
+		return
+	}
 
 	w.WriteHeader(204)
 }

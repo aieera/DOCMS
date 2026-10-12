@@ -517,3 +517,41 @@ func TestZTStream_DeletedDocument410(t *testing.T) {
 	require.NoError(t, h.seed.QueryRow(h.ctx, `SELECT view_count FROM zt_share_tokens WHERE tenant_id = $1`, h.tenant).Scan(&views))
 	require.Zero(t, views, "a deleted document must not consume a view")
 }
+
+// The recipient telemetry endpoint accepted writes for revoked and expired
+// links (unauthenticated writes into the sender's activity timeline after
+// the share was killed). Same gate as manifest/stream: 410, nothing stored.
+func TestZTTelemetry_RevokedRejected(t *testing.T) {
+	h := newZTHarness(t)
+	post := func(secret string) int {
+		rec := httptest.NewRecorder()
+		h.public.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/zt/"+secret+"/telemetry",
+			bytes.NewReader([]byte(`{"event_type":"page_view","page_number":1}`))))
+		return rec.Code
+	}
+	count := func() int {
+		var n int
+		require.NoError(t, h.seed.QueryRow(h.ctx, `SELECT count(*) FROM zt_share_telemetry WHERE tenant_id = $1`, h.tenant).Scan(&n))
+		return n
+	}
+
+	rec, revoked := ztCreate(t, h.admin, h.tenant, h.user, "member", h.doc, h.ver, 0)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusNoContent, post(revoked.secret(t)))
+	require.Equal(t, 1, count())
+
+	rv := httptest.NewRecorder()
+	h.admin.ServeHTTP(rv, ztAs(httptest.NewRequest(http.MethodPost,
+		"/api/v1/admin/share-links/zt/"+revoked.TokenID+"/revoke", nil), h.tenant, h.user, "member"))
+	require.Equal(t, http.StatusNoContent, rv.Code)
+	require.Equal(t, http.StatusGone, post(revoked.secret(t)), "revoked link must not accept telemetry")
+
+	rec, expired := ztCreate(t, h.admin, h.tenant, h.user, "member", h.doc, h.ver, 0)
+	require.Equal(t, http.StatusOK, rec.Code)
+	_, err := h.seed.Exec(h.ctx, `UPDATE zt_share_tokens SET expires_at = now() - interval '1 minute'
+		WHERE tenant_id = $1 AND token_id = $2`, h.tenant, uuid.MustParse(expired.TokenID))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusGone, post(expired.secret(t)), "expired link must not accept telemetry")
+
+	require.Equal(t, 1, count(), "no telemetry stored after revoke/expiry")
+}
