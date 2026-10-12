@@ -22,7 +22,7 @@
 #   * NATS user/password and a Redis password;
 #   * nothing is published on the network except the Kong gateway. Web,
 #     MinIO (presigned URLs) and OnlyOffice — the only other things a browser
-#     talks to — are published on SEDOC_PUBLIC_BIND (default 127.0.0.1) for the
+#     talks to — are published on 127.0.0.1 only (no override) for the
 #     host's TLS reverse proxy:
 #         https://<domain>/api, /yjs, /ws  -> 127.0.0.1:8080 (gateway)
 #         https://<domain>/               -> 127.0.0.1:3000 (web)
@@ -151,8 +151,15 @@ services:
     environment:
       MINIO_ROOT_USER: *s3-access
       MINIO_ROOT_PASSWORD: *s3-secret
+    # Published on loopback ONLY (H-23), never on the network: browsers
+    # PUT/GET object bytes directly with presigned URLs, which SigV4 binds
+    # to the host they were signed for. Storage signs them for
+    # SEDOC_S3_PUBLIC_BASE, so that name must be served by the host's TLS
+    # reverse proxy and forwarded here, Host header preserved. Kong cannot
+    # carry this traffic (it would have to keep Host and stream 64 MB+
+    # bodies outside the API rules). No SEDOC_PUBLIC_BIND override in prod.
     ports: !override
-      - "${SEDOC_PUBLIC_BIND:-127.0.0.1}:9000:9000"
+      - "127.0.0.1:9000:9000"
     restart: always
 
   minio-init:
@@ -192,8 +199,9 @@ services:
     <<: *logging
     environment:
       JWT_SECRET: *onlyoffice-jwt
+    # Loopback only; the host TLS proxy serves SEDOC_ONLYOFFICE_PUBLIC_URL.
     ports: !override
-      - "${SEDOC_PUBLIC_BIND:-127.0.0.1}:8195:80"
+      - "127.0.0.1:8195:80"
     restart: always
 
   # ---- edge ---------------------------------------------------------------
@@ -215,8 +223,9 @@ services:
     <<: *logging
     read_only: true
     tmpfs: ["/tmp"]
+    # Loopback only; the host TLS proxy serves / from here.
     ports:
-      - "${SEDOC_PUBLIC_BIND:-127.0.0.1}:3000:3000"
+      - "127.0.0.1:3000:3000"
     restart: always
 
   # ---- dev-only helpers: off unless their profile is enabled -------------
