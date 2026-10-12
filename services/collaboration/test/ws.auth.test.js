@@ -9,7 +9,7 @@
 import { describe, expect, test, onTestFinished } from 'vitest'
 import { WebSocket } from 'ws'
 
-import { startHarness, TestClient } from './harness.js'
+import { startHarness, startFixtureAPI, TestClient } from './harness.js'
 import { createFakeRedisBus } from './fake-redis.js'
 import { createCollabServer } from '../src/server.js'
 
@@ -191,5 +191,122 @@ describe('CB-7 /ws frames are bound to a subscribed document and size-capped', (
     const closed = new Promise((resolve) => ws.once('close', (code) => resolve(code)))
     ws.send(JSON.stringify({ type: 'presence', pad: 'z'.repeat(64 * 1024) }))
     expect(await closed).toBe(1009)
+  })
+})
+
+/*
+ *   CB-3 (round 2): browsers authenticate /ws from the HttpOnly dms_session
+ *   cookie on the gateway-signed upgrade — {type:'auth', mode:'cookie'}
+ *   carries no secret. The Bearer-token frame stays for non-browser
+ *   clients.
+ */
+describe('CB-3 /ws cookie-mode auth', () => {
+  async function startCookieServer({ wsRecheckIntervalMs } = {}) {
+    const api = await startFixtureAPI()
+    const saved = {
+      a: process.env.AUTH_SERVICE_URL,
+      d: process.env.DOCUMENT_SERVICE_URL,
+      s: process.env.SEDOC_GATEWAY_SECRET,
+    }
+    process.env.AUTH_SERVICE_URL = api.url
+    process.env.DOCUMENT_SERVICE_URL = api.url
+    process.env.SEDOC_GATEWAY_SECRET = 'test-gateway-secret'
+    const bus = createFakeRedisBus()
+    const server = createCollabServer({
+      port: 0,
+      host: '127.0.0.1',
+      redisPub: bus.client(),
+      redisSub: bus.client(),
+      redisStore: bus.client(),
+      ...(wsRecheckIntervalMs ? { wsRecheckIntervalMs } : {}),
+    })
+    await server.listening
+    onTestFinished(async () => {
+      await server.close()
+      await api.close()
+      process.env.AUTH_SERVICE_URL = saved.a
+      process.env.DOCUMENT_SERVICE_URL = saved.d
+      process.env.SEDOC_GATEWAY_SECRET = saved.s
+    })
+    const connect = async (headers = {}) => {
+      const c = await new TestClient(`ws://127.0.0.1:${server.port}/ws`, {
+        headers: { 'X-Gateway-Signature': 'test-gateway-secret', ...headers },
+      }).open()
+      onTestFinished(() => c.close())
+      return c
+    }
+    return { api, connect }
+  }
+
+  test('a cookie-mode frame with a valid session cookie authenticates, and every backend call carries the cookie', async () => {
+    const { api, connect } = await startCookieServer()
+    const alice = api.addUser('sess-alice', { name: 'Alice' })
+    const c = await connect({ Cookie: 'theme=dark; dms_session=sess-alice' })
+    c.send({ type: 'auth', mode: 'cookie' })
+    expect((await c.waitFor('auth_ok')).user_id).toBe(alice.id)
+
+    await c.subscribe('doc-cookie')
+    c.send({ type: 'comment_create', doc_id: 'doc-cookie', body: 'via cookie' })
+    await c.waitFor('comment_added')
+
+    const backend = api.requests.filter((r) => r.url !== '/api/v1/auth/me' || r.cookie)
+    expect(backend.length).toBeGreaterThan(2)
+    expect(backend.every((r) => r.cookie.includes('dms_session=sess-alice') && r.bearer === '')).toBe(true)
+  })
+
+  test('a cookie-mode frame without a session cookie closes with 4401', async () => {
+    const { api, connect } = await startCookieServer()
+    api.addUser('sess-alice', { name: 'Alice' })
+    const c = await connect({ Cookie: 'theme=dark' })
+    c.send({ type: 'auth', mode: 'cookie' })
+    expect((await c.waitForClose()).code).toBe(4401)
+    expect(api.requests.filter((r) => r.url === '/api/v1/auth/me')).toHaveLength(0)
+  })
+
+  test('a cookie-mode frame with an invalid session cookie closes with 4401', async () => {
+    const { connect } = await startCookieServer()
+    const c = await connect({ Cookie: 'dms_session=stale' })
+    c.send({ type: 'auth', mode: 'cookie' })
+    expect((await c.waitForClose()).code).toBe(4401)
+  })
+
+  test('forged identity headers and frame fields are ignored in cookie mode', async () => {
+    const { api, connect } = await startCookieServer()
+    const alice = api.addUser('sess-alice', { name: 'Alice', tenantId: 'tenant-a' })
+    const mallory = api.addUser('tok-mallory', { name: 'Mallory', tenantId: 'tenant-m' })
+    const c = await connect({
+      Cookie: 'dms_session=sess-alice',
+      'X-Tenant-ID': 'tenant-m',
+      'X-User-ID': mallory.id,
+    })
+    c.send({ type: 'auth', mode: 'cookie', token: 'tok-mallory', user_id: mallory.id, tenant_id: 'tenant-m' })
+    expect((await c.waitFor('auth_ok')).user_id).toBe(alice.id)
+    const snap = await c.subscribe('doc-forged')
+    expect(snap).toBeTruthy()
+    const presence = await c.waitFor('presence_update')
+    expect(presence.users).toEqual([alice.id])
+    // The smuggled token was never forwarded anywhere.
+    expect(api.requests.some((r) => r.token === 'tok-mallory')).toBe(false)
+  })
+
+  test('the Bearer-token frame still works on the same server', async () => {
+    const { api, connect } = await startCookieServer()
+    const bob = api.addUser('tok-bob', { name: 'Bob' })
+    const c = await connect()
+    c.send({ type: 'auth', token: 'tok-bob' })
+    expect((await c.waitFor('auth_ok')).user_id).toBe(bob.id)
+    await c.subscribe('doc-token')
+    expect(api.requests.filter((r) => r.url.startsWith('/api/v1/documents/')).every((r) => r.bearer === 'tok-bob')).toBe(true)
+  })
+
+  test('a cookie session that ends is closed with 4401 by the re-check', async () => {
+    const { api, connect } = await startCookieServer({ wsRecheckIntervalMs: 60 })
+    api.addUser('sess-carol', { name: 'Carol' })
+    const c = await connect({ Cookie: 'dms_session=sess-carol' })
+    c.send({ type: 'auth', mode: 'cookie' })
+    await c.waitFor('auth_ok')
+    await c.subscribe('doc-recheck')
+    api.users.delete('sess-carol')
+    expect((await c.waitForClose()).code).toBe(4401)
   })
 })

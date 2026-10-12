@@ -109,6 +109,9 @@ export function createCollabServer({
     }
 
     ws.isAlive = true
+    // CB-3: the browser's cookie-mode auth frame authenticates from the
+    // session cookie on this (gateway-signed) upgrade, never from the frame.
+    ws.upgradeCookie = req.headers.cookie || ''
     ws.authenticated = false
     ws.tenantId = null
     ws.userId = null

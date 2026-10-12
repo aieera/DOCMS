@@ -7,7 +7,9 @@
  * check on the acting user, and the dms.comment.{created,updated,
  * deleted}.v1 outbox events every other consumer already relies on.
  *
- * Auth: the caller's own session token rides as Bearer (the document
+ * Auth: the caller's own credentials ride along — either the request
+ * headers of the /ws session (Bearer token, or the browser's dms_session
+ * Cookie in cookie mode, CB-3) or a bare token string (Bearer). The document
  * service resolves + authorizes the real user — "validate session +
  * tenant + doc ACL" happens there, where the policy engine lives).
  * X-Gateway-Signature is the in-cluster call convention (same as the
@@ -21,8 +23,12 @@
 import { documentServiceURL as baseURL } from './doc-permissions.js';
 import { gatewayHeaders } from './gateway-sig.js';
 
-async function call(token, method, path, body) {
-  const headers = { Authorization: `Bearer ${token}`, ...gatewayHeaders() };
+function credentialHeaders(auth) {
+  return typeof auth === 'string' ? { Authorization: `Bearer ${auth}` } : { ...auth };
+}
+
+async function call(auth, method, path, body) {
+  const headers = { ...credentialHeaders(auth), ...gatewayHeaders() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const resp = await fetch(`${baseURL()}${path}`, {
     method,

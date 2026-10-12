@@ -41,10 +41,15 @@ export function startFixtureAPI() {
     let bodyRaw = '';
     req.on('data', (c) => { bodyRaw += c; });
     req.on('end', () => {
-      const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+      // A user is resolved from the Bearer token or, like the auth
+      // service's SessionAuth, from the dms_session cookie.
+      const bearer = (req.headers.authorization || '').replace(/^Bearer /, '');
+      const cookie = req.headers.cookie || '';
+      const session = (/(?:^|;\s*)dms_session=([^;]*)/.exec(cookie) || [])[1] || '';
+      const token = bearer || session;
       const user = users.get(token);
       const signature = req.headers['x-gateway-signature'] || '';
-      requests.push({ method: req.method, url: req.url, token, signature });
+      requests.push({ method: req.method, url: req.url, token, bearer, cookie, signature });
       const json = (code, obj) => {
         res.writeHead(code, { 'Content-Type': 'application/json' });
         res.end(obj === undefined ? '' : JSON.stringify(obj));
@@ -161,7 +166,8 @@ export function startWSServer() {
   };
   const wss = new WebSocketServer({ port: 0, host: '127.0.0.1' });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    ws.upgradeCookie = req.headers.cookie || '';
     ws.authenticated = false;
     ws.tenantId = null;
     ws.userId = null;
