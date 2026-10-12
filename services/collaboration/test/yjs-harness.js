@@ -154,6 +154,8 @@ export function installFetchMock({
 // ---- Yjs client ------------------------------------------------------------
 
 const DEFAULT_COOKIE = 'dms_session=test-session'
+/** The allow-listed browser origin (vitest.config.js SEDOC_ALLOWED_ORIGINS). */
+export const ALLOWED_ORIGIN = 'https://app.sedoc.test'
 
 /**
  * Minimal Yjs sync client over a raw WebSocket — the client half of the
@@ -161,10 +163,14 @@ const DEFAULT_COOKIE = 'dms_session=test-session'
  * header entirely (for the no-auth 4401 case).
  */
 export class YjsTestClient {
-  constructor(url, { cookie = DEFAULT_COOKIE } = {}) {
+  constructor(url, { cookie = DEFAULT_COOKIE, origin = ALLOWED_ORIGIN } = {}) {
     this.doc = new Y.Doc()
     this.awareness = new awarenessProtocol.Awareness(this.doc)
-    const opts = cookie == null ? {} : { headers: { Cookie: cookie } }
+    // Like a browser: the session cookie arrives with the page's Origin.
+    const headers = {}
+    if (cookie != null) headers.Cookie = cookie
+    if (origin != null) headers.Origin = origin
+    const opts = { headers }
     this.ws = new WebSocket(url, opts)
     this.closed = null
     this.ws.on('close', (code, reason) => {

@@ -168,6 +168,7 @@ export function startWSServer() {
 
   wss.on('connection', (ws, req) => {
     ws.upgradeCookie = req.headers.cookie || '';
+    ws.upgradeOrigin = req.headers.origin || '';
     ws.authenticated = false;
     ws.tenantId = null;
     ws.userId = null;
