@@ -117,3 +117,32 @@ func TestClaim_StaleScanningReclaimable(t *testing.T) {
 	require.Contains(t, err.Error(), "in progress")
 	require.Equal(t, "scanning", sessionStatus(t, h, live))
 }
+
+// O-9 / M-7 — RegionEnforcer had no callers, so nothing checked that the
+// bucket an upload completes into belongs to the session's pinned region.
+// CompleteUpload now runs CheckBucket before reading the object; a
+// mismatch fails the session and creates no blob.
+func TestComplete_BucketOutsideRegionRejected(t *testing.T) {
+	h := newHarness(t, harnessConfig{})
+	foreign := bucketName("me-central-1", "hot")
+	require.NoError(t, h.s3.CreateBucket(h.ctx, foreign, "us-east-1"))
+	payload := []byte("pinned to us-east-1 but parked in a me-central-1 bucket")
+	now := time.Now().UTC()
+	id := uuid.Must(uuid.NewV7())
+	key := objectKeyAt(h.tenant, id, "pinned.txt", now)
+	insertSession(t, h, seedSession{
+		id: id, filename: "pinned.txt", status: "initiated", // storage_region us-east-1
+		createdAt: now, expiresAt: now.Add(time.Hour),
+		bucket: foreign, key: key,
+	}, int64(len(payload)))
+	putObject(t, h, foreign, key, payload)
+
+	_, err := h.svc.CompleteUpload(h.ctx, CompleteUploadInput{TenantID: h.tenant, UploadID: id})
+	require.Error(t, err, "a bucket outside the session's region must be rejected")
+	require.Equal(t, vdmserr.KindRegionViolation, vdmserr.KindOf(err), "got %v", err)
+	require.Equal(t, "failed", sessionStatus(t, h, id))
+	var blobs int
+	require.NoError(t, h.pool.QueryRow(h.ctx,
+		`SELECT count(*) FROM content_blobs WHERE tenant_id=$1`, h.tenant).Scan(&blobs))
+	require.Zero(t, blobs, "no blob may record bytes stored outside its region")
+}

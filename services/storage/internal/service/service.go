@@ -33,6 +33,7 @@ import (
 	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	"github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/pkg/storage"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
 	"github.com/aieera/sedoc/services/storage/internal/model"
@@ -55,6 +56,7 @@ type Service struct {
 	outbox  *database.OutboxRepository
 	policy  PermissionChecker
 	plans   *PlanLookup
+	region  *middleware.RegionEnforcer
 	log     zerolog.Logger
 	cfg     Config
 	now     func() time.Time
@@ -141,6 +143,7 @@ func New(cfg Config) *Service {
 		outbox:  cfg.Outbox,
 		policy:  cfg.Policy,
 		plans:   cfg.Plans,
+		region:  middleware.NewRegionEnforcer(cfg.DefaultRegion),
 		log:     cfg.Logger,
 		cfg:     cfg,
 		now:     time.Now,
@@ -409,6 +412,18 @@ func (s *Service) CompleteUpload(ctx context.Context, in CompleteUploadInput) (*
 	// The object lives where initiate signed the PUT URL for (persisted on
 	// the session) — never re-derived from today's date (H-9).
 	bucket, key := sessionObject(session)
+
+	// Residency (O-9 / M-7): the bucket must belong to the session's pinned
+	// region before any byte is read or a blob row claims that region.
+	if err := s.region.CheckBucket(ctx, bucket, session.StorageRegion); err != nil {
+		s.failUpload(ctx, session, "region check: "+err.Error())
+		return nil, &vdmserr.Error{
+			Kind:    vdmserr.KindRegionViolation,
+			Code:    "REGION_VIOLATION",
+			Message: "upload bucket is outside the upload's pinned region " + session.StorageRegion,
+			Cause:   err,
+		}
+	}
 
 	// 1. Sanity-check the object landed at the expected location + size.
 	//    TotalSize is the client's declared PLAINTEXT size, and this
