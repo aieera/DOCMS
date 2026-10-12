@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/aieera/sedoc/services/policy/internal/model"
 )
 
@@ -83,25 +85,38 @@ func TestGrantProbeOrder(t *testing.T) {
 // new grant replaces. Sharing someone at a new level must not leave the old
 // level stacked behind it, but must never silently strip access the granter
 // could not have handed out themselves.
-func TestSupersededCapabilities(t *testing.T) {
-	existing := []model.Capability{
-		model.CapView, model.CapShare, model.CapEdit, model.CapDelete, model.CapAdmin,
+// perms builds active grants of the given levels, all made by `by`.
+func perms(by uuid.UUID, caps ...model.Capability) []model.Permission {
+	out := make([]model.Permission, 0, len(caps))
+	for _, c := range caps {
+		out = append(out, model.Permission{ID: uuid.New(), Capability: c, GrantedBy: by})
 	}
+	return out
+}
 
-	t.Run("admin granting view supersedes every other level", func(t *testing.T) {
-		got := supersededCapabilities(existing, model.CapView, model.CapAdmin)
-		if len(got) != 4 {
+func capsOf(ps []model.Permission) []model.Capability {
+	out := make([]model.Capability, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, p.Capability)
+	}
+	return out
+}
+
+func TestSupersededCapabilities(t *testing.T) {
+	me, peer := uuid.New(), uuid.New()
+	all := []model.Capability{model.CapView, model.CapShare, model.CapEdit, model.CapDelete, model.CapAdmin}
+
+	t.Run("org admin granting view supersedes every other level", func(t *testing.T) {
+		got := capsOf(supersededCapabilities(perms(peer, all...), model.CapView,
+			supersedeGranter{ID: me, Cap: model.CapAdmin, OrgAdmin: true}))
+		if len(got) != 4 || slices.Contains(got, model.CapView) {
 			t.Fatalf("expected the other 4 levels superseded, got %v", got)
-		}
-		for _, c := range got {
-			if c == model.CapView {
-				t.Fatal("the capability being granted must not supersede itself")
-			}
 		}
 	})
 
 	t.Run("share holder cannot strip edit or admin", func(t *testing.T) {
-		got := supersededCapabilities(existing, model.CapShare, model.CapShare)
+		got := capsOf(supersededCapabilities(perms(me, all...), model.CapShare,
+			supersedeGranter{ID: me, Cap: model.CapShare}))
 		for _, c := range got {
 			if capRank(c) > capRank(model.CapShare) {
 				t.Fatalf("a share-level granter must not revoke %s", c)
@@ -114,28 +129,62 @@ func TestSupersededCapabilities(t *testing.T) {
 	})
 
 	t.Run("nothing to supersede when the principal holds only that level", func(t *testing.T) {
-		got := supersededCapabilities([]model.Capability{model.CapView}, model.CapView, model.CapAdmin)
+		got := supersededCapabilities(perms(peer, model.CapView), model.CapView,
+			supersedeGranter{ID: me, Cap: model.CapAdmin, OrgAdmin: true})
 		if len(got) != 0 {
-			t.Fatalf("expected no supersessions, got %v", got)
+			t.Fatalf("expected no supersessions, got %v", capsOf(got))
 		}
 	})
 
 	t.Run("non-hierarchical capabilities are left alone", func(t *testing.T) {
-		got := supersededCapabilities(
-			[]model.Capability{"annotation.create", model.CapView},
-			model.CapEdit, model.CapAdmin,
-		)
+		got := capsOf(supersededCapabilities(perms(peer, "annotation.create", model.CapView),
+			model.CapEdit, supersedeGranter{ID: me, Cap: model.CapAdmin, OrgAdmin: true}))
 		if slices.Contains(got, "annotation.create") {
 			t.Fatal("annotation grants are orthogonal and must survive a level change")
 		}
 	})
 }
 
-// TestCapRankMatchesRego pins the Go mirror of the capability hierarchy to
-// the literal in opa/policy.rego (`capability_includes`). The two are
-// hand-encoded in different languages and have already drifted once —
-// view_unredacted was missing from the Go side, silently reclassifying it
-// as "orthogonal" in supersession decisions.
+// L-8: the supersede rule only refused levels ABOVE the granter's own, so a
+// share-level granter could demote a peer's equal share grant (and a
+// resource admin a peer admin's grant) by re-sharing at a lower level. A
+// level equal to the granter's ceiling may now be superseded only when the
+// granter made that grant; strictly lower levels and org admins are
+// unchanged.
+func TestGrant_CannotDemotePeer(t *testing.T) {
+	me, peer := uuid.New(), uuid.New()
+
+	got := supersededCapabilities(perms(peer, model.CapShare), model.CapView,
+		supersedeGranter{ID: me, Cap: model.CapShare})
+	if len(got) != 0 {
+		t.Fatalf("a share granter must not demote a peer's share grant, superseded %v", capsOf(got))
+	}
+	got = supersededCapabilities(perms(peer, model.CapAdmin), model.CapEdit,
+		supersedeGranter{ID: me, Cap: model.CapAdmin})
+	if len(got) != 0 {
+		t.Fatalf("a resource admin must not demote a peer's admin grant, superseded %v", capsOf(got))
+	}
+
+	// The granter's own equal-level grant may be changed.
+	got = supersededCapabilities(perms(me, model.CapShare), model.CapView,
+		supersedeGranter{ID: me, Cap: model.CapShare})
+	if len(got) != 1 {
+		t.Fatalf("a granter may change a share grant they made, superseded %v", capsOf(got))
+	}
+	// Levels strictly below the ceiling are superseded whoever made them.
+	got = supersededCapabilities(perms(peer, model.CapView), model.CapShare,
+		supersedeGranter{ID: me, Cap: model.CapEdit})
+	if len(got) != 1 {
+		t.Fatalf("a lower level must be superseded, got %v", capsOf(got))
+	}
+	// A tenant owner/admin outranks every grant.
+	got = supersededCapabilities(perms(peer, model.CapAdmin), model.CapEdit,
+		supersedeGranter{ID: me, Cap: model.CapAdmin, OrgAdmin: true})
+	if len(got) != 1 {
+		t.Fatalf("an org admin may change any level, got %v", capsOf(got))
+	}
+}
+
 func TestCapRankMatchesRego(t *testing.T) {
 	rego := map[model.Capability]int{
 		model.CapAdmin:    50,
@@ -158,10 +207,10 @@ func TestCapRankMatchesRego(t *testing.T) {
 // A grant with an empty granter capability must never supersede anything —
 // the service treats it as rank 0 (fail-closed), not as implicit admin.
 func TestSupersededCapabilitiesEmptyGranter(t *testing.T) {
-	got := supersededCapabilities(
-		[]model.Capability{model.CapView, model.CapEdit}, model.CapShare, "",
-	)
+	me := uuid.New()
+	got := supersededCapabilities(perms(me, model.CapView, model.CapEdit), model.CapShare,
+		supersedeGranter{ID: me})
 	if len(got) != 0 {
-		t.Fatalf("empty granter capability must supersede nothing, got %v", got)
+		t.Fatalf("empty granter capability must supersede nothing, got %v", capsOf(got))
 	}
 }

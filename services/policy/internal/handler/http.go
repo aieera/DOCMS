@@ -284,6 +284,7 @@ func (h *HTTPHandler) grant(w http.ResponseWriter, r *http.Request) {
 		Capability:        requested,
 		ExpiresAt:         body.ExpiresAt,
 		GranterCapability: callerCap,
+		GranterOrgAdmin:   u.Role == "owner" || u.Role == "admin",
 	})
 	if err != nil {
 		writeHTTPError(w, r, err)
