@@ -121,3 +121,153 @@ BEGIN
     END IF;
 END
 $do$;
+
+-- ===========================================================================
+-- L-10 — audit_events partitions: RLS on every partition, no direct grants.
+--
+-- Queries routed through audit_events check privileges and RLS on the
+-- parent only, which is where the tenant policies and the WORM revoke
+-- live. A partition queried BY NAME is checked on its own, and every
+-- partition had no RLS plus direct grants: document 000001's blanket
+-- GRANT gave dms_app SELECT/INSERT/UPDATE on audit_events_2026_04..07,
+-- and the init-db default privileges give dms_app SELECT/INSERT/UPDATE/
+-- DELETE on every partition the maintainer creates. That was a
+-- cross-tenant read and an UPDATE/DELETE path around the append-only
+-- trail.
+--
+-- Every partition now has ENABLE + FORCE ROW LEVEL SECURITY and no grants
+-- for dms_app, dms_readonly or PUBLIC. The only policy on a partition is
+-- audit_partition_owner_maintenance, which admits the owner of
+-- audit_events and nobody else: FORCE subjects the owner to RLS, and the
+-- maintenance functions (DEFAULT→month relocation, the DEFAULT-rows
+-- gauge) read partitions directly as that owner. dms_app has no grant on a
+-- partition, so for it the policy is moot.
+-- ===========================================================================
+
+CREATE OR REPLACE FUNCTION audit_secure_partition(p_part regclass)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $fn$
+DECLARE
+    r record;
+BEGIN
+    EXECUTE format('REVOKE ALL ON %s FROM PUBLIC', p_part);
+    FOR r IN SELECT rolname FROM pg_roles WHERE rolname IN ('dms_app', 'dms_readonly', 'dms_audit_admin') LOOP
+        EXECUTE format('REVOKE ALL ON %s FROM %I', p_part, r.rolname);
+    END LOOP;
+    EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', p_part);
+    EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', p_part);
+    IF NOT EXISTS (SELECT 1 FROM pg_policy
+                    WHERE polrelid = p_part AND polname = 'audit_partition_owner_maintenance') THEN
+        EXECUTE format($sql$
+            CREATE POLICY audit_partition_owner_maintenance ON %s
+                USING (current_user = (SELECT pg_get_userbyid(relowner) FROM pg_class
+                                        WHERE oid = 'public.audit_events'::regclass))
+                WITH CHECK (current_user = (SELECT pg_get_userbyid(relowner) FROM pg_class
+                                             WHERE oid = 'public.audit_events'::regclass))
+        $sql$, p_part);
+    END IF;
+END
+$fn$;
+REVOKE ALL ON FUNCTION audit_secure_partition(regclass) FROM PUBLIC;
+
+-- Existing partitions: document 000001's four months, DEFAULT, and every
+-- month audit 000005 / the service maintainer has created.
+DO $do$
+DECLARE
+    r record;
+BEGIN
+    FOR r IN SELECT i.inhrelid::regclass AS part
+               FROM pg_inherits i
+              WHERE i.inhparent = 'public.audit_events'::regclass
+    LOOP
+        PERFORM audit_secure_partition(r.part);
+    END LOOP;
+END
+$do$;
+
+-- Partitions created from now on: same body as audit 000005, plus
+-- audit_secure_partition on the new partition after ATTACH (instead of the
+-- direct grants 000005 handed out). The relocation INSERT runs before the
+-- new table has RLS; the DELETE from DEFAULT is admitted by the owner
+-- policy above.
+CREATE OR REPLACE FUNCTION ensure_audit_partition_range(p_from date, p_to date)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $fn$
+DECLARE
+    v_month       date;
+    v_last        date;
+    v_lo          timestamptz;
+    v_hi          timestamptz;
+    v_part        text;
+    v_created     integer := 0;
+    v_moved       bigint;
+    v_has_default boolean;
+BEGIN
+    IF p_from IS NULL OR p_to IS NULL THEN
+        RAISE EXCEPTION 'ensure_audit_partition_range: bounds must not be null';
+    END IF;
+
+    v_month := date_trunc('month', p_from)::date;
+    v_last  := date_trunc('month', p_to)::date;
+    IF v_last > (v_month + interval '10 years')::date THEN
+        v_last := (v_month + interval '10 years')::date;
+    END IF;
+
+    v_has_default := to_regclass('public.audit_events_default') IS NOT NULL;
+
+    WHILE v_month <= v_last LOOP
+        v_part := 'audit_events_' || to_char(v_month, 'YYYY_MM');
+        v_lo := v_month::timestamp AT TIME ZONE 'UTC';
+        v_hi := (v_month + interval '1 month')::timestamp AT TIME ZONE 'UTC';
+
+        IF to_regclass('public.' || quote_ident(v_part)) IS NULL THEN
+            EXECUTE format(
+                'CREATE TABLE public.%I (LIKE public.audit_events INCLUDING ALL)', v_part);
+
+            IF v_has_default THEN
+                EXECUTE format($sql$
+                    WITH moved AS (
+                        DELETE FROM ONLY public.audit_events_default
+                         WHERE created_at >= %L AND created_at < %L
+                        RETURNING *
+                    )
+                    INSERT INTO public.%I SELECT * FROM moved
+                $sql$, v_lo, v_hi, v_part);
+                GET DIAGNOSTICS v_moved = ROW_COUNT;
+                IF v_moved > 0 THEN
+                    RAISE NOTICE 'ensure_audit_partition_range: relocated % row(s) from audit_events_default into %',
+                        v_moved, v_part;
+                END IF;
+            END IF;
+
+            EXECUTE format(
+                'ALTER TABLE public.audit_events ATTACH PARTITION public.%I FOR VALUES FROM (%L) TO (%L)',
+                v_part, v_lo, v_hi);
+
+            PERFORM audit_secure_partition(format('public.%I', v_part)::regclass);
+
+            v_created := v_created + 1;
+        END IF;
+
+        v_month := (v_month + interval '1 month')::date;
+    END LOOP;
+
+    RETURN v_created;
+END
+$fn$;
+REVOKE ALL ON FUNCTION ensure_audit_partition_range(date, date) FROM PUBLIC;
+
+-- Checkpoints are append-only (audit 000003 revoked UPDATE/DELETE from
+-- PUBLIC only; the init-db default privileges still gave dms_app both).
+DO $do$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'dms_app') THEN
+        EXECUTE 'REVOKE UPDATE, DELETE, TRUNCATE ON public.audit_checkpoints FROM dms_app';
+    END IF;
+END
+$do$;
