@@ -4,6 +4,9 @@
 // Responsibilities:
 //   - Hold the access_token / refresh_token in chrome.storage.local.
 //   - Run the PKCE OAuth dance on first install (and on token expiry).
+//     M-30: the in-flight PKCE state lives in chrome.storage.session —
+//     an MV3 service worker is stopped after ~30 s idle, so module
+//     memory does not survive the user's round trip through the IdP.
 //   - Route messages between popup/content scripts and the DMS API.
 //   - Drive uploads (storage proxy chain) and clippings.
 
@@ -40,7 +43,34 @@ function base64UrlEncode(bytes) {
 
 // ---- OAuth state ----------------------------------------------------
 
-const OAUTH_STATE = new Map() // state → { codeVerifier, createdAt }
+const OAUTH_STATE_KEY = 'oauth_states'
+const OAUTH_STATE_TTL_MS = 10 * 60_000
+
+async function readOAuthStates() {
+  const got = await chrome.storage.session.get(OAUTH_STATE_KEY)
+  const all = got[OAUTH_STATE_KEY] || {}
+  // Garbage-collect entries older than 10 min so the map doesn't grow.
+  const now = Date.now()
+  for (const [k, v] of Object.entries(all)) {
+    if (!v || now - v.createdAt > OAUTH_STATE_TTL_MS) delete all[k]
+  }
+  return all
+}
+
+async function saveOAuthState(state, entry) {
+  const all = await readOAuthStates()
+  all[state] = entry
+  await chrome.storage.session.set({ [OAUTH_STATE_KEY]: all })
+}
+
+// takeOAuthState returns and deletes (one-time use) the saved entry.
+async function takeOAuthState(state) {
+  const all = await readOAuthStates()
+  const entry = typeof state === 'string' ? all[state] : undefined
+  if (entry) delete all[state]
+  await chrome.storage.session.set({ [OAUTH_STATE_KEY]: all })
+  return entry || null
+}
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // sendResponse must be called or returned-true synchronously to keep
@@ -50,6 +80,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       switch (msg?.type) {
         case 'login':
           sendResponse({ ok: true, url: await beginOAuth() })
+          break
+        case 'oauth-callback':
+          // Handled here (not in a second listener): the first listener
+          // to call sendResponse wins, and this one used to answer
+          // "unknown message" before the callback handler could run.
+          sendResponse(await completeOAuth(msg))
           break
         case 'session':
           sendResponse({ ok: true, session: await loadSession() })
@@ -81,11 +117,7 @@ async function beginOAuth() {
   const codeVerifier = randomString(48)
   const codeChallenge = await sha256Base64Url(codeVerifier)
   const state = randomString(16)
-  OAUTH_STATE.set(state, { codeVerifier, createdAt: Date.now() })
-  // Garbage collect entries older than 10 min so map doesn't grow.
-  for (const [k, v] of OAUTH_STATE) {
-    if (Date.now() - v.createdAt > 10 * 60_000) OAUTH_STATE.delete(k)
-  }
+  await saveOAuthState(state, { codeVerifier, createdAt: Date.now() })
 
   const base = await dmsBase()
   const redirectUri = chrome.runtime.getURL('callback.html')
@@ -99,45 +131,35 @@ async function beginOAuth() {
   return url.toString()
 }
 
-// callback.html posts here once the auth tab redirects with ?code=...
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type !== 'oauth-callback') return false
-  ;(async () => {
-    const saved = OAUTH_STATE.get(msg.state)
-    if (!saved) {
-      sendResponse({ ok: false, error: 'state mismatch' })
-      return
-    }
-    OAUTH_STATE.delete(msg.state)
-    const base = await dmsBase()
-    const tokenRes = await fetch(`${base}/api/v1/oauth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: 'vaultdms-ext',
-        code: msg.code,
-        code_verifier: saved.codeVerifier,
-        redirect_uri: chrome.runtime.getURL('callback.html'),
-      }),
-    })
-    if (!tokenRes.ok) {
-      sendResponse({ ok: false, error: `token exchange failed: ${tokenRes.status}` })
-      return
-    }
-    const tokens = await tokenRes.json()
-    await chrome.storage.local.set({
-      [STORAGE_KEY]: {
-        ...tokens,
-        // Anchor expiry on wall-clock now so subsequent refresh logic
-        // can compute time-to-expire without parsing the JWT.
-        expires_at: Date.now() + (tokens.expires_in || 3600) * 1000,
-      },
-    })
-    sendResponse({ ok: true })
-  })()
-  return true
-})
+// callback.html posts {type:'oauth-callback', state, code} once the auth
+// tab redirects with ?code=...
+async function completeOAuth(msg) {
+  const saved = await takeOAuthState(msg.state)
+  if (!saved) return { ok: false, error: 'state mismatch' }
+  const base = await dmsBase()
+  const tokenRes = await fetch(`${base}/api/v1/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: 'vaultdms-ext',
+      code: msg.code,
+      code_verifier: saved.codeVerifier,
+      redirect_uri: chrome.runtime.getURL('callback.html'),
+    }),
+  })
+  if (!tokenRes.ok) return { ok: false, error: `token exchange failed: ${tokenRes.status}` }
+  const tokens = await tokenRes.json()
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: {
+      ...tokens,
+      // Anchor expiry on wall-clock now so subsequent refresh logic
+      // can compute time-to-expire without parsing the JWT.
+      expires_at: Date.now() + (tokens.expires_in || 3600) * 1000,
+    },
+  })
+  return { ok: true }
+}
 
 async function loadSession() {
   const got = await chrome.storage.local.get(STORAGE_KEY)
@@ -190,7 +212,38 @@ async function apiCall(path, init = {}) {
 
 // ---- Upload chain --------------------------------------------------
 
+// pickRootFolder mirrors web/src/lib/rootFolder.ts: the auto-created
+// "Root", then the seeded "Shared Documents", then the oldest top-level
+// folder. CreateDocument and initiate both require a folder_id.
+function pickRootFolder(folders) {
+  const top = (folders || []).filter((f) => !f.parent_folder_id && !f.parent_id)
+  if (top.length === 0) return undefined
+  return (
+    top.find((f) => f.name === 'Root') ||
+    top.find((f) => f.name === 'Shared Documents') ||
+    [...top].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))[0]
+  )
+}
+
+function listOf(body, key) {
+  if (Array.isArray(body)) return body
+  return (body && Array.isArray(body[key]) && body[key]) || []
+}
+
+// uploadFile (M-30): workspace → root folder → initiate (folder_id) →
+// PUT presigned_put_url → complete → CreateDocument (folder_id) →
+// CreateVersion(content_blob_id). The document row is created only after
+// the bytes are stored, and storage never hands back an existing blob at
+// initiate (DEC-12), so the PUT is unconditional.
 async function uploadFile({ name, mimeType, sizeBytes, sha256, bytesBase64 }) {
+  // 0. destination (Phase 1: the user's first workspace, its root folder)
+  const ws = await apiCall('/api/v1/workspaces?limit=1')
+  const workspaceId = ws.ok && listOf(ws.body, 'workspaces')[0]?.id
+  if (!workspaceId) return { ok: false, error: 'no default workspace' }
+  const folders = await apiCall(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/folders`)
+  const folderId = folders.ok && pickRootFolder(listOf(folders.body, 'folders'))?.id
+  if (!folderId) return { ok: false, error: 'no root folder in the default workspace' }
+
   // 1. initiate
   const init = await apiCall('/api/v1/storage/uploads/initiate', {
     method: 'POST',
@@ -200,48 +253,47 @@ async function uploadFile({ name, mimeType, sizeBytes, sha256, bytesBase64 }) {
       mime_type: mimeType,
       size_bytes: sizeBytes,
       sha256_hash: sha256,
+      workspace_id: workspaceId,
+      folder_id: folderId,
     }),
   })
-  if (!init.ok) return { ok: false, error: 'initiate failed', detail: init }
+  if (!init.ok || !init.body?.presigned_put_url) return { ok: false, error: 'initiate failed', detail: init }
 
-  // 2. PUT bytes to presigned URL
+  // 2. PUT bytes to the presigned URL
   const bytes = Uint8Array.from(atob(bytesBase64), (c) => c.charCodeAt(0))
-  const putRes = await fetch(init.body.upload_url, {
+  const putRes = await fetch(init.body.presigned_put_url, {
     method: 'PUT',
     headers: { 'Content-Type': mimeType },
     body: bytes,
   })
   if (!putRes.ok) return { ok: false, error: 'put failed', status: putRes.status }
 
-  // 3. complete
+  // 3. complete → content blob
   const complete = await apiCall(
-    `/api/v1/storage/uploads/${init.body.upload_id}/complete`,
+    `/api/v1/storage/uploads/${encodeURIComponent(init.body.upload_id)}/complete`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checksum_sha256: sha256, size_bytes: sizeBytes }),
+      body: JSON.stringify({ sha256_hash: sha256 }),
     },
   )
-  if (!complete.ok) return { ok: false, error: 'complete failed', detail: complete }
+  const blobId = complete.ok && complete.body?.content_blob_id
+  if (!blobId) return { ok: false, error: 'complete failed', detail: complete }
 
-  // 4. create document + version (Phase 1: into user's default workspace
-  //    discovered via /api/v1/workspaces; Phase 2 allows per-upload picker)
-  const ws = await apiCall('/api/v1/workspaces?limit=1')
-  const workspaceId = ws.ok && ws.body?.workspaces?.[0]?.id
-  if (!workspaceId) return { ok: false, error: 'no default workspace' }
-
+  // 4. document row, then 5. link the blob as its first version
   const doc = await apiCall('/api/v1/documents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      workspace_id: workspaceId,
-      title: name,
-      mime_type: mimeType,
-      content_blob_id: complete.body.content_blob_id,
-      size_bytes: sizeBytes,
-    }),
+    body: JSON.stringify({ workspace_id: workspaceId, folder_id: folderId, title: name }),
   })
-  if (!doc.ok) return { ok: false, error: 'create document failed', detail: doc }
+  if (!doc.ok || !doc.body?.id) return { ok: false, error: 'create document failed', detail: doc }
+
+  const ver = await apiCall(`/api/v1/documents/${encodeURIComponent(doc.body.id)}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content_blob_id: blobId, change_summary: 'Uploaded from browser extension' }),
+  })
+  if (!ver.ok) return { ok: false, error: 'create version failed', detail: ver, documentId: doc.body.id }
 
   await chrome.notifications.create({
     type: 'basic',
