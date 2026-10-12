@@ -1210,8 +1210,12 @@ func (s *DocumentService) CopyDocument(ctx context.Context, in *CopyDocumentInpu
 			// DEC-11: a new document is pinned by its workspace; the
 			// shared bytes must already live there (checked below) —
 			// a cross-region copy needs a residency migration.
-			RegionPin:                targetRegion,
-			CustomMetadata:           src.CustomMetadata,
+			RegionPin: targetRegion,
+			// D-25: reserved _sedoc.* markers record which server path
+			// created a row; a copy is a user action and never inherits
+			// them (else copying a version-less ingest mints a
+			// GC-exempt document).
+			CustomMetadata:           withoutReserved(src.CustomMetadata),
 			Tags:                     append([]string(nil), src.Tags...),
 			DocumentClass:            src.DocumentClass,
 			ClassificationConfidence: src.ClassificationConfidence,

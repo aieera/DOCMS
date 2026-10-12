@@ -3,6 +3,8 @@ package service
 import (
 	"sort"
 	"strings"
+
+	"github.com/aieera/sedoc/services/document/internal/model"
 )
 
 // ReservedMetadataPrefix marks custom_metadata keys only the server writes
@@ -46,6 +48,52 @@ func withReservedFrom(meta, prev map[string]any) map[string]any {
 		if strings.HasPrefix(k, ReservedMetadataPrefix) {
 			out[k] = v
 		}
+	}
+	return out
+}
+
+// withoutReserved returns meta minus its reserved keys — for paths that
+// derive a new document's metadata from another document (Copy): the
+// marker records which server path created a row, and a copy is a user
+// action.
+func withoutReserved(meta map[string]any) map[string]any {
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		if !strings.HasPrefix(k, ReservedMetadataPrefix) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// rejectReservedTemplateKeys refuses a template whose folder-node or
+// placeholder-document metadata names a reserved key.
+func rejectReservedTemplateKeys(def *model.TemplateDefinition) error {
+	var walk func(nodes []model.TemplateNode) error
+	walk = func(nodes []model.TemplateNode) error {
+		for i := range nodes {
+			n := &nodes[i]
+			if err := rejectReservedMetadataKeys(stringMap(n.Metadata)); err != nil {
+				return err
+			}
+			for _, d := range n.Docs {
+				if err := rejectReservedMetadataKeys(stringMap(d.Metadata)); err != nil {
+					return err
+				}
+			}
+			if err := walk(n.Children); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walk(def.Nodes)
+}
+
+func stringMap(m map[string]string) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
 	}
 	return out
 }
