@@ -352,3 +352,84 @@ func TestCreateVersion_HoldCommittedConcurrentlyBlocks(t *testing.T) {
 		require.ErrorIs(t, err, vdmserr.ErrLegalHold, "once the hold has committed no further version lands")
 	})
 }
+
+// DEC-7 on lifecycle transitions: a hold being applied and a dispose of the
+// same document serialize on the document row, so a held document can never
+// be disposed (spoliation) whichever starts first.
+func TestUpdateLifecycle_HoldAppliedConcurrentlyBlocksDispose(t *testing.T) {
+	dispose := func(svc *service.DocumentService, h *harness, docID uuid.UUID) error {
+		_, err := svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
+			DocumentID: docID, Action: model.ActionDispose, Reason: "retention elapsed",
+		})
+		return err
+	}
+
+	t.Run("hold binding in flight first", func(t *testing.T) {
+		h := newHarness(t, true)
+		doc := mustCreateDocumentWith(t, h, model.StateArchived)
+
+		// Park the compliance hold after it share-locked the document,
+		// before it writes the binding.
+		blocker, err := h.pool.Begin(h.ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = blocker.Rollback(context.Background()) })
+		_, err = blocker.Exec(h.ctx, `LOCK TABLE legal_hold_documents IN EXCLUSIVE MODE`)
+		require.NoError(t, err)
+		holdDone := make(chan error, 1)
+		go func() {
+			_, herr := compliance.NewHoldsService(h.pool).Create(h.ctx, h.tenant, h.user, compliance.CreateInput{
+				Name: "Race matter", DocumentIDs: []uuid.UUID{doc.ID},
+			})
+			holdDone <- herr
+		}()
+		require.True(t, waitForLockWaiters(t, h, 1, 10*time.Second), "hold binding parked")
+
+		disposed, blocked := runConcurrently(t, h, func() error { return dispose(h.svc, h, doc.ID) })
+		require.True(t, blocked, "the dispose must wait for the in-flight hold on the document row")
+		require.NoError(t, blocker.Commit(context.Background()))
+		require.NoError(t, recv(t, holdDone))
+		require.ErrorIs(t, recv(t, disposed), vdmserr.ErrLegalHold, "the hold committed first, so dispose is refused")
+
+		got, _, err := h.svc.GetDocument(h.ctx, doc.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.StateArchived, got.LifecycleState, "a held document is never disposed")
+	})
+
+	t.Run("dispose in flight first", func(t *testing.T) {
+		h := newHarness(t, true)
+		gate := newGatedPolicy()
+		defer gate.open()
+		gated := serviceWith(h, gate)
+		doc := mustCreateDocumentWith(t, h, model.StateArchived)
+
+		// The dispose passes its hold check and parks in its admin check.
+		gate.armed.Store(true)
+		disposed := make(chan error, 1)
+		go func() { disposed <- dispose(gated, h, doc.ID) }()
+		awaitParked(t, gate)
+
+		hold, blocked := runConcurrently(t, h, func() error {
+			_, herr := compliance.NewHoldsService(h.pool).Create(h.ctx, h.tenant, h.user, compliance.CreateInput{
+				Name: "Race matter", DocumentIDs: []uuid.UUID{doc.ID},
+			})
+			return herr
+		})
+		require.True(t, blocked, "the hold must not commit while a dispose that already passed its hold check is in flight")
+		inband, inbandBlocked := runConcurrently(t, h, func() error {
+			_, aerr := h.svc.UpdateLifecycle(h.ctx, &service.UpdateLifecycleInput{
+				DocumentID: doc.ID, Action: model.ActionApplyHold, HoldName: "In-band race", Reason: "litigation",
+			})
+			return aerr
+		})
+		require.True(t, inbandBlocked, "an in-band apply_hold waits on the same row lock")
+
+		gate.open()
+		require.NoError(t, recv(t, disposed), "the dispose was ordered before both holds")
+		require.NoError(t, recv(t, hold))
+		require.Error(t, recv(t, inband), "apply_hold on a disposed document is not a valid transition")
+
+		got, _, err := h.svc.GetDocument(h.ctx, doc.ID)
+		require.NoError(t, err)
+		require.Equal(t, model.StateDisposed, got.LifecycleState)
+	})
+}

@@ -734,8 +734,10 @@ func WorkspaceRegion(ctx context.Context, tx pgx.Tx, tenantID, workspaceID uuid.
 	return region, nil
 }
 
-// UpdateLifecycleState only touches the state column; callers that need
-// finer updates use Update.
+// UpdateLifecycleState only touches the state column, unconditionally. The
+// service's lifecycle transitions use TransitionLifecycleState (a
+// compare-and-set on the expected state); this remains for test fixtures
+// and callers that set a state outright.
 func (r *documentRepo) UpdateLifecycleState(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, s model.LifecycleState) error {
 	ct, err := tx.Exec(ctx, `
 		UPDATE documents SET lifecycle_state = $3,
