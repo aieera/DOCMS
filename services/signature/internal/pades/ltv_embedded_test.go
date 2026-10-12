@@ -66,7 +66,7 @@ func newFixtureChain(t *testing.T, leafNotBefore, leafNotAfter time.Time) *fixtu
 		Subject:               pkix.Name{CommonName: "SeDoc Test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}

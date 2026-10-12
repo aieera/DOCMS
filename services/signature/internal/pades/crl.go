@@ -5,9 +5,10 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
+
+	"github.com/aieera/sedoc/pkg/netguard"
 )
 
 // CRLLookup represents the relevant slice of a CRL — the cert's
@@ -34,29 +35,32 @@ func fetchCRL(ctx context.Context, hc *http.Client, cert, issuer *x509.Certifica
 	if issuer == nil {
 		return nil, errors.New("crl: no issuer to verify CRL signature")
 	}
+	var lastErr error = errors.New("no fetchable distribution point")
+	tried := 0
 	for _, url := range cert.CRLDistributionPoints {
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
+		if tried == maxRevocationURLs {
+			break
+		}
+		if !fetchableURL(url) {
 			continue
 		}
-		resp, err := hc.Do(req)
+		tried++
+		body, err := getCRL(ctx, hc, url)
 		if err != nil {
-			continue
-		}
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if err != nil || resp.StatusCode >= 400 {
+			lastErr = err
 			continue
 		}
 		// crypto/x509.ParseRevocationList replaced ParseDERCRL in
 		// Go 1.19+ — works for both PEM and DER inputs.
 		crl, err := x509.ParseRevocationList(body)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		// Only trust a CRL actually signed by the issuer (fail closed to the next
 		// CDP / caller fallback otherwise).
-		if crl.CheckSignatureFrom(issuer) != nil {
+		if err := crl.CheckSignatureFrom(issuer); err != nil {
+			lastErr = err
 			continue
 		}
 		status := StatusValid
@@ -74,5 +78,28 @@ func fetchCRL(ctx context.Context, hc *http.Client, cert, issuer *x509.Certifica
 			RawCRL:     body,
 		}, nil
 	}
-	return nil, fmt.Errorf("crl: all distribution points failed")
+	return nil, fmt.Errorf("crl: all distribution points failed: %w", lastErr)
 }
+
+// getCRL fetches one distribution point and returns the body of a 2xx
+// answer, read under maxCRLBytes.
+func getCRL(ctx context.Context, hc *http.Client, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("crl distribution point status %d", resp.StatusCode)
+	}
+	return netguard.LimitedBody(resp.Body, maxCRLBytes)
+}
+
+// maxCRLBytes caps a fetched CRL body. Large public CAs publish CRLs of a
+// few MB; anything bigger is refused rather than buffered. A var so tests
+// can lower it.
+var maxCRLBytes int64 = 8 << 20
