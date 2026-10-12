@@ -250,6 +250,31 @@ export function createYjsService({
   }
 
   /**
+   * CB-2: drop an idle room and release everything it holds. The
+   * Awareness owns a 3 s setInterval and the Y.Doc the whole document;
+   * deleting the registry entry alone leaked both for every room ever
+   * opened. Only evicts the exact room instance still registered, so a
+   * room recreated under the same id is never touched.
+   */
+  function evictRoom(roomId, room) {
+    if (room.clients.size !== 0) return false
+    if (rooms.get(roomId) === room) rooms.delete(roomId)
+    if (room.destroyed) return true
+    room.destroyed = true
+    try {
+      room.awareness.destroy()
+    } catch (err) {
+      console.error(`yjs: awareness destroy failed room=${roomId}: ${err && err.message}`)
+    }
+    try {
+      room.ydoc.destroy()
+    } catch (err) {
+      console.error(`yjs: doc destroy failed room=${roomId}: ${err && err.message}`)
+    }
+    return true
+  }
+
+  /**
    * CB-3: re-read the connection's permissions every recheckIntervalMs.
    * View revoked → 4403; session invalid → 4401; source unavailable →
    * 4503 (fail closed); edit revoked/granted → conn.canEdit follows.
@@ -393,7 +418,7 @@ export function createYjsService({
       // A client may have rejoined during the await — only drop the room
       // if it's still empty, otherwise the reconnecting peer keeps the
       // live in-memory doc.
-      if (room.clients.size === 0) rooms.delete(roomId)
+      evictRoom(roomId, room)
     })
 
     console.log(`yjs: client joined tenant=${tenantId} doc=${docId} peers=${room.clients.size}`)
