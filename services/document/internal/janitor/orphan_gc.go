@@ -29,6 +29,8 @@ import (
 // These rows are filtered out client-side, but they still consume
 // rows + index pages in every tenant. The sweeper soft-deletes
 // orphans older than `Grace` so the row count stays bounded.
+// Documents that are metadata-only by design are never orphans — see
+// intentionalMetadataOnlyExcluded.
 //
 // We intentionally only soft-delete (deleted_at = now()). Hard delete
 // is owned by the existing retention pipeline so cascading cleanup
@@ -86,6 +88,13 @@ func (g *OrphanGC) Stop() {
 		close(g.stop)
 	}
 }
+
+// intentionalMetadataOnlyExcluded keeps documents that are version-less on
+// purpose out of the sweep (D-25): notes and wiki pages (content arrives
+// later through the collaborative editor) and m365 ingests filed while the
+// storage pipeline was not wired (pending=true; marked email.source).
+// Only plain file documents whose upload never completed are orphans.
+const intentionalMetadataOnlyExcluded = `doc_type = 'file' AND NOT (custom_metadata ? 'email.source')`
 
 // orphan is a minimal row shape — (tenant_id, id) is enough to
 // drive the per-tenant soft-delete loop.
@@ -145,6 +154,7 @@ func (g *OrphanGC) listOrphans(ctx context.Context, cutoff time.Time, limit int)
 			  AND current_version_id IS NULL
 			  AND deleted_at IS NULL
 			  AND created_at < $2
+			  AND `+intentionalMetadataOnlyExcluded+`
 			ORDER BY created_at ASC
 			LIMIT $3`, tenantID, cutoff, limit-len(out))
 		if err != nil {
@@ -195,7 +205,8 @@ func (g *OrphanGC) softDelete(ctx context.Context, o orphan) error {
 		   AND id = $2
 		   AND current_version_id IS NULL
 		   AND deleted_at IS NULL
-		   AND created_at < $3`,
+		   AND created_at < $3
+		   AND `+intentionalMetadataOnlyExcluded,
 		o.TenantID, o.ID, cutoff); err != nil {
 		return err
 	}
