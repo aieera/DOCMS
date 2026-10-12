@@ -97,10 +97,13 @@ func TestGoogleExchangeHTTP_Suspended403(t *testing.T) {
 // L-3 — behind any extra proxy X-Forwarded-For is a hop list. The
 // exchanges stored it raw into the INET sessions.ip_address column, so
 // every exchange 500'd. They now resolve the client IP like every other
-// auth handler (clientIP).
+// auth handler (clientIP → the shared trusted-proxy ClientIP): here the
+// peer (httptest's 192.0.2.1) and the internal hops are trusted proxies,
+// so the right-most untrusted hop is the client.
 func TestM365Exchange_MultiHopXFF(t *testing.T) {
+	t.Setenv("SEDOC_TRUSTED_PROXIES", "192.0.2.1/32,10.0.0.0/8,172.16.0.0/12")
 	f := newM365HTTPFixture(t, "active")
-	rec := f.exchange(t, "203.0.113.9, 10.1.2.3, 172.16.0.1")
+	rec := f.exchange(t, "198.51.100.66, 203.0.113.9, 10.1.2.3, 172.16.0.1")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	var body struct {

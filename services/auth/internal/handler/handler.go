@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/aieera/sedoc/pkg/auth"
 	vdmserr "github.com/aieera/sedoc/pkg/errors"
+	vdmsmw "github.com/aieera/sedoc/pkg/middleware"
 	"github.com/aieera/sedoc/services/auth/internal/service"
 )
 
@@ -251,27 +251,14 @@ func (h *Handler) clearCSRFCookie(w http.ResponseWriter) {
 }
 
 // clientIP is the ONE place the auth service derives a caller's IP (audit,
-// session rows, login events). Today: the first X-Forwarded-For hop,
-// else RemoteAddr's host. The value is always a bare IP literal (IPv6
-// without brackets) or "", so it round-trips into the INET columns via
-// NULLIF(ip, empty)::inet — a hop list or a garbage header can no longer
-// reach the database. DEC-5 replaces the body with the shared
-// trusted-proxy-aware middleware.ClientIP once it lands.
+// session rows, login events). It is the shared trusted-proxy resolver
+// (DEC-5): X-Forwarded-For counts only when the TCP peer is listed in
+// SEDOC_TRUSTED_PROXIES, and then only its right-most untrusted hop;
+// otherwise the peer address. The value is always a bare IP literal or
+// "", so it round-trips into the INET columns (L-3), and it is the same
+// key the per-IP rate limiters use (L-5).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
-			return ip.String()
-		}
-	}
-	host := r.RemoteAddr
-	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		host = h
-	}
-	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
-		return ip.String()
-	}
-	return ""
+	return vdmsmw.ClientIP(r)
 }
 
 // clientMeta returns (ip, user-agent) suitable for audit logging; the IP
