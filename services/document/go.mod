@@ -20,7 +20,7 @@ require (
 	go.temporal.io/api v1.32.0
 	go.temporal.io/sdk v1.26.1
 	golang.org/x/crypto v0.57.0
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
 )
 
