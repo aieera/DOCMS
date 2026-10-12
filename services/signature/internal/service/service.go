@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"time"
@@ -192,6 +193,21 @@ type RecordSignatureInput struct {
 	operatorSigned bool
 }
 
+// checkSignable reports whether req still accepts signatures (and sends /
+// cancels) at now: only pending and in_progress requests that have not
+// passed expires_at are open (review finding H-2).
+func checkSignable(req *model.SignatureRequest, now time.Time) error {
+	switch req.Status {
+	case "pending", "in_progress":
+	default:
+		return fmt.Errorf("%w: request is %s", ErrRequestNotSignable, req.Status)
+	}
+	if !req.ExpiresAt.IsZero() && !now.Before(req.ExpiresAt) {
+		return fmt.Errorf("%w: request expired at %s", ErrRequestNotSignable, req.ExpiresAt.UTC().Format(time.RFC3339))
+	}
+	return nil
+}
+
 // RecordSignature marks a signer as signed and, when every required
 // signer (including witnesses) is done, completes the request and
 // enqueues the "signature.completed" event through the outbox in
@@ -200,20 +216,29 @@ type RecordSignatureInput struct {
 // On the last-signer commit, ADR 0073 also stamps
 // signature_requests.final_hash_sha256 from the caller-supplied
 // DocHashHex so Verify can detect post-sign blob swaps.
+//
+// Only open requests (pending / in_progress, not past expires_at) accept a
+// signature, a signer signs at most once, and the request row is locked for
+// the whole decision so concurrent signers cannot lose each other's
+// signatures or complete the request twice (H-2).
 func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) error {
-	req, err := s.repo.GetByID(ctx, in.TenantID, in.RequestID)
-	if err != nil || req == nil {
-		return fmt.Errorf("request not found")
+	tenantUUID, err := uuid.Parse(in.TenantID)
+	if err != nil {
+		return fmt.Errorf("tenant_id: %w", err)
+	}
+	reqUUID, err := uuid.Parse(in.RequestID)
+	if err != nil {
+		return fmt.Errorf("%w: malformed request id", ErrRequestNotFound)
 	}
 
-	// Verify the per-signer signing token BEFORE marking anyone signed. Without
-	// this, any authenticated tenant member who learns a (request, signer) id —
-	// both returned by the GET endpoints — could mark that signer signed, and by
-	// iterating all signer ids drive the request to completed + the final-hash
-	// stamp + the PAdES seal. The token is the signer's single proof of
-	// authorization; it is delivered only in their signing URL. The in-person
-	// path (operatorSigned) is exempt: it is authorized by the operator session
-	// upstream in SignInPerson, and its signers hold no magic-link token.
+	// Verify the per-signer signing token BEFORE anything else. Without
+	// this, any authenticated tenant member who learns a (request, signer) id
+	// could mark that signer signed, and by iterating all signer ids drive the
+	// request to completed + the final-hash stamp + the PAdES seal. The token
+	// is the signer's single proof of authorization; it is delivered only in
+	// their signing URL. The in-person path (operatorSigned) is exempt: it is
+	// authorized by the operator session upstream in SignInPerson, and its
+	// signers hold no magic-link token.
 	if !in.operatorSigned {
 		stored, terr := s.repo.SignerSigningToken(ctx, in.TenantID, in.RequestID, in.SignerID)
 		if terr != nil {
@@ -221,48 +246,60 @@ func (s *Service) RecordSignature(ctx context.Context, in RecordSignatureInput) 
 		}
 		want := extractSigningToken(stored)
 		if want == "" || in.Token == "" || subtle.ConstantTimeCompare([]byte(in.Token), []byte(want)) != 1 {
-			return fmt.Errorf("invalid or missing signing token")
+			return ErrInvalidSigningToken
 		}
 	}
 
 	now := time.Now().UTC()
-	allSigned := true
-	for i := range req.Signers {
-		if req.Signers[i].ID == in.SignerID {
-			req.Signers[i].Status = "signed"
-			req.Signers[i].SignedAt = &now
-			req.Signers[i].IPAddress = in.IPAddress
-			req.Signers[i].SignatureSVGPath = in.SVGPath
-			req.Signers[i].DeviceKind = in.DeviceKind
-			req.Signers[i].SignedDocHashSHA256 = in.DocHashHex
-		}
-		// Both signer + witness count as required for completion;
-		// approver/cc do not gate the request.
-		if req.Signers[i].Status != "signed" {
-			role := req.Signers[i].Role
-			if role == "signer" || role == "witness" {
-				allSigned = false
-			}
-		}
-	}
-
-	tenantUUID, err := uuid.Parse(in.TenantID)
-	if err != nil {
-		return fmt.Errorf("tenant_id: %w", err)
-	}
-	reqUUID, err := uuid.Parse(in.RequestID)
-	if err != nil {
-		return fmt.Errorf("request id: %w", err)
-	}
-
 	return database.WithTenantTx(ctx, s.pool, tenantUUID, func(tx pgx.Tx) error {
-		if err := s.repo.UpdateSignersTx(ctx, tx, in.TenantID, in.RequestID, req.Signers); err != nil {
+		req, err := s.repo.GetByIDForUpdateTx(ctx, tx, in.TenantID, in.RequestID)
+		if err != nil {
 			return err
 		}
-		if !allSigned {
-			return nil
+		if req == nil {
+			return ErrRequestNotFound
+		}
+		if err := checkSignable(req, now); err != nil {
+			return err
+		}
+		idx := -1
+		for i := range req.Signers {
+			if req.Signers[i].ID == in.SignerID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return ErrSignerNotFound
+		}
+		signer := &req.Signers[idx]
+		if signer.Status == "signed" || signer.Status == "declined" {
+			return fmt.Errorf("%w (status %s)", ErrAlreadySigned, signer.Status)
+		}
+		signer.Status = "signed"
+		signer.SignedAt = &now
+		signer.IPAddress = in.IPAddress
+		signer.SignatureSVGPath = in.SVGPath
+		signer.DeviceKind = in.DeviceKind
+		signer.SignedDocHashSHA256 = in.DocHashHex
+		if err := s.repo.MarkSignerSignedTx(ctx, tx, in.TenantID, in.RequestID, *signer); err != nil {
+			if errors.Is(err, repository.ErrStateConflict) {
+				return ErrAlreadySigned
+			}
+			return err
+		}
+
+		// Both signer + witness count as required for completion;
+		// approver/cc do not gate the request.
+		for _, sg := range req.Signers {
+			if sg.Status != "signed" && (sg.Role == "signer" || sg.Role == "witness") {
+				return nil
+			}
 		}
 		if err := s.repo.CompleteTx(ctx, tx, in.TenantID, in.RequestID); err != nil {
+			if errors.Is(err, repository.ErrStateConflict) {
+				return ErrRequestNotSignable
+			}
 			return err
 		}
 		if in.DocHashHex != "" {
@@ -376,19 +413,26 @@ func (s *Service) NextExpectedSigner(req *model.SignatureRequest) string {
 	return ""
 }
 
-// CancelRequest cancels a pending signature request.
 // CancelRequest voids an in-flight signature request. Only the request's
 // creator or a tenant admin may cancel — otherwise any authenticated tenant
-// member could void anyone's ceremony (denial-of-service on signing).
+// member could void anyone's ceremony (denial-of-service on signing). Only
+// an open request can be cancelled: a completed request stays completed.
 func (s *Service) CancelRequest(ctx context.Context, tenantID, id, callerUserID string, isAdmin bool) error {
 	req, err := s.repo.GetByID(ctx, tenantID, id)
-	if err != nil || req == nil {
-		return fmt.Errorf("request not found")
+	if err != nil {
+		return err
+	}
+	if req == nil {
+		return ErrRequestNotFound
 	}
 	if !isAdmin && req.CreatedBy != callerUserID {
-		return fmt.Errorf("forbidden: only the request creator or an admin may cancel")
+		return fmt.Errorf("%w: only the request creator or an admin may cancel", ErrForbidden)
 	}
-	return s.repo.UpdateStatus(ctx, tenantID, id, "cancelled")
+	err = s.repo.TransitionStatus(ctx, tenantID, id, "cancelled", "draft", "pending", "in_progress")
+	if errors.Is(err, repository.ErrStateConflict) {
+		return fmt.Errorf("%w: request is %s", ErrRequestNotSignable, req.Status)
+	}
+	return err
 }
 
 // VerifyPDF runs the full PAdES-LTV validator (ADR 0072) against

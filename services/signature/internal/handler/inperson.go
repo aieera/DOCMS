@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/aieera/sedoc/pkg/auth"
 	"github.com/aieera/sedoc/services/signature/internal/service"
@@ -69,11 +68,7 @@ func (h *Handler) inPersonSign(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if strings.Contains(err.Error(), "forbidden") {
-			writeError(w, http.StatusForbidden, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "in-person sign failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signed"})

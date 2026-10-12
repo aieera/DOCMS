@@ -162,15 +162,29 @@ func (h *Handler) recordSignature(w http.ResponseWriter, r *http.Request) {
 		DeviceKind: body.DeviceKind,
 		DocHashHex: body.DocHashHex,
 	}); err != nil {
-		// A bad token is an auth failure, not a 500.
-		if strings.Contains(err.Error(), "signing token") {
-			writeError(w, http.StatusUnauthorized, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "record signature failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signed"})
+}
+
+// writeServiceError maps the service's sentinel errors to HTTP statuses.
+// 4xx bodies carry the sentinel's message; anything unclassified is logged
+// and answered with a generic 500 so driver errors never reach the client.
+func (h *Handler) writeServiceError(w http.ResponseWriter, err error, fallback string) {
+	switch {
+	case errors.Is(err, service.ErrInvalidSigningToken):
+		writeError(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrRequestNotFound), errors.Is(err, service.ErrSignerNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrRequestNotSignable), errors.Is(err, service.ErrAlreadySigned):
+		writeError(w, http.StatusConflict, err.Error())
+	default:
+		h.log.Error().Err(err).Msg(fallback)
+		writeError(w, http.StatusInternalServerError, fallback)
+	}
 }
 
 func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
@@ -178,11 +192,7 @@ func (h *Handler) cancelRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	isAdmin := auth.RoleString(r) == "owner" || auth.RoleString(r) == "admin"
 	if err := h.svc.CancelRequest(r.Context(), tenantID, id, auth.UserIDString(r), isAdmin); err != nil {
-		if strings.Contains(err.Error(), "forbidden") {
-			writeError(w, http.StatusForbidden, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.writeServiceError(w, err, "cancel failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
