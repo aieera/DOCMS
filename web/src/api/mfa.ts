@@ -60,11 +60,20 @@ export async function listMyEnrolledMethods(): Promise<EnrolledMethod[]> {
   return data.methods ?? []
 }
 
+// Enrolling sends a code and leaves the factor `pending`; it is
+// activated only by the matching enroll/verify call with that code.
+// Enroll answers 409 METHOD_UNAVAILABLE when the tenant has no sender.
 export async function enrollEmailMFA(email: string): Promise<void> {
   await api.post('/auth/mfa/email/enroll', { email })
 }
 export async function enrollSMSMFA(phone: string): Promise<void> {
   await api.post('/auth/mfa/sms/enroll', { phone })
+}
+export async function verifyEmailEnrollment(code: string): Promise<void> {
+  await api.post('/auth/mfa/email/enroll/verify', { code })
+}
+export async function verifySMSEnrollment(code: string): Promise<void> {
+  await api.post('/auth/mfa/sms/enroll/verify', { code })
 }
 export async function registerPushDevice(input: { platform: 'fcm' | 'apns'; token: string; label: string }) {
   const { data } = await api.post<{ device_id: string; ack_key: string }>('/auth/mfa/push/devices', input)
