@@ -73,9 +73,7 @@ func SessionOrAPIKey(cfg SessionAuthConfig, apiScope string) func(http.Handler) 
 // X-Tenant-ID); the acting user is optional (a worker may have no human
 // actor) and the role defaults to admin so ingestion can write.
 func internalServiceIdentity(r *http.Request) (auth.UserInfo, bool) {
-	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
-	got := r.Header.Get(InternalServiceKeyHeader)
-	if want == "" || got == "" || subtle.ConstantTimeCompare([]byte(want), []byte(got)) != 1 {
+	if !validInternalServiceKey(r) {
 		return auth.UserInfo{}, false
 	}
 	rawTenant := r.Header.Get("X-Auth-Tenant-ID")
@@ -92,4 +90,13 @@ func internalServiceIdentity(r *http.Request) (auth.UserInfo, bool) {
 		role = "admin"
 	}
 	return auth.UserInfo{ID: userID, TenantID: tenantID, Role: role}, true
+}
+
+// validInternalServiceKey reports whether r carries the internal-service
+// secret (SEDOC_INTERNAL_API_KEY) in X-Internal-Service-Key, compared in
+// constant time. An unset secret never matches.
+func validInternalServiceKey(r *http.Request) bool {
+	want := os.Getenv("SEDOC_INTERNAL_API_KEY")
+	got := r.Header.Get(InternalServiceKeyHeader)
+	return want != "" && got != "" && subtle.ConstantTimeCompare([]byte(want), []byte(got)) == 1
 }

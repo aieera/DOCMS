@@ -11,8 +11,10 @@
 // FORCE-RLS tables on the raw pool, so under dms_app every session was 401
 // and every API key "invalid".
 //
-// Run: go test -tags integration -run 'TestSessionAuth_' ./middleware/
-//      go test -tags "integration prodposture" -run '^TestProdPosture_' ./middleware/
+// Run:
+//
+//	go test -tags integration -run 'TestSessionAuth_|TestAPIKeyAuth_' ./middleware/
+//	go test -tags "integration prodposture" -run '^TestProdPosture_' ./middleware/
 package middleware
 
 import (
