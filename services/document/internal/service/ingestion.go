@@ -558,6 +558,28 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		return nil, vdmserr.Conflict("review item already resolved")
 	}
 
+	// DEC-12: filing the staged blob is a claim on it. The blob was
+	// supplied by the item's uploader, so that is whose claim counts (they
+	// completed the upload session that produced it), or the reviewer's
+	// view of a document already carrying it. A staged row pointing at
+	// someone else's bytes (staged before the claim rules) is NotFound —
+	// checked before anything is written, so new_document leaves no empty
+	// document behind.
+	var claimCtx context.Context
+	if in.Decision == "new_version" || in.Decision == "new_document" {
+		uploader := uuid.Nil
+		if item.CreatedBy != nil {
+			uploader = *item.CreatedBy
+		}
+		if cerr := s.withTenantTx(ctx, tenantID, func(tx pgx.Tx) error {
+			_, e := s.claimBlobTx(ctx, tx, tenantID, uploader, item.BlobRef)
+			return e
+		}); cerr != nil {
+			return nil, cerr
+		}
+		claimCtx = withStagedBlobClaim(ctx, item.BlobRef, uploader)
+	}
+
 	res := &ResolveReviewResult{}
 	switch in.Decision {
 	case "reject":
@@ -579,7 +601,7 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		if in.TargetDocumentID == uuid.Nil {
 			return nil, errInvalidInput("target_document_id", "required for new_version")
 		}
-		v, cerr := s.CreateVersion(ctx, &CreateVersionInput{
+		v, cerr := s.CreateVersion(claimCtx, &CreateVersionInput{
 			DocumentID:    in.TargetDocumentID,
 			ContentBlobID: item.BlobRef,
 			ChangeSummary: "committed from review queue",
@@ -618,7 +640,7 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 		if derr != nil {
 			return nil, derr
 		}
-		v, verr := s.CreateVersion(ctx, &CreateVersionInput{
+		v, verr := s.CreateVersion(claimCtx, &CreateVersionInput{
 			DocumentID:    doc.ID,
 			ContentBlobID: item.BlobRef,
 			ChangeSummary: "committed from ingestion review queue",
@@ -636,6 +658,30 @@ func (s *DocumentService) ResolveReviewItem(ctx context.Context, in *ResolveRevi
 	default:
 		return nil, errInvalidInput("decision", "must be one of new_version, new_document, reject")
 	}
+}
+
+// stagedBlobClaimKey carries "this blob was staged by uploader" from
+// ResolveReviewItem into CreateVersion (DEC-12). Unexported and set only
+// here, for the one blob id the staged item names.
+type stagedBlobClaimKey struct{}
+
+type stagedBlobClaim struct {
+	blobID   uuid.UUID
+	uploader uuid.UUID
+}
+
+func withStagedBlobClaim(ctx context.Context, blobID, uploader uuid.UUID) context.Context {
+	return context.WithValue(ctx, stagedBlobClaimKey{}, stagedBlobClaim{blobID: blobID, uploader: uploader})
+}
+
+// blobClaimant is whose upload claim CreateVersion evaluates for blobID:
+// the staged item's uploader when ResolveReviewItem is filing that very
+// blob, otherwise the caller.
+func blobClaimant(ctx context.Context, blobID, caller uuid.UUID) uuid.UUID {
+	if c, ok := ctx.Value(stagedBlobClaimKey{}).(stagedBlobClaim); ok && c.blobID == blobID && c.uploader != uuid.Nil {
+		return c.uploader
+	}
+	return caller
 }
 
 // finishReviewCommit marks the review resolved + the staged item committed in

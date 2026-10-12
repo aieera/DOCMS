@@ -1468,7 +1468,7 @@ func (s *DocumentService) CreateVersion(ctx context.Context, in *CreateVersionIn
 		// production NOBYPASSRLS role (H-26). The caller must hold a
 		// claim on it (DEC-12). Caller-supplied values still win when
 		// set (editor save-back computes its own).
-		blob, err := s.claimBlobTx(ctx, tx, tenantID, userID, in.ContentBlobID)
+		blob, err := s.claimBlobTx(ctx, tx, tenantID, blobClaimant(ctx, in.ContentBlobID, userID), in.ContentBlobID)
 		if err != nil {
 			return err
 		}
