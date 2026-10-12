@@ -132,3 +132,37 @@ func TestConsumers_TwoInstancesBind(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, n, si.State.Msgs, "each event must be handled by exactly one replica")
 }
+
+// O-5 follow-up: when the DLQ publish itself failed on the final delivery,
+// the consumer NAK'd — but JetStream never redelivers past MaxDeliver, so
+// the event was lost anyway. The consumer must keep the message pending
+// (InProgress) and retry the DLQ publish, so a DLQ that comes back in time
+// still receives it.
+func TestAuditConsumer_DLQPublishFailureKeepsMessage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	_, js := auditTestBroker(ctx, t)
+	require.NoError(t, js.DeleteStream("AUDIT_EVENTS_DLQ")) // the DLQ is unavailable at first
+
+	svc := New(Config{Logger: zerolog.Nop()})
+	svc.maxDeliver = 1
+	svc.nakDelays = []time.Duration{10 * time.Millisecond}
+	svc.dlqRetryDelays = []time.Duration{300 * time.Millisecond}
+	svc.dlqRetryAttempts = 40
+	require.NoError(t, svc.StartConsumer(ctx, js))
+
+	_, err := js.Publish("dms.document.poisoned.v1", []byte(`{not json`))
+	require.NoError(t, err)
+	time.Sleep(time.Second) // final (only) delivery happens; DLQ publish fails
+
+	_, err = js.AddStream(&nats.StreamConfig{Name: "AUDIT_EVENTS_DLQ", Subjects: []string{"dms.dlq.audit_events.>"}, MaxBytes: 16 << 20})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		si, err := js.StreamInfo("AUDIT_EVENTS_DLQ")
+		return err == nil && si.State.Msgs == 1
+	}, 20*time.Second, 100*time.Millisecond, "the event must reach the DLQ once it is back")
+	require.Eventually(t, func() bool {
+		ci, err := js.ConsumerInfo("TEST_ALL", "audit-dms_document")
+		return err == nil && ci.NumAckPending == 0
+	}, 10*time.Second, 100*time.Millisecond, "and only then be acked")
+}

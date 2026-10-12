@@ -40,6 +40,9 @@ type Service struct {
 	// them.
 	maxDeliver int
 	nakDelays  []time.Duration
+	// DLQ publish retry on the final delivery (see parkOnDLQ).
+	dlqRetryDelays   []time.Duration
+	dlqRetryAttempts int
 
 	// Ed25519 checkpoint signing. signer is nil when no key is
 	// configured, in which case checkpoint creation/verification is a
@@ -61,7 +64,8 @@ type Config struct {
 
 // New creates a Service.
 func New(cfg Config) *Service {
-	s := &Service{repo: cfg.Repo, log: cfg.Logger, maxDeliver: defaultMaxDeliver, nakDelays: nakRetryDelays}
+	s := &Service{repo: cfg.Repo, log: cfg.Logger, maxDeliver: defaultMaxDeliver, nakDelays: nakRetryDelays,
+		dlqRetryDelays: nakRetryDelays[:3], dlqRetryAttempts: 5}
 	if seed := strings.TrimSpace(cfg.SigningKeySeedB64); seed != "" {
 		raw, err := base64.StdEncoding.DecodeString(seed)
 		if err != nil || len(raw) != ed25519.SeedSize {
@@ -502,10 +506,11 @@ func (s *Service) StartConsumer(parent context.Context, js nats.JetStreamContext
 			if meta, mErr := msg.Metadata(); mErr == nil && int(meta.NumDelivered) >= s.maxDeliver {
 				auditIngestTotal.WithLabelValues("error").Inc()
 				auditIngestFailures.WithLabelValues(msg.Subject).Inc()
-				if dErr := s.toDLQ(js, msg, meta.NumDelivered, err); dErr != nil {
+				if dErr := s.parkOnDLQ(parent, js, msg, meta.NumDelivered, err); dErr != nil {
+					// Not acked and not NAK'd: JetStream will not redeliver
+					// past MaxDeliver, so a NAK here lost the event silently.
 					s.log.Error().Err(dErr).AnErr("cause", err).Str("subject", msg.Subject).
-						Msg("audit ingest FAILED and the DLQ publish failed — event NAK'd; it is lost when JetStream stops redelivering")
-					_ = msg.NakWithDelay(s.nakDelayFor(msg))
+						Msg("audit ingest FAILED and the DLQ publish kept failing — event left unacked; it is dropped when AckWait expires")
 					return
 				}
 				s.log.Error().Err(err).Str("subject", msg.Subject).Uint64("delivered", meta.NumDelivered).
@@ -572,6 +577,30 @@ func (s *Service) toDLQ(js nats.JetStreamContext, msg *nats.Msg, delivered uint6
 		return err
 	}
 	_, err = js.Publish(auditDLQPrefix+msg.Subject, payload)
+	return err
+}
+
+// parkOnDLQ publishes a final-delivery failure to the DLQ, retrying a
+// failed publish (DLQ stream briefly unavailable, NATS blip) while
+// msg.InProgress() keeps the message pending: this is the last delivery,
+// so once it is NAK'd or its AckWait lapses JetStream drops it for good.
+func (s *Service) parkOnDLQ(parent context.Context, js nats.JetStreamContext, msg *nats.Msg, delivered uint64, cause error) error {
+	var err error
+	for attempt := 0; attempt < s.dlqRetryAttempts; attempt++ {
+		if err = s.toDLQ(js, msg, delivered, cause); err == nil {
+			return nil
+		}
+		s.log.Error().Err(err).Str("subject", msg.Subject).Int("attempt", attempt+1).
+			Msg("audit DLQ publish failed; keeping the event pending and retrying")
+		_ = msg.InProgress()
+		delay := s.dlqRetryDelays[min(attempt, len(s.dlqRetryDelays)-1)]
+		select {
+		case <-parent.Done():
+			return fmt.Errorf("shutting down: %w", err)
+		case <-time.After(delay):
+		}
+		_ = msg.InProgress()
+	}
 	return err
 }
 
