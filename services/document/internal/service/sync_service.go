@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -113,7 +115,13 @@ func (s *DocumentService) SyncDelta(ctx context.Context, workspaceID, deviceID *
 		if err != nil {
 			return nil, err
 		}
-		res.Changes = s.filterSyncDocuments(ctx, userID, *workspaceID, changes, sens, gate)
+		filtered, ferr := s.filterSyncDocuments(ctx, userID, *workspaceID, changes, sens, gate)
+		if ferr != nil {
+			// Do NOT advance or persist the cursor: the hidden documents
+			// would otherwise be skipped forever by this client.
+			return nil, ferr
+		}
+		res.Changes = filtered
 		res.NextCursor, res.HasMore = next, more
 		cur = next
 		if len(res.Changes) > 0 || !more {
@@ -133,6 +141,11 @@ func (s *DocumentService) SyncDelta(ctx context.Context, workspaceID, deviceID *
 	return &res, nil
 }
 
+// ErrPolicyUnavailable: the per-document view check could not be evaluated
+// (policy service error). SyncDelta fails the call without advancing the
+// cursor; the sync handler answers 503 with Retry-After.
+var ErrPolicyUnavailable = errors.New("policy service unavailable")
+
 // syncMaxFilteredPages bounds how many fully-filtered pages one SyncDelta
 // call will skip before returning an empty page (HasMore=true).
 const syncMaxFilteredPages = 10
@@ -144,9 +157,11 @@ const syncMaxFilteredPages = 10
 // enforceClassificationView uses, so ACL denials and clearance blocks both
 // drop the row. Upserts the caller cannot view are removed; tombstones are
 // kept (a client may hold a copy to delete) but reduced to the id. Folders
-// were already filtered by the reader set in SQL. Policy unavailability
-// fails closed (every document treated as denied).
-func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, workspaceID uuid.UUID, changes []model.SyncChange, sens map[uuid.UUID]repository.SyncDocSensitivity, gate *classGate) []model.SyncChange {
+// were already filtered by the reader set in SQL. If the decision cannot be
+// made (policy error, context build failure) it returns ErrPolicyUnavailable
+// instead of guessing, so the caller fails the request without moving the
+// cursor; denials are not errors.
+func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, workspaceID uuid.UUID, changes []model.SyncChange, sens map[uuid.UUID]repository.SyncDocSensitivity, gate *classGate) ([]model.SyncChange, error) {
 	var docIdx []int
 	for i, c := range changes {
 		if c.Kind == "document" {
@@ -173,7 +188,7 @@ func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, works
 			}
 			st, err := structpb.NewStruct(stringifyMap(extra))
 			if err != nil {
-				continue // no check → denied
+				return nil, fmt.Errorf("%w: build policy context: %v", ErrPolicyUnavailable, err)
 			}
 			checks = append(checks, &sedocv1.CheckPermissionRequest{
 				SubjectType: "user", SubjectId: userID.String(), Action: "view",
@@ -193,16 +208,16 @@ func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, works
 		resp, err := s.policy.BatchCheckPermission(metadata.AppendToOutgoingContext(ctx, pairs...),
 			&sedocv1.BatchCheckPermissionRequest{Checks: checks})
 		if err != nil {
-			s.log.Warn().Err(err).Msg("sync delta: policy batch check unavailable; hiding documents (fail-closed)")
-		} else {
-			for i, r := range resp.GetResults() {
-				if i >= len(checks) {
-					break
-				}
-				if r.GetAllowed() {
-					if id, perr := uuid.Parse(checks[i].GetResourceId()); perr == nil {
-						allowed[id] = true
-					}
+			s.log.Warn().Err(err).Msg("sync delta: policy batch check unavailable; failing the call without advancing the cursor")
+			return nil, fmt.Errorf("%w: %v", ErrPolicyUnavailable, err)
+		}
+		if len(resp.GetResults()) != len(checks) {
+			return nil, fmt.Errorf("%w: %d results for %d checks", ErrPolicyUnavailable, len(resp.GetResults()), len(checks))
+		}
+		for i, r := range resp.GetResults() {
+			if r.GetAllowed() {
+				if id, perr := uuid.Parse(checks[i].GetResourceId()); perr == nil {
+					allowed[id] = true
 				}
 			}
 		}
@@ -218,7 +233,7 @@ func (s *DocumentService) filterSyncDocuments(ctx context.Context, userID, works
 			out = append(out, model.SyncChange{Kind: c.Kind, Op: c.Op, ID: c.ID, UpdatedAt: c.UpdatedAt})
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (s *DocumentService) RegisterSyncDevice(ctx context.Context, name, platform string, workspaceID *uuid.UUID) (*model.SyncDevice, error) {
