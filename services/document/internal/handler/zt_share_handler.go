@@ -5,7 +5,8 @@
 //	POST /api/v1/admin/share-links/zt
 //	  — sender creates a token. Body: { document_id, version_id, recipient_email, expires_in_hours, max_views }.
 //	  Returns: { token_id, share_url, expires_at }.
-//	  Auth: SessionAuth + RequireRole(owner, admin) at the mount site.
+//	  Auth: SessionAuth at the mount site; the handler requires "share" on the
+//	  document (D-3) and that version_id belongs to it.
 //
 //	POST /api/v1/admin/share-links/zt/{token_id}/revoke
 //	  — sender or admin terminates the session immediately.
@@ -35,6 +36,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -55,13 +57,19 @@ import (
 	"github.com/aieera/sedoc/pkg/auth"
 	pkgcrypto "github.com/aieera/sedoc/pkg/crypto"
 	"github.com/aieera/sedoc/pkg/database"
+	vdmserr "github.com/aieera/sedoc/pkg/errors"
 	"github.com/aieera/sedoc/pkg/storage"
+	"github.com/aieera/sedoc/services/document/internal/model"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 // ZTShareHandler exposes the routes above. The recipient byte path reads
 // the blob directly (see serveVersionBytes).
 type ZTShareHandler struct {
 	pool *pgxpool.Pool
+	// docs authorizes the sender on create (D-3): the caller must hold
+	// "share" on the document. Nil fails create closed (503).
+	docs ZTDocumentAuthorizer
 	// s3 + kms serve the token-authorized byte path (stream): the
 	// recipient has no session, so the bytes are read and decrypted here
 	// rather than through the session-oriented storage proxy.
@@ -73,8 +81,15 @@ type ZTShareHandler struct {
 	pepper []byte
 }
 
-func NewZTShareHandler(pool *pgxpool.Pool, s3 *storage.S3Client, kms pkgcrypto.KeyManager, pepper []byte) *ZTShareHandler {
-	return &ZTShareHandler{pool: pool, s3: s3, kms: kms, pepper: pepper}
+// ZTDocumentAuthorizer is the slice of DocumentService create needs:
+// GetDocument enforces view (+ classification) and reports the caller's
+// capabilities on the document.
+type ZTDocumentAuthorizer interface {
+	GetDocument(ctx context.Context, id uuid.UUID) (*model.Document, *service.DocumentPermissions, error)
+}
+
+func NewZTShareHandler(pool *pgxpool.Pool, docs ZTDocumentAuthorizer, s3 *storage.S3Client, kms pkgcrypto.KeyManager, pepper []byte) *ZTShareHandler {
+	return &ZTShareHandler{pool: pool, docs: docs, s3: s3, kms: kms, pepper: pepper}
 }
 
 // RegisterAdmin mounts the admin/sender routes (require SessionAuth at the caller).
@@ -135,8 +150,29 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "recipient_email required"})
 		return
 	}
+	if in.MaxViews < 0 {
+		writeJSON(w, 400, map[string]string{"error": "max_views must be >= 0"})
+		return
+	}
 	if in.ExpiresInHours <= 0 {
 		in.ExpiresInHours = 72
+	}
+
+	// D-3: a zero-trust share publishes the document to an outside party,
+	// so the sender must hold "share" on it (GetDocument also enforces view
+	// and the classification gate; a deleted/unknown document is 404).
+	if h.docs == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "zt share not configured"})
+		return
+	}
+	_, perms, err := h.docs.GetDocument(r.Context(), docID)
+	if err != nil {
+		writeErr(w, r, err)
+		return
+	}
+	if perms == nil || !perms.CanShare {
+		writeErr(w, r, vdmserr.Forbidden("share permission required"))
+		return
 	}
 	expiresAt := time.Now().Add(time.Duration(in.ExpiresInHours) * time.Hour)
 
@@ -155,6 +191,19 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 		time.Now().UTC().Format("2006-01-02 15:04"), tokenID.String()[:8])
 
 	err = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
+		// The version must belong to the authorized document; version ids
+		// are only tenant-unique.
+		var belongs bool
+		if e := tx.QueryRow(r.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM document_versions
+				 WHERE tenant_id = $1 AND document_id = $2 AND id = $3
+			)`, tid, docID, verID).Scan(&belongs); e != nil {
+			return e
+		}
+		if !belongs {
+			return vdmserr.NotFound("version not found")
+		}
 		if _, e := tx.Exec(r.Context(), `
 			INSERT INTO zt_share_tokens
 				(tenant_id, token_id, token_hash, document_id, version_id,
@@ -184,7 +233,11 @@ func (h *ZTShareHandler) create(w http.ResponseWriter, r *http.Request) {
 		return database.NewOutboxRepository().Insert(r.Context(), tx, evt)
 	})
 	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "insert", "detail": err.Error()})
+		if vdmserr.KindOf(err) == vdmserr.KindNotFound {
+			writeErr(w, r, err)
+			return
+		}
+		writeErr(w, r, vdmserr.Wrap(vdmserr.ErrInternal, err))
 		return
 	}
 
@@ -304,6 +357,11 @@ func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "not_found"})
 		return
 	}
+	// D-10: a revoked share is gone — no title, MIME or sender.
+	if revokedAt != nil {
+		writeJSON(w, 410, map[string]string{"error": "revoked"})
+		return
+	}
 	if time.Now().After(expiresAt) {
 		writeJSON(w, 410, map[string]string{"error": "expired"})
 		return
@@ -325,7 +383,7 @@ func (h *ZTShareHandler) manifest(w http.ResponseWriter, r *http.Request) {
 
 // ---- stream (public) ----------------------------------------------
 
-// stream resolves the token, increments view_count, and streams the
+// stream resolves the token, atomically consumes one view, and streams the
 // blob bytes back. The watermark is applied client-side as a CSS
 // overlay (ADR 0098 § Honesty about encryption — burning into the
 // pixels doesn't help against a screenshot anyway).
@@ -335,49 +393,64 @@ func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.s3 == nil {
+		// Refuse before consuming a view.
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "storage_unavailable"})
+		return
+	}
+
+	// D-10: one conditional UPDATE is the whole gate — revoked, expired
+	// and max_views are re-checked under the row lock, so concurrent opens
+	// of a max_views=N share can never consume more than N views. Only when
+	// it matches nothing do we read the row to say why.
 	var (
-		docID, verID    uuid.UUID
-		mime            string
-		expiresAt       time.Time
-		revokedAt       *time.Time
-		maxViews, views int
+		docID, verID uuid.UUID
+		denied       string
 	)
 	err := database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		return tx.QueryRow(r.Context(), `
-			SELECT t.document_id, t.version_id, t.expires_at,
-			       t.revoked_at, t.max_views, t.view_count, v.mime_type
-			FROM zt_share_tokens t
-			JOIN document_versions v ON v.tenant_id = t.tenant_id AND v.id = t.version_id
-			WHERE t.tenant_id = $1 AND t.token_id = $2
-		`, tid, tokenID).Scan(&docID, &verID, &expiresAt, &revokedAt,
-			&maxViews, &views, &mime)
-	})
-	if err != nil {
-		writeJSON(w, 404, map[string]string{"error": "not_found"})
-		return
-	}
-	if revokedAt != nil {
-		writeJSON(w, 410, map[string]string{"error": "revoked"})
-		return
-	}
-	if time.Now().After(expiresAt) {
-		writeJSON(w, 410, map[string]string{"error": "expired"})
-		return
-	}
-	if maxViews > 0 && views >= maxViews {
-		writeJSON(w, 410, map[string]string{"error": "view_limit_reached"})
-		return
-	}
-
-	// Bump counter inside tenant tx so RLS is happy.
-	_ = database.WithTenantTx(r.Context(), h.pool, tid, func(tx pgx.Tx) error {
-		_, _ = tx.Exec(r.Context(),
-			`UPDATE zt_share_tokens SET view_count = view_count + 1
-			 WHERE tenant_id = $1 AND token_id = $2`, tid, tokenID)
+		err := tx.QueryRow(r.Context(), `
+			UPDATE zt_share_tokens
+			   SET view_count = view_count + 1
+			 WHERE tenant_id = $1 AND token_id = $2
+			   AND revoked_at IS NULL
+			   AND expires_at > now()
+			   AND (max_views = 0 OR view_count < max_views)
+			RETURNING document_id, version_id`, tid, tokenID).Scan(&docID, &verID)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		var revoked bool
+		var expiresAt time.Time
+		if e := tx.QueryRow(r.Context(), `
+			SELECT revoked_at IS NOT NULL, expires_at
+			  FROM zt_share_tokens WHERE tenant_id = $1 AND token_id = $2`,
+			tid, tokenID).Scan(&revoked, &expiresAt); e != nil {
+			return e
+		}
+		switch {
+		case revoked:
+			denied = "revoked"
+		case !time.Now().Before(expiresAt):
+			denied = "expired"
+		default:
+			denied = "view_limit_reached"
+		}
 		return nil
 	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, 404, map[string]string{"error": "not_found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+		return
+	}
+	if denied != "" {
+		writeJSON(w, 410, map[string]string{"error": denied})
+		return
+	}
 
-	h.serveVersionBytes(w, r, tid, docID, verID, mime)
+	h.serveVersionBytes(w, r, tid, docID, verID)
 }
 
 // serveVersionBytes is the token-authorized read path (D-4). The recipient
@@ -389,7 +462,7 @@ func (h *ZTShareHandler) stream(w http.ResponseWriter, r *http.Request) {
 // document), fetched from object storage, and — when envelope-encrypted —
 // unwrapped under the tenant KEK and decrypted server-side. The storage
 // location never reaches the recipient.
-func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Request, tid, docID, verID uuid.UUID, versionMime string) {
+func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Request, tid, docID, verID uuid.UUID) {
 	if h.s3 == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "storage_unavailable"})
 		return
@@ -411,9 +484,6 @@ func (h *ZTShareHandler) serveVersionBytes(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
-	}
-	if mime == "" {
-		mime = versionMime
 	}
 	obj, err := h.s3.GetObject(r.Context(), bucket, key)
 	if err != nil {

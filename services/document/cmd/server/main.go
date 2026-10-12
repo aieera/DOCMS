@@ -898,7 +898,7 @@ func main() {
 	if len(ztPepper) == 0 {
 		ztPepper = []byte("dev-only-zt-pepper-rotate-in-prod")
 	}
-	ztHandler := handler.NewZTShareHandler(pool, s3c, docKMS, ztPepper)
+	ztHandler := handler.NewZTShareHandler(pool, svc, s3c, docKMS, ztPepper)
 
 	ztAdminMux := http.NewServeMux()
 	ztHandler.RegisterAdmin(ztAdminMux)

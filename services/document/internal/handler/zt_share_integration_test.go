@@ -18,11 +18,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -32,6 +34,8 @@ import (
 	pkgstorage "github.com/aieera/sedoc/pkg/storage"
 	"github.com/aieera/sedoc/pkg/testutil"
 	sedocv1 "github.com/aieera/sedoc/proto/gen/go/sedoc/v1"
+	"github.com/aieera/sedoc/services/document/internal/repository"
+	"github.com/aieera/sedoc/services/document/internal/service"
 )
 
 const ztTestPepper = "zt-test-pepper"
@@ -224,10 +228,11 @@ func TestZTToken_OnlyHashStored(t *testing.T) {
 		"the stored row id must not work as a credential")
 }
 
-// newZTTestHandler builds the handler under test on pool.
+// newZTTestHandler builds the handler under test on pool, with a document
+// service whose policy grants every capability.
 func newZTTestHandler(t *testing.T, pool *pgxpool.Pool) *ZTShareHandler {
 	t.Helper()
-	return NewZTShareHandler(pool, nil, nil, []byte(ztTestPepper))
+	return newZTHandlerWithPolicy(t, pool, ztSharePolicy{share: true})
 }
 
 // ztPolicy mirrors the real policy service's stance on a sessionless
@@ -331,5 +336,154 @@ func TestZTStream_NoSessionServesBytes(t *testing.T) {
 // newZTStreamHandler builds the handler with the byte-serving dependencies.
 func newZTStreamHandler(t *testing.T, pool *pgxpool.Pool, s3c *pkgstorage.S3Client, kms pkgcrypto.KeyManager) *ZTShareHandler {
 	t.Helper()
-	return NewZTShareHandler(pool, s3c, kms, []byte(ztTestPepper))
+	svc := service.New(pool, repository.New(pool), ztSharePolicy{share: true}, zerolog.Nop())
+	return NewZTShareHandler(pool, svc, s3c, kms, []byte(ztTestPepper))
+}
+
+// ztSharePolicy allows every action except "share" when share is false.
+type ztSharePolicy struct{ share bool }
+
+func (p ztSharePolicy) allowed(action string) bool { return action != "share" || p.share }
+
+func (p ztSharePolicy) CheckPermission(_ context.Context, in *sedocv1.CheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.CheckPermissionResponse, error) {
+	return &sedocv1.CheckPermissionResponse{Allowed: p.allowed(in.GetAction())}, nil
+}
+func (p ztSharePolicy) BatchCheckPermission(_ context.Context, in *sedocv1.BatchCheckPermissionRequest, _ ...grpc.CallOption) (*sedocv1.BatchCheckPermissionResponse, error) {
+	out := &sedocv1.BatchCheckPermissionResponse{}
+	for _, c := range in.GetChecks() {
+		out.Results = append(out.Results, &sedocv1.CheckPermissionResponse{Allowed: p.allowed(c.GetAction())})
+	}
+	return out, nil
+}
+
+func ztTokenCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool, tenant uuid.UUID) int {
+	t.Helper()
+	var n int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM zt_share_tokens WHERE tenant_id = $1`, tenant).Scan(&n))
+	return n
+}
+
+// D-3 — creating a zero-trust share had no permission check (the comment
+// promised owner/admin): any member could mint a public link for any
+// document id in the tenant, and its manifest leaked the title, MIME and
+// sender email. Create now requires "share" on the document, and the
+// version must belong to it.
+func TestZTCreate_RequiresShare(t *testing.T) {
+	ctx, _, pool := newZTDB(t)
+	tenant, user, doc, ver := ztSeedTenant(ctx, t, pool)
+	_, otherVer := seedDocWithVersion(ctx, t, pool, tenant, user, "Other document")
+
+	viewOnly, _ := ztMuxes(newZTHandlerWithPolicy(t, pool, ztSharePolicy{share: false}))
+	rec, _ := ztCreate(t, viewOnly, tenant, user, "member", doc, ver, 0)
+	require.Equal(t, http.StatusForbidden, rec.Code, "a caller without share must not mint a zt link: %s", rec.Body.String())
+	require.Zero(t, ztTokenCount(t, ctx, pool, tenant))
+
+	sharer, public := ztMuxes(newZTHandlerWithPolicy(t, pool, ztSharePolicy{share: true}))
+
+	// version ∉ document → 404, nothing stored.
+	rec, _ = ztCreate(t, sharer, tenant, user, "member", doc, otherVer, 0)
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	require.Zero(t, ztTokenCount(t, ctx, pool, tenant))
+
+	// Unknown document → 404.
+	rec, _ = ztCreate(t, sharer, tenant, user, "member", uuid.New(), ver, 0)
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+
+	// Authorized sharer, matching version → created and resolvable.
+	rec, created := ztCreate(t, sharer, tenant, user, "member", doc, ver, 0)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, 1, ztTokenCount(t, ctx, pool, tenant))
+	require.Equal(t, http.StatusOK, ztGet(public, "/api/v1/zt/"+created.secret(t)+"/manifest").Code)
+}
+
+// D-10 — max_views was check-then-increment across two transactions (and
+// the increment's error was ignored), so concurrent opens of a
+// max_views=1 share all got the bytes. The gate is now one conditional
+// UPDATE ... RETURNING.
+func TestZTStream_MaxViewsAtomic(t *testing.T) {
+	ctx, _, pool := newZTDB(t)
+	tenant, user, doc, ver := ztSeedTenant(ctx, t, pool)
+
+	endpoint, access, secretKey, minioClean, err := testutil.NewMinIOContainer(ctx)
+	require.NoError(t, err)
+	t.Cleanup(minioClean)
+	s3c, err := pkgstorage.NewS3Client(endpoint, access, secretKey, false)
+	require.NoError(t, err)
+	require.NoError(t, s3c.CreateBucket(ctx, ztTestBucket, "us-east-1"))
+	ztPutVersionBytes(ctx, t, pool, s3c, nil, tenant, ver, []byte("%PDF-1.7 once"))
+
+	admin, public := ztMuxes(newZTStreamHandler(t, pool, s3c, nil))
+	rec, created := ztCreate(t, admin, tenant, user, "member", doc, ver, 1)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	path := "/api/v1/zt/" + created.secret(t) + "/stream"
+
+	const n = 64
+	codes := make([]int, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			codes[i] = ztGet(public, path).Code
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	served, gone := 0, 0
+	for _, c := range codes {
+		switch c {
+		case http.StatusOK:
+			served++
+		case http.StatusGone:
+			gone++
+		default:
+			t.Fatalf("unexpected status %d (all: %v)", c, codes)
+		}
+	}
+	require.Equal(t, 1, served, "max_views=1 must serve exactly one concurrent open (codes %v)", codes)
+	require.Equal(t, n-1, gone)
+
+	var views int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT view_count FROM zt_share_tokens WHERE tenant_id = $1`, tenant).Scan(&views))
+	require.Equal(t, 1, views, "view_count must never exceed max_views")
+}
+
+// D-10 — the manifest ignored revocation: a revoked share still returned
+// 200 with the title, MIME and sender.
+func TestZTManifest_Revoked410(t *testing.T) {
+	h := newZTHarness(t)
+	rec, created := ztCreate(t, h.admin, h.tenant, h.user, "member", h.doc, h.ver, 0)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	manifest := "/api/v1/zt/" + created.secret(t) + "/manifest"
+	require.Equal(t, http.StatusOK, ztGet(h.public, manifest).Code)
+
+	revoke := httptest.NewRecorder()
+	h.admin.ServeHTTP(revoke, ztAs(httptest.NewRequest(http.MethodPost,
+		"/api/v1/admin/share-links/zt/"+created.TokenID+"/revoke", nil), h.tenant, h.user, "member"))
+	require.Equal(t, http.StatusNoContent, revoke.Code, revoke.Body.String())
+
+	rec = ztGet(h.public, manifest)
+	require.Equal(t, http.StatusGone, rec.Code, "revoked share manifest must be 410")
+	require.NotContains(t, rec.Body.String(), "Board minutes", "a revoked manifest must not leak the title")
+	require.NotContains(t, rec.Body.String(), "@test.local", "a revoked manifest must not leak the sender")
+
+	// The stream refuses a revoked share at the gate, before storage is
+	// touched (a lazy S3 client on an unreachable endpoint proves it).
+	lazyS3, err := pkgstorage.NewS3Client("127.0.0.1:1", "x", "y", false)
+	require.NoError(t, err)
+	_, streamMux := ztMuxes(newZTStreamHandler(t, h.seed, lazyS3, nil))
+	rec = ztGet(streamMux, "/api/v1/zt/"+created.secret(t)+"/stream")
+	require.Equal(t, http.StatusGone, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "revoked")
+}
+
+// newZTHandlerWithPolicy builds the handler with a DocumentService on the
+// given policy stub (the create-path authorizer).
+func newZTHandlerWithPolicy(t *testing.T, pool *pgxpool.Pool, policy service.PermissionChecker) *ZTShareHandler {
+	t.Helper()
+	svc := service.New(pool, repository.New(pool), policy, zerolog.Nop())
+	return NewZTShareHandler(pool, svc, nil, nil, []byte(ztTestPepper))
 }
