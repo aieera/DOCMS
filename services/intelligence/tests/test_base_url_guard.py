@@ -36,6 +36,12 @@ def _resolves_to(*ips):
     ("https://mapped.example/v1", ["::ffff:192.168.1.1"]),
     ("https://rebind.example/v1", ["93.184.216.34", "192.168.0.10"]),  # any private answer
     ("http://redis:6379", ["172.18.0.5"]),
+    # NAT64 (64:ff9b::/96) and 6to4 (2002::/16) embed an IPv4 address;
+    # the embedded address is what a translator/relay will reach.
+    ("https://nat64-meta.example/", ["64:ff9b::a9fe:a9fe"]),     # 169.254.169.254
+    ("https://nat64-lan.example/", ["64:ff9b::c0a8:0101"]),      # 192.168.1.1
+    ("https://6to4-lo.example/", ["2002:7f00:0001::1"]),          # 127.0.0.1
+    ("https://6to4-lan.example/", ["2002:0a00:0005::"]),          # 10.0.0.5
 ])
 def test_base_url_private_rejected(url, ips):
     with _resolves_to(*ips):
@@ -46,6 +52,11 @@ def test_base_url_private_rejected(url, ips):
 def test_base_url_public_allowed():
     with _resolves_to("93.184.216.34"):
         url_guard.check_base_url("https://api.example.com/v1", provider="openai")
+    # NAT64 / 6to4 forms of a PUBLIC IPv4 stay allowed.
+    with _resolves_to("64:ff9b::5db8:d822"):          # 93.184.216.34
+        url_guard.check_base_url("https://nat64-public.example/v1", provider="openai")
+    with _resolves_to("2002:5db8:d822::1"):           # 93.184.216.34
+        url_guard.check_base_url("https://6to4-public.example/v1", provider="openai")
 
 
 def test_base_url_unresolvable_or_malformed_rejected():

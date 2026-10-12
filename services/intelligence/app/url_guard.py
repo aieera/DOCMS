@@ -31,10 +31,28 @@ def _allowlist() -> set[str]:
     return {h.strip().lower().rstrip(".") for h in raw.split(",") if h.strip()}
 
 
+_NAT64 = ipaddress.IPv6Network("64:ff9b::/96")
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 form actually reaches: IPv4-mapped
+    (::ffff:a.b.c.d), NAT64 well-known prefix (64:ff9b::/96, last 32 bits)
+    and 6to4 (2002:AABB:CCDD::/48)."""
+    if ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    if ip in _NAT64:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if ip.sixtofour is not None:
+        return ip.sixtofour
+    return None
+
+
 def _is_public(addr: str) -> bool:
     ip = ipaddress.ip_address(addr.split("%", 1)[0])
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        v4 = _embedded_ipv4(ip)
+        if v4 is not None:
+            ip = v4
     return ip.is_global and not ip.is_multicast
 
 
